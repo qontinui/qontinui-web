@@ -3442,8 +3442,11 @@ async def get_fleet_resource_samples(
         }
 
     Each ``ResourceSampleRow`` carries a **server-computed** ``pressure``
-    (``{ratio, basis}``, or ``null`` for "no opinion") plus ``age_secs``.
-    Both are passed through untouched on purpose:
+    (``{ratio, basis}``, or ``null`` for "no opinion"), ``age_secs``, and
+    the admission fields ``floor`` / ``disk_floor``
+    (``{basis, bytes, source, verdict}``) plus ``headroom``
+    (``ok | warn | breach | unknown``). All are passed through untouched
+    on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
       ranker also reads. Recomputing it here (or in the browser) is
@@ -3451,6 +3454,15 @@ async def get_fleet_resource_samples(
     * ``age_secs`` is computed by Postgres in the same statement as the
       row, so a browser never subtracts its own clock from a server
       timestamp.
+    * ``headroom`` is the VERDICT coord's admission acts on, and the
+      strip colours rows from it rather than from a client-side band
+      over ``pressure`` — the two could otherwise disagree exactly at
+      the boundary. It is not defaultable here: a row arriving without
+      these fields (a coord that predates them) must reach the browser
+      without them, which renders as *unknown*, never as healthy. Note
+      ``floor.basis`` — the floor is on a different column from the
+      ratio's divisors, so it cannot be collapsed into a pressure
+      threshold anywhere along this path.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

@@ -23,6 +23,16 @@
  * same runs. This fleet has already shipped one dashboard that led on the
  * pinned number.
  *
+ * ## Pressure is the magnitude; `headroom` is the colour
+ *
+ * Pressure says how loaded a lane is. It does **not** say whether the lane
+ * will accept work — coord admits on **byte floors**, on columns the ratio
+ * does not even divide by. So the row's tone comes from the server's
+ * `headroom` verdict and the floor beside it, and the pressure percentage is
+ * rendered in neutral type. The band constants that used to colour this table
+ * (`SATURATED_AT` / `WARN_AT`, decided in TypeScript) are deleted: they could
+ * paint a row amber that the ranker had already stopped electing.
+ *
  * ## The §C3 honesty rules this file implements
  *
  * - A machine with **no recent sample** renders `unknown`, never `healthy`.
@@ -33,6 +43,9 @@
  *   number that had stopped being true.
  * - `pressure: null` is **no server opinion**, rendered unknown — never 0,
  *   never green.
+ * - `headroom` absent or `unknown` gets **the same treatment as a stale or
+ *   absent sample** — the neutral unknown tone, never green. A coord that has
+ *   not shipped the floor fields yet paints the fleet grey, not healthy.
  * - **No swap figure appears on a `host` row at all.** Windows derives swap
  *   algebraically from the same commit counters, so printing both would read
  *   as corroboration from two instruments when it is one printed twice. The
@@ -48,7 +61,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Line,
   LineChart,
-  ReferenceLine,
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
@@ -67,28 +79,30 @@ import { CollapsiblePanel } from "./CollapsiblePanel";
 import {
   buildMachineGroups,
   coupledWslHeadroomBytes,
-  floorsForLane,
+  describeFloor,
   formatAge,
   formatBytes,
   formatPercent,
   formatRatioOfCeiling,
   FLOOR_VERDICT_HINT,
+  headroomTone,
+  HEADROOM_LABEL,
   hostIsBindingConstraint,
-  LANE_FLOORS,
   laneShowsSwap,
   pressureFormula,
   pressureLabel,
-  pressureTone,
   rowAnchor,
+  rowHeadroom,
   safeRatio,
-  SATURATED_AT,
   STALE_AFTER_SECS,
 } from "./fleetResources";
 import type {
+  EffectiveFloor,
   FleetDeviceRef,
+  Headroom,
   HistorySeries,
-  PressureTone,
   ResourceSampleRow,
+  RowTone,
   StripRow,
 } from "./fleetResources";
 import type { UseFleetResourceSamplesResult } from "./useFleetResourceSamples";
@@ -97,21 +111,39 @@ import type { UseFleetResourceSamplesResult } from "./useFleetResourceSamples";
 // Tone
 // ---------------------------------------------------------------------------
 
-const TONE_DOT: Record<PressureTone, string> = {
+const TONE_DOT: Record<RowTone, string> = {
   ok: "bg-green-500",
   warn: "bg-yellow-500",
   critical: "bg-red-500",
   unknown: "bg-muted-foreground/50",
 };
 
-const TONE_TEXT: Record<PressureTone, string> = {
-  ok: "text-green-600 dark:text-green-400",
-  warn: "text-yellow-600 dark:text-yellow-400",
-  critical: "text-red-600 dark:text-red-400",
-  unknown: "text-muted-foreground",
+// There is deliberately no tone map for the PRESSURE text any more. Colouring
+// the magnitude was how a client-side band leaked back into the verdict; the
+// ratio now renders in neutral type and the Admission column carries tone.
+
+/**
+ * The row's own tone stripe. `unknown` gets the SAME muted treatment as a
+ * stale row — deliberately not a colour that reads as an all-clear.
+ */
+const TONE_ROW: Record<RowTone, string> = {
+  ok: "border-l-2 border-l-green-500/60",
+  warn: "border-l-2 border-l-yellow-500",
+  critical: "border-l-2 border-l-red-500",
+  unknown: "border-l-2 border-l-muted-foreground/30",
 };
 
-const SPARK_STROKE: Record<PressureTone, string> = {
+const TONE_BADGE: Record<
+  RowTone,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  ok: "secondary",
+  warn: "secondary",
+  critical: "destructive",
+  unknown: "outline",
+};
+
+const SPARK_STROKE: Record<RowTone, string> = {
   ok: "var(--chart-2, #22c55e)",
   warn: "#eab308",
   critical: "#ef4444",
@@ -125,10 +157,16 @@ const SPARK_STROKE: Record<PressureTone, string> = {
 /**
  * A pressure sparkline over the retention window.
  *
- * The Y domain is **pinned to [0, 1]** and a reference line sits at the
- * critical band. Auto-scaling would draw a machine flat at 5% and a machine
- * flat at 95% as the same picture — and "spiky vs saturated" is exactly the
- * distinction that decides whether to drain a machine.
+ * The Y domain is **pinned to [0, 1]**. Auto-scaling would draw a machine flat
+ * at 5% and a machine flat at 95% as the same picture — and "spiky vs
+ * saturated" is exactly the distinction that decides whether to drain a
+ * machine.
+ *
+ * There is **no threshold reference line**. There used to be one, drawn at a
+ * client-side `SATURATED_AT`; the floor coord actually admits on is a byte
+ * count on a different column, so it has no honest Y position on a pressure
+ * axis. Drawing a line where nothing happens is the same lie as colouring a
+ * row from it. The stroke colour carries the server's verdict instead.
  *
  * Null points are gaps (`connectNulls={false}`): a period where the server
  * had no pressure opinion must not be drawn as a straight line between two
@@ -139,7 +177,7 @@ function PressureSparkline({
   tone,
 }: {
   series: HistorySeries | undefined;
-  tone: PressureTone;
+  tone: RowTone;
 }) {
   // Time is the X value, not the array index. With index spacing a three-hour
   // publisher outage would draw as one 30-second-wide step between adjacent
@@ -186,11 +224,6 @@ function PressureSparkline({
           domain={["dataMin", "dataMax"]}
         />
         <YAxis hide domain={[0, 1]} />
-        <ReferenceLine
-          y={SATURATED_AT}
-          stroke="#ef4444"
-          strokeDasharray="2 2"
-        />
         <RechartsTooltip
           isAnimationActive={false}
           // Both params are typed `unknown` and narrowed at RUNTIME on
@@ -251,7 +284,7 @@ function LaneCell({ row }: { row: StripRow }) {
 }
 
 /**
- * The lead column.
+ * The lead column: the lane's pressure MAGNITUDE.
  *
  * Renders the server's ratio, the instrument that produced it, and — on
  * hover — the exact formula and the raw counters it came from. §C1 requires
@@ -259,10 +292,14 @@ function LaneCell({ row }: { row: StripRow }) {
  * means `swap_used/swap_total` on one row and `1 − commit_available/
  * commit_total` on the next is a new version of the confidently-wrong
  * dashboard.
+ *
+ * It is deliberately **not colour-toned**. "How loaded is it" and "will it
+ * refuse work" are different questions, and the band that used to answer the
+ * second from the first was a client-side constant coord never agreed to.
+ * The Admission column beside this one carries the verdict and the tone.
  */
 function PressureCell({ row }: { row: StripRow }) {
   const sample = row.sample;
-  const tone = pressureTone(row.freshness, sample?.pressure ?? null);
   const pressure = sample?.pressure ?? null;
 
   if (row.freshness === "unknown") {
@@ -271,7 +308,6 @@ function PressureCell({ row }: { row: StripRow }) {
         className="inline-flex items-center gap-1.5"
         data-testid="fleet-resource-pressure-unknown"
       >
-        <span className={`h-2 w-2 rounded-full ${TONE_DOT.unknown}`} />
         <span className="text-muted-foreground">unknown</span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -293,7 +329,6 @@ function PressureCell({ row }: { row: StripRow }) {
         className="inline-flex items-center gap-1.5"
         data-testid="fleet-resource-pressure-no-opinion"
       >
-        <span className={`h-2 w-2 rounded-full ${TONE_DOT.unknown}`} />
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="text-muted-foreground underline decoration-dotted">
@@ -338,10 +373,9 @@ function PressureCell({ row }: { row: StripRow }) {
           className="inline-flex items-center gap-1.5"
           data-testid="fleet-resource-pressure"
         >
-          <span className={`h-2 w-2 rounded-full ${TONE_DOT[tone]}`} />
           <span
-            className={`font-medium tabular-nums ${TONE_TEXT[tone]} ${
-              stale ? "line-through opacity-60" : ""
+            className={`font-medium tabular-nums ${
+              stale ? "line-through opacity-60 text-muted-foreground" : ""
             }`}
           >
             {formatPercent(pressure.ratio)}
@@ -356,7 +390,8 @@ function PressureCell({ row }: { row: StripRow }) {
         <div className="font-mono text-muted-foreground">{raw}</div>
         <div>
           Computed by coord, not by this page — the CI dispatcher ranks on the
-          same value.
+          same value. It is a magnitude, not a verdict: whether this lane
+          accepts work is the Admission column.
         </div>
         {stale && (
           <div className="text-yellow-600 dark:text-yellow-400">
@@ -365,6 +400,133 @@ function PressureCell({ row }: { row: StripRow }) {
         )}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * One reported floor: its value, whether a tenant policy set it or it is the
+ * built-in default, and whether the lane **defers** or **rejects** there.
+ *
+ * `reject` vs `defer` is not decoration — one fails the work now, the other
+ * makes it late — so the verdict is a badge rather than a tooltip, and the
+ * two get different variants.
+ */
+function FloorLine({
+  label,
+  floor,
+}: {
+  label: string;
+  floor: EffectiveFloor | null | undefined;
+}) {
+  const d = describeFloor(floor);
+  // `!floor` is redundant with `!d` at runtime and load-bearing for the type
+  // narrowing below — no non-null assertions on a nullable wire field.
+  if (!floor || !d) {
+    return (
+      <span
+        className="text-[10px] text-muted-foreground italic"
+        data-testid="fleet-resource-floor-missing"
+      >
+        {label} floor not reported
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex flex-wrap items-center gap-1 text-[10px]"
+      data-testid="fleet-resource-floor"
+    >
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums">{d.value}</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant={floor.verdict === "reject" ? "destructive" : "secondary"}
+            className="text-[9px] px-1 py-0"
+          >
+            {d.verdict}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          {FLOOR_VERDICT_HINT[floor.verdict]}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className="text-[9px] px-1 py-0">
+            {d.source}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          {d.source === "policy"
+            ? "Set for this tenant in the fleet runtime policy — an operator chose this number."
+            : "coord's built-in default — no tenant policy overrides it."}
+        </TooltipContent>
+      </Tooltip>
+    </span>
+  );
+}
+
+/**
+ * The verdict column — **where this row's colour comes from**.
+ *
+ * `headroom` is coord's own admission state for the lane, computed against
+ * the floor coord enforces, on the column that floor governs. The strip does
+ * not re-derive it and holds no threshold of its own, so "the dashboard says
+ * red" and "the dispatcher stopped sending work" cannot come apart.
+ *
+ * `unknown` — the field absent (a coord without the floor fields), null, or a
+ * stale/absent sample — renders in the same muted tone as a dead row. Absence
+ * of signal is not health.
+ */
+function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
+  const headroom: Headroom =
+    row.freshness === "fresh" ? rowHeadroom(row.sample) : "unknown";
+  const reported = row.sample?.headroom != null;
+
+  return (
+    <span
+      className="inline-flex flex-col gap-0.5"
+      data-testid="fleet-resource-admission"
+      data-headroom={headroom}
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${TONE_DOT[tone]}`} />
+            <Badge variant={TONE_BADGE[tone]} className="text-[10px]">
+              {HEADROOM_LABEL[headroom]}
+            </Badge>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+          <div>
+            coord&apos;s own admission verdict for this lane, computed against
+            the floor below. This page holds no threshold of its own — if it
+            says the machine is refusing work, the dispatcher already stopped
+            sending it.
+          </div>
+          {headroom === "unknown" && (
+            <div className="text-muted-foreground">
+              {row.freshness !== "fresh"
+                ? "The sample is not current, so the verdict computed from it is not either."
+                : reported
+                  ? "coord reports this lane's admission state as unknown."
+                  : "coord did not report an admission state for this lane — an older coord, or a lane it does not admit on. Unknown is NOT healthy."}
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+      {/* A floor reported inside a sample too old to trust is a config value
+          that may since have changed, so an `unknown` row withholds it for
+          the same reason it withholds the measurements. */}
+      {row.freshness !== "unknown" && (
+        <>
+          <FloorLine label="mem" floor={row.sample?.floor} />
+          <FloorLine label="disk" floor={row.sample?.disk_floor} />
+        </>
+      )}
+    </span>
   );
 }
 
@@ -487,71 +649,74 @@ function AgeCell({ row }: { row: StripRow }) {
 }
 
 // ---------------------------------------------------------------------------
-// Floors legend — §C3's last requirement
+// Floors legend — how to read the per-row floors, NOT what they are
 // ---------------------------------------------------------------------------
 
-const VERDICT_BADGE: Record<string, "destructive" | "secondary" | "outline"> = {
-  rejects: "destructive",
-  defers: "secondary",
-  warns: "outline",
-};
-
-function FloorsLegend({ lanes }: { lanes: string[] }) {
-  const floors = useMemo(() => {
-    const seen = new Set<string>();
-    const out = [] as typeof LANE_FLOORS;
-    for (const lane of lanes) {
-      for (const f of floorsForLane(lane)) {
-        const k = `${f.guard}`;
-        if (!seen.has(k)) {
-          seen.add(k);
-          out.push(f);
-        }
-      }
-    }
-    return out.length > 0 ? out : LANE_FLOORS;
-  }, [lanes]);
-
+/**
+ * The legend explains the vocabulary. It states **no numbers**.
+ *
+ * Its predecessor listed the floors as constants transcribed from the
+ * publishers' source, because nothing on the wire carried them. Coord now
+ * reports the floor it is enforcing per row, so every number on this surface
+ * comes from there — and a transcribed table beside a reported one is a
+ * second source of truth waiting to drift.
+ *
+ * `missingFloors` is surfaced rather than hidden: rows with no reported floor
+ * are the pre-deployment state, and saying "not reported" out loud is the
+ * difference between a known gap and an invisible one.
+ */
+function FloorsLegend({ missingFloors }: { missingFloors: number }) {
   return (
     <div
       className="rounded border border-dashed p-2 space-y-1"
       data-testid="fleet-resource-floors"
     >
       <div className="text-[11px] font-medium">
-        Effective floors — and whether the lane defers or rejects
+        Reading the Admission column — floors come from coord, not from this
+        page
       </div>
-      <ul className="space-y-0.5">
-        {floors.map((f) => (
-          <li
-            key={f.guard}
-            className="flex flex-wrap items-center gap-1.5 text-[11px]"
-          >
-            <Badge variant="outline" className="font-mono text-[10px]">
-              {f.lane}
-            </Badge>
-            <span className="font-medium">{f.guard}</span>
-            <span className="tabular-nums">{f.threshold}</span>
-            <span className="text-muted-foreground">of {f.quantity}</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant={VERDICT_BADGE[f.verdict] ?? "outline"}>
-                  {f.verdict}
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent className="text-[11px]">
-                {FLOOR_VERDICT_HINT[f.verdict]} — {f.source}
-              </TooltipContent>
-            </Tooltip>
-          </li>
-        ))}
+      <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+        <li>
+          <Badge variant="destructive" className="text-[9px] px-1 py-0 mr-1.5">
+            rejects
+          </Badge>
+          {FLOOR_VERDICT_HINT.reject}
+        </li>
+        <li>
+          <Badge variant="secondary" className="text-[9px] px-1 py-0 mr-1.5">
+            defers
+          </Badge>
+          {FLOOR_VERDICT_HINT.defer}
+        </li>
+        <li>
+          <Badge variant="outline" className="text-[9px] px-1 py-0 mr-1.5">
+            policy
+          </Badge>
+          a number an operator set for this tenant;{" "}
+          <Badge variant="outline" className="text-[9px] px-1 py-0 mx-1">
+            default
+          </Badge>
+          coord&apos;s built-in fallback.
+        </li>
       </ul>
       <p className="text-[10px] text-muted-foreground">
-        Documented constants read out of the publishers&apos; source, not live
-        per-device state — nothing on the wire carries them yet. Note the
-        divergence rather than a tidy single number: the ci_node lane guards a
-        different quantity (sysinfo available memory) at a different threshold
-        and <em>rejects</em> where the supervisor <em>defers</em>.
+        The row&apos;s colour is coord&apos;s <em>admission verdict</em> against
+        these floors — not a band over the pressure ratio. This page keeps no
+        threshold of its own, so a red row means the dispatcher has already
+        stopped electing that lane. Memory and disk are kept apart because
+        memory frees on its own and disk does not.
       </p>
+      {missingFloors > 0 && (
+        <p
+          className="text-[10px] text-muted-foreground"
+          data-testid="fleet-resource-floors-missing"
+        >
+          {missingFloors} lane{missingFloors === 1 ? "" : "s"} reported no
+          floor. That is a coord without the floor fields, not a lane without a
+          limit — those rows read <strong>unknown</strong>, which is not
+          healthy.
+        </p>
+      )}
     </div>
   );
 }
@@ -609,22 +774,32 @@ export function FleetResourceStrip({
     return m;
   }, [data?.history]);
 
-  const lanes = useMemo(
-    () => Array.from(new Set(latest.map((r) => r.lane))),
-    [latest]
-  );
-
-  const { unknownLanes, staleLanes } = useMemo(() => {
-    let unknown = 0;
-    let stale = 0;
-    for (const g of groups) {
-      for (const r of g.rows) {
-        if (r.freshness === "unknown") unknown += 1;
-        else if (r.freshness === "stale") stale += 1;
+  const { unknownLanes, staleLanes, breachLanes, missingFloors } =
+    useMemo(() => {
+      let unknown = 0;
+      let stale = 0;
+      let breach = 0;
+      let missing = 0;
+      for (const g of groups) {
+        for (const r of g.rows) {
+          if (r.freshness === "unknown") unknown += 1;
+          else if (r.freshness === "stale") stale += 1;
+          else if (rowHeadroom(r.sample) === "breach") breach += 1;
+          // Only a row whose floors are actually rendered can be missing
+          // one; a machine that published nothing (or too long ago) is
+          // already counted as unknown above.
+          if (r.freshness !== "unknown" && r.sample?.floor == null) {
+            missing += 1;
+          }
+        }
       }
-    }
-    return { unknownLanes: unknown, staleLanes: stale };
-  }, [groups]);
+      return {
+        unknownLanes: unknown,
+        staleLanes: stale,
+        breachLanes: breach,
+        missingFloors: missing,
+      };
+    }, [groups]);
 
   return (
     // Self-provided rather than assuming an ancestor: the app layout supplies
@@ -643,6 +818,15 @@ export function FleetResourceStrip({
             <Badge variant="outline" className="ml-2">
               {groups.length} machines
             </Badge>
+            {breachLanes > 0 && (
+              <Badge
+                variant="destructive"
+                className="ml-1"
+                data-testid="fleet-resource-breach-badge"
+              >
+                {breachLanes} at floor
+              </Badge>
+            )}
             {staleLanes > 0 && (
               <Badge variant="destructive" className="ml-1">
                 {staleLanes} stale
@@ -722,6 +906,23 @@ export function FleetResourceStrip({
                       </TooltipContent>
                     </Tooltip>
                   </th>
+                  <th className="py-1 pr-3 font-medium">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="underline decoration-dotted">
+                          Admission
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[22rem] text-[11px]">
+                        Whether coord will still send this lane work, and the
+                        floor it decides that against. <strong>This</strong> is
+                        what colours the row — not the pressure ratio. The
+                        floors are byte counts on columns the ratio does not
+                        divide by, so there is no pressure threshold that could
+                        stand in for them, and this page keeps none.
+                      </TooltipContent>
+                    </Tooltip>
+                  </th>
                   <th className="py-1 pr-3 font-medium">Trend</th>
                   <th className="py-1 pr-3 font-medium">Disk</th>
                   <th className="py-1 pr-3 font-medium">Build slots</th>
@@ -734,10 +935,12 @@ export function FleetResourceStrip({
                 {groups.flatMap((group) =>
                   group.rows.map((row, i) => {
                     const s = row.sample;
-                    const tone = pressureTone(
-                      row.freshness,
-                      s?.pressure ?? null
-                    );
+                    // The row's tone is the SERVER's admission verdict. There
+                    // is no client-side band left to derive it from, and that
+                    // is the point: the strip cannot show amber for a machine
+                    // coord has already stopped electing.
+                    const headroom = rowHeadroom(s);
+                    const tone = headroomTone(row.freshness, headroom);
                     const diskRatio = safeRatio(
                       s?.disk_free_bytes,
                       s?.disk_total_bytes
@@ -748,7 +951,11 @@ export function FleetResourceStrip({
                         data-testid="fleet-resource-row"
                         data-lane={row.lane ?? ""}
                         data-freshness={row.freshness}
-                        className="border-t align-top"
+                        data-headroom={
+                          row.freshness === "fresh" ? headroom : "unknown"
+                        }
+                        data-tone={tone}
+                        className={`border-t align-top ${TONE_ROW[tone]}`}
                       >
                         <td className="py-1.5 pr-3">
                           {i === 0 ? (
@@ -771,6 +978,9 @@ export function FleetResourceStrip({
                         </td>
                         <td className="py-1.5 pr-3">
                           <PressureCell row={row} />
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <AdmissionCell row={row} tone={tone} />
                         </td>
                         <td className="py-1.5 pr-3">
                           {row.freshness === "unknown" ? (
@@ -862,7 +1072,7 @@ export function FleetResourceStrip({
           </div>
         )}
 
-        <FloorsLegend lanes={lanes} />
+        <FloorsLegend missingFloors={missingFloors} />
 
         <p className="text-[10px] text-muted-foreground flex items-start gap-1">
           <Activity className="h-3 w-3 mt-0.5 shrink-0" />

@@ -165,8 +165,10 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
 
 /**
  * §C1/§C3 — the resource alarm is hoisted onto the COLLAPSED header, for the
- * same reason the unhealthy count already is: a saturated machine is a red
- * fleet state, and a red fleet state must not hide behind a click. That is
+ * same reason the unhealthy count already is: a machine coord has stopped
+ * electing is a red fleet state, and a red fleet state must not hide behind a
+ * click. The count comes from coord's admission verdict, not from a
+ * client-side band over the pressure ratio. That is
  * also why the poll lives on the page rather than inside the section (which
  * unmounts while collapsed).
  */
@@ -185,7 +187,12 @@ describe("/admin/coord/fleet resource alarm hoisting", () => {
     );
   }
 
-  function hostSample(deviceId: string, ratio: number, ageSecs = 15) {
+  function hostSample(
+    deviceId: string,
+    ratio: number,
+    ageSecs = 15,
+    headroom: "ok" | "warn" | "breach" | "unknown" | undefined = "ok"
+  ) {
     return {
       device_id: deviceId,
       lane: "host",
@@ -209,31 +216,85 @@ describe("/admin/coord/fleet resource alarm hoisting", () => {
       ci_jobs_running: null,
       source: "supervisor",
       pressure: { ratio, basis: "commit" },
+      floor: {
+        basis: "commit_available",
+        bytes: 4 * 1024 ** 3,
+        source: "default",
+        verdict: "defer",
+      },
+      disk_floor: {
+        basis: "disk_free",
+        bytes: 30 * 1024 ** 3,
+        source: "default",
+        verdict: "reject",
+      },
+      headroom,
     };
   }
 
-  it("shows the saturated count on the collapsed header", async () => {
+  it("shows the at-floor count on the collapsed header", async () => {
     mockRoutes(
       { devices: [coordDevice("d-1", "msi", "healthy")] },
-      { latest: [hostSample("d-1", 0.95)], history: [] }
+      { latest: [hostSample("d-1", 0.95, 15, "breach")], history: [] }
     );
 
     render(<CoordFleetPage />);
 
     await waitFor(() => {
-      expect(
-        screen.getByTestId("coord-fleet-saturated-badge")
-      ).toHaveTextContent("1 saturated");
+      expect(screen.getByTestId("coord-fleet-breach-badge")).toHaveTextContent(
+        "1 at floor"
+      );
     });
     // Still collapsed — the alarm did not require opening the section.
     expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
   });
 
-  it("shows a stale count, and does NOT count a stale lane as saturated", async () => {
+  it("raises no alarm from a high pressure ratio coord is still electing", async () => {
+    // The defect this replaced: 0.95 was above the client-side SATURATED_AT,
+    // so the header cried saturated while the dispatcher kept sending work.
     mockRoutes(
       { devices: [coordDevice("d-1", "msi", "healthy")] },
-      // Last known ratio was critical, but the sample stopped being true.
-      { latest: [hostSample("d-1", 0.99, 4000)], history: [] }
+      { latest: [hostSample("d-1", 0.95, 15, "ok")], history: [] }
+    );
+
+    render(<CoordFleetPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 machines")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("coord-fleet-breach-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-fleet-unknown-badge")).toBeNull();
+  });
+
+  it("counts a lane coord reports no admission state for as unknown", async () => {
+    // An older coord: the field is simply absent. Unknown, never healthy.
+    const row = hostSample("d-1", 0.3, 15, undefined) as Record<
+      string,
+      unknown
+    >;
+    delete row.headroom;
+    delete row.floor;
+    delete row.disk_floor;
+    mockRoutes(
+      { devices: [coordDevice("d-1", "msi", "healthy")] },
+      { latest: [row], history: [] }
+    );
+
+    render(<CoordFleetPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("coord-fleet-unknown-badge")).toHaveTextContent(
+        "1 unknown"
+      );
+    });
+    expect(screen.queryByTestId("coord-fleet-breach-badge")).toBeNull();
+  });
+
+  it("shows a stale count, and does NOT count a stale lane as breaching", async () => {
+    mockRoutes(
+      { devices: [coordDevice("d-1", "msi", "healthy")] },
+      // Last known verdict was a breach, but the sample stopped being true.
+      { latest: [hostSample("d-1", 0.99, 4000, "breach")], history: [] }
     );
 
     render(<CoordFleetPage />);
@@ -243,10 +304,10 @@ describe("/admin/coord/fleet resource alarm hoisting", () => {
         "1 stale"
       );
     });
-    expect(screen.queryByTestId("coord-fleet-saturated-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-fleet-breach-badge")).toBeNull();
   });
 
-  it("raises no saturation alarm when a machine has simply published nothing", async () => {
+  it("raises no at-floor alarm when a machine has simply published nothing", async () => {
     // §C3: absence of signal is not health — but it is also not a red alarm.
     // It is unknown, and the header must not claim either.
     mockRoutes(
@@ -259,7 +320,7 @@ describe("/admin/coord/fleet resource alarm hoisting", () => {
     await waitFor(() => {
       expect(screen.getByText("1 machines")).toBeInTheDocument();
     });
-    expect(screen.queryByTestId("coord-fleet-saturated-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-fleet-breach-badge")).toBeNull();
     expect(screen.queryByTestId("coord-fleet-stale-badge")).toBeNull();
   });
 });

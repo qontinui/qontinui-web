@@ -6,14 +6,36 @@
  *
  * ## The one thing this module deliberately does NOT do
  *
- * It does **not** compute lane pressure. `pressure` arrives already computed
- * from coord (`device_resource_samples::lane_pressure`) — the same function
- * §B1's CI ranker reads. The plan's thesis is *"if the dashboard says a
- * machine is red, the dispatcher must already have stopped sending it work"*,
- * which is only true while both consumers read ONE definition. Deriving the
- * ratio again in TypeScript reintroduces exactly the drift §C0 exists to
- * prevent, so everything here treats `pressure` as opaque input: it labels
- * it, tones it, and marks it stale — it never recalculates it.
+ * It does **not** compute lane pressure, and it does **not** decide where a
+ * lane turns red. Both arrive from coord: `pressure` from
+ * `device_resource_samples::lane_pressure` (the same function §B1's CI ranker
+ * reads), and `headroom` from the floor coord's admission actually enforces.
+ * The plan's thesis is *"if the dashboard says a machine is red, the
+ * dispatcher must already have stopped sending it work"*, which is only true
+ * while both consumers read ONE definition of **both** the number and the
+ * verdict.
+ *
+ * ## Why there is no threshold constant here any more
+ *
+ * §C1 first shipped with `SATURATED_AT = 0.85` / `WARN_AT = 0.6` decided in
+ * TypeScript while coord's real admission behaviour was **byte floors**. The
+ * ratio was shared; the verdict was not — so the strip could render amber
+ * while the ranker had already stopped electing the machine. Sharing the
+ * number without the threshold is not sharing the decision.
+ *
+ * The floors cannot be re-expressed as a pressure threshold either: they are
+ * on **different columns** (`commit_available` on host, `mem_available` on
+ * wsl) from the ratio's divisors, so "a pressure threshold equivalent to a
+ * 4 GiB mem-available floor" is a number nobody can compute without
+ * fabricating one. So the server does not send a threshold — it sends the
+ * **admission state** (`headroom`) derived from the floor applied to the
+ * column that floor governs, plus the floor itself so an operator can see
+ * why.
+ *
+ * **Pressure is the magnitude and the sparkline series. `headroom` is what
+ * colours the row.** Two different questions — "how loaded is it?" and "will
+ * it refuse work?" — that the constants above conflated into one arbitrary
+ * band.
  *
  * Everything below is pure and unit-tested (`fleetResources.test.ts`) so the
  * §C3 honesty rules are assertable without a DOM.
@@ -38,6 +60,51 @@ export interface LanePressure {
 }
 
 export type Lane = "host" | "wsl" | "container";
+
+/**
+ * The column a floor is measured on.
+ *
+ * This is the whole reason a floor cannot be re-expressed as a pressure
+ * threshold: the host lane's pressure divides `commit_*`, the wsl lane's
+ * divides `swap_*`, and the wsl floor is on `mem_available` — a third column
+ * that appears in neither ratio.
+ */
+export type FloorBasis = "commit_available" | "mem_available" | "disk_free";
+
+/**
+ * What the lane does at its floor. **Not interchangeable**, and coord keeps
+ * them apart on purpose: a `reject` fails the job now, a `defer` makes it
+ * late. An operator reading "this machine is refusing work" needs to know
+ * which.
+ */
+export type FloorVerdict = "reject" | "defer";
+
+/**
+ * A floor coord is actually enforcing for this lane, as reported per row.
+ *
+ * `source` distinguishes a tenant's configured value (§D1 policy) from the
+ * built-in fallback. That matters operationally: "the box is below its floor"
+ * has a different fix depending on whether somebody set that floor.
+ */
+export interface EffectiveFloor {
+  basis: FloorBasis;
+  bytes: number;
+  source: "policy" | "default";
+  verdict: FloorVerdict;
+}
+
+/**
+ * The lane's admission state, **decided by the server against the floor it
+ * enforces** — the field this whole surface colours from.
+ *
+ * `unknown` is a first-class value, not an error: a lane coord has no floor
+ * opinion on (and any row from a coord that predates the sibling PR) is
+ * unknown, and §C3's rule is that unknown renders like a stale or absent
+ * sample — never green.
+ */
+export type Headroom = "ok" | "warn" | "breach" | "unknown";
+
+const HEADROOM_VALUES = new Set<string>(["ok", "warn", "breach", "unknown"]);
 
 /** Newest sample for one `(device_id, lane, lane_instance)` anchor. */
 export interface ResourceSampleRow {
@@ -66,6 +133,19 @@ export interface ResourceSampleRow {
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
+  /**
+   * The memory floor this lane is admitted against. Optional on the wire:
+   * absent from any coord that predates the §C3 floor-bands PR, and the
+   * absence is rendered as `unknown`, never as "no floor".
+   */
+  floor?: EffectiveFloor | null;
+  /** The disk floor. Split from `floor` because memory frees and disk does not. */
+  disk_floor?: EffectiveFloor | null;
+  /**
+   * SERVER-decided admission state. The row's colour comes from THIS, not
+   * from `pressure` — see the module header.
+   */
+  headroom?: Headroom | null;
 }
 
 export interface HistoryPoint {
@@ -232,43 +312,101 @@ export function laneShowsSwap(lane: string): boolean {
   return lane !== "host";
 }
 
-export type PressureTone = "ok" | "warn" | "critical" | "unknown";
-
 /**
- * Ratio at or above which a lane reads RED.
+ * Whether the lead column has a magnitude worth printing at all.
  *
- * **A stated bound, because it is the one thing on this surface that coord
- * does not define.** The *ratio* is server-computed and shared with §B1's
- * ranker, which is what the plan's thesis requires — but where that ratio
- * turns red is decided here, while coord's actual admission behaviour is the
- * GiB floors in `LANE_FLOORS`. So "the dashboard says red" and "the
- * dispatcher stopped sending work" are pinned together on the *ordering* and
- * can still disagree at the exact boundary. Closing that needs the threshold
- * to come from the server too (§A3 step 3's per-device floor report is where
- * it would land). Until then the floors panel is on the page precisely so an
- * operator can see the real rule beside this approximation.
+ * Deliberately NOT a colour: the magnitude question ("how loaded is it?") and
+ * the admission question ("will it refuse work?") were conflated by the
+ * constants this replaces. `pressure` answers the first and is rendered in
+ * neutral type; `headroom` answers the second and is what carries tone.
  */
-export const SATURATED_AT = 0.85;
-
-/** Ratio at or above which a lane reads amber. Same caveat as above. */
-export const WARN_AT = 0.6;
-
-/**
- * Tone for the lead column. Freshness dominates: a stale or absent sample is
- * `unknown` **whatever its last ratio was**, because a green cell sourced
- * from a number that stopped being true is the exact failure §C3 forbids.
- * `pressure === null` ("no server opinion") is also `unknown` — never 0, and
- * never green.
- */
-export function pressureTone(
+export function hasPressureValue(
   freshness: Freshness,
   pressure: LanePressure | null | undefined
-): PressureTone {
+): boolean {
+  return (
+    freshness !== "unknown" && !!pressure && Number.isFinite(pressure.ratio)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Admission — the VERDICT, which the server owns end to end
+// ---------------------------------------------------------------------------
+
+export type RowTone = "ok" | "warn" | "critical" | "unknown";
+
+/**
+ * The row's admission state, normalized.
+ *
+ * Anything the server did not say — field absent (coord predates the floor
+ * PR), `null`, or a value this build does not recognize (coord ahead of this
+ * build) — is `unknown`. Never `ok`: a client that reads silence as "fine" is
+ * the false-safe §C3 exists to forbid, and it is exactly how a not-yet-deployed
+ * server would have painted the whole fleet green.
+ */
+export function rowHeadroom(
+  row: Pick<ResourceSampleRow, "headroom"> | null | undefined
+): Headroom {
+  const h = row?.headroom;
+  if (typeof h !== "string" || !HEADROOM_VALUES.has(h)) return "unknown";
+  return h as Headroom;
+}
+
+/**
+ * Tone for the row — **derived from the server's admission verdict, never
+ * from the pressure ratio.**
+ *
+ * Freshness still dominates: a stale or absent sample is `unknown` whatever
+ * its last verdict was, because coord computed that verdict against numbers
+ * that have stopped being true.
+ */
+export function headroomTone(
+  freshness: Freshness,
+  headroom: Headroom
+): RowTone {
   if (freshness !== "fresh") return "unknown";
-  if (!pressure || !Number.isFinite(pressure.ratio)) return "unknown";
-  if (pressure.ratio >= SATURATED_AT) return "critical";
-  if (pressure.ratio >= WARN_AT) return "warn";
-  return "ok";
+  switch (headroom) {
+    case "breach":
+      return "critical";
+    case "warn":
+      return "warn";
+    case "ok":
+      return "ok";
+    default:
+      return "unknown";
+  }
+}
+
+/** Short operator-facing name for an admission state. */
+export const HEADROOM_LABEL: Record<Headroom, string> = {
+  ok: "above floor",
+  warn: "near floor",
+  breach: "at floor",
+  unknown: "unknown",
+};
+
+export const FLOOR_VERDICT_LABEL: Record<FloorVerdict, string> = {
+  reject: "rejects",
+  defer: "defers",
+};
+
+export const FLOOR_VERDICT_HINT: Record<FloorVerdict, string> = {
+  reject: "hard-refuses the job outright — the work fails now",
+  defer:
+    "holds the work until the resource frees — the work is late, not failed",
+};
+
+export const FLOOR_BASIS_LABEL: Record<FloorBasis, string> = {
+  commit_available: "free commit",
+  mem_available: "available memory",
+  disk_free: "free disk",
+};
+
+/** `"4.0 GB free commit"` — the floor's value and the column it is measured on. */
+export function formatFloor(floor: EffectiveFloor | null | undefined): string {
+  if (!floor || !Number.isFinite(floor.bytes)) return "unknown";
+  const basis = FLOOR_BASIS_LABEL[floor.basis] ?? floor.basis;
+  return `${formatBytes(floor.bytes)} ${basis}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -480,15 +618,17 @@ export function buildMachineGroups(
   return groups;
 }
 
-export interface FleetPressureSummary {
-  /** Fresh lanes at or above `SATURATED_AT`. */
-  saturated: number;
+export interface FleetAdmissionSummary {
+  /** Fresh lanes the SERVER says are at or below their floor. */
+  breach: number;
+  /** Fresh lanes the server says are approaching their floor. */
+  warn: number;
   /** Lanes whose newest sample has stopped being current. */
   stale: number;
   /**
-   * Lanes (or whole machines) with no usable sample, and fresh lanes the
-   * server has no pressure opinion on. Counted separately from `saturated`
-   * because it is a different claim — not healthy, and not known to be red.
+   * Lanes (or whole machines) with no usable sample, and fresh lanes coord
+   * reports no admission state for. Counted separately from `breach` because
+   * it is a different claim — not healthy, and not known to be refusing work.
    */
   unknown: number;
 }
@@ -497,19 +637,29 @@ export interface FleetPressureSummary {
  * The counts the page hoists onto the collapsed "System details" header.
  *
  * Hoisted for the same reason the unhealthy-machine count already is: a red
- * fleet state must not hide behind a click. A saturated machine is a red
- * fleet state — it is the one this plan was written after.
+ * fleet state must not hide behind a click. A machine that has stopped
+ * accepting work is a red fleet state — it is the one this plan was written
+ * after.
+ *
+ * Counted from `headroom`, the same verdict the row is coloured from and the
+ * same one the dispatcher acts on, so the header and the table can never
+ * disagree — and neither can disagree with coord.
  *
  * `unknown` is reported alongside rather than folded into either bucket. It
- * is neither "fine" nor "saturated", and collapsing it into the first is
+ * is neither "fine" nor "breaching", and collapsing it into the first is
  * precisely the false-safe §C3 forbids.
  */
-export function summarizeFleetPressure(
+export function summarizeFleetAdmission(
   devices: FleetDeviceRef[],
   latest: ResourceSampleRow[],
   sinceFetchSecs = 0
-): FleetPressureSummary {
-  const summary: FleetPressureSummary = { saturated: 0, stale: 0, unknown: 0 };
+): FleetAdmissionSummary {
+  const summary: FleetAdmissionSummary = {
+    breach: 0,
+    warn: 0,
+    stale: 0,
+    unknown: 0,
+  };
   for (const group of buildMachineGroups(devices, latest, sinceFetchSecs)) {
     for (const row of group.rows) {
       if (row.freshness === "unknown") {
@@ -520,11 +670,17 @@ export function summarizeFleetPressure(
         summary.stale += 1;
         continue;
       }
-      const p = row.sample?.pressure;
-      if (!p || !Number.isFinite(p.ratio)) {
-        summary.unknown += 1;
-      } else if (p.ratio >= SATURATED_AT) {
-        summary.saturated += 1;
+      switch (rowHeadroom(row.sample)) {
+        case "breach":
+          summary.breach += 1;
+          break;
+        case "warn":
+          summary.warn += 1;
+          break;
+        case "ok":
+          break;
+        default:
+          summary.unknown += 1;
       }
     }
   }
@@ -532,100 +688,34 @@ export function summarizeFleetPressure(
 }
 
 // ---------------------------------------------------------------------------
-// Effective floors — §C3's last requirement
+// Effective floors — §C3's last requirement, now READ rather than declared
 // ---------------------------------------------------------------------------
+//
+// This module used to carry a `LANE_FLOORS` table of documented constants
+// transcribed out of the publishers' source (5 GiB free commit, 4 GiB sysinfo
+// available memory, …). It is gone: coord now reports the floor it is
+// ACTUALLY enforcing per row (`floor` / `disk_floor`), and a transcribed
+// constant beside a reported one is a second source of truth that drifts
+// silently the first time somebody edits the real one. Whatever this surface
+// says about a floor now comes from the same place the admission decision
+// does.
+//
+// Where coord reports no floor, the row says so — see `describeFloor`.
 
 /**
- * What a lane does when it hits its floor. These are NOT interchangeable and
- * §A3 keeps them deliberately split: memory frees on its own, disk does not.
- */
-export type FloorVerdict = "defers" | "rejects" | "warns";
-
-export interface LaneFloor {
-  /** Which lane's guard this is. */
-  lane: string;
-  /** Human name of the guard. */
-  guard: string;
-  /** The FIELD it measures — the whole point of §A3 is that these differ. */
-  quantity: string;
-  threshold: string;
-  verdict: FloorVerdict;
-  /** Where the constant lives, so the number is checkable. */
-  source: string;
-}
-
-/**
- * The effective floors, as documented constants read out of the publishers'
- * source.
+ * One line of floor detail for a row, or `null` when coord reported none.
  *
- * **Provenance, stated because it matters:** these are NOT read live off each
- * machine. §A3's step 3 ("`GET /coord/fleet` reports all three effective
- * floors per device") has not landed, so nothing on the wire carries them
- * yet. Presenting them as live per-device state would be exactly the
- * fabricated-state trap this plan flags elsewhere — the panel labels them as
- * documented constants and cites each source, and the moment coord reports
- * them per device this table is replaced by that read.
- *
- * The divergences are shown rather than smoothed over: `ci_node` guards a
- * DIFFERENT quantity (`sysinfo` available memory) at a DIFFERENT number (4
- * GiB) from the supervisor's free-commit 5 GiB, and it **rejects** where the
- * supervisor **defers**. That divergence is the live drift §A3 exists to
- * converge; hiding it behind one tidy number would be the third false parity
- * claim in this fleet.
+ * `null` is the pre-deployment state and is rendered as an explicit
+ * "not reported", never as "no floor" — a lane with no stated floor reads as
+ * unconstrained, which is the false-safe in the other direction.
  */
-export const LANE_FLOORS: LaneFloor[] = [
-  {
-    lane: "host",
-    guard: "supervisor build pool",
-    quantity: "free commit (Win32_OperatingSystem.FreeVirtualMemory)",
-    threshold: "5 GiB",
-    verdict: "defers",
-    source: "qontinui-supervisor config.rs DEFAULT_MIN_FREE_RAM_GB",
-  },
-  {
-    lane: "host",
-    guard: "supervisor disk guard",
-    quantity: "free disk on the build volume",
-    threshold: "30 GiB",
-    verdict: "rejects",
-    source: "qontinui-supervisor config.rs DEFAULT_MIN_FREE_DISK_GB",
-  },
-  {
-    lane: "host",
-    guard: "cargo-guard.sh (agent lane)",
-    quantity: "free commit (same counter as the supervisor)",
-    threshold: "5 GiB",
-    verdict: "warns",
-    source: "qontinui-claude-config cargo-guard.sh MIN_FREE_GB",
-  },
-  {
-    lane: "wsl",
-    guard: "runner ci_node admission",
-    quantity: "sysinfo available memory — NOT free commit",
-    threshold: "4 GiB",
-    verdict: "rejects",
-    source: "qontinui-runner ci_node/admission.rs MIN_FREE_RAM_GB",
-  },
-  {
-    lane: "wsl",
-    guard: "runner ci_node disk admission",
-    quantity: "free disk on the QONTINUI_ROOT volume",
-    threshold: "ci_node.min_free_disk_gb (configurable; 20 GiB in tests)",
-    verdict: "rejects",
-    source: "qontinui-runner ci_node/admission.rs",
-  },
-];
-
-export function floorsForLane(lane: string | null): LaneFloor[] {
-  if (!lane) return [];
-  // `container` shares the ci_node guards with `wsl` — both are the Linux
-  // executor lane; `host` is the Windows build/agent lane.
-  const key = lane === "container" ? "wsl" : lane;
-  return LANE_FLOORS.filter((f) => f.lane === key);
+export function describeFloor(
+  floor: EffectiveFloor | null | undefined
+): { value: string; source: "policy" | "default"; verdict: string } | null {
+  if (!floor || !Number.isFinite(floor.bytes)) return null;
+  return {
+    value: formatFloor(floor),
+    source: floor.source,
+    verdict: FLOOR_VERDICT_LABEL[floor.verdict] ?? floor.verdict,
+  };
 }
-
-export const FLOOR_VERDICT_HINT: Record<FloorVerdict, string> = {
-  defers: "waits for memory to free, then proceeds",
-  rejects: "hard-refuses the job outright",
-  warns: "logs and proceeds anyway",
-};

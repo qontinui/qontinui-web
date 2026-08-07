@@ -14,22 +14,38 @@ import {
   buildMachineGroups,
   classifyFreshness,
   coupledWslHeadroomBytes,
-  floorsForLane,
+  describeFloor,
+  formatFloor,
   formatRatioOfCeiling,
+  hasPressureValue,
+  headroomTone,
   hostIsBindingConstraint,
   laneShowsSwap,
   pressureFormula,
   pressureLabel,
-  pressureTone,
+  rowHeadroom,
   safeRatio,
-  SATURATED_AT,
-  summarizeFleetPressure,
+  summarizeFleetAdmission,
   EXPIRED_AFTER_SECS,
   STALE_AFTER_SECS,
 } from "./fleetResources";
-import type { ResourceSampleRow } from "./fleetResources";
+import type { EffectiveFloor, ResourceSampleRow } from "./fleetResources";
 
 const GIB = 1024 ** 3;
+
+const MEM_FLOOR: EffectiveFloor = {
+  basis: "commit_available",
+  bytes: 4 * GIB,
+  source: "default",
+  verdict: "defer",
+};
+
+const DISK_FLOOR: EffectiveFloor = {
+  basis: "disk_free",
+  bytes: 30 * GIB,
+  source: "policy",
+  verdict: "reject",
+};
 
 function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
   return {
@@ -55,8 +71,27 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     ci_jobs_running: null,
     source: "supervisor",
     pressure: { ratio: 0.8, basis: "commit" },
+    floor: MEM_FLOOR,
+    disk_floor: DISK_FLOOR,
+    headroom: "ok",
     ...overrides,
   };
+}
+
+/**
+ * A row from a coord that predates the floor-bands PR: the three new fields
+ * are simply absent from the JSON. This is the state the whole fleet is in
+ * until the sibling coord PR deploys, so it gets a first-class fixture rather
+ * than an afterthought.
+ */
+function preFloorSample(
+  overrides: Partial<ResourceSampleRow> = {}
+): ResourceSampleRow {
+  const row = sample(overrides);
+  delete row.floor;
+  delete row.disk_floor;
+  delete row.headroom;
+  return row;
 }
 
 describe("the anchor is COALESCE(lane_instance, '')", () => {
@@ -112,12 +147,13 @@ describe("§C3 — a machine with no recent sample is unknown, never healthy", (
     expect(groups[0].displayName).toBe("dev-1");
   });
 
-  it("a null pressure from the server is unknown — never 0 and never green", () => {
-    expect(pressureTone("fresh", null)).toBe("unknown");
-    expect(pressureTone("fresh", { ratio: 0, basis: "commit" })).toBe("ok");
-    // …and the two are distinguishable, which is the point.
-    expect(pressureTone("fresh", null)).not.toBe(
-      pressureTone("fresh", { ratio: 0, basis: "commit" })
+  it("a null pressure from the server has no magnitude — never 0", () => {
+    expect(hasPressureValue("fresh", null)).toBe(false);
+    expect(hasPressureValue("fresh", { ratio: 0, basis: "commit" })).toBe(true);
+    // …and the two are distinguishable, which is the point: a 0 would sort an
+    // unmeasured machine first.
+    expect(hasPressureValue("fresh", { ratio: NaN, basis: "commit" })).toBe(
+      false
     );
   });
 });
@@ -135,18 +171,63 @@ describe("§C3 — a stale sample renders as stale, not as its last value", () =
     expect(classifyFreshness(sample({ age_secs: NaN }))).toBe("unknown");
   });
 
-  it("forces the lead column to unknown when the sample is stale, whatever the last ratio said", () => {
-    const green = { ratio: 0.05, basis: "commit" as const };
-    expect(pressureTone("fresh", green)).toBe("ok");
-    expect(pressureTone("stale", green)).toBe("unknown");
-    expect(pressureTone("unknown", green)).toBe("unknown");
+  it("forces the row tone to unknown when the sample is stale, whatever the last verdict said", () => {
+    // coord computed "ok" against numbers that have since stopped being true.
+    expect(headroomTone("fresh", "ok")).toBe("ok");
+    expect(headroomTone("stale", "ok")).toBe("unknown");
+    expect(headroomTone("unknown", "ok")).toBe("unknown");
+    // …and the same for a red verdict: a stale breach is not a live breach.
+    expect(headroomTone("stale", "breach")).toBe("unknown");
+  });
+});
+
+describe("§C3 — the row's colour is the SERVER's verdict, not a client band", () => {
+  it("maps each admission state to its own tone", () => {
+    expect(headroomTone("fresh", "breach")).toBe("critical");
+    expect(headroomTone("fresh", "warn")).toBe("warn");
+    expect(headroomTone("fresh", "ok")).toBe("ok");
+    expect(headroomTone("fresh", "unknown")).toBe("unknown");
   });
 
-  it("tones a fresh saturated lane critical", () => {
-    expect(pressureTone("fresh", { ratio: 0.9, basis: "swap" })).toBe(
+  it("never colours from the pressure ratio — 99% pressure with headroom ok stays ok", () => {
+    // The exact disagreement the deleted SATURATED_AT/WARN_AT constants
+    // produced, in the direction that matters: a very loaded machine that
+    // coord is still electing must NOT read red, or the operator drains a
+    // box the dispatcher is happily using.
+    const loaded = sample({
+      pressure: { ratio: 0.99, basis: "commit" },
+      headroom: "ok",
+    });
+    expect(headroomTone("fresh", rowHeadroom(loaded))).toBe("ok");
+
+    // …and the reverse: a lightly-loaded lane whose FLOOR is breached (the
+    // floor is on a different column from the ratio) reads red.
+    const quietButBreaching = sample({
+      pressure: { ratio: 0.02, basis: "swap" },
+      headroom: "breach",
+    });
+    expect(headroomTone("fresh", rowHeadroom(quietButBreaching))).toBe(
       "critical"
     );
-    expect(pressureTone("fresh", { ratio: 0.7, basis: "swap" })).toBe("warn");
+  });
+
+  it("treats an absent headroom field as unknown, not as ok", () => {
+    // The pre-deployment state: coord has not shipped the field yet.
+    expect(rowHeadroom(preFloorSample())).toBe("unknown");
+    expect(rowHeadroom(sample({ headroom: null }))).toBe("unknown");
+    expect(rowHeadroom(null)).toBe("unknown");
+    expect(headroomTone("fresh", rowHeadroom(preFloorSample()))).toBe(
+      "unknown"
+    );
+  });
+
+  it("treats a value this build does not recognize as unknown, not as ok", () => {
+    // coord AHEAD of this build. Same rule in the other direction: an
+    // unrecognized verdict is not permission to render green.
+    const future = sample({
+      headroom: "quarantined" as unknown as ResourceSampleRow["headroom"],
+    });
+    expect(rowHeadroom(future)).toBe("unknown");
   });
 });
 
@@ -224,59 +305,96 @@ describe("§C1 — everything is a ratio against its own ceiling", () => {
   });
 });
 
-describe("§C3 — the effective floors, with defer vs reject kept apart", () => {
-  it("shows the ci_node lane rejecting where the supervisor defers", () => {
-    const hostFloors = floorsForLane("host");
-    const wslFloors = floorsForLane("wsl");
-    expect(hostFloors.some((f) => f.verdict === "defers")).toBe(true);
-    expect(wslFloors.some((f) => f.verdict === "rejects")).toBe(true);
-    // The divergence §A3 exists to converge must be VISIBLE, not smoothed.
-    const superviseMem = hostFloors.find((f) =>
-      f.guard.includes("build pool")
-    )!;
-    const ciNodeMem = wslFloors.find((f) =>
-      f.guard.includes("ci_node admission")
-    )!;
-    expect(superviseMem.threshold).not.toBe(ciNodeMem.threshold);
-    expect(superviseMem.quantity).not.toBe(ciNodeMem.quantity);
-    expect(superviseMem.verdict).not.toBe(ciNodeMem.verdict);
+describe("§C3 — the effective floor, its provenance, and defer vs reject", () => {
+  it("renders the floor's value against the column it is measured on", () => {
+    // Not a bare byte count and not a percentage: the floor is a byte count
+    // ON A NAMED COLUMN, and the column is the reason it cannot be restated
+    // as a pressure threshold.
+    expect(formatFloor(MEM_FLOOR)).toBe("4.0 GB free commit");
+    expect(
+      formatFloor({ ...MEM_FLOOR, basis: "mem_available", bytes: 2 * GIB })
+    ).toBe("2.0 GB available memory");
+    expect(formatFloor(DISK_FLOOR)).toBe("30.0 GB free disk");
   });
 
-  it("treats `container` as the same executor lane as `wsl`", () => {
-    expect(floorsForLane("container")).toEqual(floorsForLane("wsl"));
-    expect(floorsForLane(null)).toEqual([]);
+  it("keeps defer and reject distinguishable — one fails the work, one delays it", () => {
+    const deferred = describeFloor(MEM_FLOOR)!;
+    const rejected = describeFloor(DISK_FLOOR)!;
+    expect(deferred.verdict).toBe("defers");
+    expect(rejected.verdict).toBe("rejects");
+    expect(deferred.verdict).not.toBe(rejected.verdict);
+  });
+
+  it("says whether the number came from policy or from the built-in default", () => {
+    expect(describeFloor(MEM_FLOOR)!.source).toBe("default");
+    expect(describeFloor(DISK_FLOOR)!.source).toBe("policy");
+  });
+
+  it("returns null — 'not reported' — rather than inventing a floor", () => {
+    // Absent from an older coord. A lane with no STATED floor must not read
+    // as a lane with no limit.
+    expect(describeFloor(undefined)).toBeNull();
+    expect(describeFloor(null)).toBeNull();
+    expect(describeFloor({ ...MEM_FLOOR, bytes: NaN })).toBeNull();
+    expect(formatFloor(null)).toBe("unknown");
   });
 });
 
 describe("the hoisted page alarm", () => {
-  it("counts a saturated fresh lane, and never folds unknown into healthy", () => {
-    const s = summarizeFleetPressure(
+  it("counts a breaching fresh lane, and never folds unknown into healthy", () => {
+    const s = summarizeFleetAdmission(
       [
         { device_id: "d1", hostname: "msi" },
         { device_id: "d2", hostname: "spaceship" },
       ],
       [
-        sample({ device_id: "d1", pressure: { ratio: 0.95, basis: "commit" } }),
+        sample({ device_id: "d1", headroom: "breach" }),
         sample({
           device_id: "d1",
           lane: "wsl",
           age_secs: STALE_AFTER_SECS + 5,
-          pressure: { ratio: 0.1, basis: "swap" },
+          headroom: "ok",
         }),
       ]
     );
-    expect(s.saturated).toBe(1);
+    expect(s.breach).toBe(1);
     expect(s.stale).toBe(1);
     // d2 published nothing at all.
     expect(s.unknown).toBe(1);
   });
 
-  it("counts a fresh lane with no server opinion as unknown, not as fine", () => {
-    const s = summarizeFleetPressure(
+  it("counts the intermediate state separately from the red one", () => {
+    const s = summarizeFleetAdmission(
       [{ device_id: "d1" }],
-      [sample({ device_id: "d1", pressure: null })]
+      [
+        sample({ device_id: "d1", headroom: "warn" }),
+        sample({ device_id: "d1", lane: "wsl", headroom: "breach" }),
+      ]
     );
-    expect(s).toEqual({ saturated: 0, stale: 0, unknown: 1 });
+    expect(s).toEqual({ breach: 1, warn: 1, stale: 0, unknown: 0 });
+  });
+
+  it("counts a fresh lane coord reports no admission state for as unknown, not as fine", () => {
+    const s = summarizeFleetAdmission(
+      [{ device_id: "d1" }],
+      [preFloorSample({ device_id: "d1" })]
+    );
+    expect(s).toEqual({ breach: 0, warn: 0, stale: 0, unknown: 1 });
+  });
+
+  it("does NOT raise the alarm from a high pressure ratio on its own", () => {
+    // Pressure is a magnitude. The header counts what coord will refuse.
+    const s = summarizeFleetAdmission(
+      [{ device_id: "d1" }],
+      [
+        sample({
+          device_id: "d1",
+          pressure: { ratio: 0.99, basis: "commit" },
+          headroom: "ok",
+        }),
+      ]
+    );
+    expect(s).toEqual({ breach: 0, warn: 0, stale: 0, unknown: 0 });
   });
 });
 
@@ -301,36 +419,49 @@ describe("§C3 — a frozen age_secs must not keep a dead fleet green", () => {
   it("ages the hoisted page alarm out too, instead of holding an all-clear", () => {
     const devices = [{ device_id: "d1", hostname: "msi" }];
     const latest = [sample({ device_id: "d1", age_secs: 15 })];
-    expect(summarizeFleetPressure(devices, latest, 0)).toEqual({
-      saturated: 0,
+    expect(summarizeFleetAdmission(devices, latest, 0)).toEqual({
+      breach: 0,
+      warn: 0,
       stale: 0,
       unknown: 0,
     });
-    expect(summarizeFleetPressure(devices, latest, 3600)).toEqual({
-      saturated: 0,
+    expect(summarizeFleetAdmission(devices, latest, 3600)).toEqual({
+      breach: 0,
+      warn: 0,
       stale: 1,
       unknown: 0,
     });
   });
 });
 
-describe("the saturation threshold has ONE definition", () => {
-  it("pressureTone and summarizeFleetPressure agree at the boundary", () => {
-    const at = { ratio: SATURATED_AT, basis: "commit" as const };
-    const below = { ratio: SATURATED_AT - 0.001, basis: "commit" as const };
-    expect(pressureTone("fresh", at)).toBe("critical");
-    expect(pressureTone("fresh", below)).toBe("warn");
-    expect(
-      summarizeFleetPressure(
-        [{ device_id: "d1" }],
-        [sample({ device_id: "d1", pressure: at })]
-      ).saturated
-    ).toBe(1);
-    expect(
-      summarizeFleetPressure(
-        [{ device_id: "d1" }],
-        [sample({ device_id: "d1", pressure: below })]
-      ).saturated
-    ).toBe(0);
+describe("the red/amber boundary has ONE definition, and it is the server's", () => {
+  it("the row tone and the hoisted alarm read the SAME field", () => {
+    // Not "agree at a boundary" — there is no boundary here to agree at. Both
+    // consumers read coord's verdict verbatim, so they cannot disagree the way
+    // the deleted SATURATED_AT/WARN_AT constants could disagree with the
+    // dispatcher's floors.
+    for (const h of ["ok", "warn", "breach", "unknown"] as const) {
+      const row = sample({ device_id: "d1", headroom: h });
+      const s = summarizeFleetAdmission([{ device_id: "d1" }], [row]);
+      const tone = headroomTone("fresh", rowHeadroom(row));
+      expect(s.breach > 0).toBe(tone === "critical");
+      expect(s.warn > 0).toBe(tone === "warn");
+      expect(s.unknown > 0).toBe(tone === "unknown");
+    }
+  });
+
+  it("exports no threshold constant of its own", async () => {
+    // The defect this change fixes, pinned as a test: a reintroduced
+    // client-side band is a reintroduced way for the strip and the ranker to
+    // disagree. If a band is needed, it is a server field that is missing.
+    const mod = await import("./fleetResources");
+    const names = Object.keys(mod);
+    expect(names).not.toContain("SATURATED_AT");
+    expect(names).not.toContain("WARN_AT");
+    expect(names).not.toContain("LANE_FLOORS");
+    // The freshness thresholds are NOT in this class: they are about whether
+    // a measurement is current, which is a client-side question about the
+    // transport, not a verdict coord owns.
+    expect(names).toContain("STALE_AFTER_SECS");
   });
 });

@@ -47,8 +47,36 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     ci_jobs_running: null,
     source: "supervisor",
     pressure: { ratio: 0.8, basis: "commit" },
+    floor: {
+      basis: "commit_available",
+      bytes: 4 * GIB,
+      source: "default",
+      verdict: "defer",
+    },
+    disk_floor: {
+      basis: "disk_free",
+      bytes: 30 * GIB,
+      source: "policy",
+      verdict: "reject",
+    },
+    headroom: "ok",
     ...overrides,
   };
+}
+
+/**
+ * A row as an un-upgraded coord sends it: no `floor`, no `disk_floor`, no
+ * `headroom`. The state the whole fleet is in until the sibling coord PR
+ * deploys, so it is a fixture rather than an afterthought.
+ */
+function preFloorSample(
+  overrides: Partial<ResourceSampleRow> = {}
+): ResourceSampleRow {
+  const row = sample(overrides);
+  delete row.floor;
+  delete row.disk_floor;
+  delete row.headroom;
+  return row;
 }
 
 function renderStrip(
@@ -203,13 +231,165 @@ describe("§C3 — the WSL lane's headroom is shown coupled to the host", () => 
   });
 });
 
-describe("§C3 — the effective floors, with defer vs reject", () => {
-  it("shows both verdicts and marks the numbers as documented constants", () => {
+describe("§C3 — the effective floor, as coord reports it", () => {
+  it("shows the floor's value, its provenance, and whether the lane defers or rejects", () => {
     renderStrip({ latest: [sample()], history: [] });
-    const floors = screen.getByTestId("fleet-resource-floors");
-    expect(floors.textContent).toMatch(/defers/);
-    expect(floors.textContent).toMatch(/rejects/);
-    expect(floors.textContent).toMatch(/not live per-device state/i);
+    const admission = screen.getByTestId("fleet-resource-admission");
+    // The value AND the column it is measured on — the column is why it
+    // cannot be restated as a pressure threshold.
+    expect(admission.textContent).toMatch(/4\.0 GB free commit/);
+    expect(admission.textContent).toMatch(/30\.0 GB free disk/);
+    // reject vs defer are materially different and both are shown.
+    expect(admission.textContent).toMatch(/defers/);
+    expect(admission.textContent).toMatch(/rejects/);
+    // …and whether an operator set the number or coord defaulted it.
+    expect(admission.textContent).toMatch(/policy/);
+    expect(admission.textContent).toMatch(/default/);
+  });
+
+  it("says a floor is NOT REPORTED rather than implying the lane has none", () => {
+    renderStrip({ latest: [preFloorSample()], history: [] });
+    const missing = screen.getAllByTestId("fleet-resource-floor-missing");
+    // Both the memory floor and the disk floor.
+    expect(missing).toHaveLength(2);
+    expect(missing[0].textContent).toMatch(/not reported/i);
+    expect(screen.queryByTestId("fleet-resource-floor")).toBeNull();
+    // And the legend counts it rather than leaving the gap invisible.
+    expect(
+      screen.getByTestId("fleet-resource-floors-missing").textContent
+    ).toMatch(/reported no\s+floor/i);
+  });
+
+  it("the legend explains the vocabulary and states no numbers of its own", () => {
+    renderStrip({ latest: [sample()], history: [] });
+    const legend = screen.getByTestId("fleet-resource-floors");
+    expect(legend.textContent).toMatch(/rejects/);
+    expect(legend.textContent).toMatch(/defers/);
+    expect(legend.textContent).toMatch(/keeps no\s+threshold of its own/i);
+    // The old legend transcribed the publishers' constants. It must not.
+    expect(legend.textContent).not.toMatch(/GiB/);
+    expect(legend.textContent).not.toMatch(/\d+\s*GB/);
+  });
+});
+
+/**
+ * The defect this change fixes: the strip rendered its own opinion of red.
+ * Every state below is coord's verdict, rendered verbatim.
+ */
+describe("§C3 — the row is coloured from `headroom`, never from the ratio", () => {
+  it("renders breach as the strongest state", () => {
+    renderStrip({
+      latest: [sample({ headroom: "breach" })],
+      history: [],
+    });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-headroom")).toBe("breach");
+    expect(row.getAttribute("data-tone")).toBe("critical");
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/at floor/);
+  });
+
+  it("renders warn as the intermediate state", () => {
+    renderStrip({ latest: [sample({ headroom: "warn" })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-tone")).toBe("warn");
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/near floor/);
+  });
+
+  it("renders ok as normal", () => {
+    renderStrip({ latest: [sample({ headroom: "ok" })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-tone")).toBe("ok");
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/above floor/);
+  });
+
+  it("renders unknown like a stale row — never green", () => {
+    renderStrip({ latest: [sample({ headroom: "unknown" })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-tone")).toBe("unknown");
+    // The SAME tone a machine that published nothing gets.
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/unknown/);
+  });
+
+  it("falls back to unknown — not to a client band and not to green — when the fields are absent", () => {
+    renderStrip({ latest: [preFloorSample()], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-headroom")).toBe("unknown");
+    expect(row.getAttribute("data-tone")).toBe("unknown");
+    // The pressure magnitude is still shown — it is a different question.
+    expect(within(row).getByTestId("fleet-resource-pressure")).toBeTruthy();
+  });
+
+  it("does NOT go red on a high ratio coord is still electing", () => {
+    // The literal disagreement the deleted constants produced: 0.99 was above
+    // SATURATED_AT, so the strip painted red while the dispatcher kept
+    // sending work.
+    renderStrip({
+      latest: [
+        sample({ pressure: { ratio: 0.99, basis: "commit" }, headroom: "ok" }),
+      ],
+      history: [],
+    });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-tone")).toBe("ok");
+    expect(
+      within(row).getByTestId("fleet-resource-pressure").textContent
+    ).toMatch(/99%/);
+  });
+
+  it("goes red on a LOW ratio when the floor is breached", () => {
+    // The other direction, and the reason a floor cannot be restated as a
+    // ratio: the floor is on a column the ratio never divides by.
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          swap_total_bytes: 8 * GIB,
+          swap_used_bytes: 1 * GIB,
+          commit_total_bytes: null,
+          commit_available_bytes: null,
+          pressure: { ratio: 0.02, basis: "swap" },
+          floor: {
+            basis: "mem_available",
+            bytes: 4 * GIB,
+            source: "policy",
+            verdict: "reject",
+          },
+          headroom: "breach",
+        }),
+      ],
+      history: [],
+    });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-tone")).toBe("critical");
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/4\.0 GB available memory/);
+  });
+
+  it("forces a stale row's verdict to unknown, whatever coord last said", () => {
+    renderStrip({
+      latest: [sample({ age_secs: 600, headroom: "ok" })],
+      history: [],
+    });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-freshness")).toBe("stale");
+    expect(row.getAttribute("data-headroom")).toBe("unknown");
+    expect(row.getAttribute("data-tone")).toBe("unknown");
+  });
+
+  it("hoists a breaching lane onto the collapsed panel header", () => {
+    renderStrip({ latest: [sample({ headroom: "breach" })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-breach-badge").textContent
+    ).toMatch(/1 at floor/);
   });
 });
 
