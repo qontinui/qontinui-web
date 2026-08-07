@@ -78,6 +78,9 @@ afterEach(() => {
     value: originalLocation,
     writable: true,
   });
+  // The storage-blocked test spies on `Storage.prototype`; leaving that in place
+  // would break every later suite in this file.
+  vi.restoreAllMocks();
 });
 
 describe("<ConnectInstalledOrg> authorize CTA", () => {
@@ -212,6 +215,39 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
     expect(
       await screen.findByTestId("connect-installed-org-error")
     ).toHaveTextContent("502");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("refuses BEFORE minting when the browser blocks session storage", async () => {
+    // A storage-blocked browser can never complete this connect (the callback
+    // nonce is unverifiable), so it must not allocate a connect-state row on the
+    // way to finding that out: coord caps live unconsumed rows per tenant, so a
+    // user clicking through the failure would lock their whole workspace out of
+    // connecting. `beginConnectState` throws too, but only after the mint —
+    // hence the probe ahead of it.
+    stubFetch(jsonResponse({ connect_state: TOKEN }));
+    render(<ConnectInstalledOrg flow="connect" />);
+
+    const input = await screen.findByTestId("connect-installed-org-login");
+    await userEvent.type(input, "acme-org");
+    // Block only AFTER the config fetch + typing, so the failure under test is
+    // the connect click and nothing else.
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    });
+    await userEvent.click(
+      screen.getByTestId("connect-installed-org-authorize")
+    );
+
+    expect(
+      await screen.findByTestId("connect-installed-org-error")
+    ).toHaveTextContent(/session storage/i);
+    // The assertion that matters: no mint was requested at all.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/connect-state")
+      )
+    ).toHaveLength(0);
     expect(assign).not.toHaveBeenCalled();
   });
 });

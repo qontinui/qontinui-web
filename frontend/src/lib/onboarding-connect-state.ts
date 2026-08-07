@@ -97,6 +97,62 @@ export interface ConnectState {
 const SEP = "~";
 const NONCE_STORAGE_KEY = "qontinui.onboarding_connect_nonce";
 
+/**
+ * Scratch key for {@link assertNonceStorageAvailable}. Deliberately NOT
+ * `NONCE_STORAGE_KEY`: the probe runs before the mint, while a nonce from an
+ * earlier in-flight connect in this tab may still be stored, and a probe that
+ * wrote-then-removed the real key would consume it.
+ */
+const NONCE_STORAGE_PROBE_KEY = "qontinui.onboarding_connect_probe";
+
+/**
+ * The one storage-blocked failure, spelled once.
+ *
+ * {@link assertNonceStorageAvailable} and {@link beginConnectState} both raise
+ * it, and they MUST stay identical: they are the same failure detected at two
+ * points, and a caller distinguishing them by message would be encoding a
+ * difference that does not exist.
+ */
+function storageBlockedError(): Error {
+  return new Error(
+    "Your browser is blocking session storage for this site, so we can't " +
+      "verify the connect when GitHub sends you back. Allow site data for " +
+      "this site (or leave private browsing), then try again."
+  );
+}
+
+/**
+ * Throw — before anything has been spent — if this browser cannot store the
+ * CSRF nonce that {@link beginConnectState} is about to write.
+ *
+ * ## Why this exists, given `beginConnectState` already throws
+ * `beginConnectState` is the backstop and stays exactly where it is; this moves
+ * *detection* earlier. Both connect entry points must `await mintConnectState`
+ * to get a token before they can call `beginConnectState`, so without this probe
+ * the throw lands AFTER a single-use connect-state row has already been
+ * allocated in coord. That row is never consumed and simply expires — but coord
+ * caps live unconsumed rows at **20 per tenant** over a 15-minute TTL, so a
+ * storage-blocked admin clicking Connect twenty times would lock their entire
+ * tenant out of the connect flow for the rest of that window. The user cannot
+ * see why, and nothing they do makes it better.
+ *
+ * That is the composition of two individually-correct behaviours, which is why
+ * it is easy to miss and why deleting this probe as "redundant with the throw in
+ * `beginConnectState`" would silently reintroduce it. It is not redundant: the
+ * two guards differ in WHEN they fire, and when is the whole point.
+ *
+ * Call it inside the same `try` that already wraps the mint, so the existing
+ * retryable-error rendering picks it up with no new UI.
+ */
+export function assertNonceStorageAvailable(): void {
+  try {
+    sessionStorage.setItem(NONCE_STORAGE_PROBE_KEY, "1");
+    sessionStorage.removeItem(NONCE_STORAGE_PROBE_KEY);
+  } catch {
+    throw storageBlockedError();
+  }
+}
+
 /** Legacy value hardcoded by `/connect-runner-github` before the token existed. */
 const LEGACY_RUNNER_CLONE = "runner-clone";
 
@@ -278,9 +334,21 @@ function assertTokenIsWireSafe(token: string): void {
  * burning a fresh OAuth code and a fresh single-use connect-state token each
  * lap. Telling the user before the GitHub hop costs one honest message instead.
  *
+ * ## Where the failure is actually DETECTED — and why that is not here
+ * This throw is the **backstop**. The real detection is
+ * {@link assertNonceStorageAvailable}, which both entry points call *before*
+ * `await mintConnectState(...)`. It has to be earlier than this function,
+ * because a token is required to call this function at all: by the time control
+ * reaches here a single-use connect-state row has already been allocated in
+ * coord, and coord caps live unconsumed rows at **20 per tenant** across a
+ * 15-minute TTL. Detecting only here would let a storage-blocked admin clicking
+ * Connect lock their own tenant out of connecting at all. See
+ * {@link assertNonceStorageAvailable} — it is not redundant with this throw,
+ * and removing it re-opens that self-inflicted lockout.
+ *
  * Call sites already render a retryable error for a failed
- * {@link mintConnectState}, so this rides that existing path and needs no new
- * UI (plan `2026-08-01-connect-state-residual-hardenings` P1).
+ * {@link mintConnectState}, so both guards ride that existing path and need no
+ * new UI (plan `2026-08-01-connect-state-residual-hardenings` P1).
  */
 export function beginConnectState(
   flow: ConnectFlow,
@@ -296,13 +364,14 @@ export function beginConnectState(
     // Fail CLOSED at the OUTBOUND end. We have just generated a nonce we cannot
     // persist, so the callback has nothing to compare against and `consumeNonce`
     // will (correctly) refuse it. Returning a `state` carrying that nonce would
-    // spend an OAuth code and a single-use connect-state token on a connect that
-    // is already known to be uncompletable — see the header comment above.
-    throw new Error(
-      "Your browser is blocking session storage for this site, so we can't " +
-        "verify the connect when GitHub sends you back. Allow site data for " +
-        "this site (or leave private browsing), then try again."
-    );
+    // spend an OAuth code on a connect that is already known to be
+    // uncompletable — see the header comment above.
+    //
+    // The backstop, not the primary detector: call sites run
+    // `assertNonceStorageAvailable()` before the mint so nothing is allocated at
+    // all. This still throws, because a guard that only holds when someone
+    // remembers to call another function first is not a guard.
+    throw storageBlockedError();
   }
   const parts = [flow, login.trim(), nonce, connectState];
   if (isValidRunnerState(runnerState ?? null)) {

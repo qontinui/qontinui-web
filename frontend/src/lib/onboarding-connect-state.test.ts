@@ -18,6 +18,7 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 import {
+  assertNonceStorageAvailable,
   beginConnectState,
   consumeNonce,
   isValidLogin,
@@ -268,25 +269,62 @@ describe("storage-blocked browser (fail closed at BOTH ends)", () => {
     );
   });
 
-  it("spends no OAuth code and navigates with no minted token when both throw", async () => {
-    // The no-loop regression. The mint is stubbed to SUCCEED, so if the outbound
-    // half ever went back to swallowing the storage failure this test would go
-    // green with a usable `state` in hand — which is the bug, not the fix.
+  it("spends nothing at all when both throw — the probe fires before the mint", async () => {
+    // The no-loop regression, in the order a real entry point runs it. The mint
+    // is stubbed to SUCCEED, so if either guard regressed this would go green
+    // with a usable `state` in hand — which is the bug, not the fix.
     fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
     blockStorage(["getItem", "setItem"]);
 
-    const token = await mintConnectState({ flow: "connect" });
+    // 1. The probe throws first, so `mintConnectState` is never reached: no
+    //    OAuth code, and no connect-state row against the tenant's quota.
+    expect(() => assertNonceStorageAvailable()).toThrow(/session storage/i);
+    expect(fetchMock).not.toHaveBeenCalled();
 
-    // The mint's result is never turned into a `state`, so it is never carried
-    // to GitHub: `authorizeUrl`/`installUrl` are built from the return value of
-    // `beginConnectState`, which never returns — so no navigation happens, no
-    // OAuth code is ever issued, and none can be spent.
+    // 2. The backstop still holds independently, for a call site that somehow
+    //    skipped the probe — so the guarantee is not merely a calling
+    //    convention. (Reached here only because the test calls it directly.)
+    const token = await mintConnectState({ flow: "connect" });
     expect(() => beginConnectState("connect", "acme", token)).toThrow(
       /session storage/i
     );
 
-    // And the inbound half would have refused it anyway — the two ends agree,
-    // which is what stops the recover-card loop rather than merely relocating it.
+    // 3. And the inbound half would have refused it anyway — the ends agree,
+    //    which is what stops the recover-card loop rather than relocating it.
     expect(consumeNonce("f".repeat(32))).toBe(false);
+  });
+
+  it("both guards raise the SAME message, so no caller can fork on them", () => {
+    // They are one failure detected at two points. A caller that could tell
+    // them apart would be encoding a difference that does not exist.
+    blockStorage(["setItem"]);
+
+    let fromProbe = "";
+    let fromBegin = "";
+    try {
+      assertNonceStorageAvailable();
+    } catch (e) {
+      fromProbe = (e as Error).message;
+    }
+    try {
+      beginConnectState("connect", "acme", TOKEN);
+    } catch (e) {
+      fromBegin = (e as Error).message;
+    }
+    expect(fromProbe).not.toBe("");
+    expect(fromProbe).toBe(fromBegin);
+  });
+
+  it("is a no-op on a healthy browser and leaves no probe key behind", () => {
+    // The probe must not become a permanent write, and must not consume the
+    // real nonce key — an in-flight connect in this tab has one stored.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", "a".repeat(32));
+
+    expect(() => assertNonceStorageAvailable()).not.toThrow();
+
+    expect(sessionStorage.getItem("qontinui.onboarding_connect_probe")).toBeNull();
+    expect(sessionStorage.getItem("qontinui.onboarding_connect_nonce")).toBe(
+      "a".repeat(32)
+    );
   });
 });

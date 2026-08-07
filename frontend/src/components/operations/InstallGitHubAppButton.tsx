@@ -25,6 +25,7 @@ import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
 import { cn } from "@/lib/utils";
 import {
   GITHUB_APP_SLUG,
+  assertNonceStorageAvailable,
   beginConnectState,
   installUrl,
   mintConnectState,
@@ -77,6 +78,11 @@ export function InstallGitHubAppButton({
     setMinting(true);
     setError(null);
     try {
+      // BEFORE the mint, not after: a storage-blocked browser can never finish
+      // this connect, and every mint allocates a single-use row against the
+      // tenant's capped quota. `beginConnectState` would catch it below, but
+      // only once that row already exists.
+      assertNonceStorageAvailable();
       // No target is bound on this path, deliberately: GitHub names the
       // installation only in its post-install redirect, i.e. AFTER the mint.
       // Coord skips the target assertion when the row records none; inventing
