@@ -136,7 +136,7 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
     // This is the one initiation site where the target is known before the
     // GitHub hop — the user typed it and `isValidLogin` validated it — so the token
     // is bound to that org rather than authorising a claim of any org the
-    // caller happens to administer.
+    // caller happens to be able to reach.
     stubFetch(jsonResponse({ connect_state: TOKEN }));
     render(<ConnectInstalledOrg flow="connect" />);
 

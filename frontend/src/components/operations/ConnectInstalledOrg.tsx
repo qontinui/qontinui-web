@@ -6,17 +6,22 @@
  * The gap this closes: "Install the GitHub App" only works for a *fresh*
  * install. When the org already has the App, GitHub shows "Configure" and
  * issues **no Setup-URL `code`** — and coord's claim requires a code (that's
- * what proves you administer the org). So an already-installed-but-unbound org
+ * what proves you can REACH the org). So an already-installed-but-unbound org
  * could not be connected from the product at all; it took an operator calling
  * coord's unverified `bind` route by hand. That route stays operator-only on
  * purpose: it trusts the request body, so exposing it here would let anyone
  * first-bind an org they don't own and permanently block the real owner.
  *
  * Instead we get a real code the honest way: `login/oauth/authorize` issues one
- * regardless of install state. The claim then runs its normal org-admin gate.
- * Because that callback carries no `installation_id`, the org rides through in
- * `state` and coord resolves it against the caller's own installations — naming
- * an org you don't administer just 403s.
+ * regardless of install state. The claim then runs its normal install-access
+ * gate. Because that callback carries no `installation_id`, the org rides
+ * through in `state` and coord resolves it against the caller's own
+ * installations — naming an org you cannot reach just 403s.
+ *
+ * That gate proves MEMBERSHIP, not AUTHORITY: `/user/installations` lists every
+ * install the caller can reach and carries no role field, so an ordinary org
+ * member passes it. Plan `2026-08-01-onboarding-bind-requires-org-admin` (F8)
+ * tracks the real authority check.
  *
  * The org is typed rather than picked from a list: coord exposes no
  * installed-but-unbound listing today, and the `code` is single-use so a
@@ -110,7 +115,7 @@ export function ConnectInstalledOrg({
 
   const trimmed = login.trim();
   // Catches typos before a pointless round-trip; the authoritative check is
-  // coord's org-admin gate. Deliberately the SAME predicate `parseConnectState`
+  // coord's install-access gate. Deliberately the SAME predicate `parseConnectState`
   // applies on the way back in, not a second copy of the regex — the two must
   // agree, or a login accepted outbound would be dropped to null inbound and
   // silently turn a valid authorize callback into a doctor-page fall-through.
@@ -132,7 +137,7 @@ export function ConnectInstalledOrg({
    * This is the ONE path where the target org is known before the GitHub hop
    * (the user typed it, and `isValidLogin` has already validated it), so the mint
    * binds it: the token then authorises a claim of *that* org only, rather than
-   * of any org the caller happens to administer.
+   * of any org the caller happens to be able to reach.
    */
   const onAuthorize = useCallback(async () => {
     if (!clientId || !valid || minting) return;
@@ -165,8 +170,8 @@ export function ConnectInstalledOrg({
         <CardDescription>
           If the Qontinui GitHub App is already installed on your organization,
           GitHub won&apos;t send you back through the install flow. Enter the
-          organization and authorize instead — GitHub confirms you administer
-          it, then we connect it to your workspace.
+          organization and authorize instead — GitHub confirms you have access
+          to it, then we connect it to your workspace.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">

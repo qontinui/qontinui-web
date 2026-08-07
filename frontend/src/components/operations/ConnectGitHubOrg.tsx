@@ -5,9 +5,11 @@
  *
  * Leads the /admin/coord/onboarding page: the operator installs the Qontinui
  * Merge Orchestrator GitHub App on their organization. GitHub's
- * OAuth-during-install verifies they administer the org; coord then binds the
- * org to their tenant and auto-enrolls its repositories with starter (dry-run)
- * merge profiles (coord PR #901 / web #703). No device pairing or manual repo
+ * OAuth-during-install verifies they can REACH the org's installation (their
+ * own `/user/installations` lists it — MEMBERSHIP, not org-admin AUTHORITY; see
+ * plan `2026-08-01-onboarding-bind-requires-org-admin`, F8); coord then binds
+ * the org to their tenant and auto-enrolls its repositories with starter
+ * (dry-run) merge profiles (coord PR #901 / web #703). No device pairing or manual repo
  * audit is required — the device-pairing wizard below is now optional, for the
  * separate autonomous-dev runner setup.
  *

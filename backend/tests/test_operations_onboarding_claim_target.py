@@ -12,7 +12,10 @@ shapes reach ``POST /pr-merge/onboarding/claim``:
 
 What matters here is that the proxy forwards the caller's target verbatim and
 adds nothing: the tenant comes from the caller's auth, never the body, and
-coord's org-admin gate is the authority on whether the target is claimable.
+coord's install-access gate decides whether the target is claimable. That gate
+proves MEMBERSHIP, not AUTHORITY — it only establishes that the caller can REACH
+the installation via their own ``/user/installations`` (plan
+``2026-08-01-onboarding-bind-requires-org-admin``, F8).
 
 Mirrors the mocked-``httpx`` pattern in ``test_operations_claims_proxy.py`` —
 no live coord.
@@ -145,10 +148,10 @@ def test_empty_target_is_forwarded_for_coord_to_reject(
 def test_gate_failures_pass_through_verbatim(
     auth_client: TestClient, status: int, code: str
 ) -> None:
-    """The org-admin gate's verdict must reach the browser with its own status.
+    """The install-access gate's verdict must reach the browser with its own status.
 
-    Collapsing a 403 into a 500 would make an unadministered org look like an
-    outage and invite a retry loop.
+    Collapsing a 403 into a 500 would make an unreachable installation look like
+    an outage and invite a retry loop.
     """
     client = _patched_post(
         _mock_response(status_code=status, json_data={"error": code})
