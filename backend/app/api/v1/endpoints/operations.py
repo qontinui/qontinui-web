@@ -3444,9 +3444,9 @@ async def get_fleet_resource_samples(
     Each ``ResourceSampleRow`` carries a **server-computed** ``pressure``
     (``{ratio, basis}``, or ``null`` for "no opinion"), ``age_secs``, and
     the admission fields ``floor`` / ``disk_floor``
-    (``{basis, bytes, source, verdict}``) plus ``headroom``
-    (``ok | warn | breach | unknown``). All are passed through untouched
-    on purpose:
+    (``{basis, bytes, source, verdict, reject_bytes, reject_source}``)
+    plus ``headroom`` (``ok | warn | breach | unknown``). All are passed
+    through untouched on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
       ranker also reads. Recomputing it here (or in the browser) is
@@ -3463,6 +3463,15 @@ async def get_fleet_resource_samples(
       ``floor.basis`` — the floor is on a different column from the
       ratio's divisors, so it cannot be collapsed into a pressure
       threshold anywhere along this path.
+    * ``reject_bytes`` is the SECOND enforcer on the same column: a
+      column can be guarded twice with deliberately different numbers
+      (host commit — supervisor defers at 5 GiB, ``ci_node`` rejects at
+      4 GiB), and the rejecting one sits lower so the recoverable wait
+      trips first. ``null`` means no rejecting enforcer governs the
+      column and must not be defaulted to ``bytes`` or to zero; absent
+      means an older coord. The envelope's ``headroom_warn_margin``
+      travels the same way — the client reads the amber margin off the
+      response rather than naming one.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

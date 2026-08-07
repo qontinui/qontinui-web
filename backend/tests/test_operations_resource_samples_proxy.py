@@ -126,9 +126,12 @@ SAMPLE_ROW = {
     "pressure": {"ratio": 0.7963, "basis": "commit"},
     "floor": {
         "basis": "commit_available",
-        "bytes": 4_294_967_296,
+        "bytes": 5_368_709_120,
         "source": "policy",
         "verdict": "defer",
+        # The rejecting enforcer on the SAME column, deliberately lower.
+        "reject_bytes": 4_294_967_296,
+        "reject_source": "default",
     },
     "disk_floor": {
         "basis": "disk_free",
@@ -220,9 +223,11 @@ class TestResourceSamplesProxy:
         assert row["headroom"] == "warn"
         assert row["floor"] == {
             "basis": "commit_available",
-            "bytes": 4_294_967_296,
+            "bytes": 5_368_709_120,
             "source": "policy",
             "verdict": "defer",
+            "reject_bytes": 4_294_967_296,
+            "reject_source": "default",
         }
         assert row["disk_floor"] == {
             "basis": "disk_free",
@@ -257,6 +262,41 @@ class TestResourceSamplesProxy:
         assert "headroom" not in row
         assert "floor" not in row
         assert "disk_floor" not in row
+
+    def test_a_partial_rollout_arrives_partial(self, auth_client: TestClient):
+        """The shape a STAGED coord rollout produces, unedited.
+
+        `headroom` present while `floor` is absent, and a `floor` whose
+        rejecting enforcer is `null` rather than a number, are both states
+        the caller renders distinctly ("no reject threshold" is a fact about
+        the fleet; "not reported" is a fact about the deploy). Defaulting
+        either one here would erase that distinction before the browser saw
+        it.
+        """
+        partial_row = {k: v for k, v in SAMPLE_ROW.items() if k not in ("floor",)}
+        partial_row["disk_floor"] = {
+            "basis": "disk_free",
+            "bytes": 32_212_254_720,
+            "source": "default",
+            "verdict": "reject",
+            "reject_bytes": None,
+            "reject_source": None,
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [partial_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert "floor" not in row
+        assert row["headroom"] == "warn"
+        # `null` survives as null — not dropped, and not replaced by `bytes`.
+        assert row["disk_floor"]["reject_bytes"] is None
+        assert row["disk_floor"]["reject_source"] is None
 
     def test_calls_the_coord_read_route(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:

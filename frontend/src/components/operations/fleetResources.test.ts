@@ -17,8 +17,12 @@ import {
   describeFloor,
   formatFloor,
   formatRatioOfCeiling,
+  formatWarnMargin,
   hasPressureValue,
+  headroomReport,
   headroomTone,
+  HEADROOM_LABEL,
+  HEADROOM_MEANING,
   hostIsBindingConstraint,
   laneShowsSwap,
   pressureFormula,
@@ -35,9 +39,14 @@ const GIB = 1024 ** 3;
 
 const MEM_FLOOR: EffectiveFloor = {
   basis: "commit_available",
-  bytes: 4 * GIB,
+  bytes: 5 * GIB,
   source: "default",
   verdict: "defer",
+  // The rejecting enforcer on the SAME column, deliberately lower: the
+  // supervisor defers at 5 GiB so the runner's ci_node reject at 4 GiB is
+  // reached only after the recoverable wait has had its chance.
+  reject_bytes: 4 * GIB,
+  reject_source: "policy",
 };
 
 const DISK_FLOOR: EffectiveFloor = {
@@ -45,6 +54,8 @@ const DISK_FLOOR: EffectiveFloor = {
   bytes: 30 * GIB,
   source: "policy",
   verdict: "reject",
+  reject_bytes: 30 * GIB,
+  reject_source: "policy",
 };
 
 function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
@@ -310,7 +321,7 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
     // Not a bare byte count and not a percentage: the floor is a byte count
     // ON A NAMED COLUMN, and the column is the reason it cannot be restated
     // as a pressure threshold.
-    expect(formatFloor(MEM_FLOOR)).toBe("4.0 GB free commit");
+    expect(formatFloor(MEM_FLOOR)).toBe("5.0 GB free commit");
     expect(
       formatFloor({ ...MEM_FLOOR, basis: "mem_available", bytes: 2 * GIB })
     ).toBe("2.0 GB available memory");
@@ -320,8 +331,10 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
   it("keeps defer and reject distinguishable — one fails the work, one delays it", () => {
     const deferred = describeFloor(MEM_FLOOR)!;
     const rejected = describeFloor(DISK_FLOOR)!;
-    expect(deferred.verdict).toBe("defers");
-    expect(rejected.verdict).toBe("rejects");
+    expect(deferred.verdict).toBe("defer");
+    expect(deferred.verdictLabel).toBe("defers");
+    expect(rejected.verdict).toBe("reject");
+    expect(rejected.verdictLabel).toBe("rejects");
     expect(deferred.verdict).not.toBe(rejected.verdict);
   });
 
@@ -330,13 +343,108 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
     expect(describeFloor(DISK_FLOOR)!.source).toBe("policy");
   });
 
+  it("carries BOTH enforcers on a doubly-guarded column, with the rejecting one below", () => {
+    // The host commit column is guarded twice on purpose. Showing only the
+    // deferring number would tell an operator a refusing machine was merely
+    // slow; showing only the rejecting one would say builds fail when they
+    // are waiting.
+    const d = describeFloor(MEM_FLOOR)!;
+    expect(d.value).toBe("5.0 GB free commit");
+    expect(d.verdict).toBe("defer");
+    expect(d.reject).toEqual({
+      kind: "present",
+      value: "4.0 GB free commit",
+      source: "policy",
+      sourceLabel: "policy",
+    });
+  });
+
+  it("keeps 'no rejecting enforcer' apart from 'nobody told us'", () => {
+    // null: coord says nothing refuses work on this column.
+    expect(describeFloor({ ...MEM_FLOOR, reject_bytes: null })!.reject).toEqual(
+      { kind: "none" }
+    );
+    // absent: an older coord never mentioned one. NOT the same claim, and
+    // only the first is safe to act on.
+    const legacy = { ...MEM_FLOOR };
+    delete legacy.reject_bytes;
+    delete legacy.reject_source;
+    expect(describeFloor(legacy)!.reject).toEqual({ kind: "not-reported" });
+  });
+
+  it("never falls back to `bytes` or to zero for a missing reject threshold", () => {
+    const d = describeFloor({ ...MEM_FLOOR, reject_bytes: null })!;
+    expect(JSON.stringify(d.reject)).not.toMatch(/5\.0 GB|0 B/);
+  });
+
+  it("reads the amber margin off the response instead of naming 1.5 itself", () => {
+    expect(formatWarnMargin(1.5)).toBe("x1.5");
+    expect(formatWarnMargin(2)).toBe("x2");
+    // Absent, or nonsense: say so rather than printing a plausible default.
+    expect(formatWarnMargin(undefined)).toBe("not reported");
+    expect(formatWarnMargin(null)).toBe("not reported");
+    expect(formatWarnMargin(0)).toBe("not reported");
+    expect(formatWarnMargin(NaN)).toBe("not reported");
+  });
+
+  it("degrades an unrecognized verdict to unknown, NOT to the softer arm", () => {
+    // The previous spelling of this field was "rejects"/"defers" and had a
+    // third value. A coord one version off must not have a hard-refusing
+    // lane render as one that merely waits.
+    const d = describeFloor({
+      ...MEM_FLOOR,
+      verdict: "rejects" as unknown as EffectiveFloor["verdict"],
+    })!;
+    expect(d.verdict).toBe("unknown");
+    expect(d.verdictLabel).toMatch(/unknown/);
+    expect(d.verdictLabel).toMatch(/rejects/);
+    expect(d.verdictLabel).not.toBe("defers");
+  });
+
+  it("degrades an unrecognized source to unknown rather than asserting 'default'", () => {
+    const d = describeFloor({
+      ...MEM_FLOOR,
+      source: "inherited" as unknown as EffectiveFloor["source"],
+    })!;
+    expect(d.source).toBe("unknown");
+    expect(d.sourceLabel).toMatch(/inherited/);
+  });
+
+  it("spells out what breach and warn MEAN, not just their colour", () => {
+    // §C3: the operator must see whether the lane defers or rejects. The two
+    // are different events — one fails the work, the other delays it.
+    expect(HEADROOM_MEANING.breach).toMatch(/refus/i);
+    expect(HEADROOM_MEANING.warn).toMatch(/wait/i);
+    expect(HEADROOM_LABEL.breach).not.toBe(HEADROOM_LABEL.warn);
+    expect(HEADROOM_MEANING.unknown).not.toMatch(/health(y)?[^.]*$/i);
+  });
+
   it("returns null — 'not reported' — rather than inventing a floor", () => {
     // Absent from an older coord. A lane with no STATED floor must not read
     // as a lane with no limit.
     expect(describeFloor(undefined)).toBeNull();
     expect(describeFloor(null)).toBeNull();
     expect(describeFloor({ ...MEM_FLOOR, bytes: NaN })).toBeNull();
+    // A negative floor is corrupt, not small — it must not print as "-1.0 B".
+    expect(describeFloor({ ...MEM_FLOOR, bytes: -1 })).toBeNull();
     expect(formatFloor(null)).toBe("unknown");
+  });
+});
+
+describe("§C3 — why a row is unknown has three distinct answers", () => {
+  it("tells an older coord apart from a coord ahead of this build", () => {
+    expect(headroomReport(preFloorSample())).toBe("absent");
+    expect(headroomReport(sample({ headroom: null }))).toBe("absent");
+    expect(headroomReport(sample({ headroom: "ok" }))).toBe("recognized");
+    expect(headroomReport(sample({ headroom: "unknown" }))).toBe("recognized");
+    expect(
+      headroomReport(
+        sample({
+          headroom: "quarantined" as unknown as ResourceSampleRow["headroom"],
+        })
+      )
+    ).toBe("unrecognized");
+    expect(headroomReport(null)).toBe("absent");
   });
 });
 
@@ -378,6 +486,23 @@ describe("the hoisted page alarm", () => {
     const s = summarizeFleetAdmission(
       [{ device_id: "d1" }],
       [preFloorSample({ device_id: "d1" })]
+    );
+    expect(s).toEqual({ breach: 0, warn: 0, stale: 0, unknown: 1 });
+  });
+
+  it("ages an EXPIRED green verdict into unknown, not into the stale bucket", () => {
+    // Past EXPIRED_AFTER_SECS the row carries no information at all — a
+    // last-known "ok" from six hours ago is not a stale reading of a live
+    // machine, it is silence.
+    const s = summarizeFleetAdmission(
+      [{ device_id: "d1" }],
+      [
+        sample({
+          device_id: "d1",
+          age_secs: EXPIRED_AFTER_SECS + 60,
+          headroom: "ok",
+        }),
+      ]
     );
     expect(s).toEqual({ breach: 0, warn: 0, stale: 0, unknown: 1 });
   });

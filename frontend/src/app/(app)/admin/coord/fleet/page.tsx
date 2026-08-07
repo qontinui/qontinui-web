@@ -304,7 +304,7 @@ export default function CoordFleetPage() {
                 className="ml-1"
                 data-testid="coord-fleet-breach-badge"
               >
-                {admission.breach} at floor
+                {admission.breach} refusing work
               </Badge>
             )}
             {admission.warn > 0 && (
@@ -313,7 +313,7 @@ export default function CoordFleetPage() {
                 className="ml-1"
                 data-testid="coord-fleet-near-floor-badge"
               >
-                {admission.warn} near floor
+                {admission.warn} delaying work
               </Badge>
             )}
             {admission.stale > 0 && (

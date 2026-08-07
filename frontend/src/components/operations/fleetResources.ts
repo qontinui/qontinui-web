@@ -91,6 +91,24 @@ export interface EffectiveFloor {
   bytes: number;
   source: "policy" | "default";
   verdict: FloorVerdict;
+  /**
+   * The threshold of the **rejecting** enforcer on the same column, when one
+   * exists.
+   *
+   * A column can have two enforcers with deliberately different numbers: the
+   * host commit column is guarded by the supervisor at 5 GiB (**defer**) and
+   * by the runner's `ci_node` at 4 GiB (**reject**). The rejecting one sits
+   * LOWER on purpose, so the deferring guard trips first and a recoverable
+   * wait never becomes a failed build. Showing only one of them tells an
+   * operator the wrong story about why a machine is refusing work.
+   *
+   * `null` = no rejecting enforcer governs this column. Rendered as "no
+   * reject threshold" — never as 0, and never by falling back to `bytes`.
+   * Absent = a coord that predates the field, rendered as "not reported".
+   */
+  reject_bytes?: number | null;
+  /** Provenance of `reject_bytes`, on the same terms as `source`. */
+  reject_source?: "policy" | "default" | null;
 }
 
 /**
@@ -103,6 +121,24 @@ export interface EffectiveFloor {
  * sample — never green.
  */
 export type Headroom = "ok" | "warn" | "breach" | "unknown";
+
+/**
+ * What each admission state MEANS to an operator, in words.
+ *
+ * `breach` and `warn` are materially different events, not two shades of one:
+ * a breached lane **refuses** the work (the build fails now) while a warned
+ * lane **waits** for headroom (the build is late). Colour alone cannot carry
+ * that, and §C3 requires the operator to see whether the lane defers or
+ * rejects at its floor — so the strip says it.
+ */
+export const HEADROOM_MEANING: Record<Headroom, string> = {
+  ok: "above both floors — work is being accepted",
+  warn: "at or below the deferring floor (or within the server's amber margin above it) — work waits for headroom rather than failing",
+  breach:
+    "at or below the rejecting floor — a guard is refusing work right now, so builds fail here",
+  unknown:
+    "no admission verdict for this lane. Absence of signal is not health.",
+};
 
 const HEADROOM_VALUES = new Set<string>(["ok", "warn", "breach", "unknown"]);
 
@@ -180,6 +216,14 @@ export interface ResourceSamplesResponse {
   history_truncated?: boolean;
   /** The sibling alembic migration has not reached coord's DB yet. */
   schema_pending?: boolean;
+  /**
+   * The multiplier coord grades the amber band with: a lane is `warn` from
+   * `margin x` the deferring floor downwards. **Read, never assumed** — a
+   * hardcoded 1.5 here would be the client-side constant this whole change
+   * deletes, wearing a different hat. Absent = not reported, and the strip
+   * says so rather than naming a number coord did not send.
+   */
+  headroom_warn_margin?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +367,7 @@ export function laneShowsSwap(lane: string): boolean {
 export function hasPressureValue(
   freshness: Freshness,
   pressure: LanePressure | null | undefined
-): boolean {
+): pressure is LanePressure {
   return (
     freshness !== "unknown" && !!pressure && Number.isFinite(pressure.ratio)
   );
@@ -353,6 +397,23 @@ export function rowHeadroom(
 }
 
 /**
+ * Why a row reads `unknown`, for the operator-facing explanation.
+ *
+ * The three cases have different fixes and must not share one sentence:
+ * `absent` is a coord that predates the field, `unrecognized` is a coord
+ * AHEAD of this build, and `recognized` is coord itself saying it has no
+ * opinion. All three still render unknown — this only picks the wording.
+ */
+export function headroomReport(
+  row: Pick<ResourceSampleRow, "headroom"> | null | undefined
+): "absent" | "recognized" | "unrecognized" {
+  const h = row?.headroom;
+  if (h == null) return "absent";
+  if (typeof h === "string" && HEADROOM_VALUES.has(h)) return "recognized";
+  return "unrecognized";
+}
+
+/**
  * Tone for the row — **derived from the server's admission verdict, never
  * from the pressure ratio.**
  *
@@ -377,11 +438,15 @@ export function headroomTone(
   }
 }
 
-/** Short operator-facing name for an admission state. */
+/**
+ * Short operator-facing name for an admission state — in the VERB of what
+ * happens to the work, because that is the difference `breach` and `warn` now
+ * carry: refused vs delayed.
+ */
 export const HEADROOM_LABEL: Record<Headroom, string> = {
-  ok: "above floor",
-  warn: "near floor",
-  breach: "at floor",
+  ok: "accepting work",
+  warn: "work waits",
+  breach: "work refused",
   unknown: "unknown",
 };
 
@@ -402,9 +467,24 @@ export const FLOOR_BASIS_LABEL: Record<FloorBasis, string> = {
   disk_free: "free disk",
 };
 
+/**
+ * The server's amber margin as `"x1.5"`, or `"not reported"`.
+ *
+ * A separate function only so the "we did not get one" case cannot be
+ * silently rendered as a plausible default.
+ */
+export function formatWarnMargin(margin: number | null | undefined): string {
+  if (margin == null || !Number.isFinite(margin) || margin <= 0) {
+    return "not reported";
+  }
+  return `x${margin}`;
+}
+
 /** `"4.0 GB free commit"` — the floor's value and the column it is measured on. */
 export function formatFloor(floor: EffectiveFloor | null | undefined): string {
-  if (!floor || !Number.isFinite(floor.bytes)) return "unknown";
+  if (!floor || !Number.isFinite(floor.bytes) || floor.bytes < 0) {
+    return "unknown";
+  }
   const basis = FLOOR_BASIS_LABEL[floor.basis] ?? floor.basis;
   return `${formatBytes(floor.bytes)} ${basis}`;
 }
@@ -702,20 +782,108 @@ export function summarizeFleetAdmission(
 //
 // Where coord reports no floor, the row says so — see `describeFloor`.
 
+export interface FloorDetail {
+  /** `"4.0 GB free commit"`. */
+  value: string;
+  /** Normalized verdict, or `"unknown"` when this build does not know it. */
+  verdict: FloorVerdict | "unknown";
+  /** What to print for the verdict — the label, or the raw string. */
+  verdictLabel: string;
+  /** Normalized provenance, or `"unknown"`. */
+  source: "policy" | "default" | "unknown";
+  sourceLabel: string;
+  /**
+   * The SECOND enforcer on the same column — the one that refuses rather
+   * than waits.
+   *
+   * `"present"` carries its own value and provenance. `"none"` means coord
+   * said there is no rejecting enforcer here; `"not-reported"` means coord
+   * never mentioned one (an older coord). The three are kept apart because
+   * "nothing refuses work on this column" and "nobody told us" are different
+   * claims, and only the first is safe to act on.
+   */
+  reject:
+    | {
+        kind: "present";
+        value: string;
+        source: "policy" | "default" | "unknown";
+        sourceLabel: string;
+      }
+    | { kind: "none" }
+    | { kind: "not-reported" };
+}
+
+function normalizeSource(raw: unknown): {
+  source: "policy" | "default" | "unknown";
+  label: string;
+} {
+  if (raw === "policy" || raw === "default") return { source: raw, label: raw };
+  return { source: "unknown", label: `source unknown (${String(raw)})` };
+}
+
 /**
  * One line of floor detail for a row, or `null` when coord reported none.
  *
  * `null` is the pre-deployment state and is rendered as an explicit
  * "not reported", never as "no floor" — a lane with no stated floor reads as
  * unconstrained, which is the false-safe in the other direction.
+ *
+ * ## Why the enums are whitelisted at runtime
+ *
+ * `verdict` and `source` are JSON, not TypeScript. An unrecognized `verdict`
+ * must NOT fall into the `defer` arm: this field's previous spelling was
+ * `"rejects"`/`"defers"` and carried a third value, so a coord one version off
+ * would have told an operator that a hard-refusing lane merely waits — the
+ * same false-safe this whole change exists to remove, one field over. Same
+ * for `source`: silence about who set a number is not "coord's default".
+ *
+ * Unrecognized values are surfaced as `unknown` WITH the raw string, so the
+ * operator sees that something was reported and that this build could not
+ * read it, rather than a confidently wrong word.
  */
 export function describeFloor(
   floor: EffectiveFloor | null | undefined
-): { value: string; source: "policy" | "default"; verdict: string } | null {
-  if (!floor || !Number.isFinite(floor.bytes)) return null;
+): FloorDetail | null {
+  // A negative floor is not a small floor; it is a corrupt one, and
+  // `Number.isFinite(-1)` would let it print as "-1.0 B free commit".
+  if (!floor || !Number.isFinite(floor.bytes) || floor.bytes < 0) return null;
+  const verdict: FloorVerdict | "unknown" =
+    floor.verdict === "reject" || floor.verdict === "defer"
+      ? floor.verdict
+      : "unknown";
+  const src = normalizeSource(floor.source);
+
+  // Three-way, not two: `undefined` is "an older coord never mentioned a
+  // rejecting enforcer" and `null` is "coord says there is none". Collapsing
+  // them would let a silent coord read as a column nothing refuses work on.
+  let reject: FloorDetail["reject"];
+  if (floor.reject_bytes === undefined) {
+    reject = { kind: "not-reported" };
+  } else if (
+    floor.reject_bytes === null ||
+    !Number.isFinite(floor.reject_bytes) ||
+    floor.reject_bytes < 0
+  ) {
+    reject = { kind: "none" };
+  } else {
+    const rsrc = normalizeSource(floor.reject_source);
+    reject = {
+      kind: "present",
+      value: formatFloor({ ...floor, bytes: floor.reject_bytes }),
+      source: rsrc.source,
+      sourceLabel: rsrc.label,
+    };
+  }
+
   return {
     value: formatFloor(floor),
-    source: floor.source,
-    verdict: FLOOR_VERDICT_LABEL[floor.verdict] ?? floor.verdict,
+    verdict,
+    verdictLabel:
+      verdict === "unknown"
+        ? `verdict unknown (${String(floor.verdict)})`
+        : FLOOR_VERDICT_LABEL[verdict],
+    source: src.source,
+    sourceLabel: src.label,
+    reject,
   };
 }

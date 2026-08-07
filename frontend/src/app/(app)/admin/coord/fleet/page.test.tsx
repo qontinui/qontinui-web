@@ -242,7 +242,7 @@ describe("/admin/coord/fleet resource alarm hoisting", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("coord-fleet-breach-badge")).toHaveTextContent(
-        "1 at floor"
+        "1 refusing work"
       );
     });
     // Still collapsed — the alarm did not require opening the section.

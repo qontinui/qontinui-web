@@ -84,9 +84,13 @@ import {
   formatBytes,
   formatPercent,
   formatRatioOfCeiling,
+  formatWarnMargin,
   FLOOR_VERDICT_HINT,
+  hasPressureValue,
+  headroomReport,
   headroomTone,
   HEADROOM_LABEL,
+  HEADROOM_MEANING,
   hostIsBindingConstraint,
   laneShowsSwap,
   pressureFormula,
@@ -99,6 +103,7 @@ import {
 import type {
   EffectiveFloor,
   FleetDeviceRef,
+  FloorDetail,
   Headroom,
   HistorySeries,
   ResourceSampleRow,
@@ -323,7 +328,9 @@ function PressureCell({ row }: { row: StripRow }) {
     );
   }
 
-  if (!pressure) {
+  // `hasPressureValue` rather than `!pressure`: a non-finite ratio is also
+  // "no magnitude", and it would otherwise print as "NaN%".
+  if (!hasPressureValue(row.freshness, pressure)) {
     return (
       <span
         className="inline-flex items-center gap-1.5"
@@ -410,6 +417,11 @@ function PressureCell({ row }: { row: StripRow }) {
  * `reject` vs `defer` is not decoration — one fails the work now, the other
  * makes it late — so the verdict is a badge rather than a tooltip, and the
  * two get different variants.
+ *
+ * A verdict or source this build does not recognize renders as an explicit
+ * `unknown` carrying the raw string, NOT as the milder of the two arms:
+ * `describeFloor` normalizes, and telling an operator that a hard-refusing
+ * lane merely defers is the same false-safe this change removes elsewhere.
  */
 function FloorLine({
   label,
@@ -419,9 +431,7 @@ function FloorLine({
   floor: EffectiveFloor | null | undefined;
 }) {
   const d = describeFloor(floor);
-  // `!floor` is redundant with `!d` at runtime and load-bearing for the type
-  // narrowing below — no non-null assertions on a nullable wire field.
-  if (!floor || !d) {
+  if (!d) {
     return (
       <span
         className="text-[10px] text-muted-foreground italic"
@@ -441,28 +451,105 @@ function FloorLine({
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge
-            variant={floor.verdict === "reject" ? "destructive" : "secondary"}
+            variant={
+              d.verdict === "reject"
+                ? "destructive"
+                : d.verdict === "defer"
+                  ? "secondary"
+                  : "outline"
+            }
             className="text-[9px] px-1 py-0"
           >
-            {d.verdict}
+            {d.verdictLabel}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
-          {FLOOR_VERDICT_HINT[floor.verdict]}
+          {d.verdict === "unknown"
+            ? "This build does not recognize what coord says happens at this floor. It may refuse work outright — do not read it as a delay."
+            : FLOOR_VERDICT_HINT[d.verdict]}
         </TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge variant="outline" className="text-[9px] px-1 py-0">
-            {d.source}
+            {d.sourceLabel}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
           {d.source === "policy"
             ? "Set for this tenant in the fleet runtime policy — an operator chose this number."
-            : "coord's built-in default — no tenant policy overrides it."}
+            : d.source === "default"
+              ? "coord's built-in default — no tenant policy overrides it."
+              : "coord reported a provenance this build does not recognize. Whether anybody configured this number is unknown."}
         </TooltipContent>
       </Tooltip>
+      <RejectClause detail={d} />
+    </span>
+  );
+}
+
+/**
+ * The SECOND enforcer on the same column — the one that refuses.
+ *
+ * A column can be guarded twice with deliberately different numbers (host
+ * commit: supervisor defers at 5 GiB, `ci_node` rejects at 4 GiB), and the
+ * rejecting threshold sits LOWER on purpose so the deferring guard trips
+ * first. An operator who sees only one of the two cannot tell whether a
+ * refusing machine is failing builds or merely delaying them — which is the
+ * §C3 requirement this clause exists for.
+ *
+ * "coord says there is no rejecting enforcer" and "coord never mentioned one"
+ * render differently: only the first is a fact about the fleet.
+ */
+function RejectClause({ detail }: { detail: FloorDetail }) {
+  if (detail.reject.kind === "not-reported") {
+    return (
+      <span
+        className="text-muted-foreground italic"
+        data-testid="fleet-resource-reject-floor-missing"
+      >
+        reject threshold not reported
+      </span>
+    );
+  }
+  if (detail.reject.kind === "none") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-muted-foreground underline decoration-dotted"
+            data-testid="fleet-resource-reject-floor-none"
+          >
+            no reject threshold
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          coord reports no rejecting enforcer on this column — work here is
+          delayed at the floor above, not refused. Not the same as a reject
+          threshold of zero.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="text-muted-foreground">·</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="destructive" className="text-[9px] px-1 py-0">
+            rejects
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          {FLOOR_VERDICT_HINT.reject} This threshold sits below the one on the
+          left on purpose: the deferring guard trips first, so a recoverable
+          wait does not become a failed build.
+        </TooltipContent>
+      </Tooltip>
+      <span className="tabular-nums">{detail.reject.value}</span>
+      <Badge variant="outline" className="text-[9px] px-1 py-0">
+        {detail.reject.sourceLabel}
+      </Badge>
     </span>
   );
 }
@@ -482,7 +569,7 @@ function FloorLine({
 function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
   const headroom: Headroom =
     row.freshness === "fresh" ? rowHeadroom(row.sample) : "unknown";
-  const reported = row.sample?.headroom != null;
+  const report = headroomReport(row.sample);
 
   return (
     <span
@@ -497,33 +584,59 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
             <Badge variant={TONE_BADGE[tone]} className="text-[10px]">
               {HEADROOM_LABEL[headroom]}
             </Badge>
+            {/* The verb, on screen rather than only in the colour: a breached
+                lane FAILS the work and a warned one DELAYS it, and an
+                operator deciding whether to drain a machine needs the
+                difference without hovering. */}
+            {headroom !== "unknown" && (
+              <span
+                className="text-[10px] text-muted-foreground"
+                data-testid="fleet-resource-admission-verb"
+              >
+                {headroom === "breach"
+                  ? "builds fail here"
+                  : headroom === "warn"
+                    ? "builds wait"
+                    : "no guard acting"}
+              </span>
+            )}
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
           <div>
             coord&apos;s own admission verdict for this lane, computed against
-            the floor below. This page holds no threshold of its own — if it
+            the floors below. This page holds no threshold of its own — if it
             says the machine is refusing work, the dispatcher already stopped
             sending it.
+          </div>
+          <div className="text-muted-foreground">
+            {HEADROOM_MEANING[headroom]}
           </div>
           {headroom === "unknown" && (
             <div className="text-muted-foreground">
               {row.freshness !== "fresh"
                 ? "The sample is not current, so the verdict computed from it is not either."
-                : reported
+                : report === "recognized"
                   ? "coord reports this lane's admission state as unknown."
-                  : "coord did not report an admission state for this lane — an older coord, or a lane it does not admit on. Unknown is NOT healthy."}
+                  : report === "unrecognized"
+                    ? "coord reported an admission state this build does not recognize — a coord newer than this page. Unrecognized is NOT healthy."
+                    : "coord did not report an admission state for this lane — an older coord, or a lane it does not admit on. Unknown is NOT healthy."}
             </div>
           )}
         </TooltipContent>
       </Tooltip>
       {/* A floor reported inside a sample too old to trust is a config value
           that may since have changed, so an `unknown` row withholds it for
-          the same reason it withholds the measurements. */}
+          the same reason it withholds the measurements — and a `stale` row
+          demotes it the same way every other cell on that row is demoted. */}
       {row.freshness !== "unknown" && (
         <>
-          <FloorLine label="mem" floor={row.sample?.floor} />
-          <FloorLine label="disk" floor={row.sample?.disk_floor} />
+          <Aged freshness={row.freshness}>
+            <FloorLine label="mem" floor={row.sample?.floor} />
+          </Aged>
+          <Aged freshness={row.freshness}>
+            <FloorLine label="disk" floor={row.sample?.disk_floor} />
+          </Aged>
         </>
       )}
     </span>
@@ -665,7 +778,13 @@ function AgeCell({ row }: { row: StripRow }) {
  * are the pre-deployment state, and saying "not reported" out loud is the
  * difference between a known gap and an invisible one.
  */
-function FloorsLegend({ missingFloors }: { missingFloors: number }) {
+function FloorsLegend({
+  missingFloors,
+  warnMargin,
+}: {
+  missingFloors: number;
+  warnMargin: number | undefined;
+}) {
   return (
     <div
       className="rounded border border-dashed p-2 space-y-1"
@@ -698,13 +817,23 @@ function FloorsLegend({ missingFloors }: { missingFloors: number }) {
           </Badge>
           coord&apos;s built-in fallback.
         </li>
+        <li data-testid="fleet-resource-warn-margin">
+          A lane reads <strong>work waits</strong> from{" "}
+          <span className="tabular-nums">{formatWarnMargin(warnMargin)}</span>{" "}
+          the deferring floor downwards — the margin is coord&apos;s, read off
+          this response, never assumed here.
+        </li>
       </ul>
       <p className="text-[10px] text-muted-foreground">
-        The row&apos;s colour is coord&apos;s <em>admission verdict</em> against
-        these floors — not a band over the pressure ratio. This page keeps no
-        threshold of its own, so a red row means the dispatcher has already
-        stopped electing that lane. Memory and disk are kept apart because
-        memory frees on its own and disk does not.
+        A column can be guarded <em>twice</em> with deliberately different
+        numbers — the rejecting threshold sits below the deferring one so the
+        wait trips first and a recoverable delay never becomes a failed build.
+        Both are shown; neither is inferred. The row&apos;s colour is
+        coord&apos;s <em>admission verdict</em> against these floors — not a
+        band over the pressure ratio. This page keeps no threshold of its own,
+        so a red row means the dispatcher has already stopped electing that
+        lane. Memory and disk are kept apart because memory frees on its own and
+        disk does not.
       </p>
       {missingFloors > 0 && (
         <p
@@ -774,21 +903,32 @@ export function FleetResourceStrip({
     return m;
   }, [data?.history]);
 
-  const { unknownLanes, staleLanes, breachLanes, missingFloors } =
+  const { unknownLanes, staleLanes, breachLanes, warnLanes, missingFloors } =
     useMemo(() => {
       let unknown = 0;
       let stale = 0;
       let breach = 0;
+      let warn = 0;
       let missing = 0;
       for (const g of groups) {
         for (const r of g.rows) {
           if (r.freshness === "unknown") unknown += 1;
           else if (r.freshness === "stale") stale += 1;
-          else if (rowHeadroom(r.sample) === "breach") breach += 1;
+          else {
+            const h = rowHeadroom(r.sample);
+            if (h === "breach") breach += 1;
+            else if (h === "warn") warn += 1;
+          }
           // Only a row whose floors are actually rendered can be missing
           // one; a machine that published nothing (or too long ago) is
-          // already counted as unknown above.
-          if (r.freshness !== "unknown" && r.sample?.floor == null) {
+          // already counted as unknown above. BOTH floors count: a coord
+          // reporting the memory floor but not the disk one would otherwise
+          // print "disk floor not reported" while the legend claimed no gaps.
+          if (
+            r.freshness !== "unknown" &&
+            r.sample != null &&
+            (r.sample.floor == null || r.sample.disk_floor == null)
+          ) {
             missing += 1;
           }
         }
@@ -797,6 +937,7 @@ export function FleetResourceStrip({
         unknownLanes: unknown,
         staleLanes: stale,
         breachLanes: breach,
+        warnLanes: warn,
         missingFloors: missing,
       };
     }, [groups]);
@@ -824,7 +965,16 @@ export function FleetResourceStrip({
                 className="ml-1"
                 data-testid="fleet-resource-breach-badge"
               >
-                {breachLanes} at floor
+                {breachLanes} refusing work
+              </Badge>
+            )}
+            {warnLanes > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1"
+                data-testid="fleet-resource-near-floor-badge"
+              >
+                {warnLanes} delaying work
               </Badge>
             )}
             {staleLanes > 0 && (
@@ -1072,7 +1222,10 @@ export function FleetResourceStrip({
           </div>
         )}
 
-        <FloorsLegend missingFloors={missingFloors} />
+        <FloorsLegend
+          missingFloors={missingFloors}
+          warnMargin={data?.headroom_warn_margin}
+        />
 
         <p className="text-[10px] text-muted-foreground flex items-start gap-1">
           <Activity className="h-3 w-3 mt-0.5 shrink-0" />

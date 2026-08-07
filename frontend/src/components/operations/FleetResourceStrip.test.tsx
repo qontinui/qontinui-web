@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import type {
@@ -49,15 +49,21 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     pressure: { ratio: 0.8, basis: "commit" },
     floor: {
       basis: "commit_available",
-      bytes: 4 * GIB,
+      bytes: 5 * GIB,
       source: "default",
       verdict: "defer",
+      // Two enforcers on one column: the supervisor defers at 5 GiB, the
+      // runner's ci_node rejects at 4 GiB — lower on purpose.
+      reject_bytes: 4 * GIB,
+      reject_source: "policy",
     },
     disk_floor: {
       basis: "disk_free",
       bytes: 30 * GIB,
       source: "policy",
       verdict: "reject",
+      reject_bytes: 30 * GIB,
+      reject_source: "policy",
     },
     headroom: "ok",
     ...overrides,
@@ -237,7 +243,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     const admission = screen.getByTestId("fleet-resource-admission");
     // The value AND the column it is measured on — the column is why it
     // cannot be restated as a pressure threshold.
-    expect(admission.textContent).toMatch(/4\.0 GB free commit/);
+    expect(admission.textContent).toMatch(/5\.0 GB free commit/);
     expect(admission.textContent).toMatch(/30\.0 GB free disk/);
     // reject vs defer are materially different and both are shown.
     expect(admission.textContent).toMatch(/defers/);
@@ -245,6 +251,107 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     // …and whether an operator set the number or coord defaulted it.
     expect(admission.textContent).toMatch(/policy/);
     expect(admission.textContent).toMatch(/default/);
+  });
+
+  it("shows BOTH enforcers on a doubly-guarded column, with their verbs", () => {
+    // §C3 is only really satisfied once both thresholds are on screen: the
+    // deferring one (work waits) and the rejecting one below it (work fails).
+    renderStrip({ latest: [sample()], history: [] });
+    const admission = screen.getByTestId("fleet-resource-admission");
+    expect(admission.textContent).toMatch(/defers/);
+    expect(admission.textContent).toMatch(/5\.0 GB free commit/);
+    expect(admission.textContent).toMatch(/rejects/);
+    expect(admission.textContent).toMatch(/4\.0 GB free commit/);
+  });
+
+  it("says 'no reject threshold' rather than falling back to the defer number", () => {
+    renderStrip({
+      latest: [
+        sample({
+          floor: {
+            basis: "mem_available",
+            bytes: 4 * GIB,
+            source: "default",
+            verdict: "defer",
+            reject_bytes: null,
+            reject_source: null,
+          },
+        }),
+      ],
+      history: [],
+    });
+    const none = screen.getAllByTestId("fleet-resource-reject-floor-none");
+    expect(none.length).toBeGreaterThan(0);
+    expect(none[0].textContent).toMatch(/no reject threshold/);
+    // Not zero, and not the deferring number wearing the reject label.
+    expect(none[0].textContent).not.toMatch(/0 B|4\.0 GB/);
+  });
+
+  it("distinguishes 'coord never mentioned a rejecting enforcer' from 'there is none'", () => {
+    const legacyFloor = {
+      basis: "commit_available" as const,
+      bytes: 5 * GIB,
+      source: "default" as const,
+      verdict: "defer" as const,
+    };
+    renderStrip({
+      latest: [sample({ floor: legacyFloor, disk_floor: legacyFloor })],
+      history: [],
+    });
+    expect(
+      screen.getAllByTestId("fleet-resource-reject-floor-missing")[0]
+        .textContent
+    ).toMatch(/not reported/i);
+    expect(screen.queryByTestId("fleet-resource-reject-floor-none")).toBeNull();
+  });
+
+  it("prints the amber margin coord sent, and says so when it sent none", () => {
+    renderStrip({
+      latest: [sample()],
+      history: [],
+      headroom_warn_margin: 1.5,
+    });
+    expect(
+      screen.getByTestId("fleet-resource-warn-margin").textContent
+    ).toMatch(/x1\.5/);
+    cleanup();
+    renderStrip({ latest: [sample()], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-warn-margin").textContent
+    ).toMatch(/not reported/);
+  });
+
+  it("degrades an unrecognized verdict to unknown, not to the softer badge", () => {
+    renderStrip({
+      latest: [
+        sample({
+          floor: {
+            basis: "commit_available",
+            bytes: 5 * GIB,
+            // The field's PREVIOUS spelling. A coord one version off must not
+            // render a hard-refusing lane as one that merely waits.
+            verdict: "rejects" as unknown as "reject",
+            source: "inherited" as unknown as "policy",
+            reject_bytes: 4 * GIB,
+            reject_source: "default",
+          },
+        }),
+      ],
+      history: [],
+    });
+    const floor = screen.getAllByTestId("fleet-resource-floor")[0];
+    expect(floor.textContent).toMatch(/verdict unknown/);
+    expect(floor.textContent).toMatch(/rejects\)/);
+    expect(floor.textContent).toMatch(/source unknown/);
+  });
+
+  it("counts a missing DISK floor in the legend, not only a missing memory one", () => {
+    const memOnly = sample();
+    delete memOnly.disk_floor;
+    renderStrip({ latest: [memOnly], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-floors-missing").textContent
+    ).toMatch(/reported no\s+floor/i);
   });
 
   it("says a floor is NOT REPORTED rather than implying the lane has none", () => {
@@ -287,7 +394,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     expect(row.getAttribute("data-tone")).toBe("critical");
     expect(
       within(row).getByTestId("fleet-resource-admission").textContent
-    ).toMatch(/at floor/);
+    ).toMatch(/work refused/);
   });
 
   it("renders warn as the intermediate state", () => {
@@ -296,7 +403,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     expect(row.getAttribute("data-tone")).toBe("warn");
     expect(
       within(row).getByTestId("fleet-resource-admission").textContent
-    ).toMatch(/near floor/);
+    ).toMatch(/work waits/);
   });
 
   it("renders ok as normal", () => {
@@ -305,7 +412,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     expect(row.getAttribute("data-tone")).toBe("ok");
     expect(
       within(row).getByTestId("fleet-resource-admission").textContent
-    ).toMatch(/above floor/);
+    ).toMatch(/accepting work/);
   });
 
   it("renders unknown like a stale row — never green", () => {
@@ -374,6 +481,41 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     ).toMatch(/4\.0 GB available memory/);
   });
 
+  it("withholds the floors entirely on an EXPIRED row", () => {
+    // Past EXPIRED_AFTER_SECS the payload carries no information — including
+    // about configuration that may since have changed.
+    renderStrip({ latest: [sample({ age_secs: 40_000 })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    expect(row.getAttribute("data-freshness")).toBe("unknown");
+    expect(within(row).queryByTestId("fleet-resource-floor")).toBeNull();
+    expect(
+      within(row).queryByTestId("fleet-resource-floor-missing")
+    ).toBeNull();
+    expect(
+      within(row).getByTestId("fleet-resource-admission").textContent
+    ).toMatch(/unknown/);
+  });
+
+  it("demotes a STALE row's floors like every other value on that row", () => {
+    renderStrip({ latest: [sample({ age_secs: 600 })], history: [] });
+    const row = screen.getByTestId("fleet-resource-row");
+    const floor = within(row).getAllByTestId("fleet-resource-floor")[0];
+    // Still readable as last-known, but visibly not current.
+    expect(floor.closest(".italic.opacity-60")).toBeTruthy();
+  });
+
+  it("says in WORDS whether the work fails or waits, not only in colour", () => {
+    renderStrip({ latest: [sample({ headroom: "breach" })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-admission-verb").textContent
+    ).toBe("builds fail here");
+    cleanup();
+    renderStrip({ latest: [sample({ headroom: "warn" })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-admission-verb").textContent
+    ).toBe("builds wait");
+  });
+
   it("forces a stale row's verdict to unknown, whatever coord last said", () => {
     renderStrip({
       latest: [sample({ age_secs: 600, headroom: "ok" })],
@@ -389,7 +531,7 @@ describe("§C3 — the row is coloured from `headroom`, never from the ratio", (
     renderStrip({ latest: [sample({ headroom: "breach" })], history: [] });
     expect(
       screen.getByTestId("fleet-resource-breach-badge").textContent
-    ).toMatch(/1 at floor/);
+    ).toMatch(/1 refusing work/);
   });
 });
 
