@@ -7,7 +7,7 @@
  * would drop the bind-only marker and the claim target.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -212,5 +212,81 @@ describe("consumeNonce", () => {
   it("rejects a nonce this browser session never minted", () => {
     beginConnectState("connect", "acme", TOKEN);
     expect(consumeNonce("ffffffffffffffffffffffffffffffff")).toBe(false);
+  });
+});
+
+/**
+ * A browser that BLOCKS sessionStorage — Safari private mode, an ITP-partitioned
+ * third-party context, a quota error, a storage-blocking extension.
+ *
+ * Both halves must fail closed, and they must fail closed TOGETHER (plan
+ * `2026-08-01-connect-state-residual-hardenings` P1 / F4):
+ *
+ * - `consumeNonce` used to `return true` here, so `consumeNonce(<anything>)`
+ *   passed and the whole same-tab check was bypassed in exactly the contexts
+ *   where a crafted callback is cheapest to land.
+ * - `beginConnectState` used to swallow the identical failure at the OUTBOUND
+ *   end. Fixing only the inbound half would leave that population minting a
+ *   nonce it cannot store, failing the callback, landing on the recover card,
+ *   and re-entering `beginConnectState` — for ever, spending a fresh OAuth code
+ *   and a fresh single-use connect-state token every lap.
+ *
+ * Hence the third test: the failure must surface BEFORE anything is spent.
+ */
+describe("storage-blocked browser (fail closed at BOTH ends)", () => {
+  /** Make one or both sessionStorage accessors throw, as a blocked browser does. */
+  function blockStorage(accessors: ("getItem" | "setItem")[]): void {
+    for (const accessor of accessors) {
+      vi.spyOn(Storage.prototype, accessor).mockImplementation(() => {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      });
+    }
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does NOT let the claim proceed when `getItem` throws", () => {
+    // Pre-seed a real nonce first, so the ONLY reason this rejects is the throw
+    // — not an empty store. This is the exact bypass that used to return true.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", "f".repeat(32));
+    blockStorage(["getItem"]);
+
+    expect(consumeNonce("f".repeat(32))).toBe(false);
+    // …and no attacker-chosen value slips through either.
+    expect(consumeNonce("whatever-the-attacker-put-in-the-url")).toBe(false);
+  });
+
+  it("THROWS from `beginConnectState` when `setItem` throws", () => {
+    blockStorage(["setItem"]);
+
+    // Not "returns a state with no nonce" and not "returns one anyway": either
+    // would hand GitHub a state this browser can never verify on the way back.
+    expect(() => beginConnectState("connect", "acme", TOKEN)).toThrow(
+      /session storage/i
+    );
+  });
+
+  it("spends no OAuth code and navigates with no minted token when both throw", async () => {
+    // The no-loop regression. The mint is stubbed to SUCCEED, so if the outbound
+    // half ever went back to swallowing the storage failure this test would go
+    // green with a usable `state` in hand — which is the bug, not the fix.
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+    blockStorage(["getItem", "setItem"]);
+
+    const token = await mintConnectState({ flow: "connect" });
+
+    // The mint's result is never turned into a `state`, so it is never carried
+    // to GitHub: `authorizeUrl`/`installUrl` are built from the return value of
+    // `beginConnectState`, which never returns — so no navigation happens, no
+    // OAuth code is ever issued, and none can be spent.
+    expect(() => beginConnectState("connect", "acme", token)).toThrow(
+      /session storage/i
+    );
+
+    // And the inbound half would have refused it anyway — the two ends agree,
+    // which is what stops the recover-card loop rather than merely relocating it.
+    expect(consumeNonce("f".repeat(32))).toBe(false);
   });
 });

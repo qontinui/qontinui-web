@@ -266,6 +266,21 @@ function assertTokenIsWireSafe(token: string): void {
  * that started the flow. Appended as slot 5 only when it passes
  * {@link isValidRunnerState}, so a browser-only connect keeps the exact 4-field
  * shape and an unparseable value is dropped rather than propagated.
+ *
+ * ## THROWS when the nonce cannot be stored — do not soften this back
+ * A browser that blocks `sessionStorage` (Safari private mode, an ITP-
+ * partitioned third-party context, a quota error, a storage-blocking extension)
+ * cannot complete this round-trip at all: {@link consumeNonce} fails closed on
+ * the very same throw at the callback, so a `state` minted here would be
+ * unverifiable *by construction*. Emitting it anyway — which is what this used
+ * to do — sends the user to GitHub, back to the callback, onto the recover
+ * card, whose button re-enters this function and fails identically. For ever,
+ * burning a fresh OAuth code and a fresh single-use connect-state token each
+ * lap. Telling the user before the GitHub hop costs one honest message instead.
+ *
+ * Call sites already render a retryable error for a failed
+ * {@link mintConnectState}, so this rides that existing path and needs no new
+ * UI (plan `2026-08-01-connect-state-residual-hardenings` P1).
  */
 export function beginConnectState(
   flow: ConnectFlow,
@@ -278,10 +293,16 @@ export function beginConnectState(
   try {
     sessionStorage.setItem(NONCE_STORAGE_KEY, nonce);
   } catch {
-    // Private-mode / storage-disabled: proceed without the same-tab check
-    // rather than dead-end the user. The server-side `connect_state` above is
-    // the actual authorization gate (it is what binds the flow to this tenant);
-    // the nonce only narrows it further to this browser tab.
+    // Fail CLOSED at the OUTBOUND end. We have just generated a nonce we cannot
+    // persist, so the callback has nothing to compare against and `consumeNonce`
+    // will (correctly) refuse it. Returning a `state` carrying that nonce would
+    // spend an OAuth code and a single-use connect-state token on a connect that
+    // is already known to be uncompletable — see the header comment above.
+    throw new Error(
+      "Your browser is blocking session storage for this site, so we can't " +
+        "verify the connect when GitHub sends you back. Allow site data for " +
+        "this site (or leave private browsing), then try again."
+    );
   }
   const parts = [flow, login.trim(), nonce, connectState];
   if (isValidRunnerState(runnerState ?? null)) {
@@ -332,6 +353,8 @@ export function parseConnectState(raw: string | null): ConnectState | null {
  * the only callers that reach here without one are crafted links and
  * out-of-band installs — and the latter get the recoverable "start again"
  * page, not a dead end.
+ *
+ * A storage throw also **fails**, symmetrically with {@link beginConnectState}.
  */
 export function consumeNonce(nonce: string | null): boolean {
   if (!nonce) return false;
@@ -340,11 +363,26 @@ export function consumeNonce(nonce: string | null): boolean {
     stored = sessionStorage.getItem(NONCE_STORAGE_KEY);
     sessionStorage.removeItem(NONCE_STORAGE_KEY);
   } catch {
-    // Storage unreadable → we could not have stored one at mint time either,
-    // so this check is simply unavailable in this browser. Same reasoning as
-    // `beginConnectState`: the server-side `connect_state` is the gate, and it
-    // is still required and still verified by coord.
-    return true;
+    // Fail CLOSED. Storage being unreadable does not make this check
+    // "unavailable"; it makes it UNSATISFIABLE. Returning true here meant
+    // `consumeNonce(<any string>)` passed in every context where sessionStorage
+    // throws — Safari private mode, ITP-partitioned frames, quota errors,
+    // storage-blocking extensions — which is precisely where a crafted callback
+    // is cheapest to land (plan `2026-08-01-connect-state-residual-hardenings`
+    // P1 / F4).
+    //
+    // What backs this check is THIS MODULE and nothing else. The nonce answers
+    // "which browser tab initiated", and only the party that minted it can
+    // adjudicate that. The server-side `connect_state` answers a different
+    // question — "which tenant initiated" — and is enforced by coord behind its
+    // own env flags; the old comment leaned this guarantee on that one, which is
+    // exactly how the composite defence collapsed into a single one before.
+    //
+    // No legitimate flow reaches here: `beginConnectState` throws rather than
+    // emitting a nonce it could not store, so a storage-blocked browser is never
+    // sent to GitHub by us at all. A callback that lands here is crafted or
+    // out-of-band, and it gets the restartable recover card, not a dead end.
+    return false;
   }
   return stored === nonce;
 }
