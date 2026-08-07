@@ -1,0 +1,251 @@
+# CI manifest for the runner-as-CI-node lane
+# (plan qontinui-dev-notes/plans/2026-08-07-runner-local-ci-parity-and-web-
+#  configuration.md, Phase 5 — this repo is the one that motivated the plan and
+#  had no manifest at all, so it could not run on the product's local-CI lane).
+#
+# PARITY IS A REVIEW-TIME INVARIANT: the steps below mirror the gate commands of
+# .github/workflows/frontend-ci.yml's `lint-and-typecheck` job and
+# .github/workflows/backend-ci.yml's `lint` job plus that workflow's
+# "Check OpenAPI snapshot is up to date" step. When those gates change, update
+# this file in the SAME PR. Actions steps are referenced by NAME below, never by
+# line number — line numbers in those files move constantly and a stale citation
+# makes the invariant unauditable.
+#
+# Commands are argv arrays (never shell strings); env is limited to the runner's
+# allowlist (qontinui-runner/src-tauri/src/ci_node/manifest.rs::ENV_ALLOWLIST);
+# `[limits]` values are ceilings the executor caps against host-derived sizing.
+#
+# ===========================================================================
+# WHAT THIS MANIFEST CANNOT YET EXPRESS
+#
+# Recorded rather than silently omitted — the precedent is qontinui-coord's
+# manifest header: "a manifest that parses but cannot run is worse than one that
+# announces why." A reviewer comparing this file against the workflows must be
+# able to tell a deliberate gap from an oversight.
+#
+# 1. backend-ci.yml's `test` job — THE POSTGRES/REDIS SUITE.
+#    "Run tests with coverage" needs the job's `services:` block: a
+#    pgvector/pgvector:pg16 container and a redis:7-alpine container, plus the
+#    "Create test schemas and extensions" psql step that creates the project /
+#    auth / cloud / coord / strategy / web schemas and `CREATE EXTENSION vector`.
+#    The ci_node executor provisions sibling repos and registry tools; it
+#    provisions no DATABASE. Nothing in this manifest can stand a server up, and
+#    a step that assumed a local Postgres would fail on exactly the clean user
+#    machine this lane exists to serve. So the backend unit suite is NOT gated
+#    here — the Actions lane remains its only gate.
+#
+# 2. backend-ci.yml's `build-test` job — DOCKER.
+#    "Build Docker image" / "Test Docker image" need a working docker daemon.
+#    The runner does not provision one and a user's box may not have it.
+#
+# 3. backend-ci.yml's `security-scan` job.
+#    "Run Trivy vulnerability scanner" is a GitHub Action
+#    (aquasecurity/trivy-action), not a command; the ci_node tool registry is
+#    CLOSED (a manifest names a tool, it never supplies a URL) and trivy is not
+#    in it. "Run safety check" ends in `|| true` — a shell metacharacter that is
+#    banned in argv, and a step that cannot fail is not a gate worth mirroring.
+#
+# 4. The shell-scan workflows: web-boundary-lint.yml ("Scan backend/app for
+#    qontinui.* boundary violations"), forbid-public-schema.yml ("Scan for
+#    forbidden public.* references"), alembic-graph-pr.yml ("Count alembic
+#    heads" / "Fail if chain has more than one head"), secret-scan.yml.
+#    Each is a multi-line `run:` block of pipes, redirects and `$(...)`. The
+#    argv contract has no shell, deliberately. Mirroring them needs a committed
+#    SCRIPT in this repo that both lanes invoke — a worthwhile follow-up, and a
+#    change to the workflows, so it is not smuggled in here.
+#
+# 5. style-gate.yml is titled "Style Gate (shadow)" — non-gating by
+#    construction, and it needs a Rust toolchain, a Playwright Chromium install
+#    and a running app. Out of scope for a parity mirror of the GATES.
+#
+# 6. NO [[tools]] ARE DECLARED, AND THAT IS NOT THE SAME AS "NEEDS NOTHING".
+#    The runner's tool registry (ci_node/tools.rs) currently provisions exactly
+#    one tool, cargo-nextest. Every step below assumes `npm` (Node 22, per
+#    frontend-ci.yml's setup-node) and `poetry` (Python 3.12, per backend-ci.yml's
+#    PYTHON_VERSION) are already on PATH. Until those enter the registry this
+#    repo is not yet a zero-install target; declaring a tool the registry does
+#    not know would be REJECTED at validation, so the honest move is to say so
+#    here rather than to declare a lie.
+# ===========================================================================
+
+version = 1
+
+# ---------------------------------------------------------------------------
+# SIBLING REPOS — the ci_node analogue of the workflows' "Checkout sibling repos
+# (qontinui-schemas, qontinui, qontinui-cloud-control)" step. Declared rather
+# than cloned by a step: the executor materialises each one NEXT TO this repo's
+# worktree inside the dispatch-scoped directory, so backend/pyproject.toml's
+# `path = "../../qontinui-schemas"` resolves, and so cleanup stays a single
+# directory removal. An in-manifest `git clone` would pass argv validation but
+# would be unpinned and would leak.
+#
+# WHAT THIS LIST DELIBERATELY OMITS, and the open question attached to it:
+#
+#   `jspinak/qontinui` is cloned by all three backend-ci.yml jobs under a step
+#   whose comment reads "Backend's pyproject.toml has path-deps on sibling repos
+#   (qontinui-schemas, qontinui)". THAT COMMENT IS STALE. backend/pyproject.toml
+#   carries exactly ONE `path =` entry — `qontinui-schemas` — so
+#   `poetry install --no-root` never reads the qontinui clone, and no step below
+#   imports it. Declaring it here would provision a multi-gigabyte torch-pulling
+#   tree for nothing.
+#
+#   It is an OPEN QUESTION, not a settled one: the clone may still be load-
+#   bearing for the `test` job this manifest cannot express (see gap 1 above) —
+#   that job's "Free disk space" step exists specifically because "qontinui (a
+#   path-dep) pulls in torch". Whoever resolves gap 1 must re-check this before
+#   assuming the omission still holds, and fix the workflow comment either way.
+# ---------------------------------------------------------------------------
+
+[[siblings]]
+# backend/pyproject.toml's `qontinui-schemas = {path = "../../qontinui-schemas",
+# develop = true}` — the repo's only path dependency. `../../` from `backend/`
+# and coord's `../` from its repo root resolve to the SAME place, a sibling of
+# the checkout, which is the single layout rule the executor implements.
+#
+# Pinned by DECLARED ADAPTATION PR — the coord dep edge this PR and its
+# qontinui-schemas PR already have to declare for merge ordering — exactly as
+# .github/actions/checkout-sibling does, so a breaking schema change can go
+# green as a declared pair instead of deadlocking. A branch NAME resolves
+# nothing: matching on one let an un-PR'd scratch branch satisfy a mirror gate
+# in production on 2026-07-28.
+repo = "qontinui/qontinui-schemas"
+pin = "declared-adaptation"
+
+[[siblings]]
+# Installed into the poetry venv by the `backend-install-cloud-control` step
+# below, mirroring backend-ci.yml's "Install qontinui-cloud-control into poetry
+# venv". Two things need it and both are gates:
+#   * the EXTENDED OpenAPI export — without cloud-control installed the export
+#     silently drops the ~31 admin/billing/organizations routes, so the drift
+#     check would compare a truncated spec against the committed one;
+#   * backend/tests/conftest.py's side-effect `import qontinui_cloud_control`,
+#     which raises rather than skipping when CI=true (the executor exports
+#     CI=true), because a missing import on CI is a real workflow bug.
+# Public AGPL-3.0, plain clone — there is no access problem here, only a
+# provisioning one.
+#
+# `default-branch`: consumed as a published extension package, not co-evolved
+# with this repo through adaptation pairs, so there is no declaration protocol
+# to read. Matches the workflows, which clone it `--depth 1` at the default
+# branch.
+repo = "qontinui/qontinui-cloud-control"
+pin = "default-branch"
+
+# NO [limits] TABLE, deliberately.
+#
+# CiLimits carries `cargo_build_jobs` and `test_threads`, and every step below
+# is Node or Python — neither knob binds anything here. Omitting a limit means
+# "size me from the host", which is the right answer when the manifest author
+# has no measurement to contribute. Adding a table of no-ops would be a lie
+# about what has been measured.
+
+# ---------------------------------------------------------------------------
+# FRONTEND — mirrors frontend-ci.yml's `lint-and-typecheck` job, step for step
+# and in its order. Cheapest gates first: lint and typecheck fail fast before
+# the test suite is paid for.
+# ---------------------------------------------------------------------------
+
+[[steps]]
+name = "frontend-install"
+# frontend-ci.yml "Install dependencies". `npm ci` (not `npm install`) — the
+# lockfile is the input, and a resolver that is free to move makes two
+# dispatches of one commit incomparable.
+command = ["npm", "ci"]
+working_dir = "frontend"
+
+[[steps]]
+name = "frontend-lint"
+# frontend-ci.yml "Lint" → package.json `lint` = `next lint --max-warnings 0`.
+command = ["npm", "run", "lint"]
+working_dir = "frontend"
+
+[[steps]]
+name = "frontend-typecheck"
+# frontend-ci.yml "TypeScript check" runs `npx tsc --noEmit`. This invokes the
+# package.json `type-check` script, which IS `tsc --noEmit` — same compiler,
+# same flags, same tsconfig — but resolves tsc from the node_modules the
+# previous step just installed instead of letting npx reach for the network on
+# a box whose registry access this lane should not depend on.
+command = ["npm", "run", "type-check"]
+working_dir = "frontend"
+
+[[steps]]
+name = "frontend-test"
+# frontend-ci.yml "Unit tests" → package.json `test` = `vitest run`.
+command = ["npm", "test"]
+working_dir = "frontend"
+
+# ---------------------------------------------------------------------------
+# BACKEND — mirrors backend-ci.yml's `lint` job, plus the `test` job's
+# "Check OpenAPI snapshot is up to date" step (which needs no database: the
+# exporter builds the FastAPI app from its route table and self-configures the
+# minimal env it needs, so it is the one gate of that job this lane CAN hold).
+# ---------------------------------------------------------------------------
+
+[[steps]]
+name = "backend-install"
+# backend-ci.yml "Install dependencies".
+command = ["poetry", "install", "--no-interaction", "--no-root"]
+working_dir = "backend"
+
+[[steps]]
+name = "backend-install-cloud-control"
+# backend-ci.yml "Install qontinui-cloud-control into poetry venv". The path is
+# `../../qontinui-cloud-control` because working_dir is `backend`, one level
+# deeper than the checkout the sibling sits beside — the same arithmetic the
+# workflow does against $GITHUB_WORKSPACE/.., and the reason the executor's
+# one-level-deeper dispatch layout matters.
+command = ["poetry", "run", "pip", "install", "-e", "../../qontinui-cloud-control"]
+working_dir = "backend"
+
+[[steps]]
+name = "backend-ruff-check"
+# backend-ci.yml "Run ruff (linting)".
+command = ["poetry", "run", "ruff", "check", "."]
+working_dir = "backend"
+
+[[steps]]
+name = "backend-ruff-format"
+# backend-ci.yml "Run ruff format (formatting)".
+command = ["poetry", "run", "ruff", "format", "--check", "."]
+working_dir = "backend"
+
+[[steps]]
+name = "backend-mypy"
+# backend-ci.yml "Run mypy (type checking)".
+command = ["poetry", "run", "mypy", "app/", "--ignore-missing-imports"]
+working_dir = "backend"
+
+[[steps]]
+name = "openapi-export-extended"
+# backend-ci.yml "Check OpenAPI snapshot is up to date", first of its two
+# exports: the EXTENDED spec, the app as built with the cloud-control sibling
+# installed. Split into three steps here because the workflow's version is one
+# `run:` block and this lane has no shell — the drift check is the third step.
+command = ["poetry", "run", "python", "scripts/export_openapi.py"]
+working_dir = "backend"
+
+[[steps]]
+name = "openapi-export-base"
+# Same workflow step, second export: the BASE spec
+# (QONTINUI_DISABLE_CLOUD_EXTENSIONS=1), the surface prod api.qontinui.io
+# actually serves and the one coord's route-serving observer reads for that
+# host. Two exports need two PROCESSES — the app is built at import time, so
+# one process cannot re-import it with different env.
+command = ["poetry", "run", "python", "scripts/export_openapi.py", "--base"]
+working_dir = "backend"
+
+[[steps]]
+name = "openapi-snapshot-drift"
+# The gate itself: both committed snapshots must already equal what the two
+# exports just wrote. A stale snapshot silently mis-declares the web backend's
+# external surface to coord, which is why this fails the dispatch rather than
+# warning. Run from the repo root (no working_dir) because the paths are
+# repo-relative, exactly as the workflow's `git -C "$GITHUB_WORKSPACE" diff` is.
+command = [
+  "git",
+  "diff",
+  "--exit-code",
+  "frontend/src/lib/api-client/openapi-schema.json",
+  "frontend/src/lib/api-client/openapi-schema.base.json",
+]
