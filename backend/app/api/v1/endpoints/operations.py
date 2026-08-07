@@ -3442,8 +3442,13 @@ async def get_fleet_resource_samples(
         }
 
     Each ``ResourceSampleRow`` carries a **server-computed** ``pressure``
-    (``{ratio, basis}``, or ``null`` for "no opinion") plus ``age_secs``.
-    Both are passed through untouched on purpose:
+    (``{ratio, basis}``, or ``null`` for "no opinion"), ``age_secs``, and
+    the admission fields ``floor`` / ``disk_floor``
+    (``{basis, bytes, source, verdict, reject_bytes, reject_source}``),
+    ``pressure_floor``
+    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``)
+    and ``headroom`` (``ok | warn | breach | unknown``). All are passed
+    through untouched on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
       ranker also reads. Recomputing it here (or in the browser) is
@@ -3451,6 +3456,38 @@ async def get_fleet_resource_samples(
     * ``age_secs`` is computed by Postgres in the same statement as the
       row, so a browser never subtracts its own clock from a server
       timestamp.
+    * ``headroom`` is the VERDICT coord's admission acts on, and the
+      strip colours rows from it rather than from a client-side band
+      over ``pressure`` — the two could otherwise disagree exactly at
+      the boundary. It is not defaultable here: a row arriving without
+      these fields (a coord that predates them) must reach the browser
+      without them, which renders as *unknown*, never as healthy. Note
+      ``floor.basis`` — the floor is on a different column from the
+      ratio's divisors, so it cannot be collapsed into a pressure
+      threshold anywhere along this path.
+    * ``reject_bytes`` is the SECOND enforcer on the same column: a
+      column can be guarded twice with deliberately different numbers
+      (host commit — supervisor defers at 5 GiB, ``ci_node`` rejects at
+      4 GiB), and the rejecting one sits lower so the recoverable wait
+      trips first. ``null`` means no rejecting enforcer governs the
+      column and must not be defaulted to ``bytes`` or to zero; absent
+      means an older coord. The envelope's ``headroom_warn_margin``
+      travels the same way — the client reads the amber margin off the
+      response rather than naming one.
+    * ``pressure_floor`` is a threshold on the RATIO axis, not the byte
+      axis, and the two run in opposite directions: a byte floor is
+      crossed going down, a pressure ceiling going up. The Linux lanes
+      have no byte memory floor at all (nothing in the fleet floors
+      ``mem_available_bytes``) — their only guard is ``ci_node``'s
+      swap-ratio defer — so dropping this field would render a WSL row
+      under an active guard as unguarded. ``null`` on the Windows host
+      lane, whose guards are byte-based, is a fact about that lane and
+      is not the same as the field being absent.
+    * A ``verdict`` of ``null`` means a threshold coord reports and
+      NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a
+      §D1 control that validates and versions with no consumer). It must
+      reach the browser as null so it can render "set, not enforced"
+      instead of inheriting a verb it does not have.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

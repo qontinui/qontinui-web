@@ -40,7 +40,7 @@ import {
 // "@/components/operations" panels.
 import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
 import { useFleetResourceSamples } from "@/components/operations/useFleetResourceSamples";
-import { summarizeFleetPressure } from "@/components/operations/fleetResources";
+import { summarizeFleetAdmission } from "@/components/operations/fleetResources";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -228,9 +228,9 @@ export default function CoordFleetPage() {
   ).length;
 
   // Resource telemetry, hoisted to the page for the same reason fleet health
-  // already is: the saturated-lane count has to stay visible on the COLLAPSED
-  // "System details" header, so a machine that is out of memory cannot hide
-  // behind a click. That is why the poll lives here rather than inside
+  // already is: the count of lanes coord has stopped electing has to stay
+  // visible on the COLLAPSED "System details" header, so a machine that is
+  // refusing work cannot hide behind a click. That is why the poll lives here rather than inside
   // FleetResourcesSection (which unmounts with the section) — and why the same
   // result is passed down, so there is one poll and one view of the fleet.
   const resources = useFleetResourceSamples();
@@ -244,9 +244,12 @@ export default function CoordFleetPage() {
     return () => clearInterval(t);
   }, []);
 
-  const pressure = useMemo(
+  // Counted from coord's own admission verdict — the same field the strip
+  // colours rows from. There is no client-side band left that could put a
+  // machine in this badge that the dispatcher is still happily electing.
+  const admission = useMemo(
     () =>
-      summarizeFleetPressure(
+      summarizeFleetAdmission(
         devices,
         resources.data?.latest ?? [],
         resources.fetchedAtMs == null
@@ -295,35 +298,44 @@ export default function CoordFleetPage() {
                 {unhealthy} unhealthy
               </Badge>
             )}
-            {pressure.saturated > 0 && (
+            {admission.breach > 0 && (
               <Badge
                 variant="destructive"
                 className="ml-1"
-                data-testid="coord-fleet-saturated-badge"
+                data-testid="coord-fleet-breach-badge"
               >
-                {pressure.saturated} saturated
+                {admission.breach} refusing work
               </Badge>
             )}
-            {pressure.stale > 0 && (
+            {admission.warn > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1"
+                data-testid="coord-fleet-near-floor-badge"
+              >
+                {admission.warn} delaying work
+              </Badge>
+            )}
+            {admission.stale > 0 && (
               <Badge
                 variant="outline"
                 className="ml-1"
                 data-testid="coord-fleet-stale-badge"
               >
-                {pressure.stale} stale
+                {admission.stale} stale
               </Badge>
             )}
             {/* Shown even though it is not red: a fleet whose telemetry has
                 gone entirely dark would otherwise render as "N machines" and
                 nothing else — indistinguishable from an all-clear, which is
                 the false-safe §C3 exists to forbid. */}
-            {pressure.unknown > 0 && (
+            {admission.unknown > 0 && (
               <Badge
                 variant="outline"
                 className="ml-1"
                 data-testid="coord-fleet-unknown-badge"
               >
-                {pressure.unknown} unknown
+                {admission.unknown} unknown
               </Badge>
             )}
             {fleet.error && (

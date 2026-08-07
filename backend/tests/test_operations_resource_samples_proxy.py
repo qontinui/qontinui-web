@@ -12,6 +12,10 @@ rather than merely working:
 
 * the **server-computed** ``pressure`` reaches the caller untouched (the
   dashboard and coord's CI ranker must read ONE definition),
+* the per-lane ``floor`` / ``disk_floor`` / ``headroom`` fields reach it
+  untouched too — the *verdict* has to be shared for the same reason the
+  *number* does, and the strip derives its red/amber from them rather
+  than from a client-side constant,
 * ``schema_pending`` and an empty set survive the hop, since that is the
   §C3 state the caller renders as *unknown* rather than healthy,
 * out-of-range query params are FORWARDED for coord to clamp, not 422'd
@@ -120,6 +124,23 @@ SAMPLE_ROW = {
     "ci_jobs_running": None,
     "source": "supervisor",
     "pressure": {"ratio": 0.7963, "basis": "commit"},
+    "floor": {
+        "basis": "commit_available",
+        "bytes": 5_368_709_120,
+        "source": "policy",
+        "verdict": "defer",
+        # The rejecting enforcer on the SAME column, deliberately lower.
+        "reject_bytes": 4_294_967_296,
+        "reject_source": "default",
+    },
+    "disk_floor": {
+        "basis": "disk_free",
+        "bytes": 32_212_254_720,
+        "source": "default",
+        "verdict": "reject",
+    },
+    "pressure_floor": None,
+    "headroom": "warn",
 }
 
 
@@ -173,6 +194,165 @@ class TestResourceSamplesProxy:
         assert body == coord_payload
         assert body["latest"][0]["pressure"] == {"ratio": 0.7963, "basis": "commit"}
         assert body["latest"][0]["age_secs"] == 12.5
+
+    def test_forwards_the_floor_bands_untouched(self, auth_client: TestClient):
+        """The admission VERDICT must survive the hop as verbatim as the ratio.
+
+        The strip used to decide red/amber from ``SATURATED_AT`` /
+        ``WARN_AT`` in TypeScript while coord admitted on byte floors, so
+        the dashboard could show amber for a machine the ranker had
+        already stopped electing. The fix is that coord sends the verdict
+        (``headroom``) and the floor it was computed against — which is
+        only worth anything if this proxy neither drops nor reshapes
+        them.
+
+        Note ``floor.basis``: the floor is on a DIFFERENT column from the
+        pressure ratio's divisors, which is why it cannot be collapsed
+        into a "pressure threshold" anywhere along this path.
+        """
+        coord_payload = {"latest": [SAMPLE_ROW], "count": 1}
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, coord_payload)
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert row["headroom"] == "warn"
+        assert row["floor"] == {
+            "basis": "commit_available",
+            "bytes": 5_368_709_120,
+            "source": "policy",
+            "verdict": "defer",
+            "reject_bytes": 4_294_967_296,
+            "reject_source": "default",
+        }
+        assert row["disk_floor"] == {
+            "basis": "disk_free",
+            "bytes": 32_212_254_720,
+            "source": "default",
+            "verdict": "reject",
+        }
+
+    def test_absent_floor_bands_are_not_defaulted_in(self, auth_client: TestClient):
+        """A coord without the floor fields must arrive WITHOUT them.
+
+        The caller renders a missing ``headroom`` as *unknown*, never as
+        healthy. If this proxy helpfully filled in an "ok" (or a floor of
+        zero), it would manufacture the all-clear §C3 exists to forbid —
+        so the pass-through is asserted in the negative too.
+        """
+        legacy_row = {
+            k: v
+            for k, v in SAMPLE_ROW.items()
+            if k not in ("floor", "disk_floor", "headroom")
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [legacy_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert "headroom" not in row
+        assert "floor" not in row
+        assert "disk_floor" not in row
+
+    def test_a_partial_rollout_arrives_partial(self, auth_client: TestClient):
+        """The shape a STAGED coord rollout produces, unedited.
+
+        `headroom` present while `floor` is absent, and a `floor` whose
+        rejecting enforcer is `null` rather than a number, are both states
+        the caller renders distinctly ("no reject threshold" is a fact about
+        the fleet; "not reported" is a fact about the deploy). Defaulting
+        either one here would erase that distinction before the browser saw
+        it.
+        """
+        partial_row = {k: v for k, v in SAMPLE_ROW.items() if k not in ("floor",)}
+        partial_row["disk_floor"] = {
+            "basis": "disk_free",
+            "bytes": 32_212_254_720,
+            "source": "default",
+            "verdict": "reject",
+            "reject_bytes": None,
+            "reject_source": None,
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [partial_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert "floor" not in row
+        assert row["headroom"] == "warn"
+        # `null` survives as null — not dropped, and not replaced by `bytes`.
+        assert row["disk_floor"]["reject_bytes"] is None
+        assert row["disk_floor"]["reject_source"] is None
+
+    def test_forwards_the_pressure_axis_and_a_null_verdict(
+        self, auth_client: TestClient
+    ):
+        """The ratio-axis threshold and the unenforced-threshold marker.
+
+        Two things the browser cannot reconstruct if this hop edits them:
+
+        * ``pressure_floor`` is the ONLY guard on the Linux lanes —
+          nothing in the fleet floors ``mem_available_bytes``, so those
+          rows carry ``floor: null`` and a swap-ratio ceiling. Dropping
+          it would render a lane under an active guard as unguarded.
+        * ``verdict: null`` means coord reports a threshold that nothing
+          enforces. Coercing it to a verb would show an operator a rule
+          where there is only a number.
+        """
+        wsl_row = {
+            **SAMPLE_ROW,
+            "lane": "wsl",
+            "floor": None,
+            "pressure_floor": {
+                "basis": "swap_ratio",
+                "ratio": 0.5,
+                "source": "default",
+                "verdict": "defer",
+                "reject_ratio": None,
+                "reject_source": None,
+            },
+            "disk_floor": {
+                "basis": "disk_free",
+                "bytes": 32_212_254_720,
+                "source": "policy",
+                # A §D1 control with no consumer.
+                "verdict": None,
+                "reject_bytes": None,
+                "reject_source": None,
+            },
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [wsl_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        # `null` survives as null — the lane has no BYTE floor, which is a
+        # fact about the fleet and not a reporting gap.
+        assert row["floor"] is None
+        assert row["pressure_floor"]["basis"] == "swap_ratio"
+        assert row["pressure_floor"]["ratio"] == 0.5
+        assert row["pressure_floor"]["verdict"] == "defer"
+        assert row["disk_floor"]["verdict"] is None
 
     def test_calls_the_coord_read_route(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
