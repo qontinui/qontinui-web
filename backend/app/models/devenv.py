@@ -26,6 +26,7 @@ Four tables, all user-scoped by ``owner_user_id`` (FK ``auth.users.id``,
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     DateTime,
@@ -149,6 +150,31 @@ class Machine(Base):
     # the unambiguous-hostname backfill.
     coord_device_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), nullable=True
+    )
+    # ---- CI-node configuration (plan 2026-08-07, Phase 4) -----------------
+    # The DESIRED ci_node settings the owner authored on qontinui.io, as the
+    # `CiNodeSettings` envelope the runner deserializes
+    # (``enabled`` / ``max_concurrent_builds`` / ``repo_allowlist`` /
+    # ``min_free_disk_gb``). NULL = never configured here, which is NOT the
+    # same as "off": it means this surface has never spoken about the machine,
+    # so the runner's own settings file — the authority — is untouched.
+    #
+    # This column is deliberately named *desired*, never *current*. The runner
+    # owns its settings file; web cannot read it back and must never render
+    # this as the machine's live configuration (see the endpoint's
+    # ``reachability`` field, which is the honest half).
+    ci_node_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # When the owner last SAVED a desired config here.
+    ci_node_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # When coord last ACCEPTED that config for delivery to the device. Accepted
+    # is not applied: coord's fanout is fire-and-forget and the runner sends no
+    # ack, so a timestamp here means "handed off", never "in effect". NULL
+    # while a saved config has never reached coord (device unlinked, coord
+    # down, or the directive rejected).
+    ci_node_dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
     enrollment_expires_at: Mapped[datetime | None] = mapped_column(

@@ -17,6 +17,7 @@ Conventions:
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
@@ -225,6 +226,137 @@ class DispatchEnrollResponse(BaseSchema):
     machine: MachineCreatedResponse
     dispatched: bool
     detail: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# CI-node configuration (plan 2026-08-07, Phase 4)
+#
+# These schemas mirror the runner's Rust ``CiNodeSettings``
+# (qontinui-runner/src-tauri/src/settings.rs). That struct is the AUTHORITY for
+# the shape; this is the editor. When it gains a field, add it here in the same
+# PR or the web surface silently stops covering the runner's knobs.
+# ---------------------------------------------------------------------------
+
+# What a ``repo_allowlist`` entry may look like. The runner's admission check
+# matches an entry against either the coord ``owner/name`` slug or the bare
+# repo basename, so both are accepted — and nothing else. Anchored, so a
+# partial match cannot sneak a wildcard-ish entry through.
+_CI_NODE_REPO_RE = re.compile(r"^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)?$")
+
+# A hard ceiling on the list length. Not a security property (the runner
+# enforces its own admission): a legibility one. An allowlist longer than this
+# is no longer something an owner can review before consenting to it, which is
+# the entire point of the list.
+CI_NODE_MAX_ALLOWLIST_ENTRIES = 100
+
+# How reachable the paired coord device is, as far as coord will say.
+#
+# This exists because a CI-node setting is a REMOTE instruction, and an
+# instruction that cannot arrive must not be drawn as though it had:
+#
+# * ``unlinked``  — the machine has no ``coord_device_id``; there is no runner
+#                   to send anything to.
+# * ``offline``   — coord knows the device but holds no live WS session, so a
+#                   fanout publish has no subscriber and is dropped.
+# * ``online``    — coord holds a live WS session for the device.
+# * ``unknown``   — coord could not be asked (unreachable/timeout). Reported as
+#                   its own state rather than collapsed into ``offline``: "we
+#                   do not know" and "it is not there" are different claims.
+CiNodeReachabilityT = Literal["unlinked", "offline", "online", "unknown"]
+
+
+class CiNodeConfig(BaseSchema):
+    """The four ``CiNodeSettings`` fields, with the runner's own defaults.
+
+    The defaults are copied from the Rust ``Default for CiNodeSettings`` impl
+    on purpose: a machine that has never been configured here must round-trip
+    as the posture the runner actually ships with, never as a friendlier one.
+    """
+
+    # Master opt-in. FALSE by default. Enabling this lets coord dispatch
+    # repo-declared commands onto the owner's machine, which is why the field
+    # has no "default on" story anywhere in the stack.
+    enabled: bool = False
+    # Concurrent CI builds the device admits (and advertises as its budget).
+    max_concurrent_builds: int = Field(default=1, ge=1, le=64)
+    # Repos this device may build. EMPTY by default and empty means nothing is
+    # runnable even when ``enabled`` — allowlisting is a deliberate act, and
+    # there is deliberately no wildcard entry (see the validator).
+    repo_allowlist: list[str] = Field(
+        default_factory=list, max_length=CI_NODE_MAX_ALLOWLIST_ENTRIES
+    )
+    # Free disk (GiB) on the runner's volume required to START a build.
+    #
+    # ``ge=1``: 0 would DISABLE the guard, and this box has hit `os error 112`
+    # (disk exhaustion) for real. Turning a safety floor off is not something a
+    # remote surface should make one keystroke easy; an owner who truly wants
+    # it can still hand-edit the runner's settings.json.
+    min_free_disk_gb: int = Field(default=20, ge=1, le=100_000)
+
+    @field_validator("repo_allowlist")
+    @classmethod
+    def _validate_allowlist(cls, entries: list[str]) -> list[str]:
+        """Normalize + validate entries; reject wildcards and duplicates.
+
+        A wildcard is rejected with its own message rather than the generic
+        format error: "allow everything" is the exact affordance this feature
+        must not have, so a caller reaching for it deserves to be told why it
+        is absent instead of guessing at a regex.
+        """
+        seen: set[str] = set()
+        cleaned: list[str] = []
+        for raw in entries:
+            entry = raw.strip()
+            if not entry:
+                raise ValueError("repo_allowlist entries must be non-empty")
+            if "*" in entry or entry == "all":
+                raise ValueError(
+                    "repo_allowlist has no wildcard: every repo this device may "
+                    "build is listed explicitly, one entry at a time"
+                )
+            if len(entry) > 200:
+                raise ValueError(f"repo_allowlist entry {entry!r} is too long")
+            if not _CI_NODE_REPO_RE.match(entry):
+                raise ValueError(
+                    f"repo_allowlist entry {entry!r} must be `owner/name` or a "
+                    "bare repo name"
+                )
+            if entry in seen:
+                continue
+            seen.add(entry)
+            cleaned.append(entry)
+        return cleaned
+
+
+class CiNodeConfigResponse(BaseSchema):
+    """A machine's DESIRED CI-node configuration and how far it has travelled.
+
+    Every field that could be mistaken for "what the runner is running right
+    now" is named for what it actually is. Web has no read-back channel for the
+    runner's settings file, so it reports what was requested, when it was
+    handed to coord, and whether coord could even reach the device — and never
+    asserts that the device applied it.
+    """
+
+    machine_id: UUID
+    coord_device_id: UUID | None = None
+    # The desired config. For a never-configured machine this is the runner's
+    # own defaults (off, empty allowlist), NOT an empty object — the form has
+    # to render something and it must be the honest posture.
+    requested: CiNodeConfig
+    # False when this surface has never saved a config for the machine. Lets
+    # the UI distinguish "explicitly turned off here" from "never touched
+    # here, the runner's file is whatever the owner left it as".
+    configured: bool = False
+    requested_at: IsoDatetime | None = None
+    # When coord last ACCEPTED the directive. Handed off, never confirmed
+    # applied — the runner sends no ack for settings.
+    dispatched_at: IsoDatetime | None = None
+    reachability: CiNodeReachabilityT
+    # Result of THIS request's dispatch attempt. ``None`` on a read (nothing
+    # was attempted), so a UI can never mistake a GET for a successful push.
+    dispatched: bool | None = None
+    dispatch_detail: str | None = None
 
 
 # ---------------------------------------------------------------------------

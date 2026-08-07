@@ -19,6 +19,10 @@ Mounted under ``/api/v1/devenv``. Endpoints:
 * CRUD ``/applications``
 * CRUD ``/machines`` (+ ``POST /machines/{id}/regenerate-enrollment``,
   ``POST /machines/{id}/revoke``)
+* ``GET``/``PUT /machines/{id}/ci-node`` — the machine's desired CI-node
+  configuration (the runner's ``CiNodeSettings``). The PUT saves and then
+  dispatches through coord to the paired runner; see the section comment above
+  those handlers for why that is the only write path.
 * CRUD ``/environments``
 * ``PUT /environments/{id}/canonical`` — atomically set the canonical
   machine (validated owned + has a config row for the env)
@@ -31,6 +35,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
@@ -52,6 +57,9 @@ from app.schemas.devenv import (
     ApplicationResponse,
     ApplicationUpdate,
     CanonicalChangeResponse,
+    CiNodeConfig,
+    CiNodeConfigResponse,
+    CiNodeReachabilityT,
     ConfigHistoryDiffResponse,
     ConfigHistoryEntry,
     DispatchEnrollRequest,
@@ -68,7 +76,7 @@ from app.schemas.devenv import (
     SetCanonicalRequest,
     SetMachineEnvironmentRequest,
 )
-from app.services import devenv_drift
+from app.services import coord_device, devenv_drift
 from app.services.coord_proxy import post_to_coord
 
 router = APIRouter()
@@ -547,6 +555,217 @@ async def set_machine_environment(
     )
     await db.commit()
     return MachineResponse.from_model(machine)
+
+
+# ---------------------------------------------------------------------------
+# CI-node configuration (plan 2026-08-07, Phase 4)
+#
+# THE WRITE PATH, AND WHY THERE IS ONLY ONE.
+#
+# The runner owns its settings file; nothing in qontinui-web can write it
+# directly. There were two candidate doors and one of them already existed:
+#
+#   (a) coord's `/ws` fanout. The runner's CI-node subscription
+#       (`ci_node/subscription.rs`) already holds a socket on the Redis glob
+#       `events.ci.*.<device_id>` — a WILDCARD over the whole CI channel family,
+#       not a per-channel subscription. A settings directive published on
+#       `events.ci.settings_requested.<device_id>` therefore arrives on a socket
+#       the device already has open, needing no new connection, no new pattern,
+#       and no polling loop. Coord already routes exactly this shape for
+#       devenv's own dispatched self-enroll: `POST /devenv/enroll-dispatch`
+#       publishes `events.devenv.enroll_requested.<device_id>`, which
+#       `dispatch_enroll` above reaches through `post_to_coord`.
+#
+#   (b) a new pull endpoint on web that the runner polls.
+#
+# (a) wins and (b) is not built. Adding a poll would mean a second write path
+# for the same struct, a second thing to keep in sync with `CiNodeSettings`,
+# and a second failure mode — while (a) reuses a transport, an auth model and a
+# call helper that are all already load-bearing in this very module. DO NOT ADD
+# A POLL PATH LATER: if this door needs to change, change it here.
+#
+# WHAT WEB HONESTLY KNOWS, AND WHAT IT DOES NOT.
+#
+# Coord's fanout is fire-and-forget and the runner sends no acknowledgement for
+# settings. So the strongest true statement web can make is "coord accepted the
+# directive for delivery" — never "the runner applied it". These endpoints
+# therefore report three separate facts and never collapse them: what was
+# REQUESTED, when it was DISPATCHED, and how REACHABLE the device is according
+# to coord's own WS session state. A UI that renders a saved-but-undeliverable
+# config as though it were live would be lying, and this shape makes that lie
+# require effort.
+# ---------------------------------------------------------------------------
+
+# Coord's route for the CI-node settings directive, the sibling of
+# `/devenv/enroll-dispatch`. Coord validates the target device and publishes
+# `events.ci.settings_requested.<device_id>` on the family the runner's CI
+# socket already subscribes to.
+_COORD_CI_NODE_DISPATCH_PATH = "/devenv/ci-node-dispatch"
+
+
+async def _ci_node_reachability(
+    request: Request,
+    current_user: User,
+    coord_device_id: UUID | None,
+) -> CiNodeReachabilityT:
+    """Ask coord whether the paired device could receive a directive at all.
+
+    Degrades honestly: a coord that cannot be reached yields ``"unknown"``
+    rather than ``"offline"``, because "we could not ask" and "it is not there"
+    are different claims and only one of them is evidence.
+    """
+    if coord_device_id is None:
+        return "unlinked"
+    try:
+        routing = await coord_device.get_device_routing(
+            coord_device_id,
+            bearer=coord_device.extract_bearer(request),
+            user_id=str(current_user.id),
+        )
+    except HTTPException:
+        # 502/504 from the coord client, or coord's own error status. The
+        # machine page must still render; it just may not claim reachability.
+        return "unknown"
+    if routing is None:
+        # Coord's 404: it does not know this device as owned by this user, so
+        # there is nothing to deliver to.
+        return "unlinked"
+    return "online" if routing.get("ws_session_id") is not None else "offline"
+
+
+def _ci_node_response(
+    machine: Machine,
+    reachability: CiNodeReachabilityT,
+    *,
+    dispatched: bool | None = None,
+    dispatch_detail: str | None = None,
+) -> CiNodeConfigResponse:
+    """Build the response from a machine row + a reachability verdict."""
+    stored = machine.ci_node_config
+    return CiNodeConfigResponse(
+        machine_id=machine.id,
+        coord_device_id=machine.coord_device_id,
+        # A never-configured machine round-trips as the RUNNER's defaults
+        # (off, empty allowlist), never as a friendlier posture.
+        requested=CiNodeConfig.model_validate(stored) if stored else CiNodeConfig(),
+        configured=stored is not None,
+        requested_at=machine.ci_node_requested_at,
+        dispatched_at=machine.ci_node_dispatched_at,
+        reachability=reachability,
+        dispatched=dispatched,
+        dispatch_detail=dispatch_detail,
+    )
+
+
+@router.get("/machines/{machine_id}/ci-node", response_model=CiNodeConfigResponse)
+async def get_ci_node_config(
+    machine_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> CiNodeConfigResponse:
+    """Read the machine's desired CI-node config + its delivery state.
+
+    ``dispatched`` is always ``None`` here: a read attempts no delivery, and a
+    client must not be able to mistake a GET for a successful push.
+    """
+    machine = await machine_repo.get(
+        db, owner_id=current_user.id, machine_id=machine_id
+    )
+    if machine is None:
+        raise _not_found("machine")
+    reachability = await _ci_node_reachability(
+        request, current_user, machine.coord_device_id
+    )
+    return _ci_node_response(machine, reachability)
+
+
+@router.put("/machines/{machine_id}/ci-node", response_model=CiNodeConfigResponse)
+async def set_ci_node_config(
+    machine_id: UUID,
+    payload: CiNodeConfig,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> CiNodeConfigResponse:
+    """Save the desired CI-node config and dispatch it to the paired runner.
+
+    The save ALWAYS happens; the dispatch is best-effort, exactly like
+    ``dispatch_enroll``. That ordering is deliberate: an owner who curates an
+    allowlist while their machine is asleep must not lose the work, and a
+    silent "saved but never sent" is precisely the state the response's
+    ``dispatched`` / ``dispatched_at`` / ``reachability`` triple exists to make
+    visible.
+    """
+    machine = await machine_repo.get(
+        db, owner_id=current_user.id, machine_id=machine_id
+    )
+    if machine is None:
+        raise _not_found("machine")
+
+    now = utc_now()
+    await machine_repo.update(
+        db,
+        machine=machine,
+        fields={
+            "ci_node_config": payload.model_dump(mode="json"),
+            "ci_node_requested_at": now,
+        },
+    )
+    await db.commit()
+    await db.refresh(machine)
+
+    reachability = await _ci_node_reachability(
+        request, current_user, machine.coord_device_id
+    )
+    if machine.coord_device_id is None:
+        return _ci_node_response(
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_detail=(
+                "This machine is not paired with a runner, so there is nothing "
+                "to send the settings to. They are saved and will be sent the "
+                "next time you apply them after pairing."
+            ),
+        )
+
+    auth = request.headers.get("Authorization")
+    headers = {"Authorization": auth} if auth else {}
+    coord_body: dict[str, object] = {
+        "target_device_id": str(machine.coord_device_id),
+        "machine_id": str(machine.id),
+        "ci_node": payload.model_dump(mode="json"),
+    }
+    try:
+        resp = await post_to_coord(
+            _COORD_CI_NODE_DISPATCH_PATH,
+            headers=headers,
+            json_body=coord_body,
+            log_event="devenv_ci_node_dispatch",
+            machine_id=str(machine.id),
+            target_device_id=str(machine.coord_device_id),
+        )
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else "coord dispatch failed"
+        return _ci_node_response(
+            machine, reachability, dispatched=False, dispatch_detail=str(detail)
+        )
+
+    if resp.status_code >= 400:
+        return _ci_node_response(
+            machine,
+            reachability,
+            dispatched=False,
+            dispatch_detail=f"coord rejected the dispatch (HTTP {resp.status_code})",
+        )
+
+    await machine_repo.update(
+        db, machine=machine, fields={"ci_node_dispatched_at": utc_now()}
+    )
+    await db.commit()
+    await db.refresh(machine)
+    return _ci_node_response(machine, reachability, dispatched=True)
 
 
 # ---------------------------------------------------------------------------
