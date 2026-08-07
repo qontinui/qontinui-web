@@ -235,8 +235,10 @@ describe("consumeNonce", () => {
  * Hence the third test: the failure must surface BEFORE anything is spent.
  */
 describe("storage-blocked browser (fail closed at BOTH ends)", () => {
-  /** Make one or both sessionStorage accessors throw, as a blocked browser does. */
-  function blockStorage(accessors: ("getItem" | "setItem")[]): void {
+  /** Make the named sessionStorage accessors throw, as a blocked browser does. */
+  function blockStorage(
+    accessors: ("getItem" | "setItem" | "removeItem")[]
+  ): void {
     for (const accessor of accessors) {
       vi.spyOn(Storage.prototype, accessor).mockImplementation(() => {
         throw new DOMException("The operation is insecure.", "SecurityError");
@@ -326,5 +328,15 @@ describe("storage-blocked browser (fail closed at BOTH ends)", () => {
     expect(sessionStorage.getItem("qontinui.onboarding_connect_nonce")).toBe(
       "a".repeat(32)
     );
+  });
+
+  it("does NOT fail the connect when only the probe's own cleanup throws", () => {
+    // A store that accepted the write but refuses the delete has not told us
+    // the nonce write will fail — which is the only thing this probe is asking
+    // about. Throwing here would block a connect that can actually complete, so
+    // the cleanup is best-effort and the stale scratch byte is the price.
+    blockStorage(["removeItem"]);
+
+    expect(() => assertNonceStorageAvailable()).not.toThrow();
   });
 });

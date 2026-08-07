@@ -10,10 +10,10 @@
  * The storage case is the one worth pinning: a browser that blocks
  * `sessionStorage` can never verify the CSRF nonce on the way back, so the
  * connect is dead on arrival — and every mint allocates a single-use
- * connect-state row against a per-tenant cap on live unconsumed rows. Detecting
- * only in `beginConnectState` (which runs *after* the awaited mint) would let a
- * user clicking through the failure exhaust their own workspace's quota for the
- * row TTL. Plan `2026-08-01-connect-state-residual-hardenings` P1.
+ * connect-state row in coord for a connect already known to be uncompletable.
+ * Detecting only in `beginConnectState`, which runs *after* the awaited mint,
+ * would allocate one such row per click. Plan
+ * `2026-08-01-connect-state-residual-hardenings` P1.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -112,10 +112,12 @@ describe("<InstallGitHubAppButton>", () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it("allocates no row per retry, so repeated clicks can't exhaust the quota", async () => {
-    // The failure mode the probe exists for: without it, each click would mint,
-    // and a per-tenant cap on live unconsumed rows would lock the workspace out
-    // of connecting for the rest of the row TTL.
+  it("allocates nothing on retry, however many times the user clicks", async () => {
+    // The failure mode the probe exists for: without it, every click mints
+    // another dead single-use row that nothing will ever consume. (P5 of the
+    // same plan proposes a per-tenant cap on live unconsumed rows; if that
+    // lands, an unbounded retry loop here could also exhaust a tenant's own
+    // quota. Not coord's behaviour today — the dead rows are reason enough.)
     fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
     blockSessionStorage();
     render(<InstallGitHubAppButton flow="runner-clone" testId={TEST_ID} />);

@@ -220,11 +220,10 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
 
   it("refuses BEFORE minting when the browser blocks session storage", async () => {
     // A storage-blocked browser can never complete this connect (the callback
-    // nonce is unverifiable), so it must not allocate a connect-state row on the
-    // way to finding that out: coord caps live unconsumed rows per tenant, so a
-    // user clicking through the failure would lock their whole workspace out of
-    // connecting. `beginConnectState` throws too, but only after the mint —
-    // hence the probe ahead of it.
+    // nonce is unverifiable), so it must not allocate a single-use
+    // connect-state row in coord on the way to finding that out — a row nothing
+    // will ever consume, one more per retry. `beginConnectState` throws too, but
+    // only after the mint, hence the probe ahead of it.
     stubFetch(jsonResponse({ connect_state: TOKEN }));
     render(<ConnectInstalledOrg flow="connect" />);
 

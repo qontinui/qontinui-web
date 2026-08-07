@@ -146,9 +146,10 @@ export function ConnectInstalledOrg({
     setMintError(null);
     try {
       // BEFORE the mint, not after: a storage-blocked browser can never finish
-      // this connect, and every mint allocates a single-use row against the
-      // tenant's capped quota. `beginConnectState` would catch it below, but
-      // only once that row already exists.
+      // this connect, and every mint allocates a single-use row in coord for a
+      // connect that is already known to be uncompletable. `beginConnectState`
+      // would catch it below, but only once that dead row exists — and again on
+      // every retry.
       assertNonceStorageAvailable();
       const token = await mintConnectState({ flow, targetLogin: trimmed });
       const state = beginConnectState(flow, trimmed, token, runnerState);

@@ -106,12 +106,18 @@ const NONCE_STORAGE_KEY = "qontinui.onboarding_connect_nonce";
 const NONCE_STORAGE_PROBE_KEY = "qontinui.onboarding_connect_probe";
 
 /**
- * The one storage-blocked failure, spelled once.
+ * The storage-blocked message, spelled once so the two detection points cannot
+ * drift into telling the user two different stories.
  *
- * {@link assertNonceStorageAvailable} and {@link beginConnectState} both raise
- * it, and they MUST stay identical: they are the same failure detected at two
- * points, and a caller distinguishing them by message would be encoding a
- * difference that does not exist.
+ * They are NOT the same test, though, and the difference is worth knowing: the
+ * probe writes one byte under a fresh key, while {@link beginConnectState}
+ * writes a 32-char nonce under the real key. For an outright *blocked* store
+ * (private mode, a partitioned context, an extension) the two coincide, which
+ * is the case the probe is for. A *quota*-shaped failure can pass the probe and
+ * still fail the real write. That is benign — `beginConnectState` throws and the
+ * user sees the same message — but it costs the one connect-state row the probe
+ * exists to avoid, so the probe narrows this failure class rather than
+ * eliminating it.
  */
 function storageBlockedError(): Error {
   return new Error(
@@ -129,17 +135,25 @@ function storageBlockedError(): Error {
  * `beginConnectState` is the backstop and stays exactly where it is; this moves
  * *detection* earlier. Both connect entry points must `await mintConnectState`
  * to get a token before they can call `beginConnectState`, so without this probe
- * the throw lands AFTER a single-use connect-state row has already been
- * allocated in coord. That row is never consumed and simply expires — but coord
- * caps live unconsumed rows at **20 per tenant** over a 15-minute TTL, so a
- * storage-blocked admin clicking Connect twenty times would lock their entire
- * tenant out of the connect flow for the rest of that window. The user cannot
- * see why, and nothing they do makes it better.
+ * the throw lands AFTER a single-use row has already been allocated in coord's
+ * connect-state table. Allocating a server-side row for a connect we have
+ * already determined this browser cannot finish is simply wrong on its own
+ * terms: the row is dead on arrival, it is never consumed, and it sits in a
+ * shared table until its TTL expires. Every retry allocates another one.
  *
- * That is the composition of two individually-correct behaviours, which is why
- * it is easy to miss and why deleting this probe as "redundant with the throw in
- * `beginConnectState`" would silently reintroduce it. It is not redundant: the
- * two guards differ in WHEN they fire, and when is the whole point.
+ * That is enough reason by itself, and it is the reason to keep this: the guard
+ * does not depend on what any other service does with those rows. It is also
+ * why deleting this as "redundant with the throw in `beginConnectState`" would
+ * be a mistake — the two are not redundant, they differ in WHEN they fire, and
+ * when is the whole point.
+ *
+ * Forward reference, NOT current behaviour: P5 of the same plan
+ * (`2026-08-01-connect-state-residual-hardenings`) proposes a per-tenant cap on
+ * live unconsumed rows, refusing the mint above it. If and when that lands, an
+ * unbounded retry loop here would additionally be able to exhaust a tenant's own
+ * quota and lock it out of connecting for the TTL window. That is a reason the
+ * probe becomes *more* valuable, not the reason it is here — do not restate it
+ * as something coord does today.
  *
  * Call it inside the same `try` that already wraps the mint, so the existing
  * retryable-error rendering picks it up with no new UI.
@@ -147,9 +161,18 @@ function storageBlockedError(): Error {
 export function assertNonceStorageAvailable(): void {
   try {
     sessionStorage.setItem(NONCE_STORAGE_PROBE_KEY, "1");
-    sessionStorage.removeItem(NONCE_STORAGE_PROBE_KEY);
   } catch {
     throw storageBlockedError();
+  }
+  // Best-effort cleanup, in its own try: a store that accepted the write can
+  // still refuse the delete, and that is NOT the failure this probe reports —
+  // the nonce write it is standing in for would have succeeded. Throwing here
+  // would fail a connect that can actually complete, so the worst case is one
+  // stale scratch byte.
+  try {
+    sessionStorage.removeItem(NONCE_STORAGE_PROBE_KEY);
+  } catch {
+    // Intentionally ignored — see above.
   }
 }
 
@@ -339,12 +362,10 @@ function assertTokenIsWireSafe(token: string): void {
  * {@link assertNonceStorageAvailable}, which both entry points call *before*
  * `await mintConnectState(...)`. It has to be earlier than this function,
  * because a token is required to call this function at all: by the time control
- * reaches here a single-use connect-state row has already been allocated in
- * coord, and coord caps live unconsumed rows at **20 per tenant** across a
- * 15-minute TTL. Detecting only here would let a storage-blocked admin clicking
- * Connect lock their own tenant out of connecting at all. See
- * {@link assertNonceStorageAvailable} — it is not redundant with this throw,
- * and removing it re-opens that self-inflicted lockout.
+ * reaches here, coord has already allocated a single-use connect-state row for a
+ * connect this browser cannot finish, and every retry allocates another. See
+ * {@link assertNonceStorageAvailable} — it is not redundant with this throw, and
+ * removing it puts that dead-row allocation back on the retry path.
  *
  * Call sites already render a retryable error for a failed
  * {@link mintConnectState}, so both guards ride that existing path and need no
@@ -447,10 +468,16 @@ export function consumeNonce(nonce: string | null): boolean {
     // own env flags; the old comment leaned this guarantee on that one, which is
     // exactly how the composite defence collapsed into a single one before.
     //
-    // No legitimate flow reaches here: `beginConnectState` throws rather than
-    // emitting a nonce it could not store, so a storage-blocked browser is never
-    // sent to GitHub by us at all. A callback that lands here is crafted or
-    // out-of-band, and it gets the restartable recover card, not a dead end.
+    // Almost nothing legitimate reaches here, and what does is handled: a
+    // browser whose storage was already blocked at the outbound hop is never
+    // sent to GitHub at all, because `beginConnectState` throws rather than
+    // emitting a nonce it could not store. But storage can also become
+    // unreadable BETWEEN the hop and the callback — ITP/CHIPS partitioning
+    // applied on the way back, a quota filling mid-round-trip, an extension
+    // toggled — and that user does land here with an honest nonce we simply
+    // cannot check. Failing them closed is still right (an unverifiable check is
+    // not a passed one) and costs them only a restart: this returns false, which
+    // is the recover card and a working button, not a dead end or a loop.
     return false;
   }
   return stored === nonce;
