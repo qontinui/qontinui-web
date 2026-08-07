@@ -5046,6 +5046,32 @@
         "title": "BulkOperationResult",
         "type": "object"
       },
+      "CancelProposalBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /pr-merge/proposals/{proposal_id}/cancel``.\n\nMirrors coord's ``CancelProposalRequest`` exactly. ``unblock`` is the whole\npoint of the pair and is NOT a modifier on one action \u2014 it selects between\ntwo actions that do opposite things:\n\n- ``unblock=False`` (default) \u2014 **STOP.** The proposal flips to\n  ``cancelled`` and STAYS on record at this head, which is itself what\n  blocks coord re-enqueueing the PR at the same commit.\n- ``unblock=True`` \u2014 **RETRY.** Clears the stuck attempt and lets coord\n  queue a fresh one at the same commit.\n\nThe web surface renders these as two separately-labelled buttons for that\nreason; they must never be collapsed into one \"Cancel\".",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Free-text justification, stamped into the proposal's error column and the PR comment.",
+            "title": "Reason"
+          },
+          "unblock": {
+            "default": false,
+            "description": "False = stop (cancelled prior keeps blocking this commit); True = clear the block and re-queue a fresh attempt.",
+            "title": "Unblock",
+            "type": "boolean"
+          }
+        },
+        "title": "CancelProposalBody",
+        "type": "object"
+      },
       "CandidateBoundingBox": {
         "description": "Bounding box for a detected element.",
         "properties": {
@@ -81467,6 +81493,57 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/proposals/{proposal_id}/cancel": {
+      "post": {
+        "description": "Cancel a stuck merge proposal \u2014 the lever that clears today's wedge.\n\nProxies coord's ``POST /pr-merge/proposals/:proposal_id/cancel``, the same\nroute coord's own MCP cancel tool drives, so the web and agent paths land\non one core and cannot diverge in effect.\n\nDESTRUCTIVE-SHAPED: coord deletes the merge-candidate ref and comments on\nthe linked PR. The web card states both before the click.\n\nCoord's answers, all forwarded verbatim (status + body):\n\n- ``200 {\"proposal_id\", \"previous_status\", \"status\": \"cancelled\"}``\n- ``409 {\"error\": \"land_in_flight\", \u2026}`` \u2014 a ``landing`` row's\n  fast-forward push may already be executing; coord refuses rather than\n  risk a half-landed merge.\n- ``409 {\"error\": \"batch_in_flight\", \u2026}`` \u2014 the commits are already in a\n  batch's combined tip, so a \"cancelled\" member would land anyway.\n- ``409 {\"error\": \"proposal already in terminal status: <s>\", \u2026}`` \u2014 the\n  idempotence answer. A second cancel is a 409, never a double effect.\n- ``404 {\"error\": \"proposal_not_found_in_tenant_scope\", \u2026}`` \u2014 unknown OR\n  cross-tenant. Deliberately 404 and not 403 so it cannot leak whether the\n  row exists; it must surface as \"not found\", never as \"forbidden\".",
+        "operationId": "api_v1_operations_pr_merge_proposals_proposal_id_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelProposalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Pr Merge Proposal Cancel",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/prs": {
       "get": {
         "description": "PR Merge Orchestrator Phase 1 D1.6 + D1.7 -- proxy coord's\n``GET /pr-merge/prs`` (read-only list of all open PRs joined to\nper-(repo, head_sha) CI lifecycle).\n\nFleet-wide. Forwards the operator bearer so coord requires an\nauthenticated operator \u2014 retires the pilot-anonymous posture\n(operator decision 2026-05-31), mirroring ``/merge/queue``.\n\n``include_merged`` and ``merged_count_hours`` are forwarded ONLY when\nset, so the default request is byte-for-byte the legacy call (same\nconvention as ``/admin-dev/prs``). coord's response is returned verbatim\n\u2014 no field whitelist \u2014 so the merged-row enrichment and the\n``merged_recent_count`` field pass through unchanged. A coord deploy that\npredates either param simply ignores it and omits the field.",
@@ -81524,6 +81601,65 @@
           }
         },
         "summary": "Get Pr Merge Prs",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/prs/{owner}/{name}/{pr_number}/reevaluate": {
+      "post": {
+        "description": "Re-run coord's merge decision for one PR against fresh GitHub truth.\n\nProxies coord's ``POST /pr-merge/prs/:owner/:name/:pr_number/reevaluate``.\nTakes NO body \u2014 coord force-refreshes PR state (GraphQL hydrate + merge\nstate heal) and then re-evaluates. Read-then-decide: it never pushes,\ndeletes a ref, or comments, which is why the card offers it unconditionally\nwhile gating cancel.\n\nCoord's answers, forwarded verbatim:\n\n- ``200 {\"repo\", \"pr_number\", \"evaluated\": true, \"result\": \"pass\"|\"block\",\n  \"outer_state\", \"block_reason_code\", \"block_payload\"}``\n- ``404 {\"error\": \"pr_not_found_in_tenant_scope\", \"repo\", \"pr_number\"}`` \u2014\n  the PR is not evaluable, was never ingested, OR belongs to another\n  tenant. 404-not-403 for the same non-leaking reason as cancel.",
+        "operationId": "api_v1_operations_pr_merge_prs_owner_name_pr_number_reevaluate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Pr Merge Reevaluate",
         "tags": [
           "operations"
         ]
@@ -82058,6 +82194,106 @@
           }
         ],
         "summary": "Post Pr Merge Suggestion Reject",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/verdict/{owner}/{name}/{pr_number}": {
+      "get": {
+        "description": "coord's merge verdict for one PR, including its live merge proposal.\n\nProxies coord's ``GET /pr-merge/verdict/:owner/:name/:pr_number``. The\nrecovery card needs this for exactly one thing the PR list does not carry:\n``proposal.proposal_id``. ``GET /pr-merge/repo/:repo/prs`` hard-codes every\nproposal field to null, and the fleet-wide ``/pr-merge/prs`` carries\n``proposal_status`` but no id \u2014 and a cancel has to be addressed to an id.\n\nThe ``proposal`` key is OMITTED when coord has no proposal cut at the PR's\ncurrent head; when present it carries ``{proposal_id, status, age_seconds,\nseconds_since_update, candidate_ref, error, updated_at,\nhad_rebase_conflict}``. Terminal rows are included on purpose \u2014 a terminal\nprior at the current head is precisely what blocks a re-enqueue, so it is\nthe diagnosis, not noise.",
+        "operationId": "api_v1_operations_pr_merge_verdict_owner_name_pr_number_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "title": "Owner",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pr_number",
+            "required": true,
+            "schema": {
+              "title": "Pr Number",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pr Merge Verdict",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/{repo}/stuck-nudges": {
+      "get": {
+        "description": "coord's \"your PR is stuck\" nudges for one repo.\n\nProxies coord's ``GET /pr-merge/:repo/stuck-nudges`` \u2014 the alarm coord\nalready raises for a wedged PR's author. This is the read the self-service\nrecovery card is built on: it converts an alarm nobody could act on into a\nsurface that carries the remediation.\n\n``repo`` is ``owner/name``, captured inline via ``{repo:path}`` (the same\nshape as ``/pr-merge/repos/:repo/profile``). coord resolves the tenant FROM\nTHE REPO and 404s a repo no tenant owns.\n\nReturns ``{\"repo\", \"enabled\", \"cooldown_secs\", \"max_nudges\", \"nudges\": [\n{\"pr_number\", \"reason\", \"first_nudged_at\", \"last_nudged_at\", \"nudge_count\",\n\"last_outcome\"} ], \"stuck_now\": [{\"pr_number\", \"reason\"}]}``, where\n``stuck_now`` is coord's LIVE classification and ``nudges`` the history.",
+        "operationId": "api_v1_operations_pr_merge_repo_stuck_nudges_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pr Merge Stuck Nudges",
         "tags": [
           "operations"
         ]
