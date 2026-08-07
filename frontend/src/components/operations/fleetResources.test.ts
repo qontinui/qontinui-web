@@ -10,6 +10,9 @@
 import { describe, it, expect } from "vitest";
 import {
   anchorKey,
+  AXIS_DIRECTION,
+  pressureAxisIsSwap,
+  pressureAxisLabel,
   effectiveAgeSecs,
   buildMachineGroups,
   classifyFreshness,
@@ -423,7 +426,7 @@ describe("§C3 — the effective floor, its provenance, and defer vs reject", ()
       ...MEM_FLOOR,
       verdict: "rejects" as unknown as EffectiveFloor["verdict"],
     })!;
-    expect(d.verdict).toBe("unknown");
+    expect(d.verdict).toBe("unrecognized");
     expect(d.verdictLabel).toMatch(/unknown/);
     expect(d.verdictLabel).toMatch(/rejects/);
     expect(d.verdictLabel).not.toBe("defers");
@@ -532,9 +535,9 @@ describe("§C3 — the pressure axis, where the Linux lanes' only guard lives", 
       ...SWAP_FLOOR,
       verdict: "defers" as unknown as EffectivePressureFloor["verdict"],
     })!;
-    expect(d.verdict).toBe("unknown");
+    expect(d.verdict).toBe("unrecognized");
     expect(d.verdictLabel).toMatch(/defers\)/);
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
   });
 });
 
@@ -546,9 +549,10 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
     const d = describeFloor({ ...MEM_FLOOR, verdict: null })!;
     expect(d.verdict).toBe("unset");
     expect(d.verdictLabel).toBe("set, not enforced");
-    // No verb, and no direction word — there is no behaviour to describe.
+    // No verb, and the primary line will withhold its direction word —
+    // there is no behaviour to describe.
     expect(d.verdictLabel).not.toMatch(/defers|rejects/);
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
     // The number itself is still shown: it IS configured, just inert.
     expect(d.value).toBe("5.0 GB free commit");
   });
@@ -556,7 +560,103 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
   it("does the same on the pressure axis", () => {
     const d = describePressureFloor({ ...SWAP_FLOOR, verdict: null })!;
     expect(d.verdict).toBe("unset");
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
+    // The AXIS still runs the way it runs — the preposition belongs to the
+    // axis, so a rejecting enforcer under this primary still gets one.
+    expect(d.direction).toBe("at or above");
+  });
+
+  it("still gives a rejecting enforcer its preposition under an unenforced primary", () => {
+    // Deriving the direction word from the primary verdict dropped it here,
+    // leaving "rejects 90% swap used" with no indication of which side of 90%
+    // is the bad one.
+    const d = describePressureFloor({
+      ...SWAP_FLOOR,
+      verdict: null,
+      reject_ratio: 0.9,
+      reject_source: "policy",
+    })!;
+    expect(d.enforced).toBe(false);
+    expect(d.direction).toBe("at or above");
+    expect(d.reject).toMatchObject({ kind: "present", value: "90% swap used" });
+  });
+
+  it("never lets an UNREADABLE reject threshold read as 'there is none'", () => {
+    // "no reject threshold" is an affirmative claim that nothing refuses work
+    // here. A NaN or an out-of-range number must not produce it — unreadable
+    // becoming safe is the false-safe this surface exists to remove.
+    for (const bad of [NaN, -1, Infinity]) {
+      expect(
+        describeFloor({ ...MEM_FLOOR, reject_bytes: bad })!.reject
+      ).toEqual({ kind: "unreadable" });
+    }
+    for (const bad of [NaN, 1.4, -0.2]) {
+      expect(
+        describePressureFloor({ ...SWAP_FLOOR, reject_ratio: bad })!.reject
+      ).toEqual({ kind: "unreadable" });
+    }
+    // …and ONLY an explicit null is "there is none".
+    expect(describeFloor({ ...MEM_FLOOR, reject_bytes: null })!.reject).toEqual(
+      { kind: "none" }
+    );
+    expect(
+      describePressureFloor({ ...SWAP_FLOOR, reject_ratio: null })!.reject
+    ).toEqual({ kind: "none" });
+  });
+
+  it("withholds the 'set past it on purpose' claim when the order is reversed", () => {
+    // Past means LOWER on a byte floor and HIGHER on a ceiling. When coord
+    // sends them the other way round, the copy must not assert the usual
+    // story over the data.
+    expect(describeFloor(MEM_FLOOR)!.rejectIsPastPrimary).toBe(true);
+    expect(
+      describeFloor({ ...MEM_FLOOR, reject_bytes: 9 * GIB })!
+        .rejectIsPastPrimary
+    ).toBe(false);
+    expect(
+      describePressureFloor({ ...SWAP_FLOOR, reject_ratio: 0.9 })!
+        .rejectIsPastPrimary
+    ).toBe(true);
+    expect(
+      describePressureFloor({ ...SWAP_FLOOR, reject_ratio: 0.3 })!
+        .rejectIsPastPrimary
+    ).toBe(false);
+  });
+
+  it("escalates precision rather than printing one number twice", () => {
+    // 0.5 and 0.504 both round to 50%: two distinct thresholds that would
+    // otherwise render identically under two different badges.
+    const d = describePressureFloor({
+      ...SWAP_FLOOR,
+      ratio: 0.5,
+      reject_ratio: 0.504,
+      reject_source: "policy",
+    })!;
+    const rejectValue = (d.reject as { kind: "present"; value: string }).value;
+    expect(d.value).not.toBe(rejectValue);
+    expect(d.value).toMatch(/50\.0%/);
+    expect(rejectValue).toMatch(/50\.4%/);
+    // …and the common case keeps whole percents.
+    expect(describePressureFloor(SWAP_FLOOR)!.value).toBe("50% swap used");
+  });
+
+  it("derives the axis label and the swap-suppression gate from the basis", () => {
+    expect(pressureAxisLabel("swap_ratio")).toBe("swap");
+    expect(pressureAxisIsSwap("swap_ratio")).toBe(true);
+    // A future basis must not be labelled "swap" NOR gated by the swap rule.
+    expect(pressureAxisLabel("psi_some_avg10")).toBe("psi_some_avg10");
+    expect(pressureAxisIsSwap("psi_some_avg10")).toBe(false);
+  });
+
+  it("keeps the direction word in ONE place, keyed by the axis", () => {
+    // The claim "FloorDetail carries the axis and the preposition so the
+    // wording cannot drift" is only true while both describers read the same
+    // map. A literal in each function is exactly the drift it claims to stop.
+    expect(describeFloor(MEM_FLOOR)!.direction).toBe(AXIS_DIRECTION.bytes);
+    expect(describePressureFloor(SWAP_FLOOR)!.direction).toBe(
+      AXIS_DIRECTION.ratio
+    );
+    expect(AXIS_DIRECTION.bytes).not.toBe(AXIS_DIRECTION.ratio);
   });
 
   it("keeps 'unset' distinct from 'unknown' — different causes, different fixes", () => {
@@ -565,8 +665,18 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
       ...MEM_FLOOR,
       verdict: "defers" as unknown as EffectiveFloor["verdict"],
     })!;
+    const legacy = { ...MEM_FLOOR };
+    delete (legacy as { verdict?: unknown }).verdict;
+    const unreported = describeFloor(legacy as EffectiveFloor)!;
+    // Four states, four labels: nothing acts on it / this build cannot read
+    // it / coord never said. Collapsing any pair is the same two-claims-in-one
+    // defect this task removes a level up.
     expect(unset.verdict).not.toBe(unknown.verdict);
     expect(unset.verdictLabel).not.toBe(unknown.verdictLabel);
+    expect(unreported.verdict).toBe("unreported");
+    expect(unreported.verdictLabel).toMatch(/not reported/);
+    expect(unreported.verdictLabel).not.toBe(unknown.verdictLabel);
+    expect(unreported.enforced).toBe(false);
   });
 });
 

@@ -46,10 +46,14 @@
  * - `headroom` absent or `unknown` gets **the same treatment as a stale or
  *   absent sample** — the neutral unknown tone, never green. A coord that has
  *   not shipped the floor fields yet paints the fleet grey, not healthy.
- * - **No swap figure appears on a `host` row at all.** Windows derives swap
+ * - **No MEASURED swap figure appears on a `host` row.** Windows derives swap
  *   algebraically from the same commit counters, so printing both would read
  *   as corroboration from two instruments when it is one printed twice. The
  *   lead column IS the swap-or-commit figure; there is no second one.
+ *   One deliberate exception: a swap-ratio THRESHOLD coord actually reports
+ *   for such a lane is still shown (with a note that the row's pressure
+ *   figure is a different instrument), because withholding a rule the
+ *   dispatcher enforces is the worse error. A threshold is not a measurement.
  * - A `wsl` lane's headroom is never shown as spendable on its own:
  *   `pageReporting=true` couples the lanes, so the coupled
  *   `min(wsl_free, host_free_commit)` is shown beside the raw figure.
@@ -94,6 +98,8 @@ import {
   HEADROOM_MEANING,
   hostIsBindingConstraint,
   laneShowsSwap,
+  pressureAxisIsSwap,
+  pressureAxisLabel,
   pressureFormula,
   pressureLabel,
   rowAnchor,
@@ -431,10 +437,19 @@ function FloorLine({
   label,
   detail,
   reported,
+  offAxisNote,
 }: {
   label: string;
   /** `describeFloor` / `describePressureFloor` output — already normalized. */
   detail: FloorDetail | null;
+  /**
+   * Set when this threshold is measured on a quantity the ROW's pressure
+   * column is not showing — the Windows `host` carve-out. Without it an
+   * operator naturally compares "50% swap used" to a commit percentage
+   * sitting three columns away, which is the two-instruments-read-as-one
+   * error in the other direction.
+   */
+  offAxisNote?: string;
   /**
    * Three-way, because the two absences are different claims: `"absent"` is
    * an older coord that never mentioned this axis, `"null"` is coord saying
@@ -520,15 +535,19 @@ function FloorLine({
         <TooltipContent className="max-w-[20rem] text-[11px]">
           {detail.verdict === "unset"
             ? "coord reports this threshold but nothing enforces it — a control that validates and versions with no consumer. It is a number somebody set, not a rule anything acts on."
-            : detail.verdict === "unknown"
-              ? "This build does not recognize what coord says happens at this threshold. It may refuse work outright — do not read it as a delay."
-              : FLOOR_VERDICT_HINT[detail.verdict]}
+            : detail.verdict === "unreported"
+              ? "coord sent this threshold without saying what happens at it — an older coord. Treat the lane as guarded by an unknown rule, not as unguarded."
+              : detail.verdict === "unrecognized"
+                ? "This build does not recognize what coord says happens at this threshold — a newer coord. It may refuse work outright; do not read it as a delay."
+                : FLOOR_VERDICT_HINT[detail.verdict]}
         </TooltipContent>
       </Tooltip>
       {/* The direction word is load-bearing: a byte floor is crossed going
           DOWN and a pressure ceiling going UP, so one preposition cannot
-          serve both without inverting the meaning for the reader. */}
-      {detail.direction && (
+          serve both without inverting the meaning for the reader. Withheld
+          only when NOTHING enforces this threshold — "below 4.0 GB" states a
+          behaviour, and an unenforced number has none. */}
+      {detail.enforced && (
         <span className="text-muted-foreground">{detail.direction}</span>
       )}
       <span className="tabular-nums">{detail.value}</span>
@@ -547,6 +566,24 @@ function FloorLine({
         </TooltipContent>
       </Tooltip>
       <RejectClause detail={detail} />
+      {offAxisNote && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="text-muted-foreground italic underline decoration-dotted"
+              data-testid="fleet-resource-floor-off-axis"
+            >
+              ({offAxisNote})
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[20rem] text-[11px]">
+            This threshold is measured on a different quantity from the Pressure
+            column on this row, so the two percentages are not comparable. The
+            rule is coord&apos;s and is shown because it is enforced; the
+            comparison an operator would naturally make is not valid here.
+          </TooltipContent>
+        </Tooltip>
+      )}
     </span>
   );
 }
@@ -583,6 +620,25 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
       </span>
     );
   }
+  if (detail.reject.kind === "unreadable") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="text-muted-foreground italic underline decoration-dotted"
+            data-testid="fleet-resource-reject-floor-unreadable"
+          >
+            reject threshold unreadable
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem] text-[11px]">
+          coord reported a rejecting threshold whose value this build cannot
+          interpret. NOT the same as there being none — something may refuse
+          work here at a level we cannot show.
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   if (detail.reject.kind === "none") {
     return (
       <Tooltip>
@@ -612,15 +668,15 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-[20rem] text-[11px]">
-          {FLOOR_VERDICT_HINT.reject} It is set past the one on the left on
-          purpose — lower on a byte floor, higher on a pressure ceiling — so the
-          deferring guard trips first and a recoverable wait does not become a
-          failed build.
+          {FLOOR_VERDICT_HINT.reject}{" "}
+          {!detail.rejectIsPastPrimary
+            ? "It is NOT set past the threshold on the left, so this one is reached first — read the two numbers rather than assuming the usual order."
+            : detail.verdict === "defer"
+              ? "It is set past the deferring threshold on the left on purpose — lower on a byte floor, higher on a pressure ceiling — so the wait trips first and a recoverable delay does not become a failed build."
+              : "It is set past the threshold on the left — lower on a byte floor, higher on a pressure ceiling."}
         </TooltipContent>
       </Tooltip>
-      {detail.direction && (
-        <span className="text-muted-foreground">{detail.direction}</span>
-      )}
+      <span className="text-muted-foreground">{detail.direction}</span>
       <span className="tabular-nums">{detail.reject.value}</span>
       <Badge variant="outline" className="text-[9px] px-1 py-0">
         {detail.reject.sourceLabel}
@@ -645,6 +701,17 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
   const headroom: Headroom =
     row.freshness === "fresh" ? rowHeadroom(row.sample) : "unknown";
   const report = headroomReport(row.sample);
+
+  const pressureFloor = row.sample?.pressure_floor;
+  // §C1 suppresses the SWAP figure on a lane that derives swap from the commit
+  // counters. It suppresses the swap THRESHOLD line too — but only while there
+  // is nothing to disclose. A basis that is not swap is not covered by that
+  // rule at all. (`laneShowsSwap("")` is true, so a lane-less row would show
+  // the line; such a row has no sample, so the floors are withheld anyway.)
+  const pressureFigureHidden =
+    !laneShowsSwap(row.lane ?? "") &&
+    pressureAxisIsSwap(pressureFloor?.basis ?? "swap_ratio");
+  const showsPressureAxis = !pressureFigureHidden || pressureFloor != null;
 
   return (
     <span
@@ -732,13 +799,20 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
               is noise, not disclosure. A real reported ceiling still prints:
               withholding a rule the dispatcher enforces is the inversion this
               column exists to prevent, and it outranks the tidiness rule. */}
-          {(laneShowsSwap(row.lane ?? "") ||
-            row.sample?.pressure_floor != null) && (
+          {showsPressureAxis && (
             <Aged freshness={row.freshness}>
               <FloorLine
-                label="swap"
+                // Derived from the basis, not assumed: a second
+                // `PressureFloorBasis` would otherwise be mislabelled "swap"
+                // AND wrongly gated on the swap-suppression rule.
+                label={pressureAxisLabel(row.sample?.pressure_floor?.basis)}
                 detail={describePressureFloor(row.sample?.pressure_floor)}
                 reported={reportedState(row.sample?.pressure_floor)}
+                offAxisNote={
+                  pressureFigureHidden
+                    ? "not this row's pressure axis"
+                    : undefined
+                }
               />
             </Aged>
           )}
@@ -934,30 +1008,35 @@ function FloorsLegend({
           &quot;not reported&quot; are worded differently.
         </li>
         <li data-testid="fleet-resource-warn-margin">
-          A lane reads <strong>work waits</strong> from{" "}
+          On a <strong>byte floor</strong>, a lane reads{" "}
+          <strong>work waits</strong> from{" "}
           <span className="tabular-nums">{formatWarnMargin(warnMargin)}</span>{" "}
-          the deferring floor downwards — the margin is coord&apos;s, read off
-          this response, never assumed here.
+          the deferring floor <em>downwards</em> — the margin is coord&apos;s,
+          read off this response, never assumed here. On a{" "}
+          <strong>pressure ceiling</strong> there is deliberately no early band:
+          at or above the ceiling a guard is already acting, and an amber band
+          below it would assert something no enforcer does.
         </li>
       </ul>
       <p className="text-[10px] text-muted-foreground">
         A column can be guarded <em>twice</em> with deliberately different
-        numbers — the rejecting threshold sits below the deferring one so the
-        wait trips first and a recoverable delay never becomes a failed build.
-        Both are shown; neither is inferred. The row&apos;s colour is
-        coord&apos;s <em>admission verdict</em> against these floors — not a
-        band over the pressure ratio. This page keeps no threshold of its own,
-        so a red row means the dispatcher has already stopped electing that
-        lane. Memory and disk are kept apart because memory frees on its own and
-        disk does not.
+        numbers — the rejecting threshold sits <em>past</em> the deferring one,
+        which means <strong>lower</strong> on a byte floor and{" "}
+        <strong>higher</strong> on a pressure ceiling, so the wait trips first
+        and a recoverable delay never becomes a failed build. Both are shown;
+        neither is inferred. The row&apos;s colour is coord&apos;s{" "}
+        <em>admission verdict</em> against these floors — not a band over the
+        pressure ratio. This page keeps no threshold of its own, so a red row
+        means the dispatcher has already stopped electing that lane. Memory and
+        disk are kept apart because memory frees on its own and disk does not.
       </p>
       {missingFloors > 0 && (
         <p
           className="text-[10px] text-muted-foreground"
           data-testid="fleet-resource-floors-missing"
         >
-          {missingFloors} lane{missingFloors === 1 ? "" : "s"} reported no
-          floor. That is a coord without the floor fields, not a lane without a
+          {missingFloors} lane{missingFloors === 1 ? "" : "s"} left a threshold
+          unreported. That is a coord without these fields, not a lane without a
           limit — those rows read <strong>unknown</strong>, which is not
           healthy.
         </p>
@@ -1047,6 +1126,7 @@ export function FleetResourceStrip({
               r.sample.disk_floor === undefined ||
               // Only on a lane that HAS a pressure axis — a Windows host row
               // saying nothing about swap is correct, not a reporting gap.
+              // Same predicate the render uses, so the two cannot disagree.
               (laneShowsSwap(r.lane ?? "") &&
                 r.sample.pressure_floor === undefined))
           ) {
