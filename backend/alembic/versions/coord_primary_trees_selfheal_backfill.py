@@ -19,9 +19,20 @@ paragraph named the stale-WIP watcher, which reads ``dirty`` / ``dirty_files`` /
 They EXIST in the canonical RDS, but only because the Rust
 ``ALTER TABLE ... ADD COLUMN IF NOT EXISTS`` self-heal created them historically;
 that self-heal was deleted from the production binary (plan
-``2026-05-29-delete-stale-rust-table-self-heals``) and survives only as the
-``#[cfg(test)]`` fixture ``create_primary_trees_for_test``. The alembic chain
-never gained a migration for them.
+``2026-05-29-delete-stale-rust-table-self-heals``). The alembic chain never
+gained a migration for them.
+
+Corrected 2026-08-07: this paragraph used to end "and survives only as the
+``#[cfg(test)]`` fixture ``create_primary_trees_for_test``". That held when this
+revision was authored and does not now — coord deleted the fixture in
+``89a284ec``, precisely because it had DRIFTED from the chain (it never grew
+``parked_pr_number`` / ``parked_pr_head_sha`` from ``chkguard_02``, nor
+``parked_merged`` from ``twin_07``). DB-gated coord tests that touch this table
+now skip-guard on its presence via ``crate::test_fixtures::coord_tables_exist``
+rather than self-provisioning a shape that can silently disagree with head. So
+these three columns no longer have a second definition anywhere in the codebase:
+this revision is the only one, which is the posture the migration was written to
+reach.
 
 So any FRESH database migrated to head — CI's migrator catalog, a new
 environment, disaster recovery — lacks all three, and every tree-report
