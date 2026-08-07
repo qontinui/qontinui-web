@@ -16,7 +16,7 @@
  * the collapsed header so a red fleet state never hides behind the click.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +26,7 @@ import {
   CiStatusPanel,
   DevActionsTile,
   FleetOverview,
+  FleetResourcesSection,
   FleetTestTargetsPanel,
   GatesPanel,
   LandedFeaturesPanel,
@@ -37,6 +38,8 @@ import {
 // renders the real presentational primitive even when tests mock the heavy
 // "@/components/operations" panels.
 import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
+import { useFleetResourceSamples } from "@/components/operations/useFleetResourceSamples";
+import { summarizeFleetPressure } from "@/components/operations/fleetResources";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -155,69 +158,102 @@ function HealthSummaryCard({
         </Button>
       }
     >
-        {error && (
-          <p className="text-sm text-destructive">
-            Failed to load fleet/health: {error}
-          </p>
-        )}
-        {loading && !data ? (
-          <Skeleton className="h-20 w-full" />
-        ) : devices.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">
-            No devices reporting health.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {devices.map((d) => (
-              <li
-                key={d.device_id}
-                data-testid="coord-fleet-health-row"
-                className="flex items-center justify-between gap-2 text-sm"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs truncate">
-                    {d.hostname || d.device_id}
-                  </span>
-                  <Badge variant={deviceStateBadgeVariant(d.state)}>
-                    {d.state ?? "unknown"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Link
-                    href={`/admin/coord/trees?device_id=${encodeURIComponent(d.device_id)}`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    trees <ExternalLink className="h-3 w-3" />
-                  </Link>
-                  <span className="text-muted-foreground">·</span>
-                  <Link
-                    href={`/admin/agent-claims`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    claims <ExternalLink className="h-3 w-3" />
-                  </Link>
-                  <span className="text-muted-foreground">·</span>
-                  <Link
-                    href={`/admin/agent-sessions`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                  >
-                    sessions <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {error && (
+        <p className="text-sm text-destructive">
+          Failed to load fleet/health: {error}
+        </p>
+      )}
+      {loading && !data ? (
+        <Skeleton className="h-20 w-full" />
+      ) : devices.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No devices reporting health.
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {devices.map((d) => (
+            <li
+              key={d.device_id}
+              data-testid="coord-fleet-health-row"
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-xs truncate">
+                  {d.hostname || d.device_id}
+                </span>
+                <Badge variant={deviceStateBadgeVariant(d.state)}>
+                  {d.state ?? "unknown"}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1">
+                <Link
+                  href={`/admin/coord/trees?device_id=${encodeURIComponent(d.device_id)}`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  trees <ExternalLink className="h-3 w-3" />
+                </Link>
+                <span className="text-muted-foreground">·</span>
+                <Link
+                  href={`/admin/agent-claims`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  claims <ExternalLink className="h-3 w-3" />
+                </Link>
+                <span className="text-muted-foreground">·</span>
+                <Link
+                  href={`/admin/agent-sessions`}
+                  className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+                >
+                  sessions <ExternalLink className="h-3 w-3" />
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </CollapsiblePanel>
   );
 }
 
+const EMPTY_DEVICES: FleetHealthDevice[] = [];
+
 export default function CoordFleetPage() {
   const fleet = useFleetHealth();
-  const devices = fleet.data?.devices ?? [];
+  // Stable identity: `?? []` would allocate a fresh array every render, which
+  // defeats every downstream useMemo keyed on it.
+  const devices = fleet.data?.devices ?? EMPTY_DEVICES;
   const unhealthy = devices.filter(
     (d) => d.state && d.state !== "healthy"
   ).length;
+
+  // Resource telemetry, hoisted to the page for the same reason fleet health
+  // already is: the saturated-lane count has to stay visible on the COLLAPSED
+  // "System details" header, so a machine that is out of memory cannot hide
+  // behind a click. That is why the poll lives here rather than inside
+  // FleetResourcesSection (which unmounts with the section) — and why the same
+  // result is passed down, so there is one poll and one view of the fleet.
+  const resources = useFleetResourceSamples();
+
+  // A ticking clock, so the alarm ages rows out during an outage. `age_secs`
+  // is frozen inside the payload — without this, a dead proxy would leave the
+  // header claiming an all-clear indefinitely.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const pressure = useMemo(
+    () =>
+      summarizeFleetPressure(
+        devices,
+        resources.data?.latest ?? [],
+        resources.fetchedAtMs == null
+          ? 0
+          : Math.max(0, (nowMs - resources.fetchedAtMs) / 1000)
+      ),
+    [devices, resources.data?.latest, resources.fetchedAtMs, nowMs]
+  );
 
   return (
     // `overflow-x-auto`: wide panels (the merge dependency graph, train rows)
@@ -250,9 +286,45 @@ export default function CoordFleetPage() {
                 {unhealthy} unhealthy
               </Badge>
             )}
+            {pressure.saturated > 0 && (
+              <Badge
+                variant="destructive"
+                className="ml-1"
+                data-testid="coord-fleet-saturated-badge"
+              >
+                {pressure.saturated} saturated
+              </Badge>
+            )}
+            {pressure.stale > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-1"
+                data-testid="coord-fleet-stale-badge"
+              >
+                {pressure.stale} stale
+              </Badge>
+            )}
+            {/* Shown even though it is not red: a fleet whose telemetry has
+                gone entirely dark would otherwise render as "N machines" and
+                nothing else — indistinguishable from an all-clear, which is
+                the false-safe §C3 exists to forbid. */}
+            {pressure.unknown > 0 && (
+              <Badge
+                variant="outline"
+                className="ml-1"
+                data-testid="coord-fleet-unknown-badge"
+              >
+                {pressure.unknown} unknown
+              </Badge>
+            )}
             {fleet.error && (
               <Badge variant="destructive" className="ml-1">
                 health unavailable
+              </Badge>
+            )}
+            {resources.error && (
+              <Badge variant="outline" className="ml-1">
+                resources unavailable
               </Badge>
             )}
           </>
@@ -265,6 +337,7 @@ export default function CoordFleetPage() {
           error={fleet.error}
           onRefresh={fleet.refresh}
         />
+        <FleetResourcesSection devices={devices} resources={resources} />
         <FleetOverview />
         <FleetTestTargetsPanel />
 
