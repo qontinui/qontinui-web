@@ -44,11 +44,13 @@ memory floor disables the guard it names, and a zero
 ``max_concurrent_builds_override`` means "run no builds at all". Those are
 different facts and the schema must be able to tell them apart.
 
-The parent's column list is mirrored exactly, in the same order, by
-``CONTROL_COLS`` + ``d1_payload_cols()`` on the coord side; ``policy_state_cols``
-composes both the parent SELECT and the snapshot INSERT from that one constant
-so the two statements cannot name different sets. This migration is the other
-half of that contract.
+The same seven columns are named on the coord side by ``CONTROL_COLS`` and
+``d1_payload_cols()`` — one constant, from which ``policy_state_cols`` composes
+the parent SELECT/``RETURNING`` and ``insert_version_snapshot_tx`` composes the
+snapshot INSERT, so no two statements there can name different sets. The order
+differs (``d1_payload_cols()`` puts ``drain`` FIRST, this list puts it last);
+that is immaterial to DDL, where each column is added by name, and only the SET
+must match. This migration is the other half of that contract.
 
 Why the versions table is widened in the SAME migration
 =======================================================
@@ -73,6 +75,12 @@ is a single flag (``Present``/``Absent``) rather than two, precisely because
 these columns land in ONE revision and are therefore present or absent
 together. A migration that widened only one table would put coord's write path
 into a state its own type system says cannot exist.
+
+That flag is load-bearing enough to say what actually guarantees it:
+``alembic/env.py`` runs the migration inside ``context.begin_transaction()``,
+and PostgreSQL DDL is transactional, so **both ALTERs commit or neither does**.
+"Present or absent together" is therefore a property of the database, not a
+promise this file makes about the order of two statements.
 
 Snapshots that predate this revision keep NULLs, and that is honest
 ==================================================================
@@ -108,8 +116,26 @@ drain map at all. A GIN index here would cost more to maintain than the seq
 scan it replaces.
 
 Idempotency: raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` — the house
-convention for ``coord.*`` tables, and metadata-only on PG 11+ since every
-column is nullable with no default (no table rewrite, no lock held for the scan).
+convention for ``coord.*`` tables. Every column is nullable with no default, so
+each ADD is a catalogue update with no table rewrite; it still takes a brief
+``ACCESS EXCLUSIVE`` lock, which on a table this size is immeasurable.
+
+``IF NOT EXISTS`` is type-BLIND, and that is worth knowing here
+==============================================================
+
+It matches on name alone. A column of the same name but the wrong type — hand-
+added, or added by some parallel revision — makes the ADD a silent no-op and
+leaves the wrong type in place, and the schema test that pins types only ever
+runs against a fresh database.
+
+That is not the failure coord is built to survive. A missing column is 42703,
+which ``pg_error::is_missing_schema_object`` catches and ``ControlsSchema``
+degrades to ``Absent``. A column of the WRONG type is not an error at all until
+``FleetPolicyControls::from_row`` calls ``row.get(...)``, which **panics** on a
+type mismatch — no SQLSTATE, no degrade path, no 503. So the types in this file
+are an interface, and re-running ``upgrade()`` is not a repair for one that is
+already wrong: fix such a column with an explicit ``ALTER COLUMN … TYPE`` in a
+new revision.
 """
 
 from collections.abc import Sequence
@@ -254,6 +280,22 @@ def upgrade() -> None:
             'gap to be backfilled.'
         """
     )
+
+    # The other six on the snapshot table. Generated from the one list rather
+    # than restated, because restating them is how a snapshot column's
+    # documented meaning drifts from its parent's — the documentation version
+    # of the drift this whole revision is shaped to prevent. Without these,
+    # `\\d+ coord.fleet_runtime_policy_versions` shows six bare columns next to
+    # a commented `drain`, which reads as though only `drain` were deliberate.
+    for name, _ in _CONTROL_COLUMNS:
+        if name == "drain":
+            continue
+        op.execute(
+            f"COMMENT ON COLUMN coord.fleet_runtime_policy_versions.{name} IS "
+            f"'Snapshot of coord.fleet_runtime_policy.{name} — see that column "
+            f"for its meaning and for why NULL is not zero. Immutable: never "
+            f"UPDATE or DELETE a row here.'"
+        )
 
 
 def downgrade() -> None:

@@ -19,13 +19,17 @@ everything around them, and none of it is visible from a passing ``upgrade``:
 3. **Every column nullable.** NULL means "no override"; 0 means "floor of
    zero" (i.e. guard disabled) or "admit no builds". A NOT NULL DEFAULT 0
    would collapse those into one value and silently disable a safety floor.
-4. **A snapshot can actually carry the payload** — the point of widening the
-   child at all. Asserted by writing a parent row and a version row with every
-   control set, then reading them back, including a real ``drain`` map.
+4. **Parent and snapshot can actually carry the payload** — the point of
+   widening the child at all. Asserted by writing a parent row and a version
+   row with every control set and reading **both** back, including a real
+   ``drain`` map. Both, because they are two independent ALTERs: one passing is
+   not evidence about the other.
 5. **Up → down → up leaves no residue and does not touch data.** Downgrade
    must remove the columns from *both* tables (leaving the child's behind gives
    a snapshot table that can hold payload the parent cannot — the same defect
-   mirrored), and a pre-existing policy row must survive the walk.
+   mirrored) while leaving the versions TABLE itself alone — it belongs to
+   ``fleet_res_tel_02`` — and a pre-existing policy row and snapshot row must
+   both survive the walk.
 
 ``migration-reversal.yml`` walks the chain against an EMPTY database, so it
 proves the SQL parses and nothing more: no row exists there to survive a
@@ -33,10 +37,15 @@ round-trip, and it asserts nothing about which tables gained which columns.
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable. ⚠️ A skip proves nothing — point
-it at a live instance with
-``DATABASE_URL=postgresql://qontinui_user:qontinui_dev_password@localhost:5433/qontinui_test``
-if 5432 is not the one accepting the test credentials (on the MSI box the
-canonical Postgres listens on **5433**).
+it at a live instance with ``QONTINUI_TEST_PG=localhost:5433`` if 5432 is not
+the one accepting the test credentials (on the MSI box the canonical Postgres
+listens on **5433**).
+
+Use that variable, **not** ``DATABASE_URL``: ``conftest.py`` overwrites
+``os.environ["DATABASE_URL"]`` unconditionally at import time from
+``QONTINUI_TEST_PG``, so setting ``DATABASE_URL`` on the command line is
+silently discarded and every database-backed test below skips against 5432 —
+which looks exactly like a green run in the summary line.
 """
 
 from __future__ import annotations
@@ -56,6 +65,7 @@ from tests._alembic_harness import (
     can_connect,
     ephemeral_database,
     run_alembic,
+    table_exists,
 )
 
 # Pinned explicitly rather than "head" so a later revision landing on top
@@ -95,6 +105,23 @@ _EXPECTED_DDL: tuple[tuple[str, str], ...] = (
     ("sample_retention_days", "INTEGER"),
     ("drain", "JSONB"),
 )
+
+# The six scalar controls, written once and asserted on both tables. The byte
+# floors are deliberately > 2^31 — 8 GiB is an ordinary host memory floor and
+# does not fit an INTEGER, so a narrowed column fails on the write rather than
+# surviving to panic in coord's `row.get::<i64>`.
+_HOST_FLOOR = 8 * 1024**3
+_WSL_FLOOR = 4 * 1024**3
+_DISK_FLOOR = 64 * 1024**3
+_PAYLOAD = (_HOST_FLOOR, _WSL_FLOOR, _DISK_FLOOR, 2, 30, 14)
+_PAYLOAD_PARAMS = {
+    "host": _HOST_FLOOR,
+    "wsl": _WSL_FLOOR,
+    "disk": _DISK_FLOOR,
+    "builds": 2,
+    "interval": 30,
+    "retention": 14,
+}
 
 # A drain entry exactly as `fleet_drain::DrainEntry` serialises it.
 _DEVICE_ID = "6f1d6d5e-2f4a-4a3a-9d3c-2b1f0e9a8c7d"
@@ -230,6 +257,49 @@ def _seed_policy_row(engine: Engine, tenant_id: uuid.UUID) -> None:
         )
 
 
+def _seed_version_row(engine: Engine, tenant_id: uuid.UUID) -> None:
+    """The version-1 snapshot the seeded parent row would already carry."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO coord.fleet_runtime_policy_versions
+                    (policy_id, version, level, master_enabled,
+                     change_note, updated_by)
+                SELECT id, 1, level, master_enabled,
+                       'seeded before fleet_res_tel_03', updated_by
+                  FROM coord.fleet_runtime_policy WHERE tenant_id = :t
+                """
+            ),
+            {"t": str(tenant_id)},
+        )
+
+
+def _version_rows(engine: Engine, tenant_id: uuid.UUID) -> list[tuple]:
+    """The snapshot rows for a tenant's policy, identity columns only.
+
+    Deliberately not the control columns: they do not exist after downgrade,
+    and the point of this read is that the columns that predate this revision
+    survive the walk untouched.
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT v.version, v.level, v.master_enabled, v.change_note,
+                       v.updated_by
+                  FROM coord.fleet_runtime_policy_versions v
+                  JOIN coord.fleet_runtime_policy p ON p.id = v.policy_id
+                 WHERE p.tenant_id = :t
+                 ORDER BY v.version
+                """
+            ),
+            {"t": str(tenant_id)},
+        ).fetchall()
+    assert rows, "the seeded snapshot row vanished"
+    return [tuple(r) for r in rows]
+
+
 def _policy_row(engine: Engine, tenant_id: uuid.UUID) -> tuple:
     with engine.connect() as conn:
         row = conn.execute(
@@ -254,24 +324,28 @@ def _admin_url() -> str:
     return url
 
 
-def test_upgrade_adds_all_seven_columns_to_both_tables(_admin_url: str) -> None:
-    """The revision's whole job, asserted against a real database."""
-    with ephemeral_database(_admin_url, "fleet_res_tel_03") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-        _assert_columns_present(engine)
-
-
-def test_a_snapshot_can_carry_the_new_payload(_admin_url: str) -> None:
-    """A version row written after this revision holds every control.
+def test_the_parent_and_the_snapshot_both_carry_the_new_payload(
+    _admin_url: str,
+) -> None:
+    """A parent row AND its version row hold every control, read back.
 
     This is the point of widening the child. Written the way coord's
-    `insert_version_snapshot_tx` writes it — parent and snapshot in one
-    transaction, every payload column named — so a column that exists but
-    cannot round-trip its value fails here rather than in production.
+    `insert_policy_v1_tx` + `insert_version_snapshot_tx` write it — parent and
+    snapshot in one transaction, every payload column named — so a column that
+    exists but cannot round-trip its value fails here rather than in
+    production. Both sides are re-read: a parent column that accepted the write
+    and returned something else would otherwise pass on the snapshot's evidence
+    alone.
+
+    There is deliberately no separate "upgrade adds the columns" test: this one
+    upgrades and asserts the same shape before doing more, and every
+    database-backed test here replays the whole chain into its own ephemeral
+    database (~2 min each), so a duplicate costs real wall-clock for nothing.
     """
     tenant_id = uuid.uuid4()
     with ephemeral_database(_admin_url, "fleet_res_tel_03_pl") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        _assert_columns_present(engine)
 
         with engine.begin() as conn:
             policy_id = conn.execute(
@@ -292,15 +366,8 @@ def test_a_snapshot_can_carry_the_new_payload(_admin_url: str) -> None:
                 ),
                 {
                     "t": str(tenant_id),
-                    # Deliberately > 2^31 so an INTEGER column would overflow:
-                    # 8 GiB is an ordinary host memory floor and does not fit.
-                    "host": 8 * 1024**3,
-                    "wsl": 4 * 1024**3,
-                    "disk": 64 * 1024**3,
-                    "builds": 2,
-                    "interval": 30,
-                    "retention": 14,
                     "drain": json.dumps(_DRAIN),
+                    **_PAYLOAD_PARAMS,
                 },
             ).scalar_one()
 
@@ -321,13 +388,8 @@ def test_a_snapshot_can_carry_the_new_payload(_admin_url: str) -> None:
                 ),
                 {
                     "p": policy_id,
-                    "host": 8 * 1024**3,
-                    "wsl": 4 * 1024**3,
-                    "disk": 64 * 1024**3,
-                    "builds": 2,
-                    "interval": 30,
-                    "retention": 14,
                     "drain": json.dumps(_DRAIN),
+                    **_PAYLOAD_PARAMS,
                 },
             )
 
@@ -346,13 +408,39 @@ def test_a_snapshot_can_carry_the_new_payload(_admin_url: str) -> None:
             ).fetchone()
 
         assert snap is not None, "no snapshot row"
-        assert snap[0] == 8 * 1024**3
-        assert snap[1] == 4 * 1024**3
-        assert snap[2] == 64 * 1024**3
-        assert (snap[3], snap[4], snap[5]) == (2, 30, 14)
+        assert tuple(snap[:6]) == _PAYLOAD, (
+            "the snapshot did not round-trip the controls; the 8 GiB floor in "
+            "particular does not fit an INTEGER, so a narrowed column dies here"
+        )
         drain = snap[6] if isinstance(snap[6], dict) else json.loads(snap[6])
         assert drain == _DRAIN, "the drain map did not round-trip"
-        assert drain[_DEVICE_ID]["until"], "`until` is mandatory per entry"
+        # Not a schema guarantee — nothing here CHECKs the entry's shape — but
+        # the JSONB path must preserve the keys `DrainEntry` deserialises, and
+        # `until` is the one §D2 makes mandatory.
+        assert set(drain[_DEVICE_ID]) == {
+            "until",
+            "reason",
+            "drained_by",
+            "drained_at",
+        }, "the JSONB path lost a DrainEntry field"
+
+        # The parent's own columns, re-read. The snapshot passing is not
+        # evidence about the parent: they are two independent ALTERs.
+        with engine.connect() as conn:
+            parent = conn.execute(
+                text(
+                    """
+                    SELECT min_free_mem_bytes_host, min_free_mem_bytes_wsl,
+                           min_free_disk_bytes, max_concurrent_builds_override,
+                           sample_interval_secs, sample_retention_days
+                      FROM coord.fleet_runtime_policy WHERE id = :p
+                    """
+                ),
+                {"p": policy_id},
+            ).fetchone()
+        assert parent is not None and tuple(parent) == _PAYLOAD, (
+            "the parent row did not round-trip the controls"
+        )
 
         # The drain read path coord actually uses.
         with engine.connect() as conn:
@@ -420,23 +508,38 @@ def test_a_null_control_is_distinguishable_from_zero(_admin_url: str) -> None:
 def test_up_down_up_leaves_no_residue_and_keeps_the_policy_row(
     _admin_url: str,
 ) -> None:
-    """The full walk: a live parent row survives, and downgrade cleans both."""
+    """The full walk: live rows on BOTH tables survive, and downgrade cleans both.
+
+    `downgrade()` ALTERs the versions table too, so the snapshot table and its
+    rows are asserted alongside the parent's — an over-broad drop there would
+    otherwise be invisible until the next audit read.
+    """
     tenant_id = uuid.uuid4()
     with ephemeral_database(_admin_url, "fleet_res_tel_03_rt") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _seed_policy_row(engine, tenant_id)
+        _seed_version_row(engine, tenant_id)
         _assert_columns_present(engine)
         before = _policy_row(engine, tenant_id)
+        before_versions = _version_rows(engine, tenant_id)
 
         run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
         _assert_columns_absent(engine)
+        assert table_exists(engine, "coord", _VERSIONS_TABLE), (
+            "downgrade() dropped the versions TABLE; it owns seven columns "
+            "there, not the table — that belongs to fleet_res_tel_02"
+        )
         assert _policy_row(engine, tenant_id) == before, (
             "downgrade() disturbed the live policy row; it must drop columns, not data"
+        )
+        assert _version_rows(engine, tenant_id) == before_versions, (
+            "downgrade() disturbed an immutable snapshot row"
         )
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
         assert _policy_row(engine, tenant_id) == before
+        assert _version_rows(engine, tenant_id) == before_versions
 
         # The re-added columns are NULL for the row that predates them, which
         # is the honest record: while they did not exist no override could have
