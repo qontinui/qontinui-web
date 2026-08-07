@@ -48,8 +48,20 @@ the correction is to the prose only.
 
 Idempotency: ``ADD COLUMN IF NOT EXISTS`` so a re-apply (or a canonical-PG
 that already carries the column from a manual reconcile) is a strict
-no-op. Mirrors the ``coord.primary_trees`` test fixture in
-``qontinui-coord/src/primary_trees.rs::create_primary_trees_for_test``.
+no-op.
+
+Corrected 2026-08-07: the paragraph above used to add "Mirrors the
+``coord.primary_trees`` test fixture in
+``qontinui-coord/src/primary_trees.rs::create_primary_trees_for_test``". Nothing
+in that sentence still resolves. The module moved to
+``qontinui-coord/src/data/primary_trees.rs`` (coord ``34678c72``), and the
+fixture itself was deleted in coord ``89a284ec`` — it had DRIFTED from this very
+chain (never grew ``parked_pr_number`` / ``parked_pr_head_sha`` or
+``parked_merged``), which is the same class of second-definition drift that hid
+the ``behind_count`` gap and is why "mirrors a Rust fixture" is no longer a
+property any migration here should claim. DB-gated coord tests now skip-guard on
+the table's presence (``crate::test_fixtures::coord_tables_exist``) instead.
+alembic is the only definition of this column.
 
 Chains off ``coord_sessions_plan_linkage`` (re-parented from
 ``twin_02_coord_infra_drift_observations``): ``coord_sessions_plan_linkage``
