@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import os
 import subprocess
+import sys
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -78,11 +79,22 @@ def run_alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProce
 
     The URL is passed both ways (``-x db_url=`` and ``DATABASE_URL``) so the
     call does not depend on which side ``alembic/env.py`` reads.
+
+    ``sys.executable``, not a bare ``"python"``: the child must be the SAME
+    interpreter running the tests, or it is a different set of installed
+    packages. On CI the two coincide and the distinction is invisible; on a
+    Windows dev box they do not, and the bare name resolves to whatever
+    ``python.exe`` the OS finds first — which failed here with *"No module
+    named alembic.__main__"* even with the virtualenv's ``Scripts`` dir first
+    on ``PATH``, because Windows resolves an un-pathed executable against the
+    calling process's own search order rather than the ``env=`` we pass. A
+    migration test that skips locally proves nothing; one that dies on the
+    wrong interpreter proves less.
     """
     env = os.environ.copy()
     env["DATABASE_URL"] = db_url
     proc = subprocess.run(
-        ["python", "-m", "alembic", "-x", f"db_url={db_url}", *args],
+        [sys.executable, "-m", "alembic", "-x", f"db_url={db_url}", *args],
         cwd=str(cwd),
         env=env,
         capture_output=True,
