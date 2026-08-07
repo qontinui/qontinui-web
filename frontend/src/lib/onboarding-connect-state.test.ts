@@ -20,6 +20,8 @@ vi.mock("@/services/service-factory", () => ({
 import {
   beginConnectState,
   consumeNonce,
+  isValidLogin,
+  isValidRunnerState,
   mintConnectState,
   parseConnectState,
 } from "./onboarding-connect-state";
@@ -129,7 +131,68 @@ describe("beginConnectState / parseConnectState", () => {
       login: null,
       nonce: null,
       connectState: null,
+      runnerState: null,
     });
+  });
+});
+
+describe("runner return-nonce (P2 slot 5)", () => {
+  const RUNNER_NONCE = "a".repeat(64);
+
+  it("appends slot 5 and round-trips it alongside the connect-state token", () => {
+    const state = beginConnectState(
+      "runner-clone",
+      "acme-org",
+      TOKEN,
+      RUNNER_NONCE
+    );
+    expect(state.split("~")).toHaveLength(5);
+
+    expect(parseConnectState(state)).toMatchObject({
+      flow: "runner-clone",
+      login: "acme-org",
+      connectState: TOKEN,
+      runnerState: RUNNER_NONCE,
+    });
+  });
+
+  it("keeps the exact 4-field shape when no runner nonce is supplied", () => {
+    // A browser-only connect must be byte-compatible with the pre-P2 format,
+    // so a callback in flight across the deploy still parses.
+    for (const absent of [undefined, null, ""]) {
+      const state = beginConnectState("connect", "acme", TOKEN, absent);
+      expect(state.split("~")).toHaveLength(4);
+      expect(parseConnectState(state)?.runnerState).toBeNull();
+    }
+  });
+
+  it("drops a runner nonce that isn't runner-minted hex, rather than propagating it", () => {
+    // This value is later interpolated into a `qontinui://` deep link, so a
+    // non-hex value must never survive either ingress.
+    for (const bad of ["not-hex", "aa", "a".repeat(200), "<script>"]) {
+      expect(isValidRunnerState(bad)).toBe(false);
+      // Outbound: refused at mint, so the state keeps the 4-field shape.
+      expect(beginConnectState("runner-clone", "", TOKEN, bad).split("~"))
+        .toHaveLength(4);
+      // Inbound: a crafted 5-segment state parses to a null runnerState.
+      const crafted = ["runner-clone", "acme", "f".repeat(32), TOKEN, bad].join(
+        "~"
+      );
+      expect(parseConnectState(crafted)?.runnerState).toBeNull();
+    }
+  });
+
+  it("drops a login that fails the GitHub-login shape", () => {
+    // The login also flows into the deep link and the claim body.
+    const crafted = [
+      "connect",
+      "bad login/../x",
+      "f".repeat(32),
+      TOKEN,
+    ].join("~");
+    expect(parseConnectState(crafted)?.login).toBeNull();
+    expect(isValidLogin("acme-org")).toBe(true);
+    expect(isValidLogin("-leading")).toBe(false);
   });
 });
 
