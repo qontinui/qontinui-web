@@ -196,6 +196,19 @@ export const STUCK_PR_POLL_MS = 30_000;
 export const STUCK_PR_MAX_CARDS = 6;
 
 /**
+ * How many candidates the panel reads a merge verdict for per poll.
+ *
+ * Deliberately ABOVE {@link STUCK_PR_MAX_CARDS}: the verdict is what retracts a
+ * candidate the age screen caught but that turns out to be moving normally, and
+ * every retraction promotes the next candidate into view. Reading exactly
+ * `STUCK_PR_MAX_CARDS` would leave a promoted card with no verdict — and, since
+ * the fused list is the same on the next poll, permanently stuck on "merge
+ * attempt not read yet". The headroom covers the retractions without letting a
+ * repo with 30 wedged PRs turn one poll into 30 reads.
+ */
+export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
+
+/**
  * REST + action endpoints for the gates panel (plan
  * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
  * tenant-scoped server-side via the operator → tenant_id resolver (coord

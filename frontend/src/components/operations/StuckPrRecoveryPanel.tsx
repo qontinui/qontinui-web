@@ -30,6 +30,7 @@ import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
 import {
   OPERATIONS_API,
   STUCK_PR_MAX_CARDS,
+  STUCK_PR_MAX_VERDICT_READS,
   STUCK_PR_POLL_MS,
   prMergeVerdictUrl,
   prReevaluateUrl,
@@ -45,6 +46,7 @@ import {
   describeActionSuccess,
   diagnoseStuckPr,
   identityLabel,
+  isRetractedByVerdict,
   isTerminalProposalStatus,
   leverAffordance,
   parseProposalView,
@@ -53,6 +55,7 @@ import {
   type Hypothesis,
   type LeverActionKind,
   type ProposalView,
+  type StuckPr,
   type StuckPrLever,
 } from "./stuckPrDiagnosis";
 
@@ -63,6 +66,10 @@ export interface StuckCandidate {
   reason: string | null;
   nudgeCount: number;
   maxNudges: number | null;
+  /** When coord last nudged this PR's author, or `null`. */
+  lastNudgedAt: string | null;
+  /** How coord's last nudge landed, or `null`. */
+  lastOutcome: string | null;
   /** coord's own one-line hold reason from `/pr-merge/prs`. */
   blockingSummary: string | null;
 }
@@ -84,11 +91,7 @@ export interface StuckCandidate {
  */
 export function fuseStuckCandidates(
   repo: string,
-  nudged: {
-    prNumber: number;
-    reason: string | null;
-    nudgeCount: number;
-  }[],
+  nudged: StuckPr[],
   maxNudges: number | null,
   prs: PrRow[]
 ): StuckCandidate[] {
@@ -98,6 +101,11 @@ export function fuseStuckCandidates(
       prNumber: n.prNumber,
       reason: n.reason,
       nudgeCount: n.nudgeCount,
+      // `parseStuckNudges` already resolves these off coord's `nudges[]`
+      // history; taking the whole `StuckPr` rather than three named fields is
+      // what stops them being parsed and then silently dropped here.
+      lastNudgedAt: n.lastNudgedAt,
+      lastOutcome: n.lastOutcome,
       maxNudges,
       blockingSummary: null,
     });
@@ -123,6 +131,8 @@ export function fuseStuckCandidates(
         prNumber: row.pr_number,
         reason: null,
         nudgeCount: 0,
+        lastNudgedAt: null,
+        lastOutcome: null,
         maxNudges,
         blockingSummary: row.blocking_summary ?? null,
       });
@@ -308,6 +318,21 @@ function LeverRow({ lever, busy, onRun }: LeverRowProps) {
 interface StuckPrDiagnosisCardProps {
   repo: string;
   candidate: StuckCandidate;
+  /** coord's stuck-PR nudge feature flag for this repo. */
+  nudgesEnabled: boolean;
+  /**
+   * The PR's merge proposal, read by the PANEL rather than by this card. The
+   * panel already polls, and it needs the same verdict to decide whether the PR
+   * belongs on the list at all — so fetching it here as well would duplicate
+   * every request and let the two disagree.
+   */
+  proposal: ProposalView | null;
+  /**
+   * Whether the panel's verdict read has SETTLED for this PR. While `false`,
+   * proposal-shaped hypotheses are withheld rather than guessed — "I don't know
+   * yet" and "there is no merge attempt" are different claims.
+   */
+  proposalLoaded: boolean;
   /** Re-run the panel's own reads after a successful action. */
   onActed: () => void;
 }
@@ -315,53 +340,25 @@ interface StuckPrDiagnosisCardProps {
 /**
  * One PR's diagnosis + the levers that clear it.
  *
- * Reads the PR's merge verdict itself (the ONLY place `proposal_id` is
- * available, and a cancel must be addressed to an id). While that read is in
- * flight the card withholds proposal-shaped hypotheses rather than guessing —
- * "I don't know yet" and "there is no merge attempt" are different claims and
- * the card must not conflate them.
+ * Purely a view over {@link diagnoseStuckPr} plus the action handler: the
+ * verdict it diagnoses (the ONLY place `proposal_id` is available, and a cancel
+ * must be addressed to an id) arrives as a prop from the polling panel.
  */
 export function StuckPrDiagnosisCard({
   repo,
   candidate,
+  nudgesEnabled,
+  proposal,
+  proposalLoaded,
   onActed,
 }: StuckPrDiagnosisCardProps) {
-  const [proposal, setProposal] = useState<ProposalView | null>(null);
-  const [proposalLoaded, setProposalLoaded] = useState(false);
   const [busy, setBusy] = useState<LeverActionKind | null>(null);
   const [actionError, setActionError] = useState<ActionError | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
-  // Memoized so the two callbacks below can depend on the object identity
-  // rather than on destructured fields (which would re-create them each render).
+  // Memoized so the callback below can depend on the object identity rather
+  // than on destructured fields (which would re-create it each render).
   const parts = useMemo(() => splitRepo(repo), [repo]);
-
-  const loadVerdict = useCallback(async () => {
-    if (!parts) {
-      setProposalLoaded(true);
-      return;
-    }
-    try {
-      const res = await httpClient.fetch(
-        prMergeVerdictUrl(parts.owner, parts.name, candidate.prNumber)
-      );
-      if (!res.ok) {
-        // A verdict coord will not serve is not a failure of the card — the
-        // diagnosis simply proceeds without proposal evidence, and says so.
-        setProposal(null);
-        return;
-      }
-      setProposal(parseProposalView(await res.json()));
-    } catch {
-      setProposal(null);
-    } finally {
-      setProposalLoaded(true);
-    }
-  }, [parts, candidate.prNumber]);
-
-  useEffect(() => {
-    void loadVerdict();
-  }, [loadVerdict]);
 
   const hypotheses: Hypothesis[] = useMemo(
     () =>
@@ -371,11 +368,14 @@ export function StuckPrDiagnosisCard({
         reason: candidate.reason,
         nudgeCount: candidate.nudgeCount,
         maxNudges: candidate.maxNudges,
+        lastNudgedAt: candidate.lastNudgedAt,
+        lastOutcome: candidate.lastOutcome,
+        nudgesEnabled,
         blockingSummary: candidate.blockingSummary,
         proposal,
         proposalLoaded,
       }),
-    [repo, candidate, proposal, proposalLoaded]
+    [repo, candidate, nudgesEnabled, proposal, proposalLoaded]
   );
 
   const runAction = useCallback(
@@ -411,7 +411,8 @@ export function StuckPrDiagnosisCard({
           return;
         }
         setResult(describeActionSuccess(kind, body));
-        await loadVerdict();
+        // The panel's refresh re-reads the verdict too, so one call re-syncs
+        // both the candidate list and this card's proposal.
         onActed();
       } catch (err) {
         setActionError({
@@ -423,7 +424,7 @@ export function StuckPrDiagnosisCard({
         setBusy(null);
       }
     },
-    [parts, repo, candidate.prNumber, proposal, loadVerdict, onActed]
+    [parts, repo, candidate.prNumber, proposal, onActed]
   );
 
   // `diagnoseStuckPr` never returns an empty list (it emits an explicit
@@ -556,9 +557,27 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
   const activeRepo = repo ?? defaultRepo;
   const [candidates, setCandidates] = useState<StuckCandidate[]>([]);
   const [staleRead, setStaleRead] = useState(false);
+  // coord's `COORD_PR_STUCK_NUDGE_*` flag. Defaults TRUE so an unreadable
+  // nudges payload does not put "nudges are off" on the card; the flag is only
+  // believed when coord actually states it.
+  const [nudgesEnabled, setNudgesEnabled] = useState(true);
+  /**
+   * Each candidate's merge verdict, keyed by PR number, re-read on every poll.
+   *
+   * Read HERE and not in the card because the panel needs it to answer a
+   * question the card cannot: whether the PR belongs on the list at all. The
+   * candidate screen only has `proposal_age_secs` from `/pr-merge/prs`, so a
+   * 45-minute CI round trip looks identical to a 45-minute stall; only the
+   * verdict's `seconds_since_update` separates them. A `null` value is a
+   * SETTLED read that found no proposal; an absent key means "not read yet".
+   */
+  const [verdicts, setVerdicts] = useState<
+    ReadonlyMap<number, ProposalView | null>
+  >(() => new Map());
 
   const refresh = useCallback(async () => {
     if (!activeRepo) return;
+    const parts = splitRepo(activeRepo);
     try {
       const [nudgeRes, prRes] = await Promise.all([
         httpClient.fetch(stuckNudgesUrl(activeRepo)),
@@ -568,15 +587,38 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
       const prBody: unknown = prRes.ok ? await prRes.json() : null;
       const nudges = parseStuckNudges(nudgeBody);
       const prs = ((prBody as PrListResponse | null)?.prs ?? []) as PrRow[];
-      setCandidates(
-        fuseStuckCandidates(
-          activeRepo,
-          nudges?.prs ?? [],
-          nudges?.maxNudges ?? null,
-          prs
-        )
+      const fused = fuseStuckCandidates(
+        activeRepo,
+        nudges?.prs ?? [],
+        nudges?.maxNudges ?? null,
+        prs
       );
+      setCandidates(fused);
+      setNudgesEnabled(nudges?.enabled ?? true);
       setStaleRead(!nudgeRes.ok && !prRes.ok);
+
+      // Verdicts for the candidates that can plausibly be rendered — bounded,
+      // with headroom above STUCK_PR_MAX_CARDS so a retraction that promotes
+      // the next candidate promotes one that already has its verdict.
+      if (parts) {
+        const wanted = fused.slice(0, STUCK_PR_MAX_VERDICT_READS);
+        const read = await Promise.all(
+          wanted.map(async (c) => {
+            try {
+              const res = await httpClient.fetch(
+                prMergeVerdictUrl(parts.owner, parts.name, c.prNumber)
+              );
+              // A verdict coord will not serve is not a failure of the panel —
+              // the diagnosis proceeds without proposal evidence and says so.
+              if (!res.ok) return [c.prNumber, null] as const;
+              return [c.prNumber, parseProposalView(await res.json())] as const;
+            } catch {
+              return [c.prNumber, null] as const;
+            }
+          })
+        );
+        setVerdicts(new Map(read));
+      }
     } catch {
       // Keep the last known list: a flaky poll must not make a live wedge
       // vanish from the page. The banner below says the view may be stale.
@@ -590,19 +632,39 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
     return () => clearInterval(id);
   }, [refresh]);
 
-  if (!activeRepo || candidates.length === 0) return null;
+  // Drop the PRs the settled verdict cleared — from the headline count as well
+  // as the card list, since "1 pull request is stuck" above zero cards would be
+  // the same false alarm one line up. Recomputed from each poll's fresh
+  // verdict, so a PR that genuinely wedges later comes straight back.
+  const live = candidates.filter(
+    (c) =>
+      !isRetractedByVerdict({
+        repo: activeRepo ?? "",
+        prNumber: c.prNumber,
+        reason: c.reason,
+        nudgeCount: c.nudgeCount,
+        maxNudges: c.maxNudges,
+        lastNudgedAt: c.lastNudgedAt,
+        lastOutcome: c.lastOutcome,
+        nudgesEnabled,
+        blockingSummary: c.blockingSummary,
+        proposal: verdicts.get(c.prNumber) ?? null,
+        proposalLoaded: verdicts.has(c.prNumber),
+      })
+  );
+  if (!activeRepo || live.length === 0) return null;
 
-  const shown = candidates.slice(0, STUCK_PR_MAX_CARDS);
-  const hidden = candidates.length - shown.length;
+  const shown = live.slice(0, STUCK_PR_MAX_CARDS);
+  const hidden = live.length - shown.length;
 
   return (
     <section className="card p-3" data-testid="stuck-pr-panel">
       <div className="flex flex-wrap items-center gap-2">
         <LifeBuoy className="h-4 w-4 shrink-0 text-amber-500" aria-hidden />
         <h2 className="text-sm font-semibold">
-          {candidates.length === 1
+          {live.length === 1
             ? "1 pull request is stuck in the merge queue"
-            : `${candidates.length} pull requests are stuck in the merge queue`}
+            : `${live.length} pull requests are stuck in the merge queue`}
         </h2>
         <span className="text-xs text-muted-foreground">{activeRepo}</span>
         {staleRead && (
@@ -622,6 +684,9 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
             key={c.prNumber}
             repo={activeRepo}
             candidate={c}
+            nudgesEnabled={nudgesEnabled}
+            proposal={verdicts.get(c.prNumber) ?? null}
+            proposalLoaded={verdicts.has(c.prNumber)}
             onActed={() => void refresh()}
           />
         ))}
