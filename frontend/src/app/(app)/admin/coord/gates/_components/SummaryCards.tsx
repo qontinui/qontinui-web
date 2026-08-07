@@ -4,7 +4,7 @@
  * SummaryCards — at-a-glance counts for the gates & rollout dashboard.
  *
  * Open / cleared-today / failed / stale / snoozed / muted / archived gate
- * counts, plus a rollout summary (live/shadow/dry_run auto-merge repo counts).
+ * counts, plus a rollout summary (enabled/disabled auto-merge repo counts).
  */
 
 import { Card, CardContent } from "@/components/ui/card";
