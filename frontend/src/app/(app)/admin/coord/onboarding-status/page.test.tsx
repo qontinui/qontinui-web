@@ -289,15 +289,21 @@ describe("onboarding-status claim", () => {
 
 /**
  * The live OAuth `code` and the live connect-state token must leave the URL on
- * EVERY outcome, not just the resolving-claim ones.
+ * EVERY arrival — not just the resolving-claim ones, and not just the claimable
+ * ones.
  *
- * Three exits used to return without stripping — the hard claim error, the
- * malformed-`installation_id` early return, and the async `catch` — leaving both
- * credentials in the address bar, in browser history, and in the `Referer` of
- * everything the page then renders (`OnboardingDoctor` mounts on the error
- * path). The fix strips once, unconditionally, up front; these tests pin that
- * shape rather than the enumeration it replaced, which was already wrong once
- * (plan `2026-08-01-connect-state-residual-hardenings` P2 / F7).
+ * The enumeration has been wrong twice here. First three exits returned without
+ * stripping (hard claim error, malformed `installation_id`, the async `catch`).
+ * Then, with the call hoisted to the top of the claim effect, two more still
+ * leaked because that effect is gated on `hasClaimParams` — a `code` plus a
+ * target — which a GitHub authorize "Cancel" (`?error=access_denied&state=…`,
+ * no code) and an unparseable-`state` callback both fail while still carrying
+ * live credentials.
+ *
+ * So the strip now runs from its own ungated effect, and these tests cover both
+ * families: claimable arrivals that fail late, and non-claimable arrivals that
+ * never reach the claim at all (plan
+ * `2026-08-01-connect-state-residual-hardenings` P2 / F7).
  */
 describe("claim params are stripped on every exit", () => {
   /** Point `window.location` at a real claim callback URL and track replaceState. */
@@ -319,12 +325,16 @@ describe("claim params are stripped on every exit", () => {
     return { current: () => latest };
   }
 
-  function assertNoCredentials(url: string): void {
+  function assertNoCredentials(
+    url: string,
+    preserved: string[] = ["installation_id"]
+  ): void {
     const params = new URL(url).searchParams;
     expect(params.get("code")).toBeNull();
     expect(params.get("state")).toBeNull();
-    // The non-credential params are NOT collateral damage.
-    expect(params.get("installation_id")).not.toBeNull();
+    // Non-credential params are NOT collateral damage — only `code` and `state`
+    // are credentials, and the rest of the URL must survive intact.
+    for (const key of preserved) expect(params.get(key)).not.toBeNull();
   }
 
   afterEach(() => {
@@ -412,6 +422,64 @@ describe("claim params are stripped on every exit", () => {
     // …and the claim still carried the token it read BEFORE the strip, so
     // stripping early cannot starve the request it precedes.
     expect(claimBody().connect_state).toBe(TOKEN);
+  });
+
+  // ---- arrivals that are NOT claimable, and so never reach the claim effect --
+
+  it("drops the token when the user CANCELS on GitHub's authorize screen", async () => {
+    // `?error=access_denied&…&state=…` — no `code` at all, so `hasClaimParams`
+    // is false and the claim effect returns immediately. The connect-state token
+    // is nonetheless live for the rest of its TTL, and this is a path a real
+    // user reaches by mis-clicking, not a crafted one. Gating the strip on
+    // "claimable" left it in the address bar, in history, and in the
+    // same-origin `Referer` of everything this page renders.
+    const search = `error=access_denied&error_description=The+user+denied+access&state=connect~acme-org~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() =>
+      assertNoCredentials(url.current(), ["error", "error_description"])
+    );
+    // Nothing was claimed — there is nothing to claim.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+  });
+
+  it("drops code + state when `state` doesn't parse and there is no installation_id", async () => {
+    // The second non-claimable shape: a live code AND a live token, with
+    // `parseConnectState` returning null so `stateLogin` is null too. Renders
+    // the plain doctor view, which is precisely why nothing used to clean up.
+    const search = `code=gho_code&state=not-a-valid-state`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() => assertNoCredentials(url.current(), []));
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+  });
+
+  it("leaves an ordinary `?repo=` visit's URL untouched", async () => {
+    // The unconditional call must be free on non-callback visits: no `code`, no
+    // `state`, so `stripClaimParamsFromUrl` self-guards and never touches
+    // history at all.
+    const search = "repo=acme%2Fwidgets";
+    withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() => expect(screen.getByTestId("coord-onboarding-status-page")).toBeInTheDocument());
+    expect(window.history.replaceState).not.toHaveBeenCalled();
   });
 });
 
