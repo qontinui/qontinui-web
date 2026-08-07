@@ -10,10 +10,10 @@
  * final POST /pr-merge/onboarding/accept).
  *
  * Counterpart to /admin/coord/merge-settings: this page WRITES
- * coord.tenant_repos (the row the rollout-promote endpoint requires);
- * merge-settings reads/mutates rollout_state on already-enrolled repos.
- * Without this page the SLO panel renders "No repos onboarded yet" with
- * no actionable next step.
+ * coord.tenant_repos (the enrollment row the onboarding audit/accept flow
+ * requires); merge-settings reads/mutates `merge_enabled` on already-enrolled
+ * repos. Without this page the SLO panel renders "No repos onboarded yet"
+ * with no actionable next step.
  *
  * CoordNav comes from the /admin/coord layout. That layout does NOT admin-gate
  * — any authenticated tenant member may reach this page, including the
