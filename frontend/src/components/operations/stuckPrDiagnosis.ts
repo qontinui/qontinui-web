@@ -223,6 +223,20 @@ export interface ProposalView {
   candidateRef: string | null;
   error: string | null;
   hadRebaseConflict: boolean;
+  /**
+   * coord's own correction when `status` and `error` contradict each other
+   * (`merge_verdict.rs:216-235` — `proposal_status_note`). coord emits it for
+   * exactly one combination: an `error` recorded on a row sitting at an
+   * IN-FLIGHT status. That row's `status` describes its QUEUE SLOT, not its
+   * outcome — a deferred land writes its cause to `error` and requeues, so the
+   * row reads `awaiting-ci` while the real failure is only in `error`.
+   *
+   * This is the field that stops this card repeating coord#1318, where every
+   * status-shaped surface said "queued, waiting for CI" about a PR whose land
+   * had failed an hour earlier on `authority_mismatch`. `null` whenever the two
+   * do not contradict.
+   */
+  statusNote: string | null;
 }
 
 function asString(v: unknown): string | null {
@@ -255,6 +269,7 @@ export function parseProposalView(body: unknown): ProposalView | null {
     candidateRef: asString(p.candidate_ref),
     error: asString(p.error),
     hadRebaseConflict: p.had_rebase_conflict === true,
+    statusNote: asString(p.status_note),
   };
 }
 
@@ -508,6 +523,24 @@ export interface StuckPrInput {
   nudgeCount: number;
   /** coord's nudge cap, or `null` when unknown. */
   maxNudges: number | null;
+  /**
+   * When coord last nudged this PR's author (RFC3339), or `null`. Evidence for
+   * how long this has been a known problem — a `nudge_count` with no clock
+   * cannot distinguish "3 nudges this hour" from "3 nudges last month".
+   */
+  lastNudgedAt: string | null;
+  /**
+   * How coord's last nudge landed (`coord.pr_author_nudges.last_outcome`). Its
+   * value is the reason a `nudge_count > 0` does NOT prove the author was
+   * reached, so it is shown alongside the count rather than instead of it.
+   */
+  lastOutcome: string | null;
+  /**
+   * coord's `COORD_PR_STUCK_NUDGE_*` feature flag for this repo. When `false`,
+   * `stuck_now[]` is empty for reasons that say nothing about the PR, so the
+   * card must not read the absence of a nudge reason as evidence of health.
+   */
+  nudgesEnabled: boolean;
   /** coord's own plain-language hold reason from `/pr-merge/prs`. */
   blockingSummary: string | null;
   /** The newest proposal at this PR's head, or `null` when coord has none. */
@@ -555,22 +588,51 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
   const out: Hypothesis[] = [];
   const reevaluate = leverReevaluate(repo, prNumber);
 
-  const nudgeEvidence: Evidence[] =
-    input.nudgeCount > 0
-      ? [
-          {
-            source: "coord stuck-nudges",
-            pointer: `${repo}#${prNumber}.nudge_count`,
-            value:
-              input.maxNudges !== null && input.nudgeCount >= input.maxNudges
-                ? `${input.nudgeCount} (cap reached — coord has stopped nudging)`
-                : String(input.nudgeCount),
-          },
-        ]
-      : [];
+  const nudgeEvidence: Evidence[] = [];
+  if (input.nudgeCount > 0) {
+    nudgeEvidence.push({
+      source: "coord stuck-nudges",
+      pointer: `${repo}#${prNumber}.nudge_count`,
+      value:
+        input.maxNudges !== null && input.nudgeCount >= input.maxNudges
+          ? `${input.nudgeCount} (cap reached — coord has stopped nudging)`
+          : String(input.nudgeCount),
+    });
+    // A count alone cannot date the problem, and `last_outcome` is the only
+    // field that says whether the nudges coord counted actually REACHED anyone.
+    // Both were already parsed off coord's payload and then dropped.
+    if (input.lastNudgedAt) {
+      nudgeEvidence.push({
+        source: "coord stuck-nudges",
+        pointer: `${repo}#${prNumber}.last_nudged_at`,
+        value: input.lastNudgedAt,
+      });
+    }
+    if (input.lastOutcome) {
+      nudgeEvidence.push({
+        source: "coord stuck-nudges",
+        pointer: `${repo}#${prNumber}.last_outcome`,
+        value: input.lastOutcome,
+      });
+    }
+  } else if (!input.nudgesEnabled) {
+    // Zero nudges with the flag OFF is not "coord saw nothing wrong" — coord
+    // was not looking. Saying so is the difference between absent evidence and
+    // evidence of absence, which this card's honesty gate turns on.
+    nudgeEvidence.push({
+      source: "coord stuck-nudges",
+      pointer: `${repo}.enabled`,
+      value: "false (author nudges are off for this repo — no live signal)",
+    });
+  }
 
   // ---- Merge conflict: coord's own live classification. -------------------
-  if (input.reason === "merge_conflict") {
+  //
+  // coord reports the same conflict through two independent channels — the live
+  // `stuck_now[].reason` here and `had_rebase_conflict` on the proposal below.
+  // They are one finding, so whichever speaks first claims it.
+  const conflictAlreadyNamed = input.reason === "merge_conflict";
+  if (conflictAlreadyNamed) {
     out.push({
       hypothesis: "merge-conflict-blocks-candidate",
       symptom: "pr_stuck",
@@ -601,6 +663,77 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
         `${durationLabel(proposal.secondsSinceUpdate)}, age ` +
         `${durationLabel(proposal.ageSeconds)})`,
     };
+    // The merge-candidate branch a cancel DELETES. Naming it turns the cancel
+    // consequence from a category ("the branch coord created") into a specific
+    // ref the user can go and look at before agreeing to destroy it.
+    const candidateEvidence: Evidence[] = proposal.candidateRef
+      ? [
+          {
+            source: "coord merge proposal",
+            pointer: `proposal ${proposal.proposalId}.candidate_ref`,
+            value: proposal.candidateRef,
+          },
+        ]
+      : [];
+
+    // ---- coord says its own status is misleading. Believe coord. ----------
+    //
+    // `status_note` is emitted for exactly one combination — an `error` on a
+    // row still sitting at an in-flight status — and it is coord ASSERTING the
+    // contradiction rather than this card inferring it, which is why it
+    // outranks every hypothesis below. Without it this card reads the queue
+    // slot as the outcome and tells the user to wait for CI that already
+    // finished: coord#1318, the incident that put the field there.
+    if (proposal.statusNote) {
+      out.push({
+        hypothesis: "status-contradicts-recorded-error",
+        symptom: "pr_stuck",
+        confidence: 0.95,
+        summary:
+          `This PR's merge attempt still reads "${proposal.status}", but coord ` +
+          "has recorded a failure against it. The status is its place in the " +
+          "queue, not its outcome — it is not simply waiting.",
+        evidence: [
+          statusEvidence,
+          {
+            source: "coord merge proposal",
+            pointer: `proposal ${proposal.proposalId}.status_note`,
+            value: proposal.statusNote,
+          },
+          ...(proposal.error
+            ? [
+                {
+                  source: "coord merge proposal",
+                  pointer: `proposal ${proposal.proposalId}.error`,
+                  value: proposal.error,
+                },
+              ]
+            : []),
+          ...candidateEvidence,
+        ],
+        // `status_note` fires on any in-flight status, and `landing` is one of
+        // them — so this arm must respect the same refusal the land-in-flight
+        // arm below states, or it would offer an enabled cancel that coord
+        // answers with 409 `land_in_flight`.
+        levers:
+          proposal.status === "landing"
+            ? [
+                leverCancelStop(proposal.proposalId, {
+                  safeNow: false,
+                  why:
+                    "The push may already be running. coord refuses to cancel " +
+                    "a landing attempt rather than risk a half-landed merge, " +
+                    "even though it has recorded an error against it.",
+                }),
+                reevaluate,
+              ]
+            : [
+                leverCancelUnblock(proposal.proposalId),
+                leverCancelStop(proposal.proposalId, { safeNow: true }),
+                reevaluate,
+              ],
+      });
+    }
 
     // ---- Landing: a fast-forward push may already be executing. -----------
     if (proposal.status === "landing") {
@@ -649,6 +782,54 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
           leverHardcapUnblock(proposal.proposalId),
         ],
       });
+    } else if (
+      terminal &&
+      proposal.hadRebaseConflict &&
+      !conflictAlreadyNamed
+    ) {
+      // ---- The author must rebase, and coord says so structurally. ---------
+      //
+      // `had_rebase_conflict` is `merge_proposal_repos.conflict_diff IS NOT
+      // NULL`, and coord writes that diff ONLY on the genuine
+      // dry-rebase-conflict arm — never for candidate-CI failures or infra
+      // reaps. So it is the discriminator that separates the one terminal
+      // `conflict` row a retry cannot fix from the several it can.
+      //
+      // Getting here wrong is not merely a vaguer card: `conflict` is terminal,
+      // so without this arm the branch below fires and offers "Clear the block
+      // and try again" as the leading lever — a retry at the same commit, which
+      // re-runs the same rebase into the same conflict. The fix is in the
+      // user's checkout, and the card has to say so.
+      out.push({
+        hypothesis: "rebase-conflict-needs-your-branch",
+        symptom: "pr_stuck",
+        confidence: 0.9,
+        summary:
+          "coord tried to rebase this PR onto its base branch and hit a " +
+          "conflict. Retrying at this commit will hit the same conflict — the " +
+          "lines have to be resolved on your branch.",
+        evidence: [
+          statusEvidence,
+          {
+            source: "coord merge proposal",
+            pointer: `proposal ${proposal.proposalId}.had_rebase_conflict`,
+            value: "true (coord recorded a conflict diff for this attempt)",
+          },
+          ...(proposal.error
+            ? [
+                {
+                  source: "coord merge proposal",
+                  pointer: `proposal ${proposal.proposalId}.error`,
+                  value: proposal.error,
+                },
+              ]
+            : []),
+          ...nudgeEvidence,
+        ],
+        // Deliberately NO cancel-unblock: re-queueing at this commit is the one
+        // thing that cannot work here.
+        levers: [leverResolveConflict(), leverPushNewCommit(), reevaluate],
+      });
     } else if (terminal && proposal.status !== "merged") {
       // ---- A failed/cancelled prior at this head blocks re-enqueue. -------
       out.push({
@@ -680,7 +861,16 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
     }
 
     // ---- Non-terminal and not moving: the zombie. ------------------------
-    if (!terminal && proposal.status !== "landing" && stale) {
+    //
+    // Skipped when `status_note` fired: that arm covers the same row with the
+    // same levers and coord's own reason for the stall, so emitting both would
+    // put "we don't know why it stopped" underneath "coord says exactly why".
+    if (
+      !terminal &&
+      proposal.status !== "landing" &&
+      stale &&
+      !proposal.statusNote
+    ) {
       out.push({
         hypothesis: "stale-proposal-zombie",
         symptom: "pr_stuck",
@@ -689,7 +879,7 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
           `This PR's merge attempt has been sitting in "${proposal.status}" ` +
           `for ${durationLabel(proposal.secondsSinceUpdate)} without moving. ` +
           "It is holding a merge slot and will not clear itself.",
-        evidence: [statusEvidence, ...nudgeEvidence],
+        evidence: [statusEvidence, ...candidateEvidence, ...nudgeEvidence],
         levers: [
           leverCancelUnblock(proposal.proposalId),
           leverCancelStop(proposal.proposalId, { safeNow: true }),
@@ -733,6 +923,41 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
       b.confidence - a.confidence || a.hypothesis.localeCompare(b.hypothesis)
   );
   return out;
+}
+
+/**
+ * Does the settled verdict RETRACT this PR from the stuck list? Pure —
+ * exported for the vitest suite.
+ *
+ * The candidate screen and the diagnosis measure two different clocks, because
+ * they read two different coord payloads. `GET /pr-merge/prs` carries only
+ * `proposal_age_secs` — how long ago the train CUT the proposal — so the screen
+ * can only ask "has this been going a while?". The per-PR verdict carries
+ * `seconds_since_update`, which is the one that actually distinguishes a stalled
+ * attempt from a moving one.
+ *
+ * A 45-minute CI round trip is ordinary and clears the age screen every time. So
+ * without this, the panel opens with "1 pull request is stuck in the merge
+ * queue" over a card whose own best hypothesis is a 0.3-confidence
+ * `unclassified-hold` — crying wolf about a PR coord is perfectly happy with,
+ * on the surface whose whole value is that it appears only when something is
+ * wrong.
+ *
+ * Retraction requires the screen to have been the ONLY accuser: coord's live
+ * nudges must have said nothing (`reason === null`, no nudge history), the
+ * proposal must be non-terminal, moving, and carrying no `status_note`
+ * contradiction. Any single one of those firing keeps the card.
+ */
+export function isRetractedByVerdict(input: StuckPrInput): boolean {
+  if (!input.proposalLoaded) return false;
+  // No proposal at this head is not evidence of health — it is the state where
+  // the card has least to go on, so it keeps its low-confidence card.
+  const p = input.proposal;
+  if (!p) return false;
+  if (input.reason !== null || input.nudgeCount > 0) return false;
+  if (isTerminalProposalStatus(p.status)) return false;
+  if (p.statusNote) return false;
+  return p.secondsSinceUpdate < STALE_PROPOSAL_SECS;
 }
 
 /**
