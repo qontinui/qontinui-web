@@ -276,6 +276,153 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     expect(hits).toHaveLength(1);
   });
 
+  it("renders an unreadable threshold as its own state, not as absent", () => {
+    // The primary axis: coord sent something we cannot interpret. That is
+    // neither "no threshold" nor "nothing reported".
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          pressure_floor: {
+            basis: "swap_ratio",
+            ratio: 1.2,
+            source: "policy",
+            verdict: "defer",
+            reject_ratio: null,
+            reject_source: null,
+          },
+        }),
+      ],
+      history: [],
+    });
+    const unreadable = screen.getByTestId("fleet-resource-floor-unreadable");
+    expect(unreadable.textContent).toMatch(/unreadable/i);
+    expect(screen.queryByText(/no swap threshold/)).toBeNull();
+    expect(screen.queryAllByTestId("fleet-resource-floor-missing").length).toBe(
+      0
+    );
+  });
+
+  it("renders an unreadable REJECT threshold as its own state, not as 'there is none'", () => {
+    // "no reject threshold" claims nothing refuses work here. A value we
+    // cannot read must not produce that claim.
+    renderStrip({
+      latest: [
+        sample({
+          floor: {
+            basis: "commit_available",
+            bytes: 5 * GIB,
+            source: "default",
+            verdict: "defer",
+            reject_bytes: NaN,
+            reject_source: "policy",
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-reject-floor-unreadable").textContent
+    ).toMatch(/unreadable/i);
+    expect(screen.queryByTestId("fleet-resource-reject-floor-none")).toBeNull();
+  });
+
+  it("reports a reject threshold three ways on the pressure axis too", () => {
+    function wsl(pf: Record<string, unknown>) {
+      return sample({
+        lane: "wsl",
+        pressure_floor: {
+          basis: "swap_ratio",
+          ratio: 0.5,
+          source: "default",
+          verdict: "defer",
+          ...pf,
+        } as never,
+      });
+    }
+    // absent
+    const absent = wsl({});
+    delete (absent.pressure_floor as { reject_ratio?: unknown }).reject_ratio;
+    renderStrip({ latest: [absent], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-reject-floor-missing").textContent
+    ).toMatch(/not reported/i);
+    cleanup();
+    // explicit null
+    renderStrip({ latest: [wsl({ reject_ratio: null })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-reject-floor-none").textContent
+    ).toMatch(/no reject threshold/);
+    cleanup();
+    // unreadable
+    renderStrip({ latest: [wsl({ reject_ratio: 4 })], history: [] });
+    expect(
+      screen.getByTestId("fleet-resource-reject-floor-unreadable")
+    ).toBeTruthy();
+  });
+
+  it("says 'verdict not reported' for an absent verdict, distinctly from an unreadable one", () => {
+    const legacyFloor = {
+      basis: "commit_available" as const,
+      bytes: 5 * GIB,
+      source: "default" as const,
+      reject_bytes: null,
+      reject_source: null,
+    };
+    renderStrip({
+      latest: [sample({ floor: legacyFloor as never })],
+      history: [],
+    });
+    const floor = screen.getAllByTestId("fleet-resource-floor")[0];
+    expect(floor.textContent).toMatch(/verdict not reported/);
+    expect(floor.textContent).not.toMatch(/verdict unknown/);
+    // No verb inherited, and no direction word claimed.
+    expect(floor.textContent).not.toMatch(/defers|below/);
+  });
+
+  it("discloses that a host-lane ceiling is NOT the axis of that row's pressure figure", () => {
+    // The carve-out prints a reported ceiling even where swap figures are
+    // suppressed. Beside a "commit used" percentage, an unlabelled "50% swap
+    // used" invites exactly the comparison §C1 exists to prevent.
+    renderStrip({
+      latest: [
+        sample({
+          pressure_floor: {
+            basis: "swap_ratio",
+            ratio: 0.5,
+            source: "policy",
+            verdict: "defer",
+            reject_ratio: null,
+            reject_source: null,
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(
+      screen.getByTestId("fleet-resource-floor-off-axis").textContent
+    ).toMatch(/not this row's pressure axis/i);
+  });
+
+  it("does not flag a host row with a PRESENT ceiling as a reporting gap", () => {
+    renderStrip({
+      latest: [
+        sample({
+          pressure_floor: {
+            basis: "swap_ratio",
+            ratio: 0.5,
+            source: "policy",
+            verdict: "defer",
+            reject_ratio: null,
+            reject_source: null,
+          },
+        }),
+      ],
+      history: [],
+    });
+    expect(screen.queryByTestId("fleet-resource-floors-missing")).toBeNull();
+  });
+
   it("says 'no reject threshold' rather than falling back to the defer number", () => {
     renderStrip({
       latest: [
@@ -363,7 +510,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     renderStrip({ latest: [memOnly], history: [] });
     expect(
       screen.getByTestId("fleet-resource-floors-missing").textContent
-    ).toMatch(/reported no\s+floor/i);
+    ).toMatch(/left a threshold\s+unreported/i);
   });
 
   it("says a floor is NOT REPORTED rather than implying the lane has none", () => {
@@ -377,7 +524,7 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     // And the legend counts it rather than leaving the gap invisible.
     expect(
       screen.getByTestId("fleet-resource-floors-missing").textContent
-    ).toMatch(/reported no\s+floor/i);
+    ).toMatch(/left a threshold\s+unreported/i);
   });
 
   it("reports all three axes as unreported on a lane that has all three", () => {
@@ -390,7 +537,38 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     );
     expect(
       screen.getByTestId("fleet-resource-floors-missing").textContent
-    ).toMatch(/reported no\s+floor/i);
+    ).toMatch(/left a threshold\s+unreported/i);
+  });
+
+  it("never states an unqualified direction in the legend", () => {
+    // The legend TEACHES the column. It shipped once saying the rejecting
+    // threshold "sits below the deferring one" — true on the byte axis and
+    // backwards on the pressure axis, ten lines after the axes bullet said
+    // the two run in opposite directions.
+    renderStrip({ latest: [sample()], history: [] });
+    const legend =
+      screen.getByTestId("fleet-resource-floors").textContent ?? "";
+    expect(legend).not.toMatch(/sits below the deferring/i);
+    // Wherever it names one direction it must name both.
+    expect(legend).toMatch(/lower on a byte floor/i);
+    expect(legend).toMatch(/higher on a pressure ceiling/i);
+  });
+
+  it("scopes the amber margin to the byte axis, where coord applies it", () => {
+    // coord deliberately has NO early band below a pressure ceiling: at or
+    // above it a guard is already acting. Claiming the margin universally
+    // would answer a question the wire never answered.
+    renderStrip({
+      latest: [sample()],
+      history: [],
+      headroom_warn_margin: 1.5,
+    });
+    const margin =
+      screen.getByTestId("fleet-resource-warn-margin").textContent ?? "";
+    expect(margin).toMatch(/byte floor/i);
+    expect(margin).toMatch(/x1\.5/);
+    expect(margin).toMatch(/pressure ceiling/i);
+    expect(margin).toMatch(/no early band/i);
   });
 
   it("the legend explains the vocabulary and states no numbers of its own", () => {

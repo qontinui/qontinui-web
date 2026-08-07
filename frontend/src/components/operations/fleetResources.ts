@@ -94,6 +94,17 @@ export type FloorVerdict = "reject" | "defer";
 export type ThresholdAxis = "bytes" | "ratio";
 
 /**
+ * The preposition each axis is crossed by. **The single source of the
+ * direction word** — both describers key off this rather than spelling a
+ * literal, so `axis` and `direction` cannot drift apart. (They could, while
+ * each function hardcoded its own string.)
+ */
+export const AXIS_DIRECTION: Record<ThresholdAxis, string> = {
+  bytes: "below",
+  ratio: "at or above",
+};
+
+/**
  * A floor coord is actually enforcing for this lane, as reported per row.
  *
  * `source` distinguishes a tenant's configured value (§D1 policy) from the
@@ -556,8 +567,23 @@ export const PRESSURE_FLOOR_BASIS_LABEL: Record<PressureFloorBasis, string> = {
  * rendered on: the two must be directly comparable by eye or the threshold
  * tells the operator nothing about the number beside it.
  */
+/** Short axis name for the row label — derived from the basis, not assumed. */
+export function pressureAxisLabel(
+  basis: PressureFloorBasis | string | null | undefined
+): string {
+  return basis === "swap_ratio" ? "swap" : String(basis ?? "pressure");
+}
+
+/** True when this basis is the derived-on-Windows swap figure §C1 suppresses. */
+export function pressureAxisIsSwap(
+  basis: PressureFloorBasis | string | null | undefined
+): boolean {
+  return basis === "swap_ratio";
+}
+
 export function formatPressureFloor(
-  floor: EffectivePressureFloor | null | undefined
+  floor: EffectivePressureFloor | null | undefined,
+  fractionDigits = 0
 ): string {
   if (
     !floor ||
@@ -568,7 +594,11 @@ export function formatPressureFloor(
     return "unknown";
   }
   const basis = PRESSURE_FLOOR_BASIS_LABEL[floor.basis] ?? floor.basis;
-  return `${formatPercent(floor.ratio)} ${basis}`;
+  const pct =
+    fractionDigits > 0
+      ? `${(floor.ratio * 100).toFixed(fractionDigits)}%`
+      : formatPercent(floor.ratio);
+  return `${pct} ${basis}`;
 }
 
 /** `"4.0 GB free commit"` — the floor's value and the column it is measured on. */
@@ -896,13 +926,15 @@ export interface FloorDetail {
    */
   enforced: boolean;
   /**
-   * Normalized verdict.
+   * Normalized verdict — FOUR states, because they have four causes and the
+   * operator's next move differs by cause.
    *
-   * `"unset"` = coord reported `null`: a threshold nothing enforces.
-   * `"unknown"` = a value this build does not recognize (or an absent field).
-   * Neither inherits a verb.
+   * `"unset"` — coord reported `null`: a threshold nothing enforces.
+   * `"unreported"` — the field was absent: an older coord said nothing.
+   * `"unrecognized"` — a value this build cannot read: a newer coord.
+   * …plus the two real verdicts. Only the real two inherit a verb.
    */
-  verdict: FloorVerdict | "unset" | "unknown";
+  verdict: FloorVerdict | "unset" | "unreported" | "unrecognized";
   /** What to print for the verdict — the label, or the raw string. */
   verdictLabel: string;
   /** Normalized provenance, or `"unknown"`. */
@@ -927,8 +959,26 @@ export interface FloorDetail {
       }
     /** The rejecting enforcer IS this floor — printing it again says nothing. */
     | { kind: "same" }
+    /**
+     * Coord reported a rejecting threshold this build cannot read.
+     *
+     * NOT `"none"`: that renders as "no rejecting enforcer governs this
+     * column", an affirmative claim about the fleet. Letting a NaN or an
+     * out-of-range number produce it would turn unreadable into safe — the
+     * false-safe this surface exists to remove.
+     */
+    | { kind: "unreadable" }
     | { kind: "none" }
     | { kind: "not-reported" };
+  /**
+   * Whether the rejecting threshold really is past the primary in this axis's
+   * direction (lower on a byte floor, higher on a ceiling).
+   *
+   * The copy claims that ordering is deliberate; when coord sends thresholds
+   * the other way round, the claim is withheld rather than asserted over the
+   * data.
+   */
+  rejectIsPastPrimary: boolean;
 }
 
 /**
@@ -942,7 +992,7 @@ export interface FloorDetail {
  * over.
  */
 function normalizeVerdict(raw: unknown): {
-  verdict: FloorVerdict | "unset" | "unknown";
+  verdict: FloorDetail["verdict"];
   label: string;
 } {
   if (raw === "reject" || raw === "defer") {
@@ -950,9 +1000,17 @@ function normalizeVerdict(raw: unknown): {
   }
   if (raw === null) return { verdict: "unset", label: "set, not enforced" };
   if (raw === undefined) {
-    return { verdict: "unknown", label: "verdict not reported" };
+    return { verdict: "unreported", label: "verdict not reported" };
   }
-  return { verdict: "unknown", label: `verdict unknown (${String(raw)})` };
+  return {
+    verdict: "unrecognized",
+    label: `verdict unknown (${String(raw)})`,
+  };
+}
+
+/** True only for a verdict something actually acts on. */
+function isEnforced(v: FloorDetail["verdict"]): v is FloorVerdict {
+  return v === "reject" || v === "defer";
 }
 
 function normalizeSource(raw: unknown): {
@@ -998,12 +1056,12 @@ export function describeFloor(
   let reject: FloorDetail["reject"];
   if (floor.reject_bytes === undefined) {
     reject = { kind: "not-reported" };
-  } else if (
-    floor.reject_bytes === null ||
-    !Number.isFinite(floor.reject_bytes) ||
-    floor.reject_bytes < 0
-  ) {
+  } else if (floor.reject_bytes === null) {
+    // ONLY an explicit null is "there is no rejecting enforcer". A value we
+    // cannot read is a different claim — see the `unreadable` arm below.
     reject = { kind: "none" };
+  } else if (!Number.isFinite(floor.reject_bytes) || floor.reject_bytes < 0) {
+    reject = { kind: "unreadable" };
   } else if (v.verdict === "reject" && floor.reject_bytes === floor.bytes) {
     // The one enforcer on this column already rejects, and the primary badge
     // says so. A second identical clause reads as two guards where there is
@@ -1024,13 +1082,18 @@ export function describeFloor(
     value: formatFloor(floor),
     axis: "bytes",
     // Byte floors run downward: the guard acts BELOW the number.
-    direction: "below",
-    enforced: v.verdict === "reject" || v.verdict === "defer",
+    direction: AXIS_DIRECTION.bytes,
+    enforced: isEnforced(v.verdict),
     verdict: v.verdict,
     verdictLabel: v.label,
     source: src.source,
     sourceLabel: src.label,
     reject,
+    // Past = LOWER on this axis.
+    rejectIsPastPrimary:
+      typeof floor.reject_bytes === "number" &&
+      Number.isFinite(floor.reject_bytes) &&
+      floor.reject_bytes <= floor.bytes,
   };
 }
 
@@ -1061,35 +1124,55 @@ export function describePressureFloor(
   let reject: FloorDetail["reject"];
   if (floor.reject_ratio === undefined) {
     reject = { kind: "not-reported" };
+  } else if (floor.reject_ratio === null) {
+    reject = { kind: "none" };
   } else if (
-    floor.reject_ratio === null ||
     !Number.isFinite(floor.reject_ratio) ||
     floor.reject_ratio < 0 ||
     floor.reject_ratio > 1
   ) {
-    reject = { kind: "none" };
+    reject = { kind: "unreadable" };
   } else if (v.verdict === "reject" && floor.reject_ratio === floor.ratio) {
     reject = { kind: "same" };
   } else {
     const rsrc = normalizeSource(floor.reject_source);
     reject = {
       kind: "present",
-      value: formatPressureFloor({ ...floor, ratio: floor.reject_ratio }),
+      // Two ratios that differ can round to the same whole percent, which
+      // would print one number twice under two badges. Escalate precision
+      // rather than render a collision.
+      value: formatPressureFloor(
+        { ...floor, ratio: floor.reject_ratio },
+        formatPercent(floor.reject_ratio) === formatPercent(floor.ratio) ? 1 : 0
+      ),
       source: rsrc.source,
       sourceLabel: rsrc.label,
     };
   }
 
   return {
-    value: formatPressureFloor(floor),
+    value: formatPressureFloor(
+      floor,
+      reject.kind === "present" &&
+        typeof floor.reject_ratio === "number" &&
+        formatPercent(floor.reject_ratio) === formatPercent(floor.ratio)
+        ? 1
+        : 0
+    ),
     axis: "ratio",
     // A ceiling runs the other way: the guard acts AT OR ABOVE the number.
-    direction: "at or above",
-    enforced: v.verdict === "reject" || v.verdict === "defer",
+    direction: AXIS_DIRECTION.ratio,
+    enforced: isEnforced(v.verdict),
     verdict: v.verdict,
     verdictLabel: v.label,
     source: src.source,
     sourceLabel: src.label,
     reject,
+    // Past = HIGHER on this axis. The opposite comparison from the byte side,
+    // which is the whole reason this flag is computed per describer.
+    rejectIsPastPrimary:
+      typeof floor.reject_ratio === "number" &&
+      Number.isFinite(floor.reject_ratio) &&
+      floor.reject_ratio >= floor.ratio,
   };
 }
