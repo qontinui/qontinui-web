@@ -94,8 +94,8 @@ function ConnectRunnerGithubView({ runnerState }: { runnerState: string | null }
           <CardDescription>
             Install the Qontinui Merge Orchestrator GitHub App on the
             organization whose repositories you want to clone. GitHub verifies
-            you administer the org and connects it to your Qontinui workspace, so
-            your runner can list and clone your repositories. This is
+            you have access to the org and connects it to your Qontinui
+            workspace, so your runner can list and clone your repositories. This is
             clone-only — connecting here does <strong>not</strong> open any pull
             requests or enroll your repositories in the merge orchestrator.
           </CardDescription>

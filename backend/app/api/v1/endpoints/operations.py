@@ -1726,8 +1726,8 @@ async def get_pr_merge_onboarding_accounts(
 #
 # Backs the "already installed but unbound" connect path. GitHub issues a
 # Setup-URL `code` only on a FRESH install, so an org that already has the App
-# installed dead-ends: the claim's org-admin gate needs a code and none is ever
-# issued. The `login/oauth/authorize` endpoint issues a code regardless of
+# installed dead-ends: the claim's install-access gate needs a code and none is
+# ever issued. The `login/oauth/authorize` endpoint issues a code regardless of
 # install state, but the browser needs the App's `client_id` to build that URL.
 # Coord already holds `GITHUB_APP_CLIENT_ID`, so we proxy it rather than adding
 # a second copy of the config here (one source of truth; no new deploy env).
@@ -1763,9 +1763,12 @@ async def get_pr_merge_onboarding_github_app(
 # ``?code=&installation_id=&setup_action=install``. The onboarding-status page
 # POSTs the ``code`` + ``installation_id`` to this proxy, which forwards to
 # coord's ``POST /coord/onboarding/github-accounts/claim`` (coord PR #901).
-# Coord runs the GitHub OAuth code-exchange, verifies the operator administers
-# the installation's org, binds the account to the operator's Cognito tenant,
-# and enrolls the installation's repos. Coord returns
+# Coord runs the GitHub OAuth code-exchange, verifies the operator can REACH
+# the installation (its own `/user/installations` lists it), binds the account
+# to the operator's Cognito tenant, and enrolls the installation's repos. That
+# check proves MEMBERSHIP, not AUTHORITY — `/user/installations` carries no role
+# field, so an ordinary org member passes it (plan
+# `2026-08-01-onboarding-bind-requires-org-admin`, F8). Coord returns
 # ``{ok, account_login, installation_id, tenant_id, enrolled}`` on success.
 #
 # This proxy uses the SAME operator auth + tenant/bearer propagation as the
@@ -1781,8 +1784,8 @@ COORD_ONBOARDING_CLAIM_PATH = "/coord/onboarding/github-accounts/claim"
 #
 # Plan `2026-07-26-coord-onboarding-claim-caller-tenant-binding`. The claim
 # above binds the GitHub account to the CALLER's bearer tenant, while the
-# org-admin proof comes from whoever authorized the OAuth code — two values
-# that were never cross-checked. The fix makes the destination tenant an
+# install-access check runs against whoever authorized the OAuth code — two
+# values that were never cross-checked. The fix makes the destination tenant an
 # intrinsic property of the connect flow: before sending the browser to
 # GitHub, the initiating page mints a single-use, tenant-bound token from
 # coord and rides it through GitHub's `state` round-trip; the claim forwards
@@ -1924,7 +1927,11 @@ class OnboardingClaimRequest(BaseModel):
     is required (coord 400s ``target_required`` otherwise); ``installation_id``
     wins if both are sent. NEITHER selects a tenant — the tenant always comes
     from the caller's auth — and coord 403s ``installation_not_administered``
-    for an installation the caller doesn't administer, whichever key is used.
+    for an installation the caller cannot REACH, whichever key is used. That
+    gate proves MEMBERSHIP, not AUTHORITY: ``/user/installations`` lists every
+    install the caller can reach and carries no role field, so an ordinary org
+    member passes it (plan ``2026-08-01-onboarding-bind-requires-org-admin``,
+    F8). The wire code keeps its historical spelling.
 
     ``bind_only`` — when true, coord binds the account WITHOUT enrolling its
     repos (no bootstrap PRs); for the clone-only path. Defaults false =

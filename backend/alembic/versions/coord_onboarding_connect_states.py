@@ -12,8 +12,10 @@ The defect this table closes
 ============================
 
 ``POST /coord/onboarding/github-accounts/claim`` proves that the *code author*
-administers the target GitHub org, then binds that org to the tenant taken from
-the *caller's bearer* — two values that are never cross-checked. A never-bound
+can REACH the target GitHub org (membership, not authority — see plan
+``2026-08-01-onboarding-bind-requires-org-admin``, F8), then binds that org to
+the tenant taken from the *caller's bearer* — two values that are never
+cross-checked. A never-bound
 org is therefore claimable by any caller holding a valid OAuth code plus any
 coord bearer. The remediation makes the destination tenant an intrinsic,
 server-recorded property of the connect flow: the initiator mints a token under

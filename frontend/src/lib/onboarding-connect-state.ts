@@ -20,12 +20,16 @@
  * ## Why the login in `state` is not a privilege hole
  * It names WHICH installation to claim, never the tenant, and never grants
  * anything: coord resolves the login against the caller's own accessible
- * installations and 403s `installation_not_administered` on a miss. A tampered
- * login can therefore only select an org the *caller already administers*.
+ * installations and 403s `installation_not_administered` (historical wire
+ * spelling) on a miss. A tampered login can therefore only select an org the
+ * *caller can already reach*. That is MEMBERSHIP, not AUTHORITY:
+ * `/user/installations` lists every install the caller can reach and carries no
+ * role field, so an ordinary org member passes it — see plan
+ * `2026-08-01-onboarding-bind-requires-org-admin` (F8).
  *
  * ## Why the connect-state token is the real gate
  * Coord's claim used to derive the destination tenant from the caller's bearer,
- * independently of the OAuth code that proves org admin — so a never-bound org
+ * independently of the OAuth code that proves reachability — so a never-bound org
  * was claimable by any caller holding any valid bearer. {@link mintConnectState}
  * asks coord for a single-use, tenant-bound token BEFORE we navigate to GitHub;
  * the token rides through `state` and is forwarded on the claim, and coord binds

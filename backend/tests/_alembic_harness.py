@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import os
 import subprocess
+import sys
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -78,11 +79,34 @@ def run_alembic(cwd: Path, db_url: str, *args: str) -> subprocess.CompletedProce
 
     The URL is passed both ways (``-x db_url=`` and ``DATABASE_URL``) so the
     call does not depend on which side ``alembic/env.py`` reads.
+
+    ``sys.executable``, not a bare ``"python"``: the child must be the SAME
+    interpreter running the tests, or it is a different set of installed
+    packages. Under ``poetry run`` (CI) the two coincide and the distinction is
+    invisible; on a dev box they need not, and the bare name resolves to
+    whatever ``python.exe`` the OS finds first. Two things made that hard to
+    diagnose, so both are written down:
+
+    * The error was *"No module named alembic.__main__"*, not the
+      *"No module named alembic"* an interpreter without alembic should give.
+      ``cwd`` is ``backend/``, so ``sys.path[0]`` is ``backend/`` and
+      ``backend/alembic/`` — which has no ``__init__.py`` — is picked up as a
+      NAMESPACE package. The import succeeds against the migration directory
+      and only ``__main__`` is missing, which reads like a broken alembic
+      install rather than the wrong interpreter.
+    * Putting the virtualenv's ``Scripts`` dir first on ``PATH`` does not fix
+      it. Windows resolves an un-pathed executable against the calling
+      process's own search order, not the ``env=`` passed here, so the child is
+      chosen before our ``env`` is consulted. ``sys.executable`` is absolute
+      and sidesteps the lookup entirely.
+
+    A migration test that skips locally proves nothing; one that dies on the
+    wrong interpreter proves less.
     """
     env = os.environ.copy()
     env["DATABASE_URL"] = db_url
     proc = subprocess.run(
-        ["python", "-m", "alembic", "-x", f"db_url={db_url}", *args],
+        [sys.executable, "-m", "alembic", "-x", f"db_url={db_url}", *args],
         cwd=str(cwd),
         env=env,
         capture_output=True,
