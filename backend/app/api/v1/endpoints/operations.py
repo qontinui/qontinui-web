@@ -3372,6 +3372,106 @@ async def get_fleet_health(
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
+# ---- Fleet resource samples (§C0/§C2) -----------------------------------
+#
+# Plan: `2026-08-02-fleet-resource-telemetry-and-ci-allocation` §C0 (the
+# coord read route), §C2 (reuse the existing transport).
+#
+# Backs the per-machine resource strip + sparklines on
+# `/admin/coord/fleet`. Read-only, tenant-scoped, and — critically —
+# routed through THIS backend rather than called from the browser.
+# `DeviceStatusTile` records what happened the last time a coord read was
+# made directly through the `/coord-api/*` Next rewrite with
+# ``credentials: "omit"``: coord went operator-auth fail-closed and the
+# tile silently emptied. `_proxy_coord_get` forwards the operator bearer
+# and keeps tenant scoping server-side.
+
+
+@router.get("/fleet/resource-samples")
+async def get_fleet_resource_samples(
+    device_id: UUID | None = Query(
+        default=None,
+        description="Narrow to one device. Tenant scoping still applies on top.",
+    ),
+    lane: str | None = Query(
+        default=None,
+        description="Narrow to one lane: host | wsl | container.",
+    ),
+    window_secs: float | None = Query(
+        default=None,
+        description=(
+            "Sparkline window in seconds. Coord CLAMPS this (24h ceiling) and "
+            "echoes the effective value back; it is deliberately NOT validated "
+            "here."
+        ),
+    ),
+    history_points: int | None = Query(
+        default=None,
+        description=(
+            "Points per (device, lane, lane_instance) anchor. Coord clamps to "
+            "its own ceiling and echoes the effective value."
+        ),
+    ),
+    history: bool | None = Query(
+        default=None,
+        description="false skips the history query entirely (strip-only render).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).
+
+    Response shape (coord-authored — this proxy adds and removes
+    nothing)::
+
+        {
+          "latest": [ResourceSampleRow, ...],   # newest per anchor
+          "count": <int>,
+          "history": [HistorySeries, ...],      # bounded sparkline window
+          "window_secs": <float>,               # EFFECTIVE, post-clamp
+          "latest_lookback_secs": <float>,
+          "history_points_per_anchor": <int>,
+          "history_truncated": <bool>,
+          "schema_pending": <bool>
+        }
+
+    Each ``ResourceSampleRow`` carries a **server-computed** ``pressure``
+    (``{ratio, basis}``, or ``null`` for "no opinion") plus ``age_secs``.
+    Both are passed through untouched on purpose:
+
+    * ``pressure`` is the ONE lane-pressure definition that coord's CI
+      ranker also reads. Recomputing it here (or in the browser) is
+      exactly the dashboard/dispatcher drift §C0 exists to prevent.
+    * ``age_secs`` is computed by Postgres in the same statement as the
+      row, so a browser never subtracts its own clock from a server
+      timestamp.
+
+    ``schema_pending: true`` means the sibling alembic migration
+    (qontinui-web#949) has not reached coord's database yet — coord
+    degrades to an empty set rather than 500ing, and the caller must
+    render that as **unknown**, never as healthy.
+
+    Query params are forwarded verbatim WITHOUT local range validation:
+    coord clamps out-of-range values and echoes the effective bounds, and
+    a 422 here would turn a slightly-greedy render into a blank panel.
+    """
+    params: dict[str, Any] = {}
+    if device_id is not None:
+        params["device_id"] = str(device_id)
+    if lane is not None:
+        params["lane"] = lane
+    if window_secs is not None:
+        params["window_secs"] = window_secs
+    if history_points is not None:
+        params["history_points"] = history_points
+    if history is not None:
+        params["history"] = history
+    return await _proxy_coord_get(
+        "/coord/devices/resource-samples",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------
 #
 # These endpoints are added now so the Wave-3 frontend (decision queue

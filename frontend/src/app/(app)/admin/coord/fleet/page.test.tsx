@@ -30,6 +30,10 @@ vi.mock("@/services/service-factory", () => ({
 vi.mock("@/components/operations", () => ({
   DevActionsTile: () => null,
   FleetOverview: () => null,
+  // Stubbed like the rest: the resource strip has its own render tests
+  // (FleetResourceStrip.test.tsx). What matters HERE is that its alarm count
+  // is hoisted onto the collapsed header, which the page computes itself.
+  FleetResourcesSection: () => null,
   FleetTestTargetsPanel: () => null,
   MergePipeline: () => null,
   MergeDependencyGraph: () => null,
@@ -156,5 +160,106 @@ describe("/admin/coord/fleet HealthSummaryCard", () => {
         screen.getByText(/No devices reporting health/i)
       ).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * §C1/§C3 — the resource alarm is hoisted onto the COLLAPSED header, for the
+ * same reason the unhealthy count already is: a saturated machine is a red
+ * fleet state, and a red fleet state must not hide behind a click. That is
+ * also why the poll lives on the page rather than inside the section (which
+ * unmounts while collapsed).
+ */
+describe("/admin/coord/fleet resource alarm hoisting", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    window.localStorage.clear();
+  });
+
+  /** Route the two page-level GETs to different payloads. */
+  function mockRoutes(health: unknown, samples: unknown) {
+    httpGet.mockImplementation((url: unknown) =>
+      typeof url === "string" && url.includes("resource-samples")
+        ? Promise.resolve(samples)
+        : Promise.resolve(health)
+    );
+  }
+
+  function hostSample(deviceId: string, ratio: number, ageSecs = 15) {
+    return {
+      device_id: deviceId,
+      lane: "host",
+      lane_instance: null,
+      sampled_at: "2026-08-06T12:00:00Z",
+      age_secs: ageSecs,
+      cpu_cores: 16,
+      load_1m: null,
+      mem_total_bytes: 1,
+      mem_available_bytes: 1,
+      commit_total_bytes: 1,
+      commit_available_bytes: 1,
+      swap_total_bytes: null,
+      swap_used_bytes: null,
+      disk_total_bytes: 1,
+      disk_free_bytes: 1,
+      disk_mount: "D:",
+      build_slots_total: 4,
+      build_slots_busy: 1,
+      build_queue_depth: 0,
+      ci_jobs_running: null,
+      source: "supervisor",
+      pressure: { ratio, basis: "commit" },
+    };
+  }
+
+  it("shows the saturated count on the collapsed header", async () => {
+    mockRoutes(
+      { devices: [coordDevice("d-1", "msi", "healthy")] },
+      { latest: [hostSample("d-1", 0.95)], history: [] }
+    );
+
+    render(<CoordFleetPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("coord-fleet-saturated-badge")
+      ).toHaveTextContent("1 saturated");
+    });
+    // Still collapsed — the alarm did not require opening the section.
+    expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
+  });
+
+  it("shows a stale count, and does NOT count a stale lane as saturated", async () => {
+    mockRoutes(
+      { devices: [coordDevice("d-1", "msi", "healthy")] },
+      // Last known ratio was critical, but the sample stopped being true.
+      { latest: [hostSample("d-1", 0.99, 4000)], history: [] }
+    );
+
+    render(<CoordFleetPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("coord-fleet-stale-badge")).toHaveTextContent(
+        "1 stale"
+      );
+    });
+    expect(screen.queryByTestId("coord-fleet-saturated-badge")).toBeNull();
+  });
+
+  it("raises no saturation alarm when a machine has simply published nothing", async () => {
+    // §C3: absence of signal is not health — but it is also not a red alarm.
+    // It is unknown, and the header must not claim either.
+    mockRoutes(
+      { devices: [coordDevice("d-1", "msi", "healthy")] },
+      { latest: [], history: [] }
+    );
+
+    render(<CoordFleetPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 machines")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("coord-fleet-saturated-badge")).toBeNull();
+    expect(screen.queryByTestId("coord-fleet-stale-badge")).toBeNull();
   });
 });
