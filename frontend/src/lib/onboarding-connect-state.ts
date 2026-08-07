@@ -40,14 +40,33 @@
  * `/connect-runner-github` page and then hand-crafting `bind_only:false` to get
  * repo enrollment and bootstrap PRs.
  *
- * The client nonce below is **not** redundant with it and must not be
- * "simplified" away: the token proves *which tenant initiated*, the nonce proves
- * *this browser tab initiated*. Neither implies the other.
+ * ## Three questions, three values — do not collapse them
+ * The values riding this round-trip answer *different* questions, and none
+ * implies another. A later edit that "simplifies" one away silently removes a
+ * guarantee:
+ *
+ * | Value | Answers | Verified by |
+ * |---|---|---|
+ * | `connect_state` | which TENANT initiated | coord (server, single-use, flow+target bound) |
+ * | `nonce` | which BROWSER TAB initiated | this module, against `sessionStorage` |
+ * | `runnerState` | which RUNNER WINDOW initiated | the runner, against its own in-process pending slot |
+ *
+ * Only the first is an authorization gate for the bind. The other two are
+ * narrowing provenance checks, each verified by the party that minted it —
+ * which is the only party that can adjudicate its claim. In particular
+ * `runnerState` grants nothing over the bind target: the runner claims with its
+ * OWN Cognito bearer, so the destination tenant comes from that bearer and never
+ * from the nonce. See `qontinui-runner`'s `setup_wizard::take_connect_state_if_valid`
+ * (single-use, 15-min TTL, checked before any network call).
  *
  * ## Wire format
- * `<flow>~<login>~<nonce>~<connect_state>` — `~` is safe as a separator because
- * GitHub logins are alphanumeric + hyphen only and the connect-state token is
- * hex. A bare `runner-clone` is also still parsed: it is the value that
+ * `<flow>~<login>~<nonce>~<connect_state>[~<runnerState>]` — `~` is safe as a
+ * separator because GitHub logins are alphanumeric + hyphen only and both the
+ * connect-state token and the runner nonce are hex. Slot 5 is appended only on
+ * the P2 runner-native hand-off, so a browser-only connect keeps the exact
+ * 4-field shape.
+ *
+ * A bare `runner-clone` is also still parsed: it is the value that
  * `/connect-runner-github` hardcoded before this change (it comes from *web*, not
  * from the desktop runner — the runner only opens that web page), and it may
  * still arrive from a connect that was in flight across the deploy. Such a state
@@ -67,6 +86,8 @@ export interface ConnectState {
   nonce: string | null;
   /** Coord-minted, tenant-bound, single-use token. Null on legacy/out-of-band states. */
   connectState: string | null;
+  /** Runner-minted return nonce — present only on the P2 native hand-off path. */
+  runnerState: string | null;
 }
 
 const SEP = "~";
@@ -82,6 +103,35 @@ function randomNonce(): string {
   const buf = new Uint8Array(16);
   crypto.getRandomValues(buf);
   return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * A runner return nonce is hex the runner minted (256-bit today; bounds are
+ * loose for forward-compat). Validated at every ingress so arbitrary text can
+ * never ride into the `qontinui://` deep link we later construct from it.
+ *
+ * This is a SANITIZATION guard, not the authorization check — the runner
+ * verifies the value against its own pending-flow slot
+ * (`setup_wizard::take_connect_state_if_valid`). Its hex-only shape also makes
+ * the value wire-safe by construction, which is why slot 5 cannot smuggle a
+ * `~` and re-split the state.
+ */
+export function isValidRunnerState(value: string | null): value is string {
+  return !!value && /^[0-9a-fA-F]{16,128}$/.test(value);
+}
+
+/**
+ * A GitHub org/user login: alphanumeric with single interior hyphens, ≤39
+ * chars. Validated here because the returned `login` from `state` flows into
+ * the `qontinui://` deep link and the claim body — a value failing this is
+ * dropped to null rather than propagated, so no metacharacter or overlong
+ * string rides downstream. (The authoritative admin check is still coord's
+ * `/user/installations` gate.)
+ */
+export function isValidLogin(value: string | null): value is string {
+  return (
+    !!value && /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(value)
+  );
 }
 
 /**
@@ -206,11 +256,18 @@ function assertTokenIsWireSafe(token: string): void {
  *
  * `login` may be empty on the fresh-install path, where GitHub names the
  * installation itself.
+ *
+ * `runnerState` (P2) is the runner's return nonce, carried through the GitHub
+ * round-trip so the callback can deep-link the claim back to the runner window
+ * that started the flow. Appended as slot 5 only when it passes
+ * {@link isValidRunnerState}, so a browser-only connect keeps the exact 4-field
+ * shape and an unparseable value is dropped rather than propagated.
  */
 export function beginConnectState(
   flow: ConnectFlow,
   login: string,
-  connectState: string
+  connectState: string,
+  runnerState?: string | null
 ): string {
   assertTokenIsWireSafe(connectState);
   const nonce = randomNonce();
@@ -222,7 +279,11 @@ export function beginConnectState(
     // the actual authorization gate (it is what binds the flow to this tenant);
     // the nonce only narrows it further to this browser tab.
   }
-  return [flow, login.trim(), nonce, connectState].join(SEP);
+  const parts = [flow, login.trim(), nonce, connectState];
+  if (isValidRunnerState(runnerState ?? null)) {
+    parts.push(runnerState as string);
+  }
+  return parts.join(SEP);
 }
 
 /** Parse a returned `state`. Returns null when absent/unrecognized. */
@@ -234,15 +295,24 @@ export function parseConnectState(raw: string | null): ConnectState | null {
       login: null,
       nonce: null,
       connectState: null,
+      runnerState: null,
     };
   }
-  const [flow, login, nonce, connectState] = raw.split(SEP);
+  const [flow, login, nonce, connectState, runnerState] = raw.split(SEP);
   if (flow !== "connect" && flow !== LEGACY_RUNNER_CLONE) return null;
+  const trimmedLogin = login?.trim() ?? null;
+  const trimmedRunnerState = runnerState?.trim() ?? null;
   return {
     flow,
-    login: login?.trim() ? login.trim() : null,
+    // Shape-checked, not just trimmed: this value flows into the `qontinui://`
+    // deep link and the claim body. A login that fails the guard is dropped to
+    // null rather than propagated downstream.
+    login: isValidLogin(trimmedLogin) ? trimmedLogin : null,
     nonce: nonce?.trim() ? nonce.trim() : null,
     connectState: connectState?.trim() ? connectState.trim() : null,
+    runnerState: isValidRunnerState(trimmedRunnerState)
+      ? trimmedRunnerState
+      : null,
   };
 }
 
