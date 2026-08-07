@@ -535,6 +535,31 @@ describe("§C3 — a threshold nothing enforces renders without a verb", () => {
     expect(floor.textContent).not.toMatch(/defers|rejects/);
     expect(floor.textContent).not.toMatch(/below|at or above/);
   });
+
+  it("still prints the preposition on a rejecting enforcer under an unenforced primary", () => {
+    renderStrip({
+      latest: [
+        sample({
+          lane: "wsl",
+          pressure_floor: {
+            basis: "swap_ratio",
+            ratio: 0.5,
+            // Nothing enforces the primary…
+            verdict: null,
+            // …but something rejects at 90%.
+            reject_ratio: 0.9,
+            reject_source: "policy",
+            source: "policy",
+          },
+        }),
+      ],
+      history: [],
+    });
+    const admission = screen.getByTestId("fleet-resource-admission");
+    expect(admission.textContent).toMatch(/set, not enforced/);
+    expect(admission.textContent).toMatch(/rejects/);
+    expect(admission.textContent).toMatch(/at or above\s*90% swap used/);
+  });
 });
 
 describe("§C3 — the row is coloured from `headroom`, never from the ratio", () => {

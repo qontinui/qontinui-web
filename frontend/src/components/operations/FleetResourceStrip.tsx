@@ -527,8 +527,10 @@ function FloorLine({
       </Tooltip>
       {/* The direction word is load-bearing: a byte floor is crossed going
           DOWN and a pressure ceiling going UP, so one preposition cannot
-          serve both without inverting the meaning for the reader. */}
-      {detail.direction && (
+          serve both without inverting the meaning for the reader. Withheld
+          only when NOTHING enforces this threshold — "below 4.0 GB" states a
+          behaviour, and an unenforced number has none. */}
+      {detail.enforced && (
         <span className="text-muted-foreground">{detail.direction}</span>
       )}
       <span className="tabular-nums">{detail.value}</span>
@@ -618,9 +620,7 @@ function RejectClause({ detail }: { detail: FloorDetail }) {
           failed build.
         </TooltipContent>
       </Tooltip>
-      {detail.direction && (
-        <span className="text-muted-foreground">{detail.direction}</span>
-      )}
+      <span className="text-muted-foreground">{detail.direction}</span>
       <span className="tabular-nums">{detail.reject.value}</span>
       <Badge variant="outline" className="text-[9px] px-1 py-0">
         {detail.reject.sourceLabel}

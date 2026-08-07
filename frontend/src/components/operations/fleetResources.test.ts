@@ -534,7 +534,7 @@ describe("§C3 — the pressure axis, where the Linux lanes' only guard lives", 
     })!;
     expect(d.verdict).toBe("unknown");
     expect(d.verdictLabel).toMatch(/defers\)/);
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
   });
 });
 
@@ -546,9 +546,10 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
     const d = describeFloor({ ...MEM_FLOOR, verdict: null })!;
     expect(d.verdict).toBe("unset");
     expect(d.verdictLabel).toBe("set, not enforced");
-    // No verb, and no direction word — there is no behaviour to describe.
+    // No verb, and the primary line will withhold its direction word —
+    // there is no behaviour to describe.
     expect(d.verdictLabel).not.toMatch(/defers|rejects/);
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
     // The number itself is still shown: it IS configured, just inert.
     expect(d.value).toBe("5.0 GB free commit");
   });
@@ -556,7 +557,25 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
   it("does the same on the pressure axis", () => {
     const d = describePressureFloor({ ...SWAP_FLOOR, verdict: null })!;
     expect(d.verdict).toBe("unset");
-    expect(d.direction).toBe("");
+    expect(d.enforced).toBe(false);
+    // The AXIS still runs the way it runs — the preposition belongs to the
+    // axis, so a rejecting enforcer under this primary still gets one.
+    expect(d.direction).toBe("at or above");
+  });
+
+  it("still gives a rejecting enforcer its preposition under an unenforced primary", () => {
+    // Deriving the direction word from the primary verdict dropped it here,
+    // leaving "rejects 90% swap used" with no indication of which side of 90%
+    // is the bad one.
+    const d = describePressureFloor({
+      ...SWAP_FLOOR,
+      verdict: null,
+      reject_ratio: 0.9,
+      reject_source: "policy",
+    })!;
+    expect(d.enforced).toBe(false);
+    expect(d.direction).toBe("at or above");
+    expect(d.reject).toMatchObject({ kind: "present", value: "90% swap used" });
   });
 
   it("keeps 'unset' distinct from 'unknown' — different causes, different fixes", () => {

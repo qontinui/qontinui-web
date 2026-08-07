@@ -880,10 +880,21 @@ export interface FloorDetail {
   axis: ThresholdAxis;
   /**
    * The preposition that makes the direction right: `"below"` for a byte
-   * floor, `"at or above"` for a pressure ceiling. Empty when nothing
-   * enforces the threshold, since there is no behaviour to describe.
+   * floor, `"at or above"` for a pressure ceiling.
+   *
+   * A property of the AXIS, not of the verdict — a rejecting enforcer under
+   * an unenforced primary still needs its preposition, and deriving this
+   * from the verdict silently dropped it there.
    */
   direction: string;
+  /**
+   * Whether something actually acts at this threshold (`reject` / `defer`).
+   *
+   * False for `unset` (reported, nothing enforces it) and for `unknown`. The
+   * primary line withholds its direction word when this is false: there is
+   * no behaviour to describe, and "below 4.0 GB" implies one.
+   */
+  enforced: boolean;
   /**
    * Normalized verdict.
    *
@@ -1013,7 +1024,8 @@ export function describeFloor(
     value: formatFloor(floor),
     axis: "bytes",
     // Byte floors run downward: the guard acts BELOW the number.
-    direction: v.verdict === "unset" || v.verdict === "unknown" ? "" : "below",
+    direction: "below",
+    enforced: v.verdict === "reject" || v.verdict === "defer",
     verdict: v.verdict,
     verdictLabel: v.label,
     source: src.source,
@@ -1072,8 +1084,8 @@ export function describePressureFloor(
     value: formatPressureFloor(floor),
     axis: "ratio",
     // A ceiling runs the other way: the guard acts AT OR ABOVE the number.
-    direction:
-      v.verdict === "unset" || v.verdict === "unknown" ? "" : "at or above",
+    direction: "at or above",
+    enforced: v.verdict === "reject" || v.verdict === "defer",
     verdict: v.verdict,
     verdictLabel: v.label,
     source: src.source,
