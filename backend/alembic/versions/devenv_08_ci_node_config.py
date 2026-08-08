@@ -41,7 +41,7 @@ from alembic import op
 
 # revision identifiers
 revision = "devenv_08_ci_node_config"
-down_revision = "coord_alerts_pagedidx_01"
+down_revision = "coord_ocs_operator_id"
 branch_labels = None
 depends_on = None
 
