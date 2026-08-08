@@ -569,6 +569,36 @@ class TestLinkArmIntegrity:
             "is confounded"
         )
 
+    def test_enabling_the_arm_does_not_degrade_ranking(
+        self, hybrid: ArmRun, hybrid_link: ArmRun
+    ) -> None:
+        """The regression this arm actually shipped with, now guarded.
+
+        With the link arm fused at an EQUAL vote, enabling it cost MRR
+        0.8306 -> 0.2918 and nDCG@10 0.8412 -> 0.4402 on this corpus, while
+        recall@20 stayed at 1.0 — so no recall-based check could have caught
+        it. `ARM_WEIGHTS` damps the arm to 0.1, which brings both back to
+        within fixture noise of the arm-off baseline.
+
+        The tolerance is 0.01 absolute, which is ~7x the residual difference
+        at the shipped weight (~0.0015) and ~50x smaller than the regression
+        it must catch (~0.54). Wide enough not to encode a 24-case fixture's
+        exact digits; nowhere near wide enough to absorb a real collapse.
+        """
+        tolerance = 0.01
+        assert hybrid_link.suite.mrr >= hybrid.suite.mrr - tolerance, (
+            f"link expansion dropped MRR from {hybrid.suite.mrr:.4f} to "
+            f"{hybrid_link.suite.mrr:.4f}. Check ARM_WEIGHTS['link'] in "
+            "endpoints/memory.py — at an equal vote this lands near 0.29."
+        )
+        assert hybrid_link.suite.ndcg_at_10 >= hybrid.suite.ndcg_at_10 - tolerance, (
+            f"link expansion dropped nDCG@10 from {hybrid.suite.ndcg_at_10:.4f} "
+            f"to {hybrid_link.suite.ndcg_at_10:.4f}"
+        )
+        # Recall is deliberately checked too, but it is NOT the guard: it was
+        # 1.0 either way through the whole regression.
+        assert hybrid_link.suite.recall_at_10 >= hybrid.suite.recall_at_10 - tolerance
+
     def test_the_expansion_matched_real_neighbours(
         self, hybrid_link: ArmRun, golden: fx.GoldenSet
     ) -> None:
