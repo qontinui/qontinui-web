@@ -180,7 +180,11 @@ export interface DeliveryComponents {
 
 /** The body of GET /api/v1/digital-twin/delivery/verdict (coord route shape). */
 export interface DeliveryVerdictResponse {
-  plan_slug: string | null;
+  /** The work-unit slug the verdict was resolved for. Coord echoed this under
+   *  the legacy `plan_slug` key until the wire-key retirement (plan
+   *  `2026-07-30-coord-web-plan-slug-wire-key-retirement`, Phase 1); it
+   *  dual-echoes both keys today and drops `plan_slug` in Phase 4. */
+  work_unit_slug: string | null;
   tool: string;
   verdict: DriftVerdict;
 }

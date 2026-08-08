@@ -61912,12 +61912,12 @@
     },
     "/api/v1/digital-twin/delivery/verdict": {
       "get": {
-        "description": "Delivery verdict for one plan \u2014 \"has this plan/PR actually landed?\".\n\nThe *parameterized* twin read (Phase 5 of plan\n``2026-06-15-twin-delivery-verdict-completion-view``). Unlike the snapshot\nmatrix, delivery needs an argument (``plan_slug``, or ``repo``+``pr``), so it\nis a distinct on-demand route rather than a matrix cell. It proxies coord's\nSSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``), which\ndispatches the SAME ``coord_query_delivery`` MCP tool an agent calls \u2014 with\n``force_refresh=true`` server-side \u2014 so the dashboard answer is byte-identical\nto (and as fresh as) what an agent would receive: plan lifecycle status \u22c8\nper-PR merge state \u22c8 best-effort deploy state, with provenance + staleness.\n\nValidates the parameter set locally (mirroring coord) to avoid a wasted\nround-trip; coord's own 4xx/5xx (e.g. a tool failure \u2192 502) still surface via\n:func:`_proxy_coord_get`.",
+        "description": "Delivery verdict for one work unit \u2014 \"has this work unit/PR landed?\".\n\nThe *parameterized* twin read (Phase 5 of plan\n``2026-06-15-twin-delivery-verdict-completion-view``). Unlike the snapshot\nmatrix, delivery needs an argument (``work_unit_slug``, or ``repo``+``pr``),\nso it is a distinct on-demand route rather than a matrix cell. It proxies\ncoord's SSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``),\nwhich dispatches the SAME ``coord_query_delivery`` MCP tool an agent calls \u2014\nwith ``force_refresh=true`` server-side \u2014 so the dashboard answer is\nbyte-identical to (and as fresh as) what an agent would receive: work-unit\nlifecycle status \u22c8 per-PR merge state \u22c8 best-effort deploy state, with\nprovenance + staleness.\n\nThe slug parameter was spelled ``plan_slug`` on both this route and coord's\nuntil Phase 3 of plan\n``2026-07-30-coord-web-plan-slug-wire-key-retirement``. Coord dual-accepts\nboth spellings during the retirement window and drops ``plan_slug`` in\nPhase 4, so this proxy forwards only the canonical key.\n\nValidates the parameter set locally (mirroring coord) to avoid a wasted\nround-trip; coord's own 4xx/5xx (e.g. a tool failure \u2192 502) still surface via\n:func:`_proxy_coord_get`.",
         "operationId": "api_v1_digital_twin_delivery_verdict_get",
         "parameters": [
           {
             "in": "query",
-            "name": "plan_slug",
+            "name": "work_unit_slug",
             "required": false,
             "schema": {
               "anyOf": [
@@ -61928,7 +61928,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Plan Slug"
+              "title": "Work Unit Slug"
             }
           },
           {
