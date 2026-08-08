@@ -1,7 +1,7 @@
 """coord.onboarding_connect_states.operator_id — bind the connect state to the MINTING operator
 
 Revision ID: coord_ocs_operator_id
-Revises: fleet_res_tel_03
+Revises: coord_alerts_dropmachineidx_01
 Create Date: 2026-08-07
 
 The web half of P6 of plan
@@ -81,11 +81,20 @@ the house convention for ``coord.*`` tables, and reversible for the
 ``migration-reversal`` gate. The column is nullable with no default, so the ADD
 is a catalogue update with no table rewrite.
 
-``down_revision`` is ``fleet_res_tel_03``, the single live head at the time this
-was written. Do NOT copy that value out of this docstring later — the head is
-whichever revision is no other migration's ``down_revision``, and there must be
-exactly one. Recompute it and re-point this if a concurrent revision lands
-first; ``alembic-graph-pr.yml`` fails a forked chain.
+``down_revision`` is ``coord_alerts_dropmachineidx_01``, the single live head on
+main. Do NOT copy that value out of this docstring later — the head is whichever
+revision is no other migration's ``down_revision``, and there must be exactly
+one. Recompute it and re-point this if a concurrent revision lands first;
+``alembic-graph-pr.yml`` fails a forked chain.
+
+This has already happened once: the original value was ``fleet_res_tel_03``, the
+head when this was written on 2026-08-07. ``coord_alerts_retention_01`` then
+landed on that same parent while this branch was open, so rebasing produced a
+two-head chain (``coord_alerts_dropmachineidx_01`` + this one) and
+``alembic-heads-pr`` failed exactly as the paragraph above warned. Re-pointed to
+main's head on 2026-08-08. The lesson is the general one: a rebase does NOT
+re-point ``down_revision``, so any alembic PR that sits through a concurrent
+migration landing must have this recomputed by hand.
 """
 
 from collections.abc import Sequence
@@ -96,7 +105,7 @@ from alembic import op
 # Keep ``down_revision`` on ONE physical line — the ``alembic-heads-pr`` CI gate
 # parses it with a line-based regex.
 revision: str = "coord_ocs_operator_id"
-down_revision: str | Sequence[str] | None = "fleet_res_tel_03"
+down_revision: str | Sequence[str] | None = "coord_alerts_dropmachineidx_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
