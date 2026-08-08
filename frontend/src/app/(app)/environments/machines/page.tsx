@@ -21,6 +21,7 @@ import {
 import {
   Activity,
   AlertTriangle,
+  Cpu,
   KeyRound,
   Loader2,
   Plus,
@@ -30,6 +31,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { relativeTime } from "@/components/operations/utils";
+import { CiNodeConfigPanel } from "../_components/CiNodeConfigPanel";
 import { EnrollCodeModal } from "../_components/EnrollCodeModal";
 import { DispatchMachineModal } from "../_components/DispatchMachineModal";
 import { MachineEnvironmentSelector } from "../_components/MachineEnvironmentSelector";
@@ -65,6 +67,10 @@ export default function MachinesPage() {
     null
   );
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  // Which machine's CI-node panel is open. One at a time: these are consent
+  // settings, and a page of simultaneously-open consent forms invites the
+  // wrong one being edited.
+  const [ciNodeMachineId, setCiNodeMachineId] = useState<string | null>(null);
 
   const fetchMachines = useCallback(async () => {
     // The auth token can lag a first paint right after login (e.g. landing
@@ -101,9 +107,7 @@ export default function MachinesPage() {
   }, []);
 
   const applyMachineUpdate = useCallback((updated: Machine) => {
-    setMachines((prev) =>
-      prev.map((m) => (m.id === updated.id ? updated : m))
-    );
+    setMachines((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
   }, []);
 
   useEffect(() => {
@@ -324,123 +328,154 @@ export default function MachinesPage() {
               {machines.map((machine) => (
                 <div
                   key={machine.id}
-                  className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
+                  className="rounded-lg border border-border"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Server className="size-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">
-                          {machine.name}
-                        </p>
-                        {machine.revoked ? (
-                          <Badge variant="destructive">revoked</Badge>
-                        ) : machine.enrolled ? (
-                          <Badge variant="success">enrolled</Badge>
-                        ) : (
-                          <Badge variant="warning">pending</Badge>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
-                        {machine.hostname && (
-                          <span className="font-mono">{machine.hostname}</span>
-                        )}
-                        {machine.key_prefix && (
-                          <span className="font-mono">
-                            key {machine.key_prefix}…
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Server className="size-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium truncate">
+                            {machine.name}
+                          </p>
+                          {machine.revoked ? (
+                            <Badge variant="destructive">revoked</Badge>
+                          ) : machine.enrolled ? (
+                            <Badge variant="success">enrolled</Badge>
+                          ) : (
+                            <Badge variant="warning">pending</Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-xs text-muted-foreground">
+                          {machine.hostname && (
+                            <span className="font-mono">
+                              {machine.hostname}
+                            </span>
+                          )}
+                          {machine.key_prefix && (
+                            <span className="font-mono">
+                              key {machine.key_prefix}…
+                            </span>
+                          )}
+                          <span>
+                            last seen {relativeTime(machine.last_seen_at)}
                           </span>
-                        )}
-                        <span>
-                          last seen {relativeTime(machine.last_seen_at)}
-                        </span>
-                        {machine.coord_device_id && (
-                          <Link
-                            href={`/environments/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
-                            className="inline-flex items-center gap-1 text-primary hover:underline"
-                          >
-                            <Activity className="size-3" />
-                            sessions
-                          </Link>
-                        )}
+                          {machine.coord_device_id && (
+                            <Link
+                              href={`/environments/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
+                              className="inline-flex items-center gap-1 text-primary hover:underline"
+                            >
+                              <Activity className="size-3" />
+                              sessions
+                            </Link>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <MachineEnvironmentSelector
-                      machine={machine}
-                      environments={environments}
-                      onBound={applyMachineUpdate}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRegenerate(machine)}
-                    >
-                      <KeyRound className="size-4" />
-                      Re-enroll
-                    </Button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <MachineEnvironmentSelector
+                        machine={machine}
+                        environments={environments}
+                        onBound={applyMachineUpdate}
+                      />
+                      {/* CI-node configuration lives here rather than on a page
+                        of its own: this row IS the machine, and the settings
+                        are per-machine. Collapsed by default — a consent
+                        surface should not be the first thing a hand lands on
+                        while doing something else. */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-expanded={ciNodeMachineId === machine.id}
+                        onClick={() =>
+                          setCiNodeMachineId((current) =>
+                            current === machine.id ? null : machine.id
+                          )
+                        }
+                      >
+                        <Cpu className="size-4" />
+                        CI builds
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRegenerate(machine)}
+                      >
+                        <KeyRound className="size-4" />
+                        Re-enroll
+                      </Button>
 
-                    {!machine.revoked && machine.enrolled && (
+                      {!machine.revoked && machine.enrolled && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <ShieldX className="size-4 text-muted-foreground" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Revoke machine?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This revokes{" "}
+                                <span className="font-medium">
+                                  {machine.name}
+                                </span>
+                                &apos;s key. All future agent calls from it will
+                                be rejected until it re-enrolls.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction asChild>
+                                <DestructiveButton
+                                  onClick={() => handleRevoke(machine)}
+                                >
+                                  Revoke
+                                </DestructiveButton>
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="sm">
-                            <ShieldX className="size-4 text-muted-foreground" />
+                            <Trash2 className="size-4 text-muted-foreground" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Revoke machine?</AlertDialogTitle>
+                            <AlertDialogTitle>Remove machine?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This revokes{" "}
+                              This permanently deletes{" "}
                               <span className="font-medium">
                                 {machine.name}
-                              </span>
-                              &apos;s key. All future agent calls from it will be
-                              rejected until it re-enrolls.
+                              </span>{" "}
+                              and its config history.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                             <AlertDialogAction asChild>
                               <DestructiveButton
-                                onClick={() => handleRevoke(machine)}
+                                onClick={() => handleDelete(machine)}
                               >
-                                Revoke
+                                Remove
                               </DestructiveButton>
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                    )}
-
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <Trash2 className="size-4 text-muted-foreground" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Remove machine?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            This permanently deletes{" "}
-                            <span className="font-medium">{machine.name}</span>{" "}
-                            and its config history.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction asChild>
-                            <DestructiveButton
-                              onClick={() => handleDelete(machine)}
-                            >
-                              Remove
-                            </DestructiveButton>
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                    </div>
                   </div>
+                  {ciNodeMachineId === machine.id && (
+                    <div className="border-t border-border">
+                      <CiNodeConfigPanel machine={machine} />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

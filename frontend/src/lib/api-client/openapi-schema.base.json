@@ -6493,6 +6493,153 @@
         "title": "CheckUpdate",
         "type": "object"
       },
+      "CiNodeConfig": {
+        "description": "The four ``CiNodeSettings`` fields, with the runner's own defaults.\n\nThe defaults are copied from the Rust ``Default for CiNodeSettings`` impl\non purpose: a machine that has never been configured here must round-trip\nas the posture the runner actually ships with, never as a friendlier one.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_concurrent_builds": {
+            "default": 1,
+            "maximum": 64.0,
+            "minimum": 1.0,
+            "title": "Max Concurrent Builds",
+            "type": "integer"
+          },
+          "min_free_disk_gb": {
+            "default": 20,
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Min Free Disk Gb",
+            "type": "integer"
+          },
+          "repo_allowlist": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Repo Allowlist",
+            "type": "array"
+          }
+        },
+        "title": "CiNodeConfig",
+        "type": "object"
+      },
+      "CiNodeConfigResponse": {
+        "description": "A machine's DESIRED CI-node configuration and how far it has travelled.\n\nEvery field that could be mistaken for \"what the runner is running right\nnow\" is named for what it actually is. Web has no read-back channel for the\nrunner's settings file, so it reports what was requested, when it was\nhanded to coord, and whether coord could even reach the device \u2014 and never\nasserts that the device applied it.",
+        "properties": {
+          "configured": {
+            "default": false,
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "coord_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Device Id"
+          },
+          "dispatch_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Detail"
+          },
+          "dispatch_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Error"
+          },
+          "dispatch_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Status"
+          },
+          "dispatched": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatched"
+          },
+          "dispatched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatched At"
+          },
+          "machine_id": {
+            "format": "uuid",
+            "title": "Machine Id",
+            "type": "string"
+          },
+          "reachability": {
+            "enum": [
+              "unlinked",
+              "offline",
+              "online",
+              "unknown"
+            ],
+            "title": "Reachability",
+            "type": "string"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/CiNodeConfig"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          }
+        },
+        "required": [
+          "machine_id",
+          "requested",
+          "reachability"
+        ],
+        "title": "CiNodeConfigResponse",
+        "type": "object"
+      },
       "CiStatusResponse": {
         "description": "Response wrapper for ``GET /operations/ci-status``.",
         "properties": {
@@ -59980,6 +60127,112 @@
           }
         ],
         "summary": "Update Machine",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}/ci-node": {
+      "get": {
+        "description": "Read the machine's desired CI-node config + its delivery state.\n\n``dispatched`` is always ``None`` here: a read attempts no delivery, and a\nclient must not be able to mistake a GET for a successful push.",
+        "operationId": "api_v1_devenv_machines_machine_id_ci_node_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiNodeConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Ci Node Config",
+        "tags": [
+          "environments"
+        ]
+      },
+      "put": {
+        "description": "Save the desired CI-node config and dispatch it to the paired runner.\n\nThe save ALWAYS happens; the dispatch is best-effort, exactly like\n``dispatch_enroll``. That ordering is deliberate: an owner who curates an\nallowlist while their machine is asleep must not lose the work, and a\nsilent \"saved but never sent\" is precisely the state the response's\n``dispatched`` / ``dispatched_at`` / ``reachability`` triple exists to make\nvisible.",
+        "operationId": "api_v1_devenv_machines_machine_id_ci_node_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CiNodeConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CiNodeConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Ci Node Config",
         "tags": [
           "environments"
         ]
