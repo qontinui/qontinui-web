@@ -68,9 +68,25 @@ VALID_CASE_CLASSES = frozenset(
     }
 )
 
+#: The ``coord.memory_links`` relation vocabulary, mirroring the CHECK in the
+#: ``coord_memory_links`` migration and ``MemoryLinkRelation``.
+VALID_RELATIONS = frozenset({"depends_on", "implements", "supersedes", "related"})
+
 
 class GoldenSetError(ValueError):
     """The fixture on disk is not a valid golden set."""
+
+
+@dataclass(frozen=True)
+class GoldenLink:
+    """One outbound ``coord.memory_links`` edge, by fixture key.
+
+    Keyed the same way cases are — by ``key``, never by ``memory_id``, which
+    does not exist until seed time.
+    """
+
+    target_key: str
+    relation: str
 
 
 @dataclass(frozen=True)
@@ -89,6 +105,7 @@ class GoldenRecord:
     kind: str
     importance: float
     embedding: list[float] | None
+    links: tuple[GoldenLink, ...] = ()
 
     @property
     def content_bytes(self) -> int:
@@ -144,6 +161,11 @@ class GoldenSet:
     def content_bytes_by_key(self) -> Mapping[str, int]:
         """Key → content byte length, for :func:`scorer.token_cost`."""
         return {r.key: r.content_bytes for r in self.records}
+
+    @property
+    def link_count(self) -> int:
+        """Total declared edges. Zero means the link arm has nothing to do."""
+        return sum(len(r.links) for r in self.records)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -204,9 +226,107 @@ def _load_records(raw: object) -> tuple[tuple[GoldenRecord, ...], bool]:
                 kind=item["kind"],
                 importance=importance,
                 embedding=embedding,
+                links=_load_links(item.get("links"), where),
             )
         )
+
+    # Targets are resolved after the whole corpus is known — an edge may
+    # legitimately point forwards.
+    known = {r.key for r in records}
+    for record in records:
+        for link in record.links:
+            _require(
+                link.target_key in known,
+                f"records.json: record {record.key!r} links to unknown key "
+                f"{link.target_key!r}",
+            )
+            _require(
+                link.target_key != record.key,
+                f"records.json: record {record.key!r} links to itself — the "
+                "write path drops self-edges, so this would silently seed "
+                "nothing",
+            )
     return tuple(records), any_embedded
+
+
+def _load_links(raw: object, where: str) -> tuple[GoldenLink, ...]:
+    """Parse and validate one record's outbound edges.
+
+    Target existence is NOT checked here — see :func:`_load_records`, which
+    checks it once the whole corpus is known.
+    """
+    if raw is None:
+        return ()
+    _require(isinstance(raw, list), f"{where}: links must be a list")
+    assert isinstance(raw, list)
+    links: list[GoldenLink] = []
+    seen: set[tuple[str, str]] = set()
+    for index, item in enumerate(raw):
+        at = f"{where}.links[{index}]"
+        _require(isinstance(item, dict), f"{at}: must be an object")
+        assert isinstance(item, dict)
+        for field in ("target_key", "relation"):
+            _require(field in item, f"{at}: missing required field {field!r}")
+        relation = item["relation"]
+        _require(
+            relation in VALID_RELATIONS,
+            f"{at}: relation {relation!r} is not one of {sorted(VALID_RELATIONS)}",
+        )
+        edge = (item["target_key"], relation)
+        _require(edge not in seen, f"{at}: duplicate edge {edge!r}")
+        seen.add(edge)
+        links.append(GoldenLink(target_key=item["target_key"], relation=relation))
+    return tuple(links)
+
+
+def _reject_circular_edges(
+    records: Sequence[GoldenRecord], cases: Sequence[GoldenCase]
+) -> None:
+    """Refuse an edge that reproduces a case's answer key.
+
+    **This is what makes the link arm's score mean anything.** An edge drawn
+    between exactly the two records a case declares ``relevant`` lets the
+    expansion arm retrieve the second from the first BY CONSTRUCTION, so the
+    benchmark would be measuring the fixture rather than the system — and it
+    would measure it in the flattering direction, which is the kind of error
+    nobody goes looking for.
+
+    Edges must therefore be derivable from the RECORDS alone. The one
+    exception is a case's own declared ``correction`` pair: those two records
+    announce their relationship in their own titles (``CORRECTION: …``), so a
+    ``supersedes`` edge between them expresses something the corpus already
+    states rather than importing the answer key.
+    """
+    sanctioned = {
+        frozenset(case.correction) for case in cases if case.correction is not None
+    }
+    # Checked as a SUBSET, not an equality: an edge between two members of a
+    # three-record answer key hands the arm one of those records for free just
+    # as surely as one between the two members of a pair. Equality would let
+    # the wider cases through.
+    answer_keys = [
+        (frozenset(case.relevant), case.case_id)
+        for case in cases
+        if len(case.relevant) >= 2
+    ]
+    for record in records:
+        for link in record.links:
+            pair = frozenset({record.key, link.target_key})
+            if pair in sanctioned:
+                continue
+            case_id = next(
+                (cid for relevant, cid in answer_keys if pair <= relevant), None
+            )
+            _require(
+                case_id is None,
+                f"records.json: the edge {record.key!r} -[{link.relation}]-> "
+                f"{link.target_key!r} joins two records inside the relevant "
+                f"set of case {case_id!r}, which declares no correction pair. "
+                "An edge "
+                "copied from a case's answer key makes the link arm retrieve "
+                "that answer by construction — the benchmark would score the "
+                "fixture, not the system. Author edges from the records.",
+            )
 
 
 def _load_cases(raw: object, record_keys: set[str]) -> tuple[GoldenCase, ...]:
@@ -326,6 +446,7 @@ def load_golden_set(directory: Path | None = None) -> GoldenSet:
         json.loads(cases_path.read_text(encoding="utf-8")),
         {r.key for r in records},
     )
+    _reject_circular_edges(records, cases)
 
     # Vectors are all-or-nothing per fixture: a partially-embedded corpus
     # makes the hybrid arm score a subset of the corpus while the FTS arm

@@ -211,11 +211,17 @@ def reject_derived_anchor_state(data: Any) -> Any:
 class MemoryLinkIn(BaseModel):
     """One outbound edge declared alongside a record write.
 
-    ``target_ref`` names the edge's target either by ``memory_id`` (UUID
-    string) or by ``content_hash`` (sha256 hex of the target's stored
-    content) — the write path tries the UUID interpretation first, then
-    the hash, against LIVE rows of the caller's tenant only. Unresolved
-    targets are dropped and counted, never rejected.
+    ``target_ref`` names the edge's target by ``memory_id`` (UUID string),
+    by ``content_hash`` (sha256 hex of the target's stored content), or by
+    the target's **exact title** — tried in that order, against LIVE rows of
+    the caller's tenant only. Unresolved targets are dropped and counted,
+    never rejected.
+
+    Title is the interpretation a caller can actually supply: an agent
+    recording a memory knows the title of the record it is superseding
+    because it just read it, but knows neither that record's id nor the
+    sha256 of its content. A title matching more than one LIVE record is
+    AMBIGUOUS and resolves to nothing — see ``resolve_link_targets``.
     """
 
     target_ref: str = Field(min_length=1, max_length=512)

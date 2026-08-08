@@ -25842,7 +25842,7 @@
         "type": "object"
       },
       "MemoryLinkIn": {
-        "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target either by ``memory_id`` (UUID\nstring) or by ``content_hash`` (sha256 hex of the target's stored\ncontent) \u2014 the write path tries the UUID interpretation first, then\nthe hash, against LIVE rows of the caller's tenant only. Unresolved\ntargets are dropped and counted, never rejected.",
+        "description": "One outbound edge declared alongside a record write.\n\n``target_ref`` names the edge's target by ``memory_id`` (UUID string),\nby ``content_hash`` (sha256 hex of the target's stored content), or by\nthe target's **exact title** \u2014 tried in that order, against LIVE rows of\nthe caller's tenant only. Unresolved targets are dropped and counted,\nnever rejected.\n\nTitle is the interpretation a caller can actually supply: an agent\nrecording a memory knows the title of the record it is superseding\nbecause it just read it, but knows neither that record's id nor the\nsha256 of its content. A title matching more than one LIVE record is\nAMBIGUOUS and resolves to nothing \u2014 see ``resolve_link_targets``.",
         "properties": {
           "description": {
             "anyOf": [
