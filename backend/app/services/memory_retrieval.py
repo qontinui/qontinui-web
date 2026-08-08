@@ -84,17 +84,33 @@ def rrf_fuse[IdT](
     arms: Mapping[str, Sequence[IdT]],
     *,
     k: int = RRF_K,
+    weights: Mapping[str, float] | None = None,
 ) -> list[FusedHit[IdT]]:
-    """Fuse N named ranked id lists with Reciprocal Rank Fusion.
+    """Fuse N named ranked id lists with weighted Reciprocal Rank Fusion.
 
-    ``score(d) = Σ_arms 1 / (k + rank_arm(d))`` with 1-based ranks; a
+    ``score(d) = Σ_arms w_arm / (k + rank_arm(d))`` with 1-based ranks; a
     document absent from an arm simply contributes nothing for that arm.
+    An arm with no declared weight has weight ``1.0``, so an unweighted
+    call is textbook RRF.
+
+    **Why weights exist.** Plain RRF assumes every arm's rank-1 means about
+    the same thing, because the only signal it keeps is position. That holds
+    for the vector and FTS arms and fails badly for ``link``: "one hop from a
+    seed" is a much weaker claim than "nearest neighbour in the embedding
+    space", yet both score ``1/(k+1)``. Measured on the golden set
+    (``2026-08-08-memory-graph-has-no-writer`` §4a), giving ``link`` an equal
+    vote cost **MRR 0.8306 → 0.2918** and nDCG@10 0.8412 → 0.4402 while
+    recall@20 stayed at 1.0 — a ranking collapse the widest metric hid.
 
     Args:
         arms: ranked id lists keyed by arm name, each best-first (e.g.
             ``{"vector": [...], "fts": [...], "link": [...]}``). Empty
             arms are permitted and contribute nothing.
         k: RRF smoothing constant (60 per the plan).
+        weights: per-arm multipliers on the rank contribution, keyed by arm
+            name. Absent arms default to ``1.0``. Scores stay comparable
+            only within one query — they are not calibrated across queries
+            either way, which is already true of unweighted RRF.
 
     Returns:
         All distinct ids, sorted by fused score descending. Ties break by
@@ -104,6 +120,11 @@ def rrf_fuse[IdT](
         with absent ranks sorting last.
     """
     arm_order = _tie_break_arm_order(list(arms))
+    arm_weights = weights or {}
+
+    def weight_of(name: str) -> float:
+        return arm_weights.get(name, 1.0)
+
     ranks_by_arm: dict[str, dict[IdT, int]] = {
         name: {doc_id: i + 1 for i, doc_id in enumerate(arms[name])}
         for name in arm_order
@@ -123,7 +144,7 @@ def rrf_fuse[IdT](
             for name in arm_order
             if (rank := ranks_by_arm[name].get(doc_id)) is not None
         }
-        score = sum(1.0 / (k + rank) for rank in doc_ranks.values())
+        score = sum(weight_of(name) / (k + rank) for name, rank in doc_ranks.items())
         hits.append(FusedHit(id=doc_id, rrf_score=score, ranks=doc_ranks))
 
     def _sort_key(hit: FusedHit[IdT]) -> tuple[float, ...]:
