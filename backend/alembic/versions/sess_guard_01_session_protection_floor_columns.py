@@ -13,7 +13,11 @@ the direct successor of ``fleet_res_tel_03``'s seven §D1 controls: same two
 tables, same one-shared-list shape, same NULL-means-no-override rule. Read that
 revision's docstring first — everything it argues about types, nullability, the
 ``IF NOT EXISTS`` type-blindness trap and why both tables are widened in one
-migration applies here verbatim and is not restated.
+migration applies here verbatim. The two points restated below -- the
+``IF NOT EXISTS`` type-blindness trap and the NULL-is-not-zero rule -- are
+restated deliberately, because both are load-bearing for THESE columns
+specifically: an 8 GiB floor does not fit an INTEGER, and a zero floor
+disables the guard it names.
 
 What this adds, and to what
 ===========================
@@ -137,10 +141,32 @@ Ordering: this migration lands FIRST, coord's read is a separate, later PR
 The coord-side consumer — ``CONTROL_COLS`` and ``FleetPolicyControls`` in
 ``qontinui-coord/src/fleet_policy.rs`` — is a **separate, later PR**, together
 with ``validate()`` (which must reject negative floors and reject
-``critical > warn``) and ``from_row``. ``d1_payload_cols()`` and
-``policy_state_cols()`` compose from ``CONTROL_COLS``, so the parent
-SELECT/RETURNING and ``insert_version_snapshot_tx`` follow automatically; that
-is the design, and hand-editing them is how the sets drift.
+``critical > warn``) and ``from_row``.
+
+**Only the column-NAME lists compose. The parameter positions do not, and that
+distinction is load-bearing.** ``d1_payload_cols()`` and ``policy_state_cols()``
+build the name lists from ``CONTROL_COLS``, so ``RETURNING {cols}`` and the
+``INSERT ... ({payload})`` target list widen on their own. Everything
+positional is hand-written and must be extended in lockstep:
+
+* ``insert_version_snapshot_tx`` carries a **literal**
+  ``VALUES ($1, ..., $13)`` placeholder list and a hand-written
+  ``params.extend_from_slice(&[...])`` bind array. Widening ``CONTROL_COLS``
+  alone yields 17 target columns against 13 expressions, which PostgreSQL
+  rejects at PREPARE time (``42601, INSERT has more target columns than
+  expressions``) — so *every* fleet-policy write starts failing, including
+  plain ``level`` / ``master_enabled`` edits that have nothing to do with
+  session floors.
+* The parent UPSERT composes only its ``RETURNING`` clause; its whole ``SET``
+  list is hand-written at literal positions
+  (``min_free_mem_bytes_host = $7`` ... ``sample_retention_days = $12``).
+  Leaving it untouched makes the four new floors **silently discarded on
+  write** while ``RETURNING`` reads them back as NULL — a write path that
+  accepts a value and drops it, which is worse than one that errors.
+
+Note also that ``d1_payload_cols()`` emits ``drain`` FIRST, so the bind order
+is not the declaration order of this file's column tuple. Count the emitted
+names and assert they equal the placeholder arity rather than eyeballing it.
 
 **This revision must merge first.** coord and qontinui-web deploy
 independently, and the asymmetry matters: a missing *table* is caught at boot by
