@@ -504,4 +504,104 @@ describe("SessionComplianceSection", () => {
     expect(panel).toHaveTextContent(/cannot prove a session read your policy/i);
     expect(panel).toHaveTextContent(/checked for shape only/i);
   });
+
+  /* --------------------------------------------------------------------- *
+   * Nudge attempts
+   *
+   * The counter answers the one question an `absent` verdict alone can't: was
+   * the session ever ASKED? A never-nudged session and one that ignored three
+   * nudges file the same verdict and are completely different problems.
+   *
+   * It arrives with two built-in ways to mislead, and each has a test below:
+   * the number is a FLOOR (the tally lives in the runner's memory and a
+   * restart loses it), and a stored `0` is AMBIGUOUS (the column defaults to
+   * zero, so pre-migration rows and pre-counter runner builds are
+   * indistinguishable from a genuine never-nudged).
+   * --------------------------------------------------------------------- */
+
+  const absentRow = (over: Record<string, unknown>) => ({
+    id: "sc-nudge",
+    claude_session_id: "sess-nudged",
+    verdict: "unverified",
+    reason: "absent",
+    report: null,
+    reconciliation: { reason: "absent", items: [] },
+    checked_at: "2026-08-08T09:00:00Z",
+    finalized: false,
+    ...over,
+  });
+
+  it("presents a nudge count as a floor, never as an exact tally", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: {
+        sessions: [
+          absentRow({
+            nudge_attempts: 3,
+            last_nudged_at: "2026-08-08T09:05:00Z",
+          }),
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+
+    // In the table: the number, hedged.
+    const count = await screen.findByTestId("nudge-count");
+    expect(count).toHaveTextContent(/3/);
+    expect(count).toHaveTextContent(/or more/i);
+
+    // In the dialog: the number plus WHY it is a floor. A bare "asked 3
+    // times" would read as a complete history of a session that may well
+    // have been nudged more often before a restart.
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    const summary = await screen.findByTestId("nudge-summary");
+    expect(summary).toHaveTextContent(/3/);
+    expect(summary).toHaveTextContent(/at least this many/i);
+    expect(summary).toHaveTextContent(/runner's memory/i);
+  });
+
+  it("never renders a stored zero as a count of zero nudges", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: { sessions: [absentRow({ nudge_attempts: 0 })] },
+    });
+
+    render(<SessionComplianceSection />);
+
+    // Nothing in the table — a "0" beside an absent verdict would read as
+    // "the mechanism is working, this session just ignored it".
+    expect(screen.queryByTestId("nudge-count")).toBeNull();
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    const summary = await screen.findByTestId("nudge-summary");
+    expect(summary).not.toHaveTextContent(/asked 0/i);
+    expect(summary).toHaveTextContent(/no nudge is recorded/i);
+    // Both readings stated, because the stored row cannot distinguish them.
+    expect(summary).toHaveTextContent(/never asked/i);
+    expect(summary).toHaveTextContent(/older than the counter/i);
+  });
+
+  it("says the counter is missing rather than implying no nudge happened", async () => {
+    const user = userEvent.setup();
+    // A coord that doesn't carry the field at all — the pre-deploy case.
+    routeGets({ sessions: { sessions: [absentRow({})] } });
+
+    render(<SessionComplianceSection />);
+
+    expect(screen.queryByTestId("nudge-count")).toBeNull();
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    const summary = await screen.findByTestId("nudge-summary");
+    expect(summary).toHaveTextContent(/isn't recorded|isn’t recorded/i);
+    // Absence of the field is not evidence about the session — the same rule
+    // that keeps a missing `report` from rendering as "no report emitted".
+    expect(summary).not.toHaveTextContent(/never asked/i);
+  });
 });
