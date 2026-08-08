@@ -2407,6 +2407,278 @@ def _link_records(mc: MemoryClient, edges: list[tuple[str, str, str]]) -> None:
         assert resp.json()["dropped_links_count"] == 0
 
 
+class TestLinkTargetByTitle:
+    """``target_ref`` as an exact title — plan 2026-08-08-memory-graph-has-no-writer.
+
+    This is the resolution mode that makes the graph writable at all. An agent
+    recording a memory knows the TITLE of the record it is superseding (it just
+    read it) and knows neither that record's ``memory_id`` nor the sha256 of
+    its content, which is why ``coord.memory_links`` had no writer before this.
+    """
+
+    def test_title_resolves_for_a_preexisting_and_a_sibling_record(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        target_id = _write_one(
+            mc, "the elder pangolin claim", title="pangolin-claim-v1"
+        )
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record("a batch sibling okapi note", title="okapi-note"),
+                    {
+                        **_record("the correcting pangolin claim", title="whatever"),
+                        "links": [
+                            {
+                                "target_ref": "pangolin-claim-v1",
+                                "relation": "supersedes",
+                            },
+                            # Same batch: records are all inserted before any
+                            # ref is resolved, so a sibling's title resolves
+                            # exactly like a pre-existing row's.
+                            {"target_ref": "okapi-note", "relation": "related"},
+                        ],
+                    },
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["dropped_links_count"] == 0
+        source_id = body["records"][1]["memory_id"]
+        sibling_id = body["records"][0]["memory_id"]
+
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links "
+                    "WHERE source_id = :s AND relation = 'supersedes'",
+                    s=source_id,
+                )
+            )
+            == target_id
+        )
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links "
+                    "WHERE source_id = :s AND relation = 'related'",
+                    s=source_id,
+                )
+            )
+            == sibling_id
+        )
+
+    def test_an_ambiguous_title_drops_rather_than_picking_one(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Two LIVE records sharing a title resolve to NOTHING.
+
+        Binding to "the newest" would make the edge assert a target the author
+        never named. Dropping is the existing contract for an unresolvable
+        ref, so ambiguity costs callers no new failure mode.
+
+        Carries an unambiguous POSITIVE control in the same write, so the drop
+        is attributable to the ambiguity rather than to title resolution being
+        absent.
+        """
+        _write_one(mc, "first tapir body", title="contested-title")
+        _write_one(mc, "second tapir body", title="contested-title")
+        clear_id = _write_one(mc, "lone tapir body", title="uncontested-title")
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the hopeful tapir entry"),
+                        "links": [
+                            {"target_ref": "contested-title", "relation": "related"},
+                            {
+                                "target_ref": "uncontested-title",
+                                "relation": "depends_on",
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 1
+        source_id = resp.json()["records"][0]["memory_id"]
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links WHERE source_id = :s",
+                    s=source_id,
+                )
+            )
+            == clear_id
+        )
+
+    def test_ambiguity_clears_once_the_duplicate_stops_being_live(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """The ``count(*) = 1`` guard is over LIVE rows, not all rows.
+
+        Without this, a tombstoned namesake would poison a title forever and
+        the drop above would be indistinguishable from a permanent one.
+        """
+        doomed = _write_one(mc, "first quoll body", title="reused-title")
+        _write_one(mc, "second quoll body", title="reused-title")
+        assert mc.client.delete(f"/api/v1/memory/records/{doomed}").status_code == 204
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the patient quoll entry"),
+                        "links": [
+                            {"target_ref": "reused-title", "relation": "related"}
+                        ],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 0
+
+    def test_dead_and_cross_tenant_titles_do_not_resolve(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """Title resolution inherits the liveness and tenant bounds exactly.
+
+        A title is a far weaker identifier than a UUID, so the interesting
+        failure is a title leaking ACROSS tenants — asserted against a real
+        second tenant, not by reading the SQL.
+
+        Carries a POSITIVE control (``reachable-title``) in the same write:
+        without it, every ref would drop simply because title resolution does
+        not exist, and the test would pass against an implementation that
+        resolves nothing at all.
+        """
+        dead_id = _write_one(mc, "the doomed vaquita fact", title="doomed-title")
+        assert mc.client.delete(f"/api/v1/memory/records/{dead_id}").status_code == 204
+
+        foreign = MemoryClient(db)
+        _write_one(foreign, "a foreign narwhal fact", title="foreign-title")
+        reachable_id = _write_one(mc, "a live manatee fact", title="reachable-title")
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the surviving vaquita entry"),
+                        "links": [
+                            {"target_ref": "doomed-title", "relation": "related"},
+                            {"target_ref": "foreign-title", "relation": "depends_on"},
+                            {"target_ref": "reachable-title", "relation": "implements"},
+                        ],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 2
+        source_id = resp.json()["records"][0]["memory_id"]
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links WHERE source_id = :s",
+                    s=source_id,
+                )
+            )
+            == reachable_id
+        )
+
+    def test_exact_identifiers_win_over_a_colliding_title(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """A record TITLED as another record's memory_id must not shadow it.
+
+        UUID and content_hash are exact identifiers; titles are caller prose.
+        The ordering that protects them is only observable when a title
+        actually collides with one, which is what this constructs.
+        """
+        real_id = _write_one(mc, "the genuine axolotl fact")
+        # A decoy whose *title* is the other record's id.
+        _write_one(mc, "the decoy axolotl fact", title=real_id)
+
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the disambiguating axolotl entry"),
+                        "links": [{"target_ref": real_id, "relation": "related"}],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 0
+        source_id = resp.json()["records"][0]["memory_id"]
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links WHERE source_id = :s",
+                    s=source_id,
+                )
+            )
+            == real_id
+        )
+
+    def test_resolution_is_exact_not_fuzzy(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        """No trimming, no case folding, no prefix match.
+
+        An edge is an assertion; resolving it approximately would make the
+        graph assert things nobody wrote.
+
+        The exact spelling is included as a POSITIVE control so the three
+        near-misses are shown to drop *because they are near-misses*, not
+        because nothing resolves by title at all.
+        """
+        exact_id = _write_one(mc, "the precise dugong fact", title="Dugong Fact")
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    {
+                        **_record("the approximate dugong entry"),
+                        "links": [
+                            {"target_ref": "dugong fact", "relation": "related"},
+                            {"target_ref": " Dugong Fact ", "relation": "depends_on"},
+                            {"target_ref": "Dugong", "relation": "supersedes"},
+                            {"target_ref": "Dugong Fact", "relation": "implements"},
+                        ],
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["dropped_links_count"] == 3
+        source_id = resp.json()["records"][0]["memory_id"]
+        assert (
+            str(
+                _scalar(
+                    db,
+                    "SELECT target_id FROM coord.memory_links WHERE source_id = :s",
+                    s=source_id,
+                )
+            )
+            == exact_id
+        )
+
+
 class TestGraphTraversal:
     def test_chain_traversal_respects_depth(self, mc: MemoryClient) -> None:
         """A→B→C→D: depth=3 sees the whole chain, depth=1 only A→B."""

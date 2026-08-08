@@ -783,6 +783,12 @@
       -0.03126424551010132,
       -0.021206557750701904,
       0.00995851680636406
+    ],
+    "links": [
+      {
+        "target_key": "sccache-wedge-original",
+        "relation": "supersedes"
+      }
     ]
   },
   {
@@ -1569,6 +1575,12 @@
       -0.07015413045883179,
       -0.01789478212594986,
       0.012360808439552784
+    ],
+    "links": [
+      {
+        "target_key": "coord-health-sha-original",
+        "relation": "supersedes"
+      }
     ]
   },
   {
@@ -2355,6 +2367,12 @@
       0.0032542466651648283,
       0.02124626189470291,
       -0.023160599172115326
+    ],
+    "links": [
+      {
+        "target_key": "gate-spawn-selfverify-original",
+        "relation": "supersedes"
+      }
     ]
   },
   {
@@ -3141,6 +3159,12 @@
       0.0004452085413504392,
       0.038384925574064255,
       0.05145232006907463
+    ],
+    "links": [
+      {
+        "target_key": "proxy-denial-original",
+        "relation": "supersedes"
+      }
     ]
   },
   {
@@ -3927,6 +3951,12 @@
       -0.056813497096300125,
       -0.018944399431347847,
       -0.00659147510305047
+    ],
+    "links": [
+      {
+        "target_key": "pullrequest-only-ci-wedge",
+        "relation": "related"
+      }
     ]
   },
   {
@@ -5892,6 +5922,12 @@
       -0.11857268214225769,
       0.0589468851685524,
       -0.059024419635534286
+    ],
+    "links": [
+      {
+        "target_key": "gitleaks-red-means-it-ran",
+        "relation": "related"
+      }
     ]
   },
   {
@@ -7857,6 +7893,12 @@
       0.001153880963101983,
       0.024602217599749565,
       -0.015621322207152843
+    ],
+    "links": [
+      {
+        "target_key": "worktree-isolation-rule",
+        "relation": "related"
+      }
     ]
   },
   {
@@ -11001,6 +11043,12 @@
       -0.05286513641476631,
       -0.04724232107400894,
       0.03899576887488365
+    ],
+    "links": [
+      {
+        "target_key": "session-memory-single-writer",
+        "relation": "related"
+      }
     ]
   },
   {
@@ -11394,6 +11442,12 @@
       -0.04909433051943779,
       -0.04479272663593292,
       0.04273300990462303
+    ],
+    "links": [
+      {
+        "target_key": "vector-arm-caller-gated",
+        "relation": "related"
+      }
     ]
   },
   {
