@@ -562,29 +562,60 @@ export const NUDGE_FLOOR_CAVEAT =
  * different situations into one confident-looking number.
  */
 export const NUDGE_ZERO_AMBIGUITY =
-  "No nudge is recorded for this session. That can mean it was never asked, or that it ran on a runner build older than the counter — nothing stored here separates the two.";
+  "No nudge is recorded for this session. That can mean enforcement wasn't asking, that it was never asked, or that it ran on a runner build older than the counter — nothing stored here separates those.";
+
+/**
+ * Why a MISSING field is a fact about the transport, not the session.
+ *
+ * Same rule that keeps a missing `report` from rendering as "no report
+ * emitted": absence in a projection is never evidence about what happened.
+ */
+export const NUDGE_NOT_CARRIED =
+  "Whether coord asked this session for the report isn't recorded — this view didn't receive the nudge counter.";
+
+/**
+ * Why an impossible value gets its OWN reading rather than joining the zero.
+ *
+ * The column is `INTEGER` with `CHECK (nudge_attempts >= 0)`, so a negative or
+ * fractional value cannot come from a counter — it means the projection or the
+ * serialization is broken. Folding it into {@link NUDGE_ZERO_AMBIGUITY} would
+ * state two benign readings as exhaustive when neither is true, and would
+ * render a live data bug as a routine "older runner build". Surfacing the
+ * defect is the whole reason this page exists.
+ */
+export const NUDGE_INVALID =
+  "The stored nudge count for this session isn't a number a counter can produce, so nothing here can be read as evidence either way. That points at a bug in whatever wrote it.";
 
 /** What the stored counter can honestly support. */
 export type NudgeReading =
-  | { known: false; reason: "not_carried" | "none_recorded" }
+  | { known: false; reason: "not_carried" | "none_recorded" | "invalid" }
   | { known: true; atLeast: number; lastAt: string | null };
 
 /**
  * Read the nudge counter without over-claiming.
  *
- * Three outcomes, deliberately, because the field has three meanings:
- * a missing field (coord's projection doesn't carry it — unknown), a stored
- * `0` (ambiguous, see {@link NUDGE_ZERO_AMBIGUITY}), and a positive count
- * (a floor, see {@link NUDGE_FLOOR_CAVEAT}). Only the third is a fact about
- * the session, and only it should ever render as a number.
+ * Four outcomes, deliberately, because the field has four meanings: a missing
+ * field (the projection doesn't carry it — {@link NUDGE_NOT_CARRIED}), a
+ * stored `0` (ambiguous — {@link NUDGE_ZERO_AMBIGUITY}), a value no counter
+ * could produce ({@link NUDGE_INVALID}), and a positive count (a floor —
+ * {@link NUDGE_FLOOR_CAVEAT}). Only the last is a fact about the session, and
+ * only it should ever render as a number.
+ *
+ * A fractional value is floored rather than rejected: the floor of a floor is
+ * still an honest floor, and the count is already a lower bound. A NEGATIVE
+ * one is not — there is no reading under which it is a lower bound of
+ * anything, so it takes the `invalid` arm.
  */
 export function readNudges(row: SessionComplianceRow): NudgeReading {
   const raw = row.nudge_attempts;
   if (raw == null) return { known: false, reason: "not_carried" };
-  if (!Number.isFinite(raw) || raw <= 0) {
-    return { known: false, reason: "none_recorded" };
-  }
-  return { known: true, atLeast: raw, lastAt: row.last_nudged_at ?? null };
+  if (!Number.isFinite(raw) || raw < 0) return { known: false, reason: "invalid" };
+  if (raw < 1) return { known: false, reason: "none_recorded" };
+  return {
+    known: true,
+    atLeast: Math.floor(raw),
+    lastAt: row.last_nudged_at ?? null,
+  };
 }
 
 /**
