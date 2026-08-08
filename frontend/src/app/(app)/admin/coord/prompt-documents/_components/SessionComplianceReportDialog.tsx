@@ -14,12 +14,15 @@ import {
   ATTRIBUTION_META,
   ITEM_STATE_LABEL,
   NUDGE_FLOOR_CAVEAT,
+  NUDGE_INVALID,
+  NUDGE_NOT_CARRIED,
   NUDGE_ZERO_AMBIGUITY,
   VERDICT_META,
   isReportAbsent,
   readNudges,
   resultBadge,
   type ComplianceReportItem,
+  type NudgeReading,
   type ReconciliationItem,
   type SessionComplianceRow,
 } from "../compliance-types";
@@ -67,9 +70,12 @@ export function SessionComplianceReportDialog({
   const paired = row ? pairItems(row) : [];
   const absent = row ? isReportAbsent(row) : false;
   const verdictMeta = row ? VERDICT_META[row.verdict] : null;
-  const nudges = row
+  // Annotated, not `as const`: without a contextual type the literal is never
+  // checked against NudgeReading, so a typo'd reason would compile clean and
+  // silently widen the union.
+  const nudges: NudgeReading = row
     ? readNudges(row)
-    : ({ known: false, reason: "not_carried" } as const);
+    : { known: false, reason: "not_carried" };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -124,6 +130,38 @@ export function SessionComplianceReportDialog({
               </p>
             )}
 
+            {/*
+              Whether the session was ASKED says whether the mechanism is
+              working: a session that was never nudged and one that ignored
+              three nudges can file the same verdict and are completely
+              different problems.
+
+              Rendered for EVERY row, not only absent ones. A session nudged
+              three times that then complied is the most informative case there
+              is — the nudge worked — and scoping this to the absent branch hid
+              exactly that, while the table still showed the count. Two
+              surfaces disagreeing about the same row is worse than either
+              answer alone.
+            */}
+            <p className="text-sm text-muted-foreground" data-testid="nudge-summary">
+              {nudges.known ? (
+                <>
+                  Coord asked this session for a missing report{" "}
+                  <strong>{nudges.atLeast}×</strong> ({NUDGE_FLOOR_CAVEAT})
+                  {nudges.lastAt
+                    ? `, most recently ${formatWhen(nudges.lastAt)}`
+                    : ""}
+                  .
+                </>
+              ) : nudges.reason === "none_recorded" ? (
+                NUDGE_ZERO_AMBIGUITY
+              ) : nudges.reason === "invalid" ? (
+                NUDGE_INVALID
+              ) : (
+                NUDGE_NOT_CARRIED
+              )}
+            </p>
+
             {absent ? (
               <div
                 className="rounded-lg border border-border bg-muted/40 px-3 py-3 text-sm text-muted-foreground"
@@ -156,30 +194,6 @@ export function SessionComplianceReportDialog({
                 <code>absent</code> — the same verdict as a report whose claims
                 didn&apos;t hold up, because in both cases the work was not
                 shown to be finished.
-                {/*
-                  Whether the session was ASKED is the other half of an absent
-                  row, and the half that says whether the mechanism is working:
-                  a session that was never nudged and one that ignored three
-                  nudges are the same verdict but completely different
-                  problems. Only a positive count is stated as fact — see
-                  `readNudges`.
-                */}
-                <p className="mt-2" data-testid="nudge-summary">
-                  {nudges.known ? (
-                    <>
-                      Coord asked for the missing report{" "}
-                      <strong>{nudges.atLeast}×</strong> ({NUDGE_FLOOR_CAVEAT})
-                      {nudges.lastAt
-                        ? `, most recently ${formatWhen(nudges.lastAt)}`
-                        : ""}
-                      .
-                    </>
-                  ) : nudges.reason === "none_recorded" ? (
-                    NUDGE_ZERO_AMBIGUITY
-                  ) : (
-                    "Whether coord asked this session for the report isn't recorded — this view didn't receive the nudge counter."
-                  )}
-                </p>
               </div>
             ) : row.report == null ? (
               /* Not the same claim as "no report": coord said nothing about

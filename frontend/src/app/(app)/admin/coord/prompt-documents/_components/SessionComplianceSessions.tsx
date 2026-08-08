@@ -211,10 +211,18 @@ export function SessionComplianceSessions({
                             {row.reason}
                           </span>
                         )}
+                        {/* "or more" carries the hedge VISIBLY; the title only
+                            explains why. A caveat that lives solely in a
+                            tooltip is invisible to touch and unreliable to a
+                            screen reader, and this one is the entire argument
+                            for showing a number at all. Tense is past —
+                            a session that was nudged and then complied still
+                            shows its count, and "the missing report" would be
+                            wrong for that row. */}
                         {nudges.known && (
                           <span
                             className="text-[11px] text-muted-foreground"
-                            title={`Coord asked this session to produce the missing report — ${NUDGE_FLOOR_CAVEAT}.`}
+                            title={`Coord asked this session for a report it hadn't emitted — ${NUDGE_FLOOR_CAVEAT}.`}
                             data-testid="nudge-count"
                           >
                             asked {nudges.atLeast}×{" "}
