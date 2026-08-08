@@ -13,8 +13,11 @@ import { FileText } from "lucide-react";
 import {
   ATTRIBUTION_META,
   ITEM_STATE_LABEL,
+  NUDGE_FLOOR_CAVEAT,
+  NUDGE_ZERO_AMBIGUITY,
   VERDICT_META,
   isReportAbsent,
+  readNudges,
   resultBadge,
   type ComplianceReportItem,
   type ReconciliationItem,
@@ -64,6 +67,9 @@ export function SessionComplianceReportDialog({
   const paired = row ? pairItems(row) : [];
   const absent = row ? isReportAbsent(row) : false;
   const verdictMeta = row ? VERDICT_META[row.verdict] : null;
+  const nudges = row
+    ? readNudges(row)
+    : ({ known: false, reason: "not_carried" } as const);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -150,6 +156,30 @@ export function SessionComplianceReportDialog({
                 <code>absent</code> — the same verdict as a report whose claims
                 didn&apos;t hold up, because in both cases the work was not
                 shown to be finished.
+                {/*
+                  Whether the session was ASKED is the other half of an absent
+                  row, and the half that says whether the mechanism is working:
+                  a session that was never nudged and one that ignored three
+                  nudges are the same verdict but completely different
+                  problems. Only a positive count is stated as fact — see
+                  `readNudges`.
+                */}
+                <p className="mt-2" data-testid="nudge-summary">
+                  {nudges.known ? (
+                    <>
+                      Coord asked for the missing report{" "}
+                      <strong>{nudges.atLeast}×</strong> ({NUDGE_FLOOR_CAVEAT})
+                      {nudges.lastAt
+                        ? `, most recently ${formatWhen(nudges.lastAt)}`
+                        : ""}
+                      .
+                    </>
+                  ) : nudges.reason === "none_recorded" ? (
+                    NUDGE_ZERO_AMBIGUITY
+                  ) : (
+                    "Whether coord asked this session for the report isn't recorded — this view didn't receive the nudge counter."
+                  )}
+                </p>
               </div>
             ) : row.report == null ? (
               /* Not the same claim as "no report": coord said nothing about
