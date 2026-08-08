@@ -257,6 +257,23 @@ async def get_twin_subspace_raw(
     )
 
 
+def _empty_twin_catalog(detail: str) -> dict[str, Any]:
+    """A valid (empty) twin-catalog envelope annotated with ``coord_error``.
+
+    Shape matches coord's ``{entries, total}`` contract so the frontend types
+    stay valid; ``coord_error`` (an optional field ``TwinCatalog`` surfaces as
+    a "coord is unavailable" panel) explains why the catalog is empty.
+
+    A named module-level helper rather than an inline literal so it is
+    importable — ``tests/test_coord_down_envelope_contract.py`` pins it against
+    ``TwinCatalogResponse`` the same way ``_empty_overview`` / ``_empty_prs``
+    are pinned. ``total`` in particular is rendered *outside* the
+    ``coord_error`` branch (``TwinCatalog.tsx:34``), so dropping it prints
+    "undefined observers" right above the outage notice.
+    """
+    return {"entries": [], "total": 0, "coord_error": detail}
+
+
 @router.get("/catalog")
 async def get_twin_catalog(
     _tenant_key: str | None = Depends(_capture_bearer_best_effort),
@@ -281,7 +298,7 @@ async def get_twin_catalog(
     except HTTPException as exc:
         if exc.status_code in _COORD_DOWN_STATUSES:
             detail = exc.detail if isinstance(exc.detail, str) else "coord unavailable"
-            return {"entries": [], "total": 0, "coord_error": detail}
+            return _empty_twin_catalog(detail)
         raise
 
 
