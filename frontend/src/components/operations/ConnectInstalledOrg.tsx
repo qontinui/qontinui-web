@@ -45,6 +45,7 @@ import { useResetOnBackNavigation } from "@/hooks/useResetOnBackNavigation";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { httpClient } from "@/services/service-factory";
 import {
+  assertNonceStorageAvailable,
   authorizeUrl,
   beginConnectState,
   isValidLogin,
@@ -144,6 +145,12 @@ export function ConnectInstalledOrg({
     setMinting(true);
     setMintError(null);
     try {
+      // BEFORE the mint, not after: a storage-blocked browser can never finish
+      // this connect, and every mint allocates a single-use row in coord for a
+      // connect that is already known to be uncompletable. `beginConnectState`
+      // would catch it below, but only once that dead row exists — and again on
+      // every retry.
+      assertNonceStorageAvailable();
       const token = await mintConnectState({ flow, targetLogin: trimmed });
       const state = beginConnectState(flow, trimmed, token, runnerState);
       // Same-tab nav: the callback must return into this authenticated session

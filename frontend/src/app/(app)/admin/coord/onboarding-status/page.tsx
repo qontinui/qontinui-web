@@ -153,18 +153,67 @@ function messageForClaimError(status: number, body: unknown): string {
  * history.replaceState so we don't trigger a Next.js navigation (which would
  * remount + re-fire the claim).
  *
- * Called after a claim resolves EITHER way. After success the code is spent, so
- * this stops a refresh re-POSTing it. After a `recover` the code is *unspent*
- * and the connect-state token is still live for the rest of its TTL — both are
- * credentials sitting in the address bar, browser history and the `Referer` of
- * anything the recover card links to, so they are worth dropping there too.
+ * Called from its OWN effect, on every arrival at this route, gated on nothing
+ * — before the claim effect, before any branch, and before the claim POST.
+ *
+ * ## Two failed attempts at scoping this, and why there is now no scope at all
+ * It first said "called after a claim resolves EITHER way", which was false:
+ * three exits returned without stripping — the hard claim error (403/409/500),
+ * the malformed-`installation_id` early return, and the async `catch`.
+ *
+ * Moving the call to the top of the claim effect fixed those three and still
+ * missed two, because that effect is itself gated on `hasClaimParams`, i.e. a
+ * `code` **plus** a target:
+ * - GitHub's authorize screen on "Cancel" returns
+ *   `?error=access_denied&state=<flow>~<login>~<nonce>~<token>` — no `code` at
+ *   all, so nothing claimable, yet the connect-state token is live for the rest
+ *   of its TTL;
+ * - a `?code=&state=` whose state fails to parse (or whose login `isValidLogin`
+ *   drops) with no `installation_id` — a live code AND a live token.
+ *
+ * Either way the credentials sit in the address bar, in browser history, and in
+ * the same-origin `Referer` (the full URL, under the default policy) of every
+ * request `ConnectedOrgs` / `OnboardingDoctor` make from that render.
+ *
+ * So: no `finally` (it cannot fire for returns that run before the async IIFE
+ * exists), no list of exits, and no "is this arrival claimable?" predicate.
+ * Each of those is an enumeration, and the enumeration has now been wrong twice
+ * in this one file. The function self-guards on the params actually being
+ * present, so calling it on a bare or `?repo=` visit costs nothing — which is
+ * what makes "run it always" the cheapest correct rule.
+ *
+ * Nothing downstream reads these params back off the URL — `code`, `stateToken`,
+ * `stateLogin` and `installationIdRaw` are captured in closure consts by the
+ * time this runs — and `firedRef` still guards a claim re-fire.
  */
 function stripClaimParamsFromUrl(): void {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
+  // The self-guard that makes an unconditional call free on ordinary visits.
   if (!url.searchParams.has("code") && !url.searchParams.has("state")) return;
   url.searchParams.delete("code");
   url.searchParams.delete("state");
+  // Forwarding `window.history.state` is LOAD-BEARING. Do NOT "tidy" it to
+  // `{}`, `null`, or a fresh object.
+  //
+  // Next patches `history.replaceState`, and it short-circuits to the native
+  // implementation only because the state object it is handed still carries
+  // Next's own `__NA` marker. Hand it anything else and Next treats this as an
+  // app navigation and dispatches ACTION_RESTORE, which updates
+  // `useSearchParams()`. Every dep of the claim effect below then changes, so
+  // React runs that effect's cleanup — setting `cancelled = true` WHILE the
+  // claim POST is still in flight — and the response lands on
+  // `if (cancelled) return;`. Neither success nor error ever renders: the page
+  // sits on "Connecting your GitHub account…" for ever while coord has in fact
+  // bound the account and enrolled the repos. Silent, and worse than an error.
+  //
+  // This was harmless while the strip ran after the terminal `setPhase`; moving
+  // it ahead of the POST is exactly what made it load-bearing.
+  //
+  // Related trap, now that this is the ONLY strip on the page: adding a
+  // `router.refresh()` anywhere here lets Next's `HistoryUpdater` re-run
+  // `replaceState` with the un-stripped `canonicalUrl` and put the credentials
+  // straight back into the URL.
   window.history.replaceState(window.history.state, "", url.toString());
 }
 
@@ -209,6 +258,24 @@ export default function OnboardingStatusPage() {
   // Fire the claim POST exactly once per mount (belt to the URL-strip braces).
   const firedRef = useRef(false);
 
+  // Drop the live OAuth code + connect-state token from the URL on EVERY
+  // arrival — its own effect, gated on NOTHING.
+  //
+  // It must not be folded into the claim effect below, and must not be gated on
+  // `hasClaimParams`: that predicate needs a `code` AND a target, and two real
+  // callbacks carry live credentials without satisfying it — GitHub's authorize
+  // "Cancel" (`?error=access_denied&state=…`, no code) and a `?code=&state=`
+  // whose state fails to parse. See `stripClaimParamsFromUrl` for the full
+  // history of that mistake.
+  //
+  // Declared ABOVE the claim effect on purpose: React runs effects in
+  // declaration order, so this is what guarantees the URL is already clean by
+  // the time the claim POST goes out (there is a test pinning exactly that).
+  // Do not reorder them.
+  useEffect(() => {
+    stripClaimParamsFromUrl();
+  }, [searchParams]);
+
   useEffect(() => {
     if (!hasClaimParams || firedRef.current) return;
     firedRef.current = true;
@@ -226,7 +293,6 @@ export default function OnboardingStatusPage() {
           "will bring you straight back.",
       );
       setPhase("recover");
-      stripClaimParamsFromUrl();
       return;
     }
 
@@ -239,7 +305,6 @@ export default function OnboardingStatusPage() {
           "stopped before using it. Start the connect again below.",
       );
       setPhase("recover");
-      stripClaimParamsFromUrl();
       return;
     }
 
@@ -290,7 +355,6 @@ export default function OnboardingStatusPage() {
                 "stopped before binding anything. Start the connect again below.",
             );
             setPhase("recover");
-            stripClaimParamsFromUrl();
             return;
           }
           setClaimError(messageForClaimError(res.status, body));
@@ -299,9 +363,6 @@ export default function OnboardingStatusPage() {
         }
         setClaim(body as ClaimResponse);
         setPhase("success");
-        // The code + state are single-use — drop them so a refresh can't
-        // re-submit them.
-        stripClaimParamsFromUrl();
       } catch (e) {
         if (cancelled) return;
         setClaimError(e instanceof Error ? e.message : String(e));

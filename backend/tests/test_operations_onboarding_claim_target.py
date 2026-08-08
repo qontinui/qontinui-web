@@ -208,3 +208,93 @@ def test_tenant_never_taken_from_body(auth_client: TestClient) -> None:
     payload = client.post.call_args.kwargs["json"]
     assert attacker_tenant not in str(payload)
     assert "tenant_id" not in payload
+
+
+# ---------------------------------------------------------------------------
+# Field bounds on the claim body (plan
+# `2026-08-01-connect-state-residual-hardenings` P3).
+#
+# `target_login` on the sibling mint model has been bounded + charset-checked
+# since web#882 while its counterpart `account_login` — the value coord compares
+# it against — was not, and neither was `connect_state`, the bearer-equivalent
+# token. The FRONTEND already asserts a charset on that token
+# (`WIRE_SAFE_TOKEN_RE = /^[A-Za-z0-9._-]+$/`), so the browser was stricter than
+# the server-side proxy it posts to. These pin both bounds, and pin that the
+# rejection is a typed 422 that never reaches coord.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "why"),
+    [
+        # The `~` delimits the GitHub `state` wire format — a login carrying one
+        # cannot be a real login and must not ride through.
+        ("account_login", "acme~org", "tilde is the state-wire delimiter"),
+        ("account_login", "acme/../../etc", "path traversal shape"),
+        ("account_login", "-leading-hyphen", "pattern anchors on alphanumeric"),
+        ("account_login", "a" * 40, "GitHub logins are <= 39 chars"),
+        ("account_login", "", "empty is not a login"),
+        # `+` round-trips back as a SPACE under form-urlencoded decoding, and
+        # `~` re-splits the state — the two cases the frontend regex exists for.
+        ("connect_state", "tok+123", "plus decodes back as a space"),
+        ("connect_state", "tok~123", "tilde is the state-wire delimiter"),
+        ("connect_state", "tok 123", "whitespace is not wire-safe"),
+        ("connect_state", "a" * 257, "cap is far above coord's sha256 hex"),
+        ("connect_state", "", "empty is not a token"),
+    ],
+)
+def test_out_of_bounds_field_is_422_and_never_reaches_coord(
+    auth_client: TestClient, field: str, value: str, why: str
+) -> None:
+    """An out-of-range value fails as a typed 422, not as an opaque coord 400."""
+    client = _patched_post(_mock_response())
+    with patch("httpx.AsyncClient", return_value=client):
+        res = auth_client.post(
+            CLAIM_URL, json={"code": "abc", "installation_id": 1, field: value}
+        )
+    assert res.status_code == 422, why
+    # Validation happens before the proxy, so coord is never called at all.
+    client.post.assert_not_awaited()
+
+
+def test_bounded_fields_still_admit_every_legitimate_value(
+    auth_client: TestClient,
+) -> None:
+    """The bounds must not narrow past what the real flows actually send.
+
+    `account_login` mirrors `target_login`'s pattern exactly (the two name the
+    same thing and coord compares them), which is deliberately LOOSER than
+    GitHub's own login rule. `connect_state` mirrors the frontend's
+    `WIRE_SAFE_TOKEN_RE`; coord mints a lowercase sha256 hex, well inside it.
+    """
+    client = _patched_post(_mock_response())
+    with patch("httpx.AsyncClient", return_value=client):
+        res = auth_client.post(
+            CLAIM_URL,
+            json={
+                "code": "abc",
+                "account_login": "a" * 39,
+                "connect_state": "0" * 64,
+            },
+        )
+    assert res.status_code == 200
+    payload = client.post.call_args.kwargs["json"]
+    assert payload["account_login"] == "a" * 39
+    assert payload["connect_state"] == "0" * 64
+
+
+def test_bounds_are_optional_not_required(auth_client: TestClient) -> None:
+    """Adding a pattern must not accidentally make either field mandatory.
+
+    Both are genuinely absent on real flows — the Setup-URL shape names the
+    target by `installation_id`, and a pre-connect-state callback carries no
+    token — so a `Field(...)` that dropped the `default=None` would 422 the
+    happy path.
+    """
+    client = _patched_post(_mock_response())
+    with patch("httpx.AsyncClient", return_value=client):
+        res = auth_client.post(CLAIM_URL, json={"code": "abc", "installation_id": 1})
+    assert res.status_code == 200
+    payload = client.post.call_args.kwargs["json"]
+    assert "account_login" not in payload
+    assert "connect_state" not in payload

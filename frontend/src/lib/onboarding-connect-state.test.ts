@@ -7,7 +7,7 @@
  * would drop the bind-only marker and the claim target.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
 vi.mock("@/services/service-factory", () => ({
@@ -18,6 +18,7 @@ vi.mock("@/services/service-factory", () => ({
 }));
 
 import {
+  assertNonceStorageAvailable,
   beginConnectState,
   consumeNonce,
   isValidLogin,
@@ -212,5 +213,130 @@ describe("consumeNonce", () => {
   it("rejects a nonce this browser session never minted", () => {
     beginConnectState("connect", "acme", TOKEN);
     expect(consumeNonce("ffffffffffffffffffffffffffffffff")).toBe(false);
+  });
+});
+
+/**
+ * A browser that BLOCKS sessionStorage — Safari private mode, an ITP-partitioned
+ * third-party context, a quota error, a storage-blocking extension.
+ *
+ * Both halves must fail closed, and they must fail closed TOGETHER (plan
+ * `2026-08-01-connect-state-residual-hardenings` P1 / F4):
+ *
+ * - `consumeNonce` used to `return true` here, so `consumeNonce(<anything>)`
+ *   passed and the whole same-tab check was bypassed in exactly the contexts
+ *   where a crafted callback is cheapest to land.
+ * - `beginConnectState` used to swallow the identical failure at the OUTBOUND
+ *   end. Fixing only the inbound half would leave that population minting a
+ *   nonce it cannot store, failing the callback, landing on the recover card,
+ *   and re-entering `beginConnectState` — for ever, spending a fresh OAuth code
+ *   and a fresh single-use connect-state token every lap.
+ *
+ * Hence the third test: the failure must surface BEFORE anything is spent.
+ */
+describe("storage-blocked browser (fail closed at BOTH ends)", () => {
+  /** Make the named sessionStorage accessors throw, as a blocked browser does. */
+  function blockStorage(
+    accessors: ("getItem" | "setItem" | "removeItem")[]
+  ): void {
+    for (const accessor of accessors) {
+      vi.spyOn(Storage.prototype, accessor).mockImplementation(() => {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      });
+    }
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("does NOT let the claim proceed when `getItem` throws", () => {
+    // Pre-seed a real nonce first, so the ONLY reason this rejects is the throw
+    // — not an empty store. This is the exact bypass that used to return true.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", "f".repeat(32));
+    blockStorage(["getItem"]);
+
+    expect(consumeNonce("f".repeat(32))).toBe(false);
+    // …and no attacker-chosen value slips through either.
+    expect(consumeNonce("whatever-the-attacker-put-in-the-url")).toBe(false);
+  });
+
+  it("THROWS from `beginConnectState` when `setItem` throws", () => {
+    blockStorage(["setItem"]);
+
+    // Not "returns a state with no nonce" and not "returns one anyway": either
+    // would hand GitHub a state this browser can never verify on the way back.
+    expect(() => beginConnectState("connect", "acme", TOKEN)).toThrow(
+      /session storage/i
+    );
+  });
+
+  it("spends nothing at all when both throw — the probe fires before the mint", async () => {
+    // The no-loop regression, in the order a real entry point runs it. The mint
+    // is stubbed to SUCCEED, so if either guard regressed this would go green
+    // with a usable `state` in hand — which is the bug, not the fix.
+    fetchMock.mockResolvedValue(jsonResponse({ connect_state: TOKEN }));
+    blockStorage(["getItem", "setItem"]);
+
+    // 1. The probe throws first, so `mintConnectState` is never reached: no
+    //    OAuth code, and no connect-state row against the tenant's quota.
+    expect(() => assertNonceStorageAvailable()).toThrow(/session storage/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // 2. The backstop still holds independently, for a call site that somehow
+    //    skipped the probe — so the guarantee is not merely a calling
+    //    convention. (Reached here only because the test calls it directly.)
+    const token = await mintConnectState({ flow: "connect" });
+    expect(() => beginConnectState("connect", "acme", token)).toThrow(
+      /session storage/i
+    );
+
+    // 3. And the inbound half would have refused it anyway — the ends agree,
+    //    which is what stops the recover-card loop rather than relocating it.
+    expect(consumeNonce("f".repeat(32))).toBe(false);
+  });
+
+  it("both guards raise the SAME message, so no caller can fork on them", () => {
+    // They are one failure detected at two points. A caller that could tell
+    // them apart would be encoding a difference that does not exist.
+    blockStorage(["setItem"]);
+
+    let fromProbe = "";
+    let fromBegin = "";
+    try {
+      assertNonceStorageAvailable();
+    } catch (e) {
+      fromProbe = (e as Error).message;
+    }
+    try {
+      beginConnectState("connect", "acme", TOKEN);
+    } catch (e) {
+      fromBegin = (e as Error).message;
+    }
+    expect(fromProbe).not.toBe("");
+    expect(fromProbe).toBe(fromBegin);
+  });
+
+  it("is a no-op on a healthy browser and leaves no probe key behind", () => {
+    // The probe must not become a permanent write, and must not consume the
+    // real nonce key — an in-flight connect in this tab has one stored.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", "a".repeat(32));
+
+    expect(() => assertNonceStorageAvailable()).not.toThrow();
+
+    expect(sessionStorage.getItem("qontinui.onboarding_connect_probe")).toBeNull();
+    expect(sessionStorage.getItem("qontinui.onboarding_connect_nonce")).toBe(
+      "a".repeat(32)
+    );
+  });
+
+  it("does NOT fail the connect when only the probe's own cleanup throws", () => {
+    // A store that accepted the write but refuses the delete has not told us
+    // the nonce write will fail — which is the only thing this probe is asking
+    // about. Throwing here would block a connect that can actually complete, so
+    // the cleanup is best-effort and the stale scratch byte is the price.
+    blockStorage(["removeItem"]);
+
+    expect(() => assertNonceStorageAvailable()).not.toThrow();
   });
 });

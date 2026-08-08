@@ -1946,13 +1946,49 @@ class OnboardingClaimRequest(BaseModel):
     enforces it behind ``COORD_REQUIRE_CONNECT_STATE`` (default off), so a web
     build that forwards it to a coord that predates the feature is simply
     ignored rather than rejected.
+
+    Why ``account_login`` and ``connect_state`` are bounded here
+    -----------------------------------------------------------
+
+    Same fail-early reason as :class:`OnboardingConnectStateRequest`: the
+    browser validates both before it ever POSTs, but this route is directly
+    reachable, and an out-of-range value should fail as a typed 422 rather than
+    as an opaque coord 400 (or, worse, ride through to coord unexamined).
+
+    ``account_login`` gets the SAME bound + charset as its counterpart
+    ``target_login`` — the two name the same kind of thing (a GitHub org/user
+    login) and coord compares them, so a reader must not have to wonder which
+    of the pair is checked. Like ``target_login`` the pattern is deliberately
+    looser than GitHub's real login rule (it permits consecutive and trailing
+    hyphens); coord and GitHub stay the authoritative check, and this only
+    excludes values that cannot be a login at all — in particular the ``~``
+    that delimits the GitHub ``state`` wire format.
+
+    ``connect_state`` is the bearer-equivalent token on this body, and it was
+    the more glaring of the two omissions: the *frontend* already asserts a
+    charset on it (``WIRE_SAFE_TOKEN_RE = /^[A-Za-z0-9._-]+$/`` in
+    ``lib/onboarding-connect-state.ts``), so the browser was stricter than the
+    server-side proxy it posts to, which is backwards. The charset here mirrors
+    that regex exactly — the two must agree, or a token the browser is willing
+    to send would 422 here. The length cap is deliberately far above what coord
+    can legitimately produce: coord stores a lowercase sha256 hex (64 chars, see
+    ``hash_connect_state``), so 256 leaves room for a future token format
+    without ever admitting an unbounded blob into a proxied request body.
+
+    Neither pattern uses a lookahead, so both compile under pydantic's default
+    rust-regex engine, whose ``$`` is end-of-haystack — a trailing newline is
+    rejected rather than tolerated.
     """
 
     code: str
     installation_id: int | None = None
-    account_login: str | None = None
+    account_login: str | None = Field(
+        default=None, max_length=39, pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+    )
     bind_only: bool = False
-    connect_state: str | None = None
+    connect_state: str | None = Field(
+        default=None, max_length=256, pattern=r"^[A-Za-z0-9._-]+$"
+    )
 
 
 @router.post("/pr-merge/onboarding/claim")

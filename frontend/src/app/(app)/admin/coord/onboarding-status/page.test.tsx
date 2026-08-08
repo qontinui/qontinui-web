@@ -288,6 +288,202 @@ describe("onboarding-status claim", () => {
 });
 
 /**
+ * The live OAuth `code` and the live connect-state token must leave the URL on
+ * EVERY arrival — not just the resolving-claim ones, and not just the claimable
+ * ones.
+ *
+ * The enumeration has been wrong twice here. First three exits returned without
+ * stripping (hard claim error, malformed `installation_id`, the async `catch`).
+ * Then, with the call hoisted to the top of the claim effect, two more still
+ * leaked because that effect is gated on `hasClaimParams` — a `code` plus a
+ * target — which a GitHub authorize "Cancel" (`?error=access_denied&state=…`,
+ * no code) and an unparseable-`state` callback both fail while still carrying
+ * live credentials.
+ *
+ * So the strip now runs from its own ungated effect, and these tests cover both
+ * families: claimable arrivals that fail late, and non-claimable arrivals that
+ * never reach the claim at all (plan
+ * `2026-08-01-connect-state-residual-hardenings` P2 / F7).
+ */
+describe("claim params are stripped on every exit", () => {
+  /** Point `window.location` at a real claim callback URL and track replaceState. */
+  function withCallbackUrl(search: string): { current: () => string } {
+    const href = `https://qontinui.io/admin/coord/onboarding-status?${search}`;
+    Object.defineProperty(window, "location", {
+      value: { ...originalLocation, assign: vi.fn(), href },
+      writable: true,
+    });
+    // `stripClaimParamsFromUrl` uses history.replaceState (deliberately — a
+    // Next.js navigation would remount and re-fire the claim), so the rewritten
+    // URL only ever shows up there.
+    let latest = href;
+    vi.spyOn(window.history, "replaceState").mockImplementation(
+      (_state, _unused, url) => {
+        latest = String(url);
+      }
+    );
+    return { current: () => latest };
+  }
+
+  function assertNoCredentials(
+    url: string,
+    preserved: string[] = ["installation_id"]
+  ): void {
+    const params = new URL(url).searchParams;
+    expect(params.get("code")).toBeNull();
+    expect(params.get("state")).toBeNull();
+    // Non-credential params are NOT collateral damage — only `code` and `state`
+    // are credentials, and the rest of the URL must survive intact.
+    for (const key of preserved) expect(params.get(key)).not.toBeNull();
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("drops code + state after a hard 403 claim error", async () => {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+    fetchMock.mockResolvedValue(
+      jsonResponse({ error: "installation_not_administered" }, 403)
+    );
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    assertNoCredentials(url.current());
+  });
+
+  it("drops code + state on the malformed installation_id return", async () => {
+    // The exit a `finally` on the async IIFE would have missed entirely: this
+    // returns before that IIFE is ever created, and it consumes nothing — so the
+    // code is still UNSPENT and the token still live for the rest of its TTL.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=not-a-number&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+    assertNoCredentials(url.current());
+  });
+
+  it("drops code + state when the claim POST itself throws", async () => {
+    // The `catch` arm — a flaky network hits this one most often.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+    fetchMock.mockRejectedValue(new Error("network down"));
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-error");
+    assertNoCredentials(url.current());
+  });
+
+  it("has ALREADY stripped the URL by the time the claim POST is issued", async () => {
+    // This is the assertion that pins the strip-up-front shape specifically: a
+    // `finally` (or a call on each error return) would still be carrying both
+    // credentials in the address bar for the whole duration of the round-trip.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    const search = `code=gho_code&installation_id=4242&state=connect~~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    let urlAtPost: string | null = null;
+    fetchMock.mockImplementation((requested: string) => {
+      if (String(requested).includes("/onboarding/claim")) {
+        urlAtPost = url.current();
+      }
+      return Promise.resolve(
+        jsonResponse({
+          ok: true,
+          account_login: "acme",
+          installation_id: 4242,
+          tenant_id: "t-1",
+        })
+      );
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-success");
+    expect(urlAtPost).not.toBeNull();
+    assertNoCredentials(String(urlAtPost));
+    // …and the claim still carried the token it read BEFORE the strip, so
+    // stripping early cannot starve the request it precedes.
+    expect(claimBody().connect_state).toBe(TOKEN);
+  });
+
+  // ---- arrivals that are NOT claimable, and so never reach the claim effect --
+
+  it("drops the token when the user CANCELS on GitHub's authorize screen", async () => {
+    // `?error=access_denied&…&state=…` — no `code` at all, so `hasClaimParams`
+    // is false and the claim effect returns immediately. The connect-state token
+    // is nonetheless live for the rest of its TTL, and this is a path a real
+    // user reaches by mis-clicking, not a crafted one. Gating the strip on
+    // "claimable" left it in the address bar, in history, and in the
+    // same-origin `Referer` of everything this page renders.
+    const search = `error=access_denied&error_description=The+user+denied+access&state=connect~acme-org~${NONCE}~${TOKEN}`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() =>
+      assertNoCredentials(url.current(), ["error", "error_description"])
+    );
+    // Nothing was claimed — there is nothing to claim.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+  });
+
+  it("drops code + state when `state` doesn't parse and there is no installation_id", async () => {
+    // The second non-claimable shape: a live code AND a live token, with
+    // `parseConnectState` returning null so `stateLogin` is null too. Renders
+    // the plain doctor view, which is precisely why nothing used to clean up.
+    const search = `code=gho_code&state=not-a-valid-state`;
+    const url = withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() => assertNoCredentials(url.current(), []));
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+  });
+
+  it("leaves an ordinary `?repo=` visit's URL untouched", async () => {
+    // The unconditional call must be free on non-callback visits: no `code`, no
+    // `state`, so `stripClaimParamsFromUrl` self-guards and never touches
+    // history at all.
+    const search = "repo=acme%2Fwidgets";
+    withCallbackUrl(search);
+    mockSearchParams = new URLSearchParams(search);
+
+    render(<OnboardingStatusPage />);
+
+    await waitFor(() => expect(screen.getByTestId("coord-onboarding-status-page")).toBeInTheDocument());
+    expect(window.history.replaceState).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * The recovery card is the FOURTH connect-initiation site, and the only one
  * that *computes* its flow instead of hardcoding it. Inverting that ternary is
  * the cheapest possible regression in this feature — it would silently upgrade
