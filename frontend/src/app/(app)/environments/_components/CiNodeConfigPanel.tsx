@@ -50,6 +50,13 @@ import {
  * it for delivery, and whether coord can reach the device at all. A saved
  * config on an offline machine is rendered as saved-and-undelivered — never as
  * applied.
+ *
+ * The same rule governs FAILURES, via {@link dispatchRefusalCopy}. A refusal is
+ * shown as what it was — a value this form can fix, an account that may not
+ * send to this machine, or a coordinator that never answered — with the
+ * refusing system's own sentence attached. Rendering all of those as one
+ * status code would be the same collapse in a different place: it would tell
+ * the reader a number and hide whether the problem is theirs to fix.
  */
 
 /** Entry shape the runner's admission check accepts: `owner/name` or a bare name. */
@@ -134,6 +141,90 @@ export function reachabilityCopy(state: CiNodeReachability): ReachabilityCopy {
   }
 }
 
+/**
+ * A dispatch that did not happen, classified for the reader.
+ *
+ * `fixableHere` is the field that matters and the reason this type exists at
+ * all: the panel must not ask someone to "check the values above" when the
+ * refusal was about which account owns the machine, and must not imply
+ * helplessness when they typed a `*` they can simply delete.
+ */
+export interface DispatchRefusal {
+  /** What kind of refusal this was, in the user's terms. */
+  headline: string;
+  /** True when changing something in THIS form would fix it. */
+  fixableHere: boolean;
+  /** The refusing system's own explanation, when it gave one. */
+  detail: string | null;
+}
+
+/**
+ * Classify a failed dispatch. Returns `null` when nothing was refused.
+ *
+ * Keyed off coord's HTTP status (and, where it disambiguates nothing else, the
+ * reachability verdict) rather than off the prose — prose is what we SHOW, not
+ * what we branch on, so re-wording a message upstream can never silently
+ * re-class a refusal.
+ *
+ * `dispatch_status === null` means coord never answered at all: either there
+ * was no paired runner to address, or the coordinator was unreachable. Those
+ * are reported as themselves, never as a rejection, because "we could not ask"
+ * is not evidence that the answer would have been no.
+ */
+export function dispatchRefusalCopy(
+  state: CiNodeConfigState
+): DispatchRefusal | null {
+  if (state.dispatched !== false) return null;
+  const detail = state.dispatch_detail;
+  const status = state.dispatch_status;
+
+  if (status === null) {
+    if (state.reachability === "unlinked") {
+      return {
+        headline: "Saved, but there is no runner to send them to yet.",
+        fixableHere: false,
+        detail,
+      };
+    }
+    return {
+      headline: "Saved, but qontinui.io could not reach the coordinator.",
+      fixableHere: false,
+      detail,
+    };
+  }
+  if (status === 400 || status === 422) {
+    return {
+      headline: "Saved here, but these settings were not accepted.",
+      fixableHere: true,
+      detail,
+    };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      headline:
+        "Saved here, but your account is not allowed to send settings to this machine.",
+      fixableHere: false,
+      detail,
+    };
+  }
+  if (status === 404) {
+    // NOT a format error. coord answers 404 both for "no such device" and for
+    // "device belongs to another account" on purpose, so this copy must not
+    // resolve that either — it says only what is true of both.
+    return {
+      headline:
+        "Saved here, but this machine is not one your account can send settings to.",
+      fixableHere: false,
+      detail,
+    };
+  }
+  return {
+    headline: "Saved here, but the coordinator did not send them.",
+    fixableHere: false,
+    detail,
+  };
+}
+
 /** Whether two configs differ (drives the Apply button's enabled state). */
 export function configsEqual(a: CiNodeConfig, b: CiNodeConfig): boolean {
   return (
@@ -214,10 +305,14 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
         toast.success(`CI settings sent to ${machine.name}`);
       } else {
         // Saved-but-not-delivered is the honest outcome, not an error the user
-        // caused — say what happened rather than "failed".
-        toast.warning(
-          `CI settings saved, but not delivered to ${machine.name}`
-        );
+        // caused — say what happened rather than "failed". A WARNING and never
+        // a success, whatever the reason: the save landed, the delivery did
+        // not, and collapsing those two is the lie this panel exists to avoid.
+        // The reason rides along as the description so the user does not have
+        // to go hunting in the delivery box for it.
+        toast.warning(`CI settings saved, but not delivered to ${machine.name}`, {
+          description: dispatchRefusalCopy(next)?.detail ?? undefined,
+        });
       }
     } catch (err) {
       toast.error(errMessage(err, "Failed to save CI settings"));
@@ -256,6 +351,7 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
   }
 
   const reach = reachabilityCopy(state.reachability);
+  const refusal = dispatchRefusalCopy(state);
   const dirty = !configsEqual(draft, state.requested);
 
   return (
@@ -462,10 +558,27 @@ export function CiNodeConfigPanel({ machine }: CiNodeConfigPanelProps) {
             in its own settings file.
           </p>
         )}
-        {state.dispatched === false && state.dispatch_detail && (
-          <p className="text-destructive" data-testid="ci-node-dispatch-detail">
-            {state.dispatch_detail}
-          </p>
+        {/* The refusal, in the refusing system's own words. A bare status code
+            here would tell the reader a number and hide the one thing they
+            need: whether this is theirs to fix. */}
+        {refusal && (
+          <div
+            className="space-y-1 text-destructive"
+            data-testid="ci-node-dispatch-refusal"
+            data-dispatch-status={state.dispatch_status ?? ""}
+            data-dispatch-error={state.dispatch_error ?? ""}
+            data-fixable-here={refusal.fixableHere ? "true" : "false"}
+          >
+            <p className="font-medium">{refusal.headline}</p>
+            {refusal.detail && (
+              <p data-testid="ci-node-dispatch-detail">{refusal.detail}</p>
+            )}
+            {refusal.fixableHere && (
+              <p data-testid="ci-node-dispatch-fixable">
+                Adjust the values above and apply again.
+              </p>
+            )}
+          </div>
         )}
       </div>
 

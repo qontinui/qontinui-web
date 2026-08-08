@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -594,6 +595,24 @@ async def set_machine_environment(
 # to coord's own WS session state. A UI that renders a saved-but-undeliverable
 # config as though it were live would be lying, and this shape makes that lie
 # require effort.
+#
+# AND WHEN THE DISPATCH IS REFUSED, WHOSE WORDS THE USER GETS.
+#
+# The same honesty applies to failures. coord refuses for genuinely different
+# reasons, and only some of them are the user's to fix: a `*` in the allowlist
+# is a 400 with an explanation they can act on in this form, while a device
+# that is not registered to their tenant is a 404 they cannot do anything about
+# here. Rendering both as "coord rejected the dispatch (HTTP 4xx)" — which is
+# what this endpoint used to do — tells them a number and hides the one thing
+# they needed.
+#
+# So coord's status and its parsed body are forwarded into the response
+# (`dispatch_status` / `dispatch_error` / `dispatch_detail`) rather than
+# collapsed, in the shape `operations.py::_proxy_coord_passthrough` uses for
+# the tenant merge-remediation surface. What is NOT copied from that helper is
+# returning coord's status as the endpoint's own: this PUT has already
+# committed the save, so a 400 here would report the save as failed. The PUT
+# stays 200 with `dispatched=False`, and the refusal rides the body.
 # ---------------------------------------------------------------------------
 
 # Coord's route for the CI-node settings directive, the sibling of
@@ -601,6 +620,32 @@ async def set_machine_environment(
 # `events.ci.settings_requested.<device_id>` on the family the runner's CI
 # socket already subscribes to.
 _COORD_CI_NODE_DISPATCH_PATH = "/devenv/ci-node-dispatch"
+
+# What to say when coord refuses WITHOUT prose. Keyed by status because the
+# status is the only thing we know in that case; each sentence claims exactly
+# that much and no more.
+#
+# The 404 wording matters: coord answers 404 for "no such device" AND for
+# "device in another tenant" deliberately, so that a caller cannot use the
+# difference to enumerate another tenant's fleet. This copy must therefore not
+# resolve that ambiguity either — it says the machine is not one this account
+# can send to, which is true of both.
+_COORD_STATUS_FALLBACKS: dict[int, str] = {
+    400: ("These settings were not accepted. Check the values above and try again."),
+    401: (
+        "qontinui.io was not signed in to the coordinator, so nothing was sent. "
+        "Reload and try again."
+    ),
+    403: (
+        "Your account is not allowed to send settings to this machine. The "
+        "settings are saved here."
+    ),
+    404: (
+        "The coordinator does not have this machine registered to your account, "
+        "so there was nothing to send to. The settings are saved here."
+    ),
+    409: "The coordinator could not apply these settings right now.",
+}
 
 
 async def _ci_node_reachability(
@@ -633,11 +678,89 @@ async def _ci_node_reachability(
     return "online" if routing.get("ws_session_id") is not None else "offline"
 
 
+def _coord_transport_detail(exc: HTTPException) -> str:
+    """Human sentence for a `post_to_coord` transport failure.
+
+    ``post_to_coord`` raises with ``detail`` as either a plain string
+    (``"Coord unreachable."``) or the ``{"error", "message"}`` envelope it uses
+    for the 503/504 degrades. The previous code kept only the string arm and
+    flattened the envelope to ``"coord dispatch failed"`` — throwing away the
+    one sentence written for a human ("Coord is temporarily unavailable (likely
+    a rolling deploy); retry shortly."), which is precisely the case where
+    telling the user to retry is the correct advice.
+    """
+    detail = exc.detail
+    if isinstance(detail, str) and detail:
+        return detail
+    if isinstance(detail, dict):
+        message = detail.get("message")
+        if isinstance(message, str) and message:
+            return message
+    return (
+        "qontinui.io could not reach the coordinator, so the settings were not "
+        "sent. They are saved here — try again shortly."
+    )
+
+
+def _coord_dispatch_refusal(resp: httpx.Response) -> tuple[str | None, str]:
+    """Turn coord's non-2xx answer into ``(machine code, human sentence)``.
+
+    This is the passthrough shape that ``operations.py``'s
+    ``_proxy_coord_passthrough`` uses on the tenant merge-remediation surface,
+    adapted to a route that cannot simply forward coord's status: the PUT has
+    ALREADY saved the config, so answering with coord's 400/404 would report
+    the save as failed. So coord's status and parsed body ride the response
+    BODY instead — ``dispatch_status`` / ``dispatch_error`` /
+    ``dispatch_detail`` — while the PUT itself stays 200 with
+    ``dispatched=False``.
+
+    What this replaces: ``f"coord rejected the dispatch (HTTP {status})"``,
+    which rendered a validation refusal the user could fix (a ``*`` in the
+    allowlist) and an authorization refusal they cannot (the device is not
+    theirs) as the same bare number.
+
+    coord's refusal envelope on this route is uniform — ``{"error": <code>,
+    "message": <prose>}`` — so the parse is one rule: ``error`` is always a
+    code, ``message`` is always prose. Anything else (a proxy's HTML error
+    page, an empty body, a non-object JSON) degrades to a status-derived
+    sentence rather than to an invented code, because reporting "we do not
+    know why" is honest and inventing a code is not.
+    """
+    payload: object
+    try:
+        payload = resp.json()
+    except ValueError:
+        payload = None
+
+    code: str | None = None
+    message: str | None = None
+    if isinstance(payload, dict):
+        raw_code = payload.get("error")
+        if isinstance(raw_code, str) and raw_code:
+            code = raw_code
+        raw_message = payload.get("message")
+        if isinstance(raw_message, str) and raw_message:
+            message = raw_message
+
+    if message is None:
+        # No prose from coord. Say what we actually know — the status and, when
+        # there is one, the code — instead of dressing it up.
+        message = _COORD_STATUS_FALLBACKS.get(
+            resp.status_code,
+            f"The coordinator refused to send these settings (HTTP {resp.status_code}).",
+        )
+        if code is not None:
+            message = f"{message} (coordinator said: {code})"
+    return code, message
+
+
 def _ci_node_response(
     machine: Machine,
     reachability: CiNodeReachabilityT,
     *,
     dispatched: bool | None = None,
+    dispatch_status: int | None = None,
+    dispatch_error: str | None = None,
     dispatch_detail: str | None = None,
 ) -> CiNodeConfigResponse:
     """Build the response from a machine row + a reachability verdict."""
@@ -653,6 +776,8 @@ def _ci_node_response(
         dispatched_at=machine.ci_node_dispatched_at,
         reachability=reachability,
         dispatched=dispatched,
+        dispatch_status=dispatch_status,
+        dispatch_error=dispatch_error,
         dispatch_detail=dispatch_detail,
     )
 
@@ -747,17 +872,28 @@ async def set_ci_node_config(
             target_device_id=str(machine.coord_device_id),
         )
     except HTTPException as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else "coord dispatch failed"
+        # A TRANSPORT failure, raised by `post_to_coord` itself (coord
+        # unreachable / timed out / still deploying). Distinct from a refusal:
+        # coord never answered, so there is no coord status or code to forward
+        # and both stay None. `dispatch_error` is left None on purpose — an
+        # invented code here would be indistinguishable from one coord sent.
+        detail = _coord_transport_detail(exc)
         return _ci_node_response(
-            machine, reachability, dispatched=False, dispatch_detail=str(detail)
+            machine, reachability, dispatched=False, dispatch_detail=detail
         )
 
     if resp.status_code >= 400:
+        # A REFUSAL: coord answered, with a reason. Forward its status and its
+        # parsed body so the panel can say which class of refusal this was — a
+        # value the user can fix here, or a device that is not theirs.
+        code, message = _coord_dispatch_refusal(resp)
         return _ci_node_response(
             machine,
             reachability,
             dispatched=False,
-            dispatch_detail=f"coord rejected the dispatch (HTTP {resp.status_code})",
+            dispatch_status=resp.status_code,
+            dispatch_error=code,
+            dispatch_detail=message,
         )
 
     await machine_repo.update(

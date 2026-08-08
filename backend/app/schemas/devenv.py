@@ -356,6 +356,27 @@ class CiNodeConfigResponse(BaseSchema):
     # Result of THIS request's dispatch attempt. ``None`` on a read (nothing
     # was attempted), so a UI can never mistake a GET for a successful push.
     dispatched: bool | None = None
+    # WHY the dispatch did not happen, in the words of whoever refused it.
+    #
+    # These three carry coord's own answer through instead of flattening it to
+    # "HTTP 4xx". The distinction is load-bearing for the reader: a wildcard in
+    # the allowlist is something they typed and can fix in this form, while a
+    # device-ownership refusal is not — and a bare status number cannot tell
+    # them which one they hit.
+    #
+    # * ``dispatch_status`` — the HTTP status coord answered with, or ``None``
+    #   when there was no answer to have (nothing paired; coord unreachable).
+    # * ``dispatch_error``  — coord's machine-readable code from the ``error``
+    #   key (e.g. ``repo_allowlist_wildcard``,
+    #   ``device_not_found_in_tenant``). The UI keys refusal CLASS off this +
+    #   the status, never off prose.
+    # * ``dispatch_detail`` — the human sentence, coord's ``message`` verbatim
+    #   when it sent one. This is what the panel shows the user.
+    #
+    # None of them upgrade a refusal into a success: ``dispatched`` stays
+    # ``False`` and the save is still reported as saved-but-not-delivered.
+    dispatch_status: int | None = None
+    dispatch_error: str | None = None
     dispatch_detail: str | None = None
 
 
