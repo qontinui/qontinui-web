@@ -23,16 +23,21 @@ import type {
 } from "../_lib/types";
 
 /**
- * Delivery verdict lookup — the interactive "has this plan/PR landed?" card
- * (Phase 5 of plan 2026-06-15-twin-delivery-verdict-completion-view).
+ * Delivery verdict lookup — the interactive "has this work unit/PR landed?"
+ * card (Phase 5 of plan 2026-06-15-twin-delivery-verdict-completion-view).
  *
- * Enter a plan slug → the backend proxies coord's parameterized
+ * Enter a work-unit slug → the backend proxies coord's parameterized
  * `coord_query_delivery` (the SAME tool an agent calls, force-refreshed
- * server-side), and we render the verdict a human can read: plan lifecycle
+ * server-side), and we render the verdict a human can read: work-unit lifecycle
  * status ⋈ per-PR merge state ⋈ best-effort deploy state, with the credibility
  * envelope + staleness so a stale answer is visibly stale. This is the UI
  * antidote to the stale-local-checkout incident — no one needs to read a local
  * working tree to answer "is it done?".
+ *
+ * The "plan" vocabulary survives below in exactly one place, deliberately:
+ * `anchorPresentation` keys the displayed noun off the verdict's own
+ * `anchor_kind`, so a verdict coord still anchors to a plan is still labelled
+ * "Plan". That is coord's data speaking, not this card's own vocabulary.
  */
 
 /** Visual vocabulary for the canonical delivery drift classes. */

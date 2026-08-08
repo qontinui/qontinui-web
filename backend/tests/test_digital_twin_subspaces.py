@@ -303,6 +303,31 @@ class TestDeliveryEndpoint:
             MockClient.assert_not_called()
         assert resp.status_code == 400
 
+    def test_legacy_plan_slug_param_is_rejected_without_calling_coord(self):
+        """The retired spelling is a 400, not a silent empty lookup.
+
+        Phase 3 of ``2026-07-30-coord-web-plan-slug-wire-key-retirement`` moved
+        this route's query param from ``plan_slug`` to ``work_unit_slug``. That
+        is a deliberate break for anyone calling the route by hand, and it must
+        stay a *loud* one: FastAPI ignores an unknown query param, so a caller
+        still sending ``plan_slug`` falls through to the has-nothing branch.
+        Pinned so nobody "fixes" the break by re-*honouring* the old key — coord
+        drops ``plan_slug`` entirely in Phase 4, so a resurrected alias would
+        forward a param coord no longer understands (or, worse, satisfy the
+        local required-argument check and turn a clean 400 into a coord-side
+        failure). Re-declaring the param without reading it stays green, which
+        is right: that is a no-op.
+        """
+        client = TestClient(_build_delivery_app())
+        with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
+            resp = client.get(
+                f"{API_PREFIX}/delivery/verdict",
+                params={"plan_slug": "2026-06-13-approach-d-conductor-engine"},
+            )
+            MockClient.assert_not_called()
+        assert resp.status_code == 400
+        assert "work_unit_slug" in resp.json()["detail"]
+
     def test_coord_tool_failure_surfaces_status(self):
         client = TestClient(_build_delivery_app())
         with patch("app.api.v1.endpoints.operations.httpx.AsyncClient") as MockClient:
