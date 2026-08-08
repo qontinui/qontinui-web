@@ -5,6 +5,8 @@ Pure-function tests — no DB, no embedder.
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.memory_retrieval import RRF_K, rrf_fuse
 
 
@@ -144,3 +146,75 @@ def test_canonical_arms_outrank_unknown_arms_in_tie_break() -> None:
 
 def test_no_arms_at_all() -> None:
     assert rrf_fuse({}) == []
+
+
+# ---------------------------------------------------------------------------
+# Per-arm weights (plan 2026-08-08-memory-graph-has-no-writer, Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def test_omitting_weights_is_textbook_rrf() -> None:
+    """The default path must be byte-identical to unweighted RRF.
+
+    Every existing caller and every prior measurement depends on this, so a
+    weights parameter that quietly changed the default would invalidate the
+    recorded baselines rather than extend them.
+    """
+    arms = {"vector": ["a", "b", "c"], "fts": ["b", "a"], "link": ["c", "d"]}
+    plain = rrf_fuse(arms)
+
+    assert [h.rrf_score for h in rrf_fuse(arms, weights={})] == [
+        h.rrf_score for h in plain
+    ]
+    assert [h.rrf_score for h in rrf_fuse(arms, weights=None)] == [
+        h.rrf_score for h in plain
+    ]
+
+
+def test_an_unlisted_arm_weighs_one() -> None:
+    """Weighting one arm must not silently zero the others."""
+    arms = {"vector": ["a"], "link": ["b"]}
+    fused = {h.id: h.rrf_score for h in rrf_fuse(arms, weights={"link": 0.25})}
+
+    assert fused["a"] == pytest.approx(1 / (RRF_K + 1))
+    assert fused["b"] == pytest.approx(0.25 / (RRF_K + 1))
+
+
+def test_weight_scales_only_its_own_arms_contribution() -> None:
+    """A document in two arms keeps the unweighted arm's share intact."""
+    arms = {"vector": ["a"], "link": ["a"]}
+    (hit,) = rrf_fuse(arms, weights={"link": 0.5})
+
+    assert hit.rrf_score == pytest.approx(1 / (RRF_K + 1) + 0.5 / (RRF_K + 1))
+    # Provenance is untouched by weighting — a damped hit is still a hit.
+    assert hit.vector_rank == 1
+    assert hit.link_rank == 1
+
+
+def test_damping_can_reorder_but_never_drops_a_document() -> None:
+    """The superset property the end-to-end suite deliberately does not assert.
+
+    A weight changes scores and so can change order; what it must never do
+    is remove an id some arm returned.
+    """
+    arms = {"vector": ["x", "y"], "link": ["y", "z"]}
+    heavy = rrf_fuse(arms, weights={"link": 1.0})
+    light = rrf_fuse(arms, weights={"link": 0.01})
+
+    assert {h.id for h in heavy} == {"x", "y", "z"} == {h.id for h in light}
+    # Under an equal vote, y (in both arms) outranks x; damped hard enough,
+    # the vector arm's ordering wins back.
+    assert [h.id for h in heavy][0] == "y"
+    assert [h.id for h in light][0] == "x"
+
+
+def test_a_zero_weight_arm_contributes_nothing_but_still_reports_rank() -> None:
+    """Zero weight is 'no influence on score', NOT 'not retrieved'.
+
+    Keeping the rank visible is what lets a caller see that the graph found
+    a document even when the fusion chose to ignore it.
+    """
+    (hit,) = rrf_fuse({"link": ["a"]}, weights={"link": 0.0})
+
+    assert hit.rrf_score == 0.0
+    assert hit.link_rank == 1
