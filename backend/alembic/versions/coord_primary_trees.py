@@ -33,19 +33,53 @@ Schema:
   agent allocates the worktree.
 
 Composite primary key ``(device_id, repo)`` matches the UPSERT pattern
-in ``crate::primary_trees::post_upsert``.
+in ``crate::data::primary_trees::post_upsert``.
 
 Index ``idx_primary_trees_dirty`` covers the stale-WIP watcher's
 ``WHERE dirty=true AND last_edit_at < now() - interval '24 hours'``
-scan.
+scan. (Re-checked 2026-08-07 and it does: the watcher scans
+``WHERE dirty = true AND last_edit_at IS NOT NULL AND last_edit_at < $1``
+(``stale_wip_watcher.rs``), which implies this partial index's
+``WHERE dirty = true``. Unlike ``idx_primary_trees_stale`` — see
+``coord_primary_trees_selfheal_backfill`` — this one is genuinely usable.)
 
 Idempotency: ``CREATE TABLE IF NOT EXISTS`` and ``CREATE INDEX IF NOT
-EXISTS``. Mirrors the
-``qontinui-coord/src/primary_trees.rs::ensure_primary_trees_table``
-runtime self-heal — same posture as ``coord.alerts`` /
-``coord.agent_worktrees`` (alembic canonical, runtime self-heal is the
-recovery path per
-[[feedback_canonical_db_behind_alembic]]).
+EXISTS``.
+
+Corrected 2026-08-07: the paragraph above used to continue "Mirrors the
+``qontinui-coord/src/primary_trees.rs::ensure_primary_trees_table`` runtime
+self-heal — same posture as ``coord.alerts`` / ``coord.agent_worktrees``
+(alembic canonical, runtime self-heal is the recovery path per
+[[feedback_canonical_db_behind_alembic]])", and the primary-key sentence named
+``crate::primary_trees::post_upsert``. Both were true when this revision was
+authored and neither is now. ``ensure_primary_trees_table`` does not exist in
+coord at all — every Rust ``coord.*`` self-heal was deleted (plan
+``2026-05-29-delete-stale-rust-table-self-heals``), and the module moved under
+``src/data/`` (coord ``34678c72``). More importantly the POSTURE has inverted:
+runtime self-heal is no longer the recovery path. alembic is the SOLE author of
+``coord.*`` schema (served policy ``production-and-cost``
+``alembic-sole-authorship``), and coord's canonical-schema boot gate never
+creates a missing table — it either hard-fails boot or degrades the dependent
+routes. Read as live guidance, the old sentence pointed at a recovery mechanism
+that no longer exists.
+
+Which of those two this table gets, stated precisely because "asserts table
+presence at boot" (the closing line of the sibling ``coord.primary_trees``
+revisions) reads stronger than it is: ``primary_trees`` is a BEST-EFFORT
+manifest entry, NOT in coord's ``CRITICAL_BOOT_TABLES`` allowlist
+(``schema_manifest.rs`` — only ``agent_sessions`` / ``alerts`` / ``devices`` /
+``leader_lease`` / ``tenants`` hard-fail). If this revision has not been applied,
+coord BOOTS and degrades the tree-state routes to ``503
+schema_migration_pending``; it does not refuse to start. Operationally that is
+the quiet failure mode, not the loud one — worth knowing before assuming a
+missing migration would announce itself at boot. (``COORD_BOOT_GATE_STRICT=1``
+restores hard-fail-for-all as a kill switch.)
+
+Scope note: 28 other applied revisions still name a deleted
+``qontinui-coord`` ``::ensure_*`` self-heal in the same way. Only the
+``coord.primary_trees`` family is corrected here — the table whose docstrings
+were already under review in PR #945 — and the rest is left to a separate sweep
+rather than bundled into this diff.
 
 Chains off ``ud03_drop_remap_table`` (verified as the linear tip of
 the ud-chain on origin/main 2026-05-19 per
