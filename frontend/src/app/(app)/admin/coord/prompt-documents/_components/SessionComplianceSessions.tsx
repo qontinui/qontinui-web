@@ -23,9 +23,11 @@ import { ComplianceStateNotice } from "./ComplianceStateNotice";
 import { SessionComplianceReportDialog } from "./SessionComplianceReportDialog";
 import {
   COMPLIANCE_VERDICTS,
+  NUDGE_FLOOR_CAVEAT,
   VERDICT_META,
   isReportAbsent,
   isUnexamined,
+  readNudges,
   shapeCheckedCount,
   unreconciledCount,
   type ComplianceVerdict,
@@ -164,6 +166,10 @@ export function SessionComplianceSessions({
                 // was reported, or nothing was examined. Neither may render as
                 // a count — least of all as `0`, which reads as "all clear".
                 const noCount = absent || isUnexamined(row);
+                // Only a POSITIVE count is a fact about the session; a zero or
+                // a missing field is rendered as nothing at all rather than as
+                // a reassuring "0 nudges".
+                const nudges = readNudges(row);
                 return (
                   <TableRow
                     key={row.id}
@@ -203,6 +209,16 @@ export function SessionComplianceSessions({
                         {!absent && row.reason && (
                           <span className="text-[11px] text-muted-foreground">
                             {row.reason}
+                          </span>
+                        )}
+                        {nudges.known && (
+                          <span
+                            className="text-[11px] text-muted-foreground"
+                            title={`Coord asked this session to produce the missing report — ${NUDGE_FLOOR_CAVEAT}.`}
+                            data-testid="nudge-count"
+                          >
+                            asked {nudges.atLeast}×{" "}
+                            <span className="opacity-70">or more</span>
                           </span>
                         )}
                       </div>

@@ -408,6 +408,16 @@ export interface SessionComplianceRow {
    * rather than guessing "final".
    */
   finalized?: boolean | null;
+  /**
+   * How many times coord asked this session for the report it hadn't emitted.
+   *
+   * Absent ⇒ coord isn't carrying the field at all. `0` is NOT the same claim
+   * as "never nudged" — see {@link readNudges} for why the two must not be
+   * rendered alike.
+   */
+  nudge_attempts?: number | null;
+  /** When the most recent recorded nudge fired. */
+  last_nudged_at?: string | null;
 }
 
 /** `GET /coord/session-compliance/sessions` response. */
@@ -528,6 +538,53 @@ export function isReportAbsent(row: SessionComplianceRow): boolean {
  */
 export function isUnexamined(row: SessionComplianceRow): boolean {
   return row.verdict === "not_applicable";
+}
+
+/**
+ * Why a recorded nudge count is a FLOOR and never an exact tally.
+ *
+ * The counter's source is a map in the runner's memory, rebuilt empty on every
+ * restart. Coord GREATEST-merges each POST so a restarted runner's smaller
+ * number can't walk the stored value backwards — but it cannot recover what
+ * the dead process already did. So the true number is `>= stored`, and every
+ * surface that shows the value must say so.
+ */
+export const NUDGE_FLOOR_CAVEAT =
+  "at least this many — the tally lives in the runner's memory, so nudges from before a restart aren't counted";
+
+/**
+ * Why a stored `0` is not the claim "this session was never asked".
+ *
+ * The column is `NOT NULL DEFAULT 0`, so every row that existed before the
+ * migration reads `0`, as does every row written by a runner build that
+ * predates the counter. Those are indistinguishable from a session that
+ * genuinely was never nudged. Rendering "0 nudges" would collapse three
+ * different situations into one confident-looking number.
+ */
+export const NUDGE_ZERO_AMBIGUITY =
+  "No nudge is recorded for this session. That can mean it was never asked, or that it ran on a runner build older than the counter — nothing stored here separates the two.";
+
+/** What the stored counter can honestly support. */
+export type NudgeReading =
+  | { known: false; reason: "not_carried" | "none_recorded" }
+  | { known: true; atLeast: number; lastAt: string | null };
+
+/**
+ * Read the nudge counter without over-claiming.
+ *
+ * Three outcomes, deliberately, because the field has three meanings:
+ * a missing field (coord's projection doesn't carry it — unknown), a stored
+ * `0` (ambiguous, see {@link NUDGE_ZERO_AMBIGUITY}), and a positive count
+ * (a floor, see {@link NUDGE_FLOOR_CAVEAT}). Only the third is a fact about
+ * the session, and only it should ever render as a number.
+ */
+export function readNudges(row: SessionComplianceRow): NudgeReading {
+  const raw = row.nudge_attempts;
+  if (raw == null) return { known: false, reason: "not_carried" };
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return { known: false, reason: "none_recorded" };
+  }
+  return { known: true, atLeast: raw, lastAt: row.last_nudged_at ?? null };
 }
 
 /**
