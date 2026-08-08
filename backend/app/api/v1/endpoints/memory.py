@@ -164,6 +164,32 @@ _DEFAULT_QUERY_SCOPES = ["tenant", "runner"]
 # fan-out is separately capped by store.ARM_LIMIT).
 LINK_SEED_COUNT = 10
 
+# Per-arm weights on the RRF contribution (`w / (k + rank)`). Arms absent
+# here weigh 1.0, so `vector` and `fts` are unchanged textbook RRF.
+#
+# The link arm is DAMPED because plain RRF assumes every arm's rank-1 means
+# roughly the same thing, and "one hop from a seed" is a far weaker claim
+# than "nearest neighbour in the embedding space". Measured on the golden
+# set (plan 2026-08-08-memory-graph-has-no-writer §4a), an equal vote cost
+# MRR 0.8306 -> 0.2918 and nDCG@10 0.8412 -> 0.4402 while recall@20 held at
+# 1.0 — a ranking collapse invisible to the widest metric.
+#
+# 0.1 is the LARGEST swept weight whose regression is within fixture noise
+# (MRR 0.8293, nDCG@10 0.8397 — both within 0.002 of the arm-off baseline),
+# chosen so the arm keeps as much tie-breaking signal as it safely can
+# rather than being damped into a no-op. The full sweep:
+#
+#     w_link:  1.00   0.50   0.25   0.10   0.05   0.02
+#     MRR:   0.2918 0.2918 0.3569 0.8293 0.8306 0.8306   (arm off: 0.8306)
+#
+# PROVISIONAL, and deliberately not tuned finer: on this 30-record corpus
+# `ARM_LIMIT` (50) exceeds the corpus, so the vector arm ranks everything
+# and the link arm can only RE-RANK, never add a hit. No weight improved any
+# metric — damping makes the arm harmless, not useful. Re-tune against a
+# corpus larger than ARM_LIMIT (that plan's Phase 6), where the arm can
+# finally contribute hits the other arms missed.
+ARM_WEIGHTS = {"link": 0.1}
+
 
 @dataclass(frozen=True)
 class MemoryPrincipal:
@@ -706,7 +732,10 @@ async def query_records(
         link_ids = await store.link_expansion(db, seed_ids=seed_ids, **filter_kwargs)
         link_arm = "expanded"
         # Second fuse: the answer. Pure in-memory math over <= 3x50 ids.
-        fused = rrf_fuse({"vector": vector_ids, "fts": fts_ids, "link": link_ids})
+        fused = rrf_fuse(
+            {"vector": vector_ids, "fts": fts_ids, "link": link_ids},
+            weights=ARM_WEIGHTS,
+        )
 
     # Sliced only AFTER the re-fuse, so a link-only hit can displace a
     # weaker lexical one instead of being cut before it competes.
