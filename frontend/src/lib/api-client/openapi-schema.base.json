@@ -6558,6 +6558,28 @@
             ],
             "title": "Dispatch Detail"
           },
+          "dispatch_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Error"
+          },
+          "dispatch_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Status"
+          },
           "dispatched": {
             "anyOf": [
               {
