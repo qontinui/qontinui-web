@@ -93,7 +93,12 @@ export interface StalledSession {
   /** For `expected_unstarted`: the originating gate id. */
   continuation_gate_id?: string | null;
   correlation_topic?: string | null;
-  plan_slug?: string | null;
+  /** The stalled session's linked work-unit slug. Coord's
+   *  `StalledSessionSummary` emitted this under the legacy `plan_slug` key
+   *  until the wire-key retirement (plan
+   *  `2026-07-30-coord-web-plan-slug-wire-key-retirement`, Phase 1); it
+   *  dual-emits both keys today and drops `plan_slug` in Phase 4. */
+  work_unit_slug?: string | null;
 }
 
 /** Wire shape returned by `GET /api/v1/operations/device-status`. */

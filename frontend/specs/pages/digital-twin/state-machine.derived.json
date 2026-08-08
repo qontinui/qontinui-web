@@ -57,7 +57,7 @@
         "status": 200,
         "contentType": "application/json",
         "body": {
-          "plan_slug": "2026-06-15-twin-delivery-verdict-completion-view",
+          "work_unit_slug": "2026-06-15-twin-delivery-verdict-completion-view",
           "tool": "coord_query_delivery",
           "verdict": {
             "instance": "delivery",

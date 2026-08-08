@@ -242,7 +242,7 @@ def _delivery_verdict_response() -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
     resp.json.return_value = {
-        "plan_slug": "2026-06-13-approach-d-conductor-engine",
+        "work_unit_slug": "2026-06-13-approach-d-conductor-engine",
         "tool": "coord_query_delivery",
         "verdict": {
             "instance": "delivery",
@@ -276,7 +276,7 @@ class TestDeliveryEndpoint:
             MockClient.return_value = instance
             resp = client.get(
                 f"{API_PREFIX}/delivery/verdict",
-                params={"plan_slug": "2026-06-13-approach-d-conductor-engine"},
+                params={"work_unit_slug": "2026-06-13-approach-d-conductor-engine"},
             )
 
         assert resp.status_code == 200
@@ -291,7 +291,7 @@ class TestDeliveryEndpoint:
         )
         assert called_url[0].endswith("/coord/twin/delivery/verdict")
         assert (
-            called_kwargs["params"]["plan_slug"]
+            called_kwargs["params"]["work_unit_slug"]
             == "2026-06-13-approach-d-conductor-engine"
         )
 
@@ -313,7 +313,7 @@ class TestDeliveryEndpoint:
             MockClient.return_value = instance
             resp = client.get(
                 f"{API_PREFIX}/delivery/verdict",
-                params={"plan_slug": "some-plan"},
+                params={"work_unit_slug": "some-work-unit"},
             )
         # _proxy_coord_get re-raises coord's >=400 status as an HTTPException.
         assert resp.status_code == 502
