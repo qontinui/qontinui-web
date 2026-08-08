@@ -6,6 +6,13 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The frontend interfaces that tests/test_admin_dev_degraded_envelope_
+      # contract.py reads as the contract for admin_dev's hand-written
+      # coord-down fallback envelopes. A frontend-only commit adding a REQUIRED
+      # property is exactly the change that breaks those envelopes, and without
+      # this entry it would not run the guard — the same path-scoped-gate trap
+      # documented for the nightly OpenAPI drift check below.
+      - 'frontend/src/services/admin-dev-service.ts'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -16,6 +23,8 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # See the pull_request filter above.
+      - 'frontend/src/services/admin-dev-service.ts'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
