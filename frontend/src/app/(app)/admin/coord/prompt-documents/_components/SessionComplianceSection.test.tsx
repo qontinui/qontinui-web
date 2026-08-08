@@ -45,6 +45,7 @@ import { SessionComplianceSection } from "./SessionComplianceSection";
 import {
   APPLICABILITY_META,
   NOT_APPLICABLE_BEHAVIOUR,
+  NUDGE_FLOOR_CAVEAT,
   VERDICT_META,
 } from "../compliance-types";
 
@@ -531,6 +532,33 @@ describe("SessionComplianceSection", () => {
     ...over,
   });
 
+  /**
+   * The #924 lesson, applied to the new copy: two hand-written strings for one
+   * behaviour drifted into flatly contradicting each other, and a reader had
+   * no way to tell which was true. The floor caveat has two consumers (the
+   * table's title and the dialog's sentence), so it gets the same drift pin.
+   */
+  it("explains the floor caveat identically in the table and the dialog", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: { sessions: [absentRow({ nudge_attempts: 2 })] },
+    });
+
+    render(<SessionComplianceSection />);
+
+    expect(await screen.findByTestId("nudge-count")).toHaveAttribute(
+      "title",
+      expect.stringContaining(NUDGE_FLOOR_CAVEAT)
+    );
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    expect(await screen.findByTestId("nudge-summary")).toHaveTextContent(
+      NUDGE_FLOOR_CAVEAT
+    );
+  });
+
   it("presents a nudge count as a floor, never as an exact tally", async () => {
     const user = userEvent.setup();
     routeGets({
@@ -571,19 +599,107 @@ describe("SessionComplianceSection", () => {
 
     render(<SessionComplianceSection />);
 
-    // Nothing in the table — a "0" beside an absent verdict would read as
-    // "the mechanism is working, this session just ignored it".
+    // Await the ROW before asserting the badge's absence. Without this the
+    // query runs before the fetch resolves and is null no matter what the
+    // component does — proven by mutation: rendering the badge
+    // unconditionally still passed all 19 tests.
+    await screen.findByTestId("compliance-session-sess-nudged");
+    // A "0" beside an absent verdict would read as "the mechanism is working,
+    // this session just ignored it".
     expect(screen.queryByTestId("nudge-count")).toBeNull();
 
     await user.click(
       await screen.findByTestId("compliance-open-report-sess-nudged")
     );
     const summary = await screen.findByTestId("nudge-summary");
-    expect(summary).not.toHaveTextContent(/asked 0/i);
+    // Matches the RENDERED shape ("asked … for a missing report 0×"), not a
+    // bare "asked 0" — the loose pattern passed against a component that was
+    // literally printing a zero count.
+    expect(summary).not.toHaveTextContent(/report 0×/);
     expect(summary).toHaveTextContent(/no nudge is recorded/i);
-    // Both readings stated, because the stored row cannot distinguish them.
+    // All three readings stated, because the stored row separates none of
+    // them — including the one that dominates during the soak: enforcement
+    // that was not asking in the first place.
+    expect(summary).toHaveTextContent(/enforcement wasn't asking/i);
     expect(summary).toHaveTextContent(/never asked/i);
     expect(summary).toHaveTextContent(/older than the counter/i);
+  });
+
+  it("flags an impossible count as a bug rather than an older runner", async () => {
+    const user = userEvent.setup();
+    // Only reachable via a broken projection — the column is INTEGER with
+    // CHECK (nudge_attempts >= 0), so a counter cannot produce this.
+    routeGets({
+      sessions: { sessions: [absentRow({ nudge_attempts: -1 })] },
+    });
+
+    render(<SessionComplianceSection />);
+    await screen.findByTestId("compliance-session-sess-nudged");
+    expect(screen.queryByTestId("nudge-count")).toBeNull();
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    const summary = await screen.findByTestId("nudge-summary");
+    expect(summary).toHaveTextContent(/isn't a number a counter can produce/i);
+    expect(summary).toHaveTextContent(/bug in whatever wrote it/i);
+    // Must NOT be laundered as one of the benign zero readings — a live data
+    // defect rendered as "an older runner build" is the failure this branch
+    // exists to prevent.
+    expect(summary).not.toHaveTextContent(/older than the counter/i);
+    expect(summary).not.toHaveTextContent(/never asked/i);
+  });
+
+  it("floors a fractional count instead of printing it", async () => {
+    const user = userEvent.setup();
+    routeGets({
+      sessions: { sessions: [absentRow({ nudge_attempts: 2.5 })] },
+    });
+
+    render(<SessionComplianceSection />);
+
+    const count = await screen.findByTestId("nudge-count");
+    expect(count).toHaveTextContent(/asked 2×/);
+    expect(count).not.toHaveTextContent(/2\.5/);
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    expect(await screen.findByTestId("nudge-summary")).not.toHaveTextContent(
+      /2\.5/
+    );
+  });
+
+  it("shows the nudge count on a session that was asked and then complied", async () => {
+    const user = userEvent.setup();
+    // The most informative row there is: the nudge WORKED. Scoping the dialog
+    // summary to absent rows hid exactly this case while the table still
+    // showed the count — two surfaces disagreeing about one row.
+    routeGets({
+      sessions: {
+        sessions: [
+          absentRow({
+            verdict: "verified",
+            reason: null,
+            report: { schema: "policy-compliance/1", items: [] },
+            reconciliation: { items: [], unreconciled_refs: [] },
+            nudge_attempts: 3,
+          }),
+        ],
+      },
+    });
+
+    render(<SessionComplianceSection />);
+    expect(await screen.findByTestId("nudge-count")).toHaveTextContent(
+      /asked 3×/
+    );
+
+    await user.click(
+      await screen.findByTestId("compliance-open-report-sess-nudged")
+    );
+    expect(await screen.findByTestId("nudge-summary")).toHaveTextContent(
+      /asked this session for a missing report/i
+    );
   });
 
   it("says the counter is missing rather than implying no nudge happened", async () => {
@@ -593,6 +709,7 @@ describe("SessionComplianceSection", () => {
 
     render(<SessionComplianceSection />);
 
+    await screen.findByTestId("compliance-session-sess-nudged");
     expect(screen.queryByTestId("nudge-count")).toBeNull();
 
     await user.click(
