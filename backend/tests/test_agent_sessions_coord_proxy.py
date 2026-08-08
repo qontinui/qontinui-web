@@ -397,7 +397,7 @@ class TestResolveAgentSessionProxy:
             "working_on": {
                 "session": {
                     "intent_purpose": "P4 twin sessions UI",
-                    "plan_slug": "2026-07-02-digital-twin-session-identity-registry",
+                    "work_unit_slug": "2026-07-02-digital-twin-session-identity-registry",
                     "correlation_topic": None,
                     "repo": "qontinui/qontinui-web",
                     "branch": "feat/session-identity-registry",

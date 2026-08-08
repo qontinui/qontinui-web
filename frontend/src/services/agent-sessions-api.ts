@@ -74,7 +74,11 @@ export interface SessionCardMachine {
 /** `working_on.session` — the live coord session snapshot, when any. */
 export interface SessionWorkingOnSession {
   intent_purpose: string | null;
-  plan_slug: string | null;
+  /** The linked work unit's slug. Coord emitted this under the legacy
+   *  `plan_slug` key until the wire-key retirement (plan
+   *  `2026-07-30-coord-web-plan-slug-wire-key-retirement`, Phase 1); it
+   *  dual-emits both keys today and drops `plan_slug` in Phase 4. */
+  work_unit_slug: string | null;
   correlation_topic: string | null;
   repo: string | null;
   branch: string | null;

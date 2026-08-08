@@ -88,7 +88,7 @@ describe("DeviceStatusTile stalled badge", () => {
       stall_age_secs: 1800,
       expected_at: new Date().toISOString(),
       continuation_gate_id: "fec1da6e",
-      plan_slug: "coord-workunit-authz-graduated-trust",
+      work_unit_slug: "coord-workunit-authz-graduated-trust",
     };
     const { container } = renderTile([
       baseRow({ stalled_session_count: 2, most_stalled_session: stall }),

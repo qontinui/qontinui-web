@@ -304,38 +304,45 @@ async def get_twin_catalog(
 
 @router.get("/delivery/verdict")
 async def get_delivery_verdict(
-    plan_slug: str | None = None,
+    work_unit_slug: str | None = None,
     repo: str | None = None,
     pr: int | None = None,
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Delivery verdict for one plan — "has this plan/PR actually landed?".
+    """Delivery verdict for one work unit — "has this work unit/PR landed?".
 
     The *parameterized* twin read (Phase 5 of plan
     ``2026-06-15-twin-delivery-verdict-completion-view``). Unlike the snapshot
-    matrix, delivery needs an argument (``plan_slug``, or ``repo``+``pr``), so it
-    is a distinct on-demand route rather than a matrix cell. It proxies coord's
-    SSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``), which
-    dispatches the SAME ``coord_query_delivery`` MCP tool an agent calls — with
-    ``force_refresh=true`` server-side — so the dashboard answer is byte-identical
-    to (and as fresh as) what an agent would receive: plan lifecycle status ⋈
-    per-PR merge state ⋈ best-effort deploy state, with provenance + staleness.
+    matrix, delivery needs an argument (``work_unit_slug``, or ``repo``+``pr``),
+    so it is a distinct on-demand route rather than a matrix cell. It proxies
+    coord's SSO-gated ``GET /coord/twin/delivery/verdict`` (``twin_routes.rs``),
+    which dispatches the SAME ``coord_query_delivery`` MCP tool an agent calls —
+    with ``force_refresh=true`` server-side — so the dashboard answer is
+    byte-identical to (and as fresh as) what an agent would receive: work-unit
+    lifecycle status ⋈ per-PR merge state ⋈ best-effort deploy state, with
+    provenance + staleness.
+
+    The slug parameter was spelled ``plan_slug`` on both this route and coord's
+    until Phase 3 of plan
+    ``2026-07-30-coord-web-plan-slug-wire-key-retirement``. Coord dual-accepts
+    both spellings during the retirement window and drops ``plan_slug`` in
+    Phase 4, so this proxy forwards only the canonical key.
 
     Validates the parameter set locally (mirroring coord) to avoid a wasted
     round-trip; coord's own 4xx/5xx (e.g. a tool failure → 502) still surface via
     :func:`_proxy_coord_get`.
     """
-    has_slug = bool(plan_slug and plan_slug.strip())
+    has_slug = bool(work_unit_slug and work_unit_slug.strip())
     has_repo_pr = bool(repo and repo.strip()) and pr is not None
     if not has_slug and not has_repo_pr:
         raise HTTPException(
             status_code=400,
-            detail="plan_slug (or repo+pr) is required",
+            detail="work_unit_slug (or repo+pr) is required",
         )
 
     params: dict[str, Any] = {}
     if has_slug:
-        params["plan_slug"] = plan_slug.strip()  # type: ignore[union-attr]
+        params["work_unit_slug"] = work_unit_slug.strip()  # type: ignore[union-attr]
     if repo and repo.strip():
         params["repo"] = repo.strip()
     if pr is not None:
