@@ -160,6 +160,21 @@ export interface CiNodeConfigState {
   reachability: CiNodeReachability;
   /** Outcome of THIS request's dispatch; null on a read (nothing attempted). */
   dispatched: boolean | null;
+  /**
+   * The HTTP status coord answered the dispatch with, or null when there was no
+   * answer to have (nothing paired, or coord unreachable). This is what tells
+   * a refusal the user can fix (400 — a value in this form) apart from one they
+   * cannot (404 — the machine is not registered to their account).
+   */
+  dispatch_status: number | null;
+  /**
+   * coord's machine-readable refusal code (`repo_allowlist_wildcard`,
+   * `device_not_found_in_tenant`, …). Null when coord sent no code or never
+   * answered. Key refusal CLASS off this and `dispatch_status`, never off the
+   * prose in `dispatch_detail`.
+   */
+  dispatch_error: string | null;
+  /** The human sentence — coord's own `message` when it sent one. */
   dispatch_detail: string | null;
 }
 

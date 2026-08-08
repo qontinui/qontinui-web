@@ -28,6 +28,7 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 import {
   CiNodeConfigPanel,
   configsEqual,
+  dispatchRefusalCopy,
   reachabilityCopy,
   validateRepoEntry,
 } from "./CiNodeConfigPanel";
@@ -75,10 +76,38 @@ function state(overrides: Partial<CiNodeConfigState> = {}): CiNodeConfigState {
     dispatched_at: null,
     reachability: "online",
     dispatched: null,
+    dispatch_status: null,
+    dispatch_error: null,
     dispatch_detail: null,
     ...overrides,
   };
 }
+
+/**
+ * The two refusals coord actually produces on this route, as the backend
+ * forwards them: status + machine code + coord's own sentence.
+ *
+ * `repo_allowlist_wildcard` is a 400 the user typed and can fix here;
+ * `device_not_found_in_tenant` is a 404 about which account owns the machine
+ * and is not fixable in this form. Both used to arrive as
+ * `"coord rejected the dispatch (HTTP 4xx)"` — the same bare number.
+ */
+const WILDCARD_REFUSAL = {
+  dispatched: false as const,
+  dispatch_status: 400,
+  dispatch_error: "repo_allowlist_wildcard",
+  dispatch_detail:
+    'repo_allowlist entry "qontinui/*" contains a wildcard: there is no ' +
+    "allow-everything value — every repo this device may build is listed " +
+    "explicitly, one entry at a time",
+};
+
+const OWNERSHIP_REFUSAL = {
+  dispatched: false as const,
+  dispatch_status: 404,
+  dispatch_error: "device_not_found_in_tenant",
+  dispatch_detail: "device d-1 is not registered to your tenant",
+};
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -132,6 +161,69 @@ describe("reachabilityCopy", () => {
     expect(reachabilityCopy("unknown").badge).not.toEqual(
       reachabilityCopy("offline").badge
     );
+  });
+});
+
+describe("dispatchRefusalCopy", () => {
+  it("returns nothing when nothing was refused", () => {
+    expect(dispatchRefusalCopy(state())).toBeNull(); // a read: dispatched === null
+    expect(dispatchRefusalCopy(state({ dispatched: true }))).toBeNull();
+  });
+
+  it("separates a refusal the user can fix from one they cannot", () => {
+    const wildcard = dispatchRefusalCopy(state(WILDCARD_REFUSAL));
+    const ownership = dispatchRefusalCopy(state(OWNERSHIP_REFUSAL));
+
+    expect(wildcard?.fixableHere).toBe(true);
+    expect(ownership?.fixableHere).toBe(false);
+    // Different headlines, so the two never read as the same event.
+    expect(wildcard?.headline).not.toBe(ownership?.headline);
+    // Coord's own sentence is carried through both, verbatim.
+    expect(wildcard?.detail).toBe(WILDCARD_REFUSAL.dispatch_detail);
+    expect(ownership?.detail).toBe(OWNERSHIP_REFUSAL.dispatch_detail);
+  });
+
+  it("branches on status, not on prose", () => {
+    // Same status, unrecognisable message: still classed as fixable-here. The
+    // class must survive coord re-wording its explanation.
+    const reworded = dispatchRefusalCopy(
+      state({ ...WILDCARD_REFUSAL, dispatch_detail: "nope" })
+    );
+    expect(reworded?.fixableHere).toBe(true);
+    expect(reworded?.headline).toBe(
+      dispatchRefusalCopy(state(WILDCARD_REFUSAL))?.headline
+    );
+  });
+
+  it("keeps 'never answered' distinct from 'answered no'", () => {
+    const unreachable = dispatchRefusalCopy(
+      state({ dispatched: false, dispatch_detail: "coord is not reachable" })
+    );
+    const unpaired = dispatchRefusalCopy(
+      state({
+        dispatched: false,
+        reachability: "unlinked",
+        dispatch_detail: "This machine is not paired with a runner.",
+      })
+    );
+    const refused = dispatchRefusalCopy(state(OWNERSHIP_REFUSAL));
+
+    expect(unreachable?.headline).not.toBe(refused?.headline);
+    expect(unpaired?.headline).not.toBe(unreachable?.headline);
+    // None of the no-answer states may read as a rejection of the settings.
+    for (const copy of [unreachable, unpaired]) {
+      expect(copy?.fixableHere).toBe(false);
+      expect(copy?.headline).not.toMatch(/not accepted|not allowed/i);
+    }
+  });
+
+  it("still says something honest for a status it has no copy for", () => {
+    const weird = dispatchRefusalCopy(
+      state({ dispatched: false, dispatch_status: 503, dispatch_error: null })
+    );
+    expect(weird).not.toBeNull();
+    expect(weird?.fixableHere).toBe(false);
+    expect(weird?.headline).toMatch(/saved here/i);
   });
 });
 
@@ -276,7 +368,10 @@ describe("CiNodeConfigPanel", () => {
     expect(delivery.textContent).not.toMatch(/\bactive\b|\bin effect\b/i);
   });
 
-  it("reports a rejected dispatch as saved-but-not-delivered", async () => {
+  /** Drive a save whose PUT resolves to `next`, and return once it settled. */
+  async function applyAndAwaitRefusal(
+    next: Partial<CiNodeConfigState>
+  ): Promise<HTMLElement> {
     fetchMock.mockResolvedValueOnce(jsonResponse(state()));
     render(<CiNodeConfigPanel machine={MACHINE} />);
     await screen.findByTestId("ci-node-panel");
@@ -293,25 +388,88 @@ describe("CiNodeConfigPanel", () => {
           },
           configured: true,
           requested_at: "2026-08-07T11:00:00Z",
-          dispatched: false,
-          dispatch_detail: "coord rejected the dispatch (HTTP 404)",
+          ...next,
         })
       )
     );
     fireEvent.click(screen.getByTestId("ci-node-apply"));
+    return await screen.findByTestId("ci-node-dispatch-refusal");
+  }
 
-    await waitFor(() =>
-      expect(
-        screen.getByTestId("ci-node-dispatch-detail").textContent
-      ).toContain("coord rejected the dispatch (HTTP 404)")
-    );
+  it("reports a rejected dispatch as saved-but-not-delivered", async () => {
+    const refusal = await applyAndAwaitRefusal(OWNERSHIP_REFUSAL);
+    expect(refusal.textContent).toContain(OWNERSHIP_REFUSAL.dispatch_detail);
+
     // A warning, not a success: the save happened, the delivery did not.
-    expect(toastMock.warning).toHaveBeenCalled();
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
     expect(toastMock.success).not.toHaveBeenCalled();
 
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(init.method).toBe("PUT");
     expect(JSON.parse(String(init.body))).toMatchObject({ enabled: true });
+  });
+
+  it("renders a wildcard refusal's own explanation, not a bare status", async () => {
+    const refusal = await applyAndAwaitRefusal(WILDCARD_REFUSAL);
+
+    // coord's sentence reaches the person who typed the value.
+    expect(screen.getByTestId("ci-node-dispatch-detail").textContent).toContain(
+      "one entry at a time"
+    );
+    expect(refusal.textContent).toMatch(/not accepted/i);
+    // ...and it says this is theirs to fix, because it is.
+    expect(refusal).toHaveAttribute("data-fixable-here", "true");
+    expect(screen.getByTestId("ci-node-dispatch-fixable")).toBeTruthy();
+
+    // The regression this replaces: the reason collapsed to "(HTTP 400)".
+    expect(refusal.textContent).not.toMatch(/HTTP \d{3}/);
+    // Never a success.
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("renders an ownership refusal as not-found, never as a format error", async () => {
+    const refusal = await applyAndAwaitRefusal(OWNERSHIP_REFUSAL);
+
+    expect(refusal).toHaveAttribute("data-dispatch-status", "404");
+    expect(refusal).toHaveAttribute(
+      "data-dispatch-error",
+      "device_not_found_in_tenant"
+    );
+    expect(refusal.textContent).toMatch(
+      /not one your account can send settings to/i
+    );
+    expect(screen.getByTestId("ci-node-dispatch-detail").textContent).toContain(
+      "not registered to your tenant"
+    );
+
+    // The two refusal classes must not be confusable. Nothing here may suggest
+    // the values in this form are wrong, and nothing may invite a retry-as-is.
+    expect(refusal).toHaveAttribute("data-fixable-here", "false");
+    expect(screen.queryByTestId("ci-node-dispatch-fixable")).toBeNull();
+    expect(refusal.textContent).not.toMatch(
+      /wildcard|owner\/name|adjust the values/i
+    );
+
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("keeps a coordinator that never answered distinct from one that refused", async () => {
+    // No `dispatch_status`: coord was never reached, so there is no refusal to
+    // report. "We could not ask" must not be drawn as "the answer was no".
+    const refusal = await applyAndAwaitRefusal({
+      dispatched: false,
+      dispatch_detail:
+        "Coord is temporarily unavailable (likely a rolling deploy); retry shortly.",
+    });
+    expect(refusal).toHaveAttribute("data-dispatch-status", "");
+    expect(refusal.textContent).toMatch(/could not reach the coordinator/i);
+    expect(refusal.textContent).toContain("retry shortly");
+    expect(refusal).toHaveAttribute("data-fixable-here", "false");
+
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalled());
+    expect(toastMock.success).not.toHaveBeenCalled();
   });
 
   it("does not present a failed load as 'CI is off here'", async () => {
