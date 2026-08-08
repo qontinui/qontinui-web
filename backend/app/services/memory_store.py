@@ -1779,10 +1779,30 @@ async def resolve_link_targets(
     """Resolve link ``target_ref`` strings to LIVE record ids, tenant-bound.
 
     Each ref is tried as a ``memory_id`` (UUID string) first, then as a
-    ``content_hash``. Only LIVE rows (the dedup-liveness predicate —
-    tombstoned / superseded / validity-ended rows never anchor an edge)
-    resolve. Returns ``{ref: memory_id}`` for the refs that resolved;
-    unresolved refs are simply absent (the caller drops + counts them).
+    ``content_hash``, then as an **exact title**. Only LIVE rows (the
+    dedup-liveness predicate — tombstoned / superseded / validity-ended rows
+    never anchor an edge) resolve. Returns ``{ref: memory_id}`` for the refs
+    that resolved; unresolved refs are simply absent (the caller drops +
+    counts them).
+
+    **Why title resolution exists.** ``memory_id`` and ``content_hash`` are
+    the only two identifiers an edge could name until now, and a caller
+    recording a memory knows neither for the record it wants to link to — it
+    knows the TITLE, because it just read it. That gap is why
+    ``coord.memory_links`` had no writer at all: the field was expressible
+    only by a caller that had already round-tripped the target. Plan
+    ``2026-08-08-memory-graph-has-no-writer``.
+
+    **Order is load-bearing.** UUID and content_hash are exact identifiers and
+    must never be shadowed by a title that happens to collide with one, so
+    titles are tried LAST and only for refs nothing else claimed.
+
+    **Ambiguity drops rather than guessing.** A title matching more than one
+    LIVE record resolves to nothing and is dropped+counted by the caller.
+    Binding silently to "the newest one" would make the edge assert a target
+    the author never named — and an edge is an assertion. Dropping is also
+    the existing contract for an unresolvable ref, so this adds no new
+    failure mode for callers to handle.
     """
     if not refs:
         return {}
@@ -1827,6 +1847,40 @@ async def resolve_link_targets(
         for ref in remaining:
             if ref in by_hash:
                 resolved[ref] = by_hash[ref]
+
+    # Third and last: exact title. ``HAVING count(*) = 1`` is what makes
+    # ambiguity drop instead of resolving arbitrarily — a title held by two
+    # LIVE records yields no row at all, so the ref falls through unresolved
+    # exactly like a nonexistent one. Doing the disambiguation in SQL rather
+    # than by fetching candidates keeps it a single round trip and makes the
+    # rule impossible to bypass by reading the result differently.
+    #
+    # SCALING NOTE: there is no index on ``(tenant_id, title)``, so this
+    # filters the tenant's rows on title rather than seeking. Deliberate for
+    # now — it runs only on a write that DECLARES links (currently none in
+    # production, which is what this whole path exists to change) and only for
+    # refs that neither exact identifier claimed. Add the index when either
+    # tenant corpora or link-carrying writes grow; it is a `coord.*` DDL
+    # change and so belongs in a web alembic migration, not here.
+    remaining = [r for r in unique_refs if r not in resolved]
+    if remaining:
+        stmt = text(
+            f"""
+            SELECT title, min(memory_id::text) AS memory_id
+            FROM coord.memory_records
+            WHERE tenant_id = :tenant_id AND title IN :titles
+              AND {_LIVE_DEDUP_PREDICATE}
+            GROUP BY title
+            HAVING count(*) = 1
+            """
+        ).bindparams(bindparam("titles", expanding=True))
+        rows = await session.execute(
+            stmt, {"tenant_id": tenant_id, "titles": remaining}
+        )
+        by_title = {str(r.title): UUID(str(r.memory_id)) for r in rows}
+        for ref in remaining:
+            if ref in by_title:
+                resolved[ref] = by_title[ref]
     return resolved
 
 

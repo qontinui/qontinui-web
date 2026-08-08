@@ -18,11 +18,20 @@ Two arms, per the plan's §2.1a:
     ``vector_arm: "skipped_no_embedding"`` and serves full-text only.
 ``hybrid``
     ``query_embedding`` supplied, so RRF actually fuses two arms.
+``hybrid_link``
+    ``hybrid`` plus ``link_expansion``, so the one-hop ``coord.memory_links``
+    arm is fused in as a third. Added by plan
+    ``2026-08-08-memory-graph-has-no-writer``: the link arm shipped
+    default-off pending a measurement this harness could not make, because it
+    had no link arm and the corpus had no edges.
 
 The arm is **asserted from the response**, never assumed: a seeded row at
 the wrong ``embedding_model`` flips the whole tenant to
 ``skipped_migrating`` and the hybrid run would silently degrade to FTS
-while still producing a full set of plausible numbers.
+while still producing a full set of plausible numbers. ``link_arm`` gets the
+same treatment for the same reason — an expansion that never ran and an
+expansion that found nothing produce identical scores, and only the response
+discriminator tells them apart.
 """
 
 from __future__ import annotations
@@ -50,6 +59,7 @@ from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_async_db
 from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
+from app.services.memory_store import ARM_LIMIT as _ARM_LIMIT
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.memory_recall import fixtures as fx
@@ -63,6 +73,7 @@ from tests.memory_recall.scorer import CaseScore, SuiteScore, aggregate, score_c
 from tests.test_memory_api_db import (  # noqa: E402
     _SETUP_SQL,
     HashingStubEmbedder,
+    _content_sha256,
 )
 
 # Retrieval depth. Recall@20 is the widest metric the plan names, so every
@@ -133,12 +144,18 @@ class EvalClient:
         self.client = TestClient(app)
 
     def query(
-        self, query_text: str, query_embedding: list[float] | None
+        self,
+        query_text: str,
+        query_embedding: list[float] | None,
+        *,
+        link_expansion: bool = False,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"query_text": query_text, "limit": QUERY_LIMIT}
         if query_embedding is not None:
             body["query_embedding"] = query_embedding
             body["query_embedding_model"] = EMBEDDING_MODEL_TAG
+        if link_expansion:
+            body["link_expansion"] = True
         response = self.client.post("/api/v1/memory/query", json=body)
         assert response.status_code == 200, response.text
         return response.json()
@@ -168,6 +185,13 @@ def _seed_corpus(
     anyone actually uses.
     """
     client = EvalClient(engine)
+    # Edges are declared by fixture KEY and sent as the target's
+    # content_hash. One pass is enough because the write endpoint inserts
+    # every record BEFORE resolving any ref ("sibling records written above
+    # are visible", `endpoints/memory.py` step 7), so an edge may point at a
+    # record later in the same batch and the positional key<->memory_id
+    # mapping below stays intact.
+    content_by_key = {r.key: r.content for r in golden.records}
     payload = {
         "records": [
             {
@@ -177,6 +201,21 @@ def _seed_corpus(
                 "importance": r.importance,
                 "embedding": _vector_for(r, r.content),
                 "embedding_model": EMBEDDING_MODEL_TAG,
+                **(
+                    {
+                        "links": [
+                            {
+                                "target_ref": _content_sha256(
+                                    content_by_key[link.target_key]
+                                ),
+                                "relation": link.relation,
+                            }
+                            for link in r.links
+                        ]
+                    }
+                    if r.links
+                    else {}
+                ),
             }
             for r in golden.records
         ]
@@ -185,6 +224,18 @@ def _seed_corpus(
     assert response.status_code == 200, response.text
     body = response.json()
     written = body["records"]
+    # The tripwire. The write path DROPS unresolved refs and only counts
+    # them, so a hash that no longer matches stored content (a redaction
+    # sweep, a normalization) would silently produce an edgeless corpus —
+    # and an edgeless corpus scores as "expansion doesn't help", a confident
+    # number with nothing behind it. Fail here instead.
+    assert body["dropped_links_count"] == 0, (
+        f"{body['dropped_links_count']} of {golden.link_count} fixture edge(s) "
+        "failed to resolve at seed time — the corpus would be silently "
+        "edgeless and every link-arm score meaningless. The target_ref is the "
+        "sha256 of the target's STORED content; if the write path now "
+        "transforms content before hashing, this is where that shows up."
+    )
     assert len(written) == len(golden.records), (
         "seed did not write one row per fixture record — "
         f"{len(written)} rows for {len(golden.records)} records"
@@ -234,6 +285,16 @@ class ArmRun:
     scores: list[CaseScore]
     vector_arm: str
     rankings: dict[str, list[str]]
+    link_arm: str
+    #: case_id -> keys the expansion arm ranked (``link_rank`` set), whether
+    #: or not another arm also found them. Non-empty proves the edges landed
+    #: and the one-hop query matched real neighbours.
+    link_ranked: dict[str, list[str]]
+    #: case_id -> keys whose ONLY provenance was the link arm (``link_rank``
+    #: set, both other ranks null) — the hits nothing else could have found.
+    #: Structurally impossible while the corpus is no larger than
+    #: ``ARM_LIMIT``; see :class:`TestLinkArmIntegrity`.
+    link_only: dict[str, list[str]]
 
 
 def _run_arm(
@@ -248,22 +309,44 @@ def _run_arm(
     content_bytes = golden.content_bytes_by_key()
     scores: list[CaseScore] = []
     arms_seen: set[str] = set()
+    link_arms_seen: set[str] = set()
     rankings: dict[str, list[str]] = {}
+    link_ranked: dict[str, list[str]] = {}
+    link_only: dict[str, list[str]] = {}
 
     for case in golden.cases:
         embedding = None
-        if arm == "hybrid":
+        if arm in ("hybrid", "hybrid_link"):
             embedding = (
                 case.query_embedding
                 if case.query_embedding is not None
                 else HashingStubEmbedder._vec(case.query_text)
             )
-        body = client.query(case.query_text, embedding)
+        body = client.query(
+            case.query_text, embedding, link_expansion=arm == "hybrid_link"
+        )
         arms_seen.add(body["vector_arm"])
+        link_arms_seen.add(body["link_arm"])
         ranked = fx.resolve_keys(
             [hit["memory_id"] for hit in body["hits"]], key_by_memory_id
         )
         rankings[case.case_id] = ranked
+        expanded_hits = [
+            hit
+            for hit in body["hits"]
+            if hit.get("link_rank") is not None and hit["memory_id"] in key_by_memory_id
+        ]
+        if expanded_hits:
+            link_ranked[case.case_id] = [
+                key_by_memory_id[hit["memory_id"]] for hit in expanded_hits
+            ]
+        reached_by_edge = [
+            key_by_memory_id[hit["memory_id"]]
+            for hit in expanded_hits
+            if hit.get("vector_rank") is None and hit.get("fts_rank") is None
+        ]
+        if reached_by_edge:
+            link_only[case.case_id] = reached_by_edge
         correction = case.correction
         if correction is not None:
             # Guard against a fixture whose pair references a record that
@@ -284,12 +367,20 @@ def _run_arm(
         f"the {arm} arm reported more than one vector_arm across cases: "
         f"{sorted(arms_seen)} — the corpus changed mid-run"
     )
+    assert len(link_arms_seen) == 1, (
+        f"the {arm} arm reported more than one link_arm across cases: "
+        f"{sorted(link_arms_seen)} — some cases expanded and others did not, "
+        "so the run's scores mix two different retrieval strategies"
+    )
     vector_arm = arms_seen.pop()
     return ArmRun(
         suite=aggregate(arm, vector_arm, scores),
         scores=scores,
         vector_arm=vector_arm,
         rankings=rankings,
+        link_arm=link_arms_seen.pop(),
+        link_ranked=link_ranked,
+        link_only=link_only,
     )
 
 
@@ -303,6 +394,12 @@ def fts_only(seeded, golden) -> ArmRun:
 def hybrid(seeded, golden) -> ArmRun:
     client, mapping = seeded
     return _run_arm(client, mapping, golden, arm="hybrid")
+
+
+@pytest.fixture(scope="module")
+def hybrid_link(seeded, golden) -> ArmRun:
+    client, mapping = seeded
+    return _run_arm(client, mapping, golden, arm="hybrid_link")
 
 
 class TestArmIntegrity:
@@ -388,6 +485,164 @@ class TestArmIntegrity:
             HashingStubEmbedder._vec(golden.cases[0].query_text),
         )
         assert body["vector_arm"] == "skipped_migrating"
+
+
+class TestLinkArmIntegrity:
+    """The link arm must have RUN, and must have had something to run over.
+
+    Plan ``2026-08-08-memory-graph-has-no-writer``. Every assertion here
+    exists because the link arm's failure mode is silence: an expansion that
+    never fired, an expansion over an empty edge table, and an expansion that
+    genuinely found nothing all produce byte-identical scores. Without these,
+    a "link expansion changes nothing" verdict could not be distinguished
+    from "link expansion never happened" — and the first would be reported as
+    if it were a measurement.
+    """
+
+    def test_the_fixture_actually_declares_edges(self, golden: fx.GoldenSet) -> None:
+        assert golden.link_count > 0, (
+            "the golden corpus declares no links, so the hybrid_link arm has "
+            "nothing to expand over and its scores cannot say anything about "
+            "link expansion"
+        )
+
+    def test_baseline_arms_do_not_consult_the_graph(
+        self, fts_only: ArmRun, hybrid: ArmRun
+    ) -> None:
+        """The comparison is only meaningful if the baselines really abstain."""
+        assert fts_only.link_arm == "skipped_disabled"
+        assert hybrid.link_arm == "skipped_disabled"
+        assert not fts_only.link_only
+        assert not hybrid.link_only
+
+    def test_the_link_arm_really_expanded(self, hybrid_link: ArmRun) -> None:
+        assert hybrid_link.link_arm == "expanded", (
+            "the link arm did not run: endpoint reported "
+            f"{hybrid_link.link_arm!r}. 'skipped_disabled' means the request "
+            "did not carry link_expansion; 'skipped_no_seeds' means the "
+            "vector+FTS fuse returned nothing to expand from."
+        )
+        assert hybrid_link.vector_arm == "hybrid"
+
+    def test_an_edgeless_corpus_scores_identically_with_the_arm_on(
+        self, eval_engine: AsyncEngine, golden: fx.GoldenSet
+    ) -> None:
+        """The apparatus control: no edges ⇒ no effect, exactly.
+
+        Every other number in this module is a DIFFERENCE between the two- and
+        three-arm runs, so the whole comparison rests on the third arm being
+        inert when the graph is empty. If it were not — if merely asking for
+        expansion perturbed ranking — every reported delta would be measuring
+        the request flag rather than the edges.
+
+        Measured 2026-08-08: identical to 4 decimal places on MRR, nDCG@10 and
+        recall@5, while the same corpus WITH 9 edges moved MRR from 0.8306 to
+        0.2918. That contrast is what makes the degradation attributable to
+        the graph.
+        """
+        edgeless = fx.GoldenSet(
+            embedding_source=golden.embedding_source,
+            records=tuple(
+                fx.GoldenRecord(
+                    key=r.key,
+                    title=r.title,
+                    content=r.content,
+                    kind=r.kind,
+                    importance=r.importance,
+                    embedding=r.embedding,
+                    links=(),
+                )
+                for r in golden.records
+            ),
+            cases=golden.cases,
+        )
+        client, mapping = _seed_corpus(eval_engine, edgeless)
+        baseline = _run_arm(client, mapping, edgeless, arm="hybrid")
+        expanded = _run_arm(client, mapping, edgeless, arm="hybrid_link")
+
+        assert expanded.link_arm == "expanded"
+        assert not expanded.link_ranked
+        assert expanded.rankings == baseline.rankings, (
+            "asking for link expansion changed the ranking on a corpus with "
+            "no edges at all — the third arm is not inert when the graph is "
+            "empty, so every hybrid vs hybrid_link delta this module reports "
+            "is confounded"
+        )
+
+    def test_the_expansion_matched_real_neighbours(
+        self, hybrid_link: ArmRun, golden: fx.GoldenSet
+    ) -> None:
+        """Non-vacuity, at the strongest bar this corpus can support.
+
+        ``link_arm == "expanded"`` only says the query was ISSUED — it is
+        equally true over an empty edge table. This says the expansion
+        actually matched seeded edges and their neighbours reached the
+        response, which is what would silently be false if the seed's
+        ``target_ref`` hashes stopped resolving.
+        """
+        assert hybrid_link.link_ranked, (
+            f"the link arm ran and the fixture declares {golden.link_count} "
+            "edge(s), but no returned hit carried a link_rank — the expansion "
+            "matched nothing, so the arm's scores describe an empty graph"
+        )
+
+    def test_link_only_hits_track_the_corpus_size_precondition(
+        self, hybrid_link: ArmRun, golden: fx.GoldenSet
+    ) -> None:
+        """A link-ONLY hit needs a corpus larger than ``ARM_LIMIT``.
+
+        The semantic arm returns its top ``ARM_LIMIT`` (50) records. This
+        corpus holds 30, so the vector arm ranks EVERY record and
+        ``vector_rank`` is never null — making "reached purely by an edge"
+        arithmetically impossible, no matter how the edges are drawn or how
+        narrow the query window is. Measured 2026-08-08: every case returned
+        20 hits, 0 with a null ``vector_rank``.
+
+        That is a fixture-scale limit, not a defect in the arm, and it is the
+        reason ``hybrid`` and ``hybrid_link`` score nearly identically here:
+        the graph can only re-rank records the other arms already returned.
+        **The link arm's distinctive contribution stays unmeasured until the
+        golden corpus exceeds ARM_LIMIT.**
+
+        This assertion is written to STRENGTHEN itself the moment that
+        happens, rather than being deleted and forgotten: below the
+        threshold it pins the impossibility (so a link-only hit appearing
+        here would mean the ranks are being reported wrongly), and above it
+        it demands the real evidence.
+        """
+        ARM_LIMIT = _ARM_LIMIT
+        observed = sum(len(v) for v in hybrid_link.link_only.values())
+        if len(golden.records) <= ARM_LIMIT:
+            assert observed == 0, (
+                f"a link-only hit appeared with {len(golden.records)} records "
+                f"and ARM_LIMIT={ARM_LIMIT}: the vector arm should be ranking "
+                "the whole corpus, so every hit must carry a vector_rank. "
+                "Either ARM_LIMIT changed or the per-arm ranks are wrong."
+            )
+            # Deliberately NOT xfail/skip: this branch is a real, passing
+            # assertion about a real invariant. Marking it xfail would make
+            # the module's own warning come true — "a skip and a pass are the
+            # same colour in a check list" — and would hide the limitation
+            # instead of recording it. The limitation travels in the emitted
+            # report as `link_only_measurable: false`, where the human
+            # reading the numbers will see it.
+            return
+        assert observed > 0, (
+            f"corpus is {len(golden.records)} records > ARM_LIMIT={ARM_LIMIT}, "
+            "so a link-only hit is now possible — but none occurred. The "
+            "seeded edges point only at records the other arms already "
+            "return, so the comparison still measures nothing."
+        )
+
+    # NOT asserted here: "link expansion never removes an id the two-arm fuse
+    # returned." It sounds like a correctness invariant and is not one. The
+    # response is capped at `limit`, so a third arm that merely RE-RANKS will
+    # push tail entries past the cut — measured on this corpus, the expanded
+    # run displaced two baseline tail hits while contributing no link-only
+    # hit at all. The genuine superset property lives one level down, in
+    # `rrf_fuse` (every distinct id across all arms survives fusion), where
+    # it is observable and already unit-tested in `test_memory_rrf.py`.
+    # Asserting it end-to-end would only encode the retrieval depth.
 
 
 class TestHarnessDetectsRegressions:
@@ -611,7 +866,11 @@ class TestBaselineReport:
         return out
 
     def test_emit_baseline(
-        self, fts_only: ArmRun, hybrid: ArmRun, golden: fx.GoldenSet
+        self,
+        fts_only: ArmRun,
+        hybrid: ArmRun,
+        hybrid_link: ArmRun,
+        golden: fx.GoldenSet,
     ) -> None:
         fts_suite, fts_scores = fts_only.suite, fts_only.scores
         hybrid_suite, hybrid_scores = hybrid.suite, hybrid.scores
@@ -624,13 +883,32 @@ class TestBaselineReport:
             # mechanics, NOT semantic retrieval quality.
             "semantic_quality_measurable": golden.has_real_vectors,
             "records": len(golden.records),
+            "links": golden.link_count,
+            # The link arm's counterpart to semantic_quality_measurable: a
+            # delta between `hybrid` and `hybrid_link` is interpretable only
+            # if the graph actually contributed hits no other arm found.
+            # Zero here means the comparison measured nothing, however
+            # clean the numbers below look.
+            "link_ranked_hits": sum(len(v) for v in hybrid_link.link_ranked.values()),
+            "link_only_hits": sum(len(v) for v in hybrid_link.link_only.values()),
+            "link_only_cases": sorted(hybrid_link.link_only),
+            # Why link_only_hits is 0 and the hybrid/hybrid_link delta is ~0:
+            # the semantic arm returns its top ARM_LIMIT records, so on a
+            # corpus no larger than that it ranks EVERYTHING and no hit can
+            # be link-only. Without this field a reader would take the null
+            # delta as evidence that link expansion does not help, when it is
+            # evidence that this corpus cannot test it.
+            "link_only_measurable": len(golden.records) > _ARM_LIMIT,
+            "arm_limit": _ARM_LIMIT,
             "arms": [
                 self._suite_rows(fts_suite),
                 self._suite_rows(hybrid_suite),
+                self._suite_rows(hybrid_link.suite),
             ],
             "by_class": {
                 "fts_only": self._by_class(fts_scores),
                 "hybrid": self._by_class(hybrid_scores),
+                "hybrid_link": self._by_class(hybrid_link.scores),
             },
         }
 
@@ -646,3 +924,4 @@ class TestBaselineReport:
         # quality gate the plan's §4 rejects.
         assert report["arms"][0]["cases"] > 0
         assert report["arms"][1]["cases"] > 0
+        assert report["arms"][2]["cases"] > 0
