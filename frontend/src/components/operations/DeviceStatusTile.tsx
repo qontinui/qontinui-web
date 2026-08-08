@@ -105,7 +105,9 @@ function StalledBadge({
       (mostStalled.continuation_gate_id
         ? ` — gate ${mostStalled.continuation_gate_id}`
         : "") +
-      (mostStalled.plan_slug ? ` — plan ${mostStalled.plan_slug}` : "")
+      (mostStalled.work_unit_slug
+        ? ` — work unit ${mostStalled.work_unit_slug}`
+        : "")
     : `Session heartbeating but not progressing for ${age}` +
       (mostStalled.correlation_topic
         ? ` — topic ${mostStalled.correlation_topic}`

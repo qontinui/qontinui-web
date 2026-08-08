@@ -160,7 +160,7 @@ function SessionCardView({ card }: { card: SessionCard }) {
         {snapshot && (
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
             <Field label="purpose" value={snapshot.intent_purpose} />
-            <Field label="plan" value={snapshot.plan_slug} />
+            <Field label="work unit" value={snapshot.work_unit_slug} />
             <Field label="topic" value={snapshot.correlation_topic} />
             <Field label="repo" value={snapshot.repo} />
             <Field label="branch" value={snapshot.branch} />
