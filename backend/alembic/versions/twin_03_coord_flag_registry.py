@@ -67,7 +67,18 @@ def upgrade() -> None:
         sa.Column("precondition_expr", sa.Text(), nullable=True),
         # Owning module, e.g. 'next_step', 'merge_scheduler'.
         sa.Column("owning_module", sa.Text(), nullable=False),
-        # Source provenance, e.g. 'src/next_step.rs:65'.
+        # Source provenance: the FILE that reads the flag, e.g.
+        # 'src/next_step.rs', optionally with a SYMBOL after it, e.g.
+        # 'src/pr_merge/dep_graph.rs:is_pr_ready_for_topo_merge'.
+        #
+        # A line-number suffix is FORBIDDEN. This comment used to read
+        # "e.g. 'src/next_step.rs:65'", but the only writer of this column
+        # (coord's `flag_registry::seed_registry`) stopped producing line
+        # numbers in qontinui-coord#1464, which found 34 of 47 of them stale:
+        # nothing keeps a line number fresh, by hand or by test. A coord-side
+        # guard now rejects a digit-leading locator. The column keeps its
+        # `_line` name only because renaming it is a separate migration —
+        # the FORMAT is file-level.
         sa.Column("source_file_line", sa.Text(), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
         sa.Column(
