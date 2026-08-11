@@ -108,8 +108,13 @@ const PAGE_READY_TIMEOUT_MS = 15_000;
  * wait. Reserve navigation budget and wait budget separately so the assertion
  * always gets to speak. Same reasoning as captures-recordings.spec.ts's
  * POLLED_TEST_TIMEOUT_MS, scaled to the larger bound used here.
+ *
+ * 150s, not 120s: navigation (60s) + shell (45s) + page (15s) is already 120s
+ * exactly, which would reserve the two budgets to the millisecond and leave
+ * nothing for fixture setup, the fullPage screenshot and `page.content()`. The
+ * margin is only ever consumed on a run that is already failing.
  */
-const SHELL_GATED_TEST_TIMEOUT_MS = 120_000;
+const SHELL_GATED_TEST_TIMEOUT_MS = 150_000;
 
 /**
  * Block until the `(app)` auth gate has cleared.
@@ -148,6 +153,14 @@ test.describe("Tools - Error Monitor", () => {
     // Server Error". This test previously finished in ~3.6s while the page was
     // still authenticating, i.e. it was passing without ever seeing the page.
     await waitForAppShell(page, "/tools/error-monitor");
+
+    // Clearing the gate is necessary but NOT sufficient: `AppAuthGate` also
+    // shows the shell when auth resolved with no user, and that branch
+    // `router.replace`s to /login — where the shell is absent, so the wait
+    // above passes and /login trivially contains no "Internal Server Error"
+    // either. Pin the URL so this test cannot pass without having actually
+    // stayed on the route under test.
+    await expect(page).toHaveURL(/\/tools\/error-monitor/);
 
     await page.screenshot({
       path: "test-results/tools-error-monitor.png",
