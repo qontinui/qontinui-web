@@ -955,3 +955,132 @@ class TestBaselineReport:
         assert report["arms"][0]["cases"] > 0
         assert report["arms"][1]["cases"] > 0
         assert report["arms"][2]["cases"] > 0
+
+
+class TestLinkArmUnderAProductionLikeCutoff:
+    """The arm's distinctive contribution, measured by shrinking the cutoff.
+
+    Plan ``2026-08-08-memory-graph-has-no-writer`` §4c. A link-ONLY hit needs
+    the semantic arm to have EXCLUDED the record, and that arm returns its top
+    ``ARM_LIMIT`` (50) — more than this 30-record corpus holds, so at stock
+    settings no hit can ever be link-only (asserted in
+    :class:`TestLinkArmIntegrity`).
+
+    The obvious fix — grow the corpus past 50 — was tried and **does not
+    work**: 60 added distractors moved link targets' vector ranks only from
+    median 17 to 20, and produced zero link-only hits. Distractors rank BELOW
+    topically-relevant records, so the top-50 just becomes "every original plus
+    some filler". What would push a target out is ~33 records *more similar to
+    that query* than the target — corpus DENSITY, which cannot be hand-authored
+    without effectively writing the answer key.
+
+    So shrink the cutoff instead. ``arm_limit=5`` over 30 records reproduces the
+    structural situation of ``arm_limit=50`` over 300: it is the corpus:cutoff
+    RATIO that decides whether the graph can reach past the semantic arm. This
+    needs no production change — the limit is a keyword argument on the store
+    functions.
+    """
+
+    @staticmethod
+    def _capped(cap: int):
+        """Patch both primary arms to a smaller per-arm cutoff."""
+        import functools
+
+        from app.services import memory_store as store
+
+        def wrap(fn):
+            @functools.wraps(fn)
+            async def inner(*args, **kwargs):
+                kwargs["arm_limit"] = cap
+                return await fn(*args, **kwargs)
+
+            return inner
+
+        return wrap(store.vector_search), wrap(store.fts_search)
+
+    def test_a_smaller_cutoff_lets_the_graph_reach_past_the_semantic_arm(
+        self, seeded, golden: fx.GoldenSet, monkeypatch
+    ) -> None:
+        """At a production-like ratio, link-ONLY hits appear. At stock, none do.
+
+        Both halves matter. The second is what stops this being a test that
+        merely proves the patch works: at the stock cutoff the same fixture and
+        the same edges must still yield nothing, which is the §4b invariant.
+        """
+        from app.api.v1.endpoints import memory as endpoint
+
+        client, mapping = seeded
+
+        def link_only_count() -> int:
+            total = 0
+            for case in golden.cases:
+                body = client.query(
+                    case.query_text, case.query_embedding, link_expansion=True
+                )
+                total += sum(
+                    1
+                    for hit in body["hits"]
+                    if hit.get("link_rank") is not None
+                    and hit.get("vector_rank") is None
+                    and hit.get("fts_rank") is None
+                )
+            return total
+
+        assert link_only_count() == 0, "stock cutoff should expose no link-only hit"
+
+        vector_search, fts_search = self._capped(10)
+        monkeypatch.setattr(endpoint.store, "vector_search", vector_search)
+        monkeypatch.setattr(endpoint.store, "fts_search", fts_search)
+        assert link_only_count() > 0, (
+            "with the cutoff shrunk to a production-like ratio the graph still "
+            "reached nothing the semantic arm had excluded — the arm cannot "
+            "contribute a record on its own, which is its entire premise"
+        )
+
+    def test_the_live_no_vector_path_gains_recall_without_adding_noise(
+        self, seeded, golden: fx.GoldenSet
+    ) -> None:
+        """The configuration live agents actually run, and the arm's best case.
+
+        ``coord_memory_search`` sends no query vector, so real recall is the
+        FTS-only arm. Measured 2026-08-12: recall@10 0.0417 -> 0.0625 (+50%
+        relative) with noise@10 unchanged at 0.0 — the arm's strongest result,
+        and the only configuration where it buys recall for free.
+
+        Asserted as DIRECTIONS, not as those digits: pinning 0.0625 to a
+        24-case subjective fixture would be the flaky quality gate the
+        benchmark plan's §4 rejects. What must hold is that the arm does not
+        LOSE recall here and does not pay for it in noise.
+        """
+        content_bytes = golden.content_bytes_by_key()
+        client, mapping = seeded
+
+        def run(link_expansion: bool) -> SuiteScore:
+            scores = [
+                score_case(
+                    case_id=case.case_id,
+                    case_class=case.case_class,
+                    ranked=fx.resolve_keys(
+                        [
+                            hit["memory_id"]
+                            for hit in client.query(
+                                case.query_text, None, link_expansion=link_expansion
+                            )["hits"]
+                        ],
+                        mapping,
+                    ),
+                    relevant=case.relevant,
+                    content_bytes=content_bytes,
+                    correction=case.correction,
+                )
+                for case in golden.cases
+            ]
+            return aggregate("fts_only", "skipped_no_embedding", scores)
+
+        baseline, expanded = run(False), run(True)
+
+        assert expanded.recall_at_10 >= baseline.recall_at_10
+        assert expanded.noise_rate_at_10 <= baseline.noise_rate_at_10 + 1e-9, (
+            "link expansion added noise on the no-vector path, where it "
+            "previously bought recall for free"
+        )
