@@ -97,7 +97,10 @@ describe("CiStatusPanel notify-when-green arm outcome", () => {
     const chip = await clickNotify(container);
     expect(chip.getAttribute("data-arm-tone")).toBe("armed");
     expect(chip.textContent).toContain("gate armed");
-    expect(chip.getAttribute("data-gate-id")).toBe(GATE_ID);
+    // Namespaced away from GatesPanel/GateActions' `data-gate-id` gate rows,
+    // which render on this same dashboard.
+    expect(chip.getAttribute("data-arm-gate-id")).toBe(GATE_ID);
+    expect(chip.getAttribute("data-gate-id")).toBeNull();
   });
 
   it("does NOT report `cleared` as armed — the repo was already green", async () => {

@@ -203,7 +203,12 @@ function armDetail(
 /** Settled-arm chip. Tone follows coord's `initial_verdict`; the tooltip
  *  carries the reason and any advisory warnings. A non-armed outcome is
  *  marked with `data-arm-tone` so a test (and the UI Bridge) can assert
- *  that a gate which will never fire is not shown as a success. */
+ *  that a gate which will never fire is not shown as a success.
+ *
+ *  The gate id rides `data-arm-gate-id`, NOT `data-gate-id`: GatesPanel
+ *  and GateActions already use the latter for gate ROWS, and both render
+ *  on this same dashboard, so a bare `[data-gate-id=...]` selector would
+ *  match this chip too. */
 function ArmOutcomeChip({
   arm,
 }: {
@@ -217,7 +222,7 @@ function ArmOutcomeChip({
     <span
       className={`text-xs flex items-center gap-1 ${armToneClass(tone)}`}
       data-arm-tone={tone}
-      data-gate-id={arm.gateId}
+      data-arm-gate-id={arm.gateId}
     >
       <Icon className="h-3 w-3" />
       {armToneLabel(tone)}
