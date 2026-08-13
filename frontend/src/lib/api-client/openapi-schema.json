@@ -27669,12 +27669,34 @@
         "type": "object"
       },
       "NotifyWhenGreenResponse": {
-        "description": "Response for ``POST /operations/ci-status/notify-when-green``.\n\n``warnings`` carries coord's ``RegisterGateOutcome.warnings`` through\nverbatim. This endpoint is the fleet's only caller-supplied\n``gate_class`` producer, so it is also the only transport that can\nsurface coord's warning that a requested ``gate_class`` was NOT\nstored (coord's gate-insert cascade narrows to a shape without the\ncolumn when the column is missing). Declaring it here keeps that\nsignal reachable instead of having FastAPI filter it away.",
+        "description": "Response for ``POST /operations/ci-status/notify-when-green``.\n\n``warnings`` carries coord's ``RegisterGateOutcome.warnings`` through\nverbatim. This endpoint is the fleet's only caller-supplied\n``gate_class`` producer, so it is also the only transport that can\nsurface coord's warning that a requested ``gate_class`` was NOT\nstored (coord's gate-insert cascade narrows to a shape without the\ncolumn when the column is missing). Declaring it here keeps that\nsignal reachable instead of having FastAPI filter it away.\n\n``initial_verdict`` / ``initial_verdict_reason`` carry coord's\ncompose-time one-shot evaluation (``gate_routes.rs`` register\nresponses emit them next to ``gate_id``/``warnings``). They are the\ndifference between \"armed, waiting\" and \"this gate will never fire\":\n\n* ``open`` \u2014 the normal armed case; the sweep will evaluate it.\n* ``cleared`` \u2014 the predicate was ALREADY satisfied at registration,\n  i.e. the repo is green at that SHA right now. The caller is not\n  waiting for anything and no notification is coming.\n* ``failed`` / ``misconfigured`` \u2014 the gate is terminal or unusable.\n\nUndeclared, ``response_model`` filtering dropped all three, so the UI\nreported every 200 as a successfully armed gate. That is the same\ndefect class this model's ``warnings`` field was added to close, on\nthe same coord response object \u2014 a caller with a false model of\nwhether its gate is live.\n\n``None`` means coord did not report a verdict (an older coord, or a\nresponse shape without the key). It is deliberately NOT defaulted to\n``\"open\"``: claiming \"armed\" on absent evidence is the false-success\nthis field exists to prevent.\n\ncoord's ``steer`` is intentionally NOT declared. It is a *duplicate*\nof an entry already in ``warnings`` (``gates.rs`` pushes the steer\nstring into ``warnings`` and then stores it in ``steer`` \u2014 \"the\ndedicated steer string when one applies (also in ``warnings``)\"), so\ndeclaring it would add a field whose only content is a second copy of\nsomething the caller already renders.",
         "properties": {
           "gate_id": {
             "format": "uuid",
             "title": "Gate Id",
             "type": "string"
+          },
+          "initial_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Verdict"
+          },
+          "initial_verdict_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Verdict Reason"
           },
           "warnings": {
             "items": {
@@ -74961,7 +74983,7 @@
     },
     "/api/v1/operations/ci-status/notify-when-green": {
       "post": {
-        "description": "Register a ``CiGreen`` gate for ``(repo, head_sha)``.\n\nBuilds coord's ``RegisterGateRequest`` (``gate_routes.rs``) with a\nclaim anchor (``claim_kind=\"ci_notify\"``,\n``resource_key=\"ci-notify:<repo>\"``) and the snake-case-tagged\n``CiGreen`` predicate (``{\"kind\":\"ci_green\",\"repo\":...,\n\"head_sha\":...}``). When ``continuation_prompt`` is set, it is\ncarried as the continuation spawn's ``initial_prompt`` \u2014 coord's\n``spawn_continuation`` reads that key (best-effort; it also wants a\n``target_device_id`` which the dashboard does not supply today, so\nthe prompt rides along for when a target is bound).\n\nWhen ``gate_class`` is set it is forwarded verbatim \u2014 coord's gate\nregister door accepts it as a freeform string and its per-tenant\n``gate_clearance`` matrix uses it to decide who may clear the gate.\nOmitted (rather than sent as an explicit ``null``) when unset, matching\nthe ``continuation_spawn`` convention above and the other optional-field\nproxies in this module.\n\nProxies to coord ``POST /coord/gates/register`` with the operator's\nforwarded bearer and returns ``{\"gate_id\": <uuid>, \"warnings\": [...]}``.\n(The ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b \u2014\n``_tenant_headers`` forwards the bearer plus the optional active-tenant\nswitcher selection, and coord resolves the tenant server-side.)",
+        "description": "Register a ``CiGreen`` gate for ``(repo, head_sha)``.\n\nBuilds coord's ``RegisterGateRequest`` (``gate_routes.rs``) with a\nclaim anchor (``claim_kind=\"ci_notify\"``,\n``resource_key=\"ci-notify:<repo>\"``) and the snake-case-tagged\n``CiGreen`` predicate (``{\"kind\":\"ci_green\",\"repo\":...,\n\"head_sha\":...}``). When ``continuation_prompt`` is set, it is\ncarried as the continuation spawn's ``initial_prompt`` \u2014 coord's\n``spawn_continuation`` reads that key (best-effort; it also wants a\n``target_device_id`` which the dashboard does not supply today, so\nthe prompt rides along for when a target is bound).\n\nWhen ``gate_class`` is set it is forwarded verbatim \u2014 coord's gate\nregister door accepts it as a freeform string and its per-tenant\n``gate_clearance`` matrix uses it to decide who may clear the gate.\nOmitted (rather than sent as an explicit ``null``) when unset, matching\nthe ``continuation_spawn`` convention above and the other optional-field\nproxies in this module.\n\nProxies to coord ``POST /coord/gates/register`` with the operator's\nforwarded bearer and returns ``{\"gate_id\": <uuid>, \"warnings\": [...],\n\"initial_verdict\": ..., \"initial_verdict_reason\": ...}`` \u2014 coord's\nregistration outcome, minus the ``steer`` duplicate (see\n``NotifyWhenGreenResponse``).\n(The ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b \u2014\n``_tenant_headers`` forwards the bearer plus the optional active-tenant\nswitcher selection, and coord resolves the tenant server-side.)",
         "operationId": "api_v1_operations_ci_status_notify_when_green_post",
         "requestBody": {
           "content": {

@@ -4761,10 +4761,41 @@ class NotifyWhenGreenResponse(BaseModel):
     stored (coord's gate-insert cascade narrows to a shape without the
     column when the column is missing). Declaring it here keeps that
     signal reachable instead of having FastAPI filter it away.
+
+    ``initial_verdict`` / ``initial_verdict_reason`` carry coord's
+    compose-time one-shot evaluation (``gate_routes.rs`` register
+    responses emit them next to ``gate_id``/``warnings``). They are the
+    difference between "armed, waiting" and "this gate will never fire":
+
+    * ``open`` — the normal armed case; the sweep will evaluate it.
+    * ``cleared`` — the predicate was ALREADY satisfied at registration,
+      i.e. the repo is green at that SHA right now. The caller is not
+      waiting for anything and no notification is coming.
+    * ``failed`` / ``misconfigured`` — the gate is terminal or unusable.
+
+    Undeclared, ``response_model`` filtering dropped all three, so the UI
+    reported every 200 as a successfully armed gate. That is the same
+    defect class this model's ``warnings`` field was added to close, on
+    the same coord response object — a caller with a false model of
+    whether its gate is live.
+
+    ``None`` means coord did not report a verdict (an older coord, or a
+    response shape without the key). It is deliberately NOT defaulted to
+    ``"open"``: claiming "armed" on absent evidence is the false-success
+    this field exists to prevent.
+
+    coord's ``steer`` is intentionally NOT declared. It is a *duplicate*
+    of an entry already in ``warnings`` (``gates.rs`` pushes the steer
+    string into ``warnings`` and then stores it in ``steer`` — "the
+    dedicated steer string when one applies (also in ``warnings``)"), so
+    declaring it would add a field whose only content is a second copy of
+    something the caller already renders.
     """
 
     gate_id: UUID
     warnings: list[str] = Field(default_factory=list)
+    initial_verdict: str | None = None
+    initial_verdict_reason: str | None = None
 
 
 @router.get("/ci-status", response_model=CiStatusResponse)
@@ -4810,7 +4841,10 @@ async def post_ci_status_notify_when_green(
     proxies in this module.
 
     Proxies to coord ``POST /coord/gates/register`` with the operator's
-    forwarded bearer and returns ``{"gate_id": <uuid>, "warnings": [...]}``.
+    forwarded bearer and returns ``{"gate_id": <uuid>, "warnings": [...],
+    "initial_verdict": ..., "initial_verdict_reason": ...}`` — coord's
+    registration outcome, minus the ``steer`` duplicate (see
+    ``NotifyWhenGreenResponse``).
     (The ``X-Qontinui-Tenant-Id`` header was retired in fleet-auth T2b —
     ``_tenant_headers`` forwards the bearer plus the optional active-tenant
     switcher selection, and coord resolves the tenant server-side.)

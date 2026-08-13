@@ -102,7 +102,16 @@ class TestNotifyWhenGreenGateClass:
             },
         )
         assert resp.status_code == 200
-        assert resp.json() == {"gate_id": GATE_ID, "warnings": []}
+        # Exact equality on purpose: this pins the FULL declared response
+        # shape, so a field added to NotifyWhenGreenResponse without a
+        # deliberate decision fails here. coord's `steer` is absent by
+        # design — it duplicates a `warnings` entry.
+        assert resp.json() == {
+            "gate_id": GATE_ID,
+            "warnings": [],
+            "initial_verdict": None,
+            "initial_verdict_reason": None,
+        }
 
         called_url = instance.post.call_args.args[0]
         assert called_url.endswith("/coord/gates/register")
@@ -237,6 +246,110 @@ class TestNotifyWhenGreenWarningsPassthrough:
         )
         assert resp.status_code == 200
         assert resp.json()["warnings"] == []
+
+
+class TestNotifyWhenGreenInitialVerdictPassthrough:
+    """coord's compose-time one-shot verdict must reach the caller.
+
+    coord's register response (``gate_routes.rs``) emits ``initial_verdict``
+    / ``initial_verdict_reason`` next to ``gate_id`` and ``warnings``. Until
+    they were declared on ``NotifyWhenGreenResponse``, FastAPI's
+    ``response_model`` filtered them away and every 200 looked like a
+    successfully armed gate — including a ``cleared`` gate (already green,
+    no notification coming) and a ``misconfigured`` one (will never fire).
+    """
+
+    def _post_with_coord_body(self, auth_client: TestClient, coord_body: dict):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.post.return_value = _mock_response(json_data=coord_body)
+            _configure_mock_client(MockClient, instance)
+            return auth_client.post(
+                NOTIFY_PATH,
+                json={"repo": "qontinui/qontinui-web", "head_sha": "abc123"},
+            )
+
+    def test_open_verdict_is_surfaced(self, auth_client: TestClient):
+        resp = self._post_with_coord_body(
+            auth_client,
+            {"gate_id": GATE_ID, "warnings": [], "initial_verdict": "open"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["initial_verdict"] == "open"
+        assert resp.json()["initial_verdict_reason"] is None
+
+    def test_cleared_verdict_and_reason_are_surfaced(self, auth_client: TestClient):
+        """The already-green case: the caller is not waiting for anything."""
+        resp = self._post_with_coord_body(
+            auth_client,
+            {
+                "gate_id": GATE_ID,
+                "warnings": [],
+                "initial_verdict": "cleared",
+                "initial_verdict_reason": "main is green at abc123",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["initial_verdict"] == "cleared"
+        assert body["initial_verdict_reason"] == "main is green at abc123"
+
+    def test_misconfigured_verdict_is_surfaced(self, auth_client: TestClient):
+        """A gate that will never fire must not read as a success."""
+        resp = self._post_with_coord_body(
+            auth_client,
+            {
+                "gate_id": GATE_ID,
+                "warnings": ["initial evaluation could not be completed"],
+                "initial_verdict": "misconfigured",
+                "initial_verdict_reason": "repo qontinui/qontinui-web not found",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["initial_verdict"] == "misconfigured"
+        assert body["initial_verdict_reason"] == "repo qontinui/qontinui-web not found"
+        assert body["warnings"] == ["initial evaluation could not be completed"]
+
+    def test_absent_verdict_is_null_not_open(self, auth_client: TestClient):
+        """A coord that reports no verdict yields null, never a false 'open'.
+
+        Defaulting to ``open`` would claim the gate is armed on absent
+        evidence — the false-success these fields exist to prevent.
+        """
+        resp, _instance = _post(
+            auth_client,
+            {"repo": "qontinui/qontinui-web", "head_sha": "abc123"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["initial_verdict"] is None
+        assert body["initial_verdict_reason"] is None
+
+    def test_steer_is_not_declared_because_warnings_already_carries_it(
+        self, auth_client: TestClient
+    ):
+        """``steer`` is a duplicate of a ``warnings`` entry, so it stays out.
+
+        coord pushes the steer string into ``warnings`` and *then* stores it
+        in ``steer``. Declaring it would add a response field whose only
+        content is a second copy of something the caller already renders.
+        """
+        steer = "this repo's PRs are orchestrated; prefer the merge train"
+        resp = self._post_with_coord_body(
+            auth_client,
+            {
+                "gate_id": GATE_ID,
+                "warnings": [steer],
+                "initial_verdict": "open",
+                "steer": steer,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "steer" not in body
+        # ...but the caller still sees the steer text, via warnings.
+        assert body["warnings"] == [steer]
 
 
 class TestNotifyWhenGreenRejectsUnknownFields:

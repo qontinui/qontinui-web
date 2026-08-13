@@ -100,8 +100,141 @@ function repoPrQueueHref(repo: string): string {
 type ArmState =
   | { kind: "idle" }
   | { kind: "arming" }
-  | { kind: "armed"; gateId: string }
+  | {
+      kind: "armed";
+      gateId: string;
+      /** coord's compose-time verdict; null when it reported none. */
+      verdict: string | null;
+      reason: string | null;
+      warnings: string[];
+    }
   | { kind: "error"; message: string };
+
+// ----------------------------------------------------------------------------
+// Registration outcome → user-visible tone
+//
+// A 200 from notify-when-green does NOT mean "you will be notified". coord
+// evaluates the CiGreen predicate once at registration and reports the result
+// as `initial_verdict`; only `open` is the armed-and-waiting case.
+//   cleared       — already green at that SHA; no notification is coming
+//                   because there is nothing left to wait for
+//   failed /      — terminal or unusable; the gate will never fire
+//   misconfigured
+// Anything unrecognized (including a null verdict from a coord that does not
+// report one) is treated as UNKNOWN, never as success — claiming "armed" on
+// absent evidence is exactly the false-success this reporting exists to close.
+// ----------------------------------------------------------------------------
+
+type ArmTone = "armed" | "cleared" | "dead" | "unknown";
+
+function armTone(verdict: string | null): ArmTone {
+  switch (verdict) {
+    case "open":
+      return "armed";
+    case "cleared":
+      return "cleared";
+    case "failed":
+    case "misconfigured":
+      return "dead";
+    default:
+      return "unknown";
+  }
+}
+
+/** Short chip text for a settled arm attempt. */
+function armToneLabel(tone: ArmTone): string {
+  switch (tone) {
+    case "armed":
+      return "gate armed";
+    case "cleared":
+      return "already green";
+    case "dead":
+      return "gate will not fire";
+    case "unknown":
+      return "gate registered";
+  }
+}
+
+/** Button text once an arm attempt has settled. */
+function armButtonLabel(tone: ArmTone): string {
+  switch (tone) {
+    case "armed":
+      return "Armed";
+    case "cleared":
+      return "Already green";
+    case "dead":
+      return "Not armed";
+    case "unknown":
+      return "Registered";
+  }
+}
+
+function armToneClass(tone: ArmTone): string {
+  switch (tone) {
+    case "armed":
+      return "text-green-300";
+    case "cleared":
+      return "text-blue-300";
+    case "dead":
+      return "text-red-300";
+    case "unknown":
+      return "text-muted-foreground";
+  }
+}
+
+/** Tooltip body: coord's reason plus any advisory warnings it returned.
+ *  `warnings` already contains coord's `steer` string when one applies. */
+function armDetail(
+  tone: ArmTone,
+  reason: string | null,
+  warnings: string[]
+): string | null {
+  const parts: string[] = [];
+  if (tone === "cleared") {
+    parts.push("Main was already green at this SHA — nothing to wait for.");
+  }
+  if (reason) {
+    parts.push(reason);
+  }
+  parts.push(...warnings);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** Settled-arm chip. Tone follows coord's `initial_verdict`; the tooltip
+ *  carries the reason and any advisory warnings. A non-armed outcome is
+ *  marked with `data-arm-tone` so a test (and the UI Bridge) can assert
+ *  that a gate which will never fire is not shown as a success. */
+function ArmOutcomeChip({
+  arm,
+}: {
+  arm: Extract<ArmState, { kind: "armed" }>;
+}) {
+  const tone = armTone(arm.verdict);
+  const detail = armDetail(tone, arm.reason, arm.warnings);
+  const Icon = tone === "armed" ? CheckCircle2 : AlertTriangle;
+
+  const chip = (
+    <span
+      className={`text-xs flex items-center gap-1 ${armToneClass(tone)}`}
+      data-arm-tone={tone}
+      data-gate-id={arm.gateId}
+    >
+      <Icon className="h-3 w-3" />
+      {armToneLabel(tone)}
+    </span>
+  );
+
+  if (!detail) return chip;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{chip}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        {detail}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function CiStatusRow({ row }: { row: RepoCiRow }) {
   const [arm, setArm] = useState<ArmState>({ kind: "idle" });
@@ -135,7 +268,26 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
         return;
       }
       const body = (await res.json()) as NotifyWhenGreenResponse;
-      setArm({ kind: "armed", gateId: body.gate_id });
+      const warnings = body.warnings ?? [];
+      const verdict = body.initial_verdict ?? null;
+      // A registered-but-not-armed gate is the interesting case; log it so the
+      // browser console carries the signal even before anyone hovers the chip.
+      if (armTone(verdict) !== "armed") {
+        log.warn("notify-when-green registered a non-open gate", {
+          repo: row.repo,
+          gate_id: body.gate_id,
+          initial_verdict: verdict,
+          initial_verdict_reason: body.initial_verdict_reason ?? null,
+          warnings,
+        });
+      }
+      setArm({
+        kind: "armed",
+        gateId: body.gate_id,
+        verdict,
+        reason: body.initial_verdict_reason ?? null,
+        warnings,
+      });
     } catch (err) {
       log.warn("notify-when-green threw", err);
       setArm({
@@ -181,12 +333,7 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
             </span>
             <span className="text-muted-foreground/70">PR checks</span>
           </span>
-          {arm.kind === "armed" && (
-            <span className="text-xs text-green-300 flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              gate armed
-            </span>
-          )}
+          {arm.kind === "armed" && <ArmOutcomeChip arm={arm} />}
           {arm.kind === "error" && (
             <span className="text-xs text-red-300 flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
@@ -248,7 +395,7 @@ function CiStatusRow({ row }: { row: RepoCiRow }) {
           {arm.kind === "arming"
             ? "Arming…"
             : arm.kind === "armed"
-              ? "Armed"
+              ? armButtonLabel(armTone(arm.verdict))
               : "Notify when green"}
         </Button>
       )}

@@ -199,9 +199,36 @@ export interface CiStatusResponse {
   repos: RepoCiRow[];
 }
 
-/** Response from `POST /api/v1/operations/ci-status/notify-when-green`. */
+/** coord's compose-time one-shot verdict for a freshly registered gate.
+ *  `open` is the normal armed case; `cleared` means the predicate was
+ *  ALREADY satisfied at registration (nothing to wait for); `failed` and
+ *  `misconfigured` mean the gate will never fire. */
+export type InitialGateVerdict =
+  | "open"
+  | "cleared"
+  | "failed"
+  | "misconfigured";
+
+/** Response from `POST /api/v1/operations/ci-status/notify-when-green`.
+ *
+ *  Mirrors coord's `RegisterGateOutcome` as the backend re-declares it.
+ *  Everything past `gate_id` is the difference between "armed, waiting"
+ *  and "this gate will never notify you" — the backend must declare each
+ *  key or FastAPI's `response_model` filters it away before it ever
+ *  reaches here.
+ *
+ *  `initial_verdict` is widened with `(string & {})` because coord types
+ *  it as a freeform string: an unrecognized verdict must stay readable
+ *  rather than fail the cast, and the UI treats anything it does not
+ *  recognize as "unknown" (never as success). `null` means coord
+ *  reported no verdict at all. */
 export interface NotifyWhenGreenResponse {
   gate_id: string;
+  /** Advisory, non-blocking notes from coord's registration. Already
+   *  includes coord's `steer` string when one applies. */
+  warnings?: string[];
+  initial_verdict?: InitialGateVerdict | (string & {}) | null;
+  initial_verdict_reason?: string | null;
 }
 
 // ---------------------------------------------------------------------------
