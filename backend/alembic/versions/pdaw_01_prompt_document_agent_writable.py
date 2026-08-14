@@ -160,6 +160,13 @@ def upgrade() -> None:
     # A reader who takes NULL for `false` writes a migration that protects the
     # whole corpus, or a UI checkbox that reports every unconfigured document as
     # explicitly open.
+    # NOTE: no ``:word`` tokens in these strings. alembic routes op.execute of a
+    # plain string through SQLAlchemy's ``text()``, which treats ``:kind`` as a
+    # BIND PARAMETER — so spelling the route as
+    # ``/coord/prompt-documents/:kind/:name`` here makes the statement demand
+    # values for parameters that do not exist and the migration dies with
+    # "A value is required for bind parameter 'kind'". Caught by the
+    # reversibility gate. Braces are used below instead.
     op.execute(
         """
         COMMENT ON COLUMN coord.prompt_documents.agent_writable IS
@@ -168,8 +175,8 @@ def upgrade() -> None:
         'coord''s compile-time AGENT_UNWRITABLE_DOCUMENTS default (the three '
         'meta-policies deny, every other document allows). NULL is NOT false. '
         'Operator-settable only, via the admin-gated PATCH '
-        '/coord/prompt-documents/:kind/:name; coord_write_prompt_document has no '
-        'argument that can reach it, which is what keeps the control '
+        '/coord/prompt-documents/{kind}/{name}; coord_write_prompt_document has '
+        'no argument that can reach it, which is what keeps the control '
         'non-circular.'
         """
     )
