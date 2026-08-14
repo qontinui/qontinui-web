@@ -167,6 +167,34 @@ same treatment for both of these columns::
     ALTER TABLE coord.scheduler_ticks ADD COLUMN IF NOT EXISTS probed_sha TEXT;
     ALTER TABLE coord.scheduler_ticks ADD COLUMN IF NOT EXISTS probe_result TEXT;
 
+**There are TWO such blocks in coord, not one, and they have already diverged.**
+``src/mcp/tools.rs`` is the one carrying the ``proposal_id`` ALTER described
+above. ``src/pr_merge/economics.rs`` has a second
+``CREATE TABLE IF NOT EXISTS coord.scheduler_ticks`` block which declares
+neither ``proposal_id`` as a column nor the ALTER — verified against
+``origin/main`` on 2026-08-14, so it is short one column today and would be
+short three after this change. A reader who follows only the paragraph above
+will fix one site and leave the other silently behind, which is the same
+self-skip-and-report-green failure this section exists to warn about. Both
+sites need the ALTERs, and ``economics.rs`` additionally needs the missing
+``proposal_id`` one so the two stop drifting.
+
+The write-suppression digest is the other coord-side coupling, and it is the load-bearing one
+=============================================================================================
+Also recorded here rather than lost between two PRs. ``scheduler_trace``'s
+``should_emit`` gates every row on ``(repo, decision_code, digest)``, where
+``TraceInputs::digest`` is built from a fixed field list. A column that is not
+in that digest is invisible to write suppression — so a ``probe_result``
+transition from ``pending`` to ``absent``, or a moving ``probed_sha``, would not
+itself cause a row to be written and would wait up to the heartbeat floor
+(``COORD_SCHEDULER_TRACE_HEARTBEAT_SECS``, default 300s). That transition is
+precisely the discrimination these two columns exist to make readable, so
+leaving them out of the digest would ship the schema and forfeit the benefit.
+
+This is not a new argument: ``scheduler_trace``'s own module doc already records
+that ``proposal_id`` joining the digest was **required rather than optional**,
+for the same reason. The coord PR owes these two columns the same treatment.
+
 No ``tenant_id``
 ================
 ``coord.scheduler_ticks`` is one of the four **fleet-global** agent-debug tables
