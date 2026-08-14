@@ -1145,6 +1145,164 @@ class TestDispatchEnroll:
         assert body["detail"]
         assert body["machine"]["enrollment_code"]
 
+    # -- socket-first transport (plan 2026-08-05, decision 1B) ---------------
+    #
+    # When the device is connected, the directive goes down the device socket
+    # web already holds instead of the coord hop. ``dispatched`` must keep the
+    # same meaning on both paths so the dashboard needs no change.
+
+    @staticmethod
+    def _patch_socket(monkeypatch, *, connected: bool, sent: bool, captured: dict):
+        """Point devenv's socket path at a stub manager."""
+
+        class _Manager:
+            async def is_connected_redis(self, device_id):
+                captured["checked"] = str(device_id)
+                return connected
+
+            async def send_devenv_enroll(
+                self, device_id, payload, *, require_local_connection=True
+            ):
+                captured["sent_to"] = str(device_id)
+                captured["payload"] = payload
+                captured["require_local_connection"] = require_local_connection
+                return sent
+
+        async def _fake_redis():
+            return object()
+
+        async def _fake_manager(_redis):
+            return _Manager()
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.get_redis", _fake_redis)
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.get_runner_websocket_manager", _fake_manager
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_prefers_socket_when_device_connected(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A connected device gets the directive on its own socket, not via coord."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        coord_calls: list = []
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_calls.append(path)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        self._patch_socket(monkeypatch, connected=True, sent=True, captured=captured)
+
+        device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "socket-box", "target_device_id": device_id},
+            )
+
+        assert r.status_code == 201, r.text
+        body = r.json()
+        # Identical `dispatched` semantics — the dashboard cannot tell which
+        # transport carried it, which is the point.
+        assert body["dispatched"] is True
+        machine = body["machine"]
+        # The coord hop was NOT used.
+        assert coord_calls == []
+        # The socket carried the same directive fields coord's body carries.
+        assert captured["sent_to"] == device_id
+        assert captured["payload"]["machine_id"] == machine["id"]
+        assert captured["payload"]["enrollment_code"] == machine["enrollment_code"]
+        # Connectivity was confirmed cross-process, so the send must publish via
+        # Redis rather than requiring the socket on THIS replica.
+        assert captured["require_local_connection"] is False
+
+    @pytest.mark.asyncio
+    async def test_dispatch_falls_back_to_coord_when_not_connected(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """An offline device takes the shipped coord path, unchanged."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        coord_body: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_body.update(json_body)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        self._patch_socket(monkeypatch, connected=False, sent=True, captured=captured)
+
+        device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "offline-socket-box", "target_device_id": device_id},
+            )
+
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        # No socket send was attempted; coord got the directive as before.
+        assert "sent_to" not in captured
+        assert coord_body["target_device_id"] == device_id
+
+    @pytest.mark.asyncio
+    async def test_dispatch_falls_back_when_socket_send_does_not_land(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A connected-but-unreachable device must not silently lose the directive."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        coord_body: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_body.update(json_body)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        self._patch_socket(monkeypatch, connected=True, sent=False, captured=captured)
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "half-open-box", "target_device_id": str(uuid4())},
+            )
+
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        # The socket was tried, then coord picked it up.
+        assert captured["sent_to"]
+        assert coord_body["machine_id"]
+
+    @pytest.mark.asyncio
+    async def test_dispatch_falls_back_when_redis_unavailable(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Redis being down is not a reason to fail an operator's dispatch."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        coord_body: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_body.update(json_body)
+            return httpx.Response(200, json={"dispatched": True})
+
+        async def _boom():
+            raise RuntimeError("redis unavailable")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.get_redis", _boom)
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "no-redis-box", "target_device_id": str(uuid4())},
+            )
+
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        assert coord_body["machine_id"]
+
 
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""

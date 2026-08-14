@@ -35,11 +35,13 @@ from __future__ import annotations
 from uuid import UUID
 
 import httpx
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
+from app.config.redis_config import get_redis
 from app.crud import devenv_machine_crud
 from app.models.devenv import Environment, Machine
 from app.models.user import User
@@ -79,6 +81,9 @@ from app.schemas.devenv import (
 )
 from app.services import coord_device, devenv_drift
 from app.services.coord_proxy import post_to_coord
+from app.services.runner_websocket_manager import get_runner_websocket_manager
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -356,6 +361,12 @@ async def dispatch_enroll(
     rejected (device offline / unknown), so the UI can fall back to the
     copy-paste command (Phase 1(b)). Coord's admin-gated route resolves the
     operator from the forwarded Cognito bearer.
+
+    Two transports, tried in order. When the device is connected, the directive
+    goes down the authenticated device WebSocket web already holds; otherwise
+    (or if that send does not land) it falls back to the coord hop exactly as
+    it shipped. ``dispatched`` means the same thing on both paths, so no caller
+    changes.
     """
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
@@ -379,6 +390,57 @@ async def dispatch_enroll(
     await db.commit()
 
     created = MachineCreatedResponse.from_model(machine)
+
+    # Prefer the device socket web is already holding (plan
+    # ``2026-08-05-devenv-auto-enrollment-on-connection``, decision 1B). The
+    # coord hop below is fire-and-forget onto a DIFFERENT socket that may be
+    # down (it no-ops without a coord URL and backs off to 60s); this one we
+    # can confirm is up before we use it, and the runner acks on it.
+    #
+    # ``dispatched`` keeps exactly its existing meaning — "the directive was
+    # handed off" — so the dashboard and the copy-paste fallback are unchanged
+    # either way. Any failure here falls through to the shipped coord path
+    # rather than failing the request: the machine + code are already created
+    # and returned regardless.
+    socket_payload: dict[str, object] = {
+        "enrollment_code": created.enrollment_code,
+        "machine_id": str(machine.id),
+    }
+    if machine.environment_id is not None:
+        socket_payload["environment_id"] = str(machine.environment_id)
+
+    try:
+        redis = await get_redis()
+        manager = await get_runner_websocket_manager(redis)
+        # Cross-process Redis state, not the in-process registry: this HTTP
+        # request may land on a replica that does not hold the device's socket,
+        # where the memory-only check would say "offline" about a live device.
+        # The send then publishes via Redis pub/sub
+        # (``require_local_connection=False``) so it reaches whichever replica
+        # does own the socket.
+        if await manager.is_connected_redis(payload.target_device_id):
+            sent = await manager.send_devenv_enroll(
+                payload.target_device_id,
+                socket_payload,
+                require_local_connection=False,
+            )
+            if sent:
+                logger.info(
+                    "devenv_dispatch_enroll_via_socket",
+                    machine_id=str(machine.id),
+                    target_device_id=str(payload.target_device_id),
+                )
+                return DispatchEnrollResponse(machine=created, dispatched=True)
+    except Exception as exc:
+        # Redis unavailable / manager unresolvable is not a reason to fail an
+        # operator's dispatch — the coord path is still there and unchanged.
+        logger.warning(
+            "devenv_dispatch_enroll_socket_failed",
+            machine_id=str(machine.id),
+            target_device_id=str(payload.target_device_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
 
     # Dispatch the enroll directive to the device's runner via coord. Best-effort:
     # a rejection/timeout does NOT undo the machine — the operator falls back to

@@ -164,6 +164,22 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
     capabilities = info_msg.get("capabilities") or []
 
+    # Client-asserted devenv block (plan 2026-08-05, decision 2):
+    # ``{enrolled, machine_id, environment_id, instance_role}``. Parsed and
+    # logged ONLY — nothing here is acted on or written anywhere.
+    #
+    # The asymmetry this block lives under, stated once so it is not
+    # re-litigated at the call site: a client hint may freely SUPPRESS
+    # enrollment on its own behalf (``instance_role: "secondary"``, a local
+    # kill switch), but may NEVER name the machine row, the environment or the
+    # owner — those come from the verified JWT claims and the server's own
+    # tables. It is kept as a plain dict rather than being unpacked into
+    # trusted locals precisely so no later code can mistake it for a fact.
+    raw_devenv_hint = info_msg.get("devenv")
+    devenv_hint: dict[str, Any] | None = (
+        raw_devenv_hint if isinstance(raw_devenv_hint, dict) else None
+    )
+
     client_ip = websocket.client.host if websocket.client else None
 
     device_id: UUID | None = None
@@ -229,7 +245,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     #     observation only, no action, no writes. Fully swallowed so it can
     #     never affect the handshake — see the helper's docstring.
     # ------------------------------------------------------------------
-    await _log_devenv_enrollment_shadow(device_id, user_id)
+    await _log_devenv_enrollment_shadow(device_id, user_id, devenv_hint)
 
     # ------------------------------------------------------------------
     # 2b. Register with the Redis-backed runner WS manager and announce the
@@ -399,7 +415,11 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         await _cleanup(device_id, connection_pk, user_id, manager)
 
 
-async def _log_devenv_enrollment_shadow(device_id: Any, user_id: Any) -> None:
+async def _log_devenv_enrollment_shadow(
+    device_id: Any,
+    user_id: Any,
+    devenv_hint: dict[str, Any] | None = None,
+) -> None:
     """Record what a devenv auto-enrollment decision would see on this connect.
 
     Phase 1 of plan ``2026-08-05-devenv-auto-enrollment-on-connection``. The
@@ -409,6 +429,12 @@ async def _log_devenv_enrollment_shadow(device_id: Any, user_id: Any) -> None:
     devenv environment?" is answerable as a fact. Emitting it as a structured
     line makes the size of the gap the plan closes measurable in production
     **before** any behaviour depends on it.
+
+    ``devenv_hint`` is the client-asserted block from the ``runner_info``
+    frame. It is logged BESIDE the server-derived facts, never merged into
+    them, so the two can be compared in production: the whole question a
+    future engine turns on is where the client's claim and the server's row
+    disagree (the reinstall case). Nothing here trusts it.
 
     Strictly observational: one indexed SELECT, no writes, no dispatch. Every
     exception is swallowed and downgraded to a warning because this runs on the
@@ -449,6 +475,12 @@ async def _log_devenv_enrollment_shadow(device_id: Any, user_id: Any) -> None:
         enrolled=(single is not None and single.enrolled_at is not None),
         has_environment=(single is not None and single.environment_id is not None),
         machine_id=(str(single.id) if single is not None else None),
+        # --- client-asserted, NOT facts. Prefixed so no reader confuses them
+        # with the server-derived fields above. `None` = the runner sent no
+        # devenv block (an older build), which is distinct from `false`.
+        hint_present=devenv_hint is not None,
+        hint_enrolled=(devenv_hint or {}).get("enrolled"),
+        hint_instance_role=(devenv_hint or {}).get("instance_role"),
     )
 
 
@@ -526,6 +558,32 @@ async def _route_device_message(
         "terminal_buffer_response",
     } or (msg_type == "error" and msg.get("request_id") is not None):
         await manager.send_terminal_response_to_mobiles(device_id, msg)
+        return
+
+    # Reply to a ``devenv_enroll`` directive sent down this socket
+    # (``runner_websocket_manager.send_devenv_enroll``). The runner's
+    # ``mcp/backend_relay.rs::handle_relay_command`` produces it and the relay
+    # writes it straight back here.
+    #
+    # This arm MUST stay above the fall-through below. That fall-through is a
+    # closed set: an unrecognised type is logged at DEBUG and discarded, which
+    # is the exact failure the terminal-RPC comment above records shipping
+    # once already. For devenv enrollment the consequence is worse than a
+    # dropped log line — the ack is the ONLY evidence that an enroll directive
+    # reached the box, so without this arm an auto-enrollment feature whose
+    # entire purpose is to stop failures from being silent would itself fail
+    # silently. Logged at INFO, not DEBUG, for the same reason.
+    if msg_type == "devenv_enroll_ack":
+        ok = msg.get("ok")
+        logger.info(
+            "devices_ws_devenv_enroll_ack",
+            device_id=str(device_id),
+            machine_id=msg.get("machine_id"),
+            ok=ok,
+            # Only present on the failure arm; the runner never panics the
+            # relay, it reports the reason instead.
+            reason=msg.get("reason") if ok is not True else None,
+        )
         return
 
     logger.debug(

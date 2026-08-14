@@ -490,6 +490,39 @@ class RunnerWebSocketManager:
             rid, msg, require_local_connection=require_local_connection
         )
 
+    async def send_devenv_enroll(
+        self,
+        runner_id: UUID | str,
+        payload: dict[str, Any],
+        *,
+        require_local_connection: bool = True,
+    ) -> bool:
+        """Send a typed ``devenv_enroll`` directive to the runner over its WS.
+
+        The devenv enroll transport (plan
+        ``2026-08-05-devenv-auto-enrollment-on-connection``, decision 1B). The
+        pre-existing path pushes this directive through coord's
+        ``/devenv/enroll-dispatch`` onto a *different*, possibly-down socket;
+        this sends it down the authenticated device socket web is already
+        holding, which removes a service hop, an admin secret, and the
+        fire-and-forget delivery gap.
+
+        ``require_local_connection`` defaults to ``True`` on purpose: the
+        caller runs inside the connect handler on the replica that owns the
+        socket, so the in-process gate is the correct and strictest one. Pass
+        ``False`` only when connectivity was already confirmed cross-process
+        via :meth:`is_connected_redis`.
+
+        The runner replies with a ``devenv_enroll_ack`` frame on the same
+        socket; that reply needs a matching arm in
+        ``devices_ws._route_device_message`` or it is dropped at debug level.
+        """
+        rid = _rid(runner_id)
+        msg = {"type": "devenv_enroll", **payload}
+        return await self._relay.send_command_to_runner(
+            rid, msg, require_local_connection=require_local_connection
+        )
+
     async def send_command(
         self, runner_id: UUID | str, command: dict[str, Any]
     ) -> bool:
