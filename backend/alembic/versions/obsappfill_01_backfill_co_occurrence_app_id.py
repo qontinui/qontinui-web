@@ -97,8 +97,16 @@ No index work
 =============
 
 None is needed. ``appid_01`` already widened ``idx_observations_spec`` to
-``(spec_id, app_id, captured_at) WHERE invalidated_at IS NULL``. This
-revision only rewrites a column value.
+``(spec_id, app_id, captured_at) WHERE invalidated_at IS NULL``. Only a
+column value is rewritten here.
+
+(That sentence is deliberately not phrased to start a line with the bare
+word ``revision`` at column 0. The ``alembic-heads-pr`` gate in
+``.github/workflows/alembic-graph-pr.yml`` scans with ``^revision`` /
+``^down_revision`` regexes under ``re.M``; they also require an ``=``, so
+prose alone cannot trip them today — but a future edit that added one to
+such a line would corrupt the head scan on a REQUIRED check. Keep
+column-0 ``revision``/``down_revision`` for the real assignments only.)
 """
 
 from collections.abc import Sequence
