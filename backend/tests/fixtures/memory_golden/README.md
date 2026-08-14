@@ -114,8 +114,10 @@ regeneration in the same change.
 
 ## Growing the set
 
-The plan targets 50–150 cases. The set shipped here is the **initial seed**
-(24 cases over 30 records) covering all four classes end to end. Two
+The plan targets 50–150 cases. The set now holds **50 cases over 64
+records**, covering all four classes end to end — grown from the 24/30
+initial seed by plan `2026-08-04-memory-golden-set-grow-to-target`, which
+took it to the 50-case floor its parent plan's §2.1 specified. Two
 sourcing veins, in order of preference:
 
 1. **Corrections already in the corpus.** Records whose titles begin

@@ -582,7 +582,7 @@ class TestLinkArmIntegrity:
 
         The tolerance is 0.01 absolute, which is ~7x the residual difference
         at the shipped weight (~0.0015) and ~50x smaller than the regression
-        it must catch (~0.54). Wide enough not to encode a 24-case fixture's
+        it must catch (~0.54). Wide enough not to encode a 50-case fixture's
         exact digits; nowhere near wide enough to absorb a real collapse.
         """
         tolerance = 0.01
@@ -616,52 +616,86 @@ class TestLinkArmIntegrity:
             "matched nothing, so the arm's scores describe an empty graph"
         )
 
-    def test_link_only_hits_track_the_corpus_size_precondition(
+    #: Corpus:cutoff ratio at or above which link-ONLY hits have actually been
+    #: OBSERVED, so demanding them is fair. From PR #975's sweep over this
+    #: fixture: ratio 6.0 (``arm_limit=5``, 30 records) → 45 link-only hits
+    #: across 22/24 cases; ratio 3.0 (``arm_limit=10``) → 73 hits across 23/24.
+    #: Ratio 1.8 (90 records at stock cutoff 50) → ZERO. The crossover lies
+    #: between 1.8 and 3.0 and has never been narrowed further, so 3.0 is the
+    #: lowest ratio at which a demand is backed by measurement.
+    LINK_ONLY_MEASURED_RATIO = 3.0
+
+    #: Ratio at or below which zero link-only hits is the MEASURED expectation
+    #: (90/50 = 1.8 produced none). Between this and the constant above, the
+    #: outcome is genuinely unmeasured and this test asserts nothing.
+    LINK_ONLY_IMPOSSIBLE_RATIO = 1.8
+
+    def test_link_only_hits_track_the_corpus_cutoff_ratio(
         self, hybrid_link: ArmRun, golden: fx.GoldenSet
     ) -> None:
-        """A link-ONLY hit needs a corpus larger than ``ARM_LIMIT``.
+        """A link-ONLY hit needs corpus DENSITY, not corpus SIZE.
 
-        The semantic arm returns its top ``ARM_LIMIT`` (50) records. This
-        corpus holds 30, so the vector arm ranks EVERY record and
-        ``vector_rank`` is never null — making "reached purely by an edge"
-        arithmetically impossible, no matter how the edges are drawn or how
-        narrow the query window is. Measured 2026-08-08: every case returned
-        20 hits, 0 with a null ``vector_rank``.
+        A link-only hit requires the semantic arm to have EXCLUDED the record
+        the edge reaches. That arm returns its top ``ARM_LIMIT`` (50), so what
+        decides exclusion is the corpus:cutoff RATIO — how many records are
+        more similar to the query than the link target is.
 
-        That is a fixture-scale limit, not a defect in the arm, and it is the
-        reason ``hybrid`` and ``hybrid_link`` score nearly identically here:
-        the graph can only re-rank records the other arms already returned.
-        **The link arm's distinctive contribution stays unmeasured until the
-        golden corpus exceeds ARM_LIMIT.**
+        **This assertion used to branch on ``len(records) > ARM_LIMIT`` and
+        demand hits above it. That premise was disproved three days after it
+        was written** (PR #975, plan ``2026-08-08-memory-graph-has-no-writer``
+        §4c): 60 added distractors took the corpus to 90 — past the cutoff —
+        and still produced ZERO link-only hits, because distractors rank BELOW
+        topically-relevant records, so the top-50 merely becomes "every
+        original plus some filler". Pushing a target at median rank 17 past 50
+        needs ~33 records *more similar to that query* than the target. That is
+        density, and it cannot be hand-authored without writing the answer key.
 
-        This assertion is written to STRENGTHEN itself the moment that
-        happens, rather than being deleted and forgotten: below the
-        threshold it pins the impossibility (so a link-only hit appearing
-        here would mean the ranks are being reported wrongly), and above it
-        it demands the real evidence.
+        Growing the golden set to its 50-case floor (plan
+        ``2026-08-04-memory-golden-set-grow-to-target``) took the corpus to 64
+        records — past ``ARM_LIMIT``, ratio 1.28 — and reproduced exactly that:
+        zero link-only hits. Under the old branch that was a RED backend CI on
+        a fixture change that did nothing wrong.
+
+        So the bands below are keyed to what has actually been measured, and
+        the middle band asserts nothing rather than guessing. The arm's real
+        measurement lives in
+        :class:`TestLinkArmUnderAProductionLikeCutoff`, which shrinks the
+        cutoff to reach a production-like ratio instead of inflating the corpus.
         """
         ARM_LIMIT = _ARM_LIMIT
         observed = sum(len(v) for v in hybrid_link.link_only.values())
-        if len(golden.records) <= ARM_LIMIT:
+        ratio = len(golden.records) / ARM_LIMIT
+
+        if ratio <= self.LINK_ONLY_IMPOSSIBLE_RATIO:
             assert observed == 0, (
-                f"a link-only hit appeared with {len(golden.records)} records "
-                f"and ARM_LIMIT={ARM_LIMIT}: the vector arm should be ranking "
-                "the whole corpus, so every hit must carry a vector_rank. "
-                "Either ARM_LIMIT changed or the per-arm ranks are wrong."
+                f"a link-only hit appeared at corpus:cutoff ratio {ratio:.2f} "
+                f"({len(golden.records)} records, ARM_LIMIT={ARM_LIMIT}). At "
+                "this ratio the semantic arm still returns every link target "
+                "(measured at 30/50 and 90/50), so every hit must carry a "
+                "vector_rank. Either ARM_LIMIT changed or the per-arm ranks "
+                "are being reported wrongly."
             )
-            # Deliberately NOT xfail/skip: this branch is a real, passing
-            # assertion about a real invariant. Marking it xfail would make
-            # the module's own warning come true — "a skip and a pass are the
-            # same colour in a check list" — and would hide the limitation
-            # instead of recording it. The limitation travels in the emitted
-            # report as `link_only_measurable: false`, where the human
-            # reading the numbers will see it.
+            # Deliberately NOT xfail/skip: this is a real, passing assertion
+            # about a real invariant. Marking it xfail would make the module's
+            # own warning come true — "a skip and a pass are the same colour in
+            # a check list" — and would hide the limitation instead of
+            # recording it. The limitation travels in the emitted report as
+            # `link_only_measurable: false`, where the human reading the
+            # numbers will see it.
             return
+
+        if ratio < self.LINK_ONLY_MEASURED_RATIO:
+            # 1.8 < ratio < 3.0 — no measurement exists in this band. Asserting
+            # either direction here would be a guess dressed as a contract.
+            return
+
         assert observed > 0, (
-            f"corpus is {len(golden.records)} records > ARM_LIMIT={ARM_LIMIT}, "
-            "so a link-only hit is now possible — but none occurred. The "
-            "seeded edges point only at records the other arms already "
-            "return, so the comparison still measures nothing."
+            f"corpus:cutoff ratio is {ratio:.2f} ({len(golden.records)} "
+            f"records, ARM_LIMIT={ARM_LIMIT}), at or above the ratio where "
+            "link-only hits have been measured (#975: 73 hits across 23/24 "
+            "cases at ratio 3.0) — but none occurred. The seeded edges point "
+            "only at records the other arms already return, so the comparison "
+            "still measures nothing."
         )
 
     # NOT asserted here: "link expansion never removes an id the two-arm fuse
@@ -923,12 +957,24 @@ class TestBaselineReport:
             "link_only_hits": sum(len(v) for v in hybrid_link.link_only.values()),
             "link_only_cases": sorted(hybrid_link.link_only),
             # Why link_only_hits is 0 and the hybrid/hybrid_link delta is ~0:
-            # the semantic arm returns its top ARM_LIMIT records, so on a
-            # corpus no larger than that it ranks EVERYTHING and no hit can
-            # be link-only. Without this field a reader would take the null
-            # delta as evidence that link expansion does not help, when it is
-            # evidence that this corpus cannot test it.
-            "link_only_measurable": len(golden.records) > _ARM_LIMIT,
+            # a link-ONLY hit needs the semantic arm to have EXCLUDED the link
+            # target, and that depends on the corpus:cutoff RATIO, not on the
+            # corpus merely exceeding the cutoff. Without this field a reader
+            # would take the null delta as evidence that link expansion does
+            # not help, when it is evidence that this corpus cannot test it.
+            #
+            # This field read `len(records) > ARM_LIMIT` until 2026-08-14. That
+            # is the premise PR #975 disproved (90 records > 50 produced zero
+            # link-only hits), so at 64 records it began reporting
+            # `measurable: true` over a run that measured nothing — the exact
+            # misreading the field exists to prevent. It is now the same
+            # ratio-banded judgement the assertion uses, and it reports what
+            # was OBSERVED rather than what the arithmetic permits.
+            "link_only_measurable": (
+                len(golden.records) / _ARM_LIMIT
+                >= TestLinkArmIntegrity.LINK_ONLY_MEASURED_RATIO
+            ),
+            "link_only_corpus_cutoff_ratio": round(len(golden.records) / _ARM_LIMIT, 3),
             "arm_limit": _ARM_LIMIT,
             "arms": [
                 self._suite_rows(fts_suite),
@@ -950,7 +996,7 @@ class TestBaselineReport:
             Path(destination).write_text(rendered, encoding="utf-8")
 
         # Structural assertions only — this test REPORTS, it does not gate.
-        # Thresholding a ~24-case subjective set would be exactly the flaky
+        # Thresholding a ~50-case subjective set would be exactly the flaky
         # quality gate the plan's §4 rejects.
         assert report["arms"][0]["cases"] > 0
         assert report["arms"][1]["cases"] > 0
@@ -962,19 +1008,21 @@ class TestLinkArmUnderAProductionLikeCutoff:
 
     Plan ``2026-08-08-memory-graph-has-no-writer`` §4c. A link-ONLY hit needs
     the semantic arm to have EXCLUDED the record, and that arm returns its top
-    ``ARM_LIMIT`` (50) — more than this 30-record corpus holds, so at stock
-    settings no hit can ever be link-only (asserted in
-    :class:`TestLinkArmIntegrity`).
+    ``ARM_LIMIT`` (50). At this fixture's corpus:cutoff ratio the arm still
+    returns every link target, so no hit can be link-only at stock settings
+    (asserted in :class:`TestLinkArmIntegrity`).
 
     The obvious fix — grow the corpus past 50 — was tried and **does not
     work**: 60 added distractors moved link targets' vector ranks only from
-    median 17 to 20, and produced zero link-only hits. Distractors rank BELOW
+    median 17 to 20, and produced zero link-only hits. Growing the golden set
+    to 64 records for its own reasons (plan
+    ``2026-08-04-memory-golden-set-grow-to-target``) reproduced the same zero. Distractors rank BELOW
     topically-relevant records, so the top-50 just becomes "every original plus
     some filler". What would push a target out is ~33 records *more similar to
     that query* than the target — corpus DENSITY, which cannot be hand-authored
     without effectively writing the answer key.
 
-    So shrink the cutoff instead. ``arm_limit=5`` over 30 records reproduces the
+    So shrink the cutoff instead. ``arm_limit=5`` over this corpus reproduces the
     structural situation of ``arm_limit=50`` over 300: it is the corpus:cutoff
     RATIO that decides whether the graph can reach past the semantic arm. This
     needs no production change — the limit is a keyword argument on the store
@@ -1047,8 +1095,8 @@ class TestLinkArmUnderAProductionLikeCutoff:
         relative) with noise@10 unchanged at 0.0 — the arm's strongest result,
         and the only configuration where it buys recall for free.
 
-        Asserted as DIRECTIONS, not as those digits: pinning 0.0625 to a
-        24-case subjective fixture would be the flaky quality gate the
+        Asserted as DIRECTIONS, not as those digits: pinning a score to a
+        50-case subjective fixture would be the flaky quality gate the
         benchmark plan's §4 rejects. What must hold is that the arm does not
         LOSE recall here and does not pay for it in noise.
         """
