@@ -58,12 +58,32 @@ export interface AgentWriteAccessControlProps {
   onSet: (next: boolean) => Promise<boolean>;
 }
 
+/** True once coord is returning the derived access fields at all. */
+function coordReportsAccess(doc: PromptDocumentSummary): boolean {
+  return doc.agent_write_effective !== undefined;
+}
+
 /** Badge copy for each of the four (effective × source) combinations. */
 function describe(doc: PromptDocumentSummary): {
   label: string;
   variant: "outline" | "secondary" | "destructive" | "success";
   title: string;
 } {
+  // Deploy window: this page can be live against a coord that predates the
+  // feature and omits the fields entirely. Say so rather than guessing — an
+  // absent value is UNKNOWN, and both confident renderings are wrong in a way
+  // the operator cannot detect. "Protected" would be the worse guess: it
+  // reports the corpus as locked down while coord is still allowing writes.
+  // Same posture the `degraded` notice on this page already takes for an
+  // unprovisioned document store.
+  if (!coordReportsAccess(doc)) {
+    return {
+      label: "Access unknown",
+      variant: "outline",
+      title:
+        "This coord build does not report per-document agent write access yet, so its state cannot be shown. It is not necessarily protected — coord is applying its built-in default. The control becomes available once coord deploys the per-document access change.",
+    };
+  }
   const bySource = doc.agent_write_source === "operator";
   if (doc.agent_write_effective) {
     return bySource
@@ -103,6 +123,10 @@ export function AgentWriteAccessControl({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const { label, variant, title } = describe(doc);
 
+  // Never offer a toggle whose current value we cannot read: the operator would
+  // be flipping a switch without knowing which way it points, and coord would
+  // reject the PATCH field anyway on a build that does not know it.
+  const known = coordReportsAccess(doc);
   const opening = !doc.agent_write_effective;
   // Overriding a COMPILE-TIME protection is the deliberate case. Overriding an
   // operator's own earlier `false` is an ordinary change of mind.
@@ -130,12 +154,14 @@ export function AgentWriteAccessControl({
         variant="ghost"
         size="sm"
         className="h-8 w-8 p-0"
-        disabled={saving}
+        disabled={saving || !known}
         onClick={() => (overridesBuiltIn ? setConfirmOpen(true) : void apply())}
         title={
-          opening
-            ? "Allow agents to write this document"
-            : "Protect this document from agent writes"
+          !known
+            ? "Unavailable until coord reports per-document agent write access"
+            : opening
+              ? "Allow agents to write this document"
+              : "Protect this document from agent writes"
         }
         data-testid={`doc-access-toggle-${doc.kind}-${doc.name}`}
       >

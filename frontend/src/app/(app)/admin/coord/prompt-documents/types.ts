@@ -112,8 +112,17 @@ export interface PromptDocumentSummary {
    * permanently. Use `agent_write_source` to tell them apart.
    */
   agent_writable: boolean | null;
-  /** The resolved answer coord will actually enforce. */
-  agent_write_effective: boolean;
+  /**
+   * The resolved answer coord will actually enforce.
+   *
+   * **Optional on purpose.** A coord that predates this feature omits it
+   * entirely, which is a real window: the migration and this UI land before /
+   * around the coord deploy that starts returning it. An absent value is
+   * UNKNOWN, not `false` — rendering it as "protected" would tell an operator
+   * their whole corpus is locked down when coord is in fact still allowing
+   * ordinary writes, which is the more dangerous of the two wrong answers.
+   */
+  agent_write_effective?: boolean;
   /**
    * Where `agent_write_effective` came from: `"operator"` when this document
    * carries an explicit setting, `"default"` when coord's built-in meta-policy
@@ -124,7 +133,7 @@ export interface PromptDocumentSummary {
    * and the day a fourth meta-policy is added in Rust this page would label it
    * "open (default)" while coord denied every write to it.
    */
-  agent_write_source: "operator" | "default";
+  agent_write_source?: "operator" | "default";
   updated_by: string | null;
   updated_at: string;
 }
