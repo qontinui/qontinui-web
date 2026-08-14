@@ -41,11 +41,13 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
+from sqlalchemy import select
 
 from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
+from app.models.devenv import Machine
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenInvalidError,
@@ -222,6 +224,14 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         return
 
     # ------------------------------------------------------------------
+    # 2a. Shadow-log what a future auto-enrollment engine WOULD decide here.
+    #     Phase 1 of ``2026-08-05-devenv-auto-enrollment-on-connection``:
+    #     observation only, no action, no writes. Fully swallowed so it can
+    #     never affect the handshake — see the helper's docstring.
+    # ------------------------------------------------------------------
+    await _log_devenv_enrollment_shadow(device_id, user_id)
+
+    # ------------------------------------------------------------------
     # 2b. Register with the Redis-backed runner WS manager and announce the
     #     connection. This block talks to Redis (``get_redis`` /
     #     ``get_runner_websocket_manager`` / ``manager.register`` /
@@ -387,6 +397,59 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         )
     finally:
         await _cleanup(device_id, connection_pk, user_id, manager)
+
+
+async def _log_devenv_enrollment_shadow(device_id: Any, user_id: Any) -> None:
+    """Record what a devenv auto-enrollment decision would see on this connect.
+
+    Phase 1 of plan ``2026-08-05-devenv-auto-enrollment-on-connection``. The
+    device that just handshook has a *server-verified* identity (``device_id``
+    and ``user_id`` come from the coord-signed JWT claims, never from the
+    frame), so this is the first point in the system where "is this box in a
+    devenv environment?" is answerable as a fact. Emitting it as a structured
+    line makes the size of the gap the plan closes measurable in production
+    **before** any behaviour depends on it.
+
+    Strictly observational: one indexed SELECT, no writes, no dispatch. Every
+    exception is swallowed and downgraded to a warning because this runs on the
+    connect hot path — a shadow measurement must never cost a socket.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(
+                    Machine.id,
+                    Machine.enrolled_at,
+                    Machine.environment_id,
+                ).where(
+                    Machine.coord_device_id == device_id,
+                    Machine.revoked_at.is_(None),
+                )
+            )
+            rows = result.all()
+    except Exception as exc:
+        # UNKNOWN, not "no machine" — never let a failed probe read as a zero.
+        logger.warning(
+            "devenv_auto_enroll_shadow_failed",
+            device_id=str(device_id) if device_id else None,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return
+
+    single = rows[0] if len(rows) == 1 else None
+    logger.info(
+        "devenv_auto_enroll_shadow",
+        device_id=str(device_id),
+        user_id=str(user_id),
+        # 0 = the gap this plan closes; >1 = the ambiguous duplicate population
+        # a future engine must refuse to guess between.
+        machine_count=len(rows),
+        has_machine=bool(rows),
+        enrolled=(single is not None and single.enrolled_at is not None),
+        has_environment=(single is not None and single.environment_id is not None),
+        machine_id=(str(single.id) if single is not None else None),
+    )
 
 
 async def _route_device_message(
