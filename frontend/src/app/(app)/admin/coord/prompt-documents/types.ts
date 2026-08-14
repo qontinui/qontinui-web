@@ -99,6 +99,53 @@ export interface PromptDocumentSummary {
   default_source: string | null;
   /** Monotonic; bumped by coord on every edit. */
   current_version: number;
+  /**
+   * The operator's per-document agent-write setting, RAW.
+   *
+   * Three states, and they are not two: `true` = the operator opened this
+   * document, `false` = the operator protected it, **`null` = the operator has
+   * never ruled on it**, which falls back to coord's compile-time default.
+   *
+   * Never render `null` as an unchecked box or as "open". "Unset" and
+   * "explicitly open" have the same effect today and are different facts — the
+   * first tracks a later change to coord's default, the second overrides it
+   * permanently. Use `agent_write_source` to tell them apart.
+   */
+  agent_writable?: boolean | null;
+  /**
+   * The resolved answer coord will actually enforce.
+   *
+   * **Optional on purpose.** A coord that predates this feature omits it
+   * entirely, which is a real window: the migration and this UI land before /
+   * around the coord deploy that starts returning it. An absent value is
+   * UNKNOWN, not `false` — rendering it as "protected" would tell an operator
+   * their whole corpus is locked down when coord is in fact still allowing
+   * ordinary writes, which is the more dangerous of the two wrong answers.
+   */
+  agent_write_effective?: boolean;
+  /**
+   * Where `agent_write_effective` came from: `"operator"` when this document
+   * carries an explicit setting, `"default"` when coord's built-in meta-policy
+   * rule decided.
+   *
+   * Computed server-side ON PURPOSE. Deriving it here would mean shipping a
+   * second copy of coord's `AGENT_UNWRITABLE_DOCUMENTS` list into the browser,
+   * and the day a fourth meta-policy is added in Rust this page would label it
+   * "open (default)" while coord denied every write to it.
+   */
+  agent_write_source?: "operator" | "default";
+  /**
+   * What coord's built-in rule says, IGNORING any operator override — `false`
+   * exactly for a meta-policy.
+   *
+   * This is NOT derivable from `agent_write_source`. Once an operator touches a
+   * document at all, `source` becomes `"operator"` permanently, so a
+   * confirmation keyed on `source === "default"` would fire the first time a
+   * meta-policy was opened and never again: open, protect, and the third click
+   * re-opens it silently. Whether a document is one the code protects does not
+   * change when the row is written, and only this field says so.
+   */
+  agent_write_builtin_default?: boolean;
   updated_by: string | null;
   updated_at: string;
 }
@@ -152,6 +199,16 @@ export interface PromptDocumentUpdate {
    * verbatim by the PATCH proxy; the server replaces stored attrs wholesale.
    */
   attrs?: PromptDocumentAttrs;
+  /**
+   * Set this document's per-document agent write access. `true` opens it,
+   * `false` protects it; omit to leave it alone.
+   *
+   * There is deliberately no way to clear it back to `null` (re-inherit the
+   * default) over the wire — coord has no encoding for it either. Unlike every
+   * other field here, setting this creates a VERSION: it is authority, and who
+   * changed it has to survive the next agent append.
+   */
+  agent_writable?: boolean;
 }
 
 /* ------------------------------------------------------------------------- *
