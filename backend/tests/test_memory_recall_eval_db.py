@@ -80,6 +80,21 @@ from tests.test_memory_api_db import (  # noqa: E402
 # query asks for 20 (the endpoint's own cap is 50).
 QUERY_LIMIT = 20
 
+#: Corpus:cutoff ratio at or above which link-ONLY hits have actually been
+#: OBSERVED, so demanding them is fair. From PR #975's sweep over this fixture:
+#: ratio 6.0 (``arm_limit=5``, 30 records) → 45 link-only hits across 22/24
+#: cases; ratio 3.0 (``arm_limit=10``) → 73 hits across 23/24. Ratio 1.8 (90
+#: records at stock cutoff 50) → ZERO. The crossover lies between 1.8 and 3.0
+#: and has never been narrowed further, so 3.0 is the lowest ratio at which a
+#: demand is backed by measurement.
+LINK_ONLY_MEASURED_RATIO = 3.0
+
+#: Ratio at or below which zero link-only hits is the MEASURED expectation
+#: (90/50 = 1.8 produced none). Between this and the constant above the outcome
+#: is genuinely unmeasured, and both the assertion and the emitted report say so
+#: rather than guessing.
+LINK_ONLY_IMPOSSIBLE_RATIO = 1.8
+
 #: Where a CI run drops the machine-readable report for the PR comment.
 REPORT_PATH_ENV = "MEMORY_RECALL_EVAL_REPORT"
 
@@ -616,20 +631,6 @@ class TestLinkArmIntegrity:
             "matched nothing, so the arm's scores describe an empty graph"
         )
 
-    #: Corpus:cutoff ratio at or above which link-ONLY hits have actually been
-    #: OBSERVED, so demanding them is fair. From PR #975's sweep over this
-    #: fixture: ratio 6.0 (``arm_limit=5``, 30 records) → 45 link-only hits
-    #: across 22/24 cases; ratio 3.0 (``arm_limit=10``) → 73 hits across 23/24.
-    #: Ratio 1.8 (90 records at stock cutoff 50) → ZERO. The crossover lies
-    #: between 1.8 and 3.0 and has never been narrowed further, so 3.0 is the
-    #: lowest ratio at which a demand is backed by measurement.
-    LINK_ONLY_MEASURED_RATIO = 3.0
-
-    #: Ratio at or below which zero link-only hits is the MEASURED expectation
-    #: (90/50 = 1.8 produced none). Between this and the constant above, the
-    #: outcome is genuinely unmeasured and this test asserts nothing.
-    LINK_ONLY_IMPOSSIBLE_RATIO = 1.8
-
     def test_link_only_hits_track_the_corpus_cutoff_ratio(
         self, hybrid_link: ArmRun, golden: fx.GoldenSet
     ) -> None:
@@ -666,7 +667,7 @@ class TestLinkArmIntegrity:
         observed = sum(len(v) for v in hybrid_link.link_only.values())
         ratio = len(golden.records) / ARM_LIMIT
 
-        if ratio <= self.LINK_ONLY_IMPOSSIBLE_RATIO:
+        if ratio <= LINK_ONLY_IMPOSSIBLE_RATIO:
             assert observed == 0, (
                 f"a link-only hit appeared at corpus:cutoff ratio {ratio:.2f} "
                 f"({len(golden.records)} records, ARM_LIMIT={ARM_LIMIT}). At "
@@ -684,7 +685,7 @@ class TestLinkArmIntegrity:
             # numbers will see it.
             return
 
-        if ratio < self.LINK_ONLY_MEASURED_RATIO:
+        if ratio < LINK_ONLY_MEASURED_RATIO:
             # 1.8 < ratio < 3.0 — no measurement exists in this band. Asserting
             # either direction here would be a guess dressed as a contract.
             return
@@ -971,8 +972,7 @@ class TestBaselineReport:
             # ratio-banded judgement the assertion uses, and it reports what
             # was OBSERVED rather than what the arithmetic permits.
             "link_only_measurable": (
-                len(golden.records) / _ARM_LIMIT
-                >= TestLinkArmIntegrity.LINK_ONLY_MEASURED_RATIO
+                len(golden.records) / _ARM_LIMIT >= LINK_ONLY_MEASURED_RATIO
             ),
             "link_only_corpus_cutoff_ratio": round(len(golden.records) / _ARM_LIMIT, 3),
             "arm_limit": _ARM_LIMIT,
