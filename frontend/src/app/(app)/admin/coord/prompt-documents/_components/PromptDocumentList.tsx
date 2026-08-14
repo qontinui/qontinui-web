@@ -15,6 +15,7 @@ import { PromptDocumentCreateDialog } from "./PromptDocumentCreateDialog";
 import { PromptDocumentEditorDialog } from "./PromptDocumentEditorDialog";
 import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
+import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import type {
   PromptDocument,
   PromptDocumentKind,
@@ -210,8 +211,17 @@ export function PromptDocumentList() {
                   <DocumentRow
                     key={`${doc.kind}/${doc.name}`}
                     doc={doc}
+                    saving={saving}
                     onEdit={() => openEdit(doc)}
                     onHistory={() => openHistory(doc)}
+                    onSetAgentWritable={(next) =>
+                      updateDocument(doc.kind, doc.name, {
+                        agent_writable: next,
+                        change_description: next
+                          ? "Opened to agent writes by an operator"
+                          : "Protected from agent writes by an operator",
+                      })
+                    }
                     onClauses={
                       doc.kind === "policy" ? () => openClauses(doc) : undefined
                     }
@@ -270,13 +280,24 @@ export function PromptDocumentList() {
 
 interface DocumentRowProps {
   doc: PromptDocumentSummary;
+  /** True while any document write is in flight — disables the access toggle. */
+  saving: boolean;
   onEdit: () => void;
   onHistory: () => void;
+  /** Set this document's per-document agent write access. */
+  onSetAgentWritable: (next: boolean) => Promise<boolean>;
   /** Only set for `policy` documents — opens the structured clause manager. */
   onClauses?: () => void;
 }
 
-function DocumentRow({ doc, onEdit, onHistory, onClauses }: DocumentRowProps) {
+function DocumentRow({
+  doc,
+  saving,
+  onEdit,
+  onHistory,
+  onSetAgentWritable,
+  onClauses,
+}: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
   const restorable = doc.default_source != null;
@@ -314,6 +335,12 @@ function DocumentRow({ doc, onEdit, onHistory, onClauses }: DocumentRowProps) {
           {formatWhen(doc.updated_at)}
         </p>
       </div>
+
+      <AgentWriteAccessControl
+        doc={doc}
+        saving={saving}
+        onSet={onSetAgentWritable}
+      />
 
       {onClauses && (
         <Button

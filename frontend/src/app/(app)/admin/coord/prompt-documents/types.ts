@@ -99,6 +99,32 @@ export interface PromptDocumentSummary {
   default_source: string | null;
   /** Monotonic; bumped by coord on every edit. */
   current_version: number;
+  /**
+   * The operator's per-document agent-write setting, RAW.
+   *
+   * Three states, and they are not two: `true` = the operator opened this
+   * document, `false` = the operator protected it, **`null` = the operator has
+   * never ruled on it**, which falls back to coord's compile-time default.
+   *
+   * Never render `null` as an unchecked box or as "open". "Unset" and
+   * "explicitly open" have the same effect today and are different facts — the
+   * first tracks a later change to coord's default, the second overrides it
+   * permanently. Use `agent_write_source` to tell them apart.
+   */
+  agent_writable: boolean | null;
+  /** The resolved answer coord will actually enforce. */
+  agent_write_effective: boolean;
+  /**
+   * Where `agent_write_effective` came from: `"operator"` when this document
+   * carries an explicit setting, `"default"` when coord's built-in meta-policy
+   * rule decided.
+   *
+   * Computed server-side ON PURPOSE. Deriving it here would mean shipping a
+   * second copy of coord's `AGENT_UNWRITABLE_DOCUMENTS` list into the browser,
+   * and the day a fourth meta-policy is added in Rust this page would label it
+   * "open (default)" while coord denied every write to it.
+   */
+  agent_write_source: "operator" | "default";
   updated_by: string | null;
   updated_at: string;
 }
@@ -152,6 +178,16 @@ export interface PromptDocumentUpdate {
    * verbatim by the PATCH proxy; the server replaces stored attrs wholesale.
    */
   attrs?: PromptDocumentAttrs;
+  /**
+   * Set this document's per-document agent write access. `true` opens it,
+   * `false` protects it; omit to leave it alone.
+   *
+   * There is deliberately no way to clear it back to `null` (re-inherit the
+   * default) over the wire — coord has no encoding for it either. Unlike every
+   * other field here, setting this creates a VERSION: it is authority, and who
+   * changed it has to survive the next agent append.
+   */
+  agent_writable?: boolean;
 }
 
 /* ------------------------------------------------------------------------- *
@@ -274,6 +310,12 @@ export interface PromptDocumentVersionMeta {
   /** The change note recorded at edit time. */
   description: string | null;
   edited_by: string | null;
+  /**
+   * The document's `agent_writable` as of this version — the durable record of
+   * who changed the access setting, which the parent row's mutable
+   * `updated_by` cannot be (the next agent append overwrites it).
+   */
+  agent_writable: boolean | null;
   created_at: string;
 }
 
