@@ -111,7 +111,7 @@ export interface PromptDocumentSummary {
    * first tracks a later change to coord's default, the second overrides it
    * permanently. Use `agent_write_source` to tell them apart.
    */
-  agent_writable: boolean | null;
+  agent_writable?: boolean | null;
   /**
    * The resolved answer coord will actually enforce.
    *
@@ -134,6 +134,18 @@ export interface PromptDocumentSummary {
    * "open (default)" while coord denied every write to it.
    */
   agent_write_source?: "operator" | "default";
+  /**
+   * What coord's built-in rule says, IGNORING any operator override — `false`
+   * exactly for a meta-policy.
+   *
+   * This is NOT derivable from `agent_write_source`. Once an operator touches a
+   * document at all, `source` becomes `"operator"` permanently, so a
+   * confirmation keyed on `source === "default"` would fire the first time a
+   * meta-policy was opened and never again: open, protect, and the third click
+   * re-opens it silently. Whether a document is one the code protects does not
+   * change when the row is written, and only this field says so.
+   */
+  agent_write_builtin_default?: boolean;
   updated_by: string | null;
   updated_at: string;
 }
@@ -319,12 +331,6 @@ export interface PromptDocumentVersionMeta {
   /** The change note recorded at edit time. */
   description: string | null;
   edited_by: string | null;
-  /**
-   * The document's `agent_writable` as of this version — the durable record of
-   * who changed the access setting, which the parent row's mutable
-   * `updated_by` cannot be (the next agent append overwrites it).
-   */
-  agent_writable: boolean | null;
   created_at: string;
 }
 

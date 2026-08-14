@@ -128,13 +128,28 @@ export function AgentWriteAccessControl({
   // reject the PATCH field anyway on a build that does not know it.
   const known = coordReportsAccess(doc);
   const opening = !doc.agent_write_effective;
-  // Overriding a COMPILE-TIME protection is the deliberate case. Overriding an
-  // operator's own earlier `false` is an ordinary change of mind.
-  const overridesBuiltIn = opening && doc.agent_write_source === "default";
+  // Overriding a COMPILE-TIME protection is the deliberate case.
+  //
+  // Keyed on `agent_write_builtin_default` — what the code says regardless of
+  // any override — NOT on `agent_write_source === "default"`. The latter looks
+  // equivalent and is not: `source` flips to "operator" the first time the
+  // document is written and never flips back, so that version of this guard
+  // would confirm the first time a meta-policy was opened and stay silent
+  // forever after. Open it, protect it again, and the third click would re-open
+  // a meta-policy with no prompt at all — the exact thing this dialog exists to
+  // prevent. Whether a document IS a meta-policy does not change when the row
+  // is written.
+  const overridesBuiltIn = opening && doc.agent_write_builtin_default === false;
 
   const apply = async () => {
-    await onSet(opening);
-    setConfirmOpen(false);
+    // Only dismiss on success. `onSet` resolves false on any failure (the hook
+    // catches and toasts), and closing the dialog anyway is a stronger success
+    // signal than the toast is a failure one — the operator sees the dialog go
+    // away and the badge unchanged, and reads that as "it worked, the badge is
+    // stale" rather than "it failed".
+    if (await onSet(opening)) {
+      setConfirmOpen(false);
+    }
   };
 
   return (
@@ -144,8 +159,12 @@ export function AgentWriteAccessControl({
         title={title}
         className="shrink-0 text-[10px]"
         data-testid={`doc-access-${doc.kind}-${doc.name}`}
-        data-source={doc.agent_write_source}
-        data-effective={String(doc.agent_write_effective)}
+        data-source={doc.agent_write_source ?? "unknown"}
+        data-effective={
+          doc.agent_write_effective === undefined
+            ? "unknown"
+            : String(doc.agent_write_effective)
+        }
       >
         {label}
       </Badge>
@@ -165,7 +184,14 @@ export function AgentWriteAccessControl({
         }
         data-testid={`doc-access-toggle-${doc.kind}-${doc.name}`}
       >
-        {opening ? (
+        {/*
+          The icon shows the CURRENT state, not the action — the conventional
+          toggle affordance. Showing the action instead put an open padlock next
+          to a "Protected (default)" badge, two glyphs disagreeing about the same
+          fact in the same row. The action lives in the title and the confirm
+          dialog.
+        */}
+        {doc.agent_write_effective ? (
           <LockOpen className="size-4" />
         ) : (
           <Lock className="size-4" />
