@@ -6156,9 +6156,9 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, attrs?,
+    The body is forwarded as ``{description?, body?, attrs?, agent_writable?,
     change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
@@ -6167,6 +6167,19 @@ async def update_prompt_document(
     attrs object wholesale (the client merges before sending), and an attrs-only
     edit is document configuration, not content — coord updates it in place
     without creating a version.
+
+    ``agent_writable`` is the per-document agent write access flag
+    (``true`` = agents may write this document via
+    ``coord_write_prompt_document``, ``false`` = they may not). It is
+    deliberately NOT attrs-shaped: supplying it takes coord's **versioning**
+    path even when nothing else changes, because who may write a policy
+    document is authority rather than configuration and the record of who
+    changed it has to outlive the next agent append (which overwrites the
+    parent row's mutable ``updated_by``).
+
+    Omitting it leaves the current setting alone. There is no wire
+    representation for clearing it back to "no operator opinion" — coord has
+    none either.
     """
     return await _proxy_coord_patch(
         f"/coord/prompt-documents/{kind}/{name}",
