@@ -51,10 +51,22 @@ operator's record of who opened the document would be overwritten by the first
 agent that used the permission it granted. That is an audit trail that lies,
 which ``fleet_res_tel_02`` already ranks as worse than one that is absent.
 
-Versioning it instead means a flip creates a
-``prompt_document_versions`` row whose ``edited_by`` is immutable, and the
-existing ``/versions`` and ``/versions/:version/restore`` routes describe and
-revert the authorization state with machinery that already exists.
+Versioning it instead means a flip creates a ``prompt_document_versions`` row
+whose ``edited_by`` is immutable, so "who opened this document, and when" is
+answerable from the history table rather than from a field the next agent
+overwrites.
+
+**What versioning here does NOT buy, stated so nobody assumes it.** Restoring an
+old version deliberately does **not** restore that version's ``agent_writable``:
+coord's restore path passes the flag through unchanged, so the current access
+setting survives a body rollback. That is the safe direction and it is
+deliberate — every pre-``pdaw_01`` snapshot row has ``agent_writable = NULL``, so
+a restore that DID revert the flag would silently un-protect any document an
+operator had protected, as a side effect of an unrelated wording rollback, with
+nothing in the history UI showing it. The snapshot column is a record, not a
+restore source. Coord also does not currently project it onto the version-read
+API; if a future change surfaces flag history in the UI, that is where it should
+land, not in the restore semantics.
 
 Why the versions table is widened in the SAME migration
 =======================================================
