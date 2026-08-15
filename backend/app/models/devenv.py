@@ -614,6 +614,4 @@ class AutoEnrollPolicy(Base):
 
     def __repr__(self) -> str:
         """Return repr."""
-        return (
-            f"<AutoEnrollPolicy(owner={self.owner_user_id}, enabled={self.enabled})>"
-        )
+        return f"<AutoEnrollPolicy(owner={self.owner_user_id}, enabled={self.enabled})>"
