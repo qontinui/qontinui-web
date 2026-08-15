@@ -33248,6 +33248,48 @@
         "title": "RepoRefRequest",
         "type": "object"
       },
+      "ReposApplyDispatchRequest": {
+        "description": "Ask a machine's runner to reconcile its cloned repositories.\n\nThe server **requests**; the box decides and acts. Nothing here runs a clone\non a developer's machine \u2014 the target's own runner receives the directive,\napplies its LOCAL policy (workspace-root resolution, the incomparable-scope\nrefusal, the disk floor, per-repo auth), and reports. That separation is the\nsame one that retired the agent-dispatch model on 2026-07-13: a clone is\narbitrary code arriving on disk, so the authority to perform one stays with\nthe box that owns the box.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "title": "ReposApplyDispatchRequest",
+        "type": "object"
+      },
+      "ReposApplyDispatchResponse": {
+        "description": "Result of a dispatched repos apply.\n\n``dispatched`` says only that coord accepted the directive \u2014 NOT that the\nbox acted on it, which it may decline to do (no workspace root, incomparable\nscopes, insufficient disk). The outcome arrives as ordinary drift on the next\ncapture, which is the honest surface for it.",
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dispatched",
+          "confirm"
+        ],
+        "title": "ReposApplyDispatchResponse",
+        "type": "object"
+      },
       "ResendDeviceVerificationRequest": {
         "description": "Request to resend device verification email.",
         "properties": {
@@ -60417,6 +60459,65 @@
           }
         ],
         "summary": "Regenerate Enrollment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}/repos-apply-dispatch": {
+      "post": {
+        "description": "Ask this machine's runner to reconcile its cloned repositories.\n\nThe server REQUESTS; the box DECIDES. Coord publishes a directive on\n``events.devenv.repos_apply_requested.<device_id>``; the target's own runner\nruns its local apply and re-captures. Nothing here executes a clone.\n\n``dispatched: true`` means coord accepted the directive \u2014 not that the box\nacted on it. The runner may legitimately decline (no workspace root\nresolved, canonical and this box on incomparable scopes, free disk below the\nfloor), and the outcome shows up as ordinary drift on the next capture.\n\nPlan ``2026-08-06-devenv-repos-section``, P4.",
+        "operationId": "api_v1_devenv_machines_machine_id_repos_apply_dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReposApplyDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReposApplyDispatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Repos Apply",
         "tags": [
           "environments"
         ]

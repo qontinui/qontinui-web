@@ -65,8 +65,6 @@ from app.schemas.devenv import (
     ConfigHistoryEntry,
     DispatchEnrollRequest,
     DispatchEnrollResponse,
-    ReposApplyDispatchRequest,
-    ReposApplyDispatchResponse,
     EnvironmentCreate,
     EnvironmentDriftResponse,
     EnvironmentResponse,
@@ -76,6 +74,8 @@ from app.schemas.devenv import (
     MachineDriftReport,
     MachineResponse,
     MachineUpdate,
+    ReposApplyDispatchRequest,
+    ReposApplyDispatchResponse,
     SetCanonicalRequest,
     SetMachineEnvironmentRequest,
 )
