@@ -112,6 +112,102 @@ class TestDiffEnvelopes:
         assert delta.severity == "warning"
         assert report.severity == "warning"
 
+    def test_missing_repo_is_warning_not_critical(self) -> None:
+        """A repo canonical has and the box lacks → removed / **warning**.
+
+        This is the motivating case of the repos plan, and it is a ``removed``
+        delta — the one status that ignores the per-section base severity and
+        hardcodes ``critical``. Setting ``_SECTION_BASE_SEVERITY["repos"]``
+        alone therefore does NOT reach it; the per-section removed override is
+        what does. A box missing ten of the org's repositories must not pin the
+        environment rollup to ``critical`` forever, especially when some of
+        those repos are private and the developer cannot clone them at all.
+        """
+        canonical = _envelope(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner",
+                    "repo_qontinui_qontinui-stack": "https://github.com/qontinui/qontinui-stack",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner"
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repo_qontinui_qontinui-stack")
+        assert delta.status == "removed"
+        assert delta.severity == "warning"
+        assert delta.expected == "https://github.com/qontinui/qontinui-stack"
+        assert delta.derived is False
+        # Still real drift — softening the severity must not hide it.
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_removed_override_does_not_leak_to_other_sections(self) -> None:
+        """Only ``repos`` opts out; every other section keeps ``critical``.
+
+        The override table exists so one section can soften a rule that is right
+        everywhere else. A regression that made it global would quietly downgrade
+        a missing ``db_schema`` or ``services`` key — the most dangerous drift
+        there is — to a warning.
+        """
+        for section_name in ("services", "versions", "db_schema", "env_contract"):
+            canonical = _envelope({section_name: {"a": "1", "b": "2"}})
+            actual = _envelope({section_name: {"a": "1"}})
+            report = devenv_drift.diff_envelopes(canonical, actual)
+            delta = _delta(_section(report, section_name), "b")
+            assert delta.status == "removed"
+            assert delta.severity == "critical", f"{section_name} must stay critical"
+
+    def test_repos_scope_kind_difference_is_derived_and_info(self) -> None:
+        """Capture provenance is reported, never actionable, never drift.
+
+        Two boxes that resolved different KINDS of workspace root did not
+        enumerate the same concept — that is worth SEEING, which is why the
+        delta is reported at all. But no clone can install a scope, so it must
+        not count as machine drift or push the rollup up.
+        """
+        canonical = _envelope({"repos": {"repos_scope_kind": "declared"}})
+        actual = _envelope({"repos": {"repos_scope_kind": "home_default"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repos_scope_kind")
+        assert delta.status == "changed"
+        assert delta.derived is True
+        assert delta.severity == "info"
+        assert report.in_sync is True, "a derived-only difference is not drift"
+
+    def test_extra_repo_on_the_target_is_added_and_breaks_in_sync(self) -> None:
+        """A repo the box has but canonical does not is `added` — real drift.
+
+        Documented deliberately: it is why the collector filters by an owner
+        allowlist. Without that filter a developer's personal checkouts land
+        here, and each one breaks ``in_sync`` on a box that is otherwise
+        perfectly aligned.
+        """
+        canonical = _envelope({"repos": {"repos_scope_kind": "declared"}})
+        actual = _envelope(
+            {
+                "repos": {
+                    "repos_scope_kind": "declared",
+                    "repo_someone_personal-notes": "https://github.com/someone/personal-notes",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repo_someone_personal-notes")
+        assert delta.status == "added"
+        assert delta.derived is False
+        assert delta.severity == "warning"
+        assert report.in_sync is False
+
     def test_claude_accounts_change_is_warning(self) -> None:
         """A changed value in the ``claude_accounts`` section → warning (not info)."""
         canonical = _envelope({"claude_accounts": {"selection_mode": "all"}})
@@ -631,6 +727,20 @@ class TestSectionPolicy:
 
         assert sp.policy_for("something_new") == "report_only"
 
+    def test_repos_is_report_only_until_the_apply_module_exists(self) -> None:
+        """``repos`` must not be applyable before the runner can apply it.
+
+        The runner's apply driver returns ``Unsupported`` for an applyable
+        section with no module, while its plan renderer simultaneously reports
+        "N change(s) are in applyable sections - re-run with --confirm". Marking
+        ``repos`` applyable before ``env_agent/apply_repos.rs`` ships therefore
+        makes the box advertise an apply it cannot perform. Flip this — and this
+        test — in the same change that adds the module.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.policy_for("repos") == "report_only"
+
     def test_policy_map(self) -> None:
         """policy_map returns section -> policy for the given names."""
         from app.services import devenv_section_policy as sp
@@ -689,6 +799,47 @@ class TestDerivedKeys:
         assert derived == {"versions": ["probe_scope_kind"]}
         # Scoped to `versions` — it is not a blanket key name.
         assert sp.is_derived_key("services", "probe_scope_kind") is False
+
+    def test_repos_scope_kind_is_derived(self) -> None:
+        """The repos section's provenance key is reported, never applied.
+
+        ``repos_scope_kind`` names WHICH KIND of workspace-root resolution the
+        repo observations were taken under. No clone can install a scope, so it
+        must never be counted as actionable drift — but it must still be
+        REPORTED, because two boxes that resolved different kinds did not
+        enumerate the same concept and their repo lists are not comparable.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("repos", "repos_scope_kind") is True
+        derived = sp.derived_keys_map(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner",
+                    "repos_scope_kind": "discovered",
+                }
+            }
+        )
+        assert derived == {"repos": ["repos_scope_kind"]}
+
+    def test_derived_keys_do_not_leak_across_sections(self) -> None:
+        """``_DERIVED_KEYS`` is section-keyed and must stay that way.
+
+        ``is_derived_key`` answers False for an unrecognized key (its
+        conservative default), so registering a provenance key under one section
+        does NOT cover a same-named key in another. Getting this wrong is silent:
+        an unregistered provenance key simply keeps its section policy and gets
+        counted as an actionable apply action.
+        """
+        from app.services import devenv_section_policy as sp
+
+        # Each provenance key is derived in its OWN section only.
+        assert sp.is_derived_key("versions", "probe_scope_kind") is True
+        assert sp.is_derived_key("repos", "probe_scope_kind") is False
+        assert sp.is_derived_key("repos", "repos_scope_kind") is True
+        assert sp.is_derived_key("versions", "repos_scope_kind") is False
+        # A real repo key is never derived — cloning IS the apply action.
+        assert sp.is_derived_key("repos", "repo_qontinui_qontinui-stack") is False
 
     def test_machine_facts_are_not_derived(self) -> None:
         """node/python/rustc are shelled machine facts — they stay applyable."""

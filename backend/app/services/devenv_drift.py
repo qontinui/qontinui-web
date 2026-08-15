@@ -9,20 +9,26 @@ Severity heuristic
 ------------------
 
 * A ``removed`` delta (a key present on canonical but MEASURED-AND-ABSENT
-  on the target) is always ``"critical"`` — a missing piece of required
-  topology is the most dangerous drift. A key the target never measured is
-  not ``removed`` at all; see the unmeasured-key rule below.
+  on the target) is ``"critical"`` by default — a missing piece of required
+  topology is the most dangerous drift — **unless the section overrides it**
+  via ``_REMOVED_SEVERITY_OVERRIDE``. ``repos`` does: a repository the box has
+  not cloned is that section's ordinary case, and one the developer cannot
+  clone is unclearable, so a blanket ``critical`` would pin the rollup there
+  forever. A key the target never measured is not ``removed`` at all; see the
+  unmeasured-key rule below.
 * Otherwise the base severity is derived from the section name:
 
-  ===================  ==========
-  section              base sev
-  ===================  ==========
-  ``db_schema``        critical
-  ``versions``         critical
-  ``services``         warning
-  ``env_contract``     warning
-  (unknown)            info
-  ===================  ==========
+  ===================  ==========  ===============
+  section              base sev    removed sev
+  ===================  ==========  ===============
+  ``db_schema``        critical    critical
+  ``versions``         critical    critical
+  ``services``         warning     critical
+  ``env_contract``     warning     critical
+  ``claude_accounts``  warning     critical
+  ``repos``            warning     **warning**
+  (unknown)            info        critical
+  ===================  ==========  ===============
 
 * A ``schema_version`` mismatch between the two envelopes forces the
   overall report severity to ``"critical"`` regardless of per-key deltas.
@@ -102,6 +108,29 @@ _SECTION_BASE_SEVERITY: dict[str, SeverityT] = {
     "services": "warning",
     "env_contract": "warning",
     "claude_accounts": "warning",
+    # A missing repository blocks SOME work, not the box's ability to run, and
+    # `db_schema`-grade severity would drown the signal — see
+    # ``_REMOVED_SEVERITY_OVERRIDE`` for the half of this that actually decides
+    # the motivating case.
+    "repos": "warning",
+}
+
+# Per-section override of the ``removed``-delta severity.
+#
+# A ``removed`` delta is ``"critical"`` by default because a missing piece of
+# required topology is the most dangerous drift. That default is wrong for at
+# least one section, and the difference is not cosmetic: for ``repos``, "canonical
+# has it and the target does not" is the ORDINARY case the section exists to
+# report, not an emergency. Worse, a box whose developer lacks access to a private
+# repository can never clear it — so a blanket ``critical`` pins the whole
+# environment rollup to ``critical`` permanently on a condition the box cannot
+# act on. A rollup that is always critical is not a louder signal, it is a dead
+# one, which is the "drift signal rots" failure the repos plan names as a risk.
+#
+# Sections absent here keep the blanket ``"critical"``, so this table changes
+# nothing that existed before it.
+_REMOVED_SEVERITY_OVERRIDE: dict[str, SeverityT] = {
+    "repos": "warning",
 }
 
 
@@ -115,6 +144,15 @@ def _max_severity(severities: list[SeverityT]) -> SeverityT:
 def _section_base_severity(section: str) -> SeverityT:
     """Base severity for a section name (``"info"`` for unknown sections)."""
     return _SECTION_BASE_SEVERITY.get(section, "info")
+
+
+def _removed_severity(section: str) -> SeverityT:
+    """Severity for a ``removed`` delta in ``section``.
+
+    ``"critical"`` unless the section opts out — see
+    ``_REMOVED_SEVERITY_OVERRIDE`` for why an opt-out exists at all.
+    """
+    return _REMOVED_SEVERITY_OVERRIDE.get(section, "critical")
 
 
 def _extract_sections(envelope: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -240,15 +278,18 @@ def diff_envelopes(
                     )
                 )
             elif in_canon and not in_actual:
-                # Canonical key measured-and-missing on target — critical,
-                # unless derived.
+                # Canonical key measured-and-missing on target — critical unless
+                # derived, or unless the section overrides it
+                # (``_removed_severity``).
                 deltas.append(
                     KeyDelta(
                         key=key,
                         status="removed",
                         expected=expected,
                         actual=None,
-                        severity="info" if derived else "critical",
+                        severity=(
+                            "info" if derived else _removed_severity(section_name)
+                        ),
                         derived=derived,
                     )
                 )
