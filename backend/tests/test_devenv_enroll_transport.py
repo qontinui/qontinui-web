@@ -16,6 +16,11 @@ which is the whole reason the plan carries them:
 2. ``RunnerWebSocketManager.send_devenv_enroll`` must build the same envelope
    shape as ``send_dispatch`` and delegate to the relay, keeping the
    ``require_local_connection`` default strict.
+
+The Phase-1 shadow-probe tests that also lived here are gone with the probe
+itself: Phase 4's engine emits ``devenv_auto_enroll_decision`` for the same
+question, off the connect hot path, and its failure-must-read-as-UNKNOWN
+property is asserted in ``test_devenv_auto_enroll.py`` against the engine.
 """
 
 from __future__ import annotations
@@ -146,9 +151,10 @@ async def test_send_devenv_enroll_envelope_and_delegation() -> None:
     }
     # The default stays STRICT: the connect-handler caller owns the socket, so
     # the in-process gate is the correct one there.
-    assert relay.send_command_to_runner.call_args.kwargs[
-        "require_local_connection"
-    ] is True
+    assert (
+        relay.send_command_to_runner.call_args.kwargs["require_local_connection"]
+        is True
+    )
 
 
 @pytest.mark.asyncio
@@ -166,79 +172,7 @@ async def test_send_devenv_enroll_can_opt_out_of_local_gate() -> None:
     )
 
     assert ok is False
-    assert relay.send_command_to_runner.call_args.kwargs[
-        "require_local_connection"
-    ] is False
-
-
-@pytest.mark.asyncio
-async def test_runner_info_devenv_hint_is_parsed_but_not_trusted(monkeypatch) -> None:
-    """The client-asserted devenv block is logged beside server facts, never merged.
-
-    Decision 2's asymmetry: a hint may suppress enrollment on the client's own
-    behalf, but may never name the machine row, the environment or the owner.
-    The shadow line must therefore keep hint fields clearly separated from the
-    server-derived ones.
-    """
-    fake_logger = MagicMock()
-    monkeypatch.setattr(devices_ws, "logger", fake_logger)
-
-    class _Result:
-        @staticmethod
-        def all():
-            return []
-
-    class _Session:
-        async def execute(self, _stmt):
-            return _Result()
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_a):
-            return False
-
-    monkeypatch.setattr(devices_ws, "AsyncSessionLocal", lambda: _Session())
-
-    await devices_ws._log_devenv_enrollment_shadow(
-        "dev-1",
-        "user-1",
-        # A lying client claiming someone else's machine row.
-        {
-            "enrolled": False,
-            "instance_role": "secondary",
-            "machine_id": "not-mine",
-            "environment_id": "not-mine-either",
-        },
+    assert (
+        relay.send_command_to_runner.call_args.kwargs["require_local_connection"]
+        is False
     )
-
-    assert "devenv_auto_enroll_shadow" in _events(fake_logger.info)
-    kwargs = fake_logger.info.call_args.kwargs
-    # Server-derived: no row exists, so these stay false/None regardless of
-    # what the client claimed.
-    assert kwargs["has_machine"] is False
-    assert kwargs["machine_count"] == 0
-    assert kwargs["enrolled"] is False
-    assert kwargs["machine_id"] is None
-    # Client-asserted, kept under distinct `hint_` keys.
-    assert kwargs["hint_present"] is True
-    assert kwargs["hint_enrolled"] is False
-    assert kwargs["hint_instance_role"] == "secondary"
-
-
-@pytest.mark.asyncio
-async def test_shadow_probe_failure_logs_unknown_not_zero(monkeypatch) -> None:
-    """A failed probe must never be recorded as "no machine"."""
-    fake_logger = MagicMock()
-    monkeypatch.setattr(devices_ws, "logger", fake_logger)
-
-    def _boom():
-        raise RuntimeError("db down")
-
-    monkeypatch.setattr(devices_ws, "AsyncSessionLocal", _boom)
-
-    await devices_ws._log_devenv_enrollment_shadow("dev-1", "user-1", None)
-
-    assert "devenv_auto_enroll_shadow_failed" in _events(fake_logger.warning)
-    # Crucially, NO shadow line claiming zero machines was emitted.
-    assert "devenv_auto_enroll_shadow" not in _events(fake_logger.info)
