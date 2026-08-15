@@ -378,4 +378,60 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
       screen.queryByTestId("artifact-detail-error")
     ).not.toBeInTheDocument();
   });
+
+  it("does not paint a late FAILURE from A over a healthy B", async () => {
+    // The second variant, and a genuinely distinct code path: `load` writes
+    // `setFailed(full === null)`, so a superseded request that FAILED does not
+    // merely overwrite the detail — it flips `failed` on and renders "could
+    // not be loaded" over an artifact that is sitting there fetched and fine.
+    // Guarding only the success branch would leave exactly this hole, which is
+    // why it gets its own test rather than a second assertion above.
+    let resolveA: (v: WorkArtifactDetail | null) => void = () => {};
+    const slowA = new Promise<WorkArtifactDetail | null>((r) => {
+      resolveA = r;
+    });
+    const artifactB = detail({ id: "art-2", title: "The healthy artifact" });
+
+    const fetchDetail = vi
+      .fn()
+      .mockImplementationOnce(() => slowA)
+      .mockResolvedValueOnce(artifactB);
+
+    const { rerender } = render(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-1"
+        fetchDetail={fetchDetail}
+        correctKind={vi.fn()}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+
+    rerender(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-2"
+        fetchDetail={fetchDetail}
+        correctKind={vi.fn()}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByText("The healthy artifact")).toBeInTheDocument()
+    );
+
+    // A resolves LAST, and resolves to a failure.
+    await act(async () => {
+      resolveA(null);
+      await slowA;
+    });
+
+    expect(
+      screen.queryByTestId("artifact-detail-error")
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("The healthy artifact")).toBeInTheDocument();
+    expect(screen.getByTestId("artifact-body")).toBeInTheDocument();
+  });
 });
