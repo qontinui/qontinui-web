@@ -65,8 +65,19 @@ function statusLabel(status: KeyDelta["status"]): string {
     case "removed":
       return "Removed";
     case "changed":
-    default:
       return "Changed";
+    case "unknown":
+      // Deliberately NOT phrased as a difference: the capturing box's probe
+      // exceeded its budget, so nothing was observed about this key at all.
+      return "Not measured";
+    default: {
+      // The `default` this replaced returned "Changed", so a status nobody had
+      // handled rendered as a confirmed difference — exactly the false claim
+      // `unknown` exists to stop. Assigning to `never` makes any future member
+      // of DeltaStatus a COMPILE error here instead of a silent mislabel.
+      const exhaustive: never = status;
+      return exhaustive;
+    }
   }
 }
 
@@ -244,7 +255,12 @@ function MachineDriftCard({
 
 function SectionRow({ section }: { section: SectionDrift }) {
   const [open, setOpen] = useState(false);
-  const driftCount = section.deltas.length;
+  // Unmeasured keys are listed but are NOT drift — counting them here would
+  // let a slow capture probe inflate a machine's delta count.
+  const unknownCount = section.deltas.filter(
+    (d) => d.status === "unknown"
+  ).length;
+  const driftCount = section.deltas.length - unknownCount;
 
   return (
     <div className="rounded-md border border-border">
@@ -265,6 +281,7 @@ function SectionRow({ section }: { section: SectionDrift }) {
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-muted-foreground">
             {driftCount} {driftCount === 1 ? "delta" : "deltas"}
+            {unknownCount > 0 && ` · ${unknownCount} not measured`}
           </span>
           <Badge variant={severityVariant(section.severity, false)}>
             {section.severity}
@@ -295,6 +312,13 @@ function SectionRow({ section }: { section: SectionDrift }) {
 }
 
 function DeltaRow({ delta }: { delta: KeyDelta }) {
+  // On an `unknown` delta exactly one side is empty — the side whose capture
+  // never measured the key. Name it rather than showing a bare dash; the other
+  // side's value is real and still worth showing.
+  const unmeasured = delta.status === "unknown";
+  const side = (value: string | null) =>
+    value ?? (unmeasured ? "not measured" : "—");
+
   return (
     <div className="rounded-sm bg-muted/30 px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -321,16 +345,23 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
         <div className="min-w-0">
           <span className="text-muted-foreground">expected: </span>
           <span className="font-mono break-all">
-            {delta.expected ?? "—"}
+            {side(delta.expected)}
           </span>
         </div>
         <div className="min-w-0">
           <span className="text-muted-foreground">actual: </span>
           <span className={`font-mono break-all ${deltaSeverityClass(delta.severity)}`}>
-            {delta.actual ?? "—"}
+            {side(delta.actual)}
           </span>
         </div>
       </div>
+      {unmeasured && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          A capture probe for this key exceeded its budget, so it was never
+          measured. That is not the same as the key being absent — it is not
+          counted as drift and nothing here is safe to apply.
+        </p>
+      )}
     </div>
   );
 }

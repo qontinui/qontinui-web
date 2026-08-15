@@ -257,6 +257,16 @@ async def report_config(
         machine_id=str(machine.id),
         environment_id=str(environment_id),
         sections=list(envelope.sections.keys()),
+        # How many keys this capture could NOT measure, per section. ``None``
+        # (not 0) when the agent sent no ``unknown_keys`` at all — an older
+        # runner tells us nothing about what went unmeasured, which is a
+        # different fact from "nothing did". Logged so the capture-budget
+        # oracle can see unmeasured keys accumulating without re-reading JSONB.
+        unknown_key_counts=(
+            None
+            if envelope.unknown_keys is None
+            else {k: len(v) for k, v in envelope.unknown_keys.items()}
+        ),
         history_appended=history_appended,
     )
     return {

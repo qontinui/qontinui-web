@@ -5,6 +5,16 @@
 // derive the ADDITIVE set of changes that make the target match canonical:
 //   - `changed` / `removed` deltas  → "set KEY to the canonical value"
 //   - `added` deltas (extras the target has, canonical doesn't) → LEFT ALONE
+//   - `unknown` deltas (a probe exceeded the capture budget, so nobody
+//     measured the key) → LEFT ALONE. "We could not measure this" is not "you
+//     are missing this", and acting on it would install a version that may
+//     already be correct.
+//
+// The status filter below is ALLOW-listed on purpose. It used to skip only
+// `added`, which meant every future status fell straight through into a
+// remediation instruction by default — that is exactly how `unknown` would
+// have become "set python=3.12" for a key nobody looked at. A new status now
+// has to be admitted deliberately.
 //
 // The env_contract section stores presence only (secret backstop), so its
 // values can never be copied — those items are flagged `secret` (value null)
@@ -56,8 +66,15 @@ export function buildRemediation(report: MachineDriftReport): Remediation {
     const isSecret = section.section === SECRET_SECTION;
     const items: RemediationItem[] = [];
     for (const delta of section.deltas) {
-      // Additive: never touch keys the target has but canonical doesn't.
-      if (delta.status === "added") continue;
+      // ALLOW-list, not a deny-list. `changed` and `removed` are the only
+      // statuses where canonical's value is both KNOWN and settable here. The
+      // two it excludes:
+      //   - `added`   → additive: never touch keys the target has but
+      //                 canonical doesn't.
+      //   - `unknown` → nobody measured it, so there is nothing to reconcile
+      //                 toward; an instruction here could reinstall a version
+      //                 that is already correct.
+      if (delta.status !== "changed" && delta.status !== "removed") continue;
       // Repo-derived keys are read from the manifest next to the capturing
       // binary, so "set runner_crate_version to 1.0.5" is not an instruction
       // anyone can carry out — it converges by pulling the repo.
