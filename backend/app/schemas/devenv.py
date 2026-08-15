@@ -247,6 +247,41 @@ class DispatchEnrollResponse(BaseSchema):
     detail: str | None = None
 
 
+class ReposApplyDispatchRequest(BaseSchema):
+    """Ask a machine's runner to reconcile its cloned repositories.
+
+    The server **requests**; the box decides and acts. Nothing here runs a clone
+    on a developer's machine — the target's own runner receives the directive,
+    applies its LOCAL policy (workspace-root resolution, the incomparable-scope
+    refusal, the disk floor, per-repo auth), and reports. That separation is the
+    same one that retired the agent-dispatch model on 2026-07-13: a clone is
+    arbitrary code arriving on disk, so the authority to perform one stays with
+    the box that owns the box.
+    """
+
+    confirm: bool = False
+    """Whether the box should write, or only plan.
+
+    Defaults to a **dry run**. The runner defaults the same way, so an omitted
+    field asks for a plan at both ends — an omission must never be the dangerous
+    case.
+    """
+
+
+class ReposApplyDispatchResponse(BaseSchema):
+    """Result of a dispatched repos apply.
+
+    ``dispatched`` says only that coord accepted the directive — NOT that the
+    box acted on it, which it may decline to do (no workspace root, incomparable
+    scopes, insufficient disk). The outcome arrives as ordinary drift on the next
+    capture, which is the honest surface for it.
+    """
+
+    dispatched: bool
+    confirm: bool
+    detail: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # CI-node configuration (plan 2026-08-07, Phase 4)
 #

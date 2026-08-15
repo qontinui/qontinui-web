@@ -65,6 +65,8 @@ from app.schemas.devenv import (
     ConfigHistoryEntry,
     DispatchEnrollRequest,
     DispatchEnrollResponse,
+    ReposApplyDispatchRequest,
+    ReposApplyDispatchResponse,
     EnvironmentCreate,
     EnvironmentDriftResponse,
     EnvironmentResponse,
@@ -419,6 +421,75 @@ async def dispatch_enroll(
             detail=f"coord rejected the dispatch (HTTP {resp.status_code})",
         )
     return DispatchEnrollResponse(machine=created, dispatched=True)
+
+
+@router.post(
+    "/machines/{machine_id}/repos-apply-dispatch",
+    response_model=ReposApplyDispatchResponse,
+)
+async def dispatch_repos_apply(
+    machine_id: UUID,
+    payload: ReposApplyDispatchRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> ReposApplyDispatchResponse:
+    """Ask this machine's runner to reconcile its cloned repositories.
+
+    The server REQUESTS; the box DECIDES. Coord publishes a directive on
+    ``events.devenv.repos_apply_requested.<device_id>``; the target's own runner
+    runs its local apply and re-captures. Nothing here executes a clone.
+
+    ``dispatched: true`` means coord accepted the directive — not that the box
+    acted on it. The runner may legitimately decline (no workspace root
+    resolved, canonical and this box on incomparable scopes, free disk below the
+    floor), and the outcome shows up as ordinary drift on the next capture.
+
+    Plan ``2026-08-06-devenv-repos-section``, P4.
+    """
+    machine = await machine_repo.get(
+        db, owner_id=current_user.id, machine_id=machine_id
+    )
+    if machine is None:
+        raise _not_found("machine")
+    # A machine with no bound coord device has no runner to ask. That is a
+    # precondition failure, not a soft dispatch failure: retrying cannot fix it,
+    # so say so rather than returning `dispatched: false` and inviting a retry.
+    if machine.coord_device_id is None:
+        raise _conflict(
+            "machine_not_paired",
+            "This machine is not bound to a coord device, so there is no runner "
+            "to ask. Enroll it from the device first.",
+        )
+
+    auth = request.headers.get("Authorization")
+    headers = {"Authorization": auth} if auth else {}
+
+    try:
+        resp = await post_to_coord(
+            "/devenv/repos-apply-dispatch",
+            headers=headers,
+            json_body={
+                "target_device_id": str(machine.coord_device_id),
+                "confirm": payload.confirm,
+            },
+            log_event="devenv_dispatch_repos_apply",
+            machine_id=str(machine.id),
+            target_device_id=str(machine.coord_device_id),
+        )
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else "coord dispatch failed"
+        return ReposApplyDispatchResponse(
+            dispatched=False, confirm=payload.confirm, detail=str(detail)
+        )
+
+    if resp.status_code >= 400:
+        return ReposApplyDispatchResponse(
+            dispatched=False,
+            confirm=payload.confirm,
+            detail=f"coord rejected the dispatch (HTTP {resp.status_code})",
+        )
+    return ReposApplyDispatchResponse(dispatched=True, confirm=payload.confirm)
 
 
 @router.get("/machines", response_model=list[MachineResponse])

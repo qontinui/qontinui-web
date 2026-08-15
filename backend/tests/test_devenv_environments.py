@@ -1536,6 +1536,147 @@ class TestDispatchEnroll:
         assert body["machine"]["enrollment_code"]
 
 
+class TestDispatchReposApply:
+    """P4 — POST /machines/{id}/repos-apply-dispatch asks a machine's runner to
+    reconcile its cloned repositories. The server REQUESTS; the box DECIDES."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_the_device_and_confirm_flag(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured["path"] = path
+            captured["body"] = json_body
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "repos-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+
+        assert r.status_code == 200, r.text
+        assert r.json() == {"dispatched": True, "confirm": True, "detail": None}
+        assert captured["path"] == "/devenv/repos-apply-dispatch"
+        assert captured["body"] == {
+            "target_device_id": device_id,
+            "confirm": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_omitted_confirm_dispatches_a_dry_run(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """An omitted ``confirm`` must reach coord as ``false``.
+
+        Defence in depth with the runner's own default: a request that forgets
+        the field asks for a plan, never for mutation of someone's disk.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured["body"] = json_body
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "dryrun-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 200, r.text
+        assert captured["body"]["confirm"] is False
+        assert r.json()["confirm"] is False
+
+    @pytest.mark.asyncio
+    async def test_an_unpaired_machine_is_a_conflict_not_a_soft_failure(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """No bound coord device means there is no runner to ask.
+
+        A retry cannot fix that, so it must not return ``dispatched: false``
+        (which invites one) — it is a precondition failure.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _unreachable(*a, **kw):  # pragma: no cover - must not be called
+            raise AssertionError("coord must not be called for an unpaired machine")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _unreachable)
+        async with _client(app) as client:
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "unpaired"})
+            machine_id = r.json()["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "machine_not_paired"
+
+    @pytest.mark.asyncio
+    async def test_coord_rejection_is_a_soft_failure(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        calls: list[str] = []
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            calls.append(path)
+            # First call is the enroll dispatch; the second is ours.
+            if path == "/devenv/repos-apply-dispatch":
+                return httpx.Response(400, json={"error": "unknown device"})
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "rejecting-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is False
+        assert r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_another_owners_machine_is_404(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _unreachable(*a, **kw):  # pragma: no cover - must not be called
+            raise AssertionError("coord must not be called for a foreign machine")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _unreachable)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/{uuid4()}/repos-apply-dispatch", json={}
+            )
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "machine_not_found"
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User
