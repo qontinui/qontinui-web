@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -267,11 +267,33 @@ export function ArtifactDetailDialog({
   const [failed, setFailed] = useState(false);
   const [savingKind, setSavingKind] = useState(false);
 
+  /**
+   * Monotonic id of the newest detail request. Every `setState` in [`load`] is
+   * gated on still owning it.
+   *
+   * A boolean `cancelled` captured by the effect cannot do this job: the writes
+   * live INSIDE `load` (so the retry button can reuse it), which the effect's
+   * closure cannot reach — it only gets to look after `load` has already
+   * painted. Following an edge from artifact A to B while A is in flight then
+   * inverts: `load(B)` paints B, the late `load(A)` overwrites it and clears
+   * `loading`, and a post-hoc guard can only null the detail out — leaving
+   * `detail=null, failed=false, loading=false`, i.e. a permanent skeleton for
+   * an artifact that fetched fine. Out-of-order resolution is easy here,
+   * because the detail read makes up to two 5s coord round-trips when
+   * `work_unit_slug` is set. So drop stale resolutions BEFORE they write.
+   */
+  const requestIdRef = useRef(0);
+
   const load = useCallback(
     async (id: string) => {
+      const reqId = ++requestIdRef.current;
       setLoading(true);
       setFailed(false);
       const full = await fetchDetail(id);
+      // Stale: a newer request superseded this one. Write nothing at all —
+      // not the detail, not `failed`, and not `loading` (the live request
+      // owns that and will clear it when it lands).
+      if (reqId !== requestIdRef.current) return full;
       setDetail(full);
       setFailed(full === null);
       setLoading(false);
@@ -281,21 +303,19 @@ export function ArtifactDetailDialog({
   );
 
   useEffect(() => {
-    let cancelled = false;
     if (!open || !artifactId) {
+      // Invalidate anything in flight so it cannot paint into a closed dialog.
+      requestIdRef.current += 1;
       setDetail(null);
       setFailed(false);
+      setLoading(false);
       return;
     }
     setDetail(null);
-    void (async () => {
-      const full = await load(artifactId);
-      // Guard the STATE, not the fetch: a stale resolution must not overwrite
-      // a newer artifact's detail after the operator followed an edge.
-      if (cancelled && full) setDetail(null);
-    })();
+    void load(artifactId);
     return () => {
-      cancelled = true;
+      // Param changed or unmounted — the in-flight request is now stale.
+      requestIdRef.current += 1;
     };
   }, [open, artifactId, load]);
 
