@@ -17,12 +17,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 import { ArtifactDetailDialog } from "./ArtifactDetailDialog";
+import { KIND_LABELS } from "../types";
 import type { CandidateCoordLink, WorkArtifactDetail } from "../types";
 
 const UNLINKED: CandidateCoordLink = {
@@ -433,5 +435,118 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("The healthy artifact")).toBeInTheDocument();
     expect(screen.getByTestId("artifact-body")).toBeInTheDocument();
+  });
+});
+
+/** Open the kind dropdown and pick `label`. Radix needs real pointer events. */
+async function correctKindTo(label: string) {
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("artifact-kind-select"));
+  await user.click(await screen.findByRole("option", { name: label }));
+}
+
+describe("ArtifactDetailDialog — the kind correction obeys the same guard", () => {
+  it("does not let its refresh paint over an artifact opened since", async () => {
+    // `handleKind` used to call `fetchDetail` RAW — no generation bump, no
+    // generation check — so it drove straight past the guard `load` installs.
+    // The refresh makes up to two 5s coord round-trips, which is ample time to
+    // follow a provenance edge; the late refresh then repaints A over B. And
+    // because `handleKind` keys off `detail.id`, the operator's NEXT
+    // correction PATCHes A while the dialog reads B — locking the wrong row.
+    let resolveRefresh: (v: WorkArtifactDetail | null) => void = () => {};
+    const slowRefresh = new Promise<WorkArtifactDetail | null>((r) => {
+      resolveRefresh = r;
+    });
+
+    const fetchDetail = vi
+      .fn()
+      // 1: the initial load of A.
+      .mockResolvedValueOnce(detail({ id: "art-1", title: "Artifact A" }))
+      // 2: the post-correction refresh of A — still in flight.
+      .mockImplementationOnce(() => slowRefresh)
+      // 3: B, opened by following an edge.
+      .mockResolvedValueOnce(detail({ id: "art-2", title: "Artifact B" }));
+    const correctKind = vi.fn().mockResolvedValue(true);
+
+    const { rerender } = render(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-1"
+        fetchDetail={fetchDetail}
+        correctKind={correctKind}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Artifact A")).toBeInTheDocument()
+    );
+
+    await correctKindTo(KIND_LABELS.handoff);
+    await waitFor(() =>
+      expect(correctKind).toHaveBeenCalledWith("art-1", "handoff")
+    );
+    // The refresh must actually be out before we navigate, or the race the
+    // test is about never happens.
+    await waitFor(() => expect(fetchDetail).toHaveBeenCalledTimes(2));
+
+    rerender(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-2"
+        fetchDetail={fetchDetail}
+        correctKind={correctKind}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Artifact B")).toBeInTheDocument()
+    );
+
+    // NOW let the superseded refresh land.
+    await act(async () => {
+      resolveRefresh(detail({ id: "art-1", title: "Artifact A" }));
+      await slowRefresh;
+    });
+
+    expect(screen.getByText("Artifact B")).toBeInTheDocument();
+    expect(screen.queryByText("Artifact A")).not.toBeInTheDocument();
+    expect(screen.getByTestId("artifact-body")).toBeInTheDocument();
+  });
+
+  it("surfaces a refresh that failed after the write succeeded", async () => {
+    // `if (refreshed) setDetail(refreshed)` swallowed a null. The success
+    // toast ("Kind set to … and locked") then sat next to a Select still
+    // showing the OLD kind — a screen that asserts both that the write landed
+    // and that it did not, with nothing telling the operator which is true.
+    const fetchDetail = vi
+      .fn()
+      .mockResolvedValueOnce(detail({ id: "art-1", title: "Artifact A" }))
+      .mockResolvedValueOnce(null);
+    const correctKind = vi.fn().mockResolvedValue(true);
+
+    render(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-1"
+        fetchDetail={fetchDetail}
+        correctKind={correctKind}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Artifact A")).toBeInTheDocument()
+    );
+
+    await correctKindTo(KIND_LABELS.handoff);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-detail-error")).toBeInTheDocument()
+    );
+    expect(screen.getByTestId("artifact-detail-retry")).toBeInTheDocument();
+    // The stale view is gone rather than lingering as an unlabelled lie.
+    expect(screen.queryByTestId("artifact-kind-select")).not.toBeInTheDocument();
   });
 });

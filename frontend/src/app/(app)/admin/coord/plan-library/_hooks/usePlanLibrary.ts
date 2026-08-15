@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
 import type {
@@ -102,19 +102,49 @@ export function usePlanLibrary() {
     return () => clearTimeout(id);
   }, [filters, applied]);
 
+  /**
+   * Monotonic id of the newest list request. EVERY write in [`load`] — the
+   * rows, the total, both branches of the error state and `loading` — is
+   * gated on still owning it.
+   *
+   * `load` is recreated on `[applied, offset]` and fired by the effect below,
+   * so overlapping filter or page changes are ordinary, not exotic. Ungated,
+   * all four writes race:
+   *
+   * * Next then Prev, and the offset-50 response can land last — page 2's rows
+   *   rendered under "1–50 of 200".
+   * * An honesty INVERSION on the error state, which is the worst of the four.
+   *   A late failure runs `setError(...)` and paints the amber "these may be
+   *   out of date" banner over rows that are in fact fresh; a late success
+   *   runs `setError(null)` and clears a banner that was telling the truth.
+   * * `finally { setLoading(false) }` re-enables the pager while the live
+   *   request is still out.
+   *
+   * An `AbortController` cannot do this job here: `http-client.ts` overwrites
+   * the caller's `signal` with its own timeout controller, so the abort never
+   * reaches the request. This is the same counter pattern
+   * `ArtifactDetailDialog` uses, for the same reason.
+   */
+  const requestIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
+    setLoading(true);
     try {
-      setLoading(true);
       const data = await httpClient.get<WorkArtifactListResponse>(
         `${API}?${toQuery(applied, offset)}`
       );
+      // Superseded: write NOTHING. Not the rows, not the error state, and not
+      // `loading` — the live request owns that and clears it when it lands.
+      if (reqId !== requestIdRef.current) return;
       setItems(data.items ?? []);
       setTotal(data.total ?? 0);
       setError(null);
     } catch (err) {
+      if (reqId !== requestIdRef.current) return;
       setError(message(err, "Failed to load the plan library"));
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) setLoading(false);
     }
   }, [applied, offset]);
 

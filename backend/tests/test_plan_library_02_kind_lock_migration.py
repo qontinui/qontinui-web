@@ -130,7 +130,16 @@ def _index_defs(engine: Engine) -> dict[str, str]:
 
 @_PG_SKIP
 def test_upgrade_downgrade_upgrade_round_trip() -> None:
-    """head → downgrade -1 → head. ``-1`` is correct: this IS the head."""
+    """head → downgrade past THIS revision → head.
+
+    The rewind target is ``_PARENT_REVISION_ID`` by NAME, not ``-1``. A
+    relative step is correct only while this revision is the head, and being
+    the head is a property of the branch on the day the test was written, not
+    of the revision. The moment any PR chains a descendant on, ``-1`` unwinds
+    THAT revision instead, ``kind_locked`` survives, and the assertions below
+    fail with a message blaming plan-library on an unrelated change. The same
+    fix is already in the sibling ``plan_library_01`` round trip.
+    """
     admin_url = admin_database_url()
     root = backend_root()
 
@@ -153,7 +162,7 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         assert "source_repo" in scan_idx
         assert "kind_locked" in indexes["ix_work_artifacts_kind_locked"]
 
-        run_alembic(root, db_url, "downgrade", "-1")
+        run_alembic(root, db_url, "downgrade", _PARENT_REVISION_ID)
         assert _column(engine, "kind_locked") is None, (
             "kind_locked survived the downgrade"
         )

@@ -20,6 +20,7 @@ checks the tables actually landed in ``agent`` rather than in ``public``.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -27,6 +28,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import work_artifact as crud
@@ -792,6 +794,37 @@ class TestHttpSurface:
         )
         assert both.status_code == 422
 
+    async def test_edge_to_itself_is_refused(self, client: httpx.AsyncClient) -> None:
+        """A self-edge makes a plan its own permanently-unmet dependency.
+
+        ``/candidates`` walks ``depends_on`` to decide readiness, so
+        ``A depends_on A`` removes A from every candidate page forever with no
+        visible cause. Both spellings are refused — the outgoing one and the
+        incoming one, which produce the identical row.
+        """
+        a = (await client.post(API_PREFIX, json=_payload(body="self"))).json()[
+            "artifact"
+        ]
+
+        outgoing = await client.post(
+            f"{API_PREFIX}/{a['id']}/edges",
+            json={"to_id": a["id"], "relation": "depends_on"},
+        )
+        assert outgoing.status_code == 422, outgoing.text
+        assert "itself" in outgoing.text
+
+        incoming = await client.post(
+            f"{API_PREFIX}/{a['id']}/edges",
+            json={"from_id": a["id"], "relation": "depends_on"},
+        )
+        assert incoming.status_code == 422, incoming.text
+
+        # And nothing was written by either attempt.
+        detail = await client.get(
+            f"{API_PREFIX}/{a['id']}", params={"include_coord": "false"}
+        )
+        assert detail.json()["edges"] == []
+
     async def test_edge_to_missing_artifact_is_404(
         self, client: httpx.AsyncClient
     ) -> None:
@@ -845,6 +878,56 @@ class TestHttpSurface:
 
         by_q = await client.get(API_PREFIX, params={"q": "transfer"})
         assert by_q.json()["total"] >= 1
+
+
+class TestOrgScopeFailsClosed:
+    """A broken org lookup must not degrade into the shared NULL bucket.
+
+    ``organization_id = NULL`` is a REAL scope here — the bucket unprovisioned
+    principals write into — so "the lookup returned nothing" and "the lookup
+    blew up" cannot be allowed to produce the same answer. A statement timeout
+    on a fully-provisioned operator would otherwise file their artifact in a
+    bucket shared with every other principal that degraded the same way, and
+    the two causes emit an identical log line.
+    """
+
+    async def test_a_failed_org_lookup_is_503_not_the_null_bucket(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        with patch(
+            "app.api.v1.endpoints.plan_library.resolve_personal_organization",
+            new=AsyncMock(side_effect=OperationalError("SELECT 1", {}, Exception())),
+        ):
+            resp = await client.post(API_PREFIX, json=_payload(body="scoped write"))
+
+        assert resp.status_code == 503, resp.text
+        assert "organization scope" in resp.text
+
+    async def test_a_failed_org_lookup_fails_reads_too(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Reads share the scope, so a silent fall-through would show the
+        NULL bucket's rows to a caller who owns an organization."""
+        with patch(
+            "app.api.v1.endpoints.plan_library.resolve_personal_organization",
+            new=AsyncMock(side_effect=OperationalError("SELECT 1", {}, Exception())),
+        ):
+            resp = await client.get(API_PREFIX)
+
+        assert resp.status_code == 503, resp.text
+
+    async def test_genuine_absence_still_scopes_to_the_null_bucket(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """The degenerate case is unchanged: no org row is not an error."""
+        with patch(
+            "app.api.v1.endpoints.plan_library.resolve_personal_organization",
+            new=AsyncMock(return_value=None),
+        ):
+            resp = await client.post(API_PREFIX, json=_payload(body="null bucket"))
+
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["artifact"]["organization_id"] is None
 
 
 class TestCaptureHealth:

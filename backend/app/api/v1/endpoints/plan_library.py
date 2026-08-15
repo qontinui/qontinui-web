@@ -112,7 +112,7 @@ from app.schemas.plan_library import (
     WorkArtifactUpsertResponse,
     WorkArtifactVersionRead,
 )
-from app.services.permissions import get_personal_organization
+from app.services.permissions import resolve_personal_organization
 
 logger = structlog.get_logger(__name__)
 
@@ -137,8 +137,36 @@ async def _resolve_org_id(db: AsyncSession, user: User) -> UUID | None:
     share the NULL bucket. Every registered user gets a personal org at
     signup, so this is a degenerate local/bootstrap case — but it is the
     reason this returns ``None`` rather than inventing a per-user sentinel.
+
+    Which is exactly why the lookup FAILING may not fall through to that same
+    bucket. ``resolve_personal_organization`` is used rather than the
+    swallowing ``get_personal_organization``: a statement timeout or a pool
+    blip during the org read on a fully-provisioned operator would otherwise
+    be indistinguishable from genuine absence, and would silently write the
+    artifact into a scope shared with every other principal that degraded the
+    same way. That is this module's own "an unavailable dependency is
+    UNKNOWN, never empty" invariant (#5) applied to authorization scope, so
+    it fails CLOSED with a 503 and the caller retries.
     """
-    org = await get_personal_organization(db, user.id)
+    try:
+        org = await resolve_personal_organization(db, user.id)
+    except Exception as exc:  # noqa: BLE001 — re-raised as 503 below
+        logger.error(
+            "plan_library.org_scope_lookup_failed",
+            user_id=str(user.id),
+            error=str(exc),
+            detail="failing closed rather than scoping to the NULL bucket",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Could not resolve the caller's organization scope. This is a "
+                "transient dependency failure, not an authorization decision — "
+                "retry. (Proceeding would scope this request to the shared "
+                "NULL organization bucket.)"
+            ),
+        ) from exc
+
     if org is None:
         logger.info(
             "plan_library.no_personal_organization",
@@ -267,6 +295,24 @@ def _citation_rows(payload: object) -> list[object]:
     return []
 
 
+def _is_transport_failure(http_status: int) -> bool:
+    """Is this status evidence that COORD ITSELF is unreachable/broken?
+
+    Only 5xx qualifies, and that covers both sources: the proxy's own
+    transport mapping (``httpx.ConnectError`` → 502,
+    ``httpx.TimeoutException`` → 504, in ``operations._proxy_coord_get``) and
+    coord answering with a server error of its own.
+
+    A 4xx is deliberately NOT a transport failure. 401/403 is coord's auth
+    layer rejecting the forwarded credential for that route, 404 is "no such
+    work unit", 405 is "wrong method for this path" — each is coord
+    *answering about one route*, and none of them predicts anything about the
+    next slug's read. Tripping a page-wide circuit on them is how
+    ``coord_available`` ended up false on every request.
+    """
+    return http_status >= 500
+
+
 class _CoordProbe:
     """One page's coord reads, with a fail-fast circuit.
 
@@ -276,6 +322,10 @@ class _CoordProbe:
     That keeps a coord outage costing one 5s timeout for the whole page
     instead of one per row, which is what makes "degrade gracefully" actually
     graceful.
+
+    "Transport failure" is narrow on purpose (:func:`_is_transport_failure`):
+    a per-route 4xx leaves the circuit closed, because it is coord answering,
+    not coord being unreachable.
 
     ``degraded`` is sticky and is what the response's ``coord_available: false``
     reports.
@@ -298,10 +348,30 @@ class _CoordProbe:
         ``http_status`` is coord's status when it answered with one (404 is a
         real answer: "no such work unit"); ``error`` is set when the call
         could not be completed at all.
+
+        The circuit trips on TRANSPORT-CLASS failures only — see
+        :func:`_is_transport_failure`. A 4xx is coord answering *about this
+        route*, which says nothing about whether the next slug's read will
+        work, and tripping on one made ``coord_available`` permanently false:
+        the citations hop is registered on coord as ``post``/``delete`` behind
+        a ``require_jwt`` layer, so a GET there NEVER 404s — it 401/403s (the
+        layer rejects) or 405s (method mismatch). That is the same reasoning
+        :meth:`link_for` already applies to the citations hop itself ("absence
+        of a route is not evidence of an absence of PRs"); the circuit obeys
+        it too, or the one flag whose job is signalling a real coord outage
+        can never do so.
+
+        The ``degraded`` short-circuit is checked INSIDE the semaphore, not
+        before it. Checked outside, tasks 7+ of a fan-out have already passed
+        it by the time they park in ``acquire``, so a trip could never
+        actually shorten the page: 100 linked slugs against a hung coord cost
+        ceil(100/6) × 5s ≈ 85s, holding the request-scoped session and six
+        httpx connections the whole time. Inside, a trip is observed by every
+        task still queued.
         """
-        if self.degraded:
-            return None, None, self.reason or "coord unavailable"
         async with self._gate:
+            if self.degraded:
+                return None, None, self.reason or "coord unavailable"
             try:
                 payload = await _proxy_coord_get(
                     path,
@@ -310,10 +380,7 @@ class _CoordProbe:
                 )
             except HTTPException as exc:
                 detail = f"coord returned {exc.status_code}"
-                # 404 is coord ANSWERING. Every other status (502/504 from the
-                # proxy's own transport mapping, 401/403, 5xx) means this read
-                # produced no knowledge — trip the circuit.
-                if exc.status_code != 404:
+                if _is_transport_failure(exc.status_code):
                     self._trip(detail)
                 return None, exc.status_code, detail
             except Exception as exc:  # noqa: BLE001 — degrade, never 500
@@ -339,8 +406,13 @@ class _CoordProbe:
         ⚠️ **Known gap, verified 2026-08-15.** Coord registers only ``post``
         and ``delete`` on that second path; the read half exists today ONLY as
         the ``coord_work_unit_list_citations`` MCP tool, with no REST twin. So
-        against the currently-deployed coord this hop 404s and
-        ``linked_prs_state`` reads ``"unavailable"``. That is the correct
+        against the currently-deployed coord this hop never succeeds — the
+        ``require_jwt`` layer in front of the path rejects a forwarded Cognito
+        bearer with 401/403, and a credential that clears the layer gets a 405
+        for the method — and ``linked_prs_state`` reads
+        ``"unavailable"``. (It is specifically NOT a 404, which is why the
+        page-wide circuit must not treat "not 404" as "coord is down".)
+        That is the correct
         honest answer — the alternative (reporting an empty PR list) would
         assert a fact this read has not established, and the plan is explicit
         that an unavailable coord must not read as "no PRs". Adding the GET is
@@ -386,8 +458,10 @@ class _CoordProbe:
             f"/coord/work-units/{encoded}/citations"
         )
         if cites is None:
-            # Includes 404/405 on the route itself — absence of a route is not
-            # evidence of an absence of PRs.
+            # Includes 401/403/404/405 on the route itself — absence of a
+            # route (or of permission to call it) is not evidence of an
+            # absence of PRs. None of those trips the page-wide circuit
+            # either; see ``_is_transport_failure``.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = (
                 cite_error or f"coord returned {cite_status} for citations"
@@ -996,11 +1070,27 @@ async def create_work_artifact_edge(
     Supply exactly one of ``to_id`` (this artifact → that one, an OUTGOING
     edge) or ``from_id`` (that artifact → this one, an INCOMING edge).
     Re-posting an identical triple is idempotent and returns 200.
+
+    A self-edge is refused. ``/candidates`` walks ``depends_on`` to compute
+    unmet dependencies, so an artifact pointing at itself becomes its own
+    permanently-unmet blocker and can never be reported as ready — and the
+    prompt-chain walk would have to defend against the same cycle. There is
+    no provenance relation an artifact can meaningfully hold with itself.
     """
     if (payload.to_id is None) == (payload.from_id is None):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Supply exactly one of 'to_id' (outgoing) or 'from_id' (incoming).",
+        )
+
+    if payload.to_id == artifact_id or payload.from_id == artifact_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "An artifact cannot be linked to itself: a 'depends_on' "
+                "self-edge makes the artifact its own unmet dependency and it "
+                "can never appear as ready in /candidates."
+            ),
         )
 
     org_id = await _resolve_org_id(db, current_user)
