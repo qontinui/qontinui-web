@@ -37,6 +37,32 @@ Invariants this module is responsible for
 6. **``/candidates`` emits no score.** Design decision D6: the read exposes
    the ranking inputs, the agent ranks. A hardcoded criticality score would be
    a guess frozen into SQL.
+7. **Two credentials open this surface; one route takes only the first.**
+   Every route except ``PATCH /{id}/kind`` authenticates with EITHER a Cognito
+   user JWT or a coord-issued device-token JWT, via
+   :func:`~app.api.deps.get_audit_actor_user`.
+
+   This is not a convenience. The deterministic capture backbone is the runner
+   scan (``plan_workunit_adapter/body_push.rs``, which POSTs the upsert and its
+   edges) and the agent write door is ``mcp/plan_library.rs`` (which POSTs the
+   same two and reads the list + ``/candidates``); both hold ONLY the runner's
+   device JWT, attached by ``crate::auth::attach_device_auth``. Cognito-only
+   routes therefore 401 every one of those calls, and the corpus quietly fills
+   from nothing but a human clicking in the browser — a silent failure, because
+   an empty library is indistinguishable from a library nobody wrote to.
+
+   Widening changes NO scoping. A device resolves to its paired operator and
+   the org still comes from that principal's personal organization, so
+   invariant 1 holds unchanged — and it is exactly why the org must come from a
+   credential the runner owns rather than from the request body.
+
+   ``PATCH /{id}/kind`` stays Cognito-only ON PURPOSE. It is the operator's
+   override of a heuristic, and it sets ``kind_locked``, whose entire job is to
+   stop the next runner scan from putting the guess back. A door the scan could
+   call to lock in its own guess would cancel out the only mechanism that
+   constrains it. The runner does not call it (it logs the route as operator
+   guidance on the ambiguous-kind path and leaves it alone), so the narrower
+   dependency costs nothing and keeps the correction a human assertion.
 """
 
 import asyncio
@@ -57,7 +83,7 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_active_user, get_async_db
+from app.api.deps import current_active_user, get_async_db, get_audit_actor_user
 from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
 from app.crud import work_artifact as crud
 from app.models.user import User
@@ -414,7 +440,7 @@ async def list_work_artifacts(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactListResponse:
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_artifacts(
@@ -446,7 +472,7 @@ async def list_work_artifacts(
 async def list_divergent_artifacts(
     kind: str | None = Query(None, description="Restrict to one artifact kind"),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> DivergentResponse:
     """Two distinct forks, reported side by side.
 
@@ -501,7 +527,7 @@ async def list_divergent_artifacts(
 )
 async def get_capture_health(
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> CaptureHealthResponse:
     """Which door is actually feeding the store.
 
@@ -565,7 +591,7 @@ async def list_plan_candidates(
         "Set false for a purely local, coord-free read.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> PlanCandidateResponse:
     """Candidate selection for agents — signals, never a verdict.
 
@@ -706,7 +732,7 @@ async def get_work_artifact(
         "look' is not the same answer as 'there is nothing there'.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactDetail:
     """One artifact, with everything the operator page's detail view renders.
 
@@ -783,7 +809,7 @@ async def upsert_work_artifact(
     payload: WorkArtifactUpsert,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactUpsertResponse:
     """Insert or update one artifact.
 
@@ -892,6 +918,8 @@ async def patch_work_artifact_kind(
     artifact_id: UUID,
     payload: WorkArtifactKindPatch,
     db: AsyncSession = Depends(get_async_db),
+    # DELIBERATELY still ``current_active_user`` — the ONE route on this
+    # surface a device JWT may not reach. See invariant 7 and the docstring.
     current_user: User = Depends(current_active_user),
 ) -> WorkArtifactSummary:
     """Set ``kind`` deliberately and mark it ``kind_locked``.
@@ -909,6 +937,12 @@ async def patch_work_artifact_kind(
     ``(org, kind, slug, source_repo)``: that is a genuine identity collision
     and merging the two rows is an operator decision, not one this write may
     guess at.
+
+    **Cognito-only, unlike every other route in this module.** A device JWT
+    gets a 401 here by design: the lock exists to overrule the runner scan's
+    heuristic, so a door the scan itself could use to set the lock on its own
+    guess would cancel out the only mechanism constraining it. The correction
+    is an operator's assertion and it takes an operator's credential.
     """
     org_id = await _resolve_org_id(db, current_user)
     row = await crud.get_artifact(db, artifact_id, org_id=org_id)
@@ -955,7 +989,7 @@ async def create_work_artifact_edge(
     payload: WorkArtifactEdgeCreate,
     response: Response,
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactEdgeRead:
     """Create one provenance edge.
 

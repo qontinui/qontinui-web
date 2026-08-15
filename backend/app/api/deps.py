@@ -19,6 +19,7 @@ __all__ = [
     "get_authenticated_device",
     "get_authenticated_device_user",
     "get_audit_actor_user_id",
+    "get_audit_actor_user",
 ]
 
 from uuid import UUID
@@ -276,6 +277,53 @@ async def get_audit_actor_user_id(
     if credentials is not None:
         _claims, device_user = await _verify_device_jwt(credentials.credentials)
         return device_user.id
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+async def get_audit_actor_user(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> User:
+    """Resolve the acting :class:`~app.models.user.User` from EITHER a Cognito
+    user JWT OR a coord-issued device-token JWT.
+
+    The ``User``-returning sibling of :func:`get_audit_actor_user_id`, with an
+    identical decision tree — same precedence, same failure modes. It exists
+    because some dual-auth endpoints need more than the id: notably the plan &
+    prompt library, whose routes derive the artifact's ``organization_id`` from
+    the principal's personal organization and stamp an author from the
+    principal's email. Returning only the id there would force each handler to
+    re-load the row the dependency already had in hand.
+
+    Precedence and failure modes, spelled out because both are load-bearing:
+
+    * A resolved Cognito user WINS outright and the device path is never
+      consulted — a forwarded device token cannot override the authenticated
+      browser user.
+    * With no Cognito user, the presented bearer is verified as a device token
+      and the caller becomes the device's paired operator (its owning user).
+      That is deliberately the only way a device acquires an organization
+      scope: the org comes from a credential the runner owns, never from the
+      request.
+    * A bearer that fails device verification propagates that 401 (or the 503
+      from an unreachable coord JWKS) — it never falls through to success.
+    * Neither a Cognito user nor a bearer → 401. There is no anonymous path.
+
+    This deliberately does NOT delegate to :func:`get_audit_actor_user_id`:
+    that is a FastAPI dependency whose ``Depends()`` defaults are inert when
+    called by hand, so reusing it would re-run the resolution rather than share
+    it. The duplication is four lines and keeps both honest.
+    """
+    if user is not None:
+        return user
+
+    if credentials is not None:
+        _claims, device_user = await _verify_device_jwt(credentials.credentials)
+        return device_user
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
