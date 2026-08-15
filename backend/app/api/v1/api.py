@@ -82,6 +82,7 @@ from app.api.v1.endpoints import (
     organizations,
     pair_codes,
     phase_results,
+    plan_library,
     project_files,
     project_images,
     project_screenshots,
@@ -218,6 +219,12 @@ api_router.include_router(
 api_router.include_router(runner_wake.router, prefix="/device", tags=["device-wake"])
 # Operations — fleet aggregation + cross-machine Claude session monitoring.
 api_router.include_router(operations.router, prefix="/operations", tags=["operations"])
+# Plan & Prompt Library — versioned store for plans, prompts, investigation
+# reports and handoffs (agent.work_artifacts). Phase 1 of
+# ``2026-08-10-plan-and-prompt-library-in-web``.
+api_router.include_router(
+    plan_library.router, prefix="/plan-library", tags=["plan-library"]
+)
 # Helper-task portal proxy — coord-brokered human-judgment micro-tasks
 # (helper-task-queue plan Phase 1.4). Any authenticated user, incl. helpers.
 api_router.include_router(
