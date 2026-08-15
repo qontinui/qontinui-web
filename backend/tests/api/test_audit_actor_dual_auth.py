@@ -108,3 +108,100 @@ async def test_invalid_device_bearer_propagates_401(monkeypatch) -> None:
     with pytest.raises(HTTPException) as exc:
         await deps.get_audit_actor_user_id(user=None, credentials=_creds())
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
+# The ``User``-returning sibling: ``get_audit_actor_user``
+# ---------------------------------------------------------------------------
+#
+# Added for the plan & prompt library, whose routes need the User itself (they
+# derive ``organization_id`` from the principal's personal organization and
+# stamp an author from its email) rather than just the id. It is a SEPARATE
+# function, so "it follows the same structure" is not something a reader can
+# take on trust — the same four cases are re-asserted against it, and each one
+# additionally checks the returned object IS the user, not merely its id.
+
+
+@pytest.mark.asyncio
+async def test_user_variant_cognito_takes_precedence(monkeypatch) -> None:
+    """Same precedence rule, and the Cognito user object comes back whole."""
+    cognito_user = SimpleNamespace(id=uuid.uuid4())
+
+    def _boom(_token):  # pragma: no cover - must not be called
+        raise AssertionError(
+            "_verify_device_jwt must not run when a Cognito user is present"
+        )
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _boom)
+
+    result = await deps.get_audit_actor_user(user=cognito_user, credentials=_creds())
+    assert result is cognito_user
+
+
+@pytest.mark.asyncio
+async def test_user_variant_device_bearer_resolves_to_owner(monkeypatch) -> None:
+    """The device's OWNING user is returned — the object, not just the id.
+
+    This is the whole reason the sibling exists: the caller needs the row.
+    """
+    owner = SimpleNamespace(id=uuid.uuid4())
+    captured: dict[str, str] = {}
+
+    async def _fake_verify(token):
+        captured["token"] = token
+        return ({"device_id": str(uuid.uuid4())}, owner)
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+
+    result = await deps.get_audit_actor_user(
+        user=None, credentials=_creds("the-device-token")
+    )
+    assert result is owner
+    assert captured["token"] == "the-device-token"
+
+
+@pytest.mark.asyncio
+async def test_user_variant_no_user_no_bearer_is_401() -> None:
+    """No anonymous principal on the User variant either."""
+    with pytest.raises(HTTPException) as exc:
+        await deps.get_audit_actor_user(user=None, credentials=None)
+    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_user_variant_invalid_device_bearer_propagates_401(monkeypatch) -> None:
+    """A failed device verification must not fall through to success."""
+
+    async def _fake_verify(_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired device token.",
+        )
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+
+    with pytest.raises(HTTPException) as exc:
+        await deps.get_audit_actor_user(user=None, credentials=_creds())
+    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_user_variant_jwks_outage_propagates_503(monkeypatch) -> None:
+    """An unreachable coord JWKS is 503 (UNKNOWN), never 401 (rejected).
+
+    Collapsing the two would tell a runner its credential is bad when the truth
+    is that we could not check — and a runner that believes it is unauthorized
+    stops retrying, where one told the service is down does not.
+    """
+
+    async def _fake_verify(_token):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Device authentication temporarily unavailable.",
+        )
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+
+    with pytest.raises(HTTPException) as exc:
+        await deps.get_audit_actor_user(user=None, credentials=_creds())
+    assert exc.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE

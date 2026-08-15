@@ -289,11 +289,20 @@ class TestCandidateSelection:
 
 
 def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
-    from app.api.deps import current_active_user, get_async_db
+    # Both Cognito dependencies: the reads here resolve their principal through
+    # the dual-auth ``get_audit_actor_user`` (which reads the OPTIONAL one), so
+    # overriding only the strict one would 401 every request. See the fuller
+    # note in ``tests/test_plan_library_api.py``.
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.plan_library import router as plan_library_router
 
     app = FastAPI()
     app.dependency_overrides[current_active_user] = lambda: user
+    app.dependency_overrides[current_active_user_optional] = lambda: user
 
     async def _db_override():
         yield db_session

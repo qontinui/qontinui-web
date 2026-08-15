@@ -578,12 +578,27 @@ class TestEdges:
 
 
 def _build_app(*, db_session: AsyncSession, user) -> FastAPI:
-    """Mount the plan-library router with db + auth dependencies overridden."""
-    from app.api.deps import current_active_user, get_async_db
+    """Mount the plan-library router with db + auth dependencies overridden.
+
+    BOTH Cognito dependencies are overridden, because the routes no longer
+    share one. All of them except ``PATCH /{id}/kind`` resolve their principal
+    through ``get_audit_actor_user`` (dual-auth: Cognito OR the runner's coord
+    device JWT), which reads ``current_active_user_optional``; the kind
+    correction stays on the strict ``current_active_user``. Overriding only the
+    strict one would 401 every other route here and turn this whole file into a
+    test of the auth wiring instead of the handlers. The wiring itself is
+    tested in ``tests/test_plan_library_device_auth.py``.
+    """
+    from app.api.deps import (
+        current_active_user,
+        current_active_user_optional,
+        get_async_db,
+    )
     from app.api.v1.endpoints.plan_library import router as plan_library_router
 
     app = FastAPI()
     app.dependency_overrides[current_active_user] = lambda: user
+    app.dependency_overrides[current_active_user_optional] = lambda: user
 
     async def _db_override():
         yield db_session

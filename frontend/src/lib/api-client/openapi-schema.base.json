@@ -84606,6 +84606,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List work artifacts (plans, prompts, reports, handoffs)",
@@ -84651,6 +84654,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Upsert a work artifact by (organization, kind, slug, source_repo)",
@@ -84725,6 +84731,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Unshipped plans with the ranking INPUTS attached (no score)",
@@ -84752,6 +84761,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Corpus census by capture door (scan / agent / operator)",
@@ -84809,6 +84821,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Artifacts that disagree \u2014 on content, or on kind",
@@ -84870,6 +84885,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "One artifact with its body, version log and edges both ways",
@@ -84929,6 +84947,9 @@
         "security": [
           {
             "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "Link this artifact to another (outgoing or incoming)",
@@ -84939,7 +84960,7 @@
     },
     "/api/v1/plan-library/{artifact_id}/kind": {
       "patch": {
-        "description": "Set ``kind`` deliberately and mark it ``kind_locked``.\n\nThe door the library's inline kind correction needs. Heuristics only ever\nset an INITIAL kind; this is where that guess gets overruled, and the lock\nis what stops the next runner scan from quietly putting the guess back\n(which, because ``kind`` is part of the artifact's identity, would fork the\ndocument into a second row rather than merely re-label it).\n\nThe lock is set even when ``kind`` is unchanged \u2014 confirming a guessed kind\nis itself the assertion that makes it stick.\n\n409 when another artifact already occupies\n``(org, kind, slug, source_repo)``: that is a genuine identity collision\nand merging the two rows is an operator decision, not one this write may\nguess at.",
+        "description": "Set ``kind`` deliberately and mark it ``kind_locked``.\n\nThe door the library's inline kind correction needs. Heuristics only ever\nset an INITIAL kind; this is where that guess gets overruled, and the lock\nis what stops the next runner scan from quietly putting the guess back\n(which, because ``kind`` is part of the artifact's identity, would fork the\ndocument into a second row rather than merely re-label it).\n\nThe lock is set even when ``kind`` is unchanged \u2014 confirming a guessed kind\nis itself the assertion that makes it stick.\n\n409 when another artifact already occupies\n``(org, kind, slug, source_repo)``: that is a genuine identity collision\nand merging the two rows is an operator decision, not one this write may\nguess at.\n\n**Cognito-only, unlike every other route in this module.** A device JWT\ngets a 401 here by design: the lock exists to overrule the runner scan's\nheuristic, so a door the scan itself could use to set the lock on its own\nguess would cancel out the only mechanism constraining it. The correction\nis an operator's assertion and it takes an operator's credential.",
         "operationId": "api_v1_plan_library_artifact_id_kind_patch",
         "parameters": [
           {
