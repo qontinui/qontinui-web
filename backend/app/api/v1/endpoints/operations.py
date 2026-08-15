@@ -751,6 +751,14 @@ async def _proxy_coord_get(
     (Phase 5 of plan 2026-05-18-agent-spawn-coordination.md) take
     ``kind``, ``prefix``, ``limit``, ``since`` filters.
 
+    A **list** value expresses a REPEATED key: ``{"kind": ["a", "b"]}``
+    goes on the wire as ``?kind=a&kind=b``. This is httpx's own encoding
+    (``httpx.QueryParams`` treats a sequence value as repeated keys), so
+    the dict is handed to ``client.get(params=...)`` verbatim — never
+    pre-stringified, which would send the literal ``['a', 'b']``. The
+    alerts proxy relies on this for its multi-select ``kind`` /
+    ``severity`` filters.
+
     ``tenant_id`` — when set, the caller's Cognito bearer is forwarded
     (via :func:`_tenant_headers`) so coord can authenticate the operator
     and scope its SQL. Tenant-scoped dashboard endpoints pass their
@@ -3145,33 +3153,29 @@ async def get_claims_alerts(
 ) -> Any:
     """Return active claim-related alerts from coord.
 
-    Filters the coord ``/coord/alerts`` response to rows whose
-    ``alert_key`` starts with ``claim-`` (the convention used by
+    Asks coord for the ``claim-`` slice directly (``?source=claim-`` —
+    ``source`` is matched as an ``alert_key`` prefix, the convention used
+    by
     [`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).
     Other alert kinds (fleet-health, alembic-status, etc.) stay scoped
     to the Operations page's general alerts surface.
 
+    ⚠️ This used to pull the WHOLE rollup and filter ``alert_key`` in
+    Python, which measured **0 rows** on 2026-08-14: coord caps the
+    unfiltered rollup at 500 rows ordered by severity/recency, and claim
+    alerts never survived the cap, so the Python filter was always
+    filtering an already-claimless window. A targeted ``source`` query is
+    filtered in SQL and cannot be evicted by another watcher's tick.
+
     Forwards the operator bearer (fleet-auth P2/D6).
     """
-    payload = await _proxy_coord_get("/coord/alerts", tenant_id=tenant_id)
-    # coord returns either a list or `{"alerts": [...]}` depending on
-    # the version; tolerate both.
-    if isinstance(payload, dict) and "alerts" in payload:
-        rows = payload["alerts"]
-        is_dict = True
-    elif isinstance(payload, list):
-        rows = payload
-        is_dict = False
-    else:
-        return payload
-    filtered = [
-        a
-        for a in rows
-        if isinstance(a, dict) and str(a.get("alert_key", "")).startswith("claim-")
-    ]
-    if is_dict:
-        return {"alerts": filtered}
-    return filtered
+    payload = await _proxy_coord_get(
+        "/coord/alerts", params={"source": "claim-"}, tenant_id=tenant_id
+    )
+    # coord returns either a list or `{"alerts": [...]}` depending on the
+    # version; pass either through untouched. No Python-side filtering —
+    # coord's `source` prefix match is the filter now.
+    return payload
 
 
 # ---- Coord dev-action ledger proxy ----------------------------------------
@@ -3485,27 +3489,77 @@ async def get_pull_decisions(
 # ---- Alerts (full rollup; sibling of /claims/alerts) ---------------------
 
 
+def _nonblank(values: list[str] | None) -> list[str] | None:
+    """Drop blank entries from a repeatable query param.
+
+    ``?severity=`` arrives as ``[""]`` (truthy!), and a bare
+    ``?severity=&severity=critical`` as ``["", "critical"]``. Forwarding
+    the blank turns a "no filter" intent into a filter that matches
+    nothing. Returns ``None`` when nothing survives so the caller can
+    omit the param rather than send an empty list.
+    """
+    if not values:
+        return None
+    kept = [v.strip() for v in values if v and v.strip()]
+    return kept or None
+
+
 @router.get("/alerts")
 async def get_coord_alerts(
     include_resolved: bool = Query(default=False),
-    severity: str | None = Query(default=None),
-    kind: str | None = Query(default=None),
+    severity: list[str] | None = Query(default=None),
+    kind: list[str] | None = Query(default=None),
+    limit: int | None = Query(default=None, ge=1, le=1000),
+    cursor: str | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """Return the full ``coord.alerts`` rollup with optional filters.
 
-    Sibling of ``/operations/claims/alerts`` (which filters to
+    Sibling of ``/operations/claims/alerts`` (which narrows to
     ``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert
-    kinds (claim / conflict / stale_wip / health) for the dashboard's
-    Alerts page. Tenant-scoped — the underlying ``coord.alerts`` rollup
-    is fleet-wide today but the tenant header lets coord-side enforcement
-    filter once the alert producer stamps a tenant_id per row.
+    kinds for the dashboard's Alerts page. The kind vocabulary is
+    **served by the API** — coord returns the distinct kind list in the
+    response, so neither this proxy nor the UI hardcodes it (an
+    enumeration here went stale the moment a new watcher shipped).
+
+    ``severity`` and ``kind`` are REPEATABLE
+    (``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they
+    ride the wire as repeated query keys, which is what coord parses.
+    ``limit`` / ``cursor`` page the result; the response carries
+    ``total_count`` (the unpaged, filter-applied count) so a caller that
+    asks for ``?limit=1`` can still render an honest badge. ``limit`` is
+    bounded ``1..1000`` at the edge (coord's stated hard max) so a
+    nonsense value 422s here rather than relying on coord's clamp.
+
+    The coord response is passed through **untouched** — no re-wrapping,
+    no re-keying — so ``total_count``, the kind list, and any field coord
+    adds later reach the frontend without a change here.
+
+    Tenant-scoped — the underlying ``coord.alerts`` rollup is fleet-wide
+    today but the tenant header lets coord-side enforcement filter once
+    the alert producer stamps a tenant_id per row.
     """
     params: dict[str, Any] = {"include_resolved": include_resolved}
-    if severity is not None:
+    # Lists are forwarded AS LISTS: httpx encodes a sequence value as
+    # repeated keys (`kind=a&kind=b`). Stringifying them here would put
+    # the literal `['a', 'b']` on the wire and coord would silently match
+    # nothing.
+    #
+    # Blank values are dropped, not forwarded: FastAPI yields `[""]` for
+    # an explicitly-empty `?severity=`, which is truthy. Forwarding it
+    # would ask coord for the alerts whose severity is the empty string —
+    # zero rows — instead of "no severity filter". Absent, empty, or
+    # all-blank → the param is omitted entirely.
+    severity = _nonblank(severity)
+    kind = _nonblank(kind)
+    if severity:
         params["severity"] = severity
-    if kind is not None:
+    if kind:
         params["kind"] = kind
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
     return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
 
 

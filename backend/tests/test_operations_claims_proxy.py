@@ -271,11 +271,20 @@ class TestSteals:
 
 
 class TestClaimsAlerts:
-    def test_filters_to_claim_prefixed_keys(self, auth_client: TestClient):
+    """The claim slice is now selected by coord, not in Python.
+
+    The endpoint used to pull the whole ``/coord/alerts`` rollup and keep
+    the ``claim-`` prefixed rows in Python. coord caps that rollup at 500
+    rows ordered by severity/recency, so claim alerts were evicted before
+    the filter ever saw them (measured 0 rows, 2026-08-14). It now asks
+    coord for ``?source=claim-`` — a prefix match done in SQL, which no
+    other watcher's tick can evict.
+    """
+
+    def test_requests_the_claim_prefix_from_coord(self, auth_client: TestClient):
         coord_payload = {
             "alerts": [
                 {"alert_key": "claim-stale-claims-m-a", "severity": "warning"},
-                {"alert_key": "fleet-machine-partitioned-m-x", "severity": "critical"},
                 {"alert_key": "claim-stale-claims-unknown", "severity": "warning"},
             ]
         }
@@ -286,18 +295,40 @@ class TestClaimsAlerts:
             _configure_mock_client(MockClient, instance)
             resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
         assert resp.status_code == 200
-        body = resp.json()
-        keys = [a["alert_key"] for a in body["alerts"]]
-        assert "claim-stale-claims-m-a" in keys
-        assert "claim-stale-claims-unknown" in keys
-        # The non-claim alert must be filtered out.
-        assert "fleet-machine-partitioned-m-x" not in keys
+        called_url = instance.get.call_args.args[0]
+        assert called_url.endswith("/coord/alerts")
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        assert called_params.get("source") == "claim-"
+        # Passed through verbatim — no Python-side re-filtering.
+        assert resp.json() == coord_payload
+
+    def test_no_python_side_filtering(self, auth_client: TestClient):
+        """Whatever coord returns is what the caller gets.
+
+        If a future coord widens ``source`` semantics (or the operator
+        hits the route through a proxy that rewrites it), silently
+        dropping rows here would hide the discrepancy instead of
+        surfacing it.
+        """
+        coord_payload = {
+            "alerts": [
+                {"alert_key": "claim-stale-claims-m-a", "severity": "warning"},
+                {"alert_key": "fleet-machine-partitioned-m-x", "severity": "critical"},
+            ]
+        }
+        mock_resp = _mock_response(json_data=coord_payload)
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
+        keys = [a["alert_key"] for a in resp.json()["alerts"]]
+        assert keys == ["claim-stale-claims-m-a", "fleet-machine-partitioned-m-x"]
 
     def test_list_payload_shape_also_supported(self, auth_client: TestClient):
         # coord variants may return a bare list rather than a dict.
         coord_payload = [
             {"alert_key": "claim-stale-claims-m-z", "severity": "warning"},
-            {"alert_key": "something-else", "severity": "info"},
         ]
         mock_resp = _mock_response(json_data=coord_payload)
         with _patch_httpx() as MockClient:
