@@ -28,6 +28,14 @@ is **client-asserted**, so the contract is deliberately asymmetric:
   ``machines.auto_enroll_last_attempt_at``. A lying client can rotate its own
   machine key at most once per cooldown, and nothing else.
 
+One clarification so "may never name" is not read as "no client-asserted string
+ever reaches a persisted field": a NEW machine's ``machines.name`` (and
+``hostname``) IS derived from the ``runner_info`` hostname, which is
+client-asserted. That is cosmetic only — it is a display label, the owner can
+rename it, ``coord_device_id`` and ``owner_user_id`` are server-derived from the
+verified claims, and a collision with an existing name gets a numeric suffix
+rather than merging into anyone's row. Nothing is authorized by it.
+
 Every path returns an :class:`AutoEnrollOutcome` string. That is what makes the
 branches testable without parsing log lines, and it is logged verbatim so a
 production reader sees the same vocabulary the tests assert on.
@@ -61,6 +69,7 @@ OUTCOME_NOT_PRIMARY: Final[AutoEnrollOutcome] = "hint_not_primary"
 OUTCOME_NOT_PAIRED: Final[AutoEnrollOutcome] = "device_not_paired"
 OUTCOME_POLICY_DISABLED: Final[AutoEnrollOutcome] = "policy_disabled"
 OUTCOME_AMBIGUOUS: Final[AutoEnrollOutcome] = "ambiguous"
+OUTCOME_CONCURRENT: Final[AutoEnrollOutcome] = "concurrent_connect"
 OUTCOME_COOLDOWN: Final[AutoEnrollOutcome] = "cooldown"
 OUTCOME_PENDING_REMINTED: Final[AutoEnrollOutcome] = "pending_reminted"
 OUTCOME_ALREADY_ENROLLED: Final[AutoEnrollOutcome] = "already_enrolled"
@@ -307,9 +316,26 @@ async def evaluate_and_dispatch(
     # simultaneous connects for one device would both see zero rows and both
     # insert. A transaction-scoped advisory lock is the missing serialization
     # point; it is released on commit/rollback, so no path can leak it.
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(:key)"), {"key": _advisory_key(device_id)}
+    #
+    # TRY, not wait. If another connect for this same device already holds the
+    # lock, it is running this identical decision right now — so there is
+    # nothing for this caller to do but wait for an answer it would then
+    # discard. Waiting would park a pooled connection (prod: 10 + 15 overflow)
+    # for as long as the holder takes, once per connect, and a flapping device
+    # reconnecting in a loop is exactly the case that produces several at once.
+    # Returning immediately costs nothing real: the holder creates the row, and
+    # this device's next connect sees it.
+    acquired = await db.scalar(
+        text("SELECT pg_try_advisory_xact_lock(:key)"),
+        {"key": _advisory_key(device_id)},
     )
+    if not acquired:
+        logger.info(
+            "devenv_auto_enroll_concurrent",
+            device_id=str(device_id),
+            user_id=str(user_id),
+        )
+        return OUTCOME_CONCURRENT
 
     rows = (
         (

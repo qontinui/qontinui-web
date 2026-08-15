@@ -427,8 +427,14 @@ class Settings(BaseSettings):
     # the SAME machine row. It bounds two things at once: a compromised device
     # JWT rotating its own machine key (decision 2), and a box that never
     # completes enrollment re-minting on every reconnect.
+    # ``ge=1`` is a security floor, not tidiness: at 0 the cooldown window is
+    # empty, ``_within_cooldown`` is never true, and the rate limit decision 2's
+    # whole trust argument rests on ("a lying client can rotate its own machine
+    # key at most once per cooldown") silently disappears — leaving a
+    # compromised device JWT able to re-mint on every reconnect.
     DEVENV_AUTO_ENROLL_COOLDOWN_MINUTES: int = Field(
         default=60,
+        ge=1,
         description=(
             "Minimum minutes between auto-enroll dispatches for one machine row."
         ),

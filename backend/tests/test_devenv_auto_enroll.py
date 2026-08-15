@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -36,6 +37,7 @@ from app.services import devenv_auto_enroll
 from app.services.devenv_auto_enroll import (
     OUTCOME_ALREADY_ENROLLED,
     OUTCOME_AMBIGUOUS,
+    OUTCOME_CONCURRENT,
     OUTCOME_COOLDOWN,
     OUTCOME_CREATED,
     OUTCOME_DISABLED,
@@ -781,10 +783,15 @@ async def test_two_concurrent_connects_create_exactly_one_row(
     """The ``FOR UPDATE`` path locks nothing when there are zero rows.
 
     Two simultaneous connects for one device would therefore both see "no
-    machine" and both insert; the transaction-scoped advisory lock is what makes
-    the second one observe the first's row. This test needs two INDEPENDENT
-    connections, so it runs outside the shared rolled-back session fixture and
-    cleans up after itself.
+    machine" and both insert; the transaction-scoped advisory lock is what stops
+    that. This test needs two INDEPENDENT connections, so it runs outside the
+    shared rolled-back session fixture and cleans up after itself.
+
+    The lock is a TRY, so the loser has two admissible answers and the assertion
+    covers both: ``concurrent_connect`` (it found the lock held and returned
+    rather than parking a pooled connection) or ``cooldown`` (the holder had
+    already committed and released, so it saw the fresh row). What is NOT
+    admissible, and is what this test exists for, is two rows.
     """
     maker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     device_id = uuid4()
@@ -815,10 +822,90 @@ async def test_two_concurrent_connects_create_exactly_one_row(
                 )
 
         outcomes = await asyncio.gather(_one(), _one())
-        assert sorted(outcomes) == [OUTCOME_COOLDOWN, OUTCOME_CREATED]
+        assert outcomes.count(OUTCOME_CREATED) == 1
+        loser = [o for o in outcomes if o != OUTCOME_CREATED]
+        assert loser in ([OUTCOME_CONCURRENT], [OUTCOME_COOLDOWN]), outcomes
 
+        # The property the whole test is for, unchanged by the try-lock.
         async with maker() as check:
             assert len(await _machines_for(check, device_id)) == 1
+    finally:
+        async with maker() as cleanup:
+            await cleanup.execute(
+                delete(Machine).where(Machine.coord_device_id == device_id)
+            )
+            await cleanup.execute(delete(Device).where(Device.device_id == device_id))
+            if user_id is not None:
+                await cleanup.execute(
+                    delete(Environment).where(Environment.owner_user_id == user_id)
+                )
+                await cleanup.execute(
+                    delete(Machine).where(Machine.owner_user_id == user_id)
+                )
+                from app.models.user import User
+
+                await cleanup.execute(delete(User).where(User.id == user_id))
+            await cleanup.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_held_lock_returns_immediately_instead_of_waiting(
+    test_engine, enabled
+) -> None:
+    """The lock is a TRY: a held lock is answered, not queued behind.
+
+    The gather test above cannot pin this — its loser may legitimately take
+    either arm depending on scheduling — so the busy arm is forced here by
+    holding the lock on an independent connection. What is being protected is a
+    pool property: with ``pg_advisory_xact_lock`` this call parks a pooled
+    connection (prod: 10 + 15 overflow) for as long as the holder runs, once per
+    connect, and a flapping device produces several at once. There is nothing
+    for the waiter to do when it wakes anyway — the holder has made the row.
+    """
+    maker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    device_id = uuid4()
+    user_id: UUID | None = None
+    hostname = f"held-{uuid4().hex[:8]}"
+    try:
+        async with maker() as setup:
+            user = await _mk_user(setup)
+            user_id = user.id
+            await _mk_device(
+                setup,
+                user_id=user.id,
+                paired=True,
+                hostname=hostname,
+                device_id=device_id,
+            )
+            await _mk_env(setup, user_id=user.id)
+            await setup.commit()
+
+        key = devenv_auto_enroll._advisory_key(device_id)
+        async with maker() as holder:
+            # Transaction-scoped: held for as long as this session's tx is open.
+            await holder.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"), {"key": key}
+            )
+
+            async with maker() as blocked:
+                outcome = await asyncio.wait_for(
+                    evaluate_and_dispatch(
+                        blocked,
+                        device_id=device_id,
+                        user_id=user_id,  # type: ignore[arg-type]
+                        devenv_hint=PRIMARY_UNENROLLED,
+                        manager=_Manager(),
+                    ),
+                    # Generous, but finite: a WAITING lock would sit here until
+                    # the holder's rollback below, which never comes first.
+                    timeout=10,
+                )
+            await holder.rollback()
+
+        assert outcome == OUTCOME_CONCURRENT
+        # It returned instead of proceeding, so it created nothing.
+        async with maker() as check:
+            assert await _machines_for(check, device_id) == []
     finally:
         async with maker() as cleanup:
             await cleanup.execute(
@@ -850,6 +937,36 @@ async def test_engine_failure_never_reaches_the_connect_handler(
     monkeypatch.setattr(devenv_auto_enroll, "AsyncSessionLocal", _boom)
     outcome = await run_auto_enroll(uuid4(), uuid4(), PRIMARY_UNENROLLED, _Manager())
     assert outcome == OUTCOME_FAILED
+
+
+@pytest.mark.asyncio
+async def test_engine_failure_logs_unknown_never_a_benign_outcome(
+    monkeypatch, enabled
+) -> None:
+    """A failed run must read as UNKNOWN, never as "nothing to do".
+
+    Repointed from the deleted Phase-1 shadow probe, whose
+    ``devenv_auto_enroll_shadow_failed`` line carried this same property on the
+    connect hot path. The engine is the only reader of that question now, so
+    this is where the property lives: a blown session logs
+    ``devenv_auto_enroll_failed`` and emits NO
+    ``devenv_auto_enroll_decision`` line that a log reader could mistake for a
+    real, quiet no-op.
+    """
+    fake_logger = MagicMock()
+    monkeypatch.setattr(devenv_auto_enroll, "logger", fake_logger)
+
+    def _boom(*_a: Any, **_kw: Any):
+        raise RuntimeError("database is on fire")
+
+    monkeypatch.setattr(devenv_auto_enroll, "AsyncSessionLocal", _boom)
+    outcome = await run_auto_enroll(uuid4(), uuid4(), PRIMARY_UNENROLLED, _Manager())
+
+    assert outcome == OUTCOME_FAILED
+    warned = [c.args[0] for c in fake_logger.warning.call_args_list if c.args]
+    informed = [c.args[0] for c in fake_logger.info.call_args_list if c.args]
+    assert "devenv_auto_enroll_failed" in warned
+    assert "devenv_auto_enroll_decision" not in informed
 
 
 @pytest.mark.asyncio
