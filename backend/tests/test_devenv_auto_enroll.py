@@ -37,6 +37,7 @@ from app.services import devenv_auto_enroll
 from app.services.devenv_auto_enroll import (
     OUTCOME_ALREADY_ENROLLED,
     OUTCOME_AMBIGUOUS,
+    OUTCOME_CLIENT_OPTOUT,
     OUTCOME_CONCURRENT,
     OUTCOME_COOLDOWN,
     OUTCOME_CREATED,
@@ -229,6 +230,221 @@ async def test_missing_devenv_block_is_suppressed(
         manager=manager,
     )
     assert outcome == OUTCOME_NOT_PRIMARY
+
+
+# -- the local kill switch, reported as `auto_enroll_optout` -----------------
+#
+# The runner sets this true when ``QONTINUI_DEVENV_AUTO_ENROLL=0``. Before it
+# existed the kill switch was invisible server-side: web re-dispatched on every
+# reconnect, the runner refused each directive, and the pending row burned a
+# fresh one-time code every cooldown — forever. The field is the operator's
+# local "no" becoming a fact the server can act on.
+
+
+@pytest.mark.asyncio
+async def test_client_optout_suppresses_before_anything_is_touched(
+    async_db_session: AsyncSession, enabled
+) -> None:
+    """An opted-out box is refused with its own outcome, and nothing is written.
+
+    Everything the create path needs is present — paired device, exactly one
+    environment, no policy row — so the ONLY thing standing between this call
+    and a new machine row is the opt-out. That is what makes the "no writes"
+    assertion below mean something rather than passing for an unrelated reason.
+    """
+    user = await _mk_user(async_db_session)
+    await _mk_env(async_db_session, user_id=user.id)
+    device = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=True,
+        hostname=f"optout-{uuid4().hex[:8]}",
+    )
+    manager = _Manager()
+
+    outcome = await evaluate_and_dispatch(
+        async_db_session,
+        device_id=device.device_id,
+        user_id=user.id,
+        devenv_hint={
+            "instance_role": "primary",
+            "enrolled": False,
+            "auto_enroll_optout": True,
+        },
+        manager=manager,
+    )
+
+    assert outcome == OUTCOME_CLIENT_OPTOUT
+    assert manager.calls == []
+    assert await _machines_for(async_db_session, device.device_id) == []
+
+
+@pytest.mark.asyncio
+async def test_client_optout_wins_over_an_otherwise_creatable_connect(
+    async_db_session: AsyncSession, enabled
+) -> None:
+    """Control for the test above: the SAME setup without the field creates.
+
+    Without this pair, the suppression test could pass because the setup was
+    never enrollable to begin with.
+    """
+    user = await _mk_user(async_db_session)
+    await _mk_env(async_db_session, user_id=user.id)
+    device = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=True,
+        hostname=f"no-optout-{uuid4().hex[:8]}",
+    )
+    manager = _Manager()
+
+    outcome = await evaluate_and_dispatch(
+        async_db_session,
+        device_id=device.device_id,
+        user_id=user.id,
+        devenv_hint=PRIMARY_UNENROLLED,
+        manager=manager,
+    )
+
+    assert outcome == OUTCOME_CREATED
+    assert len(manager.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "hint_extra",
+    [
+        pytest.param({}, id="absent_older_runner_build"),
+        pytest.param({"auto_enroll_optout": False}, id="explicit_false"),
+        pytest.param({"auto_enroll_optout": "true"}, id="non_bool_string"),
+        pytest.param({"auto_enroll_optout": 1}, id="non_bool_truthy"),
+        pytest.param({"auto_enroll_optout": None}, id="explicit_null"),
+    ],
+)
+async def test_absent_or_non_true_optout_changes_nothing(
+    async_db_session: AsyncSession, enabled, hint_extra: dict[str, Any]
+) -> None:
+    """Absent stays absent — and only a literal ``true`` may suppress.
+
+    The regression guard for older runner builds, which send no such field and
+    must behave exactly as they did before it existed. The non-bool cases pin
+    the ``is True`` rather than a truthiness test: ``"false"`` and ``0`` are
+    both truthy/falsy in ways that would make a lying or buggy client's junk
+    value decide this, and the answer to junk is "ignore it", not "guess".
+    """
+    user = await _mk_user(async_db_session)
+    await _mk_env(async_db_session, user_id=user.id)
+    device = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=True,
+        hostname=f"legacy-{uuid4().hex[:8]}",
+    )
+    manager = _Manager()
+
+    outcome = await evaluate_and_dispatch(
+        async_db_session,
+        device_id=device.device_id,
+        user_id=user.id,
+        devenv_hint={**PRIMARY_UNENROLLED, **hint_extra},
+        manager=manager,
+    )
+
+    assert outcome == OUTCOME_CREATED
+    assert len(manager.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_optout_can_only_suppress_never_enable(
+    async_db_session: AsyncSession, enabled
+) -> None:
+    """The asymmetry, stated as a test: the field has ONE direction.
+
+    ``auto_enroll_optout: false`` is a client saying "I have not opted out". It
+    must not become a client saying "enroll me anyway" — every gate that would
+    have refused this connect still refuses it, with its own unchanged outcome.
+    """
+    manager = _Manager()
+
+    # A secondary instance does not become enrollable by declaring itself
+    # not-opted-out.
+    assert (
+        await evaluate_and_dispatch(
+            async_db_session,
+            device_id=uuid4(),
+            user_id=uuid4(),
+            devenv_hint={"instance_role": "secondary", "auto_enroll_optout": False},
+            manager=manager,
+        )
+        == OUTCOME_NOT_PRIMARY
+    )
+
+    # Neither does a device coord never paired.
+    user = await _mk_user(async_db_session)
+    await _mk_env(async_db_session, user_id=user.id)
+    unpaired = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=False,
+        hostname=f"unpaired-optout-{uuid4().hex[:8]}",
+    )
+    assert (
+        await evaluate_and_dispatch(
+            async_db_session,
+            device_id=unpaired.device_id,
+            user_id=user.id,
+            devenv_hint={**PRIMARY_UNENROLLED, "auto_enroll_optout": False},
+            manager=manager,
+        )
+        == OUTCOME_NOT_PAIRED
+    )
+
+    # Nor does an owner who explicitly disabled the policy.
+    optout_user = await _mk_user(async_db_session)
+    await _mk_env(async_db_session, user_id=optout_user.id)
+    paired = await _mk_device(
+        async_db_session,
+        user_id=optout_user.id,
+        paired=True,
+        hostname=f"policy-off-optout-{uuid4().hex[:8]}",
+    )
+    async_db_session.add(AutoEnrollPolicy(owner_user_id=optout_user.id, enabled=False))
+    await async_db_session.flush()
+    assert (
+        await evaluate_and_dispatch(
+            async_db_session,
+            device_id=paired.device_id,
+            user_id=optout_user.id,
+            devenv_hint={**PRIMARY_UNENROLLED, "auto_enroll_optout": False},
+            manager=manager,
+        )
+        == OUTCOME_POLICY_DISABLED
+    )
+
+    assert manager.calls == []
+
+
+@pytest.mark.asyncio
+async def test_optout_does_not_override_the_global_flag(
+    async_db_session: AsyncSession, monkeypatch
+) -> None:
+    """The global flag is still checked first — the client cannot reach past it.
+
+    With the deployment flag off the engine must answer ``disabled_globally``
+    even for an opted-out box: reporting ``client_optout`` there would credit
+    the client for a refusal the server made before reading the hint at all.
+    """
+    monkeypatch.setattr(settings, "DEVENV_AUTO_ENROLL_ENABLED", False)
+    manager = _Manager()
+    outcome = await evaluate_and_dispatch(
+        async_db_session,
+        device_id=uuid4(),
+        user_id=uuid4(),
+        devenv_hint={**PRIMARY_UNENROLLED, "auto_enroll_optout": True},
+        manager=manager,
+    )
+    assert outcome == OUTCOME_DISABLED
+    assert manager.calls == []
 
 
 @pytest.mark.asyncio

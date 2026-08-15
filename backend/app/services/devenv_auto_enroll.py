@@ -18,7 +18,15 @@ dropped device socket is an outage.
 Trust model (decision 2 of the plan). The ``devenv`` block on ``runner_info``
 is **client-asserted**, so the contract is deliberately asymmetric:
 
-* a hint may freely SUPPRESS enrollment (``instance_role != "primary"``);
+* a hint may freely SUPPRESS enrollment — ``instance_role != "primary"``, or
+  ``auto_enroll_optout: true``, which is the box's local kill switch
+  (``QONTINUI_DEVENV_AUTO_ENROLL=0``) reported as a fact the server can act on.
+  Before that field existed the kill switch was invisible here: web kept
+  dispatching on every reconnect and the runner kept refusing, so the operator's
+  explicit local "no" never became a server-side one and the pending row churned
+  a fresh one-time code every cooldown. Both are read one-directionally —
+  ``auto_enroll_optout`` suppresses only on a literal ``true``, and its absence
+  (an older runner build) means "not opted out", never "opted out";
 * a hint may NEVER name the machine row, the environment or the owner — those
   come from the verified claims and this server's own tables;
 * the one hint that *causes* action is ``enrolled: false`` on a device whose
@@ -66,6 +74,7 @@ AutoEnrollOutcome = str
 
 OUTCOME_DISABLED: Final[AutoEnrollOutcome] = "disabled_globally"
 OUTCOME_NOT_PRIMARY: Final[AutoEnrollOutcome] = "hint_not_primary"
+OUTCOME_CLIENT_OPTOUT: Final[AutoEnrollOutcome] = "client_optout"
 OUTCOME_NOT_PAIRED: Final[AutoEnrollOutcome] = "device_not_paired"
 OUTCOME_POLICY_DISABLED: Final[AutoEnrollOutcome] = "policy_disabled"
 OUTCOME_AMBIGUOUS: Final[AutoEnrollOutcome] = "ambiguous"
@@ -272,8 +281,36 @@ async def evaluate_and_dispatch(
         return OUTCOME_DISABLED
 
     # Gate 1 — the client's own declaration. A runner may always decline on its
-    # own behalf; a missing hint is treated as non-primary because a build old
-    # enough to omit the block is also old enough to lack the enroll arm.
+    # own behalf (decision 2's permitted direction), and there are two ways it
+    # does so.
+    #
+    # 1a — the EXPLICIT local opt-out. The box has ``QONTINUI_DEVENV_AUTO_ENROLL=0``
+    # set, so its operator has already answered this question locally. Without
+    # this field that answer was invisible here: web re-dispatched on every
+    # reconnect, the runner refused every directive, and the pending row burned
+    # a fresh one-time code once per cooldown window forever — an operator's
+    # deliberate "no" showing up in the data as an enrollment that keeps almost
+    # happening. Checked BEFORE ``instance_role`` because it is the more
+    # specific signal: a box that said "not me" deserves its own log line rather
+    # than being filed under a generic role mismatch.
+    #
+    # STRICTLY one-directional, and the ``is True`` is what enforces it. Only
+    # the literal boolean ``true`` suppresses. Absent (an older runner build
+    # that does not send the field), ``false``, or any non-bool all fall
+    # through to exactly the behaviour that shipped — this field can turn
+    # enrollment OFF and can never turn anything ON, which is the same
+    # asymmetry ``enrolled`` is read under.
+    if _hint_bool(devenv_hint, "auto_enroll_optout") is True:
+        logger.info(
+            "devenv_auto_enroll_client_optout",
+            device_id=str(device_id),
+            user_id=str(user_id),
+        )
+        return OUTCOME_CLIENT_OPTOUT
+
+    # 1b — the instance role. A missing hint is treated as non-primary because a
+    # build old enough to omit the block is also old enough to lack the enroll
+    # arm.
     if _hint_str(devenv_hint, "instance_role") != "primary":
         return OUTCOME_NOT_PRIMARY
 
