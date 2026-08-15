@@ -27,7 +27,21 @@ export const DRIFT_POLL_MS = 10_000;
 // ---------------------------------------------------------------------------
 
 export type Severity = "info" | "warning" | "critical";
-export type DeltaStatus = "added" | "removed" | "changed";
+
+/**
+ * How one key differs between the canonical capture and a target capture.
+ * Mirrors the backend's `DeltaStatusT` (`app/schemas/devenv.py`).
+ *
+ * - `added`   — present on the target, absent from canonical.
+ * - `removed` — present on canonical, MEASURED-AND-ABSENT on the target.
+ * - `changed` — present on both with different values.
+ * - `unknown` — the capturing box could not measure the key at all (its probe
+ *   exceeded the capture budget). Not a difference that was observed: one side
+ *   declined to claim it measured the key. Reported so the gap stays visible,
+ *   always at `info` severity, and never counted as drift or as something to
+ *   apply — "we could not measure this" is not "you are missing this".
+ */
+export type DeltaStatus = "added" | "removed" | "changed" | "unknown";
 
 // ---------------------------------------------------------------------------
 // Applications

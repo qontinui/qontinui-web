@@ -8324,6 +8324,23 @@
             },
             "title": "Sections",
             "type": "object"
+          },
+          "unknown_keys": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Keys"
           }
         },
         "required": [
@@ -22587,7 +22604,7 @@
         "type": "object"
       },
       "KeyDelta": {
-        "description": "A single key-level difference between canonical and a target machine.",
+        "description": "A single key-level difference between canonical and a target machine.\n\n``status`` may be ``\"unknown\"`` \u2014 see :data:`DeltaStatusT`. That is not a\ndifference that was observed; it is one side of the comparison declining to\nclaim it measured the key. It is reported (never dropped) so the gap stays\nvisible, at ``info`` severity, and it does not make a machine out-of-sync.",
         "properties": {
           "actual": {
             "anyOf": [
@@ -22633,7 +22650,8 @@
             "enum": [
               "added",
               "removed",
-              "changed"
+              "changed",
+              "unknown"
             ],
             "title": "Status",
             "type": "string"

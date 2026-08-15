@@ -320,20 +320,30 @@ function HistorySectionDiff({ section }: { section: SectionDrift }) {
 }
 
 function HistoryDeltaRow({ delta }: { delta: KeyDelta }) {
+  // `unknown` = one of the two captures never measured the key (its probe
+  // exceeded the capture budget). Rendering the raw literal would read as a
+  // value that changed to/from nothing, so it gets prose and the empty side is
+  // labelled for what it is.
+  const unmeasured = delta.status === "unknown";
+  const side = (value: string | null) =>
+    value ?? (unmeasured ? "not measured" : "—");
+
   return (
     <div className="px-2 py-1.5 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono font-medium truncate">{delta.key}</span>
-        <Badge variant={severityVariant(delta.severity)}>{delta.status}</Badge>
+        <Badge variant={severityVariant(delta.severity)}>
+          {unmeasured ? "not measured" : delta.status}
+        </Badge>
       </div>
       <div className="mt-0.5 grid grid-cols-2 gap-2">
         <div className="min-w-0">
           <span className="text-muted-foreground">was: </span>
-          <span className="font-mono break-all">{delta.expected ?? "—"}</span>
+          <span className="font-mono break-all">{side(delta.expected)}</span>
         </div>
         <div className="min-w-0">
           <span className="text-muted-foreground">now: </span>
-          <span className="font-mono break-all">{delta.actual ?? "—"}</span>
+          <span className="font-mono break-all">{side(delta.actual)}</span>
         </div>
       </div>
     </div>
