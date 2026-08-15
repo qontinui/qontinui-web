@@ -115,6 +115,30 @@ function buildMachineGroups(
     }
   }
 
+  // ...and any host that is PURELY CI infrastructure. The backend excludes
+  // CI-runner devices from `fleet.runners` (that is the categorisation), so a
+  // dedicated CI host — `spaceship-wsl`, `msi-wsl` — reaches this point with
+  // no group at all. These are live infrastructure, not clutter: they must
+  // stay in the fleet, just in their own category rather than padding the
+  // workstation list. Any host that already has a group keeps it and is NOT
+  // reclassified — a workstation that also hosts a CI runner is still a
+  // workstation.
+  for (const hostname of Object.keys(ciRunners)) {
+    if (!byHost.has(hostname)) {
+      const activity = deviceStatusByHost.get(hostname);
+      byHost.set(hostname, {
+        hostname,
+        displayName: displayNames[hostname],
+        runners: [],
+        claudeSessions: [],
+        currentActivity: activity,
+        currentlyEditing: resolveClaims(activity),
+        ciRunner: ciRunners[hostname],
+        isCiInfrastructure: true,
+      });
+    }
+  }
+
   // Sort: healthy machines first, then alphabetically
   return Array.from(byHost.values()).sort((a, b) => {
     const aHealthy = a.runners.some((r) => r.derivedStatus === "healthy")

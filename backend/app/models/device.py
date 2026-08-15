@@ -226,6 +226,34 @@ class Device(Base):
     # ---- Relationships -----------------------------------------------------
     user = relationship("User", back_populates="devices")
 
+    # ---- CI-runner categorisation (single definition) ----------------------
+    #
+    # THE canonical answer to "is this row infrastructure or a workstation?".
+    # Defined once here so the API, the aggregates and the UI cannot drift
+    # into three different answers.
+    #
+    # Why NOT ``ci_runner_status is not None``, the predicate this replaced:
+    # ``coord.devices.ci_runner_status`` is nullable **with**
+    # ``DEFAULT 'offline'``, so any insert path that simply omits the column
+    # yields a non-NULL value on an ordinary workstation and misclassifies it
+    # as CI infrastructure. Today every writer binds the column explicitly, so
+    # the old predicate happened to be right — but it was right by accident,
+    # and one new insert path would have broken it silently.
+    #
+    # ``capability_user_paired`` + ``ci_runner_labels`` has no such hole:
+    # a CI runner is registered programmatically (never paired to a human, so
+    # ``capability_user_paired`` is false) and always carries the GitHub label
+    # set that made it a runner in the first place. Neither half defaults into
+    # a wrong answer.
+    @property
+    def is_ci_runner(self) -> bool:
+        """True when this row is CI infrastructure rather than a workstation.
+
+        Mirrors the SQL predicate
+        ``capability_user_paired = false AND ci_runner_labels IS NOT NULL``.
+        """
+        return not self.capability_user_paired and self.ci_runner_labels is not None
+
     # ---- Legacy compat alias (Phase 5 — Unified Devices Registry) ---------
     #
     # The legacy ``Runner`` model exposed an ``id`` primary key; the
