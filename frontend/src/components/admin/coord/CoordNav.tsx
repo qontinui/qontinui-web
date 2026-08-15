@@ -13,7 +13,7 @@
  *
  *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
  *                                                   ← direct, daily
- *   Work ▾    Plans / Questions / Agents / History / Lands
+ *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
  *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
  *   Infra ▾°  Trees / Spawn / Deploys / Git Ops / Federation / Memory /
  *             Onboarding / Onboarding Status
@@ -71,6 +71,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  Library,
   MessageSquare,
   NotebookText,
   Package,
@@ -189,6 +190,16 @@ const GROUPS: NavGroup[] = [
         label: "Plans",
         icon: FileText,
         testId: "coord-nav-plans",
+      },
+      {
+        // Sits beside Plans deliberately: Plans is coord's work units, this is
+        // the prompt/plan CORPUS those units are authored from. Distinct path
+        // (not /plans/library) so the Plans item's startsWith active-match
+        // doesn't double-highlight — same reasoning as the Onboarding pair.
+        href: "/admin/coord/plan-library",
+        label: "Plan Library",
+        icon: Library,
+        testId: "coord-nav-plan-library",
       },
       {
         href: "/admin/coord/questions",

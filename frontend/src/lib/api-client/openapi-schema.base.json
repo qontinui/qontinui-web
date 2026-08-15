@@ -5586,6 +5586,74 @@
         "title": "CaptureActionResponse",
         "type": "object"
       },
+      "CaptureDoorHealth": {
+        "description": "One capture door's contribution to the corpus.\n\n``count`` alone cannot answer \"is the agent door being used?\" \u2014 a door\nthat fed 40 artifacts and then went quiet in March looks identical to a\nlive one. ``last_touched_at`` is the field that separates them.\n\nIt is ``max(updated_at)``, i.e. LAST TOUCHED, not last captured: a kind\ncorrection bumps it without any capture. Named for what it measures.",
+        "properties": {
+          "captured_by": {
+            "title": "Captured By",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First At"
+          },
+          "known": {
+            "default": true,
+            "title": "Known",
+            "type": "boolean"
+          },
+          "last_touched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Touched At"
+          }
+        },
+        "required": [
+          "captured_by",
+          "count"
+        ],
+        "title": "CaptureDoorHealth",
+        "type": "object"
+      },
+      "CaptureHealthResponse": {
+        "description": "Corpus census by capture door.\n\nEvery door in :data:`CapturedBy` appears, **including the ones with zero\nartifacts**. That is the point of the panel: \"the agent door has written\nnothing\" is the finding, and a door that is simply missing from the list\nreads as an absent feature rather than an unused one.",
+        "properties": {
+          "doors": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureDoorHealth"
+            },
+            "title": "Doors",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "doors"
+        ],
+        "title": "CaptureHealthResponse",
+        "type": "object"
+      },
       "CaptureScreenshotResponse": {
         "description": "Schema for screenshot response.",
         "properties": {
@@ -20687,6 +20755,219 @@
           "name"
         ],
         "title": "FlagAnchor",
+        "type": "object"
+      },
+      "FleetPolicyPut": {
+        "additionalProperties": false,
+        "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
+        "properties": {
+          "change_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Note"
+          },
+          "domain": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain",
+            "type": "string"
+          },
+          "level": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "default": true,
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "scope_band": {
+            "default": "tenant",
+            "enum": [
+              "system",
+              "tenant",
+              "repo"
+            ],
+            "title": "Scope Band",
+            "type": "string"
+          },
+          "scope_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Key"
+          }
+        },
+        "required": [
+          "domain",
+          "level"
+        ],
+        "title": "FleetPolicyPut",
+        "type": "object"
+      },
+      "FleetPolicyView": {
+        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves ``off`` / ``resolved_scope: \"none\"``.\nThat last case is why ``resolved_scope`` is surfaced: \"off because nobody\never wrote a row\" and \"off because someone turned it off\" are different\nfacts about the fleet and the operator is entitled to tell them apart.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "keys_not_shown": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys Not Shown",
+            "type": "array"
+          },
+          "keys_not_shown_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fleet_resources_row",
+                  "this_domain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keys Not Shown Source"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "effective_level",
+          "master_enabled",
+          "resolved_scope",
+          "can_edit"
+        ],
+        "title": "FleetPolicyView",
+        "type": "object"
+      },
+      "FleetPolicyWriteResult": {
+        "description": "What the write did, and \u2014 separately \u2014 what devices now resolve.\n\nThe two halves are kept apart deliberately. ``written_level`` is coord's\necho of the write; ``effective`` is a SECOND, fresh read of the same\ndomain. They can legitimately differ (a more specific scope band wins, or\n``master_enabled`` is false), and the operator needs the resolved value,\nnot the hopeful one.\n\nWhen the read-back itself fails, ``effective`` is ``None`` and\n``readback_error`` says why. That is UNKNOWN \u2014 it is NOT \"the write took\neffect\"; assuming the written value is what devices resolve is exactly the\nassertion this field exists to refuse.",
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetPolicyView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "versioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versioned"
+          },
+          "written_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Level"
+          },
+          "written_master_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Master Enabled"
+          }
+        },
+        "required": [
+          "ok",
+          "domain"
+        ],
+        "title": "FleetPolicyWriteResult",
         "type": "object"
       },
       "FolderCreateRequest": {
@@ -47828,7 +48109,7 @@
         "type": "object"
       },
       "WorkArtifactDetail": {
-        "description": "Single-artifact read: body + full version log + edges BOTH ways.",
+        "description": "Single-artifact read: body + full version log + edges BOTH ways.\n\n``coord`` carries the linked work unit and its PR citations, with the same\nhonesty flags ``/candidates`` uses \u2014 see :class:`CandidateCoordLink`. It is\nALWAYS present (defaulting to ``work_unit_state: \"unlinked\"``) so a\nconsumer never has to distinguish \"the field is missing\" from \"there is no\nlink\", and it is ``unavailable`` rather than empty whenever coord could not\nbe read. ``include_coord=false`` skips the fetch, which reports\n``unavailable`` for a linked artifact \u2014 deliberately, because \"we did not\nlook\" is not \"there is nothing there\".",
         "properties": {
           "authored_at": {
             "anyOf": [
@@ -47852,6 +48133,9 @@
           "content_sha256": {
             "title": "Content Sha256",
             "type": "string"
+          },
+          "coord": {
+            "$ref": "#/components/schemas/CandidateCoordLink"
           },
           "created_at": {
             "title": "Created At",
@@ -77928,6 +78212,120 @@
         ]
       }
     },
+    "/api/v1/operations/fleet-policy": {
+      "get": {
+        "description": "Read one fleet-policy domain's RESOLVED value for the caller's tenant.\n\nReturns what devices actually resolve, not the last thing written. See\n:class:`FleetPolicyView` for why ``resolved_scope`` matters and the module\ncomment above for the ``fleet_resources`` blocks this strips.\n\n``can_edit`` is computed with the SAME rule\n``require_coord_tenant_admin`` applies to the PUT \u2014 the operator's roles in\nthe EFFECTIVE tenant, plus the superuser bypass. Using\n``identity.is_admin`` here (as some older proxies do) would be wrong in\nboth directions: it is a union across every tenant, so an Administrator of\ntenant A who is a Developer of the active tenant B would get an enabled\nbutton and a 403, and a qontinui superuser who is not a coord tenant admin\nwould get a disabled button for a write that would have succeeded.",
+        "operationId": "api_v1_operations_fleet_policy_get",
+        "parameters": [
+          {
+            "description": "Policy domain to read",
+            "in": "query",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "description": "Policy domain to read",
+              "minLength": 1,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve as this repo would (only affects repo-band rows).",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resolve as this repo would (only affects repo-band rows).",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetPolicyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one fleet-policy domain, then READ BACK what devices resolve.\n\nTenant-admin gated web-side; coord re-checks with ``rbac::is_tenant_admin``\nand answers 403 ``admin_required`` otherwise, which passes through\nverbatim.\n\nThe read-back is a separate GET rather than a reuse of the PUT's own echo.\nA write that lands is not the same fact as a value that resolves \u2014 a\nmore specific repo-band row, a false ``master_enabled``, or a stale replica\nall break the equivalence \u2014 and the operator asked what the fleet sees.",
+        "operationId": "api_v1_operations_fleet_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetPolicyPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetPolicyWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/health": {
       "get": {
         "description": "Return the fleet-health rollup from coord (tenant-scoped).",
@@ -84216,6 +84614,33 @@
         ]
       }
     },
+    "/api/v1/plan-library/capture-health": {
+      "get": {
+        "description": "Which door is actually feeding the store.\n\nThe deterministic scanner is the backbone (design decision D3) and the\nagent write door is the addition that captures what a scan cannot see \u2014\nad-hoc worktree prompts, and the provenance edges only the agent that ran\nthe chain knows. If the agent door is unused, the corpus is quietly\nmissing exactly that half, and nothing else on this page would say so.\n\nEvery door in the schema's vocabulary is returned, **zeros included** \u2014 an\nunused door must render as ``0``, not as an absent row. A row with\n``known: false`` is a value the CHECK constraint allows that this build\ndoes not recognise; it is surfaced rather than swallowed.",
+        "operationId": "api_v1_plan_library_capture_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Corpus census by capture door (scan / agent / operator)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/divergent": {
       "get": {
         "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
@@ -84275,6 +84700,7 @@
     },
     "/api/v1/plan-library/{artifact_id}": {
       "get": {
+        "description": "One artifact, with everything the operator page's detail view renders.\n\nThe ``coord`` block is resolved over coord's HTTP API (never its Postgres\nschema \u2014 invariant 4) and carries its own honesty flags:\n\n* no ``work_unit_slug`` at all \u2192 ``unlinked``. A first-class normal state:\n  the link is optional and most artifacts have none.\n* a slug coord does not know \u2192 ``dangling``. ALSO normal \u2014 the link has no\n  FK by design and MAY dangle. It is never a 404 on this read.\n* coord unreachable \u2192 ``unavailable`` on both halves. UNKNOWN, not empty.\n\n``linked_prs_state`` is tracked separately from ``work_unit_state`` for a\nconcrete reason: today's deployed coord registers no HTTP route for the\ncitation LIST (it exists only as an MCP tool), so that half reads\n``unavailable`` even when the work unit resolves fine. Rendering an empty\nPR list there would assert something this read has not established.",
         "operationId": "api_v1_plan_library_artifact_id_get",
         "parameters": [
           {
@@ -84285,6 +84711,18 @@
               "format": "uuid",
               "title": "Artifact Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Resolve the linked coord work unit and its PR citations. Set false for a purely local, coord-free read \u2014 the coord block then reports 'unavailable' for a linked artifact, because 'we did not look' is not the same answer as 'there is nothing there'.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Resolve the linked coord work unit and its PR citations. Set false for a purely local, coord-free read \u2014 the coord block then reports 'unavailable' for a linked artifact, because 'we did not look' is not the same answer as 'there is nothing there'.",
+              "title": "Include Coord",
+              "type": "boolean"
             }
           }
         ],

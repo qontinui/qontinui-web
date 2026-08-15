@@ -25,7 +25,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -707,7 +707,11 @@ class TestHttpSurface:
         assert created.status_code == 201, created.text
         artifact_id = created.json()["artifact"]["id"]
 
-        detail = await client.get(f"{API_PREFIX}/{artifact_id}")
+        # `include_coord=false` keeps this a local read — the coord-resolution
+        # behaviour has its own tests below, with the probe stubbed.
+        detail = await client.get(
+            f"{API_PREFIX}/{artifact_id}", params={"include_coord": "false"}
+        )
         assert detail.status_code == 200
         assert detail.json()["work_unit_slug"] == dangling
 
@@ -826,3 +830,193 @@ class TestHttpSurface:
 
         by_q = await client.get(API_PREFIX, params={"q": "transfer"})
         assert by_q.json()["total"] >= 1
+
+
+class TestCaptureHealth:
+    """`GET /plan-library/capture-health` — which door is feeding the store.
+
+    The panel exists to answer one question: is the agent write door being
+    used, or is the deterministic scan the only thing writing? So the read
+    must report an UNUSED door as an explicit zero. A door that is simply
+    absent from the list reads as a feature that does not exist, which is a
+    different (and wrong) claim.
+    """
+
+    async def test_every_known_door_appears_even_at_zero(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        await client.post(API_PREFIX, json=_payload(captured_by="runner_scan"))
+
+        resp = await client.get(f"{API_PREFIX}/capture-health")
+        assert resp.status_code == 200, resp.text
+        doors = {d["captured_by"]: d for d in resp.json()["doors"]}
+        assert set(doors) >= {"runner_scan", "agent", "operator"}
+        assert doors["runner_scan"]["count"] >= 1
+        # The load-bearing assertion: the unused doors are present, at zero.
+        assert doors["operator"]["count"] == 0
+        assert doors["operator"]["known"] is True
+        assert doors["operator"]["last_touched_at"] is None
+
+    async def test_counts_and_recency_split_by_door(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        await client.post(API_PREFIX, json=_payload(captured_by="runner_scan"))
+        await client.post(API_PREFIX, json=_payload(captured_by="runner_scan"))
+        await client.post(API_PREFIX, json=_payload(captured_by="agent"))
+
+        body = (await client.get(f"{API_PREFIX}/capture-health")).json()
+        doors = {d["captured_by"]: d for d in body["doors"]}
+        assert doors["runner_scan"]["count"] >= 2
+        assert doors["agent"]["count"] >= 1
+        # A door with rows must date itself — "40 artifacts, none since March"
+        # and "40 artifacts, one an hour ago" are different findings. The field
+        # is `last_touched_at` (max(updated_at)), not a last-capture stamp: a
+        # kind correction bumps it, so it is named for what it measures.
+        assert doors["agent"]["last_touched_at"] is not None
+        assert doors["agent"]["first_at"] is not None
+        assert body["total"] == sum(d["count"] for d in body["doors"])
+
+    async def test_capture_health_is_not_swallowed_by_the_id_route(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """The literal path must beat `/{artifact_id}` — else this is a 422."""
+        resp = await client.get(f"{API_PREFIX}/capture-health")
+        assert resp.status_code == 200
+
+
+class TestDetailCoordBlock:
+    """The detail read's `coord` block — four states, never collapsed.
+
+    This is where the page can most easily lie to an operator. "No linked work
+    unit", "coord doesn't have that unit", "coord couldn't be reached" and
+    "coord has no route to list citations" are four different facts, and three
+    of them are routinely rendered as an innocuous empty state by code that
+    treats absence as zero.
+    """
+
+    async def test_no_slug_is_unlinked_not_an_error(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        created = await client.post(API_PREFIX, json=_payload())
+        artifact_id = created.json()["artifact"]["id"]
+
+        detail = await client.get(f"{API_PREFIX}/{artifact_id}")
+        assert detail.status_code == 200, detail.text
+        coord = detail.json()["coord"]
+        # A first-class normal state. Most artifacts have no work unit.
+        assert coord["work_unit_state"] == "unlinked"
+        assert coord["linked_prs_state"] == "unlinked"
+        assert coord["unavailable_reason"] is None
+
+    async def test_include_coord_false_reports_unavailable_not_unlinked(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """ "We did not look" is not the same answer as "there is nothing"."""
+        slug = f"phantom-{uuid4().hex[:8]}"
+        created = await client.post(API_PREFIX, json=_payload(work_unit_slug=slug))
+        artifact_id = created.json()["artifact"]["id"]
+
+        detail = await client.get(
+            f"{API_PREFIX}/{artifact_id}", params={"include_coord": "false"}
+        )
+        coord = detail.json()["coord"]
+        assert coord["work_unit_state"] == "unavailable"
+        assert coord["linked_prs_state"] == "unavailable"
+        assert "include_coord=false" in coord["unavailable_reason"]
+
+    async def test_a_404_from_coord_is_dangling_and_prs_are_a_real_zero(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        async def _404(path, **kwargs):
+            raise HTTPException(status_code=404, detail="no such work unit")
+
+        monkeypatch.setattr(endpoint, "_proxy_coord_get", _404)
+
+        slug = f"phantom-{uuid4().hex[:8]}"
+        created = await client.post(API_PREFIX, json=_payload(work_unit_slug=slug))
+        artifact_id = created.json()["artifact"]["id"]
+
+        coord = (await client.get(f"{API_PREFIX}/{artifact_id}")).json()["coord"]
+        # The link is FK-less by design and MAY dangle — normal, never a 404.
+        assert coord["work_unit_state"] == "dangling"
+        # Citations hang off the unit by a HARD FK, so no unit really is no
+        # citations. This is the ONE case where empty is a genuine zero.
+        assert coord["linked_prs_state"] == "unlinked"
+
+    async def test_an_unreachable_coord_is_unavailable_not_empty(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        async def _boom(path, **kwargs):
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+
+        monkeypatch.setattr(endpoint, "_proxy_coord_get", _boom)
+
+        slug = f"unit-{uuid4().hex[:8]}"
+        created = await client.post(API_PREFIX, json=_payload(work_unit_slug=slug))
+        artifact_id = created.json()["artifact"]["id"]
+
+        resp = await client.get(f"{API_PREFIX}/{artifact_id}")
+        # A coord outage must not fail the whole read of a LOCAL artifact.
+        assert resp.status_code == 200, resp.text
+        coord = resp.json()["coord"]
+        assert coord["work_unit_state"] == "unavailable"
+        assert coord["linked_prs_state"] == "unavailable"
+        assert coord["unavailable_reason"]
+
+    async def test_a_missing_citation_route_is_unavailable_not_no_prs(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Today's deployed coord has no HTTP citation LIST route (MCP-only)."""
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        async def _unit_ok_citations_404(path, **kwargs):
+            if path.endswith("/citations"):
+                raise HTTPException(status_code=404, detail="no such route")
+            return {"work_unit": {"status": "vetted", "title": "The unit"}}
+
+        monkeypatch.setattr(endpoint, "_proxy_coord_get", _unit_ok_citations_404)
+
+        slug = f"unit-{uuid4().hex[:8]}"
+        created = await client.post(API_PREFIX, json=_payload(work_unit_slug=slug))
+        artifact_id = created.json()["artifact"]["id"]
+
+        coord = (await client.get(f"{API_PREFIX}/{artifact_id}")).json()["coord"]
+        assert coord["work_unit_state"] == "linked"
+        assert coord["work_unit_status"] == "vetted"
+        # The load-bearing assertion: an unaskable question is NOT a zero.
+        assert coord["linked_prs_state"] == "unavailable"
+        assert coord["linked_prs"] == []
+
+    async def test_citations_are_projected_with_their_merged_state(
+        self, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.api.v1.endpoints import plan_library as endpoint
+
+        async def _both_ok(path, **kwargs):
+            if path.endswith("/citations"):
+                return {
+                    "citations": [
+                        {
+                            "repo": "qontinui-web",
+                            "pr_number": 1425,
+                            "merged": True,
+                            "branch": "feat/x",
+                        },
+                        {"repo": "qontinui-coord", "pr_number": 900, "merged": False},
+                    ]
+                }
+            return {"work_unit": {"status": "in_progress", "title": "The unit"}}
+
+        monkeypatch.setattr(endpoint, "_proxy_coord_get", _both_ok)
+
+        slug = f"unit-{uuid4().hex[:8]}"
+        created = await client.post(API_PREFIX, json=_payload(work_unit_slug=slug))
+        artifact_id = created.json()["artifact"]["id"]
+
+        coord = (await client.get(f"{API_PREFIX}/{artifact_id}")).json()["coord"]
+        assert coord["linked_prs_state"] == "available"
+        assert [pr["state"] for pr in coord["linked_prs"]] == ["merged", "unmerged"]

@@ -6074,6 +6074,344 @@ async def get_next_step_settings_fleet(
     )
 
 
+# ---- Fleet runtime policy proxy (generic domain toggle) ------------------
+#
+# Plan ``2026-08-10-plan-and-prompt-library-in-web`` Phase 5 (D4).
+#
+# ``coord.fleet_runtime_policy`` is a generic
+# ``(tenant, domain, scope_band, scope_key) → level + master_enabled`` store.
+# qontinui-web is already the **alembic author** of that table, so this proxy is
+# deliberately a thin pass-through onto coord's own HTTP routes rather than a
+# second, divergent notion of fleet policy living in web.
+#
+# Auth posture, mirroring coord's own:
+#   GET — any authenticated user whose tenant resolves. Coord's GET accepts an
+#         operator bearer or a device JWT; the response carries ``can_edit`` so
+#         the UI can gate the write control without a second authz call.
+#   PUT — coord-tenant ADMIN (``require_coord_tenant_admin``). Coord re-checks
+#         with ``rbac::is_tenant_admin`` and 403s ``admin_required`` otherwise.
+#
+# Two wire facts about coord that this module exists to encode ONCE, so no
+# caller has to rediscover them:
+#
+# 1. ``PutFleetPolicyRequest`` is ``#[serde(deny_unknown_fields)]``. An extra
+#    JSON key is a **422**, not a silently-ignored field. The body is therefore
+#    assembled HERE from a closed model — the browser never hands us a dict we
+#    forward verbatim, because one stray key would 422 the whole write.
+# 2. Coord's GET answers with the asked-for domain's ``effective_level`` /
+#    ``master_enabled`` / ``resolved_scope`` — and ALSO with
+#    ``controls`` / ``controls_available`` / ``current_version`` / ``drain`` /
+#    ``drain_effective`` blocks read from the UNRELATED ``fleet_resources``
+#    controls row (coord's ``read_controls`` deliberately reads that row
+#    "regardless of which domain the caller asked about"). Rendering those as
+#    the asked-for domain's own values is a real misreport, so this proxy
+#    strips them and NAMES what it stripped in ``keys_not_shown`` rather than
+#    dropping them silently. ``keys_not_shown_source`` says whether they came
+#    from the unrelated row or (for ``fleet_resources`` itself) from the
+#    asked-for domain — dropping them is unconditional either way, because
+#    ``FleetPolicyView`` has no field to carry them.
+
+#: The one domain those control blocks actually belong to. Asking about it is
+#: the only case where they are NOT another domain's data.
+_FLEET_POLICY_CONTROLS_DOMAIN = "fleet_resources"
+
+#: Keys coord's ``GET /coord/fleet-policy`` returns from the
+#: ``fleet_resources`` controls row rather than from the requested domain.
+_FLEET_POLICY_CONTROL_KEYS = (
+    "controls",
+    "controls_available",
+    "current_version",
+    "drain",
+    "drain_effective",
+)
+
+
+class FleetPolicyView(BaseModel):
+    """The requested domain's resolved policy — and ONLY that domain's.
+
+    ``effective_level`` is what a device actually resolves, which is not the
+    same as the level that was last written: coord folds ``master_enabled``
+    in (a disabled master resolves ``off`` whatever ``level`` says), and a
+    tenant with no row at all resolves ``off`` / ``resolved_scope: "none"``.
+    That last case is why ``resolved_scope`` is surfaced: "off because nobody
+    ever wrote a row" and "off because someone turned it off" are different
+    facts about the fleet and the operator is entitled to tell them apart.
+    """
+
+    domain: str
+    effective_level: str
+    master_enabled: bool
+    #: ``"repo" | "tenant" | "system"``, or ``"none"`` when NO row matched.
+    resolved_scope: str
+    #: Whether the caller may write. Computed from the operator's roles **in
+    #: the EFFECTIVE tenant**, exactly as ``require_coord_tenant_admin``
+    #: computes them for the PUT — NOT from ``identity.is_admin``, which is a
+    #: union across every tenant and would light the button for an operator
+    #: the write is about to 403. UI gating only; coord re-checks.
+    can_edit: bool
+    #: Control blocks coord returned that this view does not carry. Named, not
+    #: silently dropped — a reader who wonders where ``controls`` went gets an
+    #: answer instead of a mystery. ALWAYS populated when coord sent them,
+    #: including for ``fleet_resources`` (where they are that domain's own
+    #: values but still not rendered here); ``keys_not_shown_source`` is what
+    #: distinguishes the two cases.
+    keys_not_shown: list[str] = Field(default_factory=list)
+    #: ``"fleet_resources_row"`` — the blocks belong to a DIFFERENT domain's
+    #: row and must never be read as this domain's. ``"this_domain"`` — the
+    #: caller asked about ``fleet_resources`` itself, so they are its own.
+    #: ``None`` when coord sent none.
+    keys_not_shown_source: Literal["fleet_resources_row", "this_domain"] | None = None
+
+
+class FleetPolicyPut(BaseModel):
+    """Closed body for the fleet-policy write.
+
+    ``extra="forbid"`` is not decoration: coord's own struct is
+    ``deny_unknown_fields``, so a stray key would come back as a 422 from
+    coord with a Rust serde message. Rejecting it here turns that into a
+    local, legible 422 and keeps the wire body exactly the shape coord
+    accepts.
+
+    Deliberately absent:
+
+    * ``updated_by`` — coord stamps the author from its authenticated
+      ``OperatorContext``. An audit trail with a client-asserted author is not
+      an audit trail, and coord's wire shape has no such field to spoof.
+    * ``controls`` — optional on coord's side, but ``#[serde(default)]`` on a
+      NON-``Option`` field, so omitting it and sending ``{}`` are the SAME
+      value to coord and sending ``null`` is a 422. It is omitted because this
+      door has no business authoring control values — and because omission is
+      indistinguishable from a default, ``fleet_resources`` is refused outright
+      below rather than trusted to a comment.
+    * ``tenant_id`` — resolved from the caller's credential, never the body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    domain: str = Field(..., min_length=1, max_length=128)
+    #: Coord validates this against ``system|tenant|repo`` and 400s otherwise;
+    #: pinning it here makes a typo a 422 before the round trip.
+    scope_band: Literal["system", "tenant", "repo"] = "tenant"
+    #: Required by coord ONLY for the ``repo`` band.
+    scope_key: str | None = None
+    #: Domain-specific vocabulary — ``off``/``record`` for ``plan_capture``.
+    #: Opaque here on purpose: the store's whole design is that a new domain
+    #: (and its levels) is data, not schema.
+    level: str = Field(..., min_length=1, max_length=64)
+    master_enabled: bool = True
+    change_note: str | None = Field(None, max_length=2000)
+
+    @field_validator("domain")
+    @classmethod
+    def _reject_the_controls_domain(cls, v: str) -> str:
+        """Refuse to write the ``fleet_resources`` row through this door.
+
+        That row carries the §D1 control values (memory floors, CI job caps,
+        retention) and the §D2 drain map. This body cannot express them —
+        ``controls`` is omitted, which coord cannot distinguish from an
+        explicit default — so a write here would silently reset a tenant's
+        fleet-resource controls to defaults as a side effect of setting a
+        level. A generic proxy must not hand callers that footgun; the
+        controls have their own surface.
+        """
+        if v.strip() == _FLEET_POLICY_CONTROLS_DOMAIN:
+            raise ValueError(
+                f"domain '{_FLEET_POLICY_CONTROLS_DOMAIN}' is not writable "
+                "through this proxy: its row carries control and drain values "
+                "that this body cannot express, so the write would reset them "
+                "to defaults. Use the fleet-resources surface instead."
+            )
+        return v
+
+    @field_validator("scope_key")
+    @classmethod
+    def _blank_scope_key_is_none(cls, v: str | None) -> str | None:
+        """Fold ``""`` onto ``None``.
+
+        Coord's functional unique index is on ``COALESCE(scope_key, '')``, so
+        the two spellings are the SAME row — but its ``repo``-band validation
+        rejects both. Normalising here means a form that submits an empty
+        string cannot accidentally write a row the read side then misses.
+        """
+        return v or None
+
+
+class FleetPolicyWriteResult(BaseModel):
+    """What the write did, and — separately — what devices now resolve.
+
+    The two halves are kept apart deliberately. ``written_level`` is coord's
+    echo of the write; ``effective`` is a SECOND, fresh read of the same
+    domain. They can legitimately differ (a more specific scope band wins, or
+    ``master_enabled`` is false), and the operator needs the resolved value,
+    not the hopeful one.
+
+    When the read-back itself fails, ``effective`` is ``None`` and
+    ``readback_error`` says why. That is UNKNOWN — it is NOT "the write took
+    effect"; assuming the written value is what devices resolve is exactly the
+    assertion this field exists to refuse.
+    """
+
+    ok: bool
+    domain: str
+    written_level: str | None = None
+    written_master_enabled: bool | None = None
+    #: ``False`` means coord recorded the write WITHOUT a version snapshot
+    #: (the pre-migration window). Never omitted — a caller that cannot tell a
+    #: versioned write from an unversioned one will assume the former.
+    versioned: bool | None = None
+    version: int | None = None
+    updated_by: str | None = None
+    effective: FleetPolicyView | None = None
+    readback_error: str | None = None
+
+
+def _fleet_policy_view(payload: Any, *, domain: str, can_edit: bool) -> FleetPolicyView:
+    """Project coord's GET body onto the requested domain's OWN fields."""
+    body = payload if isinstance(payload, dict) else {}
+    # Dropped unconditionally — this view has no field for them. What VARIES is
+    # whose data they are, and that is reported rather than assumed.
+    not_shown = [k for k in _FLEET_POLICY_CONTROL_KEYS if k in body]
+    source: Literal["fleet_resources_row", "this_domain"] | None = None
+    if not_shown:
+        source = (
+            "this_domain"
+            if domain == _FLEET_POLICY_CONTROLS_DOMAIN
+            else "fleet_resources_row"
+        )
+    level = body.get("effective_level")
+    scope = body.get("resolved_scope")
+    master = body.get("master_enabled")
+    return FleetPolicyView(
+        # Echo the domain we ASKED for, not the one coord echoed: they are the
+        # same today, and pinning it means a future coord that echoes the
+        # controls row's domain cannot mislabel this block.
+        domain=domain,
+        # A coord that answers without the field has told us nothing, and the
+        # fail-safe reading of "nothing" for a capability toggle is `off` —
+        # the same floor the runner's poller applies before its first poll.
+        effective_level=level if isinstance(level, str) else "off",
+        master_enabled=master if isinstance(master, bool) else False,
+        resolved_scope=scope if isinstance(scope, str) else "none",
+        can_edit=can_edit,
+        keys_not_shown=not_shown,
+        keys_not_shown_source=source,
+    )
+
+
+@router.get("/fleet-policy", response_model=FleetPolicyView)
+async def get_fleet_policy(
+    request: Request,
+    domain: str = Query(..., min_length=1, description="Policy domain to read"),
+    repo: str | None = Query(
+        None,
+        description="Resolve as this repo would (only affects repo-band rows).",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> FleetPolicyView:
+    """Read one fleet-policy domain's RESOLVED value for the caller's tenant.
+
+    Returns what devices actually resolve, not the last thing written. See
+    :class:`FleetPolicyView` for why ``resolved_scope`` matters and the module
+    comment above for the ``fleet_resources`` blocks this strips.
+
+    ``can_edit`` is computed with the SAME rule
+    ``require_coord_tenant_admin`` applies to the PUT — the operator's roles in
+    the EFFECTIVE tenant, plus the superuser bypass. Using
+    ``identity.is_admin`` here (as some older proxies do) would be wrong in
+    both directions: it is a union across every tenant, so an Administrator of
+    tenant A who is a Developer of the active tenant B would get an enabled
+    button and a 403, and a qontinui superuser who is not a coord tenant admin
+    would get a disabled button for a write that would have succeeded.
+    """
+    params: dict[str, Any] = {"domain": domain}
+    if repo:
+        params["repo"] = repo
+    payload = await _proxy_coord_get(
+        "/coord/fleet-policy", params=params, tenant_id=tenant_id
+    )
+    identity = await get_coord_identity(request)
+    active = request.headers.get(ACTIVE_TENANT_HEADER)
+    can_edit = (
+        "admin" in _effective_tenant_roles(identity, active)
+        or current_user.is_superuser
+    )
+    return _fleet_policy_view(payload, domain=domain, can_edit=can_edit)
+
+
+@router.put("/fleet-policy", response_model=FleetPolicyWriteResult)
+async def put_fleet_policy(
+    body: FleetPolicyPut,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> FleetPolicyWriteResult:
+    """Write one fleet-policy domain, then READ BACK what devices resolve.
+
+    Tenant-admin gated web-side; coord re-checks with ``rbac::is_tenant_admin``
+    and answers 403 ``admin_required`` otherwise, which passes through
+    verbatim.
+
+    The read-back is a separate GET rather than a reuse of the PUT's own echo.
+    A write that lands is not the same fact as a value that resolves — a
+    more specific repo-band row, a false ``master_enabled``, or a stale replica
+    all break the equivalence — and the operator asked what the fleet sees.
+    """
+    written = await _proxy_coord_put(
+        "/coord/fleet-policy",
+        body.model_dump(exclude_none=False),
+        tenant_id=tenant_id,
+    )
+    echo = written if isinstance(written, dict) else {}
+
+    # The read-back must ask coord the SAME question the write answered.
+    # Coord's GET matches repo-band rows only when `?repo=` is supplied (its
+    # query struct is `{domain, repo}` — there is no `scope_key` param), so
+    # omitting it after a repo-band write would resolve a DIFFERENT question
+    # and then report the answer as this write's confirmed effect.
+    readback_params: dict[str, Any] = {"domain": body.domain}
+    if body.scope_band == "repo" and body.scope_key:
+        readback_params["repo"] = body.scope_key
+
+    effective: FleetPolicyView | None = None
+    readback_error: str | None = None
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy", params=readback_params, tenant_id=tenant_id
+        )
+        # The caller passed `require_coord_tenant_admin`, so `can_edit` is
+        # settled without a third round trip to `/admin/coord/me`.
+        effective = _fleet_policy_view(payload, domain=body.domain, can_edit=True)
+    except HTTPException as exc:
+        readback_error = f"read-back failed: coord returned {exc.status_code}"
+    except Exception as exc:  # noqa: BLE001 — the WRITE succeeded; don't lose it
+        readback_error = f"read-back failed: {exc}"
+
+    if readback_error is not None:
+        logger.warning(
+            "fleet_policy.readback_failed",
+            domain=body.domain,
+            detail=readback_error,
+        )
+
+    version = echo.get("version")
+    versioned = echo.get("versioned")
+    updated_by = echo.get("updated_by")
+    return FleetPolicyWriteResult(
+        ok=bool(echo.get("ok", True)),
+        domain=body.domain,
+        # The level we WROTE — deliberately not coord's `effective_level` echo,
+        # which is already the resolved value and belongs in `effective`.
+        # Sourcing both halves from the same field would collapse the very
+        # distinction this response exists to keep.
+        written_level=body.level,
+        written_master_enabled=body.master_enabled,
+        versioned=versioned if isinstance(versioned, bool) else None,
+        version=version if isinstance(version, int) else None,
+        updated_by=updated_by if isinstance(updated_by, str) else None,
+        effective=effective,
+        readback_error=readback_error,
+    )
+
+
 # ---- Priority-sets + composition-rules CRUD proxy -----------------------
 #
 # Plan ``2026-05-15-priority-sets-write-path-and-implementation-set.md``

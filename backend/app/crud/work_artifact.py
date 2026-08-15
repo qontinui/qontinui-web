@@ -699,6 +699,47 @@ async def create_edge(
     return edge, True
 
 
+async def capture_health(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[tuple[str, int, datetime | None, datetime | None]]:
+    """Per-``captured_by`` corpus census: ``(door, count, first, last_touched)``.
+
+    The question this answers is "is the AGENT door being used, or is the
+    scanner the only thing feeding the store?" — so the count alone is not
+    enough. Three artifacts captured by an agent in March and none since is a
+    door that WAS used, not one that is; recency is what separates the two,
+    and ``first`` dates the door's opening.
+
+    ⚠️ The recency figure is ``max(updated_at)``, which is a LAST-TOUCHED
+    timestamp, not a last-captured one: any later mutation bumps it, so an
+    operator's kind correction on a scanner-captured row moves the
+    ``runner_scan`` door's date without the scanner having written anything.
+    It is named ``last_touched`` all the way to the UI for exactly that reason
+    — calling it "last write" would overstate what the column knows.
+
+    Returns only the doors actually present in the data. Folding in the
+    never-used ones (as explicit zeros, which is the honest rendering) is the
+    endpoint's job — the vocabulary lives in the schema layer, not here.
+    """
+    stmt = (
+        select(
+            WorkArtifact.captured_by,
+            # NOT labelled ``count``: ``Row`` is a tuple, so ``row.count`` would
+            # resolve to ``tuple.count`` (the method) rather than the column.
+            func.count().label("artifact_count"),
+            func.min(WorkArtifact.created_at).label("first_at"),
+            func.max(WorkArtifact.updated_at).label("last_touched_at"),
+        )
+        .where(_org_scope(org_id))
+        .group_by(WorkArtifact.captured_by)
+        .order_by(WorkArtifact.captured_by)
+    )
+    return [
+        (row.captured_by, int(row.artifact_count), row.first_at, row.last_touched_at)
+        for row in (await db.execute(stmt)).all()
+    ]
+
+
 async def find_divergent(
     db: AsyncSession,
     *,
