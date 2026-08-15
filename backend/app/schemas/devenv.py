@@ -279,9 +279,20 @@ class AutoEnrollPolicyResponse(BaseSchema):
     ``environment_count > 1`` is the ambiguous state — the engine will skip
     every new machine and log, and the UI must name that rather than showing a
     healthy-looking "on".
+
+    ``globally_enabled`` is the DEPLOYMENT's ``DEVENV_AUTO_ENROLL_ENABLED``
+    flag, and it dominates every other field here. It ships **false** and is
+    turned on tenant by tenant, so for the whole rollout window the engine
+    answers ``disabled_globally`` before it reads a single row — while
+    ``enabled`` (the owner's own setting) still says true, because it does. A
+    response that reported only the owner's half would let the panel render a
+    healthy "on" over an engine that does nothing at all, on day one, for
+    everybody. It is exposed for exactly that reason and for no other: the
+    owner cannot change it and there is no route that would let them.
     """
 
     enabled: bool
+    globally_enabled: bool
     target_environment_id: UUID | None = None
     configured: bool
     effective_environment_id: UUID | None = None

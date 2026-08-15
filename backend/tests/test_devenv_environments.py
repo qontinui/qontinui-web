@@ -561,6 +561,30 @@ def _client(app: FastAPI) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
+async def _mk_coord_device(db: AsyncSession, *, user_id, hostname: str = "box") -> str:
+    """A ``coord.devices`` row PAIRED TO ``user_id``; returns its id as a str.
+
+    ``POST /machines/dispatch-enroll`` authorizes on exactly this row, so every
+    dispatch test has to own its target. A test that skipped this and passed a
+    bare ``uuid4()`` would now assert a 404 while believing it asserted a
+    dispatch.
+    """
+    from app.models.device import Device
+
+    device = Device(
+        device_id=uuid4(),
+        user_id=user_id,
+        name=hostname,
+        hostname=hostname,
+        state="healthy",
+        capability_user_paired=True,
+        paired_at=datetime.now(UTC),
+    )
+    db.add(device)
+    await db.flush()
+    return str(device.device_id)
+
+
 def _config_body(sections: dict) -> dict:
     """A ConfigEnvelope request body (agent push)."""
     return {
@@ -1103,7 +1127,7 @@ class TestDispatchEnroll:
             return httpx.Response(200, json={"dispatched": True})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
-        device_id = str(uuid4())
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
@@ -1153,10 +1177,11 @@ class TestDispatchEnroll:
             return httpx.Response(400, json={"error": "unknown device"})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "offline-box", "target_device_id": str(uuid4())},
+                json={"name": "offline-box", "target_device_id": device_id},
             )
         # The machine + code are still created (copy-paste fallback), dispatch soft-fails.
         assert r.status_code == 201, r.text
@@ -1215,7 +1240,7 @@ class TestDispatchEnroll:
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         self._patch_socket(monkeypatch, connected=True, sent=True, captured=captured)
 
-        device_id = str(uuid4())
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
@@ -1257,7 +1282,7 @@ class TestDispatchEnroll:
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         self._patch_socket(monkeypatch, connected=False, sent=True, captured=captured)
 
-        device_id = str(uuid4())
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
@@ -1286,10 +1311,11 @@ class TestDispatchEnroll:
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         self._patch_socket(monkeypatch, connected=True, sent=False, captured=captured)
 
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "half-open-box", "target_device_id": str(uuid4())},
+                json={"name": "half-open-box", "target_device_id": device_id},
             )
 
         assert r.status_code == 201, r.text
@@ -1316,15 +1342,418 @@ class TestDispatchEnroll:
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         monkeypatch.setattr("app.api.v1.endpoints.devenv.get_redis", _boom)
 
+        device_id = await _mk_coord_device(async_db_session, user_id=test_user.id)
         async with _client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
-                json={"name": "no-redis-box", "target_device_id": str(uuid4())},
+                json={"name": "no-redis-box", "target_device_id": device_id},
             )
 
         assert r.status_code == 201, r.text
         assert r.json()["dispatched"] is True
         assert coord_body["machine_id"]
+
+
+class TestDispatchEnrollAuthorization:
+    """``target_device_id`` must be a device the CALLER owns — on both transports.
+
+    This route used to be authorized only by the transport it happened to take.
+    coord's ``POST /devenv/enroll-dispatch`` sits behind ``require_role(admin)``,
+    so while the coord hop was the only path, a non-admin could not reach anyone
+    else's device through it. The socket transport has no such gate — web holds
+    the device's socket itself — so trying the socket FIRST removed the only
+    authorization there was: any signed-in user could name any CONNECTED device,
+    get a machine row of their own bound to it, and receive that box's
+    environment captures from then on.
+
+    So the tests come in pairs: a non-owner must be refused BEFORE anything
+    exists, on the socket path and on the coord path alike, and the owner must
+    still succeed on both.
+    """
+
+    @pytest.mark.asyncio
+    async def test_non_owner_cannot_dispatch_to_a_connected_device(
+        self, async_db_session: AsyncSession, test_user, second_user, monkeypatch
+    ) -> None:
+        """The escalation itself: a connected device belonging to someone else."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        coord_calls: list = []
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_calls.append(path)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        TestDispatchEnroll._patch_socket(
+            monkeypatch, connected=True, sent=True, captured=captured
+        )
+
+        # The device is CONNECTED (so the socket path would have taken it) and
+        # belongs to `second_user`, not the caller.
+        victim_device = await _mk_coord_device(
+            async_db_session, user_id=second_user.id, hostname="victim-box"
+        )
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "steal-me", "target_device_id": victim_device},
+            )
+
+        # 404, not 403 — cross-owner ids never leak existence in this module.
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "device_not_found"
+        # Nothing was dispatched on EITHER transport...
+        assert captured == {}
+        assert coord_calls == []
+        # ...and no machine row was created for the caller.
+        from sqlalchemy import select as _select
+
+        from app.models.devenv import Machine as _Machine
+
+        rows = (
+            (
+                await async_db_session.execute(
+                    _select(_Machine.id).where(
+                        _Machine.owner_user_id == test_user.id,
+                        _Machine.coord_device_id == UUID(victim_device),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert list(rows) == []
+
+    @pytest.mark.asyncio
+    async def test_non_owner_is_refused_on_the_coord_path_too(
+        self, async_db_session: AsyncSession, test_user, second_user, monkeypatch
+    ) -> None:
+        """The gate is before the transport choice, not inside one branch.
+
+        With the device OFFLINE the socket arm is skipped entirely, so this is
+        the arm that used to be protected by coord's admin role. It must now be
+        refused by web itself, without ever asking coord.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        coord_calls: list = []
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_calls.append(path)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        TestDispatchEnroll._patch_socket(
+            monkeypatch, connected=False, sent=True, captured=captured
+        )
+
+        victim_device = await _mk_coord_device(
+            async_db_session, user_id=second_user.id, hostname="offline-victim"
+        )
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "steal-me-too", "target_device_id": victim_device},
+            )
+
+        assert r.status_code == 404, r.text
+        assert coord_calls == []
+        assert captured == {}
+
+    @pytest.mark.asyncio
+    async def test_unknown_device_is_also_a_404(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """A device id with no row reads identically to someone else's."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            raise AssertionError("coord must not be reached")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "ghost-box", "target_device_id": str(uuid4())},
+            )
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "device_not_found"
+
+    @pytest.mark.asyncio
+    async def test_owner_still_succeeds_on_the_socket_transport(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Control: the gate admits the owner, so the refusals mean something."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            raise AssertionError("the socket path should have returned first")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        TestDispatchEnroll._patch_socket(
+            monkeypatch, connected=True, sent=True, captured=captured
+        )
+
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="my-connected-box"
+        )
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "my-socket-box", "target_device_id": device_id},
+            )
+
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["sent_to"] == device_id
+
+    @pytest.mark.asyncio
+    async def test_owner_still_succeeds_on_the_coord_transport(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Control for the offline arm."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        coord_body: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            coord_body.update(json_body)
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        TestDispatchEnroll._patch_socket(
+            monkeypatch, connected=False, sent=True, captured={}
+        )
+
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="my-offline-box"
+        )
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "my-coord-box", "target_device_id": device_id},
+            )
+
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        assert coord_body["target_device_id"] == device_id
+
+
+class TestOneLiveMachinePerDeviceIsA409:
+    """``devenv_10``'s unique index must never surface as an untyped 500.
+
+    Three shipped writers can breach ``uq_devenv_machine_active_coord_device``,
+    and none of them handled ``IntegrityError``: the violation was an untyped
+    500 on a poisoned transaction. Each is asserted here to answer **409 with
+    the typed ``device_already_has_machine`` code** instead, because a caller
+    can act on that and cannot act on a 500.
+    """
+
+    @pytest.mark.asyncio
+    async def test_agent_enroll_when_the_box_beat_the_human(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The likely one, and with auto-enroll on it is the NORMAL ordering.
+
+        The owner creates a machine by hand (no ``coord_device_id``); before
+        they paste the one-liner, the box connects and the engine creates its
+        own row bound to that device. Consuming the hand-made code then tries to
+        bind a SECOND live row to the same device.
+        """
+        from app.models.devenv import Machine
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="raced-box"
+        )
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines", json={"name": "manual-first"}
+            )
+            assert r.status_code == 201, r.text
+            code = r.json()["enrollment_code"]
+
+            # The engine gets there first.
+            auto = Machine(
+                owner_user_id=test_user.id,
+                name="auto-created",
+                hostname="raced-box",
+                coord_device_id=UUID(device_id),
+                enrollment_origin="auto",
+            )
+            async_db_session.add(auto)
+            await async_db_session.flush()
+
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": code, "coord_device_id": device_id},
+            )
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "device_already_has_machine"
+
+    @pytest.mark.asyncio
+    async def test_agent_reenroll_of_the_same_device_is_not_a_conflict(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Control: rotating a machine's OWN binding stays a 200.
+
+        Without this, the pre-check could be "any live row for this device
+        conflicts", which would break the ordinary re-enroll of the very
+        machine that owns the device.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="rotating-box"
+        )
+
+        async with _client(app) as client:
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "rotate-me"})
+            assert r.status_code == 201, r.text
+            machine_id = r.json()["id"]
+            code = r.json()["enrollment_code"]
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": code, "coord_device_id": device_id},
+            )
+            assert r.status_code == 200, r.text
+
+            # Re-mint and enroll again, same device.
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/regenerate-enrollment"
+            )
+            assert r.status_code == 200, r.text
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={
+                    "enrollment_code": r.json()["enrollment_code"],
+                    "coord_device_id": device_id,
+                },
+            )
+        assert r.status_code == 200, r.text
+
+    @pytest.mark.asyncio
+    async def test_dispatch_to_a_device_that_already_has_a_machine(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The operator dispatch path — a 409, not a 500 mid-contract.
+
+        The route's documented contract is "the machine + code are ALWAYS
+        created and returned"; it cannot honor that for a device that already
+        has a live row, so it must say so in the answer rather than blow up
+        after the bind.
+        """
+        from app.models.devenv import Machine
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            raise AssertionError("must be refused before any dispatch")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="taken-box"
+        )
+        async_db_session.add(
+            Machine(
+                owner_user_id=test_user.id,
+                name="already-here",
+                hostname="taken-box",
+                coord_device_id=UUID(device_id),
+                enrollment_origin="auto",
+            )
+        )
+        await async_db_session.flush()
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "second-row", "target_device_id": device_id},
+            )
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "device_already_has_machine"
+
+    @pytest.mark.asyncio
+    async def test_regenerate_cannot_unrevoke_over_a_live_successor(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The sharpest one: revoke + regenerate IS the reversibility story.
+
+        ``regenerate_enrollment`` clears ``revoked_at`` unconditionally. The
+        partial index deliberately lets a revoked row sit out of the way, so the
+        device can (and with auto-enroll on, does) acquire a NEW live row —
+        un-revoking the old one then makes two live rows for one device.
+        """
+        from app.models.devenv import Machine
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="reversible-box"
+        )
+
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines", json={"name": "the-old-one"}
+            )
+            assert r.status_code == 201, r.text
+            old_id = r.json()["id"]
+            code = r.json()["enrollment_code"]
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": code, "coord_device_id": device_id},
+            )
+            assert r.status_code == 200, r.text
+
+            # The owner revokes it — the documented one-click undo.
+            r = await client.post(f"{API_PREFIX}/machines/{old_id}/revoke")
+            assert r.status_code == 200, r.text
+
+            # The box reconnects and the engine gives it a fresh row.
+            async_db_session.add(
+                Machine(
+                    owner_user_id=test_user.id,
+                    name="the-new-one",
+                    hostname="reversible-box",
+                    coord_device_id=UUID(device_id),
+                    enrollment_origin="auto",
+                )
+            )
+            await async_db_session.flush()
+
+            r = await client.post(
+                f"{API_PREFIX}/machines/{old_id}/regenerate-enrollment"
+            )
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "device_already_has_machine"
+
+    @pytest.mark.asyncio
+    async def test_regenerate_on_an_unrevoked_machine_is_unaffected(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Control: the ordinary rotate path keeps working."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        device_id = await _mk_coord_device(
+            async_db_session, user_id=test_user.id, hostname="plain-rotate-box"
+        )
+        async with _client(app) as client:
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "plain-box"})
+            machine_id = r.json()["id"]
+            code = r.json()["enrollment_code"]
+            r = await client.post(
+                f"{API_PREFIX}/agent/enroll",
+                json={"enrollment_code": code, "coord_device_id": device_id},
+            )
+            assert r.status_code == 200, r.text
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/regenerate-enrollment"
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["enrollment_code"]
 
 
 async def _new_user(db: AsyncSession, label: str):
@@ -2476,6 +2905,47 @@ class TestAutoEnrollPolicyApi:
     NOTHING: several environments and no target is a permanent silent no-op,
     and the response has to name it rather than reporting a healthy "enabled".
     """
+
+    @pytest.mark.asyncio
+    async def test_response_carries_the_deployment_flag_beside_the_owners(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """Both halves, because either alone is a half-truth.
+
+        ``DEVENV_AUTO_ENROLL_ENABLED`` ships FALSE and the owner's ``enabled``
+        defaults TRUE, so for the whole rollout window a response carrying only
+        the owner's half describes an engine that returns ``disabled_globally``
+        before reading a row as if it were healthy. The panel keys its dominant
+        status off this field, so its absence is what the green-on bug was made
+        of.
+        """
+        from app.core.config import settings
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        monkeypatch.setattr(settings, "DEVENV_AUTO_ENROLL_ENABLED", False)
+        async with _client(app) as client:
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            # The rollout default: the owner wants it on, the engine is off.
+            assert body["enabled"] is True
+            assert body["globally_enabled"] is False
+
+        monkeypatch.setattr(settings, "DEVENV_AUTO_ENROLL_ENABLED", True)
+        async with _client(app) as client:
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.json()["globally_enabled"] is True
+
+        # The PUT reports it too — a save must not answer with a shape the GET
+        # would contradict.
+        async with _client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": True, "target_environment_id": None},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["globally_enabled"] is True
 
     @pytest.mark.asyncio
     async def test_absent_row_reads_as_enabled_and_unconfigured(

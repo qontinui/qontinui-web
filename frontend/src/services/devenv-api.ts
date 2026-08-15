@@ -118,6 +118,13 @@ export interface Machine {
  */
 export interface AutoEnrollPolicy {
   enabled: boolean;
+  /**
+   * The DEPLOYMENT's auto-enrollment flag, not the owner's. Ships false and is
+   * turned on tenant by tenant, so during the whole rollout window the engine
+   * refuses before reading anything while `enabled` still (truthfully) says the
+   * owner wants it on. Dominates every other field when rendering status.
+   */
+  globally_enabled: boolean;
   target_environment_id: string | null;
   configured: boolean;
   effective_environment_id: string | null;

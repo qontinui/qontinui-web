@@ -42,12 +42,15 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
+from app.core.config import settings
 from app.crud import devenv_machine_crud
 from app.models.devenv import AutoEnrollPolicy, Environment, Machine
+from app.models.device import Device
 from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
@@ -378,11 +381,51 @@ async def dispatch_enroll(
     (or if that send does not land) it falls back to the coord hop exactly as
     it shipped. ``dispatched`` means the same thing on both paths, so no caller
     changes.
+
+    AUTHORIZATION LIVES HERE, not in either transport. This route used to be
+    authorized only by the transport it happened to use: coord's
+    ``POST /devenv/enroll-dispatch`` sits behind ``require_role(admin)``, so
+    only an operator could reach a device through it. The socket transport has
+    no such gate — web holds the device's socket directly — so with the socket
+    tried first, a non-admin who named ANY connected device would have had a
+    machine row of their own bound to someone else's box, and would then have
+    received that box's environment captures.
+
+    So the caller's ownership of ``target_device_id`` is checked ONCE, up
+    front, and both transports are downstream of it. A device that is not the
+    caller's own resolves to 404 exactly like every other cross-owner id in
+    this module (existence is never leaked), and nothing is created before the
+    check passes.
     """
+    # The gate — before the name check, so a non-owner cannot even probe which
+    # of their own names are free against someone else's device, and long
+    # before any row exists.
+    owned_device = await db.scalar(
+        select(Device.device_id).where(
+            Device.device_id == payload.target_device_id,
+            Device.user_id == current_user.id,
+        )
+    )
+    if owned_device is None:
+        raise _not_found("device")
+
     if await machine_repo.name_exists(db, owner_id=current_user.id, name=payload.name):
         raise _conflict("machine_name_taken", "Machine name already in use.")
     if payload.environment_id is not None:
         await _get_editable_environment(db, current_user.id, payload.environment_id)
+    # devenv_10 pre-check: the device may already have a live machine row (the
+    # connect-time engine creates one the moment a paired box comes online).
+    # Without this the bind below trips ``uq_devenv_machine_active_coord_device``
+    # at flush time — an untyped 500 on a poisoned transaction, in place of the
+    # documented "machine + code are ALWAYS created and returned" contract.
+    existing = await devenv_machine_crud.live_machine_for_device(
+        db, coord_device_id=payload.target_device_id
+    )
+    if existing is not None:
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        )
 
     machine = await machine_repo.create(
         db,
@@ -399,9 +442,20 @@ async def dispatch_enroll(
     # asked for the machine, not which wire carried the directive.
     machine.enrollment_origin = "dispatched"
     devenv_machine_crud.mint_enrollment_code(machine)
-    await db.flush()
-    await db.refresh(machine)
-    await db.commit()
+    try:
+        await db.flush()
+        await db.refresh(machine)
+        await db.commit()
+    except IntegrityError:
+        # The pre-check above is not the guarantee — the index is, and a
+        # connect-time auto-enrollment can land between the two. Roll back
+        # (the transaction is poisoned) and answer with the SAME typed 409 the
+        # pre-check does, so a caller never has to tell the two apart.
+        await db.rollback()
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        ) from None
 
     created = MachineCreatedResponse.from_model(machine)
 
@@ -574,21 +628,47 @@ async def regenerate_enrollment(
 
     Re-enrolling a machine that already has a key rotates its credential:
     the agent must re-enroll with the new code to obtain a new key.
+
+    Clearing ``revoked_at`` un-revokes the row, and that is what makes this the
+    sharpest of the three devenv_10 writers: revoke-then-regenerate is the
+    reversibility story the whole auto-enrollment default rests on. If the
+    device acquired a NEW live machine row while this one was revoked — exactly
+    what the connect-time engine does, since the partial index deliberately
+    leaves a revoked row out of the way — un-revoking would produce two live
+    rows for one device. That is a typed 409, not a 500.
     """
     machine = await machine_repo.get(
         db, owner_id=current_user.id, machine_id=machine_id
     )
     if machine is None:
         raise _not_found("machine")
+    if machine.revoked_at is not None and machine.coord_device_id is not None:
+        successor = await devenv_machine_crud.live_machine_for_device(
+            db,
+            coord_device_id=machine.coord_device_id,
+            exclude_machine_id=machine.id,
+        )
+        if successor is not None:
+            raise _conflict(
+                devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+                devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+            )
     devenv_machine_crud.mint_enrollment_code(machine)
     # A fresh enrollment supersedes any prior key — clear it so the old
     # credential stops authenticating once re-enrollment is requested.
     machine.key_hash = None
     machine.enrolled_at = None
     machine.revoked_at = None
-    await db.flush()
-    await db.refresh(machine)
-    await db.commit()
+    try:
+        await db.flush()
+        await db.refresh(machine)
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise _conflict(
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_CODE,
+            devenv_machine_crud.DEVICE_ALREADY_HAS_MACHINE_MESSAGE,
+        ) from None
     return MachineCreatedResponse.from_model(machine)
 
 
@@ -659,6 +739,11 @@ async def _policy_view(
     materialise a row to read one: an owner who has never opened this surface
     should not acquire state by being looked at, and the default has to keep
     working for the owners who never will.
+
+    ``globally_enabled`` carries the deployment flag alongside the owner's
+    setting. Both halves, never one: during the rollout the flag is false
+    everywhere and the owner's ``enabled`` is true by default, so reporting
+    only the second would describe an engine that is doing nothing as healthy.
     """
     env_count = (
         await db.scalar(
@@ -670,6 +755,7 @@ async def _policy_view(
     effective = await resolve_target_environment(db, user_id=user_id, policy=policy)
     return AutoEnrollPolicyResponse(
         enabled=policy.enabled if policy is not None else True,
+        globally_enabled=bool(settings.DEVENV_AUTO_ENROLL_ENABLED),
         target_environment_id=(
             policy.target_environment_id if policy is not None else None
         ),

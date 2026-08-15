@@ -48,12 +48,23 @@ import {
  * {@link autoEnrollStatus} has a distinct `unresolved` state that names the
  * cause and the fix. Rendering that case as a healthy green "on" is the one
  * failure this component must not have.
+ *
+ * ## And the state that is the DEFAULT on day one
+ *
+ * The same failure has a second, larger source: `DEVENV_AUTO_ENROLL_ENABLED`
+ * ships **false** and is turned on tenant by tenant. So for the entire rollout
+ * window the engine returns `disabled_globally` before it reads a single row,
+ * while the owner's own `enabled` is true by default — which, keyed off the
+ * owner's half alone, renders as green "on" for every owner, everywhere, from
+ * the first deploy. `globally_off` is therefore checked FIRST and dominates
+ * every other state: nothing below it can be true while the engine is off.
  */
 
 /** Sentinel Select value for "no stated target" (shadcn forbids empty values). */
 const NO_TARGET = "__none__";
 
 export type AutoEnrollStatusKind =
+  | "globally_off"
   | "off"
   | "active"
   | "unresolved"
@@ -72,11 +83,25 @@ export interface AutoEnrollStatus {
 /**
  * Turn a policy into the one honest sentence about it.
  *
- * Ordered by what dominates: a disabled policy makes the target irrelevant, an
- * owner with no environments has nowhere to put a machine regardless of the
- * target, and only then does the resolved/unresolved distinction matter.
+ * Ordered by what dominates: the site-wide switch makes every owner-level
+ * setting moot, a disabled policy makes the target irrelevant, an owner with no
+ * environments has nowhere to put a machine regardless of the target, and only
+ * then does the resolved/unresolved distinction matter.
  */
 export function autoEnrollStatus(policy: AutoEnrollPolicy): AutoEnrollStatus {
+  if (!policy.globally_enabled) {
+    return {
+      kind: "globally_off",
+      badge: "not switched on yet",
+      tone: "secondary",
+      message:
+        "Automatic enrollment is not switched on for this site yet, so no machine is being enrolled on its own — whatever the settings below say. They are saved and take effect when it is switched on.",
+      // Nothing for the owner to do: this is an operator-side rollout switch
+      // with no route that would let them change it. Inventing an action here
+      // would be worse than none.
+      action: null,
+    };
+  }
   if (!policy.enabled) {
     return {
       kind: "off",

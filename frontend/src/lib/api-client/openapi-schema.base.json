@@ -2853,7 +2853,7 @@
         "type": "object"
       },
       "AutoEnrollPolicyResponse": {
-        "description": "The owner's auto-enrollment policy, plus what it actually resolves to.\n\n``configured`` is False when NO row exists. That is not the same as\ndisabled: an absent row reads as ``enabled=True`` (the column default), so\nthe flag exists to let the UI distinguish \"the owner chose this\" from \"the\nowner has never visited this surface and is getting the default\".\n\n``effective_environment_id`` is the environment a new box would actually\njoin right now, computed by the same precedence the engine uses: a target\nthe owner really owns, else their single environment, else NULL. NULL with\n``environment_count > 1`` is the ambiguous state \u2014 the engine will skip\nevery new machine and log, and the UI must name that rather than showing a\nhealthy-looking \"on\".",
+        "description": "The owner's auto-enrollment policy, plus what it actually resolves to.\n\n``configured`` is False when NO row exists. That is not the same as\ndisabled: an absent row reads as ``enabled=True`` (the column default), so\nthe flag exists to let the UI distinguish \"the owner chose this\" from \"the\nowner has never visited this surface and is getting the default\".\n\n``effective_environment_id`` is the environment a new box would actually\njoin right now, computed by the same precedence the engine uses: a target\nthe owner really owns, else their single environment, else NULL. NULL with\n``environment_count > 1`` is the ambiguous state \u2014 the engine will skip\nevery new machine and log, and the UI must name that rather than showing a\nhealthy-looking \"on\".\n\n``globally_enabled`` is the DEPLOYMENT's ``DEVENV_AUTO_ENROLL_ENABLED``\nflag, and it dominates every other field here. It ships **false** and is\nturned on tenant by tenant, so for the whole rollout window the engine\nanswers ``disabled_globally`` before it reads a single row \u2014 while\n``enabled`` (the owner's own setting) still says true, because it does. A\nresponse that reported only the owner's half would let the panel render a\nhealthy \"on\" over an engine that does nothing at all, on day one, for\neverybody. It is exposed for exactly that reason and for no other: the\nowner cannot change it and there is no route that would let them.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -2878,6 +2878,10 @@
           "environment_count": {
             "title": "Environment Count",
             "type": "integer"
+          },
+          "globally_enabled": {
+            "title": "Globally Enabled",
+            "type": "boolean"
           },
           "target_environment_id": {
             "anyOf": [
@@ -2905,6 +2909,7 @@
         },
         "required": [
           "enabled",
+          "globally_enabled",
           "configured",
           "environment_count"
         ],
@@ -58982,7 +58987,7 @@
     },
     "/api/v1/devenv/agent/enroll": {
       "post": {
-        "description": "Consume a one-time enrollment code and mint a machine key.\n\n**No machine-key dependency** \u2014 the enrollment code IS the credential\n(the agent has no key yet). The code is consumed under a ``FOR UPDATE``\nrow lock so concurrent enroll attempts serialize and only the first\nsucceeds. The plaintext key is returned ONCE; only its hash + prefix\nare stored.\n\nReturns the machine's bound ``environment_id`` if exactly one\nenvironment exists for the owner (a convenience for single-environment\nsetups); otherwise ``None`` and the agent reports per-environment by id.",
+        "description": "Consume a one-time enrollment code and mint a machine key.\n\n**No machine-key dependency** \u2014 the enrollment code IS the credential\n(the agent has no key yet). The code is consumed under a ``FOR UPDATE``\nrow lock so concurrent enroll attempts serialize and only the first\nsucceeds. The plaintext key is returned ONCE; only its hash + prefix\nare stored.\n\nReturns the machine's bound ``environment_id`` if exactly one\nenvironment exists for the owner (a convenience for single-environment\nsetups); otherwise ``None`` and the agent reports per-environment by id.\n\n``coord_device_id`` binding and devenv_10. With connect-time auto-enrollment\non, \"the box beats the human\" is the NORMAL ordering, not a race: an owner\ncreates a machine by hand (no ``coord_device_id``), and before they paste\nthe one-liner the box connects and the engine creates its own row bound to\nthat device. Consuming the hand-made code would then bind a SECOND live row\nto the same device and trip\n``uq_devenv_machine_active_coord_device`` \u2014 an untyped 500 on the agent's\nvery first call. It is a typed 409 instead, which the agent can report as\n\"this device is already enrolled as another machine\" rather than \"the\nserver broke\".",
         "operationId": "api_v1_devenv_agent_enroll_post",
         "requestBody": {
           "content": {
@@ -60142,7 +60147,7 @@
     },
     "/api/v1/devenv/machines/dispatch-enroll": {
       "post": {
-        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.\n\nTwo transports, tried in order. When the device is connected, the directive\ngoes down the authenticated device WebSocket web already holds; otherwise\n(or if that send does not land) it falls back to the coord hop exactly as\nit shipped. ``dispatched`` means the same thing on both paths, so no caller\nchanges.",
+        "description": "Create a machine + dispatch an enroll directive to a paired runner.\n\nPhase 3 (dispatched self-enroll): the operator picks an already-paired\ncoord device in the dashboard; the server mints the machine + one-time\ncode, binds it to the chosen device, then asks coord to publish an enroll\ndirective to that device's runner. The runner enrolls itself \u2014 no terminal,\nno copy-paste.\n\nThe machine + code are ALWAYS created and returned, even if the dispatch is\nrejected (device offline / unknown), so the UI can fall back to the\ncopy-paste command (Phase 1(b)). Coord's admin-gated route resolves the\noperator from the forwarded Cognito bearer.\n\nTwo transports, tried in order. When the device is connected, the directive\ngoes down the authenticated device WebSocket web already holds; otherwise\n(or if that send does not land) it falls back to the coord hop exactly as\nit shipped. ``dispatched`` means the same thing on both paths, so no caller\nchanges.\n\nAUTHORIZATION LIVES HERE, not in either transport. This route used to be\nauthorized only by the transport it happened to use: coord's\n``POST /devenv/enroll-dispatch`` sits behind ``require_role(admin)``, so\nonly an operator could reach a device through it. The socket transport has\nno such gate \u2014 web holds the device's socket directly \u2014 so with the socket\ntried first, a non-admin who named ANY connected device would have had a\nmachine row of their own bound to someone else's box, and would then have\nreceived that box's environment captures.\n\nSo the caller's ownership of ``target_device_id`` is checked ONCE, up\nfront, and both transports are downstream of it. A device that is not the\ncaller's own resolves to 404 exactly like every other cross-owner id in\nthis module (existence is never leaked), and nothing is created before the\ncheck passes.",
         "operationId": "api_v1_devenv_machines_dispatch_enroll_post",
         "requestBody": {
           "content": {
@@ -60500,7 +60505,7 @@
     },
     "/api/v1/devenv/machines/{machine_id}/regenerate-enrollment": {
       "post": {
-        "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.",
+        "description": "Mint a fresh one-time enrollment code for a machine.\n\nRe-enrolling a machine that already has a key rotates its credential:\nthe agent must re-enroll with the new code to obtain a new key.\n\nClearing ``revoked_at`` un-revokes the row, and that is what makes this the\nsharpest of the three devenv_10 writers: revoke-then-regenerate is the\nreversibility story the whole auto-enrollment default rests on. If the\ndevice acquired a NEW live machine row while this one was revoked \u2014 exactly\nwhat the connect-time engine does, since the partial index deliberately\nleaves a revoked row out of the way \u2014 un-revoking would produce two live\nrows for one device. That is a typed 409, not a 500.",
         "operationId": "api_v1_devenv_machines_machine_id_regenerate_enrollment_post",
         "parameters": [
           {
