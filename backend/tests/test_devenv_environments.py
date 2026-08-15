@@ -8,7 +8,8 @@ Two layers:
     override, in-sync identity).
   - :class:`app.schemas.devenv.ConfigEnvelope` — the secret backstop
     (env_contract values coerced to present/absent; nested non-string section
-    values rejected).
+    values rejected) and the additive ``unknown_keys`` field (absent /
+    explicit-``{}`` / populated all stay distinguishable through persist).
   - :mod:`app.crud.devenv_machine_crud` — machine-key generation (mk_ prefix,
     sha256 hash, non-secret prefix, uniqueness).
 
@@ -48,13 +49,26 @@ API_PREFIX = "/api/v1/devenv"
 # ===========================================================================
 
 
-def _envelope(sections: dict, *, schema_version: int = 1) -> dict:
-    """Build a persisted-shape envelope dict (what JSONB holds)."""
-    return {
+def _envelope(
+    sections: dict,
+    *,
+    schema_version: int = 1,
+    unknown_keys: dict | None = None,
+) -> dict:
+    """Build a persisted-shape envelope dict (what JSONB holds).
+
+    ``unknown_keys`` is OMITTED entirely when ``None`` — that is the on-disk
+    shape written by a runner predating the field, and several tests below turn
+    on omitted-vs-``{}`` being different bytes.
+    """
+    envelope: dict = {
         "schema_version": schema_version,
         "captured_at": "2026-06-21T00:00:00Z",
         "sections": sections,
     }
+    if unknown_keys is not None:
+        envelope["unknown_keys"] = unknown_keys
+    return envelope
 
 
 class TestDiffEnvelopes:
@@ -97,6 +111,102 @@ class TestDiffEnvelopes:
         assert delta.status == "changed"
         assert delta.severity == "warning"
         assert report.severity == "warning"
+
+    def test_missing_repo_is_warning_not_critical(self) -> None:
+        """A repo canonical has and the box lacks → removed / **warning**.
+
+        This is the motivating case of the repos plan, and it is a ``removed``
+        delta — the one status that ignores the per-section base severity and
+        hardcodes ``critical``. Setting ``_SECTION_BASE_SEVERITY["repos"]``
+        alone therefore does NOT reach it; the per-section removed override is
+        what does. A box missing ten of the org's repositories must not pin the
+        environment rollup to ``critical`` forever, especially when some of
+        those repos are private and the developer cannot clone them at all.
+        """
+        canonical = _envelope(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner",
+                    "repo_qontinui_qontinui-stack": "https://github.com/qontinui/qontinui-stack",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner"
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repo_qontinui_qontinui-stack")
+        assert delta.status == "removed"
+        assert delta.severity == "warning"
+        assert delta.expected == "https://github.com/qontinui/qontinui-stack"
+        assert delta.derived is False
+        # Still real drift — softening the severity must not hide it.
+        assert report.in_sync is False
+        assert report.severity == "warning"
+
+    def test_removed_override_does_not_leak_to_other_sections(self) -> None:
+        """Only ``repos`` opts out; every other section keeps ``critical``.
+
+        The override table exists so one section can soften a rule that is right
+        everywhere else. A regression that made it global would quietly downgrade
+        a missing ``db_schema`` or ``services`` key — the most dangerous drift
+        there is — to a warning.
+        """
+        for section_name in ("services", "versions", "db_schema", "env_contract"):
+            canonical = _envelope({section_name: {"a": "1", "b": "2"}})
+            actual = _envelope({section_name: {"a": "1"}})
+            report = devenv_drift.diff_envelopes(canonical, actual)
+            delta = _delta(_section(report, section_name), "b")
+            assert delta.status == "removed"
+            assert delta.severity == "critical", f"{section_name} must stay critical"
+
+    def test_repos_scope_kind_difference_is_derived_and_info(self) -> None:
+        """Capture provenance is reported, never actionable, never drift.
+
+        Two boxes that resolved different KINDS of workspace root did not
+        enumerate the same concept — that is worth SEEING, which is why the
+        delta is reported at all. But no clone can install a scope, so it must
+        not count as machine drift or push the rollup up.
+        """
+        canonical = _envelope({"repos": {"repos_scope_kind": "declared"}})
+        actual = _envelope({"repos": {"repos_scope_kind": "home_default"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repos_scope_kind")
+        assert delta.status == "changed"
+        assert delta.derived is True
+        assert delta.severity == "info"
+        assert report.in_sync is True, "a derived-only difference is not drift"
+
+    def test_extra_repo_on_the_target_is_added_and_breaks_in_sync(self) -> None:
+        """A repo the box has but canonical does not is `added` — real drift.
+
+        Documented deliberately: it is why the collector filters by an owner
+        allowlist. Without that filter a developer's personal checkouts land
+        here, and each one breaks ``in_sync`` on a box that is otherwise
+        perfectly aligned.
+        """
+        canonical = _envelope({"repos": {"repos_scope_kind": "declared"}})
+        actual = _envelope(
+            {
+                "repos": {
+                    "repos_scope_kind": "declared",
+                    "repo_someone_personal-notes": "https://github.com/someone/personal-notes",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "repos"), "repo_someone_personal-notes")
+        assert delta.status == "added"
+        assert delta.derived is False
+        assert delta.severity == "warning"
+        assert report.in_sync is False
 
     def test_claude_accounts_change_is_warning(self) -> None:
         """A changed value in the ``claude_accounts`` section → warning (not info)."""
@@ -249,6 +359,224 @@ class TestDiffEnvelopes:
         assert report.schema_version_mismatch is False
 
 
+class TestUnmeasuredKeys:
+    """``unknown_keys`` — an unmeasured key is ``unknown``, never ``removed``.
+
+    A capture probe that exceeds the runner's budget makes the runner omit the
+    key rather than guess a value, and it names the omission in the envelope's
+    ``unknown_keys``. Diffing that as ``removed`` would assert the box lacks a
+    toolchain nobody looked for — and ``removed`` is always critical, so a slow
+    probe alone could drive an install of a version that is already correct.
+    """
+
+    def test_unmeasured_key_is_unknown_not_removed(self) -> None:
+        """A key named in the target's ``unknown_keys`` → unknown / info."""
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope({"versions": {}}, unknown_keys={"versions": ["python"]})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python")
+        assert delta.status == "unknown"
+        # NOT critical: an information gap, not confirmed drift.
+        assert delta.severity == "info"
+        assert delta.expected == "3.12"
+        assert delta.actual is None
+        assert report.severity == "info"
+
+    def test_unmeasured_key_does_not_break_in_sync(self) -> None:
+        """A probe timeout must not flip the oracle.
+
+        ``in_sync`` is a claim about the BOX; a budget overrun is a fact about
+        the measuring process. Letting it decide would make the verdict depend
+        on how busy the machine was during capture — the nondeterminism this
+        change exists to remove. The gap is still REPORTED.
+        """
+        canonical = _envelope({"versions": {"rustc": "1.83.0"}})
+        actual = _envelope({"versions": {}}, unknown_keys={"versions": ["rustc"]})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert report.in_sync is True
+        # Visible, not suppressed.
+        assert _delta(_section(report, "versions"), "rustc").status == "unknown"
+
+    def test_genuinely_removed_key_is_still_removed_and_critical(self) -> None:
+        """Over-suppression guard: only the NAMED keys become unknown.
+
+        The same envelope carries one unmeasured key and one genuinely absent
+        one. Marking the whole capture "unknown" would suppress real drift.
+        """
+        canonical = _envelope({"versions": {"python": "3.12", "rustc": "1.83.0"}})
+        actual = _envelope({"versions": {}}, unknown_keys={"versions": ["rustc"]})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        section = _section(report, "versions")
+        assert _delta(section, "rustc").status == "unknown"
+        python = _delta(section, "python")
+        assert python.status == "removed"
+        assert python.severity == "critical"
+        assert report.severity == "critical"
+        assert report.in_sync is False
+
+    def test_envelope_without_unknown_keys_behaves_exactly_as_before(self) -> None:
+        """An older runner's envelope (no ``unknown_keys``) → removed / critical."""
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope({"versions": {}})
+        assert "unknown_keys" not in actual
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python")
+        assert delta.status == "removed"
+        assert delta.severity == "critical"
+        assert report.in_sync is False
+
+    def test_explicit_empty_unknown_keys_is_still_removed(self) -> None:
+        """``{}`` is a positive claim that every probe completed → removed."""
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope({"versions": {}}, unknown_keys={})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python")
+        assert delta.status == "removed"
+        assert delta.severity == "critical"
+
+    def test_canonical_side_unmeasured_key_is_unknown_not_added(self) -> None:
+        """Symmetric: a key CANONICAL could not measure is not "extra" on peers.
+
+        Otherwise one slow probe on the canonical box marks the key ``added`` at
+        the section's severity on every peer that DID measure it — the same
+        false claim inverted.
+        """
+        canonical = _envelope({"versions": {}}, unknown_keys={"versions": ["node"]})
+        actual = _envelope({"versions": {"node": "22.1.0"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "node")
+        assert delta.status == "unknown"
+        assert delta.severity == "info"
+        assert delta.expected is None
+        assert delta.actual == "22.1.0"
+        assert report.in_sync is True
+
+    def test_measured_value_wins_over_a_contradictory_unknown_claim(self) -> None:
+        """A runner naming a key it also reported a value for contradicts itself.
+
+        The measured value is the stronger evidence, so the delta stays a real
+        ``changed`` — the unknown marker must not become a way to mute drift.
+        """
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope(
+            {"versions": {"python": "3.11"}}, unknown_keys={"versions": ["python"]}
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python")
+        assert delta.status == "changed"
+        assert delta.severity == "critical"
+        assert report.in_sync is False
+
+    def test_unknown_keys_for_another_section_do_not_leak(self) -> None:
+        """The marker is per-SECTION; a same-named key elsewhere is unaffected."""
+        canonical = _envelope(
+            {"versions": {"python": "3.12"}, "services": {"python": "8000"}}
+        )
+        actual = _envelope(
+            {"versions": {}, "services": {}}, unknown_keys={"versions": ["python"]}
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert _delta(_section(report, "versions"), "python").status == "unknown"
+        assert _delta(_section(report, "services"), "python").status == "removed"
+
+    def test_malformed_unknown_keys_is_ignored_not_fatal(self) -> None:
+        """A misshapen advisory field must not lose the real drift signal."""
+        canonical = _envelope({"versions": {"python": "3.12"}})
+        actual = _envelope({"versions": {}}, unknown_keys={"versions": "python"})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        assert _delta(_section(report, "versions"), "python").status == "removed"
+
+
+class TestConfigEnvelopeUnknownKeys:
+    """:class:`ConfigEnvelope` — the ``unknown_keys`` wire field + persistence."""
+
+    def test_absent_stays_none_and_is_omitted_from_stored_config(self) -> None:
+        """An older runner's push leaves the persisted bytes exactly as before."""
+        env = ConfigEnvelope(
+            captured_at=datetime.now(UTC),
+            sections={"versions": {"python": "3.12"}},
+        )
+        assert env.unknown_keys is None
+        assert "unknown_keys" not in env.to_stored_config()
+
+    def test_explicit_empty_is_preserved_and_persisted(self) -> None:
+        """``{}`` ("everything was measured") must survive as distinct from absent."""
+        env = ConfigEnvelope(
+            captured_at=datetime.now(UTC),
+            sections={"versions": {"python": "3.12"}},
+            unknown_keys={},
+        )
+        assert env.unknown_keys == {}
+        assert env.to_stored_config()["unknown_keys"] == {}
+
+    def test_populated_round_trips_as_a_sibling_of_sections(self) -> None:
+        """The stored shape mirrors the runner's wire shape."""
+        env = ConfigEnvelope(
+            captured_at=datetime.now(UTC),
+            sections={"versions": {}},
+            unknown_keys={"versions": ["rustc", "python"]},
+        )
+        stored = env.to_stored_config()
+        assert set(stored) == {
+            "schema_version",
+            "captured_at",
+            "sections",
+            "unknown_keys",
+        }
+        # Deduped + sorted so list ORDER alone cannot append a history row.
+        assert stored["unknown_keys"] == {"versions": ["python", "rustc"]}
+
+    def test_duplicates_are_deduped_and_sorted(self) -> None:
+        """Two captures naming the same keys in any order normalize identically."""
+        a = ConfigEnvelope(
+            captured_at=datetime.now(UTC),
+            sections={},
+            unknown_keys={"versions": ["rustc", "python", "rustc"]},
+        )
+        b = ConfigEnvelope(
+            captured_at=datetime.now(UTC),
+            sections={},
+            unknown_keys={"versions": ["python", "rustc"]},
+        )
+        assert a.unknown_keys == b.unknown_keys == {"versions": ["python", "rustc"]}
+
+    def test_non_list_value_rejected(self) -> None:
+        """A bare string is not a key LIST — reject rather than iterate its chars."""
+        with pytest.raises(ValidationError):
+            ConfigEnvelope(
+                captured_at=datetime.now(UTC),
+                sections={},
+                unknown_keys={"versions": "python"},
+            )
+
+    def test_non_string_key_entry_rejected(self) -> None:
+        """Entries must be key NAMES."""
+        with pytest.raises(ValidationError):
+            ConfigEnvelope(
+                captured_at=datetime.now(UTC),
+                sections={},
+                unknown_keys={"versions": [1, 2]},
+            )
+
+    def test_non_mapping_rejected(self) -> None:
+        """The field is ``section -> [key, ...]``, not a bare list."""
+        with pytest.raises(ValidationError):
+            ConfigEnvelope(
+                captured_at=datetime.now(UTC),
+                sections={},
+                unknown_keys=["python"],
+            )
+
+
 class TestConfigEnvelopeBackstop:
     """:class:`ConfigEnvelope` — secret backstop + nesting rejection."""
 
@@ -399,6 +727,20 @@ class TestSectionPolicy:
 
         assert sp.policy_for("something_new") == "report_only"
 
+    def test_repos_is_report_only_until_the_apply_module_exists(self) -> None:
+        """``repos`` must not be applyable before the runner can apply it.
+
+        The runner's apply driver returns ``Unsupported`` for an applyable
+        section with no module, while its plan renderer simultaneously reports
+        "N change(s) are in applyable sections - re-run with --confirm". Marking
+        ``repos`` applyable before ``env_agent/apply_repos.rs`` ships therefore
+        makes the box advertise an apply it cannot perform. Flip this — and this
+        test — in the same change that adds the module.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.policy_for("repos") == "report_only"
+
     def test_policy_map(self) -> None:
         """policy_map returns section -> policy for the given names."""
         from app.services import devenv_section_policy as sp
@@ -457,6 +799,47 @@ class TestDerivedKeys:
         assert derived == {"versions": ["probe_scope_kind"]}
         # Scoped to `versions` — it is not a blanket key name.
         assert sp.is_derived_key("services", "probe_scope_kind") is False
+
+    def test_repos_scope_kind_is_derived(self) -> None:
+        """The repos section's provenance key is reported, never applied.
+
+        ``repos_scope_kind`` names WHICH KIND of workspace-root resolution the
+        repo observations were taken under. No clone can install a scope, so it
+        must never be counted as actionable drift — but it must still be
+        REPORTED, because two boxes that resolved different kinds did not
+        enumerate the same concept and their repo lists are not comparable.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("repos", "repos_scope_kind") is True
+        derived = sp.derived_keys_map(
+            {
+                "repos": {
+                    "repo_qontinui_qontinui-runner": "https://github.com/qontinui/qontinui-runner",
+                    "repos_scope_kind": "discovered",
+                }
+            }
+        )
+        assert derived == {"repos": ["repos_scope_kind"]}
+
+    def test_derived_keys_do_not_leak_across_sections(self) -> None:
+        """``_DERIVED_KEYS`` is section-keyed and must stay that way.
+
+        ``is_derived_key`` answers False for an unrecognized key (its
+        conservative default), so registering a provenance key under one section
+        does NOT cover a same-named key in another. Getting this wrong is silent:
+        an unregistered provenance key simply keeps its section policy and gets
+        counted as an actionable apply action.
+        """
+        from app.services import devenv_section_policy as sp
+
+        # Each provenance key is derived in its OWN section only.
+        assert sp.is_derived_key("versions", "probe_scope_kind") is True
+        assert sp.is_derived_key("repos", "probe_scope_kind") is False
+        assert sp.is_derived_key("repos", "repos_scope_kind") is True
+        assert sp.is_derived_key("versions", "repos_scope_kind") is False
+        # A real repo key is never derived — cloning IS the apply action.
+        assert sp.is_derived_key("repos", "repo_qontinui_qontinui-stack") is False
 
     def test_machine_facts_are_not_derived(self) -> None:
         """node/python/rustc are shelled machine facts — they stay applyable."""
@@ -561,13 +944,20 @@ def _client(app: FastAPI) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
-def _config_body(sections: dict) -> dict:
-    """A ConfigEnvelope request body (agent push)."""
-    return {
+def _config_body(sections: dict, *, unknown_keys: dict | None = None) -> dict:
+    """A ConfigEnvelope request body (agent push).
+
+    ``unknown_keys`` is omitted when ``None`` — the body an agent predating the
+    field sends.
+    """
+    body: dict = {
         "schema_version": 1,
         "captured_at": "2026-06-21T12:00:00Z",
         "sections": sections,
     }
+    if unknown_keys is not None:
+        body["unknown_keys"] = unknown_keys
+    return body
 
 
 @pytest_asyncio.fixture()
@@ -1146,6 +1536,147 @@ class TestDispatchEnroll:
         assert body["machine"]["enrollment_code"]
 
 
+class TestDispatchReposApply:
+    """P4 — POST /machines/{id}/repos-apply-dispatch asks a machine's runner to
+    reconcile its cloned repositories. The server REQUESTS; the box DECIDES."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_forwards_the_device_and_confirm_flag(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured["path"] = path
+            captured["body"] = json_body
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        device_id = str(uuid4())
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "repos-box", "target_device_id": device_id},
+            )
+            machine_id = r.json()["machine"]["id"]
+
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+
+        assert r.status_code == 200, r.text
+        assert r.json() == {"dispatched": True, "confirm": True, "detail": None}
+        assert captured["path"] == "/devenv/repos-apply-dispatch"
+        assert captured["body"] == {
+            "target_device_id": device_id,
+            "confirm": True,
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_omitted_confirm_dispatches_a_dry_run(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """An omitted ``confirm`` must reach coord as ``false``.
+
+        Defence in depth with the runner's own default: a request that forgets
+        the field asks for a plan, never for mutation of someone's disk.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            captured["body"] = json_body
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "dryrun-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 200, r.text
+        assert captured["body"]["confirm"] is False
+        assert r.json()["confirm"] is False
+
+    @pytest.mark.asyncio
+    async def test_an_unpaired_machine_is_a_conflict_not_a_soft_failure(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """No bound coord device means there is no runner to ask.
+
+        A retry cannot fix that, so it must not return ``dispatched: false``
+        (which invites one) — it is a precondition failure.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _unreachable(*a, **kw):  # pragma: no cover - must not be called
+            raise AssertionError("coord must not be called for an unpaired machine")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _unreachable)
+        async with _client(app) as client:
+            r = await client.post(f"{API_PREFIX}/machines", json={"name": "unpaired"})
+            machine_id = r.json()["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 409, r.text
+        assert r.json()["detail"]["code"] == "machine_not_paired"
+
+    @pytest.mark.asyncio
+    async def test_coord_rejection_is_a_soft_failure(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        calls: list[str] = []
+
+        async def _fake_post(path, *, headers, json_body, log_event, **kw):
+            calls.append(path)
+            # First call is the enroll dispatch; the second is ours.
+            if path == "/devenv/repos-apply-dispatch":
+                return httpx.Response(400, json={"error": "unknown device"})
+            return httpx.Response(200, json={"dispatched": True})
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "rejecting-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch", json={}
+            )
+
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is False
+        assert r.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_another_owners_machine_is_404(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+
+        async def _unreachable(*a, **kw):  # pragma: no cover - must not be called
+            raise AssertionError("coord must not be called for a foreign machine")
+
+        monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _unreachable)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/{uuid4()}/repos-apply-dispatch", json={}
+            )
+        assert r.status_code == 404, r.text
+        assert r.json()["detail"]["code"] == "machine_not_found"
+
+
 async def _new_user(db: AsyncSession, label: str):
     """Create + persist a real ``auth.users`` row (devenv FKs require one)."""
     from app.models.user import User
@@ -1698,6 +2229,139 @@ class TestOrgSharing:
             )
             assert r.status_code == 200, r.text
             assert r.json()["description"] == "edited by admin"
+
+
+class TestUnknownKeysWire:
+    """The unmeasured-key marker survives the agent PUT → JSONB → drift GET.
+
+    The layer-1 tests above cover the classification; this covers the WIRE —
+    the field used to be dropped on the floor by ``ConfigEnvelope`` (extra
+    fields ignored) and by ``to_stored_config`` (three keys copied), so the
+    marker never reached the diff no matter how correct the diff was.
+    """
+
+    async def _seed(self, client: httpx.AsyncClient) -> tuple[str, str, str, str]:
+        """env + two enrolled machines. Returns (env_id, a_id, key_a, key_b)."""
+        r = await client.post(
+            f"{API_PREFIX}/environments", json={"name": "Unknowns", "description": None}
+        )
+        env_id = r.json()["id"]
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "canon"})
+        a = r.json()
+        r = await client.post(f"{API_PREFIX}/machines", json={"name": "slow-box"})
+        b = r.json()
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": a["enrollment_code"], "machine_id": a["id"]},
+        )
+        key_a = r.json()["machine_key"]
+        r = await client.post(
+            f"{API_PREFIX}/agent/enroll",
+            json={"enrollment_code": b["enrollment_code"], "machine_id": b["id"]},
+        )
+        key_b = r.json()["machine_key"]
+        return env_id, a["id"], key_a, key_b
+
+    @pytest.mark.asyncio
+    async def test_unknown_keys_persist_and_reach_the_drift_report(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A pushed ``unknown_keys`` is stored and turns removed → unknown."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, key_a, key_b = await self._seed(client)
+
+            await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.12", "node": "22"}}),
+                headers={"X-Machine-Key": key_a},
+            )
+            # B measured `node` and matched; its `python` probe timed out. The
+            # older behavior called that a critical `removed`.
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body(
+                    {"versions": {"node": "22"}},
+                    unknown_keys={"versions": ["python"]},
+                ),
+                headers={"X-Machine-Key": key_b},
+            )
+            assert r.status_code == 200, r.text
+
+            # Persisted as a sibling of `sections`, not dropped.
+            from app.repositories.devenv import config_repo
+
+            row = await config_repo.get(
+                async_db_session,
+                environment_id=UUID(env_id),
+                machine_id=UUID(r.json()["machine_id"]),
+            )
+            assert row is not None
+            assert row.config["unknown_keys"] == {"versions": ["python"]}
+
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}/drift")
+            assert r.status_code == 200, r.text
+            drift = r.json()
+
+            report = drift["reports"][0]
+            section = next(s for s in report["sections"] if s["section"] == "versions")
+            delta = next(d for d in section["deltas"] if d["key"] == "python")
+            assert delta["status"] == "unknown"
+            assert delta["severity"] == "info"
+            # A probe timeout must not report the fleet as critically drifted.
+            assert drift["severity"] == "info"
+            assert drift["in_sync"] is True
+
+    @pytest.mark.asyncio
+    async def test_agent_omitting_the_field_is_unchanged_end_to_end(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """An older agent's push stores no ``unknown_keys`` and still drifts."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            env_id, a_id, key_a, key_b = await self._seed(client)
+
+            await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {"python": "3.12"}}),
+                headers={"X-Machine-Key": key_a},
+            )
+            r = await client.put(
+                f"{API_PREFIX}/agent/environments/{env_id}/config",
+                json=_config_body({"versions": {}}),
+                headers={"X-Machine-Key": key_b},
+            )
+            assert r.status_code == 200, r.text
+
+            from app.repositories.devenv import config_repo
+
+            row = await config_repo.get(
+                async_db_session,
+                environment_id=UUID(env_id),
+                machine_id=UUID(r.json()["machine_id"]),
+            )
+            assert row is not None
+            # Absent, not an empty dict — the stored shape is byte-identical to
+            # what a pre-field runner always wrote.
+            assert "unknown_keys" not in row.config
+
+            await client.put(
+                f"{API_PREFIX}/environments/{env_id}/canonical",
+                json={"machine_id": a_id},
+            )
+            r = await client.get(f"{API_PREFIX}/environments/{env_id}/drift")
+            drift = r.json()
+            section = next(
+                s for s in drift["reports"][0]["sections"] if s["section"] == "versions"
+            )
+            delta = next(d for d in section["deltas"] if d["key"] == "python")
+            assert delta["status"] == "removed"
+            assert delta["severity"] == "critical"
+            assert drift["in_sync"] is False
 
 
 class TestCanonicalAuditAndPull:

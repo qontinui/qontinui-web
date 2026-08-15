@@ -31,6 +31,17 @@ _SECTION_POLICY: dict[str, SectionPolicyT] = {
     "db_schema": "destructive_confirm",
     # Account roster: identity-bound; informational, not auto-applied.
     "claude_accounts": "report_only",
+    # Which repositories the environment expects. Cloning is additive and
+    # reversible-by-deletion, so this section is destined for ``applyable`` —
+    # but NOT until the runner ships ``env_agent/apply_repos.rs`` (the repos
+    # plan's P3). The runner's driver returns ``Unsupported`` for an applyable
+    # section with no module, while its plan renderer simultaneously announces
+    # "N change(s) are in applyable sections — re-run with --confirm": marking
+    # it applyable early makes the box advertise an apply it cannot perform.
+    # The drift surface — the whole value of P1/P2 — renders identically under
+    # ``report_only``, so the promise buys nothing until the module exists.
+    # Flip this to "applyable" in the same change that adds the module.
+    "repos": "report_only",
 }
 
 
@@ -89,6 +100,33 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
             # rather than installing a version that was observed somewhere
             # else (plan 2026-07-02-..., the residual slice 1a left open).
             "probe_scope_kind",
+        }
+    ),
+    "repos": frozenset(
+        {
+            # Capture PROVENANCE again, and registered here for a reason that is
+            # easy to miss: ``_DERIVED_KEYS`` is keyed by SECTION, and
+            # ``is_derived_key`` conservatively answers False for a key it does
+            # not recognise. So the ``"versions"`` entry above does NOT cover a
+            # same-named key in another section. Without this entry the runner
+            # would count a workspace-root provenance difference as an
+            # actionable change — offering to "clone" a scope marker — the
+            # moment ``repos`` becomes ``applyable``.
+            #
+            # It names WHICH KIND of workspace-root resolution the repo
+            # observations were taken under (``declared`` = an explicit
+            # ``$QONTINUI_ROOT`` / setting was honoured; ``discovered`` = the
+            # ancestor walk found the caller's own repo; ``home_default`` =
+            # ``<home>/qontinui-root``; ``unresolved``). Two boxes that resolved
+            # different KINDS did not enumerate the same concept, so this is
+            # what lets a runner tell whether canonical's repo list is even
+            # COMPARABLE with its own before acting on it.
+            #
+            # Derived for the same operational reason ``probe_scope_kind`` is:
+            # it is REPORTED but is never an apply action — no clone can install
+            # a scope. It converges by an operator setting the workspace root on
+            # one of the two boxes.
+            "repos_scope_kind",
         }
     ),
 }

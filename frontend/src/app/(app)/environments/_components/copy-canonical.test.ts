@@ -96,6 +96,53 @@ describe("buildRemediation", () => {
     expect(rem.inSync).toBe(true);
   });
 
+  it("never acts on an `unknown` key — nobody measured it", () => {
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          // The capture probe exceeded its budget, so this key was omitted
+          // from the envelope and marked unknown. Acting on it would install
+          // a version that may already be correct.
+          { key: "rustc", status: "unknown", expected: "1.83.0", actual: null, severity: "info" },
+          { key: "node", status: "changed", expected: "20", actual: "18", severity: "critical" },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([
+      { section: "versions", items: [{ key: "node", value: "20", secret: false }] },
+    ]);
+    expect(rem.itemCount).toBe(1);
+  });
+
+  it("drops a section whose only delta is `unknown`", () => {
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          { key: "python", status: "unknown", expected: "3.12", actual: null, severity: "info" },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([]);
+    expect(rem.inSync).toBe(true);
+  });
+
+  it("still acts on a genuinely `removed` key alongside an unknown one", () => {
+    // Over-suppression guard: `unknown` must not become a way to mute real
+    // drift sharing its section.
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          { key: "rustc", status: "unknown", expected: "1.83.0", actual: null, severity: "info" },
+          { key: "pnpm", status: "removed", expected: "9", actual: null, severity: "critical" },
+        ]),
+      ])
+    );
+    expect(rem.itemCount).toBe(1);
+    expect(rem.sections[0].items).toEqual([
+      { key: "pnpm", value: "9", secret: false },
+    ]);
+  });
+
   it("skips repo-derived keys — they are not settable on the box", () => {
     const rem = buildRemediation(
       report([
