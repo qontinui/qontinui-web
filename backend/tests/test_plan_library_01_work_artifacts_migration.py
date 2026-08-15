@@ -190,7 +190,15 @@ def _insert_artifact(
 
 @_PG_SKIP
 def test_upgrade_downgrade_upgrade_round_trip() -> None:
-    """head → downgrade -1 → head, asserting the tables come and go."""
+    """head → downgrade past THIS revision → head, tables come and go.
+
+    The rewind target is ``_PARENT_REVISION_ID`` by NAME, not ``-1``. A
+    relative step was correct only while this revision was the head; once a
+    descendant lands (``plan_library_02_kind_lock`` did) ``-1`` unwinds the
+    descendant instead and the assertions below would read a still-present
+    table as a failed downgrade. Naming the target keeps the walk pinned to
+    the revision this file is about.
+    """
     admin_url = admin_database_url()
     root = backend_root()
 
@@ -203,7 +211,7 @@ def test_upgrade_downgrade_upgrade_round_trip() -> None:
         ):
             assert table_exists(engine, "agent", table), table
 
-        run_alembic(root, db_url, "downgrade", "-1")
+        run_alembic(root, db_url, "downgrade", _PARENT_REVISION_ID)
         for table in (
             "work_artifacts",
             "work_artifact_versions",

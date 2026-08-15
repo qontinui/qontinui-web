@@ -4855,6 +4855,239 @@
         "title": "CandidateBoundingBox",
         "type": "object"
       },
+      "CandidateCoordLink": {
+        "description": "Everything coord-owned about a candidate, with its own honesty flags.\n\nFetched over coord's HTTP API \u2014 web NEVER reads coord's Postgres schema\n(house rule; ``tests/test_coord_schema_boundary_guard.py`` enforces it).\nEach half carries its own state so an unreachable coord is distinguishable\nfrom a genuine empty.",
+        "properties": {
+          "linked_prs": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateLinkedPr"
+            },
+            "title": "Linked Prs",
+            "type": "array"
+          },
+          "linked_prs_state": {
+            "default": "unlinked",
+            "enum": [
+              "available",
+              "unavailable",
+              "unlinked"
+            ],
+            "title": "Linked Prs State",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          },
+          "work_unit_state": {
+            "default": "unlinked",
+            "enum": [
+              "linked",
+              "dangling",
+              "unavailable",
+              "unlinked"
+            ],
+            "title": "Work Unit State",
+            "type": "string"
+          },
+          "work_unit_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Status"
+          },
+          "work_unit_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Title"
+          }
+        },
+        "title": "CandidateCoordLink",
+        "type": "object"
+      },
+      "CandidateDependency": {
+        "description": "A ``depends_on`` target that is NOT in a terminal state.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "status"
+        ],
+        "title": "CandidateDependency",
+        "type": "object"
+      },
+      "CandidateLinkedPr": {
+        "description": "A PR citation coord recorded against the linked work unit.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "cited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cited At"
+          },
+          "merged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "state": {
+            "default": "unknown",
+            "enum": [
+              "merged",
+              "unmerged",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "title": "CandidateLinkedPr",
+        "type": "object"
+      },
+      "CandidatePromptLink": {
+        "description": "One producer in the prompt chain that led to a plan.\n\nReached by walking ``authored_plan`` / ``feeds`` / ``produced_report``\nedges BACKWARDS from the plan. ``depth`` 1 is the artifact that directly\nproduced it; higher numbers are further upstream.",
+        "properties": {
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "relation",
+          "depth"
+        ],
+        "title": "CandidatePromptLink",
+        "type": "object"
+      },
       "CandidateStatus": {
         "description": "Review status of a template candidate.",
         "enum": [
@@ -14482,6 +14715,18 @@
             "title": "Groups",
             "type": "array"
           },
+          "kind_fork_total": {
+            "default": 0,
+            "title": "Kind Fork Total",
+            "type": "integer"
+          },
+          "kind_forks": {
+            "items": {
+              "$ref": "#/components/schemas/KindForkGroup"
+            },
+            "title": "Kind Forks",
+            "type": "array"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -14509,6 +14754,14 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
           },
           "source_path": {
             "anyOf": [
@@ -14547,6 +14800,8 @@
         },
         "required": [
           "id",
+          "kind",
+          "kind_locked",
           "content_sha256",
           "source_repo",
           "source_path",
@@ -22765,6 +23020,58 @@
         "title": "KeyDelta",
         "type": "object"
       },
+      "KindForkGroup": {
+        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.",
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "resolvable": {
+            "title": "Resolvable",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "variant_count": {
+            "title": "Variant Count",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/DivergentVariant"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "source_repo",
+          "kinds",
+          "variant_count",
+          "resolvable",
+          "variants"
+        ],
+        "title": "KindForkGroup",
+        "type": "object"
+      },
       "KnownIssueCreate": {
         "description": "Request to create a known issue.",
         "properties": {
@@ -29235,6 +29542,173 @@
           "created_at"
         ],
         "title": "PhaseResultResponse",
+        "type": "object"
+      },
+      "PlanCandidate": {
+        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.",
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "number"
+          },
+          "authored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored At"
+          },
+          "coord": {
+            "$ref": "#/components/schemas/CandidateCoordLink"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
+          "last_touched": {
+            "title": "Last Touched",
+            "type": "string"
+          },
+          "prompt_chain": {
+            "items": {
+              "$ref": "#/components/schemas/CandidatePromptLink"
+            },
+            "title": "Prompt Chain",
+            "type": "array"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unmet_depends_on": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateDependency"
+            },
+            "title": "Unmet Depends On",
+            "type": "array"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "kind_locked",
+          "slug",
+          "title",
+          "status",
+          "created_at",
+          "last_touched",
+          "age_days",
+          "coord"
+        ],
+        "title": "PlanCandidate",
+        "type": "object"
+      },
+      "PlanCandidateResponse": {
+        "description": "A page of candidates plus the honesty flags for the whole read.",
+        "properties": {
+          "coord_available": {
+            "default": true,
+            "title": "Coord Available",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "ordering": {
+            "const": "oldest_vetted_first",
+            "default": "oldest_vetted_first",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PlanCandidateResponse",
         "type": "object"
       },
       "PopularPackageResponse": {
@@ -47415,6 +47889,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
           "organization_id": {
             "anyOf": [
               {
@@ -47496,6 +47974,7 @@
           "organization_id",
           "created_by_user_id",
           "kind",
+          "kind_locked",
           "slug",
           "title",
           "status",
@@ -47675,6 +48154,28 @@
         "title": "WorkArtifactEdgeRead",
         "type": "object"
       },
+      "WorkArtifactKindPatch": {
+        "description": "Correct one artifact's ``kind`` and lock it against future scans.\n\nThe door Phase 5's inline kind correction needs. Sets ``kind_locked``\nunconditionally \u2014 even when the kind is unchanged \u2014 because the lock\nrecords that a human/agent asserted it.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "investigation_prompt",
+              "plan_authoring_prompt",
+              "implementation_prompt",
+              "investigation_report",
+              "handoff",
+              "plan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "WorkArtifactKindPatch",
+        "type": "object"
+      },
       "WorkArtifactListResponse": {
         "description": "A page of list rows.",
         "properties": {
@@ -47758,6 +48259,10 @@
             "title": "Kind",
             "type": "string"
           },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
           "organization_id": {
             "anyOf": [
               {
@@ -47832,6 +48337,7 @@
           "organization_id",
           "created_by_user_id",
           "kind",
+          "kind_locked",
           "slug",
           "title",
           "status",
@@ -47913,6 +48419,11 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "kind_is_heuristic": {
+            "default": false,
+            "title": "Kind Is Heuristic",
+            "type": "boolean"
           },
           "repos": {
             "items": {
@@ -83631,8 +84142,83 @@
         ]
       }
     },
+    "/api/v1/plan-library/candidates": {
+      "get": {
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.",
+        "operationId": "api_v1_plan_library_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Fetch the coord-owned signals (work unit + PR citations). Set false for a purely local, coord-free read.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Fetch the coord-owned signals (work unit + PR citations). Set false for a purely local, coord-free read.",
+              "title": "Include Coord",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanCandidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Unshipped plans with the ranking INPUTS attached (no score)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/divergent": {
       "get": {
+        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
         "operationId": "api_v1_plan_library_divergent_get",
         "parameters": [
           {
@@ -83681,7 +84267,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Artifacts sharing a (kind, slug) but disagreeing on content",
+        "summary": "Artifacts that disagree \u2014 on content, or on kind",
         "tags": [
           "plan-library"
         ]
@@ -83789,6 +84375,65 @@
           }
         ],
         "summary": "Link this artifact to another (outgoing or incoming)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}/kind": {
+      "patch": {
+        "description": "Set ``kind`` deliberately and mark it ``kind_locked``.\n\nThe door the library's inline kind correction needs. Heuristics only ever\nset an INITIAL kind; this is where that guess gets overruled, and the lock\nis what stops the next runner scan from quietly putting the guess back\n(which, because ``kind`` is part of the artifact's identity, would fork the\ndocument into a second row rather than merely re-label it).\n\nThe lock is set even when ``kind`` is unchanged \u2014 confirming a guessed kind\nis itself the assertion that makes it stick.\n\n409 when another artifact already occupies\n``(org, kind, slug, source_repo)``: that is a genuine identity collision\nand merging the two rows is an operator decision, not one this write may\nguess at.",
+        "operationId": "api_v1_plan_library_artifact_id_kind_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactKindPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Correct an artifact's kind and LOCK it against future re-scans",
         "tags": [
           "plan-library"
         ]
