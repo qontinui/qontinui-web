@@ -371,10 +371,24 @@ async def dispatch_enroll(
     directive to that device's runner. The runner enrolls itself — no terminal,
     no copy-paste.
 
-    The machine + code are ALWAYS created and returned, even if the dispatch is
-    rejected (device offline / unknown), so the UI can fall back to the
-    copy-paste command (Phase 1(b)). Coord's admin-gated route resolves the
-    operator from the forwarded Cognito bearer.
+    Once the request is ACCEPTED, the machine + code are always created and
+    returned even if the dispatch itself is rejected (device offline, coord
+    unreachable, coord refuses), so the UI can fall back to the copy-paste
+    command (Phase 1(b)). Coord's admin-gated route resolves the operator from
+    the forwarded Cognito bearer.
+
+    Two refusals happen BEFORE any of that, and neither creates a machine or a
+    code:
+
+    * **404 ``device_not_found``** — ``target_device_id`` is not a device this
+      caller owns (or does not exist; the two are deliberately indistinguishable).
+    * **409 ``device_already_has_machine``** — the device already has a live
+      machine row, so binding another would breach
+      ``uq_devenv_machine_active_coord_device``. With connect-time
+      auto-enrollment on this is an ordinary outcome, not an edge case: the
+      engine enrolls a box the moment it connects, while the dashboard picker
+      still offers it. The remedy is the caller's — revoke or delete the
+      existing machine first — which is why it is a typed code and not a 500.
 
     Two transports, tried in order. When the device is connected, the directive
     goes down the authenticated device WebSocket web already holds; otherwise
