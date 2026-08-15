@@ -27068,6 +27068,42 @@
         "title": "NotificationUpdate",
         "type": "object"
       },
+      "NotificationsMarkReadBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/notifications/mark-read``.\n\nMirrors coord's ``MarkReadRequest``. **Coord remains the authority** \u2014 this\nmodel is defence in depth at the boundary, not a second source of truth, so\nit must be kept in lockstep and must never accept something coord rejects.\n\nThe shape exists in this exact form because of a defect found in coord\nreview 2026-08-15. Coord took ``Option<Json<MarkReadRequest>>``, and axum\nmaps **every** deserialization failure to ``None`` \u2014 a wrong\n``Content-Type``, a non-UUID id, or the natural TypeScript spelling\n``{\"notificationIds\": [...]}`` all arrived as ``None``, which the SQL then\nread as *mark the entire tenant read*. Ninety days of read state, destroyed\nby a typo, with no mark-UNREAD anywhere in the API to undo it.\n\nSo the two operations are DISJOINT and both EXPLICIT:\n\n- ``{\"notification_ids\": [\"<uuid>\", ...]}`` \u2014 mark exactly those rows. An\n  empty list marks nothing, which is a legitimate no-op.\n- ``{\"all\": true}`` \u2014 mark everything unread for this principal.\n\nSetting both, setting neither, or spelling ``all`` as anything but ``true``\nis rejected. Absent/``null`` no longer means \"all\"; that overload is\nprecisely what made the bug reachable, and the fix is worth nothing if this\nhop quietly re-introduces it.\n\n``extra=\"forbid\"`` is the other half: a misspelled field is a loud reject\nhere rather than a silently-ignored key that leaves the request looking\nlike the dangerous empty body.",
+        "properties": {
+          "all": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Must be `true` when present: mark every unread notification for the calling principal. Mutually exclusive with `notification_ids`. There is no undo.",
+            "title": "All"
+          },
+          "notification_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mark exactly these notifications read. Empty list = no-op. Mutually exclusive with `all`.",
+            "title": "Notification Ids"
+          }
+        },
+        "title": "NotificationsMarkReadBody",
+        "type": "object"
+      },
       "NotifyWhenGreenRequest": {
         "additionalProperties": false,
         "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.\n\n``gate_class`` is coord's freeform gate-classification string\n(recommended vocabulary: ``security-surface`` / ``routine-review`` /\n``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix\nkeys off it to decide who may clear the resulting gate, so dropping\nit silently would silently change an authorization outcome.\n\n``extra=\"forbid\"`` is deliberate: before ``gate_class`` was declared\nhere, a caller that sent it had the field swallowed at validation \u2014\nno 400, no log line, and a gate registered under the wrong clearance\nrules. Rejecting unknown keys makes the NEXT such drift a typed 422\ninstead of another silent swallow. The only in-tree caller\n(``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.\n\nA BLANK ``gate_class`` is rejected rather than forwarded. Coord's\n``normalize_gate_class`` trims and empty-filters it back to ``None``,\nso ``\"\"`` / ``\"   \"`` would register an UNCLASSIFIED gate under the\ndefault clearance authority with no 4xx and no warning \u2014 the same\nsilent-authorization-downgrade this model exists to close, just moved\none layer down. Coord calls a blank class \"an authoring accident, not\na class\"; this rejects it at the edge, where the caller can see it.",
@@ -78701,6 +78737,154 @@
           }
         },
         "summary": "Get Migrations Queue",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/notifications": {
+      "get": {
+        "description": "Return the ``coord.notifications`` feed for the calling principal.\n\nResponse envelope mirrors coord:\n``{\"notifications\": [...], \"next_cursor\": str|null, \"total\": N,\n\"unread_count\": N}``. ``total`` and ``unread_count`` are server-computed\nscalars distinct from the page \u2014 consumers (notably the ``CoordNav``\nbadge) MUST read those and never derive a count from\n``notifications.length``, which is the page size.\n\nEvery paging/filter param is forwarded **verbatim** and only when the\ncaller set it: a proxy that swallowed ``limit`` would re-create, one\nlayer up, exactly the ignored-paging defect this plan exists to fix.\nBounds live in coord (single clamp, single place); this hop adds none.\n\nTenant-scoped and operator-bearer-forwarding, same posture as the\nsibling ``/operations/alerts`` rollup \u2014 coord derives the read-state\nprincipal (``operator:<uuid>`` / ``device:<uuid>``) from that bearer.",
+        "operationId": "api_v1_operations_notifications_get",
+        "parameters": [
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Filter by notification kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by notification kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Restrict to notifications the calling principal has not read.",
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to notifications the calling principal has not read.",
+              "title": "Unread Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Notifications Api V1 Operations Notifications Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Notifications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/notifications/mark-read": {
+      "post": {
+        "description": "Mark notifications read for the calling principal.\n\nExactly one of two disjoint, explicit operations \u2014 see\n:class:`NotificationsMarkReadBody` for why the \"absent body means mark\neverything\" spelling was removed rather than merely discouraged:\n\n- ``{\"notification_ids\": [\"<uuid>\", ...]}`` \u2192 mark those rows.\n- ``{\"all\": true}`` \u2192 mark every unread row for this principal.\n\nAnything else \u2014 both arms, neither arm, ``{\"all\": false}``, an unknown or\nmisspelled field, a non-UUID id \u2014 is rejected here and never reaches coord.\nThe arm-selection rule answers ``400`` to match coord's own status for it;\ntype/shape violations answer FastAPI's standard ``422``. Both are hard\nrejects, and neither can degrade into a mark-all.\n\nCoord answers ``{\"marked\": N, \"unread_count\": N}``.\n\nGated on ``get_tenant_id`` rather than ``require_coord_tenant_admin``:\nread state is **per-principal** (coord derives ``actor_key`` solely from\nthe forwarded bearer, and no body field can influence it), so this mutates\nonly the caller's own view and is not an administrative action. Marking\nread is idempotent coord-side \u2014 ``ON CONFLICT DO NOTHING``, so re-marking\nnever moves an existing ``read_at``.",
+        "operationId": "api_v1_operations_notifications_mark_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationsMarkReadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Notifications Mark Read Api V1 Operations Notifications Mark Read Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Coord Notifications Mark Read",
         "tags": [
           "operations"
         ]
