@@ -235,6 +235,61 @@ class DispatchEnrollResponse(BaseSchema):
 
 
 # ---------------------------------------------------------------------------
+# Auto-enrollment policy (plan 2026-08-05, Phase 5)
+#
+# The owner-facing view of ``devenv.auto_enroll_policy``, which is what makes
+# the connect-time engine visible and reversible. Two questions, one row:
+# may new boxes of this owner enroll themselves, and which environment do they
+# join.
+#
+# The response deliberately carries more than the two stored columns. The
+# engine's most interesting outcome is a NO-OP — "more than one environment and
+# no stated target" makes it skip every new box, silently, forever. A surface
+# that showed only ``enabled`` and ``target_environment_id`` would render that
+# state as a perfectly healthy "on", which is the same invisible hole the whole
+# plan exists to close. So the server also reports what it would actually
+# resolve (``effective_environment_id``) and how many environments the owner
+# has, and the UI is expected to say so out loud.
+# ---------------------------------------------------------------------------
+
+
+class AutoEnrollPolicyUpdate(BaseSchema):
+    """Set the owner's auto-enrollment policy.
+
+    Both fields are required on a PUT — this is a whole-row write, not a patch,
+    so a client can never half-state a policy and leave the other half at a
+    value it never saw. ``target_environment_id: null`` clears the target.
+    """
+
+    enabled: bool
+    target_environment_id: UUID | None = None
+
+
+class AutoEnrollPolicyResponse(BaseSchema):
+    """The owner's auto-enrollment policy, plus what it actually resolves to.
+
+    ``configured`` is False when NO row exists. That is not the same as
+    disabled: an absent row reads as ``enabled=True`` (the column default), so
+    the flag exists to let the UI distinguish "the owner chose this" from "the
+    owner has never visited this surface and is getting the default".
+
+    ``effective_environment_id`` is the environment a new box would actually
+    join right now, computed by the same precedence the engine uses: a target
+    the owner really owns, else their single environment, else NULL. NULL with
+    ``environment_count > 1`` is the ambiguous state — the engine will skip
+    every new machine and log, and the UI must name that rather than showing a
+    healthy-looking "on".
+    """
+
+    enabled: bool
+    target_environment_id: UUID | None = None
+    configured: bool
+    effective_environment_id: UUID | None = None
+    environment_count: int
+    updated_at: IsoDatetime | None = None
+
+
+# ---------------------------------------------------------------------------
 # CI-node configuration (plan 2026-08-07, Phase 4)
 #
 # These schemas mirror the runner's Rust ``CiNodeSettings``

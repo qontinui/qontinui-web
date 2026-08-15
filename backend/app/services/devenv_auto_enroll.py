@@ -134,7 +134,7 @@ def _advisory_key(device_id: UUID) -> int:
     return int.from_bytes(device_id.bytes[:8], "big", signed=True)
 
 
-async def _resolve_environment(
+async def resolve_target_environment(
     db: AsyncSession,
     *,
     user_id: UUID,
@@ -149,6 +149,12 @@ async def _resolve_environment(
 
     ``None`` means "the server must not guess". Two environments and no stated
     target is precisely the ambiguity the policy row exists to resolve.
+
+    Public because the policy API (``GET /devenv/auto-enroll-policy``) reports
+    what a new box would ACTUALLY join, and it must answer that with this
+    function rather than a second copy of the precedence. A dashboard whose
+    "effective environment" disagreed with the engine's would be worse than no
+    dashboard: it would show a healthy policy while every connect no-ops.
     """
     target = policy.target_environment_id if policy is not None else None
     if target is not None:
@@ -376,7 +382,9 @@ async def evaluate_and_dispatch(
         return outcome
 
     # ---- 0 rows: create the machine -------------------------------------
-    environment_id = await _resolve_environment(db, user_id=user_id, policy=policy)
+    environment_id = await resolve_target_environment(
+        db, user_id=user_id, policy=policy
+    )
     if environment_id is None:
         # An unbound machine cannot capture anything: the runner's
         # ``is_enrolled()`` requires BOTH a machine id and an environment id, so

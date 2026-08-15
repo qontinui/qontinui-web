@@ -2852,6 +2852,91 @@
         "title": "AutoCreateBaselinesResponse",
         "type": "object"
       },
+      "AutoEnrollPolicyResponse": {
+        "description": "The owner's auto-enrollment policy, plus what it actually resolves to.\n\n``configured`` is False when NO row exists. That is not the same as\ndisabled: an absent row reads as ``enabled=True`` (the column default), so\nthe flag exists to let the UI distinguish \"the owner chose this\" from \"the\nowner has never visited this surface and is getting the default\".\n\n``effective_environment_id`` is the environment a new box would actually\njoin right now, computed by the same precedence the engine uses: a target\nthe owner really owns, else their single environment, else NULL. NULL with\n``environment_count > 1`` is the ambiguous state \u2014 the engine will skip\nevery new machine and log, and the UI must name that rather than showing a\nhealthy-looking \"on\".",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "effective_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Environment Id"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "environment_count": {
+            "title": "Environment Count",
+            "type": "integer"
+          },
+          "target_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Environment Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "enabled",
+          "configured",
+          "environment_count"
+        ],
+        "title": "AutoEnrollPolicyResponse",
+        "type": "object"
+      },
+      "AutoEnrollPolicyUpdate": {
+        "description": "Set the owner's auto-enrollment policy.\n\nBoth fields are required on a PUT \u2014 this is a whole-row write, not a patch,\nso a client can never half-state a policy and leave the other half at a\nvalue it never saw. ``target_environment_id: null`` clears the target.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "target_environment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Environment Id"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutoEnrollPolicyUpdate",
+        "type": "object"
+      },
       "AutomationScreenshot": {
         "properties": {
           "automation_metadata": {
@@ -59272,6 +59357,78 @@
           }
         ],
         "summary": "Update Application",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/auto-enroll-policy": {
+      "get": {
+        "description": "Read the caller's auto-enrollment policy.\n\nNever creates the row. A missing row reads as enabled with no target, which\nis what the engine does with it.",
+        "operationId": "api_v1_devenv_auto_enroll_policy_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoEnrollPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Auto Enroll Policy",
+        "tags": [
+          "environments"
+        ]
+      },
+      "put": {
+        "description": "Set the caller's auto-enrollment policy, creating the row on first write.\n\n``target_environment_id`` must be an environment the caller OWNS. The\ncolumn carries no FK (it is a soft reference, matching\n``machines.environment_id``), so nothing at the database level stops a\nforeign or dangling id from being stored \u2014 and the engine already treats\none defensively, falling back to the single-environment rule. That defence\nis a backstop for rows written before this route existed, not a licence to\nwrite bad ones: a stored id that silently never resolves is exactly the\nquiet no-op this phase exists to eliminate, so it is rejected here.\n\nCross-owner ids resolve to 404, not 403, so this route cannot be used to\nprobe which environment ids exist.",
+        "operationId": "api_v1_devenv_auto_enroll_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoEnrollPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoEnrollPolicyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Auto Enroll Policy",
         "tags": [
           "environments"
         ]

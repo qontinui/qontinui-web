@@ -2466,3 +2466,193 @@ class TestConfigHistory:
             )
             assert r.status_code == 404, r.text
             assert r.json()["detail"]["code"] == "environment_not_found"
+
+
+class TestAutoEnrollPolicyApi:
+    """``GET``/``PUT /devenv/auto-enroll-policy`` (plan 2026-08-05, Phase 5).
+
+    The surface that makes the connect-time engine visible and reversible. The
+    thing worth testing hardest is what it says when the engine would do
+    NOTHING: several environments and no target is a permanent silent no-op,
+    and the response has to name it rather than reporting a healthy "enabled".
+    """
+
+    @pytest.mark.asyncio
+    async def test_absent_row_reads_as_enabled_and_unconfigured(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """No row = enabled (decision 3), and the GET must not create one."""
+        from sqlalchemy import select
+
+        from app.models.devenv import AutoEnrollPolicy
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["enabled"] is True
+            assert body["configured"] is False
+            assert body["target_environment_id"] is None
+            assert body["updated_at"] is None
+
+        # Reading must not materialise state: the default has to keep working
+        # for the owners who never open this surface.
+        row = await async_db_session.scalar(
+            select(AutoEnrollPolicy).where(
+                AutoEnrollPolicy.owner_user_id == test_user.id
+            )
+        )
+        assert row is None
+
+    @pytest.mark.asyncio
+    async def test_single_environment_is_the_effective_target(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """One environment resolves without a stated target (the shipped rule)."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments", json={"name": "Only", "description": None}
+            )
+            assert r.status_code == 201, r.text
+            env_id = r.json()["id"]
+
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["environment_count"] == 1
+            assert body["effective_environment_id"] == env_id
+
+    @pytest.mark.asyncio
+    async def test_two_environments_no_target_is_reported_as_unresolved(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The ambiguous state: enabled, but nothing would actually happen.
+
+        This is the case Phase 5 exists for. ``enabled`` alone would read as
+        healthy; ``effective_environment_id: null`` with ``environment_count``
+        above one is what tells the UI that every new box is being skipped.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            for name in ("Alpha", "Beta"):
+                r = await client.post(
+                    f"{API_PREFIX}/environments",
+                    json={"name": name, "description": None},
+                )
+                assert r.status_code == 201, r.text
+
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["enabled"] is True
+            assert body["environment_count"] == 2
+            assert body["effective_environment_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_put_sets_target_and_resolves_it(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Naming a target disambiguates, and the row round-trips."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            ids = []
+            for name in ("Alpha", "Beta"):
+                r = await client.post(
+                    f"{API_PREFIX}/environments",
+                    json={"name": name, "description": None},
+                )
+                assert r.status_code == 201, r.text
+                ids.append(r.json()["id"])
+
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": True, "target_environment_id": ids[1]},
+            )
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["configured"] is True
+            assert body["target_environment_id"] == ids[1]
+            assert body["effective_environment_id"] == ids[1]
+            assert body["updated_at"] is not None
+
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.json()["target_environment_id"] == ids[1]
+
+    @pytest.mark.asyncio
+    async def test_put_disable_round_trips(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """Opting out is one write, and it is what the GET reports back."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": False, "target_environment_id": None},
+            )
+            assert r.status_code == 200, r.text
+            assert r.json()["enabled"] is False
+
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["enabled"] is False
+            assert body["configured"] is True
+
+    @pytest.mark.asyncio
+    async def test_put_rejects_unknown_environment(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """A dangling target is refused rather than stored as a silent no-op."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": True, "target_environment_id": str(uuid4())},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+    @pytest.mark.asyncio
+    async def test_put_rejects_another_owners_environment(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """A foreign environment is a 404 — never stored, and never confirmed."""
+        app_other = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app_other) as client:
+            r = await client.post(
+                f"{API_PREFIX}/environments",
+                json={"name": "Theirs", "description": None},
+            )
+            assert r.status_code == 201, r.text
+            foreign_env_id = r.json()["id"]
+
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": True, "target_environment_id": foreign_env_id},
+            )
+            assert r.status_code == 404, r.text
+            assert r.json()["detail"]["code"] == "environment_not_found"
+
+    @pytest.mark.asyncio
+    async def test_policy_is_owner_scoped(
+        self, async_db_session: AsyncSession, test_user, second_user
+    ) -> None:
+        """One owner's opt-out never leaks into another owner's policy."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.put(
+                f"{API_PREFIX}/auto-enroll-policy",
+                json={"enabled": False, "target_environment_id": None},
+            )
+            assert r.status_code == 200, r.text
+
+        app_other = _build_app(db_session=async_db_session, user=second_user)
+        async with _client(app_other) as client:
+            r = await client.get(f"{API_PREFIX}/auto-enroll-policy")
+            assert r.status_code == 200, r.text
+            assert r.json()["enabled"] is True
+            assert r.json()["configured"] is False

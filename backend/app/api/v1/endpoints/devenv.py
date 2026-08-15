@@ -23,6 +23,9 @@ Mounted under ``/api/v1/devenv``. Endpoints:
   configuration (the runner's ``CiNodeSettings``). The PUT saves and then
   dispatches through coord to the paired runner; see the section comment above
   those handlers for why that is the only write path.
+* ``GET``/``PUT /auto-enroll-policy`` — the owner's connect-time
+  auto-enrollment policy (may new boxes self-enroll, and into which
+  environment). Owner-scoped; an absent row reads as enabled.
 * CRUD ``/environments``
 * ``PUT /environments/{id}/canonical`` — atomically set the canonical
   machine (validated owned + has a config row for the env)
@@ -38,12 +41,13 @@ import httpx
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from qontinui_schemas.common import utc_now
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_current_active_user_async
 from app.config.redis_config import get_redis
 from app.crud import devenv_machine_crud
-from app.models.devenv import Environment, Machine
+from app.models.devenv import AutoEnrollPolicy, Environment, Machine
 from app.models.user import User
 from app.repositories.devenv import (
     application_repo,
@@ -59,6 +63,8 @@ from app.schemas.devenv import (
     ApplicationCreate,
     ApplicationResponse,
     ApplicationUpdate,
+    AutoEnrollPolicyResponse,
+    AutoEnrollPolicyUpdate,
     CanonicalChangeResponse,
     CiNodeConfig,
     CiNodeConfigResponse,
@@ -81,6 +87,7 @@ from app.schemas.devenv import (
 )
 from app.services import coord_device, devenv_drift
 from app.services.coord_proxy import post_to_coord
+from app.services.devenv_auto_enroll import resolve_target_environment
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
 logger = structlog.get_logger(__name__)
@@ -625,6 +632,127 @@ async def set_machine_environment(
     )
     await db.commit()
     return MachineResponse.from_model(machine)
+
+
+# ---------------------------------------------------------------------------
+# Auto-enrollment policy (plan 2026-08-05, Phase 5)
+#
+# The owner's control over the connect-time enrollment engine: may new boxes
+# enroll themselves, and where do they land. This pair of routes is what makes
+# Phase 4 visible and reversible — shipping the engine without them would leave
+# its no-ops exactly as unobservable as the gap the plan set out to close.
+#
+# Owner-scoped, deliberately, and NOT org-shared like applications and
+# environments. The policy keys on ``owner_user_id`` and the engine resolves it
+# from the device's verified owner, so there is no second reader for whom an
+# org-shared view would mean anything.
+# ---------------------------------------------------------------------------
+
+
+async def _policy_view(
+    db: AsyncSession, *, user_id: UUID, policy: AutoEnrollPolicy | None
+) -> AutoEnrollPolicyResponse:
+    """Render a policy row (or its absence) plus what it actually resolves to.
+
+    An ABSENT row is reported as ``enabled=True, configured=False`` — the
+    column default, and the rule the engine follows (decision 3). We do NOT
+    materialise a row to read one: an owner who has never opened this surface
+    should not acquire state by being looked at, and the default has to keep
+    working for the owners who never will.
+    """
+    env_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Environment)
+            .where(Environment.owner_user_id == user_id)
+        )
+    ) or 0
+    effective = await resolve_target_environment(db, user_id=user_id, policy=policy)
+    return AutoEnrollPolicyResponse(
+        enabled=policy.enabled if policy is not None else True,
+        target_environment_id=(
+            policy.target_environment_id if policy is not None else None
+        ),
+        configured=policy is not None,
+        effective_environment_id=effective,
+        environment_count=int(env_count),
+        updated_at=policy.updated_at if policy is not None else None,
+    )
+
+
+@router.get("/auto-enroll-policy", response_model=AutoEnrollPolicyResponse)
+async def get_auto_enroll_policy(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> AutoEnrollPolicyResponse:
+    """Read the caller's auto-enrollment policy.
+
+    Never creates the row. A missing row reads as enabled with no target, which
+    is what the engine does with it.
+    """
+    policy = await db.scalar(
+        select(AutoEnrollPolicy).where(
+            AutoEnrollPolicy.owner_user_id == current_user.id
+        )
+    )
+    return await _policy_view(db, user_id=current_user.id, policy=policy)
+
+
+@router.put("/auto-enroll-policy", response_model=AutoEnrollPolicyResponse)
+async def set_auto_enroll_policy(
+    payload: AutoEnrollPolicyUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user_async),
+) -> AutoEnrollPolicyResponse:
+    """Set the caller's auto-enrollment policy, creating the row on first write.
+
+    ``target_environment_id`` must be an environment the caller OWNS. The
+    column carries no FK (it is a soft reference, matching
+    ``machines.environment_id``), so nothing at the database level stops a
+    foreign or dangling id from being stored — and the engine already treats
+    one defensively, falling back to the single-environment rule. That defence
+    is a backstop for rows written before this route existed, not a licence to
+    write bad ones: a stored id that silently never resolves is exactly the
+    quiet no-op this phase exists to eliminate, so it is rejected here.
+
+    Cross-owner ids resolve to 404, not 403, so this route cannot be used to
+    probe which environment ids exist.
+    """
+    if payload.target_environment_id is not None:
+        owned = await db.scalar(
+            select(Environment.id).where(
+                Environment.id == payload.target_environment_id,
+                Environment.owner_user_id == current_user.id,
+            )
+        )
+        if owned is None:
+            raise _not_found("environment")
+
+    policy = await db.scalar(
+        select(AutoEnrollPolicy).where(
+            AutoEnrollPolicy.owner_user_id == current_user.id
+        )
+    )
+    if policy is None:
+        policy = AutoEnrollPolicy(owner_user_id=current_user.id)
+        db.add(policy)
+    policy.enabled = payload.enabled
+    policy.target_environment_id = payload.target_environment_id
+    policy.updated_at = utc_now()
+    await db.flush()
+    await db.commit()
+    await db.refresh(policy)
+    logger.info(
+        "devenv_auto_enroll_policy_set",
+        user_id=str(current_user.id),
+        enabled=policy.enabled,
+        target_environment_id=(
+            str(policy.target_environment_id)
+            if policy.target_environment_id is not None
+            else None
+        ),
+    )
+    return await _policy_view(db, user_id=current_user.id, policy=policy)
 
 
 # ---------------------------------------------------------------------------
