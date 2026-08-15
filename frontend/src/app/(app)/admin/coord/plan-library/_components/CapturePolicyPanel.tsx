@@ -112,10 +112,16 @@ export function CapturePolicyPanel() {
                     setLevel(level).finally(() => setPending(null));
                   }}
                   data-testid={`plan-capture-level-${level}`}
+                  // The two !canEdit reasons are different facts and must not
+                  // share one tooltip: `policy` present means coord ANSWERED
+                  // and said not-an-admin; `policy` null means the read failed
+                  // and the role is UNKNOWN. Same split as the paragraph below.
                   title={
                     canEdit
                       ? LEVEL_COPY[level].blurb
-                      : "Coord reports you are not an admin of this tenant."
+                      : policy
+                        ? "Coord reports you are not an admin of this tenant."
+                        : "Your role could not be read, so whether this write would be accepted is unknown."
                   }
                 >
                   {/* Only the level being written spins — a spinner on both

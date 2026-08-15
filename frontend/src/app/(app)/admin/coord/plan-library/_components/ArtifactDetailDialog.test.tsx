@@ -10,7 +10,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -308,6 +314,66 @@ describe("ArtifactDetailDialog — a failed fetch is not a loading state", () =>
     await waitFor(() =>
       expect(screen.getByTestId("artifact-body")).toBeInTheDocument()
     );
+    expect(
+      screen.queryByTestId("artifact-detail-error")
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
+  it("keeps the newer artifact when an older fetch lands last", async () => {
+    // Following a provenance edge switches `artifactId` while the first read
+    // is still in flight. That read makes up to two 5s coord round-trips, so
+    // out-of-order resolution is ordinary, not exotic. If the late one wins,
+    // the dialog shows artifact A under artifact B's request — and the old
+    // post-hoc guard then nulled it out, leaving a permanent skeleton.
+    let resolveA: (v: WorkArtifactDetail) => void = () => {};
+    const slowA = new Promise<WorkArtifactDetail>((r) => {
+      resolveA = r;
+    });
+    const artifactB = detail({ id: "art-2", title: "The newer artifact" });
+
+    const fetchDetail = vi
+      .fn()
+      .mockImplementationOnce(() => slowA)
+      .mockResolvedValueOnce(artifactB);
+
+    const { rerender } = render(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-1"
+        fetchDetail={fetchDetail}
+        correctKind={vi.fn()}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+
+    // Follow the edge before A resolves.
+    rerender(
+      <ArtifactDetailDialog
+        open
+        onOpenChange={vi.fn()}
+        artifactId="art-2"
+        fetchDetail={fetchDetail}
+        correctKind={vi.fn()}
+        onOpenArtifact={vi.fn()}
+      />
+    );
+    await waitFor(() =>
+      expect(screen.getByText("The newer artifact")).toBeInTheDocument()
+    );
+
+    // NOW let the superseded request land.
+    await act(async () => {
+      resolveA(detail({ id: "art-1", title: "The stale artifact" }));
+      await slowA;
+    });
+
+    expect(screen.getByText("The newer artifact")).toBeInTheDocument();
+    expect(screen.queryByText("The stale artifact")).not.toBeInTheDocument();
+    // And it must not have been nulled into a permanent skeleton either.
+    expect(screen.getByTestId("artifact-body")).toBeInTheDocument();
     expect(
       screen.queryByTestId("artifact-detail-error")
     ).not.toBeInTheDocument();
