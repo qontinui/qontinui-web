@@ -3199,6 +3199,8 @@ async def get_dev_action_detail(
 # - GET    /operations/trees/by-device/{device_id}       — primary trees
 # - GET    /operations/trees/contention                  — overlap view
 # - GET    /operations/alerts                            — full alert rollup
+# - GET    /operations/notifications                     — append-only event feed
+# - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
 # - GET    /operations/agent-questions/pending           — Wave-3 prep
 # - GET    /operations/agent-questions/{id}              — Wave-3a single lookup
@@ -3402,6 +3404,186 @@ async def get_coord_alerts(
     if kind is not None:
         params["kind"] = kind
     return await _proxy_coord_get("/coord/alerts", params=params, tenant_id=tenant_id)
+
+
+# ---- Notifications (append-only event feed; sibling of /alerts) ----------
+#
+# Plan ``2026-08-05-coord-notifications-type-and-tab.md`` Change 4.
+#
+# `coord.notifications` is the EVENT type, the deliberate counterpart to
+# `coord.alerts` (the CONDITION type): append-only, never resolves, one row
+# per occurrence, with per-principal read state. It answers "what happened
+# while I was away?" where alerts answer "what is wrong right now?".
+#
+# - `/operations/notifications`           → coord `GET  /coord/notifications`
+# - `/operations/notifications/mark-read` → coord `POST /coord/notifications/mark-read`
+#
+# Both back `/admin/coord/notifications` and the `CoordNav` unread badge.
+# Until the `coord.notifications` alembic revision deploys, coord answers
+# both with ``503 {"error": "schema_migration_pending"}`` (its best-effort
+# schema-readiness degrade); that status passes through this proxy verbatim
+# and BOTH frontend surfaces treat it as "nothing to show", never an error.
+#
+# The GET forwards its params verbatim and validates nothing (coord clamps).
+# The POST is the opposite and deliberately so: it is the only DESTRUCTIVE,
+# UNDOABLE-BY-NOBODY operation on this surface, so its body is typed and
+# arm-checked here as well as in coord. See `NotificationsMarkReadBody`.
+
+
+@router.get("/notifications")
+async def get_coord_notifications(
+    limit: int | None = Query(
+        default=None,
+        description="Page size. Forwarded verbatim — coord owns the default and the clamp.",
+    ),
+    cursor: str | None = Query(
+        default=None,
+        description="Opaque keyset cursor from a prior response's ``next_cursor``.",
+    ),
+    kind: str | None = Query(default=None, description="Filter by notification kind."),
+    unread_only: bool | None = Query(
+        default=None,
+        description="Restrict to notifications the calling principal has not read.",
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return the ``coord.notifications`` feed for the calling principal.
+
+    Response envelope mirrors coord:
+    ``{"notifications": [...], "next_cursor": str|null, "total": N,
+    "unread_count": N}``. ``total`` and ``unread_count`` are server-computed
+    scalars distinct from the page — consumers (notably the ``CoordNav``
+    badge) MUST read those and never derive a count from
+    ``notifications.length``, which is the page size.
+
+    Every paging/filter param is forwarded **verbatim** and only when the
+    caller set it: a proxy that swallowed ``limit`` would re-create, one
+    layer up, exactly the ignored-paging defect this plan exists to fix.
+    Bounds live in coord (single clamp, single place); this hop adds none.
+
+    Tenant-scoped and operator-bearer-forwarding, same posture as the
+    sibling ``/operations/alerts`` rollup — coord derives the read-state
+    principal (``operator:<uuid>`` / ``device:<uuid>``) from that bearer.
+    """
+    params: dict[str, Any] = {}
+    if limit is not None:
+        params["limit"] = limit
+    if cursor is not None:
+        params["cursor"] = cursor
+    if kind is not None:
+        params["kind"] = kind
+    if unread_only is not None:
+        params["unread_only"] = unread_only
+    return await _proxy_coord_get(
+        "/coord/notifications", params=params or None, tenant_id=tenant_id
+    )
+
+
+class NotificationsMarkReadBody(BaseModel):
+    """Body for ``POST /operations/notifications/mark-read``.
+
+    Mirrors coord's ``MarkReadRequest``. **Coord remains the authority** — this
+    model is defence in depth at the boundary, not a second source of truth, so
+    it must be kept in lockstep and must never accept something coord rejects.
+
+    The shape exists in this exact form because of a defect found in coord
+    review 2026-08-15. Coord took ``Option<Json<MarkReadRequest>>``, and axum
+    maps **every** deserialization failure to ``None`` — a wrong
+    ``Content-Type``, a non-UUID id, or the natural TypeScript spelling
+    ``{"notificationIds": [...]}`` all arrived as ``None``, which the SQL then
+    read as *mark the entire tenant read*. Ninety days of read state, destroyed
+    by a typo, with no mark-UNREAD anywhere in the API to undo it.
+
+    So the two operations are DISJOINT and both EXPLICIT:
+
+    - ``{"notification_ids": ["<uuid>", ...]}`` — mark exactly those rows. An
+      empty list marks nothing, which is a legitimate no-op.
+    - ``{"all": true}`` — mark everything unread for this principal.
+
+    Setting both, setting neither, or spelling ``all`` as anything but ``true``
+    is rejected. Absent/``null`` no longer means "all"; that overload is
+    precisely what made the bug reachable, and the fix is worth nothing if this
+    hop quietly re-introduces it.
+
+    ``extra="forbid"`` is the other half: a misspelled field is a loud reject
+    here rather than a silently-ignored key that leaves the request looking
+    like the dangerous empty body.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    notification_ids: list[UUID] | None = Field(
+        default=None,
+        description="Mark exactly these notifications read. Empty list = no-op. "
+        "Mutually exclusive with `all`.",
+    )
+    all: bool | None = Field(
+        default=None,
+        description="Must be `true` when present: mark every unread "
+        "notification for the calling principal. Mutually exclusive with "
+        "`notification_ids`. There is no undo.",
+    )
+
+
+@router.post("/notifications/mark-read")
+async def post_coord_notifications_mark_read(
+    body: NotificationsMarkReadBody,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Mark notifications read for the calling principal.
+
+    Exactly one of two disjoint, explicit operations — see
+    :class:`NotificationsMarkReadBody` for why the "absent body means mark
+    everything" spelling was removed rather than merely discouraged:
+
+    - ``{"notification_ids": ["<uuid>", ...]}`` → mark those rows.
+    - ``{"all": true}`` → mark every unread row for this principal.
+
+    Anything else — both arms, neither arm, ``{"all": false}``, an unknown or
+    misspelled field, a non-UUID id — is rejected here and never reaches coord.
+    The arm-selection rule answers ``400`` to match coord's own status for it;
+    type/shape violations answer FastAPI's standard ``422``. Both are hard
+    rejects, and neither can degrade into a mark-all.
+
+    Coord answers ``{"marked": N, "unread_count": N}``.
+
+    Gated on ``get_tenant_id`` rather than ``require_coord_tenant_admin``:
+    read state is **per-principal** (coord derives ``actor_key`` solely from
+    the forwarded bearer, and no body field can influence it), so this mutates
+    only the caller's own view and is not an administrative action. Marking
+    read is idempotent coord-side — ``ON CONFLICT DO NOTHING``, so re-marking
+    never moves an existing ``read_at``.
+    """
+    provided = body.model_fields_set
+    has_ids = "notification_ids" in provided and body.notification_ids is not None
+    has_all = "all" in provided and body.all is not None
+    if has_ids and has_all:
+        raise HTTPException(
+            status_code=400,
+            detail="Send either `notification_ids` or `all: true`, not both.",
+        )
+    if not has_ids and not has_all:
+        raise HTTPException(
+            status_code=400,
+            detail="Send `notification_ids: [...]` to mark specific rows, or "
+            "`all: true` to mark everything. An absent or null selection is "
+            "not a way to say `all`.",
+        )
+    if has_all and body.all is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="`all` must be `true` when present. To mark nothing, send "
+            "`notification_ids: []`.",
+        )
+    # ``mode="json"`` renders the parsed UUIDs back to strings (httpx cannot
+    # serialize UUID objects); ``exclude_none`` keeps the unused arm off the
+    # wire entirely, which coord's `deny_unknown_fields` tolerates but which
+    # would otherwise re-send the very `null` this route exists to reject.
+    return await _proxy_coord_post(
+        "/coord/notifications/mark-read",
+        body.model_dump(mode="json", exclude_none=True),
+        tenant_id=tenant_id,
+    )
 
 
 # ---- Fleet health --------------------------------------------------------

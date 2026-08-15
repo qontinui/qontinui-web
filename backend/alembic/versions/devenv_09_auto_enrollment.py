@@ -32,14 +32,24 @@ machines<->environments cycle that ``Base.metadata.sorted_tables`` cannot sort.
 matching ``machines.owner_user_id`` (``models/devenv.py:124``) — deleting a
 user must not strand a policy row.
 
-``down_revision`` is ``probe_base_01``, resolved from ``alembic heads`` at
-implementation time and re-verified immediately before the PR. It is NOT
-``devenv_08_ci_node_config``: the ``devenv_NN`` filenames are a naming
-convention, not a private chain. ``devenv_08`` itself chains into
+``down_revision`` is ``coordnotif_01``, re-pointed from ``probe_base_01``
+immediately before the PR — which is exactly the check this note used to
+record passing. It was ``probe_base_01`` correctly when written; ``main`` then
+landed ``coordnotif_01`` (``6b57f32b``) with that same parent, so the two
+revisions became SIBLINGS off one node and ``alembic heads`` reported two
+heads, reddening the ``alembic-graph-pr`` single-head gate. Re-pointing
+linearises it: ``probe_base_01 -> coordnotif_01 -> devenv_09 -> devenv_10``.
+
+Re-pointing is safe here because the two are INDEPENDENT: ``coordnotif_01``
+creates ``coord.notifications`` / ``coord.notification_reads``, this one only
+touches ``devenv.*``, and neither reads the other's objects. Ordering between
+them is therefore arbitrary and picking one is a graph choice, not a data one.
+
+It is NOT ``devenv_08_ci_node_config``: the ``devenv_NN`` filenames are a
+naming convention, not a private chain. ``devenv_08`` itself chains into
 ``coord_ocs_operator_id`` and is already superseded by
 ``sess_guard_01_session_protection_floor_columns``, so chaining off it would
-fork the graph into two heads and red the ``alembic-graph-pr`` single-head
-gate.
+fork the graph in the same way.
 
 Additive and nullable/defaulted throughout — safe for a running app on the
 prior schema, and ``downgrade`` drops exactly what ``upgrade`` added.
@@ -54,7 +64,7 @@ from alembic import op
 
 # revision identifiers
 revision: str = "devenv_09_auto_enrollment"
-down_revision: str | Sequence[str] | None = "probe_base_01"
+down_revision: str | Sequence[str] | None = "coordnotif_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
