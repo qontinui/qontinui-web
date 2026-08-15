@@ -21,12 +21,19 @@ is **client-asserted**, so the contract is deliberately asymmetric:
 * a hint may freely SUPPRESS enrollment — ``instance_role != "primary"``, or
   ``auto_enroll_optout: true``, which is the box's local kill switch
   (``QONTINUI_DEVENV_AUTO_ENROLL=0``) reported as a fact the server can act on.
-  Before that field existed the kill switch was invisible here: web kept
-  dispatching on every reconnect and the runner kept refusing, so the operator's
-  explicit local "no" never became a server-side one and the pending row churned
-  a fresh one-time code every cooldown. Both are read one-directionally —
+  Without that field the kill switch would be invisible here, and the failure it
+  prevents is a FUTURE one, not observed history: today the runner on
+  ``origin/main`` sends no ``devenv`` block at all, so ``devenv_hint`` is always
+  ``None``, gate 1b answers ``hint_not_primary`` on every connect, and this
+  engine has never dispatched anything in production. Once the runner build that
+  emits the block ships, a box whose operator set the kill switch would be
+  dispatched to on every reconnect, would refuse every directive, and its
+  pending row would burn a fresh one-time code once per cooldown window —
+  indefinitely, with the operator's explicit local "no" never becoming a
+  server-side one. Both hints are read one-directionally —
   ``auto_enroll_optout`` suppresses only on a literal ``true``, and its absence
-  (an older runner build) means "not opted out", never "opted out";
+  (any runner build that does not send it) means "not opted out", never "opted
+  out";
 * a hint may NEVER name the machine row, the environment or the owner — those
   come from the verified claims and this server's own tables;
 * the one hint that *causes* action is ``enrolled: false`` on a device whose
@@ -285,14 +292,20 @@ async def evaluate_and_dispatch(
     # does so.
     #
     # 1a — the EXPLICIT local opt-out. The box has ``QONTINUI_DEVENV_AUTO_ENROLL=0``
-    # set, so its operator has already answered this question locally. Without
-    # this field that answer was invisible here: web re-dispatched on every
-    # reconnect, the runner refused every directive, and the pending row burned
-    # a fresh one-time code once per cooldown window forever — an operator's
-    # deliberate "no" showing up in the data as an enrollment that keeps almost
-    # happening. Checked BEFORE ``instance_role`` because it is the more
-    # specific signal: a box that said "not me" deserves its own log line rather
-    # than being filed under a generic role mismatch.
+    # set, so its operator has already answered this question locally.
+    #
+    # This gate is currently INERT and deliberately so: no shipped runner build
+    # sends a ``devenv`` block, so ``devenv_hint`` is ``None`` on every connect
+    # today and gate 1b below refuses first. It is here for the runner build
+    # this ships alongside. Once that lands, a box carrying the kill switch
+    # would otherwise be dispatched to on every reconnect, refuse every
+    # directive, and burn a fresh one-time code on its pending row once per
+    # cooldown window — an operator's deliberate "no" showing up in the data as
+    # an enrollment that keeps almost happening.
+    #
+    # Checked BEFORE ``instance_role`` because it is the more specific signal:
+    # a box that said "not me" deserves its own log line rather than being
+    # filed under a generic role mismatch.
     #
     # STRICTLY one-directional, and the ``is True`` is what enforces it. Only
     # the literal boolean ``true`` suppresses. Absent (an older runner build
@@ -355,13 +368,24 @@ async def evaluate_and_dispatch(
     # point; it is released on commit/rollback, so no path can leak it.
     #
     # TRY, not wait. If another connect for this same device already holds the
-    # lock, it is running this identical decision right now — so there is
-    # nothing for this caller to do but wait for an answer it would then
-    # discard. Waiting would park a pooled connection (prod: 10 + 15 overflow)
-    # for as long as the holder takes, once per connect, and a flapping device
-    # reconnecting in a loop is exactly the case that produces several at once.
-    # Returning immediately costs nothing real: the holder creates the row, and
-    # this device's next connect sees it.
+    # lock, it is running this identical decision right now, so waiting would
+    # park a pooled connection (prod: 10 + 15 overflow) for as long as the
+    # holder takes, once per connect — and a flapping device reconnecting in a
+    # loop is exactly the case that produces several at once.
+    #
+    # What this trades away, stated honestly: the holder does NOT necessarily
+    # create a row. It may answer ``needs_environment``, ``name_unavailable`` or
+    # ``ambiguous``, or raise and be swallowed as ``failed``. In those cases
+    # this caller has already returned ``concurrent_connect`` and the round
+    # enrolls nothing, where a waiting lock would have given it a turn. That is
+    # accepted: the engine is idempotent and re-runs on the very next connect,
+    # so the cost is one deferred round, while the cost of waiting is a held
+    # pool connection on every concurrent connect in the fleet.
+    #
+    # Note the lock is an OPTIMISATION, not the correctness boundary. Since
+    # devenv_10 the partial unique index ``uq_devenv_machine_active_coord_device``
+    # enforces one live row per device unconditionally, against every writer —
+    # so a lost lock can cost a round, never a duplicate.
     acquired = await db.scalar(
         text("SELECT pg_try_advisory_xact_lock(:key)"),
         {"key": _advisory_key(device_id)},

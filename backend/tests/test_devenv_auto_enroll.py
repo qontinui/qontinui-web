@@ -999,15 +999,22 @@ async def test_two_concurrent_connects_create_exactly_one_row(
     """The ``FOR UPDATE`` path locks nothing when there are zero rows.
 
     Two simultaneous connects for one device would therefore both see "no
-    machine" and both insert; the transaction-scoped advisory lock is what stops
-    that. This test needs two INDEPENDENT connections, so it runs outside the
-    shared rolled-back session fixture and cleans up after itself.
+    machine" and both try to insert. Since devenv_10, TWO things stop the second
+    row and it is worth being precise about which does what: the partial unique
+    index is the correctness boundary and would refuse the duplicate
+    unconditionally (as an ``IntegrityError``, swallowed into ``failed``); the
+    advisory lock is what makes the loser take a CLEAN branch instead — it
+    observes the winner's row, or the held lock, and says so. This test needs
+    two INDEPENDENT connections, so it runs outside the shared rolled-back
+    session fixture and cleans up after itself.
 
     The lock is a TRY, so the loser has two admissible answers and the assertion
     covers both: ``concurrent_connect`` (it found the lock held and returned
     rather than parking a pooled connection) or ``cooldown`` (the holder had
-    already committed and released, so it saw the fresh row). What is NOT
-    admissible, and is what this test exists for, is two rows.
+    already committed and released, so it saw the fresh row). ``failed`` is NOT
+    admissible — that would mean the lock stopped doing its job and the index
+    was left to catch it. Neither is two rows, which is what this test exists
+    for.
     """
     maker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     device_id = uuid4()
