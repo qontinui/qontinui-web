@@ -25,7 +25,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -388,12 +388,32 @@ async def test_policy_target_environment_wins_over_the_single_env_rule(
 async def test_duplicate_rows_are_never_guessed_between(
     async_db_session: AsyncSession, enabled
 ) -> None:
+    """Two live rows for one device: refuse to guess, act on neither.
+
+    Since Phase 6 (``devenv_10``) the database forbids this shape —
+    ``UNIQUE (coord_device_id) WHERE revoked_at IS NULL`` — so the duplicate
+    has to be constructed with the index dropped. That is not a workaround
+    around the constraint; it is the honest setup for what this branch now
+    covers: rows that ALREADY existed when the constraint was added, on a
+    database the migration cannot retroactively clean. The engine's refusal to
+    guess is what keeps such a pair harmless, so the branch stays and so does
+    this test.
+
+    The DROP is inside the test's own transaction, which the fixture rolls
+    back, so no other test sees a database without the invariant.
+    """
     user = await _mk_user(async_db_session)
     device = await _mk_device(
         async_db_session,
         user_id=user.id,
         paired=True,
         hostname=f"dup-{uuid4().hex[:8]}",
+    )
+    # IF EXISTS: the test schema is built from ORM metadata, and a test DB
+    # created before devenv_10 landed would not carry the index at all. A
+    # missing index must not fail the test for the wrong reason.
+    await async_db_session.execute(
+        text("DROP INDEX IF EXISTS devenv.uq_devenv_machine_active_coord_device")
     )
     await _mk_machine(
         async_db_session, user_id=user.id, coord_device_id=device.device_id
@@ -874,3 +894,76 @@ async def test_a_failing_dispatch_still_burns_the_cooldown(
 
     assert outcome == OUTCOME_PENDING_REMINTED
     assert machine.auto_enroll_last_attempt_at is not None
+
+
+# ===========================================================================
+# Phase 6 — the duplicate-row hole, closed at the database
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_a_second_live_row_for_one_device_is_rejected(
+    async_db_session: AsyncSession,
+) -> None:
+    """``devenv_10``'s partial unique index refuses the second live row.
+
+    The engine already serialises its OWN create path with an advisory lock,
+    but that covers one writer. This invariant covers the operator dispatch
+    path, the agent enroll path, a hand-made row, and any writer not yet
+    written — and it fails loudly at the second insert rather than quietly at
+    every subsequent connect, which is what a duplicate actually costs: the
+    engine reads "the machine row for this device", finds two, and does nothing
+    for that box from then on.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    user = await _mk_user(async_db_session)
+    device = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=True,
+        hostname=f"uniq-{uuid4().hex[:8]}",
+    )
+    await _mk_machine(
+        async_db_session, user_id=user.id, coord_device_id=device.device_id
+    )
+
+    nested = await async_db_session.begin_nested()
+    with pytest.raises(IntegrityError):
+        await _mk_machine(
+            async_db_session, user_id=user.id, coord_device_id=device.device_id
+        )
+    await nested.rollback()
+
+
+@pytest.mark.asyncio
+async def test_a_revoked_row_does_not_block_re_enrolling_its_device(
+    async_db_session: AsyncSession,
+) -> None:
+    """The index is PARTIAL for this reason, and the reason is load-bearing.
+
+    ``POST /machines/{id}/revoke`` does not clear ``coord_device_id``, so a
+    full unique index would let one revoked machine bar its own device from
+    ever being enrolled again — turning the one-click undo into a permanent
+    lockout.
+    """
+    user = await _mk_user(async_db_session)
+    device = await _mk_device(
+        async_db_session,
+        user_id=user.id,
+        paired=True,
+        hostname=f"revoked-{uuid4().hex[:8]}",
+    )
+    old = await _mk_machine(
+        async_db_session, user_id=user.id, coord_device_id=device.device_id
+    )
+    old.revoked_at = datetime.now(UTC)
+    await async_db_session.flush()
+
+    fresh = await _mk_machine(
+        async_db_session, user_id=user.id, coord_device_id=device.device_id
+    )
+    assert fresh.id != old.id
+
+    live = await _machines_for(async_db_session, device.device_id)
+    assert [m.id for m in live] == [fresh.id]

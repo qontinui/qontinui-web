@@ -113,7 +113,27 @@ class Machine(Base):
         Index("idx_devenv_machine_key_hash", "key_hash"),
         Index("idx_devenv_machine_enrollment_code", "enrollment_code"),
         Index("idx_devenv_machine_environment", "environment_id"),
-        Index("idx_devenv_machine_coord_device", "coord_device_id"),
+        # At most ONE non-revoked machine per coord device (devenv_10, plan
+        # 2026-08-05 Phase 6). This replaced the plain non-unique
+        # ``idx_devenv_machine_coord_device`` and serves the same lookups.
+        #
+        # Partial on purpose. Revoked rows are history, and the shipped revoke
+        # flow does NOT clear ``coord_device_id`` — so a full unique index
+        # would let a revoked machine permanently block its own device from
+        # ever being enrolled again. The predicate scopes the invariant to what
+        # it means: one LIVE machine per device.
+        #
+        # Two rows for one device is not cosmetic duplication: the connect-time
+        # engine reads "the machine row for this device", and with two there is
+        # no such thing — it refuses and does nothing, permanently, for that
+        # box. The engine's advisory lock covers its own create path; this
+        # index covers every other writer, including ones not yet written.
+        Index(
+            "uq_devenv_machine_active_coord_device",
+            "coord_device_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
         {"schema": _SCHEMA},
     )
 
