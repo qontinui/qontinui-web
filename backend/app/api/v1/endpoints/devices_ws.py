@@ -48,6 +48,7 @@ from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
 from app.models.devenv import Machine
+from app.services import devenv_auto_enroll
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenInvalidError,
@@ -382,6 +383,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             device_id=str(device_id),
             user_id=str(user_id),
             name=name,
+        )
+
+        # ----------------------------------------------------------------
+        # Auto-enrollment decision engine (plan 2026-08-05, Phase 4).
+        #
+        # Scheduled AFTER the ``connected`` ack is on the wire and never
+        # awaited: the handshake must not wait on a DB round trip, and the
+        # engine's own wrapper swallows every failure. Deliberately NOT the
+        # rollback-and-close posture of the Redis block above — a device that
+        # could not be auto-enrolled has lost a convenience; a device whose
+        # socket was dropped has lost its connection to the fleet.
+        #
+        # It is flagged off by default (``DEVENV_AUTO_ENROLL_ENABLED``), in
+        # which case this costs one attribute read inside the task.
+        # ----------------------------------------------------------------
+        devenv_auto_enroll.schedule_auto_enroll(
+            device_id, user_id, devenv_hint, manager
         )
 
         while True:

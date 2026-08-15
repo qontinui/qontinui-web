@@ -407,6 +407,33 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Connect-time devenv auto-enrollment (plan
+    # 2026-08-05-devenv-auto-enrollment-on-connection, Phase 4).
+    #
+    # DEFAULT-OFF on first deploy. The engine creates machine rows and rotates
+    # enrollment codes without an operator in the loop, so it ships dark and is
+    # turned on tenant by tenant while the Phase-1 shadow log line
+    # (`devenv_auto_enroll_shadow`) is watched turning into real enrollments.
+    # Off, the connect path is byte-for-byte what it was: the engine returns
+    # `disabled_globally` before touching the database.
+    DEVENV_AUTO_ENROLL_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Enable connect-time devenv auto-enrollment on WS /api/v1/devices/ws. "
+            "Ships off; enabled per tenant during rollout."
+        ),
+    )
+    # Rate-limit clock for every arm that re-dispatches an enroll directive at
+    # the SAME machine row. It bounds two things at once: a compromised device
+    # JWT rotating its own machine key (decision 2), and a box that never
+    # completes enrollment re-minting on every reconnect.
+    DEVENV_AUTO_ENROLL_COOLDOWN_MINUTES: int = Field(
+        default=60,
+        description=(
+            "Minimum minutes between auto-enroll dispatches for one machine row."
+        ),
+    )
+
     # Database query timing settings
     SLOW_QUERY_THRESHOLD_MS: int = Field(
         default=100,
