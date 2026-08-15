@@ -17,7 +17,7 @@ the tables really land there rather than trusting that it works.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -68,6 +68,30 @@ SEARCH_TSVECTOR_SQL = (
 
 _IDENTITY_ORG_EXPR = f"coalesce(organization_id, '{NIL_ORGANIZATION_ID}'::uuid)"
 
+#: Statuses that mean "this artifact is done" — normalized (uppercased, every
+#: run of non-alphanumerics collapsed to ``_``, edges trimmed). ``status`` is
+#: OPAQUE free-form text by design, so this is a *reading* of it, not a
+#: vocabulary: nothing rejects an unlisted status, it simply counts as
+#: not-yet-shipped. Used by the candidate read (which lists UNSHIPPED plans)
+#: and by ``unmet_depends_on`` (a dependency in one of these states is met).
+TERMINAL_STATUSES: frozenset[str] = frozenset(
+    {
+        "SHIPPED",
+        "COMPLETE",
+        "COMPLETED",
+        "DONE",
+        "LANDED",
+        "MERGED",
+        "ABANDONED",
+        "SUPERSEDED",
+        "CANCELLED",
+        "CANCELED",
+        "OBSOLETE",
+        "CLOSED",
+        "WITHDRAWN",
+    }
+)
+
 
 class WorkArtifact(Base):
     """A plan, prompt, report or handoff — the mutable head row.
@@ -88,6 +112,20 @@ class WorkArtifact(Base):
             text("slug"),
             text("coalesce(source_repo, '')"),
             unique=True,
+        ),
+        # The kind-LESS resolution key the scan-safe upsert path queries on.
+        # Deliberately NOT unique: an already-forked corpus (two kinds for one
+        # document) must still load so the API can report the ambiguity.
+        Index(
+            "ix_work_artifacts_scan_identity",
+            text(_IDENTITY_ORG_EXPR),
+            text("slug"),
+            text("coalesce(source_repo, '')"),
+        ),
+        Index(
+            "ix_work_artifacts_kind_locked",
+            "kind_locked",
+            postgresql_where=text("kind_locked"),
         ),
         Index("ix_work_artifacts_kind_status", "kind", "status"),
         Index("ix_work_artifacts_work_unit_slug", "work_unit_slug"),
@@ -125,6 +163,19 @@ class WorkArtifact(Base):
     )
 
     kind: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # True once ``kind`` was set DELIBERATELY (an operator/agent upsert or the
+    # explicit PATCH .../kind door) rather than guessed by a scanner. The
+    # scan-safe upsert path resolves its target ignoring ``kind`` and refuses
+    # to move the kind of a locked row — that is what makes a correction
+    # survive the next re-scan instead of forking into a second row. See
+    # alembic revision ``plan_library_02_kind_lock``.
+    kind_locked: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        default=False,
+    )
 
     slug: Mapped[str] = mapped_column(Text, nullable=False)
 

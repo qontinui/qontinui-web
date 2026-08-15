@@ -17,15 +17,46 @@ Upsert contract
 matches the stored digest the upsert is a **no-op**: ``current_version`` does
 not move and no version row is appended. When it differs, the head row is
 updated and a snapshot is appended in the SAME transaction.
+
+Kind-lock contract (``plan_library_02_kind_lock``)
+--------------------------------------------------
+``upsert_artifact`` has TWO resolution modes, selected by
+``kind_is_heuristic``:
+
+* ``False`` (default — operator/agent/API writes): phase-1 behaviour. The
+  target row is the EXACT identity ``(org, kind, slug, source_repo)``, and the
+  write additionally sets ``kind_locked = True``, because a caller that names
+  a kind is asserting it.
+* ``True`` (the runner scanner, whose kind is a filename/body heuristic): the
+  target row is resolved by ``(org, slug, source_repo)`` **ignoring kind**, so
+  a corrected artifact is FOUND rather than forked into a second row. A locked
+  row keeps its kind; an unlocked one lets the heuristic move it.
+
+When the kind-less key matches more than one row (a corpus that already forked
+before this fix), the resolver prefers the single ``kind_locked`` row if there
+is exactly one, and otherwise raises :class:`AmbiguousArtifactKind` — the
+scanner must NOT pick a winner silently. The endpoint turns that into a
+structured 409 naming the candidate ids so ``/plan-library/divergent``
+surfaces the fork instead.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, Text, cast, func, or_, select, text
+from sqlalchemy import (
+    ColumnElement,
+    Select,
+    Text,
+    cast,
+    func,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,10 +64,97 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
     SEARCH_TSVECTOR_SQL,
+    TERMINAL_STATUSES,
     WorkArtifact,
     WorkArtifactEdge,
     WorkArtifactVersion,
 )
+
+#: Relations traversed BACKWARDS to reconstruct the prompt chain that produced
+#: a plan: ``investigation_prompt --produced_report--> report --feeds-->
+#: plan_authoring_prompt --authored_plan--> plan``. ``supersedes`` and
+#: ``depends_on`` are deliberately excluded — they relate peer artifacts, not
+#: producers.
+PROMPT_CHAIN_RELATIONS: tuple[str, ...] = (
+    "authored_plan",
+    "feeds",
+    "produced_report",
+)
+
+#: Hard stop for the backwards prompt-chain walk. The graph is user-authored
+#: and may contain cycles; the visited set already breaks them, this bounds a
+#: pathological long chain as well.
+_PROMPT_CHAIN_MAX_DEPTH = 10
+
+_NON_ALNUM = re.compile(r"[^A-Z0-9]+")
+
+
+class AmbiguousArtifactKind(Exception):
+    """A kind-less resolution matched several rows with no locked winner.
+
+    Raised by the scan-safe upsert path instead of picking one arbitrarily.
+    Carries the candidate ids so the caller can name them in a 409 and the
+    operator can fix the fork through ``/plan-library/divergent``.
+    """
+
+    def __init__(
+        self,
+        *,
+        slug: str,
+        source_repo: str | None,
+        candidates: list[WorkArtifact],
+    ) -> None:
+        self.slug = slug
+        self.source_repo = source_repo
+        self.candidate_ids = [row.id for row in candidates]
+        self.candidate_kinds = sorted({row.kind for row in candidates})
+        super().__init__(
+            f"slug={slug!r} source_repo={source_repo!r} resolves to "
+            f"{len(candidates)} rows with kinds {self.candidate_kinds} and no "
+            "single kind_locked row to prefer"
+        )
+
+
+class ArtifactKindConflict(Exception):
+    """Setting a kind would collide with an existing row's identity.
+
+    ``uq_work_artifacts_identity`` covers ``kind``, so re-kinding a row onto a
+    ``(org, kind, slug, source_repo)`` that another row already occupies is a
+    unique violation. Surfaced as a 409 naming the occupant rather than a 500.
+    """
+
+    def __init__(self, *, kind: str, slug: str, existing_id: UUID | None) -> None:
+        self.kind = kind
+        self.slug = slug
+        self.existing_id = existing_id
+        super().__init__(
+            f"another artifact already occupies kind={kind!r} slug={slug!r}"
+            + (f" (id={existing_id})" if existing_id is not None else "")
+        )
+
+
+def normalize_status(status: str | None) -> str:
+    """Fold an opaque status onto its comparison form.
+
+    Uppercase, every run of non-alphanumerics collapsed to ``_``, edges
+    trimmed — so ``"IN PROGRESS"``, ``"in-progress"`` and ``"In_Progress"``
+    all compare equal. Mirrors the SQL expression :func:`_normalized_status`
+    builds, and the two MUST stay in step.
+    """
+    return _NON_ALNUM.sub("_", (status or "").upper()).strip("_")
+
+
+def _normalized_status() -> ColumnElement[str]:
+    """The SQL twin of :func:`normalize_status`, over ``WorkArtifact.status``."""
+    return func.btrim(
+        func.regexp_replace(func.upper(WorkArtifact.status), "[^A-Z0-9]+", "_", "g"),
+        "_",
+    )
+
+
+def is_terminal_status(status: str | None) -> bool:
+    """True when this opaque status reads as "done"."""
+    return normalize_status(status) in TERMINAL_STATUSES
 
 
 def compute_content_sha256(body: str) -> str:
@@ -182,6 +300,65 @@ async def get_by_identity(
     return (await db.execute(stmt)).scalars().first()
 
 
+async def list_by_scan_identity(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    slug: str,
+    source_repo: str | None,
+) -> list[WorkArtifact]:
+    """Every row matching ``(org, slug, source_repo)`` — ``kind`` IGNORED.
+
+    This is the scanner's resolution key. Phase 1's identity index includes
+    ``kind``, so a corrected artifact is invisible to a re-scan that
+    re-derives the heuristic kind; keying without ``kind`` finds it.
+
+    Returns a list, not one row, because an already-forked corpus legitimately
+    has several. Ordered ``kind_locked`` first (the preferred winner), then
+    oldest-first so the ordering is stable for the ambiguity report.
+    """
+    stmt = (
+        select(WorkArtifact)
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.slug == slug,
+            func.coalesce(WorkArtifact.source_repo, "") == (source_repo or ""),
+        )
+        .order_by(
+            WorkArtifact.kind_locked.desc(),
+            WorkArtifact.created_at,
+            WorkArtifact.id,
+        )
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+def resolve_scan_target(
+    matches: list[WorkArtifact], *, slug: str, source_repo: str | None
+) -> WorkArtifact | None:
+    """Pick the single row a heuristic-kind scan should update.
+
+    * no match          → ``None`` (the caller inserts).
+    * exactly one match → that row.
+    * several matches   → the ONE ``kind_locked`` row if there is exactly one;
+      otherwise :class:`AmbiguousArtifactKind`.
+
+    The "several matches" case is a corpus that forked before the kind-lock
+    fix landed (or a genuine same-slug/different-kind pair). Picking
+    arbitrarily would let the scanner silently overwrite whichever copy it
+    happened to sort first, so it refuses — the fork stays visible in
+    ``/plan-library/divergent`` and the rows are left untouched.
+    """
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    locked = [row for row in matches if row.kind_locked]
+    if len(locked) == 1:
+        return locked[0]
+    raise AmbiguousArtifactKind(slug=slug, source_repo=source_repo, candidates=matches)
+
+
 async def list_versions(
     db: AsyncSession, artifact_id: UUID
 ) -> list[WorkArtifactVersion]:
@@ -256,6 +433,7 @@ async def upsert_artifact(
     captured_by: str,
     change_description: str | None,
     created_by: str | None = None,
+    kind_is_heuristic: bool = False,
 ) -> tuple[WorkArtifact, bool, bool]:
     """Insert-or-update by the functional unique key.
 
@@ -265,23 +443,49 @@ async def upsert_artifact(
       ``(row, True, True)``.
     * An existing key whose body hashes to the stored digest is a **no-op**:
       ``current_version`` is untouched and no snapshot is appended →
-      ``(row, False, False)``. Metadata differences are deliberately NOT
-      written on a no-op; the digest is the whole contract.
+      ``(row, False, False)``. Content metadata is deliberately NOT written on
+      a no-op; the digest is the whole contract. The ONE exception is
+      ``kind_locked`` (see below), which is an assertion about identity rather
+      than content.
     * An existing key with different content bumps ``current_version``,
       rewrites the head row's metadata and appends a snapshot in the same
       transaction → ``(row, False, True)``.
+
+    ``kind_is_heuristic``
+        ``False`` (default) — an operator/agent write. Target resolution is
+        the phase-1 EXACT identity, and the write SETS ``kind_locked`` because
+        the caller is asserting the kind. That is what makes a correction
+        survive later scans.
+
+        ``True`` — a runner scan whose kind came from a filename/body
+        heuristic. Target resolution IGNORES ``kind`` (see
+        :func:`list_by_scan_identity`); a ``kind_locked`` row keeps its kind,
+        an unlocked one lets the heuristic move it, and a missing row is
+        inserted unlocked. Raises :class:`AmbiguousArtifactKind` rather than
+        guessing when the kind-less key matches several rows.
     """
     digest = compute_content_sha256(body)
 
-    existing = await get_by_identity(
-        db, org_id=org_id, kind=kind, slug=slug, source_repo=source_repo
-    )
+    if kind_is_heuristic:
+        matches = await list_by_scan_identity(
+            db, org_id=org_id, slug=slug, source_repo=source_repo
+        )
+        # Raises AmbiguousArtifactKind on an unresolvable fork — deliberately
+        # NOT caught here: no row is touched and the endpoint 409s.
+        existing = resolve_scan_target(matches, slug=slug, source_repo=source_repo)
+    else:
+        existing = await get_by_identity(
+            db, org_id=org_id, kind=kind, slug=slug, source_repo=source_repo
+        )
 
     if existing is None:
         artifact = WorkArtifact(
             organization_id=org_id,
             created_by_user_id=user_id,
             kind=kind,
+            # A heuristic kind is a guess and must stay correctable; an
+            # explicit one is an assertion and locks immediately.
+            kind_locked=not kind_is_heuristic,
             slug=slug,
             title=title,
             status=status,
@@ -303,9 +507,18 @@ async def upsert_artifact(
             # Roll back to a clean session and fall through to the update
             # path against the row they inserted.
             await db.rollback()
-            existing = await get_by_identity(
-                db, org_id=org_id, kind=kind, slug=slug, source_repo=source_repo
-            )
+            if kind_is_heuristic:
+                existing = resolve_scan_target(
+                    await list_by_scan_identity(
+                        db, org_id=org_id, slug=slug, source_repo=source_repo
+                    ),
+                    slug=slug,
+                    source_repo=source_repo,
+                )
+            else:
+                existing = await get_by_identity(
+                    db, org_id=org_id, kind=kind, slug=slug, source_repo=source_repo
+                )
             if existing is None:  # pragma: no cover — the row must exist now
                 raise
         else:
@@ -326,7 +539,17 @@ async def upsert_artifact(
     assert existing is not None  # narrowed by both branches above
 
     if existing.content_sha256 == digest:
-        # 304-equivalent. No version bump, no snapshot, no metadata write.
+        # 304-equivalent: no version bump, no snapshot, no content write.
+        #
+        # ``kind_locked`` is the ONE field still written here, and only in the
+        # False → True direction on an explicit write. The lock records that a
+        # caller ASSERTED this kind; that assertion is independent of whether
+        # the body happened to change, and dropping it on a re-post would let
+        # the very next scan un-stick a correction.
+        if not kind_is_heuristic and not existing.kind_locked:
+            existing.kind_locked = True
+            await db.commit()
+            await db.refresh(existing)
         return existing, False, False
 
     # Content differs, so a version row is about to be appended. Take a row
@@ -336,7 +559,31 @@ async def upsert_artifact(
     # the winner's digest and either no-ops or bumps to 3.
     await db.refresh(existing, with_for_update=True)
     if existing.content_sha256 == digest:
+        if not kind_is_heuristic and not existing.kind_locked:
+            existing.kind_locked = True
+            await db.commit()
+            await db.refresh(existing)
         return existing, False, False
+
+    # Whether this write may move ``kind``. Evaluated AFTER the row lock, not
+    # before: a concurrent correction that landed while we were resolving is
+    # visible only in the re-read, and honouring the pre-lock value would let
+    # this scan overwrite it.
+    may_move_kind = not (kind_is_heuristic and existing.kind_locked)
+
+    if may_move_kind and existing.kind != kind:
+        # Only reachable on the heuristic path against an UNLOCKED row: the
+        # exact-identity lookup can never hand back a differing kind. Moving
+        # onto a kind another row already occupies would violate
+        # uq_work_artifacts_identity — report it rather than 500.
+        clash = await get_by_identity(
+            db, org_id=org_id, kind=kind, slug=slug, source_repo=source_repo
+        )
+        if clash is not None and clash.id != existing.id:
+            raise ArtifactKindConflict(kind=kind, slug=slug, existing_id=clash.id)
+        existing.kind = kind
+    if not kind_is_heuristic:
+        existing.kind_locked = True
 
     existing.current_version += 1
     existing.title = title
@@ -363,6 +610,49 @@ async def upsert_artifact(
     await db.commit()
     await db.refresh(existing)
     return existing, False, True
+
+
+async def set_artifact_kind(
+    db: AsyncSession, artifact: WorkArtifact, *, kind: str, org_id: UUID | None
+) -> WorkArtifact:
+    """Correct an artifact's ``kind`` and LOCK it against future scans.
+
+    The lock is set unconditionally — even when ``kind`` is unchanged — because
+    the point of this door is to record that a human/agent asserted the kind,
+    which is exactly what stops the next heuristic scan from moving it.
+
+    Raises :class:`ArtifactKindConflict` when another row already occupies
+    ``(org, kind, slug, source_repo)``; that is a genuine identity collision
+    (``uq_work_artifacts_identity`` covers ``kind``) and merging the two rows
+    is an operator decision, not something this write may guess at.
+    """
+    if artifact.kind != kind:
+        clash = await get_by_identity(
+            db,
+            org_id=org_id,
+            kind=kind,
+            slug=artifact.slug,
+            source_repo=artifact.source_repo,
+        )
+        if clash is not None and clash.id != artifact.id:
+            raise ArtifactKindConflict(
+                kind=kind, slug=artifact.slug, existing_id=clash.id
+            )
+        artifact.kind = kind
+
+    artifact.kind_locked = True
+    artifact.updated_at = datetime.now(UTC)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # A concurrent writer took the target identity between the check and
+        # the commit. Same conflict, reported the same way.
+        await db.rollback()
+        raise ArtifactKindConflict(
+            kind=kind, slug=artifact.slug, existing_id=None
+        ) from exc
+    await db.refresh(artifact)
+    return artifact
 
 
 async def create_edge(
@@ -456,3 +746,199 @@ async def find_divergent(
             bucket.append(row)
 
     return [(g.kind, g.slug, buckets[(g.kind, g.slug)]) for g in groups]
+
+
+async def find_kind_forks(
+    db: AsyncSession, *, org_id: UUID | None
+) -> list[tuple[str, str | None, list[WorkArtifact]]]:
+    """``(slug, source_repo)`` keys carrying MORE THAN ONE ``kind``.
+
+    The fork class the kind-lock fix exists to prevent, and the one a scanner
+    now refuses to resolve (:class:`AmbiguousArtifactKind`). Reported
+    separately from :func:`find_divergent` — which groups by ``(kind, slug)``
+    and therefore cannot see a fork whose whole distinguishing feature is that
+    the kinds differ.
+
+    Returns ``(slug, source_repo, rows)`` with ``rows`` ordered locked-first so
+    the operator can see immediately whether a winner already exists.
+    """
+    # ONE Label object reused across SELECT / GROUP BY / ORDER BY. Spelling
+    # ``coalesce(source_repo, '')`` three times instead would emit three
+    # DIFFERENT bind parameters ($4, $5, $6), and PostgreSQL compares grouped
+    # expressions node-by-node — so the ORDER BY copy would not match the
+    # GROUP BY copy and the query fails with "source_repo must appear in the
+    # GROUP BY clause". (Observed, not theorised.)
+    repo_key = func.coalesce(WorkArtifact.source_repo, "").label("repo_key")
+    group_stmt = (
+        select(WorkArtifact.slug, repo_key)
+        .where(_org_scope(org_id))
+        .group_by(WorkArtifact.slug, repo_key)
+        .having(func.count(func.distinct(WorkArtifact.kind)) > 1)
+        .order_by(WorkArtifact.slug, repo_key)
+    )
+    groups = list((await db.execute(group_stmt)).all())
+    if not groups:
+        return []
+
+    keys = {(g.slug, g.repo_key) for g in groups}
+    rows_stmt = (
+        select(WorkArtifact)
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.slug.in_({s for s, _ in keys}),
+        )
+        .order_by(
+            WorkArtifact.slug,
+            WorkArtifact.kind_locked.desc(),
+            WorkArtifact.kind,
+            WorkArtifact.id,
+        )
+    )
+    rows = (await db.execute(rows_stmt)).scalars().all()
+
+    buckets: dict[tuple[str, str], list[WorkArtifact]] = {k: [] for k in keys}
+    for row in rows:
+        # The slug IN-list can pull in a (slug, repo) pair that is not itself
+        # forked; keep only the real groups.
+        bucket = buckets.get((row.slug, row.source_repo or ""))
+        if bucket is not None:
+            bucket.append(row)
+
+    return [(g.slug, g.repo_key or None, buckets[(g.slug, g.repo_key)]) for g in groups]
+
+
+# ===========================================================================
+# Candidate selection (Phase 6) — SIGNALS ONLY, no score
+# ===========================================================================
+#
+# Design decision D6: this read exposes the ranking INPUTS and the AGENT
+# ranks. No criticality score, no weighting, no "priority" column — a
+# hardcoded score would be a guess frozen into SQL, and every consumer would
+# then be arguing with the guess instead of with the evidence.
+
+
+async def list_plan_candidates(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    offset: int = 0,
+    limit: int = 25,
+) -> tuple[list[WorkArtifact], int]:
+    """Unshipped ``kind='plan'`` artifacts, oldest-vetted-first.
+
+    "Unshipped" reads the OPAQUE ``status`` through
+    :func:`normalize_status` against
+    :data:`app.models.work_artifact.TERMINAL_STATUSES`. An unrecognised status
+    counts as not-yet-shipped — the library mirrors what the fleet wrote and
+    an unknown word must not silently hide a plan.
+
+    Ordering is a STABLE DEFAULT and nothing more:
+    ``coalesce(authored_at, created_at) ASC, id ASC``. ``authored_at`` is the
+    plan's own front-matter timestamp when the scanner captured one, falling
+    back to when the library first saw it; ``id`` breaks ties so paging is
+    deterministic. There is no scoring pass.
+    """
+    base = select(WorkArtifact).where(
+        _org_scope(org_id),
+        WorkArtifact.kind == "plan",
+        _normalized_status().not_in(tuple(sorted(TERMINAL_STATUSES))),
+    )
+    count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
+    total = int((await db.execute(count_stmt)).scalar_one())
+
+    order_key = func.coalesce(WorkArtifact.authored_at, WorkArtifact.created_at)
+    rows = (
+        (
+            await db.execute(
+                base.order_by(order_key.asc(), WorkArtifact.id.asc())
+                .offset(offset)
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows), total
+
+
+async def load_depends_on(
+    db: AsyncSession, artifact_ids: list[UUID]
+) -> dict[UUID, list[WorkArtifact]]:
+    """``depends_on`` edge TARGETS per artifact, keyed by the dependent's id.
+
+    Every target is returned; the caller filters to the UNMET ones with
+    :func:`is_terminal_status` so the "met" reading stays in one place.
+    """
+    if not artifact_ids:
+        return {}
+
+    stmt = (
+        select(WorkArtifactEdge.from_id, WorkArtifact)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.to_id)
+        .where(
+            WorkArtifactEdge.from_id.in_(artifact_ids),
+            WorkArtifactEdge.relation == "depends_on",
+        )
+        .order_by(WorkArtifactEdge.from_id, WorkArtifact.slug, WorkArtifact.id)
+    )
+    out: dict[UUID, list[WorkArtifact]] = {aid: [] for aid in artifact_ids}
+    for from_id, target in (await db.execute(stmt)).all():
+        out.setdefault(from_id, []).append(target)
+    return out
+
+
+async def load_prompt_chains(
+    db: AsyncSession, artifact_ids: list[UUID]
+) -> dict[UUID, list[tuple[WorkArtifact, str, int]]]:
+    """Walk :data:`PROMPT_CHAIN_RELATIONS` BACKWARDS from each artifact.
+
+    A plan's provenance runs ``investigation_prompt --produced_report-->
+    investigation_report --feeds--> plan_authoring_prompt --authored_plan-->
+    plan``, so reconstructing "what produced this plan" means following those
+    edges from ``to_id`` toward ``from_id``.
+
+    Returns ``{artifact_id: [(producer, relation, depth), ...]}`` ordered
+    nearest-first (depth 1 = the artifact that directly produced the plan).
+    Cycles are broken by a per-root visited set and the walk is capped at
+    :data:`_PROMPT_CHAIN_MAX_DEPTH` levels — the graph is user-authored, so
+    neither guarantee can be assumed away.
+
+    Implemented as one query per LEVEL (not per artifact): every root advances
+    together, so a page of N candidates with a chain of depth D costs D
+    queries, not N*D.
+    """
+    if not artifact_ids:
+        return {}
+
+    chains: dict[UUID, list[tuple[WorkArtifact, str, int]]] = {
+        aid: [] for aid in artifact_ids
+    }
+    # Per ROOT, the ids already emitted (plus the root itself) — a shared
+    # visited set would let one root's traversal starve another's.
+    seen: dict[UUID, set[UUID]] = {aid: {aid} for aid in artifact_ids}
+    # The frontier: node id → the roots still expanding through it.
+    frontier: dict[UUID, set[UUID]] = {aid: {aid} for aid in artifact_ids}
+
+    for depth in range(1, _PROMPT_CHAIN_MAX_DEPTH + 1):
+        if not frontier:
+            break
+        stmt = (
+            select(WorkArtifactEdge.to_id, WorkArtifactEdge.relation, WorkArtifact)
+            .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
+            .where(
+                WorkArtifactEdge.to_id.in_(list(frontier)),
+                WorkArtifactEdge.relation.in_(PROMPT_CHAIN_RELATIONS),
+            )
+            .order_by(WorkArtifactEdge.to_id, WorkArtifact.kind, WorkArtifact.id)
+        )
+        next_frontier: dict[UUID, set[UUID]] = {}
+        for child_id, relation, producer in (await db.execute(stmt)).all():
+            for root in frontier.get(child_id, ()):
+                if producer.id in seen[root]:
+                    continue
+                seen[root].add(producer.id)
+                chains[root].append((producer, relation, depth))
+                next_frontier.setdefault(producer.id, set()).add(root)
+        frontier = next_frontier
+
+    return chains

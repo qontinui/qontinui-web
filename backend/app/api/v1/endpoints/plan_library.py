@@ -7,11 +7,13 @@ instead of living only as markdown in a dozen checkouts.
 
 Routes
 ------
-``GET  /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
-``GET  /plan-library/divergent``  same (kind, slug), differing content digests
-``GET  /plan-library/{id}``       body + full version log + edges BOTH directions
-``POST /plan-library``            upsert by (org, kind, slug, source_repo)
-``POST /plan-library/{id}/edges`` add a provenance edge in either direction
+``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
+``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
+``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
+``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
+``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
+``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
+``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
 
 Invariants this module is responsible for
 -----------------------------------------
@@ -22,29 +24,57 @@ Invariants this module is responsible for
    status filters to an empty page; an unknown status on write is stored.
 3. **``work_unit_slug`` may dangle.** It is a soft link to a coord work unit
    with no FK and no resolution step. A missing work unit NEVER 404s a read.
-4. **No direct reads of coord's schema.** Nothing here touches ``coord.*``;
-   anything coord-owned is reached over coord's HTTP API by other modules
-   (house rule — see ``agent_sessions.py`` / ``prompt_injections.py``).
+4. **No direct reads of coord's schema.** Nothing here touches coord's
+   Postgres tables; every coord-owned field on ``/candidates`` is fetched over
+   coord's HTTP API via ``operations._proxy_coord_get`` (house rule — see
+   ``agent_sessions.py`` / ``prompt_injections.py``, enforced by
+   ``tests/test_coord_schema_boundary_guard.py``).
+5. **An unavailable coord is UNKNOWN, never empty.** ``/candidates`` degrades
+   to the local signals with the coord-sourced fields explicitly flagged
+   ``unavailable`` rather than failing the whole read — and never renders an
+   unreachable coord as "this plan has no PRs".
+6. **``/candidates`` emits no score.** Design decision D6: the read exposes
+   the ranking inputs, the agent ranks. A hardcoded criticality score would be
+   a guess frozen into SQL.
 """
 
-from datetime import datetime
+import asyncio
+from datetime import UTC, datetime
+from urllib.parse import quote
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_active_user, get_async_db
+from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
 from app.crud import work_artifact as crud
 from app.models.user import User
 from app.models.work_artifact import WorkArtifact, WorkArtifactVersion
 from app.schemas.plan_library import (
+    CandidateCoordLink,
+    CandidateDependency,
+    CandidateLinkedPr,
+    CandidatePromptLink,
     DivergentGroup,
     DivergentResponse,
     DivergentVariant,
+    KindForkGroup,
+    PlanCandidate,
+    PlanCandidateResponse,
     WorkArtifactDetail,
     WorkArtifactEdgeCreate,
     WorkArtifactEdgeRead,
+    WorkArtifactKindPatch,
     WorkArtifactListResponse,
     WorkArtifactSummary,
     WorkArtifactUpsert,
@@ -56,6 +86,11 @@ from app.services.permissions import get_personal_organization
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+#: How many coord reads ``/candidates`` runs at once. Coord is a shared
+#: service and a page of candidates can reference many distinct work units;
+#: this bounds the fan-out without serialising it.
+_COORD_FANOUT = 6
 
 
 async def _resolve_org_id(db: AsyncSession, user: User) -> UUID | None:
@@ -111,6 +146,7 @@ def _detail(
         organization_id=row.organization_id,
         created_by_user_id=row.created_by_user_id,
         kind=row.kind,
+        kind_locked=row.kind_locked,
         slug=row.slug,
         title=row.title,
         status=row.status,
@@ -128,6 +164,216 @@ def _detail(
         versions=[WorkArtifactVersionRead.model_validate(v) for v in versions],
         edges=edges,
     )
+
+
+# ─────────────────── coord-owned signals (HTTP only) ───────────────────
+
+
+async def _soft_tenant_id(request: Request) -> UUID | None:
+    """Resolve the caller's coord tenant WITHOUT letting a coord outage 403.
+
+    ``get_tenant_id`` is the fleet's normal dependency, but it raises 403
+    ``tenant_not_resolved`` when coord cannot answer — which for
+    ``/candidates`` would turn "coord is slow" into "you cannot see your own
+    local plans". Resolution is therefore best-effort here.
+
+    Calling it still runs its load-bearing side effect: the caller's bearer is
+    captured into the request-scoped ContextVar BEFORE identity resolution and
+    independently of its outcome, so ``_proxy_coord_get`` can forward the
+    bearer even when the tenant came back ``None``.
+    """
+    try:
+        return await get_tenant_id(request)
+    except Exception as exc:  # noqa: BLE001 — any failure degrades, none 403s
+        logger.info(
+            "plan_library.tenant_unresolved",
+            detail="continuing with local signals only",
+            error=str(exc),
+        )
+        return None
+
+
+def _coord_pr(raw: object) -> CandidateLinkedPr:
+    """Project one coord citation onto :class:`CandidateLinkedPr`.
+
+    Defensive about shape: coord's citation projection is
+    ``{repo, pr_number, merged, branch, cited_at, sources}`` today, but this
+    read must not 500 on a coord that grew or lost a field.
+    """
+    if not isinstance(raw, dict):
+        return CandidateLinkedPr()
+
+    merged = raw.get("merged")
+    merged_bool = merged if isinstance(merged, bool) else None
+    pr_number = raw.get("pr_number")
+    sources = raw.get("sources")
+    return CandidateLinkedPr(
+        repo=raw.get("repo") if isinstance(raw.get("repo"), str) else None,
+        pr_number=pr_number if isinstance(pr_number, int) else None,
+        state=(
+            "unknown"
+            if merged_bool is None
+            else ("merged" if merged_bool else "unmerged")
+        ),
+        merged=merged_bool,
+        branch=raw.get("branch") if isinstance(raw.get("branch"), str) else None,
+        cited_at=str(raw["cited_at"]) if raw.get("cited_at") is not None else None,
+        sources=[str(s) for s in sources] if isinstance(sources, list) else [],
+    )
+
+
+def _citation_rows(payload: object) -> list[object]:
+    """Pull the citation list out of whatever envelope coord returned."""
+    if isinstance(payload, list):
+        return list(payload)
+    if isinstance(payload, dict):
+        for key in ("citations", "prs", "items"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return list(value)
+    return []
+
+
+class _CoordProbe:
+    """One page's coord reads, with a fail-fast circuit.
+
+    A page of candidates can reference many work units. If coord is down, the
+    FIRST transport failure is enough to know the rest will fail too — every
+    subsequent slug is marked ``unavailable`` without paying another timeout.
+    That keeps a coord outage costing one 5s timeout for the whole page
+    instead of one per row, which is what makes "degrade gracefully" actually
+    graceful.
+
+    ``degraded`` is sticky and is what the response's ``coord_available: false``
+    reports.
+    """
+
+    def __init__(self, tenant_id: UUID | None) -> None:
+        self.tenant_id = tenant_id
+        self.degraded = False
+        self.reason: str | None = None
+        self._gate = asyncio.Semaphore(_COORD_FANOUT)
+
+    def _trip(self, reason: str) -> None:
+        self.degraded = True
+        if self.reason is None:
+            self.reason = reason
+
+    async def _get(self, path: str) -> tuple[object | None, int | None, str | None]:
+        """``(payload, http_status, error)`` — never raises.
+
+        ``http_status`` is coord's status when it answered with one (404 is a
+        real answer: "no such work unit"); ``error`` is set when the call
+        could not be completed at all.
+        """
+        if self.degraded:
+            return None, None, self.reason or "coord unavailable"
+        async with self._gate:
+            try:
+                payload = await _proxy_coord_get(
+                    path,
+                    tenant_id=self.tenant_id,
+                    forward_bearer=True,
+                )
+            except HTTPException as exc:
+                detail = f"coord returned {exc.status_code}"
+                # 404 is coord ANSWERING. Every other status (502/504 from the
+                # proxy's own transport mapping, 401/403, 5xx) means this read
+                # produced no knowledge — trip the circuit.
+                if exc.status_code != 404:
+                    self._trip(detail)
+                return None, exc.status_code, detail
+            except Exception as exc:  # noqa: BLE001 — degrade, never 500
+                detail = f"coord read failed: {exc}"
+                self._trip(detail)
+                return None, None, detail
+        return payload, 200, None
+
+    async def link_for(self, slug: str) -> CandidateCoordLink:
+        """Resolve one work-unit slug into its coord block.
+
+        Two hops, both over coord's HTTP API:
+
+        1. ``GET /coord/work-units/{slug}`` — presence. A 404 here is the
+           NORMAL dangling case (the link is FK-less by design), and it also
+           settles the PR question: citations hang off the work unit by a hard
+           FK, so no unit really does mean no citations.
+        2. ``GET /coord/work-units/{slug}/citations`` — the PR citations, with
+           the live merged state coord's own ``shipped`` predicate reduces
+           (coord projects each row to
+           ``{repo, pr_number, merged, branch, cited_at, sources}``).
+
+        ⚠️ **Known gap, verified 2026-08-15.** Coord registers only ``post``
+        and ``delete`` on that second path; the read half exists today ONLY as
+        the ``coord_work_unit_list_citations`` MCP tool, with no REST twin. So
+        against the currently-deployed coord this hop 404s and
+        ``linked_prs_state`` reads ``"unavailable"``. That is the correct
+        honest answer — the alternative (reporting an empty PR list) would
+        assert a fact this read has not established, and the plan is explicit
+        that an unavailable coord must not read as "no PRs". Adding the GET is
+        a coord-side follow-up; nothing here changes when it lands, the field
+        simply starts reading ``"available"``.
+
+        Reading the citations out of coord's Postgres instead is NOT the
+        workaround: the web→coord read boundary is closed and
+        ``tests/test_coord_schema_boundary_guard.py`` enforces it.
+        """
+        encoded = quote(slug, safe="")
+        payload, http_status, error = await self._get(f"/coord/work-units/{encoded}")
+
+        if http_status == 404:
+            return CandidateCoordLink(
+                work_unit_slug=slug,
+                work_unit_state="dangling",
+                linked_prs_state="unlinked",
+                unavailable_reason=None,
+            )
+        if payload is None:
+            return CandidateCoordLink(
+                work_unit_slug=slug,
+                work_unit_state="unavailable",
+                linked_prs_state="unavailable",
+                unavailable_reason=error or "coord unavailable",
+            )
+
+        unit = payload.get("work_unit") if isinstance(payload, dict) else None
+        unit = unit if isinstance(unit, dict) else {}
+        link = CandidateCoordLink(
+            work_unit_slug=slug,
+            work_unit_state="linked",
+            work_unit_status=(
+                unit.get("status") if isinstance(unit.get("status"), str) else None
+            ),
+            work_unit_title=(
+                unit.get("title") if isinstance(unit.get("title"), str) else None
+            ),
+        )
+
+        cites, cite_status, cite_error = await self._get(
+            f"/coord/work-units/{encoded}/citations"
+        )
+        if cites is None:
+            # Includes 404/405 on the route itself — absence of a route is not
+            # evidence of an absence of PRs.
+            link.linked_prs_state = "unavailable"
+            link.unavailable_reason = (
+                cite_error or f"coord returned {cite_status} for citations"
+            )
+            return link
+
+        link.linked_prs_state = "available"
+        link.linked_prs = [_coord_pr(row) for row in _citation_rows(cites)]
+        return link
+
+
+async def _coord_links(
+    slugs: list[str], probe: _CoordProbe
+) -> dict[str, CandidateCoordLink]:
+    """Resolve every DISTINCT slug on the page concurrently."""
+    if not slugs:
+        return {}
+    results = await asyncio.gather(*(probe.link_for(s) for s in slugs))
+    return dict(zip(slugs, results, strict=True))
 
 
 # ───────────────────────────── reads ─────────────────────────────
@@ -188,15 +434,30 @@ async def list_work_artifacts(
 @router.get(
     "/divergent",
     response_model=DivergentResponse,
-    summary="Artifacts sharing a (kind, slug) but disagreeing on content",
+    summary="Artifacts that disagree — on content, or on kind",
 )
 async def list_divergent_artifacts(
     kind: str | None = Query(None, description="Restrict to one artifact kind"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ) -> DivergentResponse:
+    """Two distinct forks, reported side by side.
+
+    ``groups`` — same ``(kind, slug)``, different ``content_sha256``: the same
+    document captured from two repos/checkouts that have drifted apart.
+
+    ``kind_forks`` — same ``(slug, source_repo)``, different ``kind``: the
+    class the kind-lock fix prevents, and the one the scan-safe upsert now
+    refuses to resolve on its own (it 409s rather than pick a winner). Grouping
+    by ``(kind, slug)`` structurally cannot see these, which is why they are
+    reported separately rather than folded into ``groups``.
+    """
     org_id = await _resolve_org_id(db, current_user)
     groups = await crud.find_divergent(db, org_id=org_id, kind=kind)
+    forks = await crud.find_kind_forks(db, org_id=org_id)
+    if kind is not None:
+        forks = [f for f in forks if any(row.kind == kind for row in f[2])]
+
     return DivergentResponse(
         groups=[
             DivergentGroup(
@@ -208,6 +469,160 @@ async def list_divergent_artifacts(
             for g_kind, g_slug, variants in groups
         ],
         total=len(groups),
+        kind_forks=[
+            KindForkGroup(
+                slug=f_slug,
+                source_repo=f_repo,
+                kinds=sorted({row.kind for row in variants}),
+                variant_count=len(variants),
+                # Exactly one locked row is a fork the scanner can heal by
+                # itself; anything else needs an operator to pick.
+                resolvable=sum(1 for row in variants if row.kind_locked) == 1,
+                variants=[DivergentVariant.model_validate(v) for v in variants],
+            )
+            for f_slug, f_repo, variants in forks
+        ],
+        kind_fork_total=len(forks),
+    )
+
+
+@router.get(
+    "/candidates",
+    response_model=PlanCandidateResponse,
+    summary="Unshipped plans with the ranking INPUTS attached (no score)",
+)
+async def list_plan_candidates(
+    request: Request,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    include_coord: bool = Query(
+        True,
+        description="Fetch the coord-owned signals (work unit + PR citations). "
+        "Set false for a purely local, coord-free read.",
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> PlanCandidateResponse:
+    """Candidate selection for agents — signals, never a verdict.
+
+    Returns unshipped ``kind='plan'`` artifacts, each carrying the inputs an
+    agent needs to decide what to pick up next: ``status``, ``repos``,
+    ``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,
+    ``last_touched``, and the ``prompt_chain`` that produced the plan.
+
+    **There is no criticality score** (design decision D6). A hardcoded score
+    would be a guess frozen into SQL; the read exposes the evidence and the
+    agent ranks. The only ordering is a stable default — oldest-vetted-first
+    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) — with no
+    weighting of any kind.
+
+    Coord-owned fields (the work unit and its PR citations) come over coord's
+    HTTP API, never from coord's Postgres schema. Two things the payload is
+    careful about:
+
+    * ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.
+      A missing work unit is a NORMAL result — null-joined as
+      ``work_unit_state: "dangling"``, never a 404 and never an error.
+    * An unreachable or slow coord degrades to ``"unavailable"`` on the
+      affected fields, and the whole read still returns the local signals.
+      ``unavailable`` is UNKNOWN — it is NOT "this plan has no PRs". The two
+      are distinct values precisely so a consumer cannot confuse them.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    rows, total = await crud.list_plan_candidates(
+        db, org_id=org_id, offset=offset, limit=limit
+    )
+
+    ids = [row.id for row in rows]
+    depends = await crud.load_depends_on(db, ids)
+    chains = await crud.load_prompt_chains(db, ids)
+
+    links: dict[str, CandidateCoordLink] = {}
+    coord_available = True
+    if include_coord:
+        tenant_id = await _soft_tenant_id(request)
+        probe = _CoordProbe(tenant_id)
+        slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
+        links = await _coord_links(slugs, probe)
+        coord_available = not probe.degraded
+
+    now = datetime.now(UTC)
+    items: list[PlanCandidate] = []
+    for row in rows:
+        anchor = row.authored_at or row.created_at
+        if anchor.tzinfo is None:  # pragma: no cover — the column is timestamptz
+            anchor = anchor.replace(tzinfo=UTC)
+
+        if not include_coord:
+            coord_block = CandidateCoordLink(
+                work_unit_slug=row.work_unit_slug,
+                work_unit_state="unavailable" if row.work_unit_slug else "unlinked",
+                linked_prs_state="unavailable" if row.work_unit_slug else "unlinked",
+                unavailable_reason=(
+                    "not fetched (include_coord=false)" if row.work_unit_slug else None
+                ),
+            )
+        elif row.work_unit_slug:
+            coord_block = links.get(
+                row.work_unit_slug,
+                CandidateCoordLink(
+                    work_unit_slug=row.work_unit_slug,
+                    work_unit_state="unavailable",
+                    linked_prs_state="unavailable",
+                    unavailable_reason="coord unavailable",
+                ),
+            )
+        else:
+            coord_block = CandidateCoordLink()
+
+        items.append(
+            PlanCandidate(
+                id=row.id,
+                kind=row.kind,
+                kind_locked=row.kind_locked,
+                slug=row.slug,
+                title=row.title,
+                status=row.status,
+                repos=list(row.repos or []),
+                source_repo=row.source_repo,
+                source_path=row.source_path,
+                work_unit_slug=row.work_unit_slug,
+                authored_at=row.authored_at,
+                created_at=row.created_at,
+                last_touched=row.updated_at,
+                age_days=round((now - anchor).total_seconds() / 86400.0, 3),
+                unmet_depends_on=[
+                    CandidateDependency(
+                        id=dep.id,
+                        kind=dep.kind,
+                        slug=dep.slug,
+                        title=dep.title,
+                        status=dep.status,
+                    )
+                    for dep in depends.get(row.id, [])
+                    if not crud.is_terminal_status(dep.status)
+                ],
+                prompt_chain=[
+                    CandidatePromptLink(
+                        id=producer.id,
+                        kind=producer.kind,
+                        slug=producer.slug,
+                        title=producer.title,
+                        relation=relation,
+                        depth=depth,
+                    )
+                    for producer, relation, depth in chains.get(row.id, [])
+                ],
+                coord=coord_block,
+            )
+        )
+
+    return PlanCandidateResponse(
+        items=items,
+        total=total,
+        offset=offset,
+        limit=limit,
+        coord_available=coord_available,
     )
 
 
@@ -289,24 +704,70 @@ async def upsert_work_artifact(
         )
 
     org_id = await _resolve_org_id(db, current_user)
-    artifact, created, changed = await crud.upsert_artifact(
-        db,
-        org_id=org_id,
-        user_id=current_user.id,
-        kind=payload.kind,
-        slug=payload.slug,
-        title=payload.title,
-        status=payload.status,
-        body=payload.body,
-        source_path=payload.source_path,
-        source_repo=payload.source_repo,
-        work_unit_slug=payload.work_unit_slug,
-        repos=payload.repos,
-        authored_at=payload.authored_at,
-        captured_by=payload.captured_by,
-        change_description=payload.change_description,
-        created_by=_actor(current_user),
-    )
+    try:
+        artifact, created, changed = await crud.upsert_artifact(
+            db,
+            org_id=org_id,
+            user_id=current_user.id,
+            kind=payload.kind,
+            slug=payload.slug,
+            title=payload.title,
+            status=payload.status,
+            body=payload.body,
+            source_path=payload.source_path,
+            source_repo=payload.source_repo,
+            work_unit_slug=payload.work_unit_slug,
+            repos=payload.repos,
+            authored_at=payload.authored_at,
+            captured_by=payload.captured_by,
+            change_description=payload.change_description,
+            created_by=_actor(current_user),
+            kind_is_heuristic=payload.kind_is_heuristic,
+        )
+    except crud.AmbiguousArtifactKind as exc:
+        # A heuristic scan whose kind-less key matched several rows with no
+        # single locked winner. NOTHING was written: picking one silently is
+        # exactly the fork this fix exists to stop. The candidates are named
+        # so the operator can resolve it via PATCH .../kind, and the fork is
+        # already listed under GET /plan-library/divergent → kind_forks.
+        logger.warning(
+            "plan_library.ambiguous_kind_resolution",
+            slug=exc.slug,
+            source_repo=exc.source_repo,
+            candidate_ids=[str(i) for i in exc.candidate_ids],
+            kinds=exc.candidate_kinds,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "ambiguous_kind_resolution",
+                "message": (
+                    "This slug resolves to several artifacts with different "
+                    "kinds and no single corrected (kind_locked) row to "
+                    "prefer, so the heuristic scan refused to pick one. "
+                    "Nothing was written. Correct one of the candidates with "
+                    "PATCH /plan-library/{id}/kind, or see "
+                    "GET /plan-library/divergent."
+                ),
+                "slug": exc.slug,
+                "source_repo": exc.source_repo,
+                "candidate_ids": [str(i) for i in exc.candidate_ids],
+                "candidate_kinds": exc.candidate_kinds,
+            },
+        ) from exc
+    except crud.ArtifactKindConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "kind_identity_conflict",
+                "message": str(exc),
+                "kind": exc.kind,
+                "slug": exc.slug,
+                "existing_id": (
+                    str(exc.existing_id) if exc.existing_id is not None else None
+                ),
+            },
+        ) from exc
 
     response.headers["ETag"] = f'"{artifact.content_sha256}"'
     if created:
@@ -317,6 +778,68 @@ async def upsert_work_artifact(
     return WorkArtifactUpsertResponse(
         changed=changed, created=created, artifact=_summary(artifact)
     )
+
+
+@router.patch(
+    "/{artifact_id}/kind",
+    response_model=WorkArtifactSummary,
+    summary="Correct an artifact's kind and LOCK it against future re-scans",
+)
+async def patch_work_artifact_kind(
+    artifact_id: UUID,
+    payload: WorkArtifactKindPatch,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> WorkArtifactSummary:
+    """Set ``kind`` deliberately and mark it ``kind_locked``.
+
+    The door the library's inline kind correction needs. Heuristics only ever
+    set an INITIAL kind; this is where that guess gets overruled, and the lock
+    is what stops the next runner scan from quietly putting the guess back
+    (which, because ``kind`` is part of the artifact's identity, would fork the
+    document into a second row rather than merely re-label it).
+
+    The lock is set even when ``kind`` is unchanged — confirming a guessed kind
+    is itself the assertion that makes it stick.
+
+    409 when another artifact already occupies
+    ``(org, kind, slug, source_repo)``: that is a genuine identity collision
+    and merging the two rows is an operator decision, not one this write may
+    guess at.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    row = await crud.get_artifact(db, artifact_id, org_id=org_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work artifact not found: {artifact_id}",
+        )
+
+    try:
+        updated = await crud.set_artifact_kind(
+            db, row, kind=payload.kind, org_id=org_id
+        )
+    except crud.ArtifactKindConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "kind_identity_conflict",
+                "message": str(exc),
+                "kind": exc.kind,
+                "slug": exc.slug,
+                "existing_id": (
+                    str(exc.existing_id) if exc.existing_id is not None else None
+                ),
+            },
+        ) from exc
+
+    logger.info(
+        "plan_library.kind_corrected",
+        artifact_id=str(updated.id),
+        kind=updated.kind,
+        actor=_actor(current_user),
+    )
+    return _summary(updated)
 
 
 @router.post(
