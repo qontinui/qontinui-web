@@ -29,6 +29,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -174,6 +175,23 @@ class Machine(Base):
     # while a saved config has never reached coord (device unlinked, coord
     # down, or the directive rejected).
     ci_node_dispatched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # ---- Auto-enrollment provenance (plan 2026-08-05, Phase 3) ------------
+    # How this machine row came to exist: ``manual`` (the owner created it in
+    # the dashboard), ``dispatched`` (operator-pushed enroll directive), or
+    # ``auto`` (created by the connect-time engine).
+    #
+    # NULL means "pre-existing, origin UNKNOWN" — every row that predates this
+    # column keeps it, and it was deliberately not backfilled with a guess.
+    # Render it as unknown, never as ``manual``: the point of the column is to
+    # let an owner see exactly which machines arrived without them asking, and
+    # a guessed provenance would defeat that.
+    enrollment_origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Rate-limit clock for the reinstall arm. Stamped on every auto-enroll
+    # ATTEMPT regardless of whether the runner acked, so a failing device
+    # cannot be retried in a hot loop.
+    auto_enroll_last_attempt_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     enrollment_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -525,4 +543,57 @@ class CanonicalChangeLog(Base):
         """Return repr."""
         return (
             f"<CanonicalChangeLog(env={self.environment_id}, to={self.to_machine_id})>"
+        )
+
+
+class AutoEnrollPolicy(Base):
+    """Per-owner devenv auto-enrollment policy (``devenv.auto_enroll_policy``).
+
+    One row per owner, answering both policy questions a connect-time
+    enrollment engine has to ask:
+
+    * ``enabled`` — may new boxes of this owner enroll themselves at all?
+    * ``target_environment_id`` — which environment does a NEW box join?
+
+    The second is why this is its own table rather than a boolean on
+    ``environments``: "where does a new machine go" is not a property of any
+    one environment, so no environment row can own the answer.
+
+    **An ABSENT row means enabled**, not disabled — the column default is
+    ``true`` and callers must treat a missing row the same way. An owner who
+    has never opened the policy surface still gets the behaviour; opting out is
+    an explicit act. Auto-enrollment grants only read-only reporting (the
+    machine key is read-only by construction), and it stays reversible via the
+    one-click machine revoke plus the ``enrollment_origin`` badge, which is
+    what keeps that default honest rather than surprising.
+
+    ``target_environment_id`` is a SOFT reference with no FK, matching
+    :class:`Machine.environment_id` — declaring the relationship in ORM
+    metadata would close a machines<->environments cycle that the test
+    harness's table ordering cannot sort.
+    """
+
+    __tablename__ = "auto_enroll_policy"
+    __table_args__ = ({"schema": _SCHEMA},)
+
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("auth.users.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    target_environment_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+    def __repr__(self) -> str:
+        """Return repr."""
+        return (
+            f"<AutoEnrollPolicy(owner={self.owner_user_id}, enabled={self.enabled})>"
         )

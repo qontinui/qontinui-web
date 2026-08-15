@@ -1122,6 +1122,26 @@ class TestDispatchEnroll:
         assert captured["body"]["target_device_id"] == device_id
         assert captured["body"]["enrollment_code"] == machine["enrollment_code"]
         assert captured["body"]["machine_id"] == machine["id"]
+        assert machine["enrollment_origin"] == "dispatched"
+
+    @pytest.mark.asyncio
+    async def test_dashboard_created_machine_is_stamped_manual(
+        self, async_db_session: AsyncSession, test_user
+    ) -> None:
+        """The other existing writer stamps its own origin.
+
+        Both writers stamp at creation so every row created from devenv_09
+        onward has honest provenance; only rows that PREDATE the column carry
+        NULL, which must read as "unknown" rather than being backfilled with a
+        guess.
+        """
+        app = _build_app(db_session=async_db_session, user=test_user)
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines", json={"name": "manual-origin-box"}
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["enrollment_origin"] == "manual"
 
     @pytest.mark.asyncio
     async def test_dispatch_rejection_still_creates_machine(
@@ -1208,6 +1228,9 @@ class TestDispatchEnroll:
         # transport carried it, which is the point.
         assert body["dispatched"] is True
         machine = body["machine"]
+        # Provenance describes WHO asked, not which wire carried it: an
+        # operator-pushed machine is `dispatched` on both transports.
+        assert machine["enrollment_origin"] == "dispatched"
         # The coord hop was NOT used.
         assert coord_calls == []
         # The socket carried the same directive fields coord's body carries.

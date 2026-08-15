@@ -331,6 +331,10 @@ async def create_machine(
         description=payload.description,
         environment_id=payload.environment_id,
     )
+    # Stamp provenance at the writer so new rows are honest from day one. Rows
+    # created before devenv_09 keep NULL (= origin unknown) and are never
+    # backfilled with a guess.
+    machine.enrollment_origin = "manual"
     devenv_machine_crud.mint_enrollment_code(machine)
     await db.flush()
     await db.refresh(machine)
@@ -384,6 +388,9 @@ async def dispatch_enroll(
     # Bind the machine to the chosen coord device up front (the dispatch flow
     # knows the device; the copy-paste flow learns it only at enroll-consume).
     machine.coord_device_id = payload.target_device_id
+    # Operator-pushed, on either transport below — the origin describes who
+    # asked for the machine, not which wire carried the directive.
+    machine.enrollment_origin = "dispatched"
     devenv_machine_crud.mint_enrollment_code(machine)
     await db.flush()
     await db.refresh(machine)

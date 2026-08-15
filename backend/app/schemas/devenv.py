@@ -148,6 +148,10 @@ class MachineResponse(BaseORMSchema):
     enrolled: bool = False
     last_seen_at: IsoDatetime | None = None
     revoked: bool = False
+    # How the row came to exist: ``manual`` | ``dispatched`` | ``auto``.
+    # ``None`` means UNKNOWN (the row predates the column) and must be rendered
+    # as such — never defaulted to ``manual``, which would invent provenance.
+    enrollment_origin: str | None = None
     created_at: IsoDatetime
     updated_at: IsoDatetime
 
@@ -165,6 +169,7 @@ class MachineResponse(BaseORMSchema):
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
             revoked=machine.revoked_at is not None,
+            enrollment_origin=machine.enrollment_origin,
             created_at=machine.created_at,
             updated_at=machine.updated_at,
         )
@@ -196,6 +201,7 @@ class MachineCreatedResponse(MachineResponse):
             enrolled=machine.enrolled_at is not None,
             last_seen_at=machine.last_seen_at,
             revoked=machine.revoked_at is not None,
+            enrollment_origin=machine.enrollment_origin,
             created_at=machine.created_at,
             updated_at=machine.updated_at,
             enrollment_code=machine.enrollment_code,
