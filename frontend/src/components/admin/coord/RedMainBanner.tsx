@@ -27,9 +27,9 @@
  * about whether a remediation is already in flight.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import type { CoordAlertRow } from "@/components/admin/coord/AlertCard";
+import type { CoordAlertRow } from "@/components/admin/coord/alertStatus";
 import { httpClient } from "@/services/service-factory";
 import { redMainSpawnFixUrl } from "@/components/operations/utils";
 
@@ -38,6 +38,29 @@ const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
 
 const RED_MAIN_KEY_PREFIX = "red_main:";
+/** The `coord.alerts.kind` value the server-side filter narrows on. */
+const RED_MAIN_KIND = "red_main";
+
+/**
+ * How many CONSECUTIVE empty polls it takes to clear the banner.
+ *
+ * 3 × 10s ≈ 30s of sustained emptiness. Low enough that a genuinely-fixed main
+ * clears the banner promptly, high enough that a single evicted row (or an
+ * un-upgraded coord dropping the `kind` filter on a churning 500-row window)
+ * cannot. Measured 2026-08-14: the row survived 1 of 5 samples, so a
+ * clear-on-first-empty banner was blind ~80% of the time.
+ */
+const EMPTY_POLLS_BEFORE_CLEAR = 3;
+
+/**
+ * How long a banner may go unconfirmed before it says so.
+ *
+ * Two intervals: one missed poll is ordinary jitter, two is a read path that
+ * is not answering. Keeping the banner up is still right (a failed read is not
+ * evidence main went green) — but an operator reading "main is RED" deserves
+ * to know the claim is not being re-confirmed.
+ */
+const STALE_AFTER_MS = 2 * POLL_INTERVAL_MS;
 
 const SPAWN_LABEL = "Spawn fix session";
 const RETRY_LABEL = "Retry fix session";
@@ -323,35 +346,116 @@ function SpawnFixButton({ alert }: { alert: RedMainAlert }) {
 
 export function RedMainBanner() {
   const [reds, setReds] = useState<RedMainAlert[]>([]);
+  /**
+   * Consecutive polls that came back with no `red_main` row. See
+   * {@link EMPTY_POLLS_BEFORE_CLEAR} — the banner clears only once this
+   * crosses the threshold, so one evicted or dropped answer cannot blank it.
+   */
+  const emptyPolls = useRef(0);
+  /**
+   * Guards against overlapping polls. A read that outlives the 10s interval
+   * would otherwise have a second one launched on top of it, and two answers
+   * landing out of order double-count (or reset) the empty streak — the state
+   * the streak protects would then turn on request latency.
+   */
+  const inFlight = useRef(false);
+  /**
+   * When coord last CONFIRMED the banner's content, and the clock that ages
+   * it. A failed poll deliberately does not advance the streak (a read outage
+   * is not evidence main went green), which is right — but it also means the
+   * banner can keep asserting "main is RED" off an hour-old answer with
+   * nothing on screen saying so. `nowMs` ticks only while the banner is up.
+   */
+  const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const fetchData = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
+      // TARGETED, not the whole rollup. Measured 2026-08-14: coord orders the
+      // unfiltered rollup by `last_seen_at DESC` under a hard 500-row cap, and
+      // every watcher re-stamps `last_seen_at` on its own tick — so the served
+      // window spanned as little as 7.2s and the single `red_main` row
+      // survived only 1 of 5 consecutive samples. A `kind`-filtered query
+      // cannot be evicted by another watcher's tick. An un-upgraded coord
+      // ignores the unknown param and returns the old unfiltered rollup, which
+      // `parseRedMainAlerts` already filters — so this degrades to exactly the
+      // previous behaviour rather than to an empty banner.
       const body = await httpClient.get<unknown>(
-        `${API}/alerts?include_resolved=false`
+        `${API}/alerts?include_resolved=false&kind=${RED_MAIN_KIND}`
       );
       // Tolerate both `{alerts: [...]}` and bare-list shapes (same as the
       // alerts page).
       const alerts = Array.isArray(body)
         ? body
         : ((body as { alerts?: CoordAlertRow[] })?.alerts ?? []);
-      setReds(parseRedMainAlerts(alerts));
+      const parsed = parseRedMainAlerts(alerts);
+      // The answer arrived, so what the banner shows is confirmed as of NOW —
+      // whether it confirmed a red main or an empty result.
+      const at = Date.now();
+      setLastSuccessAt(at);
+      setNowMs(at);
+      if (parsed.length > 0) {
+        emptyPolls.current = 0;
+        setReds(parsed);
+        return;
+      }
+      // KEEP-LAST-KNOWN. An empty answer is ambiguous: main went green, OR the
+      // row was evicted / the filter was dropped by an older coord. Clearing a
+      // tenant-wide merge-outage banner on that ambiguity is the M2 defect —
+      // require the emptiness to persist before believing it.
+      emptyPolls.current += 1;
+      if (emptyPolls.current >= EMPTY_POLLS_BEFORE_CLEAR) setReds([]);
     } catch {
       // Best-effort: keep the last known state on a transient fetch error
       // — a flaky poll must neither flash the banner away during a real
       // outage nor surface its own error UI here (the alerts page does
-      // that). The next poll retries.
+      // that). The next poll retries. A failed poll is NOT an empty one, so
+      // the streak is left untouched — and `lastSuccessAt` is NOT advanced,
+      // which is what makes the staleness note appear.
+    } finally {
+      inFlight.current = false;
     }
   }, []);
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    const id = setInterval(() => {
+      // Skip the tick while nobody is looking; catch up on the way back.
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden"
+      ) {
+        return;
+      }
+      fetchData();
+    }, POLL_INTERVAL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchData();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [fetchData]);
+
+  // Age the "as of" clock while the banner is up, so a stalled read path shows
+  // as stale instead of quietly freezing at its last confirmed value.
+  const banner = reds.length > 0;
+  useEffect(() => {
+    if (!banner) return;
+    const id = setInterval(() => setNowMs(Date.now()), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [banner]);
 
   if (reds.length === 0) return null;
 
-  const nowMs = Date.now();
+  const staleMs =
+    lastSuccessAt === null ? 0 : Math.max(0, nowMs - lastSuccessAt);
+  const stale = staleMs > STALE_AFTER_MS;
+
   return (
     <div data-testid="red-main-banner" className="shrink-0">
       {reds.map((a) => (
@@ -381,6 +485,18 @@ export function RedMainBanner() {
           {a.workflows.length > 0 && (
             <span className="text-xs font-mono text-red-100">
               failing: {a.workflows.join(", ")}
+            </span>
+          )}
+          {stale && lastSuccessAt !== null && (
+            // The banner stays up on a read outage BY DESIGN, but it must not
+            // pass an unconfirmed claim off as a live one.
+            <span
+              className="text-xs text-red-200 italic"
+              data-testid="red-main-stale"
+              title="coord has not confirmed this alert since then — the read path is failing, so the banner is showing its last known state"
+            >
+              (as of{" "}
+              {sinceLabel(new Date(lastSuccessAt).toISOString(), nowMs)} ago)
             </span>
           )}
           <span className="ml-auto">

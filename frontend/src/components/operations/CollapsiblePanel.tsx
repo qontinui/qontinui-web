@@ -33,6 +33,17 @@ import { cn } from "@/lib/utils";
 
 interface CollapsiblePanelProps {
   title: ReactNode;
+  /**
+   * Element wrapping `title`. Defaults to `h2` — the panel is a SECTION on
+   * every surface that predates this prop, and a section deserves a heading.
+   *
+   * Pass `"div"` when the panel is a ROW in a list of them: the coord Alerts
+   * tab renders up to 100 of these under one page heading, and 100 sibling
+   * `<h2>`s make the document outline useless to a screen-reader user (the
+   * trigger is a button whose accessible name already carries the title, so
+   * nothing is lost). Chrome is identical either way.
+   */
+  titleAs?: "h2" | "h3" | "div";
   icon?: ReactNode;
   /** Status badges/counts kept visible in the header even when collapsed. */
   summary?: ReactNode;
@@ -50,6 +61,7 @@ interface CollapsiblePanelProps {
 
 export function CollapsiblePanel({
   title,
+  titleAs: TitleTag = "h2",
   icon,
   summary,
   headerActions,
@@ -105,9 +117,9 @@ export function CollapsiblePanel({
             aria-hidden
           />
           {icon}
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
+          <TitleTag className="text-sm font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
             {title}
-          </h2>
+          </TitleTag>
           {summary}
         </CollapsibleTrigger>
         {headerActions && (

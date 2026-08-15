@@ -49,6 +49,14 @@ import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { CollapsiblePanel } from "./CollapsiblePanel";
+import {
+  AUTHOR_GLYPH_KINDS,
+  RowTime,
+  rowAccentClass,
+  StatusBadge,
+  STATUS_BADGE_CLASS,
+  type StatusPalette,
+} from "./statusRow";
 import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
 import { MergeTrainActivity } from "./MergeTrainActivity";
 import { prDraftStateUrl, relativeTime } from "./utils";
@@ -77,184 +85,54 @@ import {
 // ----------------------------------------------------------------------------
 // Status visuals.
 //
-// THE RULE, and the whole point of the palette: **color encodes who has to do
-// something, not how alarming the word sounds.** Red is reserved for
-// `attention: "author"` — someone must act now. Amber means the row is
-// waiting on something else and will clear itself. Everything else is a calm
-// in-flight hue (yellow = CI running, purple = coord testing, blue = landing,
-// green = ready/done, muted = inert).
-//
-// Getting this backwards is the bug this table exists to prevent: a red badge
-// on "CI hasn't finished" trained the eye to ignore red, while a failed check
-// — the one state that genuinely needs a push — sat in amber next to it.
-// `ATTENTION_BY_KIND` (prPipeline.ts) is the shared audit table and a unit
-// test asserts every entry below agrees with it, so the severity model and
-// the palette can never drift apart again.
+// The palette rule, the colour families, the badge and the row timestamp all
+// live in `./statusRow` now — they are shared with the coord Alerts tab, which
+// renders the same "one row per entity, ONE plain-language status" shape.
+// `STATUS_BADGE_CLASS` and `AUTHOR_GLYPH_KINDS` are re-exported here because
+// they are this surface's palette and its callers (and tests) address them by
+// this module; the implementation is single-sourced so the two surfaces cannot
+// drift.
 // ----------------------------------------------------------------------------
 
-/** The three families. A kind may only use the family its attention allows. */
-const AUTHOR_RED = "bg-red-500/15 text-red-200 border-red-500/35";
-const WAITING_AMBER = "bg-amber-500/15 text-amber-200 border-amber-500/30";
-const CI_YELLOW = "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
-const INERT = "bg-muted text-muted-foreground border-border";
+export { AUTHOR_GLYPH_KINDS, STATUS_BADGE_CLASS } from "./statusRow";
 
-export const STATUS_BADGE_CLASS: Record<UnifiedStatusKind, string> = {
-  // --- someone must act now → red -------------------------------------------
-  conflict: AUTHOR_RED,
-  "not-mergeable": AUTHOR_RED,
-  requirements: AUTHOR_RED,
-  "checks-failing": AUTHOR_RED,
-  // --- waiting on something else → amber ------------------------------------
-  blocked: WAITING_AMBER,
-  "needs-rebase": WAITING_AMBER,
-  // A true conflict, de-escalated because coord won't reach this PR for a
-  // while: "resolve just-before-merge", not "act now".
-  "conflict-deferred": WAITING_AMBER,
-  // ...but only for so long. Once the deferral window lapses, coord is
-  // demonstrably never reaching this PR and it goes back to red.
-  "conflict-stranded": AUTHOR_RED,
-  // The other two waiting promises with an expired premise: past the dwell
-  // cap the wait is demonstrably not ending on its own — red.
-  "needs-rebase-stale": AUTHOR_RED,
-  "blocked-stale": AUTHOR_RED,
-  // --- in flight / terminal, nobody is blocked → never red or amber ---------
-  "awaiting-ci": CI_YELLOW,
-  "checks-pending": CI_YELLOW,
-  rebasing: "bg-purple-500/15 text-purple-200 border-purple-500/30",
-  landing: "bg-blue-500/15 text-blue-200 border-blue-500/30",
-  merged: "bg-green-500/15 text-green-200 border-green-500/30",
-  ready: "bg-green-500/5 text-green-300 border-green-500/25",
-  queued: INERT,
-  unknown: INERT,
-  draft: "bg-transparent text-muted-foreground border-border border-dashed",
+/**
+ * This surface's palette. `ATTENTION_BY_KIND` (prPipeline.ts) is the shared
+ * audit table and a unit test asserts every entry here agrees with it, so the
+ * severity model and the palette can never drift apart.
+ */
+const PIPELINE_PALETTE: StatusPalette<UnifiedStatusKind> = {
+  badgeClass: STATUS_BADGE_CLASS,
+  authorGlyphKinds: AUTHOR_GLYPH_KINDS,
+  // `✓` is the landed marker; the merged tab is a record of lands.
+  doneGlyphKinds: new Set<UnifiedStatusKind>(["merged"]),
+  unknownNote: UNKNOWN_DWELL_NOTE,
 };
 
-/** Left-edge accent: red = the author must act, amber = waiting on others. */
-function rowAccentClass(row: PipelineRow): string {
-  if (row.status.attention === "author")
-    return "border-l-2 border-l-red-500/80";
-  if (row.status.attention === "waiting")
-    return "border-l-2 border-l-amber-500/80";
-  return "";
-}
-
 /**
- * The kinds whose badge carries the colourblind-safe `✕` glyph.
- *
- * The rule is deliberately total: EVERY kind whose `ATTENTION_BY_KIND` value
- * is `"author"` is listed — red ⇔ ✕, no hand-picked subset. The glyph is the
- * colourblind-safe marker for "the author must act", and a consistent
- * red-implies-✕ rule beats the previous curated conflict-only list (which
- * meant `checks-failing` / `requirements` rows were red with no glyph, and
- * which web#813 forgot to extend — this list is a string set TypeScript's
- * exhaustive `Record`s cannot check, so a unit test enforces the invariant
- * against `ATTENTION_BY_KIND` instead).
- */
-export const AUTHOR_GLYPH_KINDS: ReadonlySet<UnifiedStatusKind> = new Set([
-  "conflict",
-  "not-mergeable",
-  "conflict-stranded",
-  "needs-rebase-stale",
-  "blocked-stale",
-  "checks-failing",
-  "requirements",
-]);
-
-/**
- * The marker for an amber row whose dwell clock DOES NOT EXIST — the third
- * glyph, joining `✓` (landed) and `✕` (the author must act). It reads
- * "coord cannot say how long this has been waiting", never "this is fine" and
- * never "this is broken".
- *
- * A glyph, and specifically a glyph in the channel the page already uses, is
- * the choice the UX priorities force. The signal has to survive the SCAN — a
- * hover title alone is invisible to an operator sweeping twenty rows for work,
- * which is precisely how nine month-old conflicts were skipped every time. But
- * the row must not change colour, kind, sort rank or attention, because none
- * of those may move on the absence of evidence. A prefix glyph plus a dashed
- * border is the only channel left that is visible at scan distance, costs no
- * layout, and asserts nothing about severity.
- */
-const UNKNOWN_DWELL_GLYPH = "? ";
-
-/**
- * The dashed treatment layered over the amber a `waiting` row already earns.
- * Same hue (attention has not changed), but the border no longer reads as a
- * firm measurement — the same "provisional" vocabulary `draft` already uses.
- */
-const UNKNOWN_DWELL_CLASS = "border-dashed";
-
-/**
- * The badge carries its own reason as a `title`, so the "why is this PR
- * blocked?" answer is one hover away on EVERY row — including the narrow
- * viewports where the inline reason is dropped and the wide ones where it is
- * truncated. A native title (rather than a JS tooltip) also survives in the
- * accessibility tree and needs no provider.
- */
-function StatusBadge({ row }: { row: PipelineRow }) {
-  const { kind, label, reason, dwellEvidence } = row.status;
-  const isUnknown = dwellEvidence === "unknown";
-  const base = reason ? `${label} — ${reason}` : label;
-  return (
-    <Badge
-      variant="outline"
-      className={[
-        "text-[11px] font-semibold whitespace-nowrap",
-        STATUS_BADGE_CLASS[kind],
-        isUnknown ? UNKNOWN_DWELL_CLASS : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-status-kind={kind}
-      // Absent when the question does not arise, so a reader can tell "not
-      // applicable" from "measured" from "unknown" — the whole point.
-      data-dwell-evidence={dwellEvidence}
-      title={isUnknown ? `${base} (${UNKNOWN_DWELL_NOTE})` : base}
-    >
-      {kind === "merged" && "✓ "}
-      {AUTHOR_GLYPH_KINDS.has(kind) && "✕ "}
-      {isUnknown && UNKNOWN_DWELL_GLYPH}
-      {label}
-    </Badge>
-  );
-}
-
-/** Absolute local timestamp for a `title` — "unknown" reads better than "". */
-function absoluteTime(iso: string | null): string {
-  if (!iso) return "time unknown";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "time unknown" : d.toLocaleString();
-}
-
-/**
- * The right-hand timestamp. A merged row reports its LAND time (what the
+ * The pipeline's timestamp: a merged row reports its LAND time (what the
  * merged tab is a record of); every other row reports its last state change.
  * A merged row from a coord deploy that does not project `merged_at` says so
  * rather than passing a refresh time off as a merge time.
  */
-function RowTime({ row }: { row: PipelineRow }) {
+function PipelineRowTime({ row }: { row: PipelineRow }) {
   const isMerged = row.status.kind === "merged";
-  if (isMerged && row.mergedAt === null) {
-    return (
-      <span
-        className="text-xs text-muted-foreground/70 italic shrink-0"
-        title="coord did not report a merge time for this PR"
-        data-testid="row-time"
-      >
-        merged
-      </span>
-    );
-  }
-  const iso = isMerged ? row.mergedAt : row.updatedAt;
   return (
-    <span
-      className="text-xs text-muted-foreground tabular-nums shrink-0"
-      title={`${isMerged ? "Merged" : "Updated"} ${absoluteTime(iso)}`}
-      data-testid="row-time"
-    >
-      {isMerged && <span className="text-green-300/80">merged </span>}
-      {relativeTime(iso)}
-    </span>
+    <RowTime
+      at={isMerged ? row.mergedAt : row.updatedAt}
+      verb={isMerged ? "Merged" : "Updated"}
+      prefix={
+        isMerged ? <span className="text-green-300/80">merged </span> : undefined
+      }
+      absent={
+        isMerged
+          ? {
+              label: "merged",
+              title: "coord did not report a merge time for this PR",
+            }
+          : null
+      }
+    />
   );
 }
 
@@ -827,7 +705,7 @@ function PipelineRowDisplay({
         type="button"
         onClick={onToggle}
         className={`w-full flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left ${rowAccentClass(
-          row
+          row.status
         )} ${expanded ? "rounded-b-none bg-accent/60" : ""}`}
         aria-expanded={expanded}
       >
@@ -851,7 +729,7 @@ function PipelineRowDisplay({
             </span>
           )}
         </span>
-        <StatusBadge row={row} />
+        <StatusBadge status={row.status} palette={PIPELINE_PALETTE} />
         {row.status.reason && !expanded && (
           // The reason rides beside the badge from `sm` up (it used to appear
           // only at `lg`, which hid the answer to "why?" on most laptops).
@@ -865,7 +743,7 @@ function PipelineRowDisplay({
             {row.status.reason}
           </span>
         )}
-        <RowTime row={row} />
+        <PipelineRowTime row={row} />
         <Chevron className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       </button>
       {expanded && (

@@ -413,8 +413,15 @@ class TestAlertsEndpoint:
             )
         assert resp.status_code == 200
         called_params = instance.get.call_args.kwargs.get("params", {})
-        assert called_params.get("severity") == "warning"
-        assert called_params.get("kind") == "claim"
+        # LISTS, not scalars: `severity` and `kind` are REPEATABLE on this
+        # endpoint (`?kind=a&kind=b`) so the Alerts UI can multi-select, and
+        # the proxy hands the list to httpx verbatim — httpx encodes a
+        # sequence value as repeated query keys, which is what coord parses.
+        # A single-valued query is therefore a one-element list, not a bare
+        # string. The full repeat/blank/paging contract lives in
+        # tests/test_operations_alerts_proxy.py.
+        assert called_params.get("severity") == ["warning"]
+        assert called_params.get("kind") == ["claim"]
         assert called_params.get("include_resolved") is False
         _assert_tenant_header_forwarded(instance.get.call_args)
 

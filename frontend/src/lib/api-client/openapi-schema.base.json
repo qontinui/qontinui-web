@@ -74647,7 +74647,7 @@
     },
     "/api/v1/operations/alerts": {
       "get": {
-        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nSibling of ``/operations/claims/alerts`` (which filters to\n``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert\nkinds (claim / conflict / stale_wip / health) for the dashboard's\nAlerts page. Tenant-scoped \u2014 the underlying ``coord.alerts`` rollup\nis fleet-wide today but the tenant header lets coord-side enforcement\nfilter once the alert producer stamps a tenant_id per row.",
+        "description": "Return the full ``coord.alerts`` rollup with optional filters.\n\nSibling of ``/operations/claims/alerts`` (which narrows to\n``alert_key`` prefix ``claim-``). This endpoint exposes ALL alert\nkinds for the dashboard's Alerts page. The kind vocabulary is\n**served by the API** \u2014 coord returns the distinct kind list in the\nresponse, so neither this proxy nor the UI hardcodes it (an\nenumeration here went stale the moment a new watcher shipped).\n\n``severity`` and ``kind`` are REPEATABLE\n(``?kind=stale_wip&kind=red_main``) so the UI can multi-select; they\nride the wire as repeated query keys, which is what coord parses.\n``limit`` / ``cursor`` page the result; the response carries\n``total_count`` (the unpaged, filter-applied count) so a caller that\nasks for ``?limit=1`` can still render an honest badge. ``limit`` is\nbounded ``1..1000`` at the edge (coord's stated hard max) so a\nnonsense value 422s here rather than relying on coord's clamp.\n\nThe coord response is passed through **untouched** \u2014 no re-wrapping,\nno re-keying \u2014 so ``total_count``, the kind list, and any field coord\nadds later reach the frontend without a change here.\n\nTenant-scoped \u2014 the underlying ``coord.alerts`` rollup is fleet-wide\ntoday but the tenant header lets coord-side enforcement filter once\nthe alert producer stamps a tenant_id per row.",
         "operationId": "api_v1_operations_alerts_get",
         "parameters": [
           {
@@ -74667,7 +74667,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -74683,13 +74686,50 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
             }
           }
         ],
@@ -74787,7 +74827,7 @@
     },
     "/api/v1/operations/claims/alerts": {
       "get": {
-        "description": "Return active claim-related alerts from coord.\n\nFilters the coord ``/coord/alerts`` response to rows whose\n``alert_key`` starts with ``claim-`` (the convention used by\n[`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).\nOther alert kinds (fleet-health, alembic-status, etc.) stay scoped\nto the Operations page's general alerts surface.\n\nForwards the operator bearer (fleet-auth P2/D6).",
+        "description": "Return active claim-related alerts from coord.\n\nAsks coord for the ``claim-`` slice directly (``?source=claim-`` \u2014\n``source`` is matched as an ``alert_key`` prefix, the convention used\nby\n[`claims_alert_watcher`](https://github.com/qontinui/qontinui-coord/blob/main/src/claims_alert_watcher.rs)).\nOther alert kinds (fleet-health, alembic-status, etc.) stay scoped\nto the Operations page's general alerts surface.\n\n\u26a0\ufe0f This used to pull the WHOLE rollup and filter ``alert_key`` in\nPython, which measured **0 rows** on 2026-08-14: coord caps the\nunfiltered rollup at 500 rows ordered by severity/recency, and claim\nalerts never survived the cap, so the Python filter was always\nfiltering an already-claimless window. A targeted ``source`` query is\nfiltered in SQL and cannot be evicted by another watcher's tick.\n\nForwards the operator bearer (fleet-auth P2/D6).",
         "operationId": "api_v1_operations_claims_alerts_get",
         "responses": {
           "200": {
