@@ -9,6 +9,7 @@ Routes
 ------
 ``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
+``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
 ``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
@@ -40,6 +41,7 @@ Invariants this module is responsible for
 
 import asyncio
 from datetime import UTC, datetime
+from typing import get_args
 from urllib.parse import quote
 from uuid import UUID
 
@@ -65,6 +67,9 @@ from app.schemas.plan_library import (
     CandidateDependency,
     CandidateLinkedPr,
     CandidatePromptLink,
+    CapturedBy,
+    CaptureDoorHealth,
+    CaptureHealthResponse,
     DivergentGroup,
     DivergentResponse,
     DivergentVariant,
@@ -133,6 +138,7 @@ def _detail(
     row: WorkArtifact,
     versions: list[WorkArtifactVersion],
     edges: list[WorkArtifactEdgeRead],
+    coord: CandidateCoordLink | None = None,
 ) -> WorkArtifactDetail:
     """Assemble the single-artifact response.
 
@@ -142,6 +148,7 @@ def _detail(
     already loaded by an explicit query — use those.
     """
     return WorkArtifactDetail(
+        coord=coord if coord is not None else CandidateCoordLink(),
         id=row.id,
         organization_id=row.organization_id,
         created_by_user_id=row.created_by_user_id,
@@ -486,6 +493,63 @@ async def list_divergent_artifacts(
     )
 
 
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/capture-health",
+    response_model=CaptureHealthResponse,
+    summary="Corpus census by capture door (scan / agent / operator)",
+)
+async def get_capture_health(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(current_active_user),
+) -> CaptureHealthResponse:
+    """Which door is actually feeding the store.
+
+    The deterministic scanner is the backbone (design decision D3) and the
+    agent write door is the addition that captures what a scan cannot see —
+    ad-hoc worktree prompts, and the provenance edges only the agent that ran
+    the chain knows. If the agent door is unused, the corpus is quietly
+    missing exactly that half, and nothing else on this page would say so.
+
+    Every door in the schema's vocabulary is returned, **zeros included** — an
+    unused door must render as ``0``, not as an absent row. A row with
+    ``known: false`` is a value the CHECK constraint allows that this build
+    does not recognise; it is surfaced rather than swallowed.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    rows = await crud.capture_health(db, org_id=org_id)
+    known_doors: tuple[str, ...] = get_args(CapturedBy)
+    observed = {door: (count, first, touched) for door, count, first, touched in rows}
+
+    doors = []
+    for door in known_doors:
+        count, first, touched = observed.get(door, (0, None, None))
+        doors.append(
+            CaptureDoorHealth(
+                captured_by=door,
+                count=count,
+                known=True,
+                first_at=first,
+                last_touched_at=touched,
+            )
+        )
+    doors.extend(
+        CaptureDoorHealth(
+            captured_by=door,
+            count=count,
+            known=False,
+            first_at=first,
+            last_touched_at=touched,
+        )
+        for door, count, first, touched in rows
+        if door not in known_doors
+    )
+    return CaptureHealthResponse(
+        total=sum(d.count for d in doors),
+        doors=doors,
+    )
+
+
 @router.get(
     "/candidates",
     response_model=PlanCandidateResponse,
@@ -633,9 +697,34 @@ async def list_plan_candidates(
 )
 async def get_work_artifact(
     artifact_id: UUID,
+    request: Request,
+    include_coord: bool = Query(
+        True,
+        description="Resolve the linked coord work unit and its PR citations. "
+        "Set false for a purely local, coord-free read — the coord block then "
+        "reports 'unavailable' for a linked artifact, because 'we did not "
+        "look' is not the same answer as 'there is nothing there'.",
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(current_active_user),
 ) -> WorkArtifactDetail:
+    """One artifact, with everything the operator page's detail view renders.
+
+    The ``coord`` block is resolved over coord's HTTP API (never its Postgres
+    schema — invariant 4) and carries its own honesty flags:
+
+    * no ``work_unit_slug`` at all → ``unlinked``. A first-class normal state:
+      the link is optional and most artifacts have none.
+    * a slug coord does not know → ``dangling``. ALSO normal — the link has no
+      FK by design and MAY dangle. It is never a 404 on this read.
+    * coord unreachable → ``unavailable`` on both halves. UNKNOWN, not empty.
+
+    ``linked_prs_state`` is tracked separately from ``work_unit_state`` for a
+    concrete reason: today's deployed coord registers no HTTP route for the
+    citation LIST (it exists only as an MCP tool), so that half reads
+    ``unavailable`` even when the work unit resolves fine. Rendering an empty
+    PR list there would assert something this read has not established.
+    """
     org_id = await _resolve_org_id(db, current_user)
     row = await crud.get_artifact(db, artifact_id, org_id=org_id)
     if row is None:
@@ -665,7 +754,21 @@ async def get_work_artifact(
         )
         for edge, direction, peer in edge_rows
     ]
-    return _detail(row, versions, edges)
+
+    coord_block = CandidateCoordLink()
+    if row.work_unit_slug:
+        if include_coord:
+            probe = _CoordProbe(await _soft_tenant_id(request))
+            coord_block = await probe.link_for(row.work_unit_slug)
+        else:
+            coord_block = CandidateCoordLink(
+                work_unit_slug=row.work_unit_slug,
+                work_unit_state="unavailable",
+                linked_prs_state="unavailable",
+                unavailable_reason="not fetched (include_coord=false)",
+            )
+
+    return _detail(row, versions, edges, coord_block)
 
 
 # ───────────────────────────── writes ─────────────────────────────

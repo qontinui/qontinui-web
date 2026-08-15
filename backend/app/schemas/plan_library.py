@@ -107,6 +107,71 @@ class WorkArtifactEdgeCreate(BaseModel):
     note: str | None = None
 
 
+# ─────────────── coord-owned link block (shared) ───────────────
+#
+# Used by BOTH the single-artifact detail read and the candidates read. It
+# lives here, above the response models, because the detail response embeds it
+# — not because it is candidate-specific.
+
+
+class CandidateLinkedPr(BaseModel):
+    """A PR citation coord recorded against the linked work unit."""
+
+    repo: str | None = None
+    pr_number: int | None = None
+    #: ``"merged"`` / ``"unmerged"`` — derived from coord's ``merged`` flag,
+    #: which is the SAME flag coord's own ``shipped`` predicate reduces.
+    #: ``"unknown"`` when coord returned a citation with no merged state.
+    state: Literal["merged", "unmerged", "unknown"] = "unknown"
+    merged: bool | None = None
+    branch: str | None = None
+    cited_at: str | None = None
+    sources: list[str] = Field(default_factory=list)
+
+
+#: Whether the linked work unit could be read from coord AT ALL.
+#:
+#: * ``linked``      — coord returned the work unit.
+#: * ``dangling``    — coord answered, and there is no such work unit. The
+#:   soft link is FK-less by design and MAY dangle; this is a normal result,
+#:   never a 404 on this read.
+#: * ``unavailable`` — coord could not be read (down, slow, unauthorized).
+#:   **This is UNKNOWN, not empty.** Never render it as "no work unit".
+#: * ``unlinked``    — the artifact carries no ``work_unit_slug`` at all.
+CoordLinkState = Literal["linked", "dangling", "unavailable", "unlinked"]
+
+#: Whether ``linked_prs`` is a real answer.
+#:
+#: * ``available``   — coord answered; ``linked_prs`` is complete (possibly
+#:   genuinely empty).
+#: * ``unavailable`` — coord could not be read, or the deployed coord has no
+#:   citation read route. ``linked_prs`` is ``[]`` because there is nothing to
+#:   show, NOT because there are no PRs. Absence is UNKNOWN, not zero.
+#: * ``unlinked``    — no work unit to hang citations off (no slug, or the
+#:   slug dangles). Citations carry a hard FK to the work unit, so "no unit"
+#:   really does mean "no citations" — this one IS a real zero.
+CoordPrState = Literal["available", "unavailable", "unlinked"]
+
+
+class CandidateCoordLink(BaseModel):
+    """Everything coord-owned about a candidate, with its own honesty flags.
+
+    Fetched over coord's HTTP API — web NEVER reads coord's Postgres schema
+    (house rule; ``tests/test_coord_schema_boundary_guard.py`` enforces it).
+    Each half carries its own state so an unreachable coord is distinguishable
+    from a genuine empty.
+    """
+
+    work_unit_slug: str | None = None
+    work_unit_state: CoordLinkState = "unlinked"
+    work_unit_status: str | None = None
+    work_unit_title: str | None = None
+    linked_prs_state: CoordPrState = "unlinked"
+    linked_prs: list[CandidateLinkedPr] = Field(default_factory=list)
+    #: Why the read degraded, when it did. Free-form, for the operator.
+    unavailable_reason: str | None = None
+
+
 # ───────────────────────── responses ─────────────────────────
 
 
@@ -169,11 +234,22 @@ class WorkArtifactEdgeRead(BaseORMSchema):
 
 
 class WorkArtifactDetail(WorkArtifactSummary):
-    """Single-artifact read: body + full version log + edges BOTH ways."""
+    """Single-artifact read: body + full version log + edges BOTH ways.
+
+    ``coord`` carries the linked work unit and its PR citations, with the same
+    honesty flags ``/candidates`` uses — see :class:`CandidateCoordLink`. It is
+    ALWAYS present (defaulting to ``work_unit_state: "unlinked"``) so a
+    consumer never has to distinguish "the field is missing" from "there is no
+    link", and it is ``unavailable`` rather than empty whenever coord could not
+    be read. ``include_coord=false`` skips the fetch, which reports
+    ``unavailable`` for a linked artifact — deliberately, because "we did not
+    look" is not "there is nothing there".
+    """
 
     body: str
     versions: list[WorkArtifactVersionRead]
     edges: list[WorkArtifactEdgeRead]
+    coord: CandidateCoordLink = Field(default_factory=CandidateCoordLink)
 
 
 class WorkArtifactListResponse(BaseModel):
@@ -259,6 +335,45 @@ class DivergentResponse(BaseModel):
     kind_fork_total: int = 0
 
 
+# ─────────────────── capture health (Phase 5) ───────────────────
+
+
+class CaptureDoorHealth(BaseModel):
+    """One capture door's contribution to the corpus.
+
+    ``count`` alone cannot answer "is the agent door being used?" — a door
+    that fed 40 artifacts and then went quiet in March looks identical to a
+    live one. ``last_touched_at`` is the field that separates them.
+
+    It is ``max(updated_at)``, i.e. LAST TOUCHED, not last captured: a kind
+    correction bumps it without any capture. Named for what it measures.
+    """
+
+    #: ``runner_scan`` / ``agent`` / ``operator`` — or an unrecognised value,
+    #: if the CHECK constraint ever grows a member this build has not heard of.
+    captured_by: str
+    count: int
+    #: ``True`` when this door is one of the three the schema knows about.
+    #: A ``False`` here means the corpus contains a door this build does not
+    #: recognise — worth showing rather than quietly bucketing as "other".
+    known: bool = True
+    first_at: IsoDatetime | None = None
+    last_touched_at: IsoDatetime | None = None
+
+
+class CaptureHealthResponse(BaseModel):
+    """Corpus census by capture door.
+
+    Every door in :data:`CapturedBy` appears, **including the ones with zero
+    artifacts**. That is the point of the panel: "the agent door has written
+    nothing" is the finding, and a door that is simply missing from the list
+    reads as an absent feature rather than an unused one.
+    """
+
+    total: int
+    doors: list[CaptureDoorHealth]
+
+
 # ─────────────────── candidate selection (Phase 6) ───────────────────
 #
 # Design decision D6: these models carry the ranking INPUTS and NOTHING that
@@ -291,64 +406,6 @@ class CandidateDependency(BaseModel):
     slug: str
     title: str
     status: str
-
-
-class CandidateLinkedPr(BaseModel):
-    """A PR citation coord recorded against the linked work unit."""
-
-    repo: str | None = None
-    pr_number: int | None = None
-    #: ``"merged"`` / ``"unmerged"`` — derived from coord's ``merged`` flag,
-    #: which is the SAME flag coord's own ``shipped`` predicate reduces.
-    #: ``"unknown"`` when coord returned a citation with no merged state.
-    state: Literal["merged", "unmerged", "unknown"] = "unknown"
-    merged: bool | None = None
-    branch: str | None = None
-    cited_at: str | None = None
-    sources: list[str] = Field(default_factory=list)
-
-
-#: Whether the linked work unit could be read from coord AT ALL.
-#:
-#: * ``linked``      — coord returned the work unit.
-#: * ``dangling``    — coord answered, and there is no such work unit. The
-#:   soft link is FK-less by design and MAY dangle; this is a normal result,
-#:   never a 404 on this read.
-#: * ``unavailable`` — coord could not be read (down, slow, unauthorized).
-#:   **This is UNKNOWN, not empty.** Never render it as "no work unit".
-#: * ``unlinked``    — the artifact carries no ``work_unit_slug`` at all.
-CoordLinkState = Literal["linked", "dangling", "unavailable", "unlinked"]
-
-#: Whether ``linked_prs`` is a real answer.
-#:
-#: * ``available``   — coord answered; ``linked_prs`` is complete (possibly
-#:   genuinely empty).
-#: * ``unavailable`` — coord could not be read, or the deployed coord has no
-#:   citation read route. ``linked_prs`` is ``[]`` because there is nothing to
-#:   show, NOT because there are no PRs. Absence is UNKNOWN, not zero.
-#: * ``unlinked``    — no work unit to hang citations off (no slug, or the
-#:   slug dangles). Citations carry a hard FK to the work unit, so "no unit"
-#:   really does mean "no citations" — this one IS a real zero.
-CoordPrState = Literal["available", "unavailable", "unlinked"]
-
-
-class CandidateCoordLink(BaseModel):
-    """Everything coord-owned about a candidate, with its own honesty flags.
-
-    Fetched over coord's HTTP API — web NEVER reads coord's Postgres schema
-    (house rule; ``tests/test_coord_schema_boundary_guard.py`` enforces it).
-    Each half carries its own state so an unreachable coord is distinguishable
-    from a genuine empty.
-    """
-
-    work_unit_slug: str | None = None
-    work_unit_state: CoordLinkState = "unlinked"
-    work_unit_status: str | None = None
-    work_unit_title: str | None = None
-    linked_prs_state: CoordPrState = "unlinked"
-    linked_prs: list[CandidateLinkedPr] = Field(default_factory=list)
-    #: Why the read degraded, when it did. Free-form, for the operator.
-    unavailable_reason: str | None = None
 
 
 class PlanCandidate(BaseModel):
