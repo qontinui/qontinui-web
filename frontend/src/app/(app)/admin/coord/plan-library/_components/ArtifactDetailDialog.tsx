@@ -319,14 +319,38 @@ export function ArtifactDetailDialog({
     };
   }, [open, artifactId, load]);
 
+  /**
+   * Apply an operator's kind correction, then re-read the artifact.
+   *
+   * The refresh goes through [`load`], NOT through `fetchDetail` directly.
+   * Two reasons, and the second is the one that bites:
+   *
+   * 1. `load` owns `requestIdRef`. A raw `fetchDetail` neither bumps the
+   *    generation nor checks it, so its result paints unconditionally — and
+   *    this read makes up to two 5s coord round-trips. Correct A's kind,
+   *    follow a provenance edge to B while the refresh is in flight, and A
+   *    lands on top of B.
+   * 2. `handleKind` keys off `detail.id`. Once A has overwritten B, the
+   *    operator's NEXT correction PATCHes A while the dialog is showing B —
+   *    locking the kind on the wrong row, which `kind_locked` then defends
+   *    against the scan that would have fixed it.
+   *
+   * The id is captured BEFORE the await for the same reason: `detail` may be
+   * a different artifact by the time the PATCH resolves.
+   *
+   * A failed refresh is surfaced rather than swallowed. `if (refreshed)
+   * setDetail(refreshed)` left the success toast on screen next to a Select
+   * still showing the old kind — the one reading of the screen that is
+   * definitely wrong, because it says both that the write happened and that
+   * it did not. `load` writes `failed` on a null result, which renders the
+   * error panel and its retry.
+   */
   const handleKind = async (next: string) => {
     if (!detail) return;
+    const id = detail.id;
     setSavingKind(true);
-    const ok = await correctKind(detail.id, next as WorkArtifactKind);
-    if (ok) {
-      const refreshed = await fetchDetail(detail.id);
-      if (refreshed) setDetail(refreshed);
-    }
+    const ok = await correctKind(id, next as WorkArtifactKind);
+    if (ok) await load(id);
     setSavingKind(false);
   };
 

@@ -84779,7 +84779,7 @@
     },
     "/api/v1/plan-library/{artifact_id}/edges": {
       "post": {
-        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.",
+        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
         "operationId": "api_v1_plan_library_artifact_id_edges_post",
         "parameters": [
           {

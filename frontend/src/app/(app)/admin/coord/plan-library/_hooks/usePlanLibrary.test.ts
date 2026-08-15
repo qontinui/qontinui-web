@@ -190,6 +190,125 @@ describe("usePlanLibrary — failure is not emptiness", () => {
   });
 });
 
+describe("usePlanLibrary — overlapping loads must not race", () => {
+  /** A promise plus its settle functions, so a request can be held open. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    // Nothing awaits the rejection until the test does; keep node quiet.
+    promise.catch(() => {});
+    return { promise, resolve, reject };
+  }
+
+  const page = (title: string, offset: number) => ({
+    items: [row({ title })],
+    total: 200,
+    offset,
+    limit: 50,
+  });
+
+  // `load` is recreated on [applied, offset] and fired by an effect, so two
+  // of it are in flight whenever the operator pages or retypes faster than
+  // the backend answers. An AbortController cannot fix this — `http-client`
+  // overwrites the caller's `signal` with its own timeout controller — so the
+  // hook carries a generation counter, and each of these tests pins one of
+  // its four writes.
+
+  it("drops a superseded page response instead of painting it", async () => {
+    const first = deferred<unknown>();
+    getMock
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(page("page two", 50));
+
+    const { result } = renderHook(() => usePlanLibrary());
+    // Page forward before page 1 has landed.
+    act(() => result.current.setOffset(50));
+    await waitFor(() =>
+      expect(result.current.items[0]?.title).toBe("page two")
+    );
+
+    await act(async () => {
+      first.resolve(page("page one", 0));
+      await first.promise;
+    });
+
+    // Page 1's rows under a "51–100 of 200" pager is the visible symptom.
+    expect(result.current.items[0]?.title).toBe("page two");
+    expect(result.current.offset).toBe(50);
+  });
+
+  it("does not paint a late FAILURE banner over fresh rows", async () => {
+    // The honesty inversion, half one: a stale rejection runs `setError`, and
+    // the page then warns that rows which are in fact current may be stale.
+    const first = deferred<unknown>();
+    getMock
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(page("fresh", 50));
+
+    const { result } = renderHook(() => usePlanLibrary());
+    act(() => result.current.setOffset(50));
+    await waitFor(() => expect(result.current.items[0]?.title).toBe("fresh"));
+
+    await act(async () => {
+      first.reject(new Error("stale failure"));
+      await first.promise.catch(() => {});
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.items[0]?.title).toBe("fresh");
+  });
+
+  it("does not let a late SUCCESS clear a live failure banner", async () => {
+    // Half two, and the more dangerous direction: the banner that vanishes is
+    // the one that was telling the truth, leaving stale rows unlabelled.
+    const first = deferred<unknown>();
+    getMock
+      .mockImplementationOnce(() => first.promise)
+      .mockRejectedValueOnce(new Error("backend down"));
+
+    const { result } = renderHook(() => usePlanLibrary());
+    act(() => result.current.setOffset(50));
+    await waitFor(() => expect(result.current.error).toContain("backend down"));
+
+    await act(async () => {
+      first.resolve(page("late success", 0));
+      await first.promise;
+    });
+
+    expect(result.current.error).toContain("backend down");
+  });
+
+  it("keeps `loading` true while the live request is still out", async () => {
+    // `finally { setLoading(false) }` was unconditional, so a superseded
+    // response re-enabled the pager underneath a request that had not landed.
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    getMock
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const { result } = renderHook(() => usePlanLibrary());
+    act(() => result.current.setOffset(50));
+
+    await act(async () => {
+      first.resolve(page("page one", 0));
+      await first.promise;
+    });
+
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      second.resolve(page("page two", 50));
+      await second.promise;
+    });
+    expect(result.current.loading).toBe(false);
+  });
+});
+
 describe("usePlanLibrary — kind correction", () => {
   it("patches the kind and reloads the list", async () => {
     getMock.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50 });

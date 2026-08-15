@@ -6204,7 +6204,7 @@ class FleetPolicyPut(BaseModel):
     @field_validator("domain")
     @classmethod
     def _reject_the_controls_domain(cls, v: str) -> str:
-        """Refuse to write the ``fleet_resources`` row through this door.
+        """Normalise the domain, then refuse ``fleet_resources`` outright.
 
         That row carries the §D1 control values (memory floors, CI job caps,
         retention) and the §D2 drain map. This body cannot express them —
@@ -6213,8 +6213,18 @@ class FleetPolicyPut(BaseModel):
         fleet-resource controls to defaults as a side effect of setting a
         level. A generic proxy must not hand callers that footgun; the
         controls have their own surface.
+
+        The STRIPPED value is what is returned. Comparing ``v.strip()`` while
+        forwarding the raw ``v`` meant ``"  plan_capture  "`` cleared the
+        guard and then wrote a *distinct* coord row — the domain is a bare
+        string key on coord's side, so the padded and unpadded forms are two
+        different policies that render identically in the UI. Normalising
+        here makes the guard and the write agree on what the domain is.
         """
-        if v.strip() == _FLEET_POLICY_CONTROLS_DOMAIN:
+        v = v.strip()
+        if not v:
+            raise ValueError("domain must not be blank")
+        if v == _FLEET_POLICY_CONTROLS_DOMAIN:
             raise ValueError(
                 f"domain '{_FLEET_POLICY_CONTROLS_DOMAIN}' is not writable "
                 "through this proxy: its row carries control and drain values "

@@ -17,6 +17,53 @@ from app.services.permissions.helpers import check_role_level
 logger = structlog.get_logger(__name__)
 
 
+async def resolve_personal_organization(
+    db: AsyncSession, user_id: UUID
+) -> Organization | None:
+    """Get the user's personal organization, letting query errors PROPAGATE.
+
+    Same lookup as :func:`get_personal_organization`, minus the blanket
+    ``except``. ``None`` from this function therefore means one thing only —
+    the user genuinely has no personal organization row — where ``None`` from
+    the swallowing wrapper conflates that with "the lookup blew up".
+
+    Callers that treat ``None`` as an authorization *scope* (rather than as a
+    "no org, carry on" hint) must use this one and fail closed on the
+    exception. Reading a statement timeout as "no organization" scopes the
+    write into the shared NULL bucket, and the log line for the two causes is
+    otherwise identical.
+
+    Raises:
+        Exception: whatever the database layer raised. Callers decide.
+    """
+    result = await db.execute(
+        select(Organization).where(Organization.owner_id == user_id)
+    )
+    user_orgs = result.scalars().all()
+
+    # Filter for personal organization in Python
+    personal_org = None
+    for org in user_orgs:
+        if org.settings and org.settings.get("is_personal") is True:
+            personal_org = org
+            break
+
+    if personal_org:
+        logger.debug(
+            "personal_org_found",
+            user_id=user_id,
+            org_id=personal_org.id,
+            org_name=personal_org.name,
+        )
+    else:
+        logger.warning(
+            "personal_org_not_found",
+            user_id=user_id,
+        )
+
+    return personal_org
+
+
 async def get_personal_organization(
     db: AsyncSession, user_id: UUID
 ) -> Organization | None:
@@ -25,6 +72,13 @@ async def get_personal_organization(
 
     Every user has a personal organization created during user registration.
     The personal organization has 'is_personal': true in its settings.
+
+    NOTE: this variant swallows every error and returns ``None``, so ``None``
+    is ambiguous — "no such org" and "the lookup failed" are indistinguishable
+    to the caller. That is retained for its existing callers, which treat the
+    result as an optional convenience. Anything deriving an authorization
+    scope from the answer must call :func:`resolve_personal_organization`
+    instead and fail closed.
 
     Args:
         db: Database session
@@ -39,34 +93,7 @@ async def get_personal_organization(
         ...     print(f"Personal org: {org.name}")
     """
     try:
-        # Query for all organizations owned by user
-        result = await db.execute(
-            select(Organization).where(Organization.owner_id == user_id)
-        )
-        user_orgs = result.scalars().all()
-
-        # Filter for personal organization in Python
-        personal_org = None
-        for org in user_orgs:
-            if org.settings and org.settings.get("is_personal") is True:
-                personal_org = org
-                break
-
-        if personal_org:
-            logger.debug(
-                "personal_org_found",
-                user_id=user_id,
-                org_id=personal_org.id,
-                org_name=personal_org.name,
-            )
-        else:
-            logger.warning(
-                "personal_org_not_found",
-                user_id=user_id,
-            )
-
-        return personal_org
-
+        return await resolve_personal_organization(db, user_id)
     except Exception as e:
         logger.error(
             "get_personal_org_failed",

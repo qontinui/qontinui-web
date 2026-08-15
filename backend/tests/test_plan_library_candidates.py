@@ -24,6 +24,7 @@ Postgres tables.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import UTC, datetime, timedelta
@@ -37,6 +38,11 @@ import pytest_asyncio
 from fastapi import FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.endpoints.plan_library import (
+    _COORD_FANOUT,
+    _coord_links,
+    _CoordProbe,
+)
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact
 
@@ -551,10 +557,80 @@ class TestCandidatesHttp:
             "every row paid its own coord timeout — the circuit did not trip"
         )
 
-    async def test_citations_route_absent_reads_as_unavailable(
-        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    async def test_the_circuit_is_observed_by_tasks_already_queued_on_the_gate(
+        self,
     ) -> None:
-        """A coord without the citation read route is UNKNOWN, not 'no PRs'."""
+        """Fail-fast has to be checked INSIDE the semaphore, not before it.
+
+        With the check outside, every task in a ``gather`` passes it during the
+        synchronous prelude — before any of them has awaited coord even once —
+        so tasks beyond the concurrency limit are already committed by the time
+        the first failure trips the circuit. They then each pay their own
+        timeout, and the trip shortens nothing: a hung coord with 100 linked
+        slugs costs ceil(100/6) × 5s ≈ 85s for one request, holding the
+        request-scoped session and six httpx connections throughout, against
+        the 5s the class docstring promises.
+
+        This test drives ``_CoordProbe`` directly because that is where the
+        ordering lives; the HTTP-level test above cannot distinguish 6 awaits
+        from 24 when the page only has 4 rows.
+        """
+        slug_count = _COORD_FANOUT * 4
+
+        async def _coord_down(path: str, **_: Any) -> Any:
+            # Yield first, so the failure lands only after every task has had a
+            # chance to run its prelude — the exact interleaving the bug needs.
+            await asyncio.sleep(0)
+            raise HTTPException(status_code=504, detail="timeout waiting for coord")
+
+        fake = AsyncMock(side_effect=_coord_down)
+        probe = _CoordProbe(None)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            links = await _coord_links(
+                [_slug(f"gate-{i}") for i in range(slug_count)], probe
+            )
+
+        assert probe.degraded is True
+        assert len(links) == slug_count
+        assert all(link.work_unit_state == "unavailable" for link in links.values())
+        assert fake.await_count <= _COORD_FANOUT, (
+            f"{fake.await_count} coord calls for {slug_count} slugs — the "
+            f"tasks queued on the semaphore did not see the trip, so the "
+            f"circuit cannot short-circuit anything (expected at most "
+            f"{_COORD_FANOUT}, the tasks already in flight when it tripped)"
+        )
+
+    @pytest.mark.parametrize(
+        ("cite_status", "why"),
+        [
+            # Coord registers `post` + `delete` on the citations path, so a GET
+            # is a method mismatch once the caller clears the auth layer.
+            (405, "method not allowed"),
+            # ...and the path sits behind `require_jwt`, so a forwarded Cognito
+            # bearer is rejected by the layer BEFORE the method is considered.
+            (401, "unauthorized"),
+            # Kept for the hypothetical coord that simply has no such path.
+            (404, "not found"),
+        ],
+    )
+    async def test_citations_route_absent_reads_as_unavailable(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        cite_status: int,
+        why: str,
+    ) -> None:
+        """A coord without the citation read route is UNKNOWN, not 'no PRs'.
+
+        And — the half this test used to miss — it is not a coord OUTAGE
+        either. The circuit must stay closed, because a per-route 4xx is coord
+        answering about that route. Modelling only 404 hid a bug where every
+        other status tripped the circuit: since a GET on the real citations
+        path can never actually 404 (it 401/403s at the `require_jwt` layer or
+        405s on the method), `coord_available` was false on every single
+        request that carried one linked candidate, which is precisely the
+        flag's one job made impossible.
+        """
         wu = _slug("wu-nocite")
         plan = await _plan(
             async_db_session, org_id=None, slug=_slug("nocite"), work_unit_slug=wu
@@ -562,7 +638,7 @@ class TestCandidatesHttp:
 
         async def _fake(path: str, **_: Any) -> Any:
             if path.endswith("/citations"):
-                raise HTTPException(status_code=404, detail="Not Found")
+                raise HTTPException(status_code=cite_status, detail=why)
             return {"work_unit": {"slug": wu, "status": "vetted"}}
 
         with patch(
@@ -571,10 +647,71 @@ class TestCandidatesHttp:
         ):
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
-        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            f"a {cite_status} on ONE route tripped the page-wide circuit — "
+            "coord answered, so `coord_available` must stay true or the flag "
+            "can never report a genuine outage"
+        )
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
         assert row["coord"]["work_unit_state"] == "linked"
         assert row["coord"]["linked_prs_state"] == "unavailable"
         assert row["coord"]["linked_prs"] == []
+
+    @pytest.mark.parametrize("http_status", [500, 502, 503, 504])
+    async def test_only_transport_class_failures_trip_the_circuit(
+        self,
+        client: httpx.AsyncClient,
+        async_db_session: AsyncSession,
+        http_status: int,
+    ) -> None:
+        """The other half: 5xx IS coord being unreachable/broken, so it trips."""
+        wu = _slug("wu-5xx")
+        await _plan(
+            async_db_session, org_id=None, slug=_slug("boom"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=http_status, detail="boom")
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        assert resp.json()["coord_available"] is False
+
+    async def test_a_403_on_the_work_unit_read_does_not_trip_the_circuit(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Per-row UNKNOWN without claiming coord is down.
+
+        The row is honestly ``unavailable`` (the read established nothing),
+        but the credential being refused for one route is not evidence about
+        coord's reachability, so the page-level flag stays true.
+        """
+        wu = _slug("wu-403")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("forbidden"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=403, detail="forbidden")
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        body = resp.json()
+        assert body["coord_available"] is True
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        assert row["coord"]["work_unit_state"] == "unavailable"
+        assert row["coord"]["linked_prs_state"] == "unavailable"
+        assert row["coord"]["unavailable_reason"]
 
     async def test_include_coord_false_skips_coord_entirely(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
