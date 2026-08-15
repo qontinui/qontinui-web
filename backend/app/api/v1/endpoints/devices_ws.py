@@ -46,6 +46,7 @@ from app.config.redis_config import get_redis
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
+from app.services import devenv_auto_enroll
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenInvalidError,
@@ -161,6 +162,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     os_name = info_msg.get("os")
     os_version = info_msg.get("os_version") or info_msg.get("osVersion")
     capabilities = info_msg.get("capabilities") or []
+
+    # Client-asserted devenv block (plan 2026-08-05, decision 2):
+    # ``{enrolled, machine_id, environment_id, instance_role}``. Parsed here and
+    # handed, unmodified, to the auto-enrollment engine below — which is the
+    # only reader, and which decides what (if anything) a hint may cause.
+    #
+    # The asymmetry this block lives under, stated once so it is not
+    # re-litigated at the call site: a client hint may freely SUPPRESS
+    # enrollment on its own behalf (``instance_role: "secondary"``, a local
+    # kill switch), but may NEVER name the machine row, the environment or the
+    # owner — those come from the verified JWT claims and the server's own
+    # tables. It is kept as a plain dict rather than being unpacked into
+    # trusted locals precisely so no later code can mistake it for a fact.
+    raw_devenv_hint = info_msg.get("devenv")
+    devenv_hint: dict[str, Any] | None = (
+        raw_devenv_hint if isinstance(raw_devenv_hint, dict) else None
+    )
 
     client_ip = websocket.client.host if websocket.client else None
 
@@ -358,6 +376,23 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             name=name,
         )
 
+        # ----------------------------------------------------------------
+        # Auto-enrollment decision engine (plan 2026-08-05, Phase 4).
+        #
+        # Scheduled AFTER the ``connected`` ack is on the wire and never
+        # awaited: the handshake must not wait on a DB round trip, and the
+        # engine's own wrapper swallows every failure. Deliberately NOT the
+        # rollback-and-close posture of the Redis block above — a device that
+        # could not be auto-enrolled has lost a convenience; a device whose
+        # socket was dropped has lost its connection to the fleet.
+        #
+        # It is flagged off by default (``DEVENV_AUTO_ENROLL_ENABLED``), in
+        # which case this costs one attribute read inside the task.
+        # ----------------------------------------------------------------
+        devenv_auto_enroll.schedule_auto_enroll(
+            device_id, user_id, devenv_hint, manager
+        )
+
         while True:
             try:
                 data = await asyncio.wait_for(websocket.receive_json(), timeout=120.0)
@@ -463,6 +498,32 @@ async def _route_device_message(
         "terminal_buffer_response",
     } or (msg_type == "error" and msg.get("request_id") is not None):
         await manager.send_terminal_response_to_mobiles(device_id, msg)
+        return
+
+    # Reply to a ``devenv_enroll`` directive sent down this socket
+    # (``runner_websocket_manager.send_devenv_enroll``). The runner's
+    # ``mcp/backend_relay.rs::handle_relay_command`` produces it and the relay
+    # writes it straight back here.
+    #
+    # This arm MUST stay above the fall-through below. That fall-through is a
+    # closed set: an unrecognised type is logged at DEBUG and discarded, which
+    # is the exact failure the terminal-RPC comment above records shipping
+    # once already. For devenv enrollment the consequence is worse than a
+    # dropped log line — the ack is the ONLY evidence that an enroll directive
+    # reached the box, so without this arm an auto-enrollment feature whose
+    # entire purpose is to stop failures from being silent would itself fail
+    # silently. Logged at INFO, not DEBUG, for the same reason.
+    if msg_type == "devenv_enroll_ack":
+        ok = msg.get("ok")
+        logger.info(
+            "devices_ws_devenv_enroll_ack",
+            device_id=str(device_id),
+            machine_id=msg.get("machine_id"),
+            ok=ok,
+            # Only present on the failure arm; the runner never panics the
+            # relay, it reports the reason instead.
+            reason=msg.get("reason") if ok is not True else None,
+        )
         return
 
     logger.debug(
