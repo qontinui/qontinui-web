@@ -3239,6 +3239,8 @@ async def get_dev_action_detail(
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/fleet/volumes                     — free space, all devices
+# - GET    /operations/devices/{device_id}/volumes       — free space, one device
 # - GET    /operations/agent-questions/pending           — Wave-3 prep
 # - GET    /operations/agent-questions/{id}              — Wave-3a single lookup
 # - GET    /operations/agent-questions/by-session/{sid}  — Wave-3a by-session
@@ -3769,6 +3771,77 @@ async def get_fleet_resource_samples(
         params=params or None,
         tenant_id=tenant_id,
     )
+
+
+# ---- Volume free space (disk monitoring, Phase 1) ------------------------
+#
+# Plan: `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1 steps
+# 8-9. Backs the per-machine free-space rows on `/admin/coord/fleet`.
+#
+# **No alembic migration ships with these routes.** The storage they read,
+# the `worktree_volume` table in coord's schema, already exists (alembic
+# `twin_07_coord_worktree_census.py:139-141`), so this phase adds ZERO DDL
+# and therefore carries none of the deploy-ordering hazard that
+# `production-and-cost` `alembic-sole-authorship` governs.
+#
+# **Read boundary.** Web NEVER reads coord's Postgres schema directly
+# (`backend/tests/test_coord_schema_boundary_guard.py`), so the volume rows
+# come over coord HTTP through `_proxy_coord_get` — the same posture as
+# `/fleet/resource-samples` above. The coord-side routes are Phase 1 steps
+# 4-5 (`GET /coord/devices/:device_id/volumes`, `GET /coord/fleet/volumes`).
+#
+# **Honesty (plan D10 / INV-D1).** Coord returns `observed_at` unmodified
+# and never synthesises a row: a device that has never reported produces NO
+# entry, and the browser must render that as UNKNOWN — never as `0` bytes
+# free and never as healthy. This proxy therefore adds no defaults, fills no
+# zeroes, and does not turn an upstream failure into an empty list: a coord
+# error stays an error (502/504/upstream status) so the UI can say "could
+# not read" instead of "nothing reported".
+
+
+@router.get("/devices/{device_id}/volumes")
+async def get_device_volumes(
+    device_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/devices/{device_id}/volumes`` (tenant-scoped).
+
+    Returns the latest capacity snapshot per volume for ONE device — the
+    ``DISTINCT ON (volume)`` head of coord's append-only volume oplog.
+    Response shape is coord-authored and passed through untouched::
+
+        {"device_id": "<uuid>", "volumes": [
+            {"volume": "D:", "total_bytes": 4000787030016,
+             "free_bytes": 98923937792, "observed_at": "<rfc3339>"}, ...]}
+
+    A device with no telemetry yields an EMPTY ``volumes`` list, which the
+    caller renders as UNKNOWN (plan D10). This route never invents a row and
+    never zero-fills — "never reported" and "reported 0 bytes free" are
+    different facts and must not render the same.
+    """
+    return await _proxy_coord_get(
+        f"/coord/devices/{device_id}/volumes", tenant_id=tenant_id
+    )
+
+
+@router.get("/fleet/volumes")
+async def get_fleet_volumes(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Proxy coord's ``GET /coord/fleet/volumes`` (tenant-scoped).
+
+    The fleet-wide sibling of :func:`get_device_volumes`: the latest
+    capacity snapshot per ``(device, volume)`` across every device in the
+    caller's tenant, so the fleet dashboard can render one machine card per
+    device without N per-device requests. Response shape is coord-authored::
+
+        {"devices": [{"device_id": "<uuid>", "volumes": [VolumeRow, ...]},
+                     ...], "count": <int>}
+
+    Devices absent from the payload have NEVER reported volume telemetry.
+    That is UNKNOWN, not zero — see the section note above.
+    """
+    return await _proxy_coord_get("/coord/fleet/volumes", tenant_id=tenant_id)
 
 
 # ---- Wave-3 prep (decision queue + agent-logs + memory) ------------------

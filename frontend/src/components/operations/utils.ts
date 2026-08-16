@@ -466,6 +466,106 @@ export function formatStallAge(secs: number | null | undefined): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+// ---------------------------------------------------------------------------
+// Volume free space (disk monitoring, Phase 1)
+// ---------------------------------------------------------------------------
+//
+// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1. Reads
+// coord's `worktree_volume` head through the web proxy — no alembic migration
+// ships with this phase, and web never touches coord's Postgres schema.
+
+/**
+ * GET the latest volume snapshot for every device in the caller's tenant.
+ * Tenant-scoped server-side via the operator bearer; the caller passes no
+ * tenant_id. A device with no telemetry is ABSENT from the payload — that is
+ * UNKNOWN, never zero (plan D10).
+ */
+export const FLEET_VOLUMES_API = `${OPERATIONS_API}/fleet/volumes`;
+
+/** GET one device's latest volume snapshot (per-device sibling of the above). */
+export function deviceVolumesUrl(deviceId: string): string {
+  return `${OPERATIONS_API}/devices/${encodeURIComponent(deviceId)}/volumes`;
+}
+
+/**
+ * Age at which a volume reading stops being presented as current.
+ *
+ * The runner publishes on a short tick (Phase 1 step 1 targets 60s), so a
+ * reading older than 5 minutes means the publisher missed several ticks. It is
+ * still SHOWN — with its age — because a stale number plus its age is
+ * information, whereas hiding it would be indistinguishable from "no disks".
+ */
+export const VOLUME_STALE_AFTER_MS = 5 * 60_000;
+
+/**
+ * Free-space bands, in bytes. These are the runner's existing thresholds
+ * (`census.rs` `COORD_LOW_DISK_WARN_BYTES` / `COORD_LOW_DISK_CRIT_BYTES`:
+ * 100 GiB warn, 25 GiB crit), promoted here so the dashboard colours agree
+ * with the log-side warning rather than inventing a second opinion. Phase 3
+ * replaces both with per-device configuration.
+ */
+export const VOLUME_WARN_FREE_BYTES = 100 * 1024 ** 3;
+export const VOLUME_CRIT_FREE_BYTES = 25 * 1024 ** 3;
+
+/** Severity band for a volume's free space. */
+export type VolumeSeverity = "ok" | "warn" | "critical";
+
+export function volumeSeverity(freeBytes: number): VolumeSeverity {
+  if (freeBytes < VOLUME_CRIT_FREE_BYTES) return "critical";
+  if (freeBytes < VOLUME_WARN_FREE_BYTES) return "warn";
+  return "ok";
+}
+
+const BINARY_UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] as const;
+
+/**
+ * Format a byte count with BINARY units (KiB/GiB/TiB), which is what the
+ * thresholds above are expressed in and what Windows' own "GB" actually means.
+ * Labelling them `GiB` removes the ambiguity rather than papering over it.
+ *
+ * Returns `"unknown"` for a non-finite or negative input — a value that could
+ * not be computed says so instead of rendering as `0 B`.
+ */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "unknown";
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < BINARY_UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  // Sub-unit values keep one decimal; bytes stay integral.
+  const text = unit === 0 ? String(Math.round(value)) : value.toFixed(1);
+  return `${text} ${BINARY_UNITS[unit]}`;
+}
+
+/**
+ * Percentage of a volume that is FREE, rounded to one decimal. Returns `null`
+ * when the total is unusable (0, negative, non-finite) — a percentage that
+ * cannot be computed must render as "unknown", never as 0 %.
+ */
+export function percentFree(
+  freeBytes: number,
+  totalBytes: number
+): number | null {
+  if (!Number.isFinite(freeBytes) || !Number.isFinite(totalBytes)) return null;
+  if (totalBytes <= 0 || freeBytes < 0) return null;
+  return Math.round((freeBytes / totalBytes) * 1000) / 10;
+}
+
+/**
+ * Age of a reading in milliseconds, or `null` when it cannot be computed
+ * (absent/unparseable timestamp). A future timestamp clamps to 0 rather than
+ * going negative — clock skew is not evidence of freshness, but it is also not
+ * evidence of staleness.
+ */
+export function readingAgeMs(observedAt: string | null | undefined): number | null {
+  if (!observedAt) return null;
+  const then = new Date(observedAt).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Date.now() - then);
+}
+
 /**
  * Truncate a string to `maxLen` characters, appending an ellipsis if needed.
  */
