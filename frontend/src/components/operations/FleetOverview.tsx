@@ -163,6 +163,11 @@ function buildMachineGroups(
         currentlyEditing: resolveClaims(activity),
         ciRunner: ciRunners[hostname],
         isCiInfrastructure: true,
+        // CI hosts get REAL disk telemetry, not an exemption. A dedicated CI
+        // box is exactly the machine whose disk fills with build artifacts —
+        // resolving this to a placeholder would blind the one category that
+        // most needs watching.
+        volumes: resolveVolumes(hostname, activity),
       });
     }
   }
