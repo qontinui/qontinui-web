@@ -12,6 +12,8 @@ import {
   RefreshCw,
   WifiOff,
   Cog,
+  HardDrive,
+  AlertTriangle,
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
@@ -19,8 +21,24 @@ import { TaskRunCard } from "./TaskRunCard";
 import { useDeviceStatusStream } from "./useDeviceStatusStream";
 import { useSymbolClaimsStream } from "./useSymbolClaimsStream";
 import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, POLL_INTERVAL_MS, relativeTime } from "./utils";
+import {
+  FLEET_VOLUMES_API,
+  formatBytes,
+  OPERATIONS_API,
+  POLL_INTERVAL_MS,
+  relativeTime,
+  volumeSeverity,
+} from "./utils";
 import { CollapsiblePanel } from "./CollapsiblePanel";
+import {
+  indexDeviceVolumes,
+  parseFleetVolumes,
+  resolveMachineVolumes,
+  tightestVolume,
+  volumesReliabilityWarning,
+  VOLUMES_NOT_YET_READ,
+  type VolumesFetch,
+} from "./fleetVolumes";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -28,6 +46,7 @@ import type {
   FleetStatus,
   AggregatedTaskRuns,
   MachineGroup,
+  MachineVolumes,
   RunnerTaskRun,
   SymbolClaim,
 } from "./types";
@@ -39,7 +58,8 @@ import type {
 function buildMachineGroups(
   fleet: FleetStatus,
   deviceStatusByHost: Map<string, DeviceStatus>,
-  symbolClaimsByMachine: Map<string, SymbolClaim[]>
+  symbolClaimsByMachine: Map<string, SymbolClaim[]>,
+  volumesFetch: VolumesFetch
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
@@ -61,6 +81,11 @@ function buildMachineGroups(
     return ciRunners[hostname];
   };
 
+  const resolveVolumes = (
+    hostname: string,
+    activity: DeviceStatus | undefined
+  ): MachineVolumes => resolveMachineVolumes(hostname, activity, volumesFetch);
+
   for (const runner of fleet.runners) {
     const hostname = runner.hostname ?? "unknown";
     let group = byHost.get(hostname);
@@ -74,6 +99,7 @@ function buildMachineGroups(
         currentActivity: activity,
         currentlyEditing: resolveClaims(activity),
         ciRunner: resolveCiRunner(hostname),
+        volumes: resolveVolumes(hostname, activity),
       };
       byHost.set(hostname, group);
     }
@@ -92,6 +118,7 @@ function buildMachineGroups(
         currentActivity: activity,
         currentlyEditing: resolveClaims(activity),
         ciRunner: resolveCiRunner(hostname),
+        volumes: resolveVolumes(hostname, activity),
       });
     }
   }
@@ -111,6 +138,7 @@ function buildMachineGroups(
         currentActivity,
         currentlyEditing: resolveClaims(currentActivity),
         ciRunner: resolveCiRunner(hostname),
+        volumes: resolveVolumes(hostname, currentActivity),
       });
     }
   }
@@ -135,6 +163,11 @@ function buildMachineGroups(
         currentlyEditing: resolveClaims(activity),
         ciRunner: ciRunners[hostname],
         isCiInfrastructure: true,
+        // CI hosts get REAL disk telemetry, not an exemption. A dedicated CI
+        // box is exactly the machine whose disk fills with build artifacts —
+        // resolving this to a placeholder would blind the one category that
+        // most needs watching.
+        volumes: resolveVolumes(hostname, activity),
       });
     }
   }
@@ -188,12 +221,14 @@ export function FleetOverview() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [volumes, setVolumes] = useState<VolumesFetch>(VOLUMES_NOT_YET_READ);
 
   const fetchData = useCallback(async () => {
     try {
-      const [fleetRes, tasksRes] = await Promise.allSettled([
+      const [fleetRes, tasksRes, volumesRes] = await Promise.allSettled([
         httpClient.fetch(`${OPERATIONS_API}/fleet`),
         httpClient.fetch(`${OPERATIONS_API}/fleet/tasks`),
+        httpClient.fetch(FLEET_VOLUMES_API),
       ]);
 
       if (fleetRes.status === "fulfilled" && fleetRes.value.ok) {
@@ -216,11 +251,71 @@ export function FleetOverview() {
         setTasks({ task_runs: [], total: 0 });
       }
 
+      // Disk telemetry. Every failure path lands on `unavailable` WITH the
+      // reason — a failed read must never degrade into "this device has never
+      // reported", which is a claim about the device rather than about the
+      // read (plan D10 / `silent-empty-is-unknown`).
+      if (volumesRes.status === "rejected") {
+        setVolumes({
+          state: "unavailable",
+          reason: `Request to ${FLEET_VOLUMES_API} failed: ${
+            (volumesRes.reason as Error)?.message ?? "unknown error"
+          }`,
+        });
+      } else if (!volumesRes.value.ok) {
+        setVolumes({
+          state: "unavailable",
+          reason:
+            `The fleet-volumes read returned HTTP ${volumesRes.value.status}. ` +
+            `Coord may be unreachable (502/504) or the volumes route may not ` +
+            `be deployed yet.`,
+        });
+      } else {
+        let payload: unknown;
+        try {
+          payload = await volumesRes.value.json();
+        } catch (err) {
+          payload = undefined;
+          setVolumes({
+            state: "unavailable",
+            reason: `The fleet-volumes response was not valid JSON: ${
+              err instanceof Error ? err.message : "parse error"
+            }`,
+          });
+        }
+        if (payload !== undefined) {
+          const parsed = parseFleetVolumes(payload);
+          if (parsed.state === "unparseable") {
+            setVolumes({
+              state: "unavailable",
+              reason:
+                "The fleet-volumes response could not be parsed: it either " +
+                "matched no known shape (expected `{devices: [...]}` or " +
+                "`{volumes: [...]}`) or carried rows that named no device, so " +
+                "no device could be matched to a reading. This says nothing " +
+                "about any machine's disk -- an EMPTY response parses fine " +
+                "and reports itself as such.",
+            });
+          } else {
+            // A PARTLY readable response keeps its readable half (the parse's
+            // `skippedRows` rides along), and the render withdraws the
+            // never-reported claims instead of throwing the data away.
+            setVolumes(indexDeviceVolumes(parsed.devices, parsed.skippedRows));
+          }
+        }
+      }
+
       setLastUpdated(new Date());
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to reach operations API"
-      );
+      const message =
+        err instanceof Error ? err.message : "Failed to reach operations API";
+      setError(message);
+      // The disk section must not keep presenting the previous readings as if
+      // this refresh had confirmed them.
+      setVolumes({
+        state: "unavailable",
+        reason: `The fleet refresh failed before disk telemetry could be read: ${message}`,
+      });
     } finally {
       setLoading(false);
     }
@@ -242,10 +337,11 @@ export function FleetOverview() {
         ? buildMachineGroups(
             fleet,
             deviceStatus.byHostname,
-            symbolClaims.byMachine
+            symbolClaims.byMachine,
+            volumes
           )
         : [],
-    [fleet, deviceStatus.byHostname, symbolClaims.byMachine]
+    [fleet, deviceStatus.byHostname, symbolClaims.byMachine, volumes]
   );
 
   const activeCiRunners = useMemo(() => {
@@ -259,6 +355,32 @@ export function FleetOverview() {
     if (!fleet?.ci_runners) return 0;
     return Object.keys(fleet.ci_runners).length;
   }, [fleet]);
+
+  /**
+   * Fleet-level headline: the TIGHTEST volume anywhere in the fleet — the
+   * number that actually predicts the next "0 bytes free" incident. Never
+   * renders `0 B` and never renders green without a reading behind it.
+   *
+   * The two no-number cases are LABELLED DIFFERENTLY, because this badge is the
+   * first thing an operator looks at and they are different facts: "not read"
+   * (the fleet-volumes read did not answer — says nothing about any disk) vs
+   * "none reported" (the read answered, and no device has telemetry yet).
+   * Collapsing both into "unknown" is the same conflation the parse layer was
+   * fixed for.
+   */
+  const worstFreeVolume = useMemo(() => tightestVolume(volumes), [volumes]);
+  const worstSeverity = worstFreeVolume
+    ? volumeSeverity(worstFreeVolume.free_bytes)
+    : null;
+  const volumesRead = volumes.state === "ok";
+  /**
+   * Set when the response was only PARTLY readable. The rows that were dropped
+   * named no device, so they cannot be attributed to a machine — which means
+   * the "no telemetry" labels on the cards below are unreliable for this
+   * refresh, and the page has to say so where the operator will see it rather
+   * than silently under-reporting.
+   */
+  const volumesWarning = volumesReliabilityWarning(volumes);
 
   const runningTasks: RunnerTaskRun[] = useMemo(
     () =>
@@ -328,6 +450,28 @@ export function FleetOverview() {
         }
       >
         <div className="space-y-6">
+          {/* A PARTLY readable fleet-volumes response. This sits ABOVE the
+              cards, not in a footnote, because it changes how the cards below
+              must be read: the skipped rows named no device, so any machine
+              shown without telemetry may in fact have reported. */}
+          {volumesWarning && (
+            <div
+              className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
+              role="status"
+              data-operations-volumes-partial
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  Disk telemetry only partly readable
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {volumesWarning}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Machine cards grid */}
           {isEmpty ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
@@ -393,6 +537,28 @@ export function FleetOverview() {
                 variant={activeCiRunners > 0 ? "success" : "outline"}
               />
             )}
+            <StatBadge
+              icon={HardDrive}
+              label="Tightest volume"
+              value={
+                worstFreeVolume
+                  ? `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
+                  : !volumesRead
+                    ? "not read"
+                    : volumesWarning
+                      ? "partial read"
+                      : "none reported"
+              }
+              variant={
+                worstSeverity === "critical"
+                  ? "destructive"
+                  : worstSeverity === "warn"
+                    ? "warning"
+                    : worstSeverity === "ok"
+                      ? "success"
+                      : "outline"
+              }
+            />
 
             {/* Refresh indicator */}
             <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">

@@ -17,11 +17,22 @@ import {
   Circle,
   Pencil,
   Loader2,
+  HardDrive,
+  HelpCircle,
 } from "lucide-react";
+import type { Runner } from "@qontinui/shared-types";
 import { httpClient } from "@/services/service-factory";
-import { machineRenameUrl, relativeTime } from "./utils";
+import {
+  formatBytes,
+  machineRenameUrl,
+  percentFree,
+  readingAgeMs,
+  relativeTime,
+  VOLUME_STALE_AFTER_MS,
+  volumeSeverity,
+} from "./utils";
 import { CiRunnerBadge } from "./CiRunnerBadge";
-import type { MachineGroup } from "./types";
+import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 interface MachineCardProps {
   machine: MachineGroup;
@@ -54,28 +65,236 @@ function osBadgeVariant(os: string): "default" | "secondary" | "outline" {
   return "outline";
 }
 
+/**
+ * The three states a runner's health can be in.
+ *
+ * `unknown` is the state this dot GREW in disk-monitoring Phase 1 (plan
+ * `2026-08-07-product-disk-monitoring-and-cleanup.md` step 11). The dot was
+ * binary before, which meant a runner that had never reported rendered as the
+ * same red as one that reported a problem — a read that failed and a
+ * population that is genuinely bad must never render the same
+ * (`silent-empty-is-unknown`).
+ */
+export type RunnerHealthState = "healthy" | "unhealthy" | "unknown";
+
+/**
+ * Classify a runner for {@link HealthDot}.
+ *
+ * A runner that has NEVER heartbeated is `unknown`, not `unhealthy`: nothing
+ * has been measured about it. Likewise an unrecognised/absent `derivedStatus`
+ * — an unreadable status is an unknown one, and must not be downgraded into a
+ * verdict the data does not support.
+ */
+export function runnerHealthState(runner: Runner): RunnerHealthState {
+  const status = runner.derivedStatus as string | null | undefined;
+  if (status === "healthy") return "healthy";
+  if (!runner.lastHeartbeat) return "unknown";
+  if (!status || status === "unknown") return "unknown";
+  return "unhealthy";
+}
+
 function HealthDot({
-  healthy,
+  state,
   heartbeat,
 }: {
-  healthy: boolean;
+  state: RunnerHealthState;
   heartbeat: string | null;
 }) {
-  const color = healthy ? "text-green-500" : "text-red-500";
-  const label = healthy
-    ? `Healthy -- last seen ${relativeTime(heartbeat)}`
-    : `Unhealthy -- last seen ${relativeTime(heartbeat)}`;
+  // The unknown state is distinguished by SHAPE as well as colour — a hollow
+  // ring rather than a filled dot — so it is not lost to a red/grey confusion
+  // or to a monochrome/colour-blind rendering.
+  const className =
+    state === "healthy"
+      ? "h-3 w-3 fill-current text-green-500"
+      : state === "unhealthy"
+        ? "h-3 w-3 fill-current text-red-500"
+        : "h-3 w-3 text-muted-foreground";
+
+  const label =
+    state === "healthy"
+      ? `Healthy -- last seen ${relativeTime(heartbeat)}`
+      : state === "unhealthy"
+        ? `Unhealthy -- last seen ${relativeTime(heartbeat)}`
+        : heartbeat
+          ? `Unknown -- this runner's health has not been determined ` +
+            `(last seen ${relativeTime(heartbeat)}). This is NOT the same as ` +
+            `unhealthy: nothing has reported a problem, and nothing has ` +
+            `reported health either.`
+          : `Unknown -- this runner has NEVER reported. This is NOT the same ` +
+            `as unhealthy: no health telemetry has ever been received from it.`;
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Circle
-          className={`h-3 w-3 fill-current ${color}`}
+          className={className}
           aria-label={label}
+          data-operations-health-dot={state}
         />
       </TooltipTrigger>
-      <TooltipContent side="top">{label}</TooltipContent>
+      <TooltipContent side="top" className="max-w-xs">
+        {label}
+      </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * Per-volume free-space rows — the disk-monitoring Phase 1 surface.
+ *
+ * Honesty rules this renders, all of them load-bearing (plan D10 / INV-D1):
+ *
+ * - **No telemetry ⇒ `UNKNOWN`.** Never `0`, never green. A device that has
+ *   never reported and a read that failed both render as UNKNOWN, each with
+ *   the reason it is unknown, and they are worded differently because they are
+ *   different facts.
+ * - **Stale telemetry renders its age** from coord's `observed_at` — the value
+ *   is still shown (hiding it would be indistinguishable from "no disks") with
+ *   a STALE marker so it is never mistaken for current.
+ * - **A number that could not be computed says so.** An unusable `total_bytes`
+ *   produces "unknown", not a 0 % bar.
+ */
+function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
+  return (
+    <div className="space-y-2">
+      {volumes.map((v, i) => {
+        const pct = percentFree(v.free_bytes, v.total_bytes);
+        const usable = pct !== null;
+        const ageMs = readingAgeMs(v.observed_at);
+        const stale = ageMs === null || ageMs > VOLUME_STALE_AFTER_MS;
+
+        // A free-space figure that did not arrive as a number has NO
+        // severity — `volumeSeverity` returns `null` for it rather than
+        // banding it green, which is precisely the fabricated-healthy render
+        // this feature exists to remove. It renders muted instead.
+        const severity = volumeSeverity(v.free_bytes);
+
+        const barColor =
+          severity === "critical"
+            ? "bg-red-500"
+            : severity === "warn"
+              ? "bg-amber-500"
+              : severity === "ok"
+                ? "bg-green-500"
+                : "bg-muted-foreground/40";
+        const textColor =
+          severity === "critical"
+            ? "text-red-500"
+            : severity === "warn"
+              ? "text-amber-600 dark:text-amber-500"
+              : severity === "ok"
+                ? "text-foreground"
+                : "text-muted-foreground";
+
+        // The volume name alone is NOT guaranteed unique: the tolerant flat
+        // parse groups by device, so a payload carrying the same volume twice
+        // for one device yields two rows here. A duplicate React key logs a
+        // warning and can mis-reconcile, so the index disambiguates.
+        return (
+          <div key={`${i}-${v.volume}`} data-operations-volume={v.volume}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-sm font-medium">{v.volume}</span>
+              <span className={`text-sm font-semibold ${textColor}`}>
+                {formatBytes(v.free_bytes)} free
+                <span className="text-muted-foreground font-normal">
+                  {" of "}
+                  {formatBytes(v.total_bytes)}
+                </span>
+              </span>
+            </div>
+
+            {/* Used/total bar. An unusable total renders no bar at all rather
+                than a misleading empty one. */}
+            {usable ? (
+              <div
+                className="mt-1 h-2 w-full rounded-full bg-muted overflow-hidden"
+                role="img"
+                aria-label={`${v.volume}: ${pct}% free`}
+              >
+                <div
+                  className={`h-full ${barColor}`}
+                  style={{ width: `${Math.min(100, Math.max(0, 100 - pct))}%` }}
+                />
+              </div>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground italic">
+                Capacity unknown -- coord reported no usable total for this
+                volume, so the percentage cannot be computed.
+              </p>
+            )}
+
+            <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px]">
+              <span className={usable ? textColor : "text-muted-foreground"}>
+                {usable ? `${pct}% free` : "percent free: unknown"}
+              </span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                {stale && (
+                  <Badge
+                    variant="outline"
+                    className="px-1 py-0 text-[9px] uppercase tracking-wide"
+                  >
+                    stale
+                  </Badge>
+                )}
+                {v.observed_at
+                  ? `measured ${relativeTime(v.observed_at)}`
+                  : "measurement time unknown"}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The UNKNOWN presentation — deliberately not a zero and not a blank. */
+function VolumesUnknown({
+  headline,
+  detail,
+}: {
+  headline: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5">
+      <div className="flex items-center gap-1.5">
+        <HelpCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500 shrink-0" />
+        <span className="text-sm font-semibold text-amber-600 dark:text-amber-500 uppercase tracking-wide">
+          Unknown
+        </span>
+        <span className="text-xs text-muted-foreground">-- {headline}</span>
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function DiskSection({ volumes }: { volumes: MachineVolumes }) {
+  return (
+    <div data-operations-machine-disk data-disk-state={volumes.state}>
+      <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <HardDrive className="h-3.5 w-3.5" />
+        Free disk space
+      </h4>
+      {volumes.state === "reported" ? (
+        <VolumeRows volumes={volumes.volumes} />
+      ) : volumes.state === "never_reported" ? (
+        <VolumesUnknown
+          headline="this device has never reported disk telemetry"
+          detail={
+            "The read succeeded and returned no volume rows for this device, " +
+            "so nothing has been measured yet. That is not zero free space " +
+            "and not a healthy disk -- it is an absence of measurement."
+          }
+        />
+      ) : (
+        <VolumesUnknown
+          headline="disk telemetry could not be read"
+          detail={volumes.reason}
+        />
+      )}
+    </div>
   );
 }
 
@@ -178,11 +397,60 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
     }
   };
 
-  // Determine overall machine health from derivedStatus
-  const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
+  // Determine overall machine health. This derives from `runnerHealthState`,
+  // the SAME classifier `HealthDot` uses — not from a second read of
+  // `derivedStatus`. When the two disagreed, a machine whose only runner had
+  // never heartbeated rendered a muted per-runner dot AND a solid red header
+  // ("No runners healthy"), and the eye lands on the header: the never-reported
+  // runner was announced as a problem by the louder of the two elements.
+  const healthyRunners = runners.filter(
+    (r) => runnerHealthState(r) === "healthy"
+  );
+  const unhealthyCount = runners.filter(
+    (r) => runnerHealthState(r) === "unhealthy"
+  ).length;
   const allHealthy =
     runners.length > 0 && healthyRunners.length === runners.length;
   const someHealthy = healthyRunners.length > 0;
+  // Nothing healthy AND nothing unhealthy: every runner is UNKNOWN. Absence of
+  // evidence is not evidence of a problem, so this is muted, never red.
+  const allUnknown = runners.length > 0 && !someHealthy && unhealthyCount === 0;
+
+  const headerHealth: RunnerHealthState | "empty" | "mixed" =
+    runners.length === 0
+      ? "empty"
+      : allHealthy
+        ? "healthy"
+        : someHealthy
+          ? "mixed"
+          : allUnknown
+            ? "unknown"
+            : "unhealthy";
+
+  const headerHealthClass =
+    headerHealth === "healthy"
+      ? "bg-green-500"
+      : headerHealth === "mixed"
+        ? "bg-yellow-500"
+        : headerHealth === "unhealthy"
+          ? "bg-red-500"
+          : "bg-muted-foreground/40";
+
+  const headerHealthLabel =
+    headerHealth === "empty"
+      ? "No runners reporting on this machine -- health unknown"
+      : headerHealth === "healthy"
+        ? "All runners healthy"
+        : headerHealth === "mixed"
+          ? "Some runners healthy"
+          : headerHealth === "unknown"
+            ? `Health unknown -- no runner on this machine has ever reported ` +
+              `its health. Never-reported is NOT unhealthy: nothing has ` +
+              `reported a problem, and nothing has reported health either.`
+            : unhealthyCount < runners.length
+              ? `No runners healthy -- ${unhealthyCount} of ${runners.length} ` +
+                `unhealthy, the rest have never reported`
+              : "No runners healthy";
 
   // Pick OS from first runner
   const os = runners[0]?.os ?? "unknown";
@@ -197,14 +465,14 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
       <CardHeader className="pb-0 py-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
+            {/* A machine with NO runners -- or only runners that have NEVER
+                reported -- has nothing to be unhealthy about: it renders muted
+                (unknown), not red. Same rule as `HealthDot`, and now the same
+                classifier: absence of evidence is not evidence of a problem. */}
             <div
-              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                allHealthy
-                  ? "bg-green-500"
-                  : someHealthy
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
-              }`}
+              className={`h-2.5 w-2.5 rounded-full shrink-0 ${headerHealthClass}`}
+              aria-label={headerHealthLabel}
+              data-operations-machine-health={headerHealth}
             />
             {editing ? (
               <Input
@@ -267,6 +535,12 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-3 pb-0">
+        {/* Free disk space (disk-monitoring Phase 1). Deliberately the FIRST
+            section on the card: Phase 0 measured 3.57 TB of reclaimable cargo
+            targets on a single box that had previously hit 0 bytes free, so
+            this is the headline number, not a footnote. */}
+        <DiskSection volumes={machine.volumes} />
+
         {/* Runner instances */}
         <div>
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
@@ -274,7 +548,7 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
           </h4>
           <div className="space-y-1.5">
             {runners.map((runner) => {
-              const isHealthy = runner.derivedStatus === "healthy";
+              const health = runnerHealthState(runner);
               return (
                 <div
                   key={runner.id}
@@ -282,7 +556,7 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <HealthDot
-                      healthy={isHealthy}
+                      state={health}
                       heartbeat={runner.lastHeartbeat ?? null}
                     />
                     {runner.port ? (
@@ -297,7 +571,7 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
                       variant="outline"
                       className="text-[10px] px-1.5 py-0"
                     >
-                      {runner.derivedStatus}
+                      {runner.derivedStatus ?? "unknown"}
                     </Badge>
                     <span className="text-[10px] text-muted-foreground">
                       {relativeTime(runner.lastHeartbeat ?? null)}

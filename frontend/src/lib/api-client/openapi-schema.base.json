@@ -78282,6 +78282,50 @@
         ]
       }
     },
+    "/api/v1/operations/devices/{device_id}/volumes": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/{device_id}/volumes`` (tenant-scoped).\n\nReturns the latest capacity snapshot per volume for ONE device \u2014 the\n``DISTINCT ON (volume)`` head of coord's append-only volume oplog.\nResponse shape is coord-authored and passed through untouched::\n\n    {\"device_id\": \"<uuid>\", \"volumes\": [\n        {\"volume\": \"D:\", \"total_bytes\": 4000787030016,\n         \"free_bytes\": 98923937792, \"observed_at\": \"<rfc3339>\"}, ...]}\n\nA device with no telemetry yields an EMPTY ``volumes`` list, which the\ncaller renders as UNKNOWN (plan D10). This route never invents a row and\nnever zero-fills \u2014 \"never reported\" and \"reported 0 bytes free\" are\ndifferent facts and must not render the same.\n\nNOTE: intentionally unwired in Phase 1 \u2014 the fleet read covers every\nmachine card, so no frontend caller exists yet. Phase 2 (per-device\ndrill-down) is its first consumer; this is not an accidentally-dead route.",
+        "operationId": "api_v1_operations_devices_device_id_volumes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Device Volumes Api V1 Operations Devices  Device Id  Volumes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/federation/reports": {
       "get": {
         "description": "List memory federation reports from coord (paginated, filterable).",
@@ -78987,6 +79031,28 @@
           }
         ],
         "summary": "Get All Tasks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/volumes": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/fleet/volumes`` (tenant-scoped).\n\nThe fleet-wide sibling of :func:`get_device_volumes`: the latest\ncapacity snapshot per ``(device, volume)`` across every device in the\ncaller's tenant, so the fleet dashboard can render one machine card per\ndevice without N per-device requests. Response shape is coord-authored::\n\n    {\"devices\": [{\"device_id\": \"<uuid>\", \"volumes\": [VolumeRow, ...]},\n                 ...], \"count\": <int>}\n\nDevices absent from the payload have NEVER reported volume telemetry.\nThat is UNKNOWN, not zero \u2014 see the section note above.",
+        "operationId": "api_v1_operations_fleet_volumes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Volumes Api V1 Operations Fleet Volumes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Volumes",
         "tags": [
           "operations"
         ]
