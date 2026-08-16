@@ -43,6 +43,15 @@ export type VolumesFetch =
       state: "ok";
       byDevice: Map<string, DeviceVolumes>;
       byHostname: Map<string, DeviceVolumes>;
+      /**
+       * Rows in the response that named NO device and were skipped.
+       *
+       * `> 0` means this read was only PARTLY readable, and — because the
+       * skipped rows named no device — any machine on the page could be one
+       * they belonged to. Every `never_reported` verdict from this fetch is
+       * therefore unreliable and must be downgraded to UNKNOWN.
+       */
+      skippedRows: number;
     }
   | { state: "unavailable"; reason: string };
 
@@ -89,10 +98,20 @@ export function toVolumeReading(raw: unknown): VolumeReading | null {
  * empty list is a positive claim that no device has ever reported. The count
  * is what lets {@link parseFleetVolumes} tell "nobody reported" apart from
  * "we could not read the answer".
+ *
+ * It counts ONLY the rows that named no device, because those are the ones
+ * that cannot be attributed. A row that named a device but carried no usable
+ * volume is recorded on THAT device's `skipped_rows` instead, which is a
+ * sharper answer than a fleet-wide caveat.
  */
 export interface FlatGroupResult {
   devices: DeviceVolumes[];
-  /** Rows the grouper could not turn into a `(device, volume)` reading. */
+  /**
+   * Rows that named NO device (non-record, or a missing/non-string
+   * `device_id`). UNATTRIBUTABLE: any machine on the page could be the one
+   * they belonged to, so their existence makes every `never_reported` verdict
+   * in this fetch unreliable.
+   */
   rejected: number;
 }
 
@@ -110,11 +129,6 @@ export function groupFlatRows(rows: unknown[]): FlatGroupResult {
       rejected++;
       continue;
     }
-    const reading = toVolumeReading(row);
-    if (!reading) {
-      rejected++;
-      continue;
-    }
     let entry = byDevice.get(deviceId);
     if (!entry) {
       entry = {
@@ -124,32 +138,54 @@ export function groupFlatRows(rows: unknown[]): FlatGroupResult {
       };
       byDevice.set(deviceId, entry);
     }
+    // The row NAMED this device, so a failure to read it is attributable: the
+    // device gets an entry with a skip recorded rather than being left out of
+    // the map entirely, where its absence would read as "never reported".
+    const reading = toVolumeReading(row);
+    if (!reading) {
+      entry.skipped_rows = (entry.skipped_rows ?? 0) + 1;
+      continue;
+    }
     entry.volumes.push(reading);
   }
   return { devices: Array.from(byDevice.values()), rejected };
 }
 
 /**
+ * The outcome of {@link parseFleetVolumes}.
+ *
+ * `skippedRows` rides along with a SUCCESSFUL parse because a partial payload
+ * is still worth showing — the fix for it is not to throw the readable half
+ * away, but to stop the UI making a positive claim it cannot support about the
+ * unreadable half. It counts only UNATTRIBUTABLE drops (rows that named no
+ * device); per-device drops live on that device's `skipped_rows`.
+ */
+export type FleetVolumesParse =
+  | { state: "parsed"; devices: DeviceVolumes[]; skippedRows: number }
+  | { state: "unparseable" };
+
+/**
  * Decide what a flat row list means.
  *
- * A non-empty row list that produced ZERO usable devices is UNPARSEABLE
- * (`null`), never an empty fleet: the payload said something, and we failed to
- * read it. Returning `[]` there would render every machine as
- * `never_reported` — "no device has ever reported disk telemetry" — a positive
- * factual claim about the whole fleet derived from a payload that never
- * supported it. The expected trigger is an envelope mismatch on the day
- * coord's routes land (camelCase `deviceId`, a non-string `device_id`, or the
- * per-device `{device_id, volumes: [...]}` envelope whose rows carry no device
- * identity), and the honest diagnosis of that is "we could not parse the
- * answer", not "nobody reported".
+ * A non-empty row list that produced ZERO devices is UNPARSEABLE, never an
+ * empty fleet: the payload said something, and we failed to read it. Returning
+ * an empty device list there would render every machine as `never_reported` —
+ * "no device has ever reported disk telemetry" — a positive factual claim about
+ * the whole fleet derived from a payload that never supported it. The expected
+ * trigger is an envelope mismatch on the day coord's routes land (camelCase
+ * `deviceId`, a non-string `device_id`, or the per-device
+ * `{device_id, volumes: [...]}` envelope whose rows carry no device identity),
+ * and the honest diagnosis of that is "we could not parse the answer", not
+ * "nobody reported".
  */
-function fromFlatRows(rows: unknown[]): DeviceVolumes[] | null {
+function fromFlatRows(rows: unknown[]): FleetVolumesParse {
   // A present-but-empty array is a RECOGNISED shape: the read answered, and
   // the answer is that nothing has reported yet.
-  if (rows.length === 0) return [];
+  if (rows.length === 0)
+    return { state: "parsed", devices: [], skippedRows: 0 };
   const { devices, rejected } = groupFlatRows(rows);
-  if (devices.length === 0 && rejected > 0) return null;
-  return devices;
+  if (devices.length === 0 && rejected > 0) return { state: "unparseable" };
+  return { state: "parsed", devices, skippedRows: rejected };
 }
 
 /**
@@ -165,16 +201,20 @@ function fromFlatRows(rows: unknown[]): DeviceVolumes[] | null {
  *
  * Three outcomes, and the difference between them is the whole point:
  *
- * - `DeviceVolumes[]` (non-empty) — the read answered and named devices.
- * - `[]` — a RECOGNISED shape carrying an EMPTY population: `{devices: []}`,
- *   `{volumes: []}` or `[]`. A fleet where nobody has reported yet is a fact
- *   about the fleet, and reporting it as a parse failure would send an
- *   operator hunting a bug that does not exist.
- * - `null` — UNPARSEABLE: the payload matched no known shape, OR a non-empty
- *   row array yielded zero usable devices (see {@link fromFlatRows}). The
- *   caller renders UNKNOWN with the reason.
+ * - `parsed` with devices — the read answered and named devices. It may ALSO
+ *   carry `skippedRows > 0`, meaning the answer was only partly readable; the
+ *   readable half is kept (tolerance), and the caller must then refuse to
+ *   claim `never_reported` about anything (see {@link resolveMachineVolumes}).
+ * - `parsed` with NO devices and `skippedRows: 0` — a RECOGNISED shape
+ *   carrying an EMPTY population: `{devices: []}`, `{volumes: []}` or `[]`. A
+ *   fleet where nobody has reported yet is a fact about the fleet, and
+ *   reporting it as a parse failure would send an operator hunting a bug that
+ *   does not exist.
+ * - `unparseable` — the payload matched no known shape, OR a non-empty row
+ *   array yielded zero devices (see {@link fromFlatRows}). The caller renders
+ *   UNKNOWN with the reason.
  */
-export function parseFleetVolumes(payload: unknown): DeviceVolumes[] | null {
+export function parseFleetVolumes(payload: unknown): FleetVolumesParse {
   const container = isRecord(payload) ? payload : null;
   const grouped = Array.isArray(payload)
     ? payload
@@ -184,49 +224,120 @@ export function parseFleetVolumes(payload: unknown): DeviceVolumes[] | null {
 
   if (grouped) {
     const out: DeviceVolumes[] = [];
+    // Entries that NAMED a device but carried no `volumes` array. They are
+    // attributable, so they are kept as devices whose rows we could not read
+    // rather than dropped — but only once some other entry has proved this is
+    // the grouped envelope at all (otherwise a bare array of FLAT rows would
+    // be misread as a fleet of volume-less devices).
+    const unreadable: DeviceVolumes[] = [];
     let sawGrouped = false;
+    let unattributable = 0;
     for (const entry of grouped) {
-      if (!isRecord(entry)) continue;
-      const deviceId = entry.device_id;
-      if (typeof deviceId !== "string") continue;
-      if (Array.isArray(entry.volumes)) {
-        sawGrouped = true;
-        out.push({
-          device_id: deviceId,
-          hostname: typeof entry.hostname === "string" ? entry.hostname : null,
-          volumes: (entry.volumes as unknown[])
-            .map(toVolumeReading)
-            .filter((v): v is VolumeReading => v !== null),
-        });
+      if (!isRecord(entry)) {
+        unattributable++;
+        continue;
       }
+      const deviceId = entry.device_id;
+      if (typeof deviceId !== "string") {
+        unattributable++;
+        continue;
+      }
+      const hostname =
+        typeof entry.hostname === "string" ? entry.hostname : null;
+      if (!Array.isArray(entry.volumes)) {
+        unreadable.push({
+          device_id: deviceId,
+          hostname,
+          volumes: [],
+          skipped_rows: 1,
+        });
+        continue;
+      }
+      sawGrouped = true;
+      const rows = entry.volumes as unknown[];
+      const volumes = rows
+        .map(toVolumeReading)
+        .filter((v): v is VolumeReading => v !== null);
+      // Rows this device named but we could not read. Without the count, a
+      // device whose every row was unreadable arrives here as `volumes: []`
+      // and renders as "never reported" — the same fabricated claim, per
+      // device instead of per fleet.
+      const dropped = rows.length - volumes.length;
+      out.push({
+        device_id: deviceId,
+        hostname,
+        volumes,
+        ...(dropped > 0 ? { skipped_rows: dropped } : {}),
+      });
     }
-    if (sawGrouped) return out;
+    if (sawGrouped) {
+      return {
+        state: "parsed",
+        devices: [...out, ...unreadable],
+        skippedRows: unattributable,
+      };
+    }
     // A present-but-EMPTY `devices` array (or a bare `[]`) is the documented
     // grouped envelope for a fleet where nobody has reported yet -- a
     // recognised shape describing an empty population, NOT a parse failure.
-    if (grouped.length === 0) return [];
+    if (grouped.length === 0) {
+      return { state: "parsed", devices: [], skippedRows: 0 };
+    }
     // A bare array of FLAT rows falls through to the flat grouping.
     if (Array.isArray(payload)) return fromFlatRows(payload);
     // A non-empty `devices` array in which no entry carried both a string
     // `device_id` and a `volumes` array is unreadable, not empty.
-    return null;
+    return { state: "unparseable" };
   }
 
   if (container && Array.isArray(container.volumes)) {
     return fromFlatRows(container.volumes as unknown[]);
   }
-  return null;
+  return { state: "unparseable" };
 }
 
-/** Build the lookup maps a {@link VolumesFetch} `ok` state carries. */
-export function indexDeviceVolumes(entries: DeviceVolumes[]): VolumesFetch {
+/**
+ * Build the lookup maps a {@link VolumesFetch} `ok` state carries.
+ *
+ * `skippedRows` is the UNATTRIBUTABLE drop count from the parse. It defaults to
+ * zero only so hand-built test fixtures stay terse — production callers pass
+ * the parse's own number, because dropping it on the floor here would restore
+ * the exact defect it exists to prevent.
+ */
+export function indexDeviceVolumes(
+  entries: DeviceVolumes[],
+  skippedRows = 0
+): VolumesFetch {
   const byDevice = new Map<string, DeviceVolumes>();
   const byHostname = new Map<string, DeviceVolumes>();
   for (const entry of entries) {
     byDevice.set(entry.device_id, entry);
     if (entry.hostname) byHostname.set(entry.hostname, entry);
   }
-  return { state: "ok", byDevice, byHostname };
+  return { state: "ok", byDevice, byHostname, skippedRows };
+}
+
+/**
+ * The fleet-level warning for a PARTLY readable response, or `null` when the
+ * read was whole.
+ *
+ * This is not a footnote. The skipped rows named no device, so they could have
+ * belonged to any machine on the page — which makes every "never reported"
+ * label in this render a claim the data does not support. The text says that
+ * outright rather than leaving the operator to infer it.
+ */
+export function volumesReliabilityWarning(
+  fetched: VolumesFetch
+): string | null {
+  if (fetched.state !== "ok" || fetched.skippedRows === 0) return null;
+  const n = fetched.skippedRows;
+  return (
+    `${n} row${n === 1 ? "" : "s"} in the fleet-volumes response named no ` +
+    `device and could not be attributed, so this read is only PARTLY ` +
+    `readable. Disk telemetry shown below is real, but the machines marked ` +
+    `as having no telemetry are UNRELIABLE for this refresh -- some of them ` +
+    `may have reported in the rows that were skipped.`
+  );
 }
 
 /**
@@ -250,6 +361,17 @@ export function resolveMachineVolumes(
     (deviceId ? fetched.byDevice.get(deviceId) : undefined) ??
     fetched.byHostname.get(hostname);
 
+  // A partly-readable response cannot support `never_reported` about ANY
+  // machine: the rows it dropped named no device, so one of them may well have
+  // been this machine's. The readable half is still shown (tolerance) -- what
+  // is withdrawn is the claim about the unreadable half.
+  const partial = fetched.skippedRows > 0;
+  const partialReason =
+    `The fleet-volumes read was only PARTLY readable: ${fetched.skippedRows} ` +
+    `row${fetched.skippedRows === 1 ? "" : "s"} named no device and had to be ` +
+    `skipped, and any of them could have been this machine's. So this is NOT ` +
+    `"never reported" -- it is "we could not read the whole answer".`;
+
   if (!entry) {
     if (!deviceId) {
       return {
@@ -261,9 +383,24 @@ export function resolveMachineVolumes(
           `machine could not be matched to a device.`,
       };
     }
+    if (partial) return { state: "unknown", reason: partialReason };
     return { state: "never_reported", deviceId };
   }
   if (entry.volumes.length === 0) {
+    // Attributed drops: coord DID name this device, and we failed to read the
+    // rows it named. That is a fact about the read, not about the device.
+    const dropped = entry.skipped_rows ?? 0;
+    if (dropped > 0) {
+      return {
+        state: "unknown",
+        reason:
+          `Coord returned ${dropped} volume row${dropped === 1 ? "" : "s"} ` +
+          `for this device that could not be read, and no readable row ` +
+          `survived. The device DID report -- we could not parse what it ` +
+          `reported -- so this is not "never reported" and not zero.`,
+      };
+    }
+    if (partial) return { state: "unknown", reason: partialReason };
     return { state: "never_reported", deviceId: entry.device_id };
   }
   return {

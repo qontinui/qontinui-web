@@ -227,6 +227,29 @@ describe("MachineCard — free disk space", () => {
     expect(section?.textContent ?? "").not.toMatch(/never reported/i);
   });
 
+  it("renders the PARTIAL-read reason without any never-reported claim", () => {
+    // The per-card half of the partly-readable-response fix: a machine the
+    // skipped rows might have covered gets `unknown` carrying the read's
+    // reason, and the card must not word that as a fact about the device.
+    const { container, getByText } = renderCard(
+      baseGroup({
+        volumes: {
+          state: "unknown",
+          reason:
+            "The fleet-volumes read was only PARTLY readable: 2 rows named " +
+            "no device and had to be skipped, and any of them could have " +
+            'been this machine\'s. So this is NOT "never reported" -- it is ' +
+            '"we could not read the whole answer".',
+        },
+      })
+    );
+    const section = container.querySelector("[data-operations-machine-disk]");
+    expect(section?.getAttribute("data-disk-state")).toBe("unknown");
+    expect(getByText(/only PARTLY readable/)).not.toBeNull();
+    expect(section?.textContent ?? "").not.toMatch(/0 B|0 GiB|0% free/);
+    expect(section?.querySelector(".bg-green-500")).toBeNull();
+  });
+
   it("never renders a non-numeric free-space figure as green", () => {
     const { container, getByText } = renderCard(
       baseGroup({

@@ -6,9 +6,10 @@ import {
   resolveMachineVolumes,
   tightestVolume,
   toVolumeReading,
+  volumesReliabilityWarning,
   VOLUMES_NOT_YET_READ,
 } from "./fleetVolumes";
-import type { DeviceStatus } from "./types";
+import type { DeviceStatus, DeviceVolumes } from "./types";
 
 /**
  * Disk monitoring Phase 1 (plan
@@ -20,6 +21,18 @@ import type { DeviceStatus } from "./types";
  */
 
 const DEVICE = "11111111-1111-1111-1111-111111111111";
+
+/**
+ * The devices a payload parsed to, or `null` when it was unparseable.
+ *
+ * Most assertions below care only about that distinction; the tests that care
+ * about the PARTIAL case call `parseFleetVolumes` directly and read
+ * `skippedRows`.
+ */
+function devicesOf(payload: unknown): DeviceVolumes[] | null {
+  const parsed = parseFleetVolumes(payload);
+  return parsed.state === "parsed" ? parsed.devices : null;
+}
 
 function activity(deviceId: string): DeviceStatus {
   return {
@@ -37,7 +50,7 @@ function activity(deviceId: string): DeviceStatus {
 
 describe("parseFleetVolumes", () => {
   it("parses the grouped envelope", () => {
-    const parsed = parseFleetVolumes({
+    const parsed = devicesOf({
       devices: [
         {
           device_id: DEVICE,
@@ -71,7 +84,7 @@ describe("parseFleetVolumes", () => {
   });
 
   it("parses the flat oplog envelope and groups by device", () => {
-    const parsed = parseFleetVolumes({
+    const parsed = devicesOf({
       volumes: [
         { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
         { device_id: DEVICE, volume: "D:", total_bytes: 4, free_bytes: 3 },
@@ -82,11 +95,9 @@ describe("parseFleetVolumes", () => {
   });
 
   it("parses a bare array in either shape", () => {
+    expect(devicesOf([{ device_id: DEVICE, volumes: [] }])).toHaveLength(1);
     expect(
-      parseFleetVolumes([{ device_id: DEVICE, volumes: [] }])
-    ).toHaveLength(1);
-    expect(
-      parseFleetVolumes([
+      devicesOf([
         { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
       ])
     ).toHaveLength(1);
@@ -95,9 +106,9 @@ describe("parseFleetVolumes", () => {
   it("returns null — NOT an empty list — for an unrecognized payload", () => {
     // The distinction is the whole point: an empty list would render as "no
     // device has any disk", which is a claim the payload does not support.
-    expect(parseFleetVolumes({ unexpected: true })).toBeNull();
-    expect(parseFleetVolumes("nope")).toBeNull();
-    expect(parseFleetVolumes(null)).toBeNull();
+    expect(devicesOf({ unexpected: true })).toBeNull();
+    expect(devicesOf("nope")).toBeNull();
+    expect(devicesOf(null)).toBeNull();
   });
 
   // -- W2: a RECOGNISED shape carrying an empty population ------------------
@@ -110,16 +121,16 @@ describe("parseFleetVolumes", () => {
   // classifies as a failed read in one serialization and a device fact in
   // another.
   it("treats an EMPTY grouped envelope as a recognised, empty fleet", () => {
-    expect(parseFleetVolumes({ devices: [], count: 0 })).toEqual([]);
-    expect(parseFleetVolumes({ devices: [] })).toEqual([]);
+    expect(devicesOf({ devices: [], count: 0 })).toEqual([]);
+    expect(devicesOf({ devices: [] })).toEqual([]);
   });
 
   it("treats an EMPTY flat envelope as a recognised, empty fleet", () => {
-    expect(parseFleetVolumes({ volumes: [] })).toEqual([]);
+    expect(devicesOf({ volumes: [] })).toEqual([]);
   });
 
   it("treats a bare empty array as a recognised, empty fleet", () => {
-    expect(parseFleetVolumes([])).toEqual([]);
+    expect(devicesOf([])).toEqual([]);
   });
 
   // -- W1: a non-empty payload that yields no devices is UNPARSEABLE --------
@@ -132,7 +143,7 @@ describe("parseFleetVolumes", () => {
   // written, an envelope mismatch on integration day is the EXPECTED case.
   it("returns null — not an empty fleet — for camelCase flat rows", () => {
     expect(
-      parseFleetVolumes({
+      devicesOf({
         volumes: [
           { deviceId: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
         ],
@@ -146,7 +157,7 @@ describe("parseFleetVolumes", () => {
     // has ever reported" instead of "we could not parse the answer" is the
     // exact inversion this test forbids.
     expect(
-      parseFleetVolumes({
+      devicesOf({
         device_id: DEVICE,
         volumes: [
           { volume: "C:", total_bytes: 2, free_bytes: 1 },
@@ -158,14 +169,14 @@ describe("parseFleetVolumes", () => {
 
   it("returns null when device_id is serialized as a non-string", () => {
     expect(
-      parseFleetVolumes({
+      devicesOf({
         volumes: [
           { device_id: 42, volume: "C:", total_bytes: 2, free_bytes: 1 },
         ],
       })
     ).toBeNull();
     expect(
-      parseFleetVolumes({
+      devicesOf({
         volumes: [
           { device_id: null, volume: "C:", total_bytes: 2, free_bytes: 1 },
         ],
@@ -175,20 +186,20 @@ describe("parseFleetVolumes", () => {
 
   it("returns null for a bare array of rows that name no device", () => {
     expect(
-      parseFleetVolumes([{ volume: "C:", total_bytes: 2, free_bytes: 1 }])
+      devicesOf([{ volume: "C:", total_bytes: 2, free_bytes: 1 }])
     ).toBeNull();
   });
 
   it("returns null for a non-empty devices array with no usable entry", () => {
-    expect(parseFleetVolumes({ devices: [{ deviceId: DEVICE }] })).toBeNull();
+    expect(devicesOf({ devices: [{ deviceId: DEVICE }] })).toBeNull();
     expect(
-      parseFleetVolumes({ devices: [{ device_id: DEVICE }], count: 1 })
+      devicesOf({ devices: [{ device_id: DEVICE }], count: 1 })
     ).toBeNull();
   });
 
   it("still parses a payload where SOME rows are usable", () => {
     // Tolerance is preserved: a partially-readable payload is not thrown away.
-    const parsed = parseFleetVolumes({
+    const parsed = devicesOf({
       volumes: [
         { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
         { deviceId: DEVICE, volume: "Z:", total_bytes: 2, free_bytes: 1 },
@@ -196,6 +207,74 @@ describe("parseFleetVolumes", () => {
     });
     expect(parsed).toHaveLength(1);
     expect(parsed?.[0].volumes.map((v) => v.volume)).toEqual(["C:"]);
+  });
+
+  // -- W1 residual: a PARTIALLY readable payload -----------------------------
+  //
+  // Dropping the unreadable rows and keeping the rest is right (partial data is
+  // worth showing) — but it silently shrinks the device list, and every device
+  // that fell out then renders `never_reported`. That is the SAME fabricated
+  // claim W1 was raised for, just narrower. So the parse now reports what it
+  // skipped, and the count travels with the successful result.
+  it("reports unattributable skipped rows alongside the readable half", () => {
+    const parsed = parseFleetVolumes({
+      volumes: [
+        { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
+        { deviceId: DEVICE, volume: "Z:", total_bytes: 2, free_bytes: 1 },
+        { volume: "Y:", total_bytes: 2, free_bytes: 1 },
+      ],
+    });
+    expect(parsed.state).toBe("parsed");
+    expect(parsed.state === "parsed" && parsed.devices).toHaveLength(1);
+    expect(parsed.state === "parsed" && parsed.skippedRows).toBe(2);
+  });
+
+  it("attributes a device's OWN unreadable rows to that device", () => {
+    // These rows named the device, so the drop is attributable: the device is
+    // kept with the drop recorded, rather than vanishing from the map where
+    // its absence would read as "never reported".
+    const parsed = parseFleetVolumes({
+      devices: [
+        { device_id: DEVICE, hostname: "box-1", volumes: [{ nope: true }, {}] },
+      ],
+    });
+    expect(parsed.state === "parsed" && parsed.skippedRows).toBe(0);
+    const devices = parsed.state === "parsed" ? parsed.devices : [];
+    expect(devices).toHaveLength(1);
+    expect(devices[0].volumes).toEqual([]);
+    expect(devices[0].skipped_rows).toBe(2);
+  });
+
+  it("keeps a grouped entry with no volumes array as UNREADABLE, not absent", () => {
+    const OTHER = "22222222-2222-2222-2222-222222222222";
+    const parsed = parseFleetVolumes({
+      devices: [
+        {
+          device_id: DEVICE,
+          volumes: [
+            { volume: "C:", total_bytes: 2, free_bytes: 1, observed_at: null },
+          ],
+        },
+        { device_id: OTHER },
+      ],
+      count: 2,
+    });
+    const devices = parsed.state === "parsed" ? parsed.devices : [];
+    expect(devices).toHaveLength(2);
+    const other = devices.find((d) => d.device_id === OTHER);
+    expect(other?.volumes).toEqual([]);
+    expect(other?.skipped_rows).toBe(1);
+  });
+
+  it("attributes a flat row that named a device but no usable volume", () => {
+    const { devices, rejected } = groupFlatRows([
+      { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
+      { device_id: DEVICE, total_bytes: 9 },
+    ]);
+    expect(rejected).toBe(0);
+    expect(devices).toHaveLength(1);
+    expect(devices[0].skipped_rows).toBe(1);
+    expect(devices[0].volumes.map((v) => v.volume)).toEqual(["C:"]);
   });
 
   it("counts rejected rows so an empty result can be told from a failed one", () => {
@@ -303,6 +382,129 @@ describe("resolveMachineVolumes", () => {
       VOLUMES_NOT_YET_READ
     );
     expect(state.state).toBe("unknown");
+  });
+});
+
+/**
+ * The MIXED payload — the residual left by the first W1 fix.
+ *
+ * Some rows parse, some do not. The readable half must survive (partial data
+ * is worth showing), but the page must stop making a positive claim about the
+ * half it could not read: no machine may render a bare `never_reported`, and
+ * the unreliability must be stated where the operator sees it.
+ */
+describe("partially readable fleet-volumes payloads", () => {
+  const OTHER = "22222222-2222-2222-2222-222222222222";
+
+  // One good device, one row naming a device in an unreadable (camelCase)
+  // form, one row naming no device at all.
+  const MIXED = {
+    volumes: [
+      {
+        device_id: DEVICE,
+        hostname: "box-1",
+        volume: "D:",
+        total_bytes: 100,
+        free_bytes: 10,
+        observed_at: "2026-08-16T10:00:00Z",
+      },
+      { deviceId: OTHER, volume: "C:", total_bytes: 2, free_bytes: 1 },
+      { volume: "E:", total_bytes: 2, free_bytes: 1 },
+    ],
+  };
+
+  function fetchMixed() {
+    const parsed = parseFleetVolumes(MIXED);
+    if (parsed.state !== "parsed") throw new Error("expected a parsed payload");
+    return indexDeviceVolumes(parsed.devices, parsed.skippedRows);
+  }
+
+  it("keeps the readable device and renders its real volumes", () => {
+    const state = resolveMachineVolumes(
+      "box-1",
+      activity(DEVICE),
+      fetchMixed()
+    );
+    expect(state.state).toBe("reported");
+    expect(
+      state.state === "reported" && state.volumes.map((v) => v.volume)
+    ).toEqual(["D:"]);
+  });
+
+  it("does NOT claim never_reported for a device the skipped rows may cover", () => {
+    const state = resolveMachineVolumes("box-2", activity(OTHER), fetchMixed());
+    expect(state.state).not.toBe("never_reported");
+    expect(state.state).toBe("unknown");
+    expect(state.state === "unknown" && state.reason).toMatch(
+      /partly readable/i
+    );
+    expect(state.state === "unknown" && state.reason).toMatch(
+      /named no device/i
+    );
+  });
+
+  it("surfaces a fleet-level warning that the never-reported labels are unreliable", () => {
+    const warning = volumesReliabilityWarning(fetchMixed());
+    expect(warning).not.toBeNull();
+    expect(warning).toMatch(/2 rows/);
+    expect(warning).toMatch(/PARTLY/);
+    expect(warning).toMatch(/UNRELIABLE/);
+  });
+
+  it("says nothing when the read was WHOLE — no warning, never_reported stands", () => {
+    const parsed = parseFleetVolumes({
+      devices: [
+        {
+          device_id: DEVICE,
+          hostname: "box-1",
+          volumes: [
+            {
+              volume: "D:",
+              total_bytes: 100,
+              free_bytes: 10,
+              observed_at: null,
+            },
+          ],
+        },
+      ],
+      count: 1,
+    });
+    const fetched =
+      parsed.state === "parsed"
+        ? indexDeviceVolumes(parsed.devices, parsed.skippedRows)
+        : null;
+    expect(fetched).not.toBeNull();
+    expect(volumesReliabilityWarning(fetched!)).toBeNull();
+    // The honest never_reported verdict is NOT collateral damage of the fix:
+    // a whole read still supports it.
+    expect(resolveMachineVolumes("box-2", activity(OTHER), fetched!)).toEqual({
+      state: "never_reported",
+      deviceId: OTHER,
+    });
+  });
+
+  it("never warns about a read that did not answer at all", () => {
+    // That is `unavailable`, which already carries its own reason — the
+    // partial-read warning must not double-report it as a partial success.
+    expect(volumesReliabilityWarning(VOLUMES_NOT_YET_READ)).toBeNull();
+  });
+
+  it("blames the READ, not the device, when all of a device's own rows drop", () => {
+    const parsed = parseFleetVolumes({
+      devices: [
+        { device_id: DEVICE, hostname: "box-1", volumes: [{ bogus: true }] },
+      ],
+    });
+    const fetched =
+      parsed.state === "parsed"
+        ? indexDeviceVolumes(parsed.devices, parsed.skippedRows)
+        : null;
+    const state = resolveMachineVolumes("box-1", activity(DEVICE), fetched!);
+    expect(state.state).toBe("unknown");
+    expect(state.state === "unknown" && state.reason).toMatch(
+      /could not be read/i
+    );
+    expect(state.state === "unknown" && state.reason).toMatch(/DID report/);
   });
 });
 

@@ -635,6 +635,14 @@ export interface DeviceVolumes {
    */
   hostname?: string | null;
   volumes: VolumeReading[];
+  /**
+   * How many of THIS device's rows the parser could not read (absent when
+   * none were). Load-bearing, not diagnostics: a device whose every row was
+   * dropped ends up with `volumes: []`, which is indistinguishable from "this
+   * device has never reported" unless the drop is recorded. With this set,
+   * `resolveMachineVolumes` says UNKNOWN instead of making that claim.
+   */
+  skipped_rows?: number;
 }
 
 /**

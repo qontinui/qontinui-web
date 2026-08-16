@@ -13,6 +13,7 @@ import {
   WifiOff,
   Cog,
   HardDrive,
+  AlertTriangle,
 } from "lucide-react";
 import { MachineCard } from "./MachineCard";
 import { DeviceStatusTile } from "./DeviceStatusTile";
@@ -34,6 +35,7 @@ import {
   parseFleetVolumes,
   resolveMachineVolumes,
   tightestVolume,
+  volumesReliabilityWarning,
   VOLUMES_NOT_YET_READ,
   type VolumesFetch,
 } from "./fleetVolumes";
@@ -278,7 +280,7 @@ export function FleetOverview() {
         }
         if (payload !== undefined) {
           const parsed = parseFleetVolumes(payload);
-          if (parsed === null) {
+          if (parsed.state === "unparseable") {
             setVolumes({
               state: "unavailable",
               reason:
@@ -290,7 +292,10 @@ export function FleetOverview() {
                 "and reports itself as such.",
             });
           } else {
-            setVolumes(indexDeviceVolumes(parsed));
+            // A PARTLY readable response keeps its readable half (the parse's
+            // `skippedRows` rides along), and the render withdraws the
+            // never-reported claims instead of throwing the data away.
+            setVolumes(indexDeviceVolumes(parsed.devices, parsed.skippedRows));
           }
         }
       }
@@ -363,6 +368,14 @@ export function FleetOverview() {
     ? volumeSeverity(worstFreeVolume.free_bytes)
     : null;
   const volumesRead = volumes.state === "ok";
+  /**
+   * Set when the response was only PARTLY readable. The rows that were dropped
+   * named no device, so they cannot be attributed to a machine — which means
+   * the "no telemetry" labels on the cards below are unreliable for this
+   * refresh, and the page has to say so where the operator will see it rather
+   * than silently under-reporting.
+   */
+  const volumesWarning = volumesReliabilityWarning(volumes);
 
   const runningTasks: RunnerTaskRun[] = useMemo(
     () =>
@@ -432,6 +445,28 @@ export function FleetOverview() {
         }
       >
         <div className="space-y-6">
+          {/* A PARTLY readable fleet-volumes response. This sits ABOVE the
+              cards, not in a footnote, because it changes how the cards below
+              must be read: the skipped rows named no device, so any machine
+              shown without telemetry may in fact have reported. */}
+          {volumesWarning && (
+            <div
+              className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
+              role="status"
+              data-operations-volumes-partial
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                  Disk telemetry only partly readable
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {volumesWarning}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Machine cards grid */}
           {isEmpty ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
@@ -503,9 +538,11 @@ export function FleetOverview() {
               value={
                 worstFreeVolume
                   ? `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
-                  : volumesRead
-                    ? "none reported"
-                    : "not read"
+                  : !volumesRead
+                    ? "not read"
+                    : volumesWarning
+                      ? "partial read"
+                      : "none reported"
               }
               variant={
                 worstSeverity === "critical"
