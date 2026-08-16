@@ -371,6 +371,76 @@ async def list_versions(
     return list((await db.execute(stmt)).scalars().all())
 
 
+async def get_version(
+    db: AsyncSession, artifact_id: UUID, version_number: int
+) -> WorkArtifactVersion | None:
+    """One specific snapshot of an artifact, or ``None`` if it does not exist.
+
+    Plan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4 — the
+    export can address a historical ``version_number``, not just head. Callers
+    MUST scope the parent artifact to the caller's organization before calling
+    this: ``document_id`` alone is not an authorization boundary.
+    """
+    stmt = select(WorkArtifactVersion).where(
+        WorkArtifactVersion.document_id == artifact_id,
+        WorkArtifactVersion.version_number == version_number,
+    )
+    return (await db.execute(stmt)).scalars().first()
+
+
+async def list_for_export(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    kind: str | None = None,
+    status: str | None = None,
+    repo: str | None = None,
+    q: str | None = None,
+    since: datetime | None = None,
+    work_unit_slug: str | None = None,
+    limit: int,
+) -> tuple[list[WorkArtifact], bool]:
+    """Rows for a bulk export, plus whether ``limit`` truncated the result.
+
+    Plan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4.
+
+    Shares :func:`_apply_filters` with :func:`list_artifacts` on purpose, so
+    "export what I am looking at" is literally the same predicate as the list
+    the operator page renders — an export whose filter grammar drifted from the
+    list's would silently omit rows the caller believed were selected.
+
+    Returns ``(rows, truncated)``. The bound is reported rather than applied
+    silently: a bulk export that quietly stopped at N looks exactly like a
+    corpus of N, and the caller cannot tell the difference. The route turns
+    ``truncated`` into an explicit response header.
+    """
+    base = _apply_filters(
+        select(WorkArtifact),
+        org_id=org_id,
+        kind=kind,
+        status=status,
+        repo=repo,
+        q=q,
+        since=since,
+        work_unit_slug=work_unit_slug,
+    )
+    # Fetch one MORE than asked for: the presence of row limit+1 is what proves
+    # truncation. A separate COUNT would race the SELECT on a live corpus.
+    rows = list(
+        (
+            await db.execute(
+                base.order_by(
+                    WorkArtifact.kind, WorkArtifact.slug, WorkArtifact.id
+                ).limit(limit + 1)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    truncated = len(rows) > limit
+    return rows[:limit], truncated
+
+
 async def list_edges(
     db: AsyncSession, artifact_id: UUID
 ) -> list[tuple[WorkArtifactEdge, str, WorkArtifact | None]]:
