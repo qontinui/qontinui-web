@@ -41,6 +41,11 @@ WorkArtifactRelation = Literal[
     "authored_plan",
     "supersedes",
     "depends_on",
+    #: Work this artifact SURFACED but deliberately did not do. The only
+    #: relation whose ``to_id`` may be null — the follow-up has no artifact
+    #: yet, which is precisely what makes it worth recording. See
+    #: ``plan_library_03_spawned_followup``.
+    "spawned_followup",
 ]
 
 
@@ -99,12 +104,35 @@ class WorkArtifactKindPatch(BaseModel):
 
 
 class WorkArtifactEdgeCreate(BaseModel):
-    """Create one provenance edge out of (or into) the path artifact."""
+    """Create one provenance edge out of (or into) the path artifact.
+
+    For the four two-ended relations, supply EXACTLY ONE of ``to_id``
+    (outgoing) or ``from_id`` (incoming) — plus ``supersedes``, five in all.
+
+    For ``spawned_followup`` both may be omitted: that is the one-ended form,
+    ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
+    ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
+    and records a follow-up that already has an owner.
+    """
 
     to_id: UUID | None = None
     from_id: UUID | None = None
     relation: WorkArtifactRelation
+    #: Optional on a two-ended edge. **Required, and non-blank, on
+    #: ``spawned_followup``** — with no far end the note is the whole payload.
     note: str | None = None
+
+
+class WorkArtifactEdgeClaim(BaseModel):
+    """Claim an open ``spawned_followup`` by naming the artifact that owns it.
+
+    ``PATCH /plan-library/edges/{edge_id}``. The edge stops being an open
+    follow-up and becomes an ordinary two-ended provenance link, so it drops
+    out of ``GET /plan-library/followups`` while staying traceable from the
+    originating artifact's edge list.
+    """
+
+    to_id: UUID
 
 
 # ─────────────── coord-owned link block (shared) ───────────────
@@ -218,7 +246,10 @@ class WorkArtifactEdgeRead(BaseORMSchema):
 
     id: UUID
     from_id: UUID
-    to_id: UUID
+    #: ``None`` for an OPEN ``spawned_followup`` — the surfaced work has no
+    #: owning artifact yet. Every other relation always carries a target
+    #: (``ck_work_artifact_edges_open_target``).
+    to_id: UUID | None
     relation: str
     note: str | None
     created_by: str | None
@@ -436,6 +467,51 @@ class PlanCandidate(BaseModel):
     coord: CandidateCoordLink
 
 
+# ─────────────── open follow-ups (Phase 7) ───────────────
+#
+# The one-ended ``spawned_followup`` edge, read back. See
+# ``plan_library_03_spawned_followup`` for why the edge exists at all.
+
+
+class OpenFollowup(BaseModel):
+    """Work a plan SURFACED and deliberately did not do, with no owner yet.
+
+    The row is a ``spawned_followup`` edge whose ``to_id`` is still NULL. The
+    originating artifact is denormalized in so the queue renders without an
+    N+1 fetch, and ``note`` carries the finding itself — with no far end there
+    is nowhere else for it to live, which is why the schema requires it.
+    """
+
+    edge_id: UUID
+    #: The artifact that surfaced this — normally the plan that said
+    #: "worth its own plan" and moved on.
+    from_id: UUID
+    from_kind: str
+    from_slug: str
+    from_title: str
+    #: The finding. Non-blank by construction
+    #: (``ck_work_artifact_edges_followup_note``).
+    note: str
+    created_by: str | None = None
+    created_at: IsoDatetime
+    #: Days since the follow-up was recorded. An OLD unowned follow-up is the
+    #: interesting one — it is work the fleet has known about and not picked
+    #: up — which is also why the default ordering is oldest first.
+    age_days: float
+
+
+class OpenFollowupResponse(BaseModel):
+    """A page of open (unclaimed) follow-ups."""
+
+    items: list[OpenFollowup]
+    total: int
+    offset: int
+    limit: int
+    #: Named so a consumer can assert it did not silently change. Oldest first
+    #: is the useful default here, not an arbitrary one.
+    ordering: Literal["oldest_first"] = "oldest_first"
+
+
 class PlanCandidateResponse(BaseModel):
     """A page of candidates plus the honesty flags for the whole read."""
 
@@ -450,3 +526,14 @@ class PlanCandidateResponse(BaseModel):
     #: ``False`` when ANY coord read degraded on this page. Per-row detail is
     #: in each item's ``coord`` block.
     coord_available: bool = True
+    #: **Additive (Phase 7).** Work that has no plan yet — open
+    #: ``spawned_followup`` edges, oldest first, bounded by the same ``limit``
+    #: the candidate page uses. "What should I pick up next" is not answerable
+    #: from ``items`` alone: an unwritten follow-up is not an artifact, so it
+    #: can never appear there, and before this field it was invisible to the
+    #: only read whose job is answering that question. ``items`` keeps its
+    #: shape exactly.
+    open_followups: list[OpenFollowup] = Field(default_factory=list)
+    #: Unpaged count of open follow-ups, so a truncated ``open_followups``
+    #: never reads as the whole queue.
+    open_followup_total: int = 0

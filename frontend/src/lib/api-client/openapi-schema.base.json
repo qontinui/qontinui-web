@@ -28014,6 +28014,106 @@
         "title": "OnboardingConnectStateRequest",
         "type": "object"
       },
+      "OpenFollowup": {
+        "description": "Work a plan SURFACED and deliberately did not do, with no owner yet.\n\nThe row is a ``spawned_followup`` edge whose ``to_id`` is still NULL. The\noriginating artifact is denormalized in so the queue renders without an\nN+1 fetch, and ``note`` carries the finding itself \u2014 with no far end there\nis nowhere else for it to live, which is why the schema requires it.",
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "edge_id": {
+            "format": "uuid",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "from_kind": {
+            "title": "From Kind",
+            "type": "string"
+          },
+          "from_slug": {
+            "title": "From Slug",
+            "type": "string"
+          },
+          "from_title": {
+            "title": "From Title",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "from_id",
+          "from_kind",
+          "from_slug",
+          "from_title",
+          "note",
+          "created_at",
+          "age_days"
+        ],
+        "title": "OpenFollowup",
+        "type": "object"
+      },
+      "OpenFollowupResponse": {
+        "description": "A page of open (unclaimed) follow-ups.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpenFollowup"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "ordering": {
+            "const": "oldest_first",
+            "default": "oldest_first",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "OpenFollowupResponse",
+        "type": "object"
+      },
       "OrganizationCreate": {
         "description": "Schema for creating a new organization.",
         "properties": {
@@ -29989,6 +30089,18 @@
           "offset": {
             "title": "Offset",
             "type": "integer"
+          },
+          "open_followup_total": {
+            "default": 0,
+            "title": "Open Followup Total",
+            "type": "integer"
+          },
+          "open_followups": {
+            "items": {
+              "$ref": "#/components/schemas/OpenFollowup"
+            },
+            "title": "Open Followups",
+            "type": "array"
           },
           "ordering": {
             "const": "oldest_vetted_first",
@@ -48339,8 +48451,23 @@
         "title": "WorkArtifactDetail",
         "type": "object"
       },
+      "WorkArtifactEdgeClaim": {
+        "description": "Claim an open ``spawned_followup`` by naming the artifact that owns it.\n\n``PATCH /plan-library/edges/{edge_id}``. The edge stops being an open\nfollow-up and becomes an ordinary two-ended provenance link, so it drops\nout of ``GET /plan-library/followups`` while staying traceable from the\noriginating artifact's edge list.",
+        "properties": {
+          "to_id": {
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_id"
+        ],
+        "title": "WorkArtifactEdgeClaim",
+        "type": "object"
+      },
       "WorkArtifactEdgeCreate": {
-        "description": "Create one provenance edge out of (or into) the path artifact.",
+        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the four two-ended relations, supply EXACTLY ONE of ``to_id``\n(outgoing) or ``from_id`` (incoming) \u2014 plus ``supersedes``, five in all.\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
         "properties": {
           "from_id": {
             "anyOf": [
@@ -48371,7 +48498,8 @@
               "feeds",
               "authored_plan",
               "supersedes",
-              "depends_on"
+              "depends_on",
+              "spawned_followup"
             ],
             "title": "Relation",
             "type": "string"
@@ -48480,9 +48608,16 @@
             "type": "string"
           },
           "to_id": {
-            "format": "uuid",
-            "title": "To Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Id"
           }
         },
         "required": [
@@ -84733,7 +84868,7 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {
@@ -84898,6 +85033,68 @@
         ]
       }
     },
+    "/api/v1/plan-library/edges/{edge_id}": {
+      "patch": {
+        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\nFailure modes, each distinguished on purpose:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409** \u2014 already claimed. Claiming is NOT idempotent across different\n  targets: silently re-pointing the edge would erase the first claim with\n  no trace and leave two callers each believing they own the work. The\n  response names the current owner.",
+        "operationId": "api_v1_plan_library_edges_edge_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Edge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactEdgeClaim"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim an open follow-up by naming the artifact that owns it",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/export": {
       "get": {
         "description": "The bulk half of Phase 4 \u2014 the tenant's corpus back out as markdown.\n\nPlan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4, which\nexists to pay for design decision D2 (the DB is authoritative for reads).\nMaking the DB primary silently drops the **distributed durability** git gave\nfor free: git keeps N copies, a database keeps one plus whatever backups\nexist. Before this route there was no export path at ALL \u2014 zero\nmarkdown-emitting exporters across qontinui-coord and this backend. That is\nnot polish; it is the price of D2, and D5 says so explicitly.\n\n**Verbatim bodies, always.** Each entry is the stored body's UTF-8 bytes,\nunmodified \u2014 no re-rendered front matter, no normalized headings, no\ninjected status block. The status block is already IN the body (it is the\nmarkdown the scanner captured), and re-rendering one would fork the exported\ntext from the stored text. Fidelity is the whole product here, and it is\nexactly what Phase 4's gate measures: a plan exported and re-scanned must\ncome back with an unchanged ``content_sha256``. Any transformation, however\ncosmetic, fails that round trip.\n\n**Export only, never import.** This route reads the authoritative store and\nemits copies. It has no write half by design (Risk: \"export without\ndiscipline recreates the fork\") \u2014 a bidirectional git sync would rebuild\nprecisely the divergent-corpus problem this plan exists to close. Copies\nflow OUT of the authority; nothing flows back in except through the scanner.\n\n**No git push here.** D3 demotes git to an OPTIONAL per-tenant export\ntarget, so the archive is a plain download and **no tenant is required to\nown a repo**. A configured git target is a later, opt-in layer over this\nsame byte stream, not a precondition for getting your plans out.\n\nThe filter grammar is the list route's, verbatim (shared\n``_apply_filters``), so \"export what I am looking at\" cannot drift from what\nthe page showed.",
@@ -85047,6 +85244,71 @@
         ]
       }
     },
+    "/api/v1/plan-library/followups": {
+      "get": {
+        "description": "The queryable form of \"worth its own plan\".\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan\nroutinely surfaces work it deliberately does not do, and until this route\nthat lived ONLY as prose in the plan body \u2014 unrecoverable from the data, so\nnothing could answer \"show me follow-ups with no owning plan\". It is now a\n``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the\nread that lists them.\n\n**Open only.** A follow-up that has been claimed\n(``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended\nprovenance edge and drops out of this list \u2014 but it is not deleted, and it\nstays on the originating artifact's edge list, so the trail from \"this plan\nsurfaced it\" to \"that plan owns it\" survives the claim.\n\n**Oldest first**, and that is the useful default rather than an arbitrary\none: an old unowned follow-up is work the fleet has known about and\nrepeatedly not picked up. ``total`` is the unpaged count, so a bounded page\ncan never be mistaken for the whole queue.",
+        "operationId": "api_v1_plan_library_followups_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenFollowupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Follow-ups a plan identified but nobody owns yet",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/{artifact_id}": {
       "get": {
         "description": "One artifact, with everything the operator page's detail view renders.\n\nThe ``coord`` block is resolved over coord's HTTP API (never its Postgres\nschema \u2014 invariant 4) and carries its own honesty flags:\n\n* no ``work_unit_slug`` at all \u2192 ``unlinked``. A first-class normal state:\n  the link is optional and most artifacts have none.\n* a slug coord does not know \u2192 ``dangling``. ALSO normal \u2014 the link has no\n  FK by design and MAY dangle. It is never a 404 on this read.\n* coord unreachable \u2192 ``unavailable`` on both halves. UNKNOWN, not empty.\n\n``linked_prs_state`` is tracked separately from ``work_unit_state`` for a\nconcrete reason: today's deployed coord registers no HTTP route for the\ncitation LIST (it exists only as an MCP tool), so that half reads\n``unavailable`` even when the work unit resolves fine. Rendering an empty\nPR list there would assert something this read has not established.",
@@ -85113,7 +85375,7 @@
     },
     "/api/v1/plan-library/{artifact_id}/edges": {
       "post": {
-        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
+        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\nRe-posting the same note is idempotent on ``(from_id, relation, note)``,\nwhile a DIFFERENT note is a second follow-up \u2014 a plan may surface several.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
         "operationId": "api_v1_plan_library_artifact_id_edges_post",
         "parameters": [
           {

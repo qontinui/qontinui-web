@@ -17,7 +17,16 @@ the tables really land there rather than trusting that it works.
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,7 +64,39 @@ WORK_ARTIFACT_RELATIONS: tuple[str, ...] = (
     "authored_plan",
     "supersedes",
     "depends_on",
+    "spawned_followup",
 )
+
+#: The relation for work a plan SURFACED but deliberately did not do —
+#: "worth its own plan". Added by ``plan_library_03_spawned_followup``.
+#:
+#: It is the only relation whose ``to_id`` may be NULL, because the follow-up
+#: has no artifact yet: the whole point is to record identified-but-unowned
+#: work. ``depends_on`` is the near miss and points the WRONG WAY ("I need that
+#: first" rather than "I surfaced that"), which is why this is a new member of
+#: the vocabulary rather than a re-use.
+SPAWNED_FOLLOWUP_RELATION = "spawned_followup"
+
+#: Relations permitted to carry a NULL ``to_id``. Mirrors
+#: ``ck_work_artifact_edges_open_target``; the API checks it FIRST so a
+#: one-ended edge on the wrong relation is a 422 naming the relation rather
+#: than a bare IntegrityError 500.
+RELATIONS_ALLOWING_OPEN_TARGET: frozenset[str] = frozenset({SPAWNED_FOLLOWUP_RELATION})
+
+#: Whitespace stripped from a follow-up ``note`` before it is compared —
+#: by the blank-note CHECK, by the duplicate-guard index, and by the CRUD
+#: dedup lookup, all three of which MUST agree.
+#:
+#: ⚠️ Spelled out because one-argument ``btrim`` strips **spaces only**:
+#: ``btrim(E'\n\t ')`` is ``E'\n\t'``, not ``''``, so the obvious spelling of
+#: "must not be blank" admits a tab-and-newline note. The set matches what
+#: Python's ``str.strip()`` removes for ASCII, which is what the API check uses.
+NOTE_TRIM_CHARS = " \t\n\r\f\v"
+
+#: The SQL trim expression over ``note``, spelled once. Mirrors
+#: ``uq_work_artifact_edges_open_followup``'s indexed expression exactly, so the
+#: CRUD dedup lookup can be served by that index and shares its grain.
+NOTE_TRIM_SQL = r"btrim(note, E' \t\n\r\f\v')"
 
 #: The indexed full-text expression, spelled once. The API's ``?q=`` filter
 #: reuses this string verbatim so the predicate matches the index expression
@@ -311,7 +352,13 @@ class WorkArtifactVersion(Base):
 
 
 class WorkArtifactEdge(Base):
-    """A directed provenance relation between two work artifacts."""
+    """A directed provenance relation between two work artifacts.
+
+    Usually two-ended. The ONE exception is
+    :data:`SPAWNED_FOLLOWUP_RELATION`, whose ``to_id`` is NULL until somebody
+    writes the plan that owns the surfaced work — see
+    ``plan_library_03_spawned_followup``.
+    """
 
     __tablename__ = "work_artifact_edges"
     __table_args__ = (
@@ -324,6 +371,39 @@ class WorkArtifactEdge(Base):
         ),
         Index("ix_work_artifact_edges_from_id", "from_id"),
         Index("ix_work_artifact_edges_to_id", "to_id"),
+        # The duplicate guard for OPEN follow-ups. The unique index above
+        # cannot constrain them — SQL NULLs are distinct, so every null-target
+        # row is unique to it regardless of content. Two DIFFERENT follow-ups
+        # off one plan must stay legal (a plan can surface several); an
+        # identical re-post must not become a second queue entry. Keyed on the
+        # note, therefore, and PARTIAL so it can never touch the four shipped
+        # relations. Mirrors ``uq_work_artifact_edges_open_followup``.
+        Index(
+            "uq_work_artifact_edges_open_followup",
+            "from_id",
+            "relation",
+            text(NOTE_TRIM_SQL),
+            unique=True,
+            postgresql_where=text("to_id IS NULL AND relation = 'spawned_followup'"),
+        ),
+        # Mirrors ``ck_work_artifact_edges_open_target``. The four shipped
+        # relations keep the target guarantee they had before this revision:
+        # ``/candidates`` joins ``depends_on`` through ``to_id``, and a null
+        # target there would silently drop the row out of the join and report a
+        # blocked plan as unblocked.
+        CheckConstraint(
+            "relation = 'spawned_followup' OR to_id IS NOT NULL",
+            name="ck_work_artifact_edges_open_target",
+        ),
+        # Mirrors ``ck_work_artifact_edges_followup_note``. For an unowned
+        # follow-up there is no far end, so the note IS the payload; an empty
+        # one records that a plan surfaced *something* and leaves the queue
+        # holding a row nobody can act on.
+        CheckConstraint(
+            "relation <> 'spawned_followup' "
+            f"OR (note IS NOT NULL AND {NOTE_TRIM_SQL} <> '')",
+            name="ck_work_artifact_edges_followup_note",
+        ),
         {"schema": "agent"},
     )
 
@@ -340,14 +420,20 @@ class WorkArtifactEdge(Base):
         nullable=False,
     )
 
-    to_id: Mapped[UUID] = mapped_column(
+    #: NULL only for an OPEN ``spawned_followup`` — work the ``from_id`` plan
+    #: surfaced but deliberately did not do, with no owning artifact yet.
+    #: ``PATCH /plan-library/edges/{id}`` fills it in when someone claims it,
+    #: and the edge then reads like any other two-ended provenance link.
+    to_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("agent.work_artifacts.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
 
     relation: Mapped[str] = mapped_column(Text, nullable=False)
 
+    #: Optional colour on a normal edge; REQUIRED (and non-blank) on a
+    #: ``spawned_followup``, where it is the row's entire content.
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
