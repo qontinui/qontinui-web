@@ -87121,6 +87121,155 @@
         ]
       }
     },
+    "/api/v1/plan-library/export": {
+      "get": {
+        "description": "The bulk half of Phase 4 \u2014 the tenant's corpus back out as markdown.\n\nPlan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4, which\nexists to pay for design decision D2 (the DB is authoritative for reads).\nMaking the DB primary silently drops the **distributed durability** git gave\nfor free: git keeps N copies, a database keeps one plus whatever backups\nexist. Before this route there was no export path at ALL \u2014 zero\nmarkdown-emitting exporters across qontinui-coord and this backend. That is\nnot polish; it is the price of D2, and D5 says so explicitly.\n\n**Verbatim bodies, always.** Each entry is the stored body's UTF-8 bytes,\nunmodified \u2014 no re-rendered front matter, no normalized headings, no\ninjected status block. The status block is already IN the body (it is the\nmarkdown the scanner captured), and re-rendering one would fork the exported\ntext from the stored text. Fidelity is the whole product here, and it is\nexactly what Phase 4's gate measures: a plan exported and re-scanned must\ncome back with an unchanged ``content_sha256``. Any transformation, however\ncosmetic, fails that round trip.\n\n**Export only, never import.** This route reads the authoritative store and\nemits copies. It has no write half by design (Risk: \"export without\ndiscipline recreates the fork\") \u2014 a bidirectional git sync would rebuild\nprecisely the divergent-corpus problem this plan exists to close. Copies\nflow OUT of the authority; nothing flows back in except through the scanner.\n\n**No git push here.** D3 demotes git to an OPTIONAL per-tenant export\ntarget, so the archive is a plain download and **no tenant is required to\nown a repo**. A configured git target is a later, opt-in layer over this\nsame byte stream, not a precondition for getting your plans out.\n\nThe filter grammar is the list route's, verbatim (shared\n``_apply_filters``), so \"export what I am looking at\" cannot drift from what\nthe page showed.",
+        "operationId": "api_v1_plan_library_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_unit_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "A zip archive; one `<kind>/<slug>.md` per artifact."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk export the filtered corpus as a zip of verbatim .md files",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
     "/api/v1/plan-library/{artifact_id}": {
       "get": {
         "description": "One artifact, with everything the operator page's detail view renders.\n\nThe ``coord`` block is resolved over coord's HTTP API (never its Postgres\nschema \u2014 invariant 4) and carries its own honesty flags:\n\n* no ``work_unit_slug`` at all \u2192 ``unlinked``. A first-class normal state:\n  the link is optional and most artifacts have none.\n* a slug coord does not know \u2192 ``dangling``. ALSO normal \u2014 the link has no\n  FK by design and MAY dangle. It is never a 404 on this read.\n* coord unreachable \u2192 ``unavailable`` on both halves. UNKNOWN, not empty.\n\n``linked_prs_state`` is tracked separately from ``work_unit_state`` for a\nconcrete reason: today's deployed coord registers no HTTP route for the\ncitation LIST (it exists only as an MCP tool), so that half reads\n``unavailable`` even when the work unit resolves fine. Rendering an empty\nPR list there would assert something this read has not established.",
@@ -87242,6 +87391,76 @@
           }
         ],
         "summary": "Link this artifact to another (outgoing or incoming)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}/export": {
+      "get": {
+        "description": "One artifact, back out as the markdown it came from.\n\nPlan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4.\n\n**The body is emitted verbatim** \u2014 the stored UTF-8 bytes, with no\nre-rendering of any kind. This is what makes the phase's gate meaningful:\nexport a plan, feed it back through the runner scanner, and its\n``content_sha256`` must be unchanged. The digest is returned in\n``X-Content-Sha256`` so a caller can check the round trip without a second\nrequest.\n\n``version_number`` addresses the shipped version log\n(``agent.work_artifact_versions``, unique on\n``(document_id, version_number)``) rather than only head \u2014 the plan asks for\nexactly this, and it costs nothing because the snapshots are already\nrecorded.\n\n**Authorization is on the PARENT, not the version.** The artifact is\nresolved through the org-scoped read first, and only then is the version\nfetched by ``document_id``; ``document_id`` alone is not a boundary. A\nmissing artifact and a missing version are both 404, and the version 404\nnames the versions that DO exist rather than leaving the caller guessing.",
+        "operationId": "api_v1_plan_library_artifact_id_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Export this historical snapshot instead of head. Reuses the shipped `agent.work_artifact_versions` log \u2014 nothing new is recorded to make an old version exportable.",
+            "in": "query",
+            "name": "version_number",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Export this historical snapshot instead of head. Reuses the shipped `agent.work_artifact_versions` log \u2014 nothing new is recorded to make an old version exportable.",
+              "title": "Version Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {}
+            },
+            "description": "The stored body, byte-for-byte."
+          },
+          "404": {
+            "description": "No such artifact, or no such version_number."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One artifact as its verbatim markdown (head, or a given version)",
         "tags": [
           "plan-library"
         ]
