@@ -66,6 +66,9 @@ def _db_device(
     port: int,
     ws_connected: bool,
     derived_status: str = "offline",
+    ci_runner_labels: list[str] | None = None,
+    ci_runner_status: str | None = None,
+    capability_user_paired: bool = True,
 ) -> Any:
     """A minimal stand-in for a ``coord.devices`` ORM row.
 
@@ -73,6 +76,10 @@ def _db_device(
     below. A WS-connected device derives ``healthy`` unconditionally; a
     disconnected one with a stale/absent heartbeat derives from the stored
     ``derived_status`` column (liveness claims decay to ``offline``).
+
+    ``is_ci_runner`` mirrors ``Device.is_ci_runner`` rather than hardcoding
+    ``False``: the fleet endpoint categorises on it, so a stand-in that
+    always answered "workstation" would make the CI-runner split untestable.
     """
     now = datetime.now(UTC)
     return SimpleNamespace(
@@ -90,10 +97,36 @@ def _db_device(
         derived_status=derived_status,
         last_heartbeat=now if ws_connected else None,
         created_at=now,
-        ci_runner_status=None,
-        ci_runner_labels=None,
+        capability_user_paired=capability_user_paired,
+        ci_runner_status=ci_runner_status,
+        ci_runner_labels=ci_runner_labels,
         ci_runner_last_job_at=None,
+        is_ci_runner=(not capability_user_paired and ci_runner_labels is not None),
     )
+
+
+def _db_ci_runner(*, hostname: str, status: str = "busy") -> Any:
+    """A self-hosted CI runner row — infrastructure, not a workstation.
+
+    Registered programmatically by coord's ``ci_runner_registrar``, so it is
+    never paired to a human (``capability_user_paired = False``) and always
+    carries the GitHub label set.
+    """
+    return _db_device(
+        hostname=hostname,
+        port=0,
+        ws_connected=False,
+        capability_user_paired=False,
+        ci_runner_labels=["self-hosted", "Linux", "X64", "qontinui"],
+        ci_runner_status=status,
+    )
+
+
+def _empty_registry() -> Any:
+    """A fleet registry with no beacons — isolates DB-device categorisation."""
+    from app.services.dev_dashboard_service import FleetRegistry
+
+    return FleetRegistry()
 
 
 @pytest.fixture()
@@ -183,6 +216,132 @@ class TestFleetTotals:
         # Per-user machine display names are folded into the fleet read;
         # empty (no names saved) for this test.
         assert body["machine_display_names"] == {}
+
+        # No CI runners in this fixture — the category exists but is empty.
+        assert body["total_ci_runners"] == 0
+        assert "ci_runners" not in body
+
+    def test_ci_runners_are_categorised_not_counted_as_workstations(
+        self, client: TestClient
+    ) -> None:
+        """Self-hosted CI runners are infrastructure, not workstations.
+
+        They stay in the fleet (``ci_runners`` + ``total_ci_runners``) but must
+        not inflate ``total_runners`` / ``total_healthy`` or appear in the
+        ``runners`` list, which is what the Operations page renders as machines.
+        """
+        db_devices = [
+            _db_device(hostname="workstation", port=9876, ws_connected=True),
+            _db_ci_runner(hostname="spaceship-wsl"),
+            _db_ci_runner(hostname="msi-wsl"),
+        ]
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+                AsyncMock(return_value=db_devices),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.get_fleet_registry",
+                return_value=_empty_registry(),
+            ),
+        ):
+            resp = client.get(f"{API_PREFIX}/fleet")
+
+        assert resp.status_code == 200
+        body = resp.json()
+
+        # Only the workstation is a "runner".
+        assert [r["hostname"] for r in body["runners"]] == ["workstation"]
+        assert body["total_runners"] == 1
+        assert body["total_healthy"] == 1
+
+        # ...and both CI runners are present, in their own category.
+        assert body["total_ci_runners"] == 2
+        assert set(body["ci_runners"]) == {"spaceship-wsl", "msi-wsl"}
+        assert body["ci_runners"]["spaceship-wsl"]["status"] == "busy"
+        assert "self-hosted" in body["ci_runners"]["spaceship-wsl"]["labels"]
+
+    def test_ci_runner_predicate_ignores_ci_runner_status_default(
+        self, client: TestClient
+    ) -> None:
+        """A workstation is never miscategorised by ``ci_runner_status`` alone.
+
+        ``coord.devices.ci_runner_status`` is nullable *with*
+        ``DEFAULT 'offline'``, so an insert path that omits the column leaves a
+        non-NULL value on an ordinary workstation. The retired predicate
+        (``ci_runner_status is not None``) would have called that row CI
+        infrastructure; ``capability_user_paired``+``ci_runner_labels`` does not.
+        """
+        db_devices = [
+            _db_device(
+                hostname="workstation",
+                port=9876,
+                ws_connected=True,
+                # the column default leaking onto a paired workstation
+                ci_runner_status="offline",
+                ci_runner_labels=None,
+                capability_user_paired=True,
+            ),
+        ]
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+                AsyncMock(return_value=db_devices),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.get_fleet_registry",
+                return_value=_empty_registry(),
+            ),
+        ):
+            resp = client.get(f"{API_PREFIX}/fleet")
+
+        body = resp.json()
+        assert body["total_runners"] == 1
+        assert body["total_ci_runners"] == 0
+        assert "ci_runners" not in body
+
+    def test_paired_workstation_hosting_a_ci_runner_keeps_its_badge(
+        self, client: TestClient
+    ) -> None:
+        """Categorisation and CI-capability display are separate questions.
+
+        A paired workstation that also hosts a CI runner is still a
+        workstation — it stays in ``runners`` and is not counted as CI
+        infrastructure — but it must KEEP its per-host CI badge. Collapsing
+        the two predicates into one drops the badge, which is a regression.
+        """
+        db_devices = [
+            _db_device(
+                hostname="dual-role",
+                port=9876,
+                ws_connected=True,
+                capability_user_paired=True,
+                ci_runner_labels=["self-hosted", "X64"],
+                ci_runner_status="idle",
+            ),
+        ]
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.runner_crud.list_runners",
+                AsyncMock(return_value=db_devices),
+            ),
+            patch(
+                "app.api.v1.endpoints.operations.get_fleet_registry",
+                return_value=_empty_registry(),
+            ),
+        ):
+            resp = client.get(f"{API_PREFIX}/fleet")
+
+        body = resp.json()
+        # Still a workstation...
+        assert [r["hostname"] for r in body["runners"]] == ["dual-role"]
+        assert body["total_runners"] == 1
+        assert body["total_ci_runners"] == 0
+        # ...but the CI badge survives.
+        assert body["ci_runners"]["dual-role"]["status"] == "idle"
 
     def test_beacon_on_unowned_host_is_filtered(self, client: TestClient) -> None:
         """Cross-tenant regression guard: a beacon from a host the caller owns

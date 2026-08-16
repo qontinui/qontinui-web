@@ -364,15 +364,31 @@ async def get_fleet_status(
     (``frontend/src/components/operations/FleetOverview.tsx`` reads
     ``total_runners`` / ``total_healthy`` / ``total_running_tasks``):
 
-    * ``total_runners`` — every runner in the merged list (DB-paired +
-      heartbeat-only beacons).
+    * ``total_runners`` — every **workstation** in the merged list (DB-paired
+      + heartbeat-only beacons). Self-hosted CI runners are excluded; they
+      are counted by ``total_ci_runners`` instead.
     * ``total_healthy`` — merged-list entries whose ``derivedStatus`` is
       ``"healthy"`` (same staleness-gated derivation the list itself uses).
+    * ``total_ci_runners`` — self-hosted CI runners, categorised by
+      :attr:`app.models.device.Device.is_ci_runner`. These are live
+      infrastructure (registered by coord's ``ci_runner_registrar``), not
+      clutter and not workstations.
     * ``total_running_tasks`` — heartbeat-reported running-task counts from
       the beacon registry (no live fan-out to runners on this poll path;
       ``GET /fleet/tasks`` remains the live-fetch surface).
     """
-    runners = await runner_crud.list_runners(db, current_user.id)
+    all_devices = await runner_crud.list_runners(db, current_user.id)
+
+    # CI-runner categorisation. Self-hosted GitHub Actions runners are live
+    # infrastructure, not workstations — they are registered programmatically
+    # by coord's ``ci_runner_registrar`` and never paired to a human. Splitting
+    # them out here is what keeps them from inflating the workstation counts
+    # (``total_runners`` / ``total_healthy``) that the FleetOverview stat row
+    # renders. ``Device.is_ci_runner`` is the single definition of the
+    # predicate — do not re-derive it inline.
+    runners = [d for d in all_devices if not d.is_ci_runner]
+    ci_devices = [d for d in all_devices if d.is_ci_runner]
+
     wire_runners = [_runner_to_wire(r).model_dump(mode="json") for r in runners]
 
     registry = get_fleet_registry()
@@ -391,8 +407,12 @@ async def get_fleet_status(
     # on is not theirs to see. This is a hostname-match heuristic; the durable
     # fix is to stamp an authenticated owner on the heartbeat itself and scope
     # the registry by it (see follow-up bug note).
-    db_keys = {(r.hostname, r.port) for r in runners}
-    owned_hostnames = {r.hostname.lower() for r in runners if r.hostname}
+    # Ownership guard spans ALL the caller's devices, CI runners included: the
+    # categorisation above decides how a device is *presented*, never whether
+    # the caller owns the host. Narrowing this to workstations would stop a
+    # beacon on a CI-runner host from resolving as the caller's own.
+    db_keys = {(r.hostname, r.port) for r in all_devices}
+    owned_hostnames = {r.hostname.lower() for r in all_devices if r.hostname}
     for beacon in fleet_status.runners:
         if (beacon.hostname, beacon.port) in db_keys:
             continue
@@ -422,11 +442,24 @@ async def get_fleet_status(
             }
         )
 
-    # Build per-hostname CI runner info from coord.devices rows that
-    # have ci_runner_status set (Phase 4c self-hosted CI runners).
+    # Build per-hostname CI runner display info (Phase 4c self-hosted CI
+    # runners).
+    #
+    # NOTE this is deliberately a WIDER predicate than the categorisation
+    # above, because it answers a different question. ``is_ci_runner`` decides
+    # "is this row infrastructure or a workstation" — which list it belongs in.
+    # This map decides "does this host have CI capability worth showing" — the
+    # per-machine CI badge. A workstation that ALSO hosts a CI runner is still
+    # a workstation (so it stays in ``runners``), but it should keep its badge,
+    # which is why the two predicates must not be collapsed into one.
+    #
+    # It keys on ``ci_runner_labels`` rather than the retired
+    # ``ci_runner_status is not None``: the status column is nullable *with*
+    # ``DEFAULT 'offline'``, so it can be non-NULL on a device that has no CI
+    # runner at all. Labels only exist if GitHub registered one.
     ci_runners: dict[str, dict[str, Any]] = {}
-    for device in runners:
-        if device.ci_runner_status is not None and device.hostname:
+    for device in all_devices:
+        if device.ci_runner_labels is not None and device.hostname:
             ci_runners[device.hostname] = {
                 "status": device.ci_runner_status,
                 "labels": list(device.ci_runner_labels or []),
@@ -471,6 +504,10 @@ async def get_fleet_status(
         ),
         "total_running_tasks": owned_running_tasks,
         "total_claude_sessions": sum(len(s) for s in owned_claude_sessions.values()),
+        # CI infrastructure is counted separately from workstations — the
+        # total_runners/total_healthy pair above now describes workstations
+        # only, which is the point of the categorisation.
+        "total_ci_runners": len(ci_devices),
         "machine_display_names": machine_display_names,
     }
 

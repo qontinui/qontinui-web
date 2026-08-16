@@ -532,10 +532,17 @@ export interface FleetStatus {
    * hostname; grouping and React keys still use the hostname.
    */
   machine_display_names?: Record<string, string>;
+  /** Workstations only — self-hosted CI runners are counted separately. */
   total_runners: number;
   total_healthy: number;
   total_running_tasks: number;
   total_claude_sessions: number;
+  /**
+   * Self-hosted CI runners owned by this caller, categorised server-side by
+   * `Device.is_ci_runner`. Optional because a backend predating the
+   * categorisation omits it — read it as `?? 0`, never assume presence.
+   */
+  total_ci_runners?: number;
 }
 
 export interface RunnerTaskRun {
@@ -610,6 +617,18 @@ export interface MachineGroup {
    * when the machine does not have CI runner capability.
    */
   ciRunner?: CiRunnerInfo;
+  /**
+   * True when this group is CI **infrastructure** rather than a workstation
+   * — i.e. the host's only devices are self-hosted CI runners.
+   *
+   * The backend decides the category (`Device.is_ci_runner`, mirroring
+   * `capability_user_paired = false AND ci_runner_labels IS NOT NULL`) and
+   * excludes those devices from `FleetStatus.runners`, so a pure-CI host
+   * arrives here with an empty `runners` array and a populated `ciRunner`.
+   * A workstation that *also* hosts a CI runner keeps `false` — it is still
+   * a workstation, and it still renders in the machines section.
+   */
+  isCiInfrastructure?: boolean;
 }
 
 // ============================================================================
