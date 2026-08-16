@@ -157,18 +157,17 @@ function HealthDot({
 function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
   return (
     <div className="space-y-2">
-      {volumes.map((v) => {
+      {volumes.map((v, i) => {
         const pct = percentFree(v.free_bytes, v.total_bytes);
         const usable = pct !== null;
         const ageMs = readingAgeMs(v.observed_at);
         const stale = ageMs === null || ageMs > VOLUME_STALE_AFTER_MS;
 
         // A free-space figure that did not arrive as a number has NO
-        // severity — banding it would land it in the "ok" (green) arm by
-        // default, which is precisely the fabricated-healthy render this
-        // feature exists to remove. It renders muted instead.
-        const known = Number.isFinite(v.free_bytes);
-        const severity = known ? volumeSeverity(v.free_bytes) : null;
+        // severity — `volumeSeverity` returns `null` for it rather than
+        // banding it green, which is precisely the fabricated-healthy render
+        // this feature exists to remove. It renders muted instead.
+        const severity = volumeSeverity(v.free_bytes);
 
         const barColor =
           severity === "critical"
@@ -187,8 +186,12 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
                 ? "text-foreground"
                 : "text-muted-foreground";
 
+        // The volume name alone is NOT guaranteed unique: the tolerant flat
+        // parse groups by device, so a payload carrying the same volume twice
+        // for one device yields two rows here. A duplicate React key logs a
+        // warning and can mis-reconcile, so the index disambiguates.
         return (
-          <div key={v.volume} data-operations-volume={v.volume}>
+          <div key={`${i}-${v.volume}`} data-operations-volume={v.volume}>
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono text-sm font-medium">{v.volume}</span>
               <span className={`text-sm font-semibold ${textColor}`}>
@@ -246,7 +249,13 @@ function VolumeRows({ volumes }: { volumes: VolumeReading[] }) {
 }
 
 /** The UNKNOWN presentation — deliberately not a zero and not a blank. */
-function VolumesUnknown({ headline, detail }: { headline: string; detail: string }) {
+function VolumesUnknown({
+  headline,
+  detail,
+}: {
+  headline: string;
+  detail: string;
+}) {
   return (
     <div className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5">
       <div className="flex items-center gap-1.5">
@@ -388,11 +397,60 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
     }
   };
 
-  // Determine overall machine health from derivedStatus
-  const healthyRunners = runners.filter((r) => r.derivedStatus === "healthy");
+  // Determine overall machine health. This derives from `runnerHealthState`,
+  // the SAME classifier `HealthDot` uses — not from a second read of
+  // `derivedStatus`. When the two disagreed, a machine whose only runner had
+  // never heartbeated rendered a muted per-runner dot AND a solid red header
+  // ("No runners healthy"), and the eye lands on the header: the never-reported
+  // runner was announced as a problem by the louder of the two elements.
+  const healthyRunners = runners.filter(
+    (r) => runnerHealthState(r) === "healthy"
+  );
+  const unhealthyCount = runners.filter(
+    (r) => runnerHealthState(r) === "unhealthy"
+  ).length;
   const allHealthy =
     runners.length > 0 && healthyRunners.length === runners.length;
   const someHealthy = healthyRunners.length > 0;
+  // Nothing healthy AND nothing unhealthy: every runner is UNKNOWN. Absence of
+  // evidence is not evidence of a problem, so this is muted, never red.
+  const allUnknown = runners.length > 0 && !someHealthy && unhealthyCount === 0;
+
+  const headerHealth: RunnerHealthState | "empty" | "mixed" =
+    runners.length === 0
+      ? "empty"
+      : allHealthy
+        ? "healthy"
+        : someHealthy
+          ? "mixed"
+          : allUnknown
+            ? "unknown"
+            : "unhealthy";
+
+  const headerHealthClass =
+    headerHealth === "healthy"
+      ? "bg-green-500"
+      : headerHealth === "mixed"
+        ? "bg-yellow-500"
+        : headerHealth === "unhealthy"
+          ? "bg-red-500"
+          : "bg-muted-foreground/40";
+
+  const headerHealthLabel =
+    headerHealth === "empty"
+      ? "No runners reporting on this machine -- health unknown"
+      : headerHealth === "healthy"
+        ? "All runners healthy"
+        : headerHealth === "mixed"
+          ? "Some runners healthy"
+          : headerHealth === "unknown"
+            ? `Health unknown -- no runner on this machine has ever reported ` +
+              `its health. Never-reported is NOT unhealthy: nothing has ` +
+              `reported a problem, and nothing has reported health either.`
+            : unhealthyCount < runners.length
+              ? `No runners healthy -- ${unhealthyCount} of ${runners.length} ` +
+                `unhealthy, the rest have never reported`
+              : "No runners healthy";
 
   // Pick OS from first runner
   const os = runners[0]?.os ?? "unknown";
@@ -407,28 +465,14 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
       <CardHeader className="pb-0 py-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            {/* A machine with NO runners has nothing to be unhealthy about --
-                it renders muted (unknown), not red. Same rule as `HealthDot`:
-                absence of evidence is not evidence of a problem. */}
+            {/* A machine with NO runners -- or only runners that have NEVER
+                reported -- has nothing to be unhealthy about: it renders muted
+                (unknown), not red. Same rule as `HealthDot`, and now the same
+                classifier: absence of evidence is not evidence of a problem. */}
             <div
-              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                runners.length === 0
-                  ? "bg-muted-foreground/40"
-                  : allHealthy
-                    ? "bg-green-500"
-                    : someHealthy
-                      ? "bg-yellow-500"
-                      : "bg-red-500"
-              }`}
-              aria-label={
-                runners.length === 0
-                  ? "No runners reporting on this machine -- health unknown"
-                  : allHealthy
-                    ? "All runners healthy"
-                    : someHealthy
-                      ? "Some runners healthy"
-                      : "No runners healthy"
-              }
+              className={`h-2.5 w-2.5 rounded-full shrink-0 ${headerHealthClass}`}
+              aria-label={headerHealthLabel}
+              data-operations-machine-health={headerHealth}
             />
             {editing ? (
               <Input

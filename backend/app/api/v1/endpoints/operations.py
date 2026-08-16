@@ -3818,6 +3818,10 @@ async def get_device_volumes(
     caller renders as UNKNOWN (plan D10). This route never invents a row and
     never zero-fills — "never reported" and "reported 0 bytes free" are
     different facts and must not render the same.
+
+    NOTE: intentionally unwired in Phase 1 — the fleet read covers every
+    machine card, so no frontend caller exists yet. Phase 2 (per-device
+    drill-down) is its first consumer; this is not an accidentally-dead route.
     """
     return await _proxy_coord_get(
         f"/coord/devices/{device_id}/volumes", tenant_id=tenant_id

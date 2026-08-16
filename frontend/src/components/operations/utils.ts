@@ -482,7 +482,13 @@ export function formatStallAge(secs: number | null | undefined): string {
  */
 export const FLEET_VOLUMES_API = `${OPERATIONS_API}/fleet/volumes`;
 
-/** GET one device's latest volume snapshot (per-device sibling of the above). */
+/**
+ * GET one device's latest volume snapshot (per-device sibling of the above).
+ *
+ * NOTE: intentionally unwired in Phase 1 — the fleet read covers every card, so
+ * nothing calls this yet. Phase 2 (per-device drill-down) is its first
+ * consumer; it is not accidentally-dead code.
+ */
 export function deviceVolumesUrl(deviceId: string): string {
   return `${OPERATIONS_API}/devices/${encodeURIComponent(deviceId)}/volumes`;
 }
@@ -510,7 +516,19 @@ export const VOLUME_CRIT_FREE_BYTES = 25 * 1024 ** 3;
 /** Severity band for a volume's free space. */
 export type VolumeSeverity = "ok" | "warn" | "critical";
 
-export function volumeSeverity(freeBytes: number): VolumeSeverity {
+/**
+ * Band a volume's free space, or `null` when there is nothing to band.
+ *
+ * A non-finite input (`NaN` from a byte count that did not arrive as a number,
+ * `Infinity`) has NO severity. It must not fall through the `<` comparisons
+ * into the `"ok"` arm: both `NaN < CRIT` and `NaN < WARN` are false, so the
+ * naive form returns green — a fabricated "healthy" badge for a volume that was
+ * never measured, which is exactly the render this feature exists to remove.
+ * The hazard is fixed HERE rather than at each call site, because the next
+ * consumer of this shared helper is the one that forgets to guard.
+ */
+export function volumeSeverity(freeBytes: number): VolumeSeverity | null {
+  if (!Number.isFinite(freeBytes)) return null;
   if (freeBytes < VOLUME_CRIT_FREE_BYTES) return "critical";
   if (freeBytes < VOLUME_WARN_FREE_BYTES) return "warn";
   return "ok";
@@ -559,7 +577,9 @@ export function percentFree(
  * going negative — clock skew is not evidence of freshness, but it is also not
  * evidence of staleness.
  */
-export function readingAgeMs(observedAt: string | null | undefined): number | null {
+export function readingAgeMs(
+  observedAt: string | null | undefined
+): number | null {
   if (!observedAt) return null;
   const then = new Date(observedAt).getTime();
   if (Number.isNaN(then)) return null;

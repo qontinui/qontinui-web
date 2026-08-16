@@ -155,9 +155,9 @@ describe("summarizeClearanceProvenance", () => {
   });
 
   it("renders ids without cleared_via using the neutral 'cleared' verb", () => {
-    expect(
-      summarizeClearanceProvenance({ cleared_under_rule: RULE })
-    ).toBe("cleared under rule 9e8d7c6b");
+    expect(summarizeClearanceProvenance({ cleared_under_rule: RULE })).toBe(
+      "cleared under rule 9e8d7c6b"
+    );
   });
 });
 
@@ -208,6 +208,17 @@ describe("volumeSeverity", () => {
     expect(volumeSeverity(VOLUME_CRIT_FREE_BYTES)).toBe("warn");
     expect(volumeSeverity(VOLUME_CRIT_FREE_BYTES - 1)).toBe("critical");
     expect(volumeSeverity(0)).toBe("critical");
+  });
+
+  it("returns null — NOT 'ok' — for a non-finite reading", () => {
+    // `NaN < CRIT` and `NaN < WARN` are BOTH false, so a naive banding falls
+    // through to the green arm and badges an unmeasured volume as healthy.
+    // The guard lives here, in the shared helper, rather than at each call
+    // site: the next consumer is the one that forgets to check.
+    expect(volumeSeverity(Number.NaN)).toBeNull();
+    expect(volumeSeverity(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(volumeSeverity(Number.NEGATIVE_INFINITY)).toBeNull();
+    expect(volumeSeverity(Number.NaN)).not.toBe("ok");
   });
 });
 

@@ -79,15 +79,42 @@ export function toVolumeReading(raw: unknown): VolumeReading | null {
   };
 }
 
+/**
+ * What {@link groupFlatRows} made of a flat row list.
+ *
+ * `rejected` is load-bearing, not diagnostics: a flat array whose rows the
+ * grouper could not use (camelCase `deviceId`, a non-string `device_id`, the
+ * per-device envelope's rows which carry no device identity at all) would
+ * otherwise produce an EMPTY device list from a NON-EMPTY payload — and an
+ * empty list is a positive claim that no device has ever reported. The count
+ * is what lets {@link parseFleetVolumes} tell "nobody reported" apart from
+ * "we could not read the answer".
+ */
+export interface FlatGroupResult {
+  devices: DeviceVolumes[];
+  /** Rows the grouper could not turn into a `(device, volume)` reading. */
+  rejected: number;
+}
+
 /** Group flat `VolumeRow`s (`{device_id, volume, ...}`) by device. */
-export function groupFlatRows(rows: unknown[]): DeviceVolumes[] {
+export function groupFlatRows(rows: unknown[]): FlatGroupResult {
   const byDevice = new Map<string, DeviceVolumes>();
+  let rejected = 0;
   for (const row of rows) {
-    if (!isRecord(row)) continue;
+    if (!isRecord(row)) {
+      rejected++;
+      continue;
+    }
     const deviceId = row.device_id;
-    if (typeof deviceId !== "string") continue;
+    if (typeof deviceId !== "string") {
+      rejected++;
+      continue;
+    }
     const reading = toVolumeReading(row);
-    if (!reading) continue;
+    if (!reading) {
+      rejected++;
+      continue;
+    }
     let entry = byDevice.get(deviceId);
     if (!entry) {
       entry = {
@@ -99,20 +126,53 @@ export function groupFlatRows(rows: unknown[]): DeviceVolumes[] {
     }
     entry.volumes.push(reading);
   }
-  return Array.from(byDevice.values());
+  return { devices: Array.from(byDevice.values()), rejected };
+}
+
+/**
+ * Decide what a flat row list means.
+ *
+ * A non-empty row list that produced ZERO usable devices is UNPARSEABLE
+ * (`null`), never an empty fleet: the payload said something, and we failed to
+ * read it. Returning `[]` there would render every machine as
+ * `never_reported` — "no device has ever reported disk telemetry" — a positive
+ * factual claim about the whole fleet derived from a payload that never
+ * supported it. The expected trigger is an envelope mismatch on the day
+ * coord's routes land (camelCase `deviceId`, a non-string `device_id`, or the
+ * per-device `{device_id, volumes: [...]}` envelope whose rows carry no device
+ * identity), and the honest diagnosis of that is "we could not parse the
+ * answer", not "nobody reported".
+ */
+function fromFlatRows(rows: unknown[]): DeviceVolumes[] | null {
+  // A present-but-empty array is a RECOGNISED shape: the read answered, and
+  // the answer is that nothing has reported yet.
+  if (rows.length === 0) return [];
+  const { devices, rejected } = groupFlatRows(rows);
+  if (devices.length === 0 && rejected > 0) return null;
+  return devices;
 }
 
 /**
  * Normalize the fleet-volumes payload.
  *
- * Accepts the grouped shape (`{devices: [{device_id, hostname?, volumes[]}]}`)
- * and the flat oplog shape (`{volumes: [{device_id, volume, ...}]}`), plus a
- * bare array of either — coord's `VolumeRow` carries `device_id` on every row,
- * so both are plausible serializations of the same read and the dashboard
- * should not blank out because the envelope differs.
+ * The PREFERRED shape is coord's grouped envelope
+ * (`{devices: [{device_id, hostname?, volumes[]}], count}`) — that is what the
+ * route serves, and `hostname` is kept as a join key. The flat oplog shape
+ * (`{volumes: [{device_id, volume, ...}]}`) and a bare array of either remain
+ * as a TOLERANT FALLBACK: coord's `VolumeRow` carries `device_id` on every
+ * row, so both are plausible serializations and the dashboard should not blank
+ * out because the envelope differs.
  *
- * Returns `null` when the payload matches none of them, so the caller reports
- * UNKNOWN rather than silently rendering an empty fleet.
+ * Three outcomes, and the difference between them is the whole point:
+ *
+ * - `DeviceVolumes[]` (non-empty) — the read answered and named devices.
+ * - `[]` — a RECOGNISED shape carrying an EMPTY population: `{devices: []}`,
+ *   `{volumes: []}` or `[]`. A fleet where nobody has reported yet is a fact
+ *   about the fleet, and reporting it as a parse failure would send an
+ *   operator hunting a bug that does not exist.
+ * - `null` — UNPARSEABLE: the payload matched no known shape, OR a non-empty
+ *   row array yielded zero usable devices (see {@link fromFlatRows}). The
+ *   caller renders UNKNOWN with the reason.
  */
 export function parseFleetVolumes(payload: unknown): DeviceVolumes[] | null {
   const container = isRecord(payload) ? payload : null;
@@ -141,13 +201,19 @@ export function parseFleetVolumes(payload: unknown): DeviceVolumes[] | null {
       }
     }
     if (sawGrouped) return out;
+    // A present-but-EMPTY `devices` array (or a bare `[]`) is the documented
+    // grouped envelope for a fleet where nobody has reported yet -- a
+    // recognised shape describing an empty population, NOT a parse failure.
+    if (grouped.length === 0) return [];
     // A bare array of FLAT rows falls through to the flat grouping.
-    if (Array.isArray(payload)) return groupFlatRows(payload);
+    if (Array.isArray(payload)) return fromFlatRows(payload);
+    // A non-empty `devices` array in which no entry carried both a string
+    // `device_id` and a `volumes` array is unreadable, not empty.
     return null;
   }
 
   if (container && Array.isArray(container.volumes)) {
-    return groupFlatRows(container.volumes as unknown[]);
+    return fromFlatRows(container.volumes as unknown[]);
   }
   return null;
 }

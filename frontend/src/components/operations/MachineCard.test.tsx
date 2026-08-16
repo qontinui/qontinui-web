@@ -161,7 +161,9 @@ describe("MachineCard — free disk space", () => {
     const section = container.querySelector("[data-operations-machine-disk]");
     expect(section).not.toBeNull();
     expect(section?.getAttribute("data-disk-state")).toBe("reported");
-    expect(container.querySelector('[data-operations-volume="D:"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-operations-volume="D:"]')
+    ).not.toBeNull();
     expect(getByText(/1\.0 GiB free/)).not.toBeNull();
     expect(getByText(/4\.0 TiB/)).not.toBeNull();
     // 1 GiB of 4 TiB → 0.0 % free (rounded), and it must be LABELLED as a
@@ -321,6 +323,97 @@ describe("MachineCard — HealthDot third state", () => {
     // says never-reported explicitly.
     expect(dot?.getAttribute("class") ?? "").not.toMatch(/text-red-500/);
     expect(dot?.getAttribute("aria-label") ?? "").toMatch(/NEVER reported/);
+  });
+
+  // The per-runner dot and the machine-card HEADER dot must agree, and the
+  // header is the one the eye lands on. Before this, a machine whose only
+  // runner had never heartbeated rendered a muted per-runner dot AND a solid
+  // red header labelled "No runners healthy" — announcing a problem that
+  // nothing had reported.
+  it("renders the HEADER dot as muted-unknown when every runner has never reported", () => {
+    const { container } = renderCard(
+      baseGroup({
+        runners: [
+          {
+            ...mockRunner("r-never"),
+            derivedStatus: undefined,
+            lastHeartbeat: null,
+          } as unknown as Runner,
+        ],
+      })
+    );
+    const header = container.querySelector("[data-operations-machine-health]");
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute("data-operations-machine-health")).toBe(
+      "unknown"
+    );
+    expect(header?.getAttribute("class") ?? "").not.toMatch(/bg-red-500/);
+    expect(header?.getAttribute("class") ?? "").toMatch(/bg-muted-foreground/);
+    const label = header?.getAttribute("aria-label") ?? "";
+    expect(label).toMatch(/never-reported is NOT unhealthy/i);
+    expect(label).toMatch(/has ever reported its health/i);
+    expect(label).not.toBe("No runners healthy");
+  });
+
+  it("still renders the HEADER dot red when a runner is genuinely unhealthy", () => {
+    const { container } = renderCard(
+      baseGroup({
+        runners: [
+          {
+            ...mockRunner("r-bad"),
+            derivedStatus: "unhealthy",
+          } as unknown as Runner,
+        ],
+      })
+    );
+    const header = container.querySelector("[data-operations-machine-health]");
+    expect(header?.getAttribute("data-operations-machine-health")).toBe(
+      "unhealthy"
+    );
+    expect(header?.getAttribute("class") ?? "").toMatch(/bg-red-500/);
+  });
+
+  it("names the never-reported runners when only SOME are unhealthy", () => {
+    const { container } = renderCard(
+      baseGroup({
+        runners: [
+          {
+            ...mockRunner("r-bad"),
+            derivedStatus: "unhealthy",
+          } as unknown as Runner,
+          {
+            ...mockRunner("r-never"),
+            derivedStatus: undefined,
+            lastHeartbeat: null,
+          } as unknown as Runner,
+        ],
+      })
+    );
+    const header = container.querySelector("[data-operations-machine-health]");
+    expect(header?.getAttribute("data-operations-machine-health")).toBe(
+      "unhealthy"
+    );
+    expect(header?.getAttribute("aria-label") ?? "").toMatch(
+      /1 of 2 unhealthy, the rest have never reported/i
+    );
+  });
+
+  it("renders the HEADER dot green only when every runner is healthy", () => {
+    const { container } = renderCard(baseGroup());
+    const header = container.querySelector("[data-operations-machine-health]");
+    expect(header?.getAttribute("data-operations-machine-health")).toBe(
+      "healthy"
+    );
+    expect(header?.getAttribute("class") ?? "").toMatch(/bg-green-500/);
+  });
+
+  it("renders the HEADER dot muted for a machine with NO runners", () => {
+    const { container } = renderCard(baseGroup({ runners: [] }));
+    const header = container.querySelector("[data-operations-machine-health]");
+    expect(header?.getAttribute("data-operations-machine-health")).toBe(
+      "empty"
+    );
+    expect(header?.getAttribute("class") ?? "").toMatch(/bg-muted-foreground/);
   });
 
   it("classifies runner health states", () => {

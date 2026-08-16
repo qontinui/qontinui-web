@@ -82,8 +82,7 @@ function buildMachineGroups(
   const resolveVolumes = (
     hostname: string,
     activity: DeviceStatus | undefined
-  ): MachineVolumes =>
-    resolveMachineVolumes(hostname, activity, volumesFetch);
+  ): MachineVolumes => resolveMachineVolumes(hostname, activity, volumesFetch);
 
   for (const runner of fleet.runners) {
     const hostname = runner.hostname ?? "unknown";
@@ -283,9 +282,12 @@ export function FleetOverview() {
             setVolumes({
               state: "unavailable",
               reason:
-                "The fleet-volumes response did not match any known shape " +
-                "(expected `{devices: [...]}` or `{volumes: [...]}`), so no " +
-                "device could be matched to a reading.",
+                "The fleet-volumes response could not be parsed: it either " +
+                "matched no known shape (expected `{devices: [...]}` or " +
+                "`{volumes: [...]}`) or carried rows that named no device, so " +
+                "no device could be matched to a reading. This says nothing " +
+                "about any machine's disk -- an EMPTY response parses fine " +
+                "and reports itself as such.",
             });
           } else {
             setVolumes(indexDeviceVolumes(parsed));
@@ -346,11 +348,21 @@ export function FleetOverview() {
 
   /**
    * Fleet-level headline: the TIGHTEST volume anywhere in the fleet — the
-   * number that actually predicts the next "0 bytes free" incident. Renders
-   * `unknown` (never `0 B`, never green) whenever the read did not answer or
-   * no device has reported, so an unread fleet cannot look like a healthy one.
+   * number that actually predicts the next "0 bytes free" incident. Never
+   * renders `0 B` and never renders green without a reading behind it.
+   *
+   * The two no-number cases are LABELLED DIFFERENTLY, because this badge is the
+   * first thing an operator looks at and they are different facts: "not read"
+   * (the fleet-volumes read did not answer — says nothing about any disk) vs
+   * "none reported" (the read answered, and no device has telemetry yet).
+   * Collapsing both into "unknown" is the same conflation the parse layer was
+   * fixed for.
    */
   const worstFreeVolume = useMemo(() => tightestVolume(volumes), [volumes]);
+  const worstSeverity = worstFreeVolume
+    ? volumeSeverity(worstFreeVolume.free_bytes)
+    : null;
+  const volumesRead = volumes.state === "ok";
 
   const runningTasks: RunnerTaskRun[] = useMemo(
     () =>
@@ -491,16 +503,18 @@ export function FleetOverview() {
               value={
                 worstFreeVolume
                   ? `${formatBytes(worstFreeVolume.free_bytes)} free (${worstFreeVolume.volume})`
-                  : "unknown"
+                  : volumesRead
+                    ? "none reported"
+                    : "not read"
               }
               variant={
-                worstFreeVolume === null
-                  ? "outline"
-                  : volumeSeverity(worstFreeVolume.free_bytes) === "critical"
-                    ? "destructive"
-                    : volumeSeverity(worstFreeVolume.free_bytes) === "warn"
-                      ? "warning"
-                      : "success"
+                worstSeverity === "critical"
+                  ? "destructive"
+                  : worstSeverity === "warn"
+                    ? "warning"
+                    : worstSeverity === "ok"
+                      ? "success"
+                      : "outline"
               }
             />
 

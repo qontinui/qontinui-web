@@ -100,6 +100,118 @@ describe("parseFleetVolumes", () => {
     expect(parseFleetVolumes(null)).toBeNull();
   });
 
+  // -- W2: a RECOGNISED shape carrying an empty population ------------------
+  //
+  // `{devices: [], count: 0}` is the documented grouped envelope for a fleet
+  // where nobody has reported yet. Reporting it as "did not match any known
+  // shape" is factually false about a well-formed response and sends an
+  // operator hunting a parse bug that does not exist. It must parse to `[]`,
+  // and `[]` must mean the same thing in EVERY envelope — otherwise one fact
+  // classifies as a failed read in one serialization and a device fact in
+  // another.
+  it("treats an EMPTY grouped envelope as a recognised, empty fleet", () => {
+    expect(parseFleetVolumes({ devices: [], count: 0 })).toEqual([]);
+    expect(parseFleetVolumes({ devices: [] })).toEqual([]);
+  });
+
+  it("treats an EMPTY flat envelope as a recognised, empty fleet", () => {
+    expect(parseFleetVolumes({ volumes: [] })).toEqual([]);
+  });
+
+  it("treats a bare empty array as a recognised, empty fleet", () => {
+    expect(parseFleetVolumes([])).toEqual([]);
+  });
+
+  // -- W1: a non-empty payload that yields no devices is UNPARSEABLE --------
+  //
+  // The failure mode this pins is the worst one available: `[]` is not
+  // `null`, so the fetch succeeds, the maps come back empty, and EVERY machine
+  // in the fleet renders "this device has never reported disk telemetry" —
+  // a positive factual claim about every device, derived from a payload that
+  // never supported it. Since coord's routes did not exist when the parser was
+  // written, an envelope mismatch on integration day is the EXPECTED case.
+  it("returns null — not an empty fleet — for camelCase flat rows", () => {
+    expect(
+      parseFleetVolumes({
+        volumes: [
+          { deviceId: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it("returns null when the PER-DEVICE envelope is fed to the fleet parser", () => {
+    // `GET /devices/{id}/volumes` answers `{device_id, volumes: [...]}`; its
+    // rows carry no `device_id` of their own. Diagnosing that as "no device
+    // has ever reported" instead of "we could not parse the answer" is the
+    // exact inversion this test forbids.
+    expect(
+      parseFleetVolumes({
+        device_id: DEVICE,
+        volumes: [
+          { volume: "C:", total_bytes: 2, free_bytes: 1 },
+          { volume: "D:", total_bytes: 4, free_bytes: 3 },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it("returns null when device_id is serialized as a non-string", () => {
+    expect(
+      parseFleetVolumes({
+        volumes: [
+          { device_id: 42, volume: "C:", total_bytes: 2, free_bytes: 1 },
+        ],
+      })
+    ).toBeNull();
+    expect(
+      parseFleetVolumes({
+        volumes: [
+          { device_id: null, volume: "C:", total_bytes: 2, free_bytes: 1 },
+        ],
+      })
+    ).toBeNull();
+  });
+
+  it("returns null for a bare array of rows that name no device", () => {
+    expect(
+      parseFleetVolumes([{ volume: "C:", total_bytes: 2, free_bytes: 1 }])
+    ).toBeNull();
+  });
+
+  it("returns null for a non-empty devices array with no usable entry", () => {
+    expect(parseFleetVolumes({ devices: [{ deviceId: DEVICE }] })).toBeNull();
+    expect(
+      parseFleetVolumes({ devices: [{ device_id: DEVICE }], count: 1 })
+    ).toBeNull();
+  });
+
+  it("still parses a payload where SOME rows are usable", () => {
+    // Tolerance is preserved: a partially-readable payload is not thrown away.
+    const parsed = parseFleetVolumes({
+      volumes: [
+        { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
+        { deviceId: DEVICE, volume: "Z:", total_bytes: 2, free_bytes: 1 },
+      ],
+    });
+    expect(parsed).toHaveLength(1);
+    expect(parsed?.[0].volumes.map((v) => v.volume)).toEqual(["C:"]);
+  });
+
+  it("counts rejected rows so an empty result can be told from a failed one", () => {
+    expect(groupFlatRows([])).toEqual({ devices: [], rejected: 0 });
+    expect(groupFlatRows([{ volume: "D:" }, "junk", null])).toEqual({
+      devices: [],
+      rejected: 3,
+    });
+    const ok = groupFlatRows([
+      { device_id: DEVICE, volume: "C:", total_bytes: 2, free_bytes: 1 },
+      { volume: "no-device" },
+    ]);
+    expect(ok.devices).toHaveLength(1);
+    expect(ok.rejected).toBe(1);
+  });
+
   it("never coerces a missing byte count to zero", () => {
     const reading = toVolumeReading({ volume: "D:", observed_at: null });
     expect(reading).not.toBeNull();
@@ -111,7 +223,7 @@ describe("parseFleetVolumes", () => {
   it("drops rows with no usable volume identity", () => {
     expect(toVolumeReading({ total_bytes: 1, free_bytes: 1 })).toBeNull();
     expect(toVolumeReading({ volume: "" })).toBeNull();
-    expect(groupFlatRows([{ volume: "D:" }])).toEqual([]);
+    expect(groupFlatRows([{ volume: "D:" }]).devices).toEqual([]);
   });
 });
 
