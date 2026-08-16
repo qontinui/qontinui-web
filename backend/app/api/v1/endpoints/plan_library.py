@@ -11,7 +11,9 @@ Routes
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
+``GET   /plan-library/export``     the filtered corpus as a zip of verbatim .md
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
+``GET   /plan-library/{id}/export`` one artifact's verbatim body (head or version)
 ``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
 ``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
 ``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
@@ -37,6 +39,15 @@ Invariants this module is responsible for
 6. **``/candidates`` emits no score.** Design decision D6: the read exposes
    the ranking inputs, the agent ranks. A hardcoded criticality score would be
    a guess frozen into SQL.
+6a. **Export is verbatim, and one-way.** The two ``/export`` routes emit the
+   stored body's bytes unmodified — no re-rendered status block, no normalized
+   headings. Fidelity is the product: plan
+   ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4 gates on
+   exporting a plan and re-scanning it with an unchanged ``content_sha256``,
+   which any cosmetic transformation would break. Provenance rides in headers
+   and a ``manifest.json``, never inside the bodies. There is deliberately no
+   import half: copies flow OUT of the authority, and a bidirectional git sync
+   would rebuild the divergent-corpus problem the plan exists to close.
 7. **Two credentials open this surface; one route takes only the first.**
    Every route except ``PATCH /{id}/kind`` authenticates with EITHER a Cognito
    user JWT or a coord-issued device-token JWT, via
@@ -66,6 +77,10 @@ Invariants this module is responsible for
 """
 
 import asyncio
+import io
+import json
+import re
+import zipfile
 from datetime import UTC, datetime
 from typing import get_args
 from urllib.parse import quote
@@ -122,6 +137,58 @@ router = APIRouter()
 #: service and a page of candidates can reference many distinct work units;
 #: this bounds the fan-out without serialising it.
 _COORD_FANOUT = 6
+
+#: Hard ceiling on artifacts in one bulk export (Phase 4 of plan
+#: ``2026-08-16-plan-corpus-authority-and-run-provenance``). The zip is built in
+#: memory, so the bound exists to keep one request from pinning the process; at
+#: the measured corpus size (~1000 plans across two directories) it is generous
+#: rather than binding. It is NEVER applied silently — ``list_for_export``
+#: reports truncation and the route emits ``X-Export-Truncated``, because an
+#: export that stopped short reads exactly like a corpus that is short.
+_EXPORT_MAX_ARTIFACTS = 5000
+
+#: Characters allowed in an exported filename. Slugs are scanner-derived from
+#: real filenames and are normally already safe, but they are NOT validated on
+#: write (``slug`` is opaque TEXT), so everything else is folded to ``-``. This
+#: also drops path separators and ``..`` segments, which is what keeps a hostile
+#: slug from writing outside its archive directory on extraction (zip-slip).
+_EXPORT_SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _export_filename(slug: str) -> str:
+    """A safe ``<slug>.md`` filename for a single-artifact download."""
+    cleaned = _EXPORT_SAFE_CHARS.sub("-", slug).strip("-.") or "artifact"
+    # Leave room for the extension inside common 255-byte filename limits.
+    return f"{cleaned[:200]}.md"
+
+
+def _export_archive_name(row: WorkArtifact, used: set[str]) -> str:
+    """A unique ``<kind>/<slug>.md`` path for one entry in a bulk archive.
+
+    Grouped by ``kind`` so an extracted archive lands as ``plan/…``,
+    ``prompt/…`` and so on rather than one flat heap of a thousand files.
+
+    Uniqueness matters and is not free: the store's identity is
+    ``(org, kind, slug, source_repo)``, so the SAME slug legitimately appears
+    more than once — that is design decision D7 (source-qualified identity),
+    which keeps both copies of a forked plan instead of destroying one. Six such
+    forks exist in this fleet's corpus today. Collapsing them onto one archive
+    entry would silently discard exactly the divergence the operator is meant to
+    review, so a collision gets the source repo appended, then a numeric suffix.
+    """
+    kind = _EXPORT_SAFE_CHARS.sub("-", row.kind).strip("-.") or "unknown"
+    base = _export_filename(row.slug)
+    candidate = f"{kind}/{base}"
+    if candidate in used:
+        repo = _EXPORT_SAFE_CHARS.sub("-", row.source_repo or "").strip("-.")
+        if repo:
+            candidate = f"{kind}/{base[:-3]}__{repo}.md"
+    suffix = 2
+    while candidate in used:
+        candidate = f"{kind}/{base[:-3]}__{suffix}.md"
+        suffix += 1
+    used.add(candidate)
+    return candidate
 
 
 async def _resolve_org_id(db: AsyncSession, user: User) -> UUID | None:
@@ -651,6 +718,154 @@ async def get_capture_health(
 
 
 @router.get(
+    "/export",
+    summary="Bulk export the filtered corpus as a zip of verbatim .md files",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"application/zip": {}},
+            "description": "A zip archive; one `<kind>/<slug>.md` per artifact.",
+        }
+    },
+)
+async def export_corpus(
+    kind: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
+    repo: str | None = Query(None),
+    q: str | None = Query(None),
+    since: datetime | None = Query(None),
+    work_unit_slug: str | None = Query(None),
+    limit: int = Query(
+        _EXPORT_MAX_ARTIFACTS,
+        ge=1,
+        le=_EXPORT_MAX_ARTIFACTS,
+        description="Hard bound on archived artifacts. When it truncates, the "
+        "response says so in `X-Export-Truncated` — a silently short export is "
+        "indistinguishable from a short corpus.",
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> Response:
+    """The bulk half of Phase 4 — the tenant's corpus back out as markdown.
+
+    Plan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4, which
+    exists to pay for design decision D2 (the DB is authoritative for reads).
+    Making the DB primary silently drops the **distributed durability** git gave
+    for free: git keeps N copies, a database keeps one plus whatever backups
+    exist. Before this route there was no export path at ALL — zero
+    markdown-emitting exporters across qontinui-coord and this backend. That is
+    not polish; it is the price of D2, and D5 says so explicitly.
+
+    **Verbatim bodies, always.** Each entry is the stored body's UTF-8 bytes,
+    unmodified — no re-rendered front matter, no normalized headings, no
+    injected status block. The status block is already IN the body (it is the
+    markdown the scanner captured), and re-rendering one would fork the exported
+    text from the stored text. Fidelity is the whole product here, and it is
+    exactly what Phase 4's gate measures: a plan exported and re-scanned must
+    come back with an unchanged ``content_sha256``. Any transformation, however
+    cosmetic, fails that round trip.
+
+    **Export only, never import.** This route reads the authoritative store and
+    emits copies. It has no write half by design (Risk: "export without
+    discipline recreates the fork") — a bidirectional git sync would rebuild
+    precisely the divergent-corpus problem this plan exists to close. Copies
+    flow OUT of the authority; nothing flows back in except through the scanner.
+
+    **No git push here.** D3 demotes git to an OPTIONAL per-tenant export
+    target, so the archive is a plain download and **no tenant is required to
+    own a repo**. A configured git target is a later, opt-in layer over this
+    same byte stream, not a precondition for getting your plans out.
+
+    The filter grammar is the list route's, verbatim (shared
+    ``_apply_filters``), so "export what I am looking at" cannot drift from what
+    the page showed.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    rows, truncated = await crud.list_for_export(
+        db,
+        org_id=org_id,
+        kind=kind,
+        status=status_filter,
+        repo=repo,
+        q=q,
+        since=since,
+        work_unit_slug=work_unit_slug,
+        limit=limit,
+    )
+
+    buffer = io.BytesIO()
+    # ZIP_DEFLATED: markdown compresses ~4x and the archive is streamed to a
+    # browser. `strict_timestamps=False` so a pre-1980 authored_at (possible —
+    # `authored_at` is scanner-supplied and unvalidated) cannot raise instead of
+    # exporting.
+    with zipfile.ZipFile(
+        buffer, "w", compression=zipfile.ZIP_DEFLATED, strict_timestamps=False
+    ) as archive:
+        used: set[str] = set()
+        manifest: list[dict[str, object]] = []
+        for row in rows:
+            name = _export_archive_name(row, used)
+            archive.writestr(name, row.body.encode("utf-8"))
+            manifest.append(
+                {
+                    "file": name,
+                    "id": str(row.id),
+                    "kind": row.kind,
+                    "slug": row.slug,
+                    "title": row.title,
+                    "status": row.status,
+                    "version_number": row.current_version,
+                    "content_sha256": row.content_sha256,
+                    "source_repo": row.source_repo,
+                    "source_path": row.source_path,
+                    "work_unit_slug": row.work_unit_slug,
+                    "captured_by": row.captured_by,
+                    "updated_at": row.updated_at.isoformat()
+                    if row.updated_at
+                    else None,
+                }
+            )
+        # The manifest is provenance, not content: it records WHICH stored
+        # version each file is a copy of, so a re-import or an audit can tell
+        # whether a checked-out copy has drifted from the authority without
+        # re-hashing anything. It is deliberately a sibling file rather than a
+        # header injected into the bodies — see the verbatim rule above.
+        archive.writestr(
+            "manifest.json",
+            json.dumps(
+                {
+                    "exported_at": datetime.now(UTC).isoformat(),
+                    "artifact_count": len(rows),
+                    "truncated": truncated,
+                    "limit": limit,
+                    "artifacts": manifest,
+                },
+                indent=2,
+            ).encode("utf-8"),
+        )
+
+    if truncated:
+        logger.warning(
+            "plan_library.export.truncated",
+            limit=limit,
+            note="corpus exceeded the export bound; archive is incomplete",
+        )
+
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (f'attachment; filename="plan-library-{stamp}.zip"'),
+            "X-Export-Artifact-Count": str(len(rows)),
+            # Explicit on BOTH branches. A header present only when something
+            # went wrong trains readers to ignore its absence.
+            "X-Export-Truncated": "true" if truncated else "false",
+        },
+    )
+
+
+@router.get(
     "/candidates",
     response_model=PlanCandidateResponse,
     summary="Unshipped plans with the ranking INPUTS attached (no score)",
@@ -869,6 +1084,99 @@ async def get_work_artifact(
             )
 
     return _detail(row, versions, edges, coord_block)
+
+
+@router.get(
+    "/{artifact_id}/export",
+    summary="One artifact as its verbatim markdown (head, or a given version)",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {"text/markdown": {}},
+            "description": "The stored body, byte-for-byte.",
+        },
+        404: {"description": "No such artifact, or no such version_number."},
+    },
+)
+async def export_work_artifact(
+    artifact_id: UUID,
+    version_number: int | None = Query(
+        None,
+        ge=1,
+        description="Export this historical snapshot instead of head. Reuses "
+        "the shipped `agent.work_artifact_versions` log — nothing new is "
+        "recorded to make an old version exportable.",
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> Response:
+    """One artifact, back out as the markdown it came from.
+
+    Plan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4.
+
+    **The body is emitted verbatim** — the stored UTF-8 bytes, with no
+    re-rendering of any kind. This is what makes the phase's gate meaningful:
+    export a plan, feed it back through the runner scanner, and its
+    ``content_sha256`` must be unchanged. The digest is returned in
+    ``X-Content-Sha256`` so a caller can check the round trip without a second
+    request.
+
+    ``version_number`` addresses the shipped version log
+    (``agent.work_artifact_versions``, unique on
+    ``(document_id, version_number)``) rather than only head — the plan asks for
+    exactly this, and it costs nothing because the snapshots are already
+    recorded.
+
+    **Authorization is on the PARENT, not the version.** The artifact is
+    resolved through the org-scoped read first, and only then is the version
+    fetched by ``document_id``; ``document_id`` alone is not a boundary. A
+    missing artifact and a missing version are both 404, and the version 404
+    names the versions that DO exist rather than leaving the caller guessing.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    row = await crud.get_artifact(db, artifact_id, org_id=org_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work artifact not found: {artifact_id}",
+        )
+
+    if version_number is None or version_number == row.current_version:
+        body = row.body
+        digest = row.content_sha256
+        exported_version = row.current_version
+    else:
+        snapshot = await crud.get_version(db, row.id, version_number)
+        if snapshot is None:
+            available = [v.version_number for v in await crud.list_versions(db, row.id)]
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"Artifact {artifact_id} has no version {version_number}. "
+                    f"Recorded versions: {available or 'none'} "
+                    f"(head is {row.current_version})."
+                ),
+            )
+        body = snapshot.body
+        digest = snapshot.content_sha256
+        exported_version = snapshot.version_number
+
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{_export_filename(row.slug)}"'
+            ),
+            # Provenance travels beside the bytes, never inside them — see the
+            # verbatim rule. A consumer can verify the round trip from headers
+            # alone.
+            "X-Content-Sha256": digest,
+            "X-Artifact-Kind": row.kind,
+            "X-Artifact-Slug": row.slug,
+            "X-Artifact-Version": str(exported_version),
+        },
+    )
 
 
 # ───────────────────────────── writes ─────────────────────────────
