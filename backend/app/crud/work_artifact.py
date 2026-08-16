@@ -63,7 +63,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.work_artifact import (
     NIL_ORGANIZATION_ID,
+    NOTE_TRIM_CHARS,
     SEARCH_TSVECTOR_SQL,
+    SPAWNED_FOLLOWUP_RELATION,
     TERMINAL_STATUSES,
     WorkArtifact,
     WorkArtifactEdge,
@@ -466,7 +468,17 @@ async def list_edges(
     if not edges:
         return []
 
-    peer_ids = {(e.to_id if e.from_id == artifact_id else e.from_id) for e in edges}
+    # ``to_id`` is nullable since ``plan_library_03_spawned_followup`` — an
+    # OPEN follow-up has no far end at all. Filter the Nones out before the
+    # IN-list: ``id IN (NULL)`` matches nothing but emits a SAWarning, and the
+    # peer lookup below would then hand back ``None`` anyway.
+    peer_ids = {
+        peer
+        for peer in (
+            (e.to_id if e.from_id == artifact_id else e.from_id) for e in edges
+        )
+        if peer is not None
+    }
     peers = {
         row.id: row
         for row in (
@@ -479,7 +491,10 @@ async def list_edges(
     out: list[tuple[WorkArtifactEdge, str, WorkArtifact | None]] = []
     for edge in edges:
         if edge.from_id == artifact_id:
-            out.append((edge, "outgoing", peers.get(edge.to_id)))
+            # ``to_id`` is None on an OPEN follow-up — there is no peer to
+            # denormalize, which the caller renders as a one-ended edge.
+            peer = peers.get(edge.to_id) if edge.to_id is not None else None
+            out.append((edge, "outgoing", peer))
         else:
             out.append((edge, "incoming", peers.get(edge.from_id)))
     return out
@@ -729,7 +744,7 @@ async def create_edge(
     db: AsyncSession,
     *,
     from_artifact: WorkArtifact,
-    to_artifact: WorkArtifact,
+    to_artifact: WorkArtifact | None,
     relation: str,
     note: str | None,
     created_by: str | None,
@@ -739,19 +754,50 @@ async def create_edge(
     Returns ``(edge, created)``. Re-posting the same
     ``(from, to, relation)`` triple is idempotent rather than a 409 — the
     library is fed by repeatable scans.
+
+    ``to_artifact`` may be ``None`` for :data:`SPAWNED_FOLLOWUP_RELATION`, the
+    ONE-ENDED edge that records work a plan surfaced but did not do
+    (``plan_library_03_spawned_followup``). The DB CHECK
+    ``ck_work_artifact_edges_open_target`` refuses a null target on every other
+    relation; the endpoint checks it first so the caller gets a 422 naming the
+    relation rather than an IntegrityError 500.
+
+    **Idempotency for the one-ended form is keyed on the NOTE.** The shipped
+    ``UNIQUE (from_id, to_id, relation)`` cannot see these rows — SQL NULLs are
+    distinct, so every open follow-up is unique to it whatever it says. Keying
+    the dedup on ``(from_id, relation, btrim(note))`` — matching the partial
+    index ``uq_work_artifact_edges_open_followup`` exactly — keeps two DIFFERENT
+    follow-ups off one plan legal (a plan can surface several) while collapsing
+    a re-post of the same finding onto the existing row.
     """
-    stmt = select(WorkArtifactEdge).where(
-        WorkArtifactEdge.from_id == from_artifact.id,
-        WorkArtifactEdge.to_id == to_artifact.id,
-        WorkArtifactEdge.relation == relation,
-    )
+    if to_artifact is None:
+        # The note is the identity here, so it is also the dedup key. BOTH
+        # sides are trimmed in SQL with :data:`NOTE_TRIM_CHARS` — the exact
+        # expression ``uq_work_artifact_edges_open_followup`` indexes — rather
+        # than trimming the incoming note in Python. Two trims that disagree
+        # (Python's ``str.strip()`` also eats unicode whitespace; one-argument
+        # ``btrim`` eats only spaces) would let the lookup miss a row the index
+        # then refuses to insert, turning an idempotent re-post into a 500.
+        stmt = select(WorkArtifactEdge).where(
+            WorkArtifactEdge.from_id == from_artifact.id,
+            WorkArtifactEdge.to_id.is_(None),
+            WorkArtifactEdge.relation == relation,
+            func.btrim(WorkArtifactEdge.note, NOTE_TRIM_CHARS)
+            == func.btrim(note or "", NOTE_TRIM_CHARS),
+        )
+    else:
+        stmt = select(WorkArtifactEdge).where(
+            WorkArtifactEdge.from_id == from_artifact.id,
+            WorkArtifactEdge.to_id == to_artifact.id,
+            WorkArtifactEdge.relation == relation,
+        )
     found = (await db.execute(stmt)).scalars().first()
     if found is not None:
         return found, False
 
     edge = WorkArtifactEdge(
         from_id=from_artifact.id,
-        to_id=to_artifact.id,
+        to_id=to_artifact.id if to_artifact is not None else None,
         relation=relation,
         note=note,
         created_by=created_by,
@@ -767,6 +813,153 @@ async def create_edge(
         return found, False
     await db.refresh(edge)
     return edge, True
+
+
+# ===========================================================================
+# Open follow-ups (Phase 7) — the ONE-ENDED edge, read back
+# ===========================================================================
+
+
+class FollowupAlreadyClaimed(Exception):
+    """Someone already named the artifact that owns this follow-up.
+
+    Claiming is a one-way transition (open → owned) and it is NOT idempotent
+    across different targets: silently re-pointing a claimed follow-up at a
+    second artifact would erase the first claim with no trace, and the two
+    callers would each believe they own the work. Surfaced as a 409 naming the
+    current owner so the loser can look at it and decide.
+    """
+
+    def __init__(self, *, edge_id: UUID, to_id: UUID) -> None:
+        self.edge_id = edge_id
+        self.to_id = to_id
+        super().__init__(
+            f"follow-up edge {edge_id} is already claimed by artifact {to_id}"
+        )
+
+
+async def get_edge(
+    db: AsyncSession, edge_id: UUID, *, org_id: UUID | None
+) -> tuple[WorkArtifactEdge, WorkArtifact] | None:
+    """One edge plus its originating artifact, scoped to the caller's org.
+
+    Edges carry no ``organization_id`` of their own, so the scope is inherited
+    from ``from_id``'s artifact — the same NULL-collapsing bucket every other
+    read in this module uses. Without the join an edge id would be a global
+    handle and the org boundary would end at the artifact routes.
+    """
+    stmt = (
+        select(WorkArtifactEdge, WorkArtifact)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
+        .where(WorkArtifactEdge.id == edge_id, _org_scope(org_id))
+    )
+    row = (await db.execute(stmt)).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+async def list_open_followups(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[tuple[WorkArtifactEdge, WorkArtifact]], int]:
+    """Unclaimed ``spawned_followup`` edges + their originating artifact.
+
+    "Open" is exactly ``to_id IS NULL``: work that was identified and has no
+    artifact owning it. A claimed follow-up is an ordinary two-ended
+    provenance edge and drops out of this read while staying visible on the
+    originating artifact's edge list — nothing is deleted by claiming.
+
+    Ordered OLDEST FIRST (``created_at ASC``, ``id`` breaking ties for stable
+    paging). That is the useful default rather than an arbitrary one: an old
+    unowned follow-up is work the fleet has known about and repeatedly not
+    picked up, which is the interesting row. Returns the page plus the unpaged
+    total, so a bounded page can never read as the whole queue.
+    """
+    base = (
+        select(WorkArtifactEdge, WorkArtifact)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
+        .where(
+            _org_scope(org_id),
+            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
+            WorkArtifactEdge.to_id.is_(None),
+        )
+    )
+
+    count_stmt = (
+        select(func.count())
+        .select_from(WorkArtifactEdge)
+        .join(WorkArtifact, WorkArtifact.id == WorkArtifactEdge.from_id)
+        .where(
+            _org_scope(org_id),
+            WorkArtifactEdge.relation == SPAWNED_FOLLOWUP_RELATION,
+            WorkArtifactEdge.to_id.is_(None),
+        )
+    )
+    total = int((await db.execute(count_stmt)).scalar_one())
+
+    rows = (
+        await db.execute(
+            base.order_by(WorkArtifactEdge.created_at.asc(), WorkArtifactEdge.id.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    return [(row[0], row[1]) for row in rows], total
+
+
+async def claim_followup(
+    db: AsyncSession, edge_id: UUID, to_id: UUID
+) -> WorkArtifactEdge:
+    """Name the artifact that owns an open follow-up.
+
+    The edge stops being open and becomes an ordinary two-ended provenance
+    link. Nothing is created and nothing is deleted — the ORIGINAL row is
+    updated, which is what keeps the claim traceable back to the plan that
+    surfaced the work.
+
+    Raises :class:`FollowupAlreadyClaimed` when ``to_id`` is already set. The
+    check is made under a row lock rather than from the caller's earlier read:
+    two agents claiming the same follow-up concurrently would otherwise both
+    see ``to_id IS NULL``, both write, and the second would overwrite the first
+    with no record. Callers MUST have resolved ``edge_id`` through
+    :func:`get_edge` first — this function is not an authorization boundary,
+    and it does not validate that ``to_id`` exists (the FK does, and the
+    endpoint 422s on it beforehand so the message is actionable).
+    """
+    edge = (
+        (
+            await db.execute(
+                select(WorkArtifactEdge)
+                .where(WorkArtifactEdge.id == edge_id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if edge is None:  # pragma: no cover — the caller resolved it a moment ago
+        raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=to_id)
+
+    if edge.to_id is not None:
+        raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=edge.to_id)
+
+    edge.to_id = to_id
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        # ``uq_work_artifact_edges_from_to_relation`` already holds this
+        # (from, to, relation) triple — the same link was recorded directly as
+        # a two-ended edge. Reported as a claim conflict rather than a 500:
+        # the follow-up genuinely IS owned by that artifact, the row just is
+        # not this one.
+        await db.rollback()
+        raise FollowupAlreadyClaimed(edge_id=edge_id, to_id=to_id) from exc
+    await db.refresh(edge)
+    return edge
 
 
 async def capture_health(

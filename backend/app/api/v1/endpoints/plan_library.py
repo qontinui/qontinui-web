@@ -11,10 +11,12 @@ Routes
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
+``GET   /plan-library/followups``  identified-but-UNOWNED follow-ups (Phase 7)
 ``GET   /plan-library/export``     the filtered corpus as a zip of verbatim .md
 ``GET   /plan-library/{id}``       body + full version log + edges BOTH directions
 ``GET   /plan-library/{id}/export`` one artifact's verbatim body (head or version)
 ``POST  /plan-library``            upsert by (org, kind, slug, source_repo)
+``PATCH /plan-library/edges/{id}`` claim an open follow-up (Phase 7)
 ``PATCH /plan-library/{id}/kind``  correct the kind and LOCK it against re-scans
 ``POST  /plan-library/{id}/edges`` add a provenance edge in either direction
 
@@ -39,6 +41,16 @@ Invariants this module is responsible for
 6. **``/candidates`` emits no score.** Design decision D6: the read exposes
    the ranking inputs, the agent ranks. A hardcoded criticality score would be
    a guess frozen into SQL.
+6b. **A null ``to_id`` is legal for exactly ONE relation.** Phase 7 of
+   ``2026-08-16-plan-corpus-authority-and-run-provenance`` added
+   ``spawned_followup`` — work a plan surfaced and deliberately did not do,
+   recorded as a ONE-ENDED edge because the follow-up has no artifact yet.
+   ``POST /{id}/edges`` rejects a null target for the other five relations with
+   a 422 that names the relation, **before** the request reaches the database:
+   ``ck_work_artifact_edges_open_target`` is the backstop, not the user-facing
+   error, and the reason it exists at all is that ``/candidates`` walks
+   ``depends_on`` through ``to_id`` — a null target there would drop the row
+   out of the join and report a blocked plan as ready.
 6a. **Export is verbatim, and one-way.** The two ``/export`` routes emit the
    stored body's bytes unmodified — no re-rendered status block, no normalized
    headings. Fidelity is the product: plan
@@ -102,7 +114,13 @@ from app.api.deps import current_active_user, get_async_db, get_audit_actor_user
 from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
 from app.crud import work_artifact as crud
 from app.models.user import User
-from app.models.work_artifact import WorkArtifact, WorkArtifactVersion
+from app.models.work_artifact import (
+    RELATIONS_ALLOWING_OPEN_TARGET,
+    SPAWNED_FOLLOWUP_RELATION,
+    WorkArtifact,
+    WorkArtifactEdge,
+    WorkArtifactVersion,
+)
 from app.schemas.plan_library import (
     CandidateCoordLink,
     CandidateDependency,
@@ -115,9 +133,12 @@ from app.schemas.plan_library import (
     DivergentResponse,
     DivergentVariant,
     KindForkGroup,
+    OpenFollowup,
+    OpenFollowupResponse,
     PlanCandidate,
     PlanCandidateResponse,
     WorkArtifactDetail,
+    WorkArtifactEdgeClaim,
     WorkArtifactEdgeCreate,
     WorkArtifactEdgeRead,
     WorkArtifactKindPatch,
@@ -253,6 +274,37 @@ def _actor(user: User) -> str:
 
 def _summary(row: WorkArtifact) -> WorkArtifactSummary:
     return WorkArtifactSummary.model_validate(row)
+
+
+def _age_days(anchor: datetime, now: datetime) -> float:
+    """Whole-ish days between ``anchor`` and ``now``, three decimals.
+
+    Defends against a naive timestamp even though the columns are
+    ``timestamptz``: the arithmetic raises rather than degrading if one side
+    ever arrives without a tzinfo.
+    """
+    if anchor.tzinfo is None:  # pragma: no cover — the column is timestamptz
+        anchor = anchor.replace(tzinfo=UTC)
+    return round((now - anchor).total_seconds() / 86400.0, 3)
+
+
+def _open_followup(
+    edge: WorkArtifactEdge, origin: WorkArtifact, now: datetime
+) -> OpenFollowup:
+    """Project one open ``spawned_followup`` edge onto its response row."""
+    return OpenFollowup(
+        edge_id=edge.id,
+        from_id=origin.id,
+        from_kind=origin.kind,
+        from_slug=origin.slug,
+        from_title=origin.title,
+        # Non-blank by construction (``ck_work_artifact_edges_followup_note``);
+        # the ``or ""`` only satisfies the type, it is not a real branch.
+        note=edge.note or "",
+        created_by=edge.created_by,
+        created_at=edge.created_at,
+        age_days=_age_days(edge.created_at, now),
+    )
 
 
 def _detail(
@@ -906,6 +958,12 @@ async def list_plan_candidates(
       affected fields, and the whole read still returns the local signals.
       ``unavailable`` is UNKNOWN — it is NOT "this plan has no PRs". The two
       are distinct values precisely so a consumer cannot confuse them.
+
+    ``open_followups`` (Phase 7, additive) carries work that has **no plan
+    yet** — open ``spawned_followup`` edges, oldest first. It is a separate
+    list rather than extra ``items`` because a follow-up nobody has written is
+    not an artifact and has no id to be a candidate with; folding it into
+    ``items`` would mean inventing one. ``items`` is unchanged.
     """
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_plan_candidates(
@@ -924,6 +982,15 @@ async def list_plan_candidates(
         slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
         links = await _coord_links(slugs, probe)
         coord_available = not probe.degraded
+
+    # Additive (Phase 7): work that has no plan yet. An unwritten follow-up is
+    # not an artifact, so it can NEVER appear in ``items`` — and before this it
+    # was invisible to the one read whose whole job is "what should I pick up
+    # next". Bounded by the same ``limit`` and reported alongside its own
+    # unpaged total; ``items`` keeps its shape exactly.
+    followup_rows, followup_total = await crud.list_open_followups(
+        db, org_id=org_id, offset=0, limit=limit
+    )
 
     now = datetime.now(UTC)
     items: list[PlanCandidate] = []
@@ -1002,6 +1069,55 @@ async def list_plan_candidates(
         offset=offset,
         limit=limit,
         coord_available=coord_available,
+        open_followups=[
+            _open_followup(edge, origin, now) for edge, origin in followup_rows
+        ],
+        open_followup_total=followup_total,
+    )
+
+
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/followups",
+    response_model=OpenFollowupResponse,
+    summary="Follow-ups a plan identified but nobody owns yet",
+)
+async def list_open_followups(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> OpenFollowupResponse:
+    """The queryable form of "worth its own plan".
+
+    Phase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan
+    routinely surfaces work it deliberately does not do, and until this route
+    that lived ONLY as prose in the plan body — unrecoverable from the data, so
+    nothing could answer "show me follow-ups with no owning plan". It is now a
+    ``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the
+    read that lists them.
+
+    **Open only.** A follow-up that has been claimed
+    (``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended
+    provenance edge and drops out of this list — but it is not deleted, and it
+    stays on the originating artifact's edge list, so the trail from "this plan
+    surfaced it" to "that plan owns it" survives the claim.
+
+    **Oldest first**, and that is the useful default rather than an arbitrary
+    one: an old unowned follow-up is work the fleet has known about and
+    repeatedly not picked up. ``total`` is the unpaged count, so a bounded page
+    can never be mistaken for the whole queue.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    rows, total = await crud.list_open_followups(
+        db, org_id=org_id, offset=offset, limit=limit
+    )
+    now = datetime.now(UTC)
+    return OpenFollowupResponse(
+        items=[_open_followup(edge, origin, now) for edge, origin in rows],
+        total=total,
+        offset=offset,
+        limit=limit,
     )
 
 
@@ -1291,6 +1407,119 @@ async def upsert_work_artifact(
     )
 
 
+# NOTE: declared BEFORE ``/{artifact_id}/kind`` so the literal ``edges``
+# segment cannot be swallowed by the artifact-id pattern.
+@router.patch(
+    "/edges/{edge_id}",
+    response_model=WorkArtifactEdgeRead,
+    summary="Claim an open follow-up by naming the artifact that owns it",
+)
+async def claim_followup_edge(
+    edge_id: UUID,
+    payload: WorkArtifactEdgeClaim,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_audit_actor_user),
+) -> WorkArtifactEdgeRead:
+    """Turn an open ``spawned_followup`` into a two-ended provenance edge.
+
+    Phase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When
+    somebody finally writes the plan (or report, or prompt) that owns work an
+    earlier plan surfaced, this is how the two get connected. The ORIGINAL edge
+    row is updated rather than replaced: the follow-up drops out of
+    ``GET /plan-library/followups`` but stays on the originating artifact's
+    edge list, so the trail from "this plan surfaced it" to "that plan owns it"
+    survives.
+
+    Failure modes, each distinguished on purpose:
+
+    * **404** — no such edge in the caller's organization scope. Edges carry no
+      org of their own; the scope is inherited from the originating artifact,
+      so an edge id is not a global handle.
+    * **422 (relation)** — the edge is not a ``spawned_followup``. The other
+      relations are two-ended already and there is nothing to claim.
+    * **422 (target)** — ``to_id`` names no artifact the caller can see.
+      Checked here so the message is actionable; the FK would otherwise
+      surface it as a 500.
+    * **409** — already claimed. Claiming is NOT idempotent across different
+      targets: silently re-pointing the edge would erase the first claim with
+      no trace and leave two callers each believing they own the work. The
+      response names the current owner.
+    """
+    org_id = await _resolve_org_id(db, current_user)
+    found = await crud.get_edge(db, edge_id, org_id=org_id)
+    if found is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Work artifact edge not found: {edge_id}",
+        )
+    edge, origin = found
+
+    if edge.relation != SPAWNED_FOLLOWUP_RELATION:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Edge {edge_id} has relation '{edge.relation}', which is "
+                f"already two-ended. Only '{SPAWNED_FOLLOWUP_RELATION}' edges "
+                "can be claimed."
+            ),
+        )
+
+    if payload.to_id == edge.from_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "An artifact cannot claim the follow-up it surfaced itself — "
+                "that would make it its own provenance peer."
+            ),
+        )
+
+    target = await crud.get_artifact(db, payload.to_id, org_id=org_id)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Work artifact not found: {payload.to_id}",
+        )
+
+    try:
+        claimed = await crud.claim_followup(db, edge_id, payload.to_id)
+    except crud.FollowupAlreadyClaimed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "followup_already_claimed",
+                "message": str(exc),
+                "edge_id": str(exc.edge_id),
+                "to_id": str(exc.to_id),
+            },
+        ) from exc
+
+    logger.info(
+        "plan_library.followup_claimed",
+        edge_id=str(claimed.id),
+        from_id=str(claimed.from_id),
+        from_slug=origin.slug,
+        to_id=str(claimed.to_id),
+        to_slug=target.slug,
+        actor=_actor(current_user),
+    )
+
+    return WorkArtifactEdgeRead(
+        id=claimed.id,
+        from_id=claimed.from_id,
+        to_id=claimed.to_id,
+        relation=claimed.relation,
+        note=claimed.note,
+        created_by=claimed.created_by,
+        created_at=claimed.created_at,
+        # Relative to the artifact that SURFACED the work — the same frame
+        # ``GET /{id}`` uses when it renders this edge on ``origin``.
+        direction="outgoing",
+        peer_kind=target.kind,
+        peer_slug=target.slug,
+        peer_title=target.title,
+    )
+
+
 @router.patch(
     "/{artifact_id}/kind",
     response_model=WorkArtifactSummary,
@@ -1379,16 +1608,72 @@ async def create_work_artifact_edge(
     edge) or ``from_id`` (that artifact → this one, an INCOMING edge).
     Re-posting an identical triple is idempotent and returns 200.
 
+    **``spawned_followup`` is the exception, and the only one.** It records
+    work this artifact SURFACED and deliberately did not do, which by
+    definition has no artifact to point at yet, so it may be posted with BOTH
+    endpoints omitted::
+
+        {"relation": "spawned_followup", "note": "<text>", "to_id": null}
+
+    ``note`` is then required and must not be blank — with no far end it is the
+    entire content of the row, and an empty one puts an unactionable entry in
+    the open-follow-ups queue forever. Supplying ``to_id`` is still allowed and
+    records a follow-up that already has an owner; ``from_id`` is not, because
+    the relation is inherently outgoing (this artifact surfaced that work).
+    Re-posting the same note is idempotent on ``(from_id, relation, note)``,
+    while a DIFFERENT note is a second follow-up — a plan may surface several.
+
+    Every other relation still REJECTS a null target here, with a 422 rather
+    than a database error. That is deliberate belt and braces:
+    ``ck_work_artifact_edges_open_target`` would refuse the row anyway, but
+    ``/candidates`` computes unmet dependencies by joining ``depends_on``
+    through ``to_id``, so a null target slipping in would make a blocked plan
+    read as ready — the failure is quiet enough to be worth two guards.
+
     A self-edge is refused. ``/candidates`` walks ``depends_on`` to compute
     unmet dependencies, so an artifact pointing at itself becomes its own
     permanently-unmet blocker and can never be reported as ready — and the
     prompt-chain walk would have to defend against the same cycle. There is
     no provenance relation an artifact can meaningfully hold with itself.
     """
-    if (payload.to_id is None) == (payload.from_id is None):
+    open_target_ok = payload.relation in RELATIONS_ALLOWING_OPEN_TARGET
+
+    if payload.to_id is None and payload.from_id is None:
+        if not open_target_ok:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Relation '{payload.relation}' requires a target: supply "
+                    "exactly one of 'to_id' (outgoing) or 'from_id' "
+                    "(incoming). Only "
+                    f"'{SPAWNED_FOLLOWUP_RELATION}' may be recorded with no "
+                    "far end, because the work it names has no artifact yet."
+                ),
+            )
+    elif payload.to_id is not None and payload.from_id is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Supply exactly one of 'to_id' (outgoing) or 'from_id' (incoming).",
+        )
+    elif open_target_ok and payload.from_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"'{SPAWNED_FOLLOWUP_RELATION}' is always OUTGOING — this "
+                "artifact surfaced that work. Omit 'from_id'; use 'to_id' only "
+                "to record a follow-up that already has an owning artifact."
+            ),
+        )
+
+    if open_target_ok and not (payload.note or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"'{SPAWNED_FOLLOWUP_RELATION}' requires a non-empty 'note'. "
+                "The follow-up has no artifact at the far end, so the note is "
+                "the entire record of what was surfaced; a blank one occupies "
+                "the open-follow-ups queue with nothing anyone can act on."
+            ),
         )
 
     if payload.to_id == artifact_id or payload.from_id == artifact_id:
@@ -1410,19 +1695,22 @@ async def create_work_artifact_edge(
         )
 
     peer_id = payload.to_id if payload.to_id is not None else payload.from_id
-    assert peer_id is not None  # guaranteed by the exactly-one check above
-    peer = await crud.get_artifact(db, peer_id, org_id=org_id)
-    if peer is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Work artifact not found: {peer_id}",
-        )
+    peer: WorkArtifact | None = None
+    if peer_id is not None:
+        peer = await crud.get_artifact(db, peer_id, org_id=org_id)
+        if peer is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Work artifact not found: {peer_id}",
+            )
 
-    outgoing = payload.to_id is not None
+    # No peer at all is the ONE-ENDED case, already narrowed to
+    # ``spawned_followup`` above: the edge runs out of ``anchor`` into nothing.
+    incoming = payload.from_id is not None
     edge, created = await crud.create_edge(
         db,
-        from_artifact=anchor if outgoing else peer,
-        to_artifact=peer if outgoing else anchor,
+        from_artifact=peer if incoming and peer is not None else anchor,
+        to_artifact=anchor if incoming else peer,
         relation=payload.relation,
         note=payload.note,
         created_by=_actor(current_user),
@@ -1439,8 +1727,8 @@ async def create_work_artifact_edge(
         note=edge.note,
         created_by=edge.created_by,
         created_at=edge.created_at,
-        direction="outgoing" if outgoing else "incoming",
-        peer_kind=peer.kind,
-        peer_slug=peer.slug,
-        peer_title=peer.title,
+        direction="incoming" if incoming else "outgoing",
+        peer_kind=peer.kind if peer is not None else None,
+        peer_slug=peer.slug if peer is not None else None,
+        peer_title=peer.title if peer is not None else None,
     )
