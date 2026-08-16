@@ -26,12 +26,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { FileText, Filter, RefreshCw } from "lucide-react";
+import { ArrowDownUp, FileText, Filter, RefreshCw } from "lucide-react";
 import { PlanCard, type CoordPlanRow } from "@/components/admin/coord/PlanCard";
 import { httpClient } from "@/services/service-factory";
+import { sortPlans, SORTS, type SortKey } from "./planSort";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
+
+/**
+ * Ask for coord's maximum page.
+ *
+ * Sorting happens client-side, so the window we sort over is the window we
+ * fetched. coord's list is `ORDER BY updated_at DESC LIMIT $3` with a default
+ * of 100 and a hard clamp of 500 (`work_unit_registry.rs` `list_work_units`),
+ * and the proxy forwards no sort parameter — so requesting the clamp is the
+ * widest honest window available. When the result fills it, the corpus is
+ * larger than what is sorted and the page says so; see `truncated` below.
+ */
+const FETCH_LIMIT = 500;
 
 // Work-unit lifecycle statuses (coord stores status as an opaque string;
 // these are the canonical lifecycle words the filter offers as a convenience
@@ -60,6 +73,7 @@ interface PlansListResponse {
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
+  const [sort, setSort] = useState<SortKey>("created_desc");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +82,7 @@ export default function CoordPlansListPage() {
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
+      qs.set("limit", String(FETCH_LIMIT));
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
@@ -89,6 +104,12 @@ export default function CoordPlansListPage() {
   }, [fetchData]);
 
   const plans = data?.work_units ?? data?.plans ?? [];
+  const sorted = sortPlans(plans, sort);
+  // coord returned a full page, so there are almost certainly more work units
+  // than we sorted. Say so: with the list capped at `updated_at DESC`, an
+  // "oldest created" answer drawn from this window can be wrong.
+  const truncated = plans.length >= FETCH_LIMIT;
+  const missingCreated = plans.filter((p) => !p.created_at).length;
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
@@ -122,6 +143,25 @@ export default function CoordPlansListPage() {
                 ))}
               </SelectContent>
             </Select>
+            <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
+            <Select
+              value={sort}
+              onValueChange={(v) => setSort(v as SortKey)}
+            >
+              <SelectTrigger
+                className="w-[200px]"
+                data-testid="coord-plans-sort-select"
+              >
+                <SelectValue placeholder="sort" />
+              </SelectTrigger>
+              <SelectContent>
+                {SORTS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -132,15 +172,36 @@ export default function CoordPlansListPage() {
             </Button>
           </div>
 
+          {truncated && (
+            <p
+              className="text-xs text-amber-300/90"
+              data-testid="coord-plans-truncated-notice"
+            >
+              Showing the {FETCH_LIMIT} most-recently-updated work units — coord
+              caps this list. Sorting applies to these only, so a
+              &ldquo;{SORTS.find((s) => s.value === sort)?.label}&rdquo; result
+              may not be the corpus-wide answer.
+            </p>
+          )}
+          {missingCreated > 0 && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-plans-missing-created-notice"
+            >
+              {missingCreated} of {plans.length} have no creation date recorded;
+              they sort last rather than being treated as oldest.
+            </p>
+          )}
+
           {error && (
             <p className="text-sm text-destructive">Failed to load: {error}</p>
           )}
 
           {loading && !data ? (
             <Skeleton className="h-24 w-full" />
-          ) : plans.length > 0 ? (
+          ) : sorted.length > 0 ? (
             <div className="space-y-2">
-              {plans.map((p) => (
+              {sorted.map((p) => (
                 <PlanCard key={p.slug} plan={p} />
               ))}
             </div>
