@@ -1,7 +1,7 @@
 """project.co_occurrence_observations — backfill app_id for the runner corpus
 
 Revision ID: obsappfill_01
-Revises: probe_base_01
+Revises: plan_library_03_spawned_followup
 Create Date: 2026-08-14
 
 Phase 3 of plan ``2026-08-14-f1-observation-app-scoping`` (web PR **B**, the
@@ -121,7 +121,7 @@ from alembic import op
 # regexes under ``re.M``, so a wrapped tuple silently drops parents and
 # manufactures a phantom extra head.
 revision: str = "obsappfill_01"
-down_revision: str | Sequence[str] | None = "probe_base_01"
+down_revision: str | Sequence[str] | None = "plan_library_03_spawned_followup"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
