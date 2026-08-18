@@ -319,21 +319,34 @@ function HistorySectionDiff({ section }: { section: SectionDrift }) {
   );
 }
 
+/** Badge text for a delta status — prose for the two non-difference ones. */
+function statusText(status: KeyDelta["status"]): string {
+  if (status === "unknown") return "not measured";
+  if (status === "unverified") return "unverified";
+  return status;
+}
+
 function HistoryDeltaRow({ delta }: { delta: KeyDelta }) {
   // `unknown` = one of the two captures never measured the key (its probe
   // exceeded the capture budget). Rendering the raw literal would read as a
   // value that changed to/from nothing, so it gets prose and the empty side is
   // labelled for what it is.
   const unmeasured = delta.status === "unknown";
+  // `unverified` = both captures reported the key, but comparing them says
+  // nothing — the value is a reason rather than a reading, or the two captures
+  // measured different environments. The raw literal would again read as a
+  // value change. NOT folded into `unmeasured` above: that one is not counted
+  // as drift and this one is.
+  const unverified = delta.status === "unverified";
   const side = (value: string | null) =>
-    value ?? (unmeasured ? "not measured" : "—");
+    value ?? (unmeasured || unverified ? "not measured" : "—");
 
   return (
     <div className="px-2 py-1.5 text-xs">
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono font-medium truncate">{delta.key}</span>
         <Badge variant={severityVariant(delta.severity)}>
-          {unmeasured ? "not measured" : delta.status}
+          {statusText(delta.status)}
         </Badge>
       </div>
       <div className="mt-0.5 grid grid-cols-2 gap-2">

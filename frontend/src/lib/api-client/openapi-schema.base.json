@@ -23291,6 +23291,11 @@
             "title": "Key",
             "type": "string"
           },
+          "observation_only": {
+            "default": false,
+            "title": "Observation Only",
+            "type": "boolean"
+          },
           "severity": {
             "enum": [
               "info",
@@ -23305,7 +23310,8 @@
               "added",
               "removed",
               "changed",
-              "unknown"
+              "unknown",
+              "unverified"
             ],
             "title": "Status",
             "type": "string"

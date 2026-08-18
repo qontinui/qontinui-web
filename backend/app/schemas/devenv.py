@@ -44,6 +44,17 @@ SeverityT = Literal["info", "warning", "critical"]
 #                 exceeded the capture budget, so the runner omitted the value
 #                 and named the key in the envelope's ``unknown_keys``).
 #
+# * ``unverified`` — both sides reported the key, but comparing them verifies
+#                    nothing. Two causes, one verdict (see
+#                    ``app.services.devenv_drift``): the capture's own value
+#                    says the fact was never measured
+#                    (``python_installed_probe`` other than ``measured``), or
+#                    the two captures are not comparable at all (their
+#                    ``python_installed_env_kind`` / ``..._scope_kind`` markers
+#                    disagree, so their digests were taken over different
+#                    environments). Both must read as neither clean nor
+#                    drifted.
+#
 # ``unknown`` is a STATUS, not a qualifier flag beside ``removed``: a
 # ``removed`` delta asserts "canonical has this, the target does not", and that
 # claim is simply false for a key nobody looked at — a flag alongside it would
@@ -53,7 +64,24 @@ SeverityT = Literal["info", "warning", "critical"]
 # is not there" are different claims. Contrast :attr:`KeyDelta.derived`, which
 # IS a qualifier — a derived key's status is genuinely known, it just is not
 # machine state.
-DeltaStatusT = Literal["added", "removed", "changed", "unknown"]
+#
+# ``unverified`` is a fifth member for that same reason rather than a reuse of
+# ``unknown``, and the distinction is not cosmetic:
+#
+# * ``unknown`` says the capturing box never measured THIS KEY, which is false
+#   here — ``python_installed_probe`` was measured and reported; what went
+#   unmeasured is the inventory the SIBLING keys describe, which is why they
+#   are absent rather than zero.
+# * The two carry opposite verdicts. ``unknown`` is an information gap that
+#   must NOT flip ``in_sync`` (a capture budget is a property of the measuring
+#   process, not of the box); ``unverified`` MUST flip it, because two boxes
+#   that both failed to measure agree on every installed key and would
+#   otherwise be reported in sync on the strength of two identical notes saying
+#   nobody looked. Collapsing them would force every consumer to re-derive
+#   which kind it was holding — and the drift UI already tells the reader that
+#   an ``unknown`` "is not counted as drift", a sentence that would become a
+#   lie the moment one kind of ``unknown`` started counting.
+DeltaStatusT = Literal["added", "removed", "changed", "unknown", "unverified"]
 
 # What a pulling runner may do with a config section (see
 # app.services.devenv_section_policy). Defined here because it is part of the
@@ -782,6 +810,27 @@ class KeyDelta(BaseSchema):
     by pulling the repo and can never be applied — so it is reported at ``info``
     and does not make a machine out-of-sync. See
     ``services/devenv_section_policy.is_derived_key``.
+    """
+    observation_only: bool = False
+    """Whether this key is a MEASUREMENT that no apply action can set.
+
+    ``derived`` and this flag both mean "never offer this as an apply", but for
+    opposite reasons, and only one of them is also "not machine drift":
+
+    * ``derived`` — not the box's state at all (it is the capturing binary's
+      source tree), so it is reported at ``info`` AND excluded from ``in_sync``.
+    * ``observation_only`` — genuinely the box's state, and a difference here is
+      REAL drift that counts against ``in_sync`` at full severity. It just is
+      not settable as a key: ``python_installed_digest`` is a sha256 over the
+      installed packages, so "set the digest to X" is not an instruction anyone
+      can carry out (the box converges by installing packages, and the digest
+      then follows).
+
+    Marking such a key derived to keep it out of the apply plan would silently
+    drop it from ``in_sync`` too, re-creating the "reports clean while measuring
+    nothing" failure the installed-inventory capture exists to remove — hence
+    two flags rather than one. See
+    ``services/devenv_section_policy.is_observation_only_key``.
     """
 
 
