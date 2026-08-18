@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Alembic sibling-head gate: the chain must have exactly one head.
 
-THE single home of this gate's logic. Two lanes invoke this one script:
+THE single home of this gate's logic. Three lanes invoke this one script:
 
   * ``.github/workflows/alembic-graph-pr.yml``, step "Count alembic heads"
-  * ``.qontinui/ci.toml``, step ``alembic-single-head``
+    — the PR gate; a forked chain FAILS the check.
+  * ``.qontinui/ci.toml``, step ``alembic-single-head`` — same, locally.
+  * ``.github/workflows/alembic-graph-check.yml``, step "Count heads"
+    — the post-merge companion, which is informational by construction and
+    comments on the merging PR instead of failing. It passes ``--report-only``
+    so a forked chain does not abort the step before the comment is posted.
 
 Offline head counter: it scans ``backend/alembic/versions/*.py`` textually
 without importing ``env.py`` (which would pull in qontinui-web's full app and
@@ -19,10 +24,15 @@ The post-merge informational workflow noticed it but did not block.
 Exit codes: 0 exactly one head, 1 more than one head, 2 the scan proved
 nothing (no revision files, no revisions parsed, or zero heads — a zero-head
 chain means a cycle, which is a defect, not a pass).
+
+``--report-only`` downgrades ONLY the multi-head case to exit 0; it still
+exits 2 on a scan that proved nothing, because an informational workflow that
+silently counted zero revisions is exactly as useless as a gate that did.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -72,6 +82,18 @@ merge to main also blocks `coord` from starting.
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help=(
+            "Print the head count and diagnostics but exit 0 on a multi-head "
+            "chain. For the post-merge informational workflow, which must reach "
+            "its comment step. A scan that proved nothing still exits 2."
+        ),
+    )
+    args = parser.parse_args()
+
     versions = REPO_ROOT / VERSIONS_DIR
     if not versions.is_dir():
         err(f"{VERSIONS_DIR}/ does not exist under {REPO_ROOT}.")
@@ -120,6 +142,12 @@ def main() -> int:
         for head in heads:
             err(f"  - {head}")
         print(REMEDIATION, file=sys.stderr)
+        if args.report_only:
+            # The caller (the post-merge informational workflow) reports this
+            # itself, by commenting on the merging PR. Failing here would abort
+            # its step before that comment is ever posted.
+            note("--report-only: multi-head chain reported, not failed.")
+            return 0
         return EXIT_VIOLATION
 
     return 0
