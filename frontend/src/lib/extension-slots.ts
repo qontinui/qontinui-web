@@ -8,10 +8,34 @@
  * its routes, components, services, and contexts at module-load time by
  * calling `registerCloudExtensions(...)` from its `src/index.ts`.
  *
+ * **The registry is observable.** That registration arrives asynchronously —
+ * `app/layout.tsx` loads the package with a fire-and-forget
+ * `import(CLOUD_CONTROL_PKG).catch(() => {})` — so it routinely lands *after*
+ * a consumer has already rendered. `registerCloudExtensions` therefore
+ * notifies every listener registered through `subscribeToSlots` once all its
+ * mutations are applied.
+ *
+ * **React consumers must use `useSlotComponent`, never `getComponent`.**
+ * A bare `getComponent(name)` read during render returns `undefined` until
+ * the dynamic import resolves and nothing re-renders the consumer afterwards,
+ * so the slot renders nothing *forever* — a silent failure indistinguishable
+ * from a correct OSS-only deploy. `useSlotComponent` subscribes, so a slot
+ * filled after first render re-renders its consumer. `getComponent` /
+ * `getService` / `getSlots` remain the right API for non-React callers
+ * (e.g. `services/service-factory.ts`'s Proxy, which re-reads on every
+ * property access and so has no staleness problem).
+ *
+ * This module imports React hooks, which are absent from React's
+ * `react-server` build. Verified 2026-08-18 by walking the app-router server
+ * graph from all 78 non-`"use client"` entry points: `extension-slots.ts` is
+ * not reachable without crossing a `"use client"` boundary, and all four
+ * component-slot consumers are client components.
+ *
  * See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
  *      D:/qontinui-root/tmp_cloud_control_carve_out.md  §4.1.
  */
 
+import { useCallback, useSyncExternalStore } from "react";
 import type { ComponentType, LazyExoticComponent } from "react";
 
 export interface NavItem {
@@ -76,6 +100,29 @@ const slots: ExtensionSlots = {
 };
 
 /**
+ * Listeners notified after every `registerCloudExtensions` call. Module-level
+ * (not per-slot) because registration is coarse — one `index.ts` call attaches
+ * everything cloud-control ships — so a single notification per call is both
+ * sufficient and cheaper than per-slot bookkeeping.
+ */
+const slotListeners = new Set<() => void>();
+
+/**
+ * Subscribe to slot-registration events. Returns the unsubscribe function.
+ *
+ * This is exactly the `useSyncExternalStore` subscribe contract, and
+ * `useSlotComponent` below is built on it. Exported in its own right so
+ * non-component code (and future hooks over `appRoutes` / `navItems` /
+ * `profilePanels`) can react to a late registration too.
+ */
+export function subscribeToSlots(listener: () => void): () => void {
+  slotListeners.add(listener);
+  return () => {
+    slotListeners.delete(listener);
+  };
+}
+
+/**
  * Cloud-control's `index.ts` calls this at module-load time with the
  * subset of slots it wants to attach.
  *
@@ -88,6 +135,10 @@ const slots: ExtensionSlots = {
  *   swap a `BillingService` cleanly without a stale instance hanging
  *   around. Production: do not call multiple times. Hot-reload:
  *   explicitly supported.
+ *
+ * Every `subscribeToSlots` listener is notified once, after all mutations
+ * above have been applied — never per-slot, so subscribers never observe a
+ * half-registered registry.
  */
 export function registerCloudExtensions(
   partial: Partial<{
@@ -114,6 +165,14 @@ export function registerCloudExtensions(
       slots.components.set(k, v);
     }
   }
+
+  // Notify AFTER every mutation: subscribers re-read the registry, so a
+  // mid-loop notification would let them snapshot a partial registration.
+  // Iterate a copy so a listener that unsubscribes (or subscribes) while
+  // being notified cannot perturb this pass.
+  for (const listener of [...slotListeners]) {
+    listener();
+  }
 }
 
 /** Read-only snapshot of all registered slots. */
@@ -136,12 +195,12 @@ export function getService<T>(name: string): T | undefined {
  * Look up a component slot by name. Returns `undefined` when no
  * cloud-control override has been registered (the OSS-only case).
  *
- * Callers JSX-render the result conditionally:
- *
- * ```tsx
- * const Switcher = getComponent<SwitcherProps>("organizationSwitcher");
- * return Switcher ? <Switcher {...props} /> : null;
- * ```
+ * **Not for React consumers — use `useSlotComponent` instead.** This is a
+ * one-shot read with no subscription: called during render before the
+ * cloud-control bundle's dynamic `import()` resolves, it returns `undefined`
+ * and nothing ever re-renders the consumer, so the slot stays empty for the
+ * lifetime of the page. Kept exported for non-React callers that re-read on
+ * demand (and for tests).
  *
  * The generic parameter `P` carries the props contract; the slot's
  * stored component is typed `ComponentType<unknown>` (registered by
@@ -152,4 +211,45 @@ export function getService<T>(name: string): T | undefined {
  */
 export function getComponent<P>(name: string): ComponentType<P> | undefined {
   return slots.components.get(name) as ComponentType<P> | undefined;
+}
+
+/**
+ * Subscribed React read of a component slot. Returns `undefined` when no
+ * cloud-control override is registered (the OSS-only case, and the composed
+ * case before the cloud-control bundle has loaded) — and re-renders the
+ * caller when one is registered later.
+ *
+ * This is the API every React consumer of a component slot must use:
+ *
+ * ```tsx
+ * function OrganizationSwitcherSlot(props: OrganizationSwitcherProps) {
+ *   const Slot = useSlotComponent<OrganizationSwitcherProps>("organizationSwitcher");
+ *   return Slot ? <Slot {...props} /> : null;
+ * }
+ * ```
+ *
+ * Implementation notes for anyone touching this:
+ *
+ * - The client snapshot is a `Map.get` — a stable component reference between
+ *   notifications, which is what `useSyncExternalStore` requires (a snapshot
+ *   that allocates a fresh value each call makes React loop forever).
+ * - The snapshot closures are memoised on `name` for the same reason: an
+ *   unmemoised closure re-subscribes on every render.
+ * - The server snapshot is `undefined` so SSR and OSS-only agree. React 18+
+ *   throws on a server/client snapshot mismatch, and the registry is empty on
+ *   the server by construction (the cloud-control bundle only loads in the
+ *   browser).
+ */
+export function useSlotComponent<P>(
+  name: string
+): ComponentType<P> | undefined {
+  const getSnapshot = useCallback(
+    () => slots.components.get(name) as ComponentType<P> | undefined,
+    [name]
+  );
+  const getServerSnapshot = useCallback(
+    (): ComponentType<P> | undefined => undefined,
+    []
+  );
+  return useSyncExternalStore(subscribeToSlots, getSnapshot, getServerSnapshot);
 }
