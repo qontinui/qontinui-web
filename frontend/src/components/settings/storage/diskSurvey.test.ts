@@ -71,6 +71,45 @@ function reportOnlyItem(over: Record<string, unknown> = {}) {
   });
 }
 
+/**
+ * A root ANOTHER ENGINE owns, in the shape `render_item` actually produces.
+ *
+ * `<wt>/target` is the canonical build-dir name the worktree reclaim engine
+ * owns, so the reaper refuses it with `SkipReason::OwnedByWorktreeReclaim` —
+ * and, because that reason is `owned_elsewhere()`, `render_item` strips the
+ * verb. The class is still `sibling-worktree`: the very class whose OTHER
+ * roots (`<wt>/target-<slug>`) do carry the verb.
+ */
+function ownedElsewhereItem(over: Record<string, unknown> = {}) {
+  return item({
+    id: "d:/wt/target",
+    path: "D:\\wt\\target",
+    class: "sibling-worktree",
+    status: "blocked",
+    reason: "owned-by-worktree-reclaim",
+    reason_detail:
+      "`target` is the canonical build-dir name the worktree reclaim engine " +
+      "owns.",
+    verb: null,
+    ...over,
+  });
+}
+
+/**
+ * The `scan` block a completed walk always carries. `disk_survey.rs` omits
+ * `scan` only for `pending` and `unavailable`, so any fixture standing in for
+ * a FRESH census has to carry it — and `canClaimNothingToReclaim` requires the
+ * walk to report itself complete rather than merely fail to report itself
+ * short.
+ */
+const COMPLETE_SCAN = {
+  dirs_visited: 1_200,
+  truncated: false,
+  read_errors: [],
+  roots_with_unknown_bytes: 0,
+  roots_with_partial_bytes: 0,
+};
+
 describe("parseDiskSurvey", () => {
   it("parses the documented envelope", () => {
     const survey = surveyOf({
@@ -396,6 +435,7 @@ describe("canClaimNothingToReclaim", () => {
         surveyOf({
           items: [],
           summary: { reclaimable_bytes: 0 },
+          scan: COMPLETE_SCAN,
           census_status: "fresh",
         })
       )
@@ -405,18 +445,46 @@ describe("canClaimNothingToReclaim", () => {
         surveyOf({
           items: [],
           summary: { reclaimable_bytes: 0 },
+          scan: COMPLETE_SCAN,
           census_status: "stale",
         })
       )
     ).toBe(true);
   });
 
+  it("is FALSE when the walk never REPORTED itself complete", () => {
+    // W2: `scan?.truncated !== true` passes for a missing `scan` AND for a
+    // `scan` with no `truncated` key -- two absences reading as a completeness
+    // claim the payload never made. The walk has to say it finished.
+    const noScan = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0 },
+      census_status: "fresh",
+    });
+    expect(noScan.scan).toBeNull();
+    expect(canClaimNothingToReclaim(noScan)).toBe(false);
+
+    const noKey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0 },
+      scan: { dirs_visited: 1_200, read_errors: [] },
+      census_status: "fresh",
+    });
+    expect(noKey.scan?.hasTruncatedField).toBe(false);
+    expect(noKey.scan?.truncated).toBe(false);
+    expect(canClaimNothingToReclaim(noKey)).toBe(false);
+  });
+
   it("is FALSE when the runner sent NO reclaimable_bytes at all", () => {
     // W4: absence is UNKNOWN. This is the function whose docstring says a
     // missing total may never license the sentence, and it used to read a
     // missing key as a measured zero -- the exact inversion.
-    const survey = surveyOf({ items: [], census_status: "fresh" });
-    expect(survey.summaryHasReclaimableBytes).toBe(false);
+    const survey = surveyOf({
+      items: [],
+      scan: COMPLETE_SCAN,
+      census_status: "fresh",
+    });
+    expect(Number.isNaN(survey.summaryReclaimableBytes)).toBe(true);
     expect(canClaimNothingToReclaim(survey)).toBe(false);
   });
 
@@ -424,9 +492,12 @@ describe("canClaimNothingToReclaim", () => {
     const survey = surveyOf({
       items: [],
       summary: { reclaimable_bytes: null },
+      scan: COMPLETE_SCAN,
       census_status: "fresh",
     });
-    expect(survey.summaryHasReclaimableBytes).toBe(true);
+    // Absent and `null` both survive as NaN -- both are the runner not having
+    // told us a total, and both are refused here.
+    expect(Number.isNaN(survey.summaryReclaimableBytes)).toBe(true);
     expect(canClaimNothingToReclaim(survey)).toBe(false);
   });
 
@@ -487,18 +558,26 @@ describe("runner-declared verb", () => {
       census_status: "fresh",
     });
     const [totals] = aggregateByClass(survey);
-    expect(totals.verb).toBe("v1");
+    // The CLASS is still one this build cannot place -- `item.verb` is a
+    // verdict about the ROOT, and reading it as class metadata is the X1
+    // regression. The bytes are actionable anyway: the runner named the engine
+    // that would remove this root.
+    expect(totals.verb).toBe("unrecognised");
     expect(bucketTotals([totals]).actionableBytes).toBe(1024);
+    expect(bucketTotals([totals]).unrecognisedBytes).toBe(0);
   });
 
-  it("treats an explicit `verb: null` as report-only, not unrecognised", () => {
+  it("does not offer a reclaimable root the runner named NO verb for", () => {
+    // The runner cannot emit this shape today (a verdict of `Ok` keeps the
+    // class's verb), but if one arrives this page cannot say what would act on
+    // it -- so it is surfaced as unplaceable, never as actionable.
     const survey = surveyOf({
       items: [item({ class: "some-future-class", verb: null })],
       census_status: "fresh",
     });
-    const [totals] = aggregateByClass(survey);
-    expect(totals.verb).toBe("deferred-v2");
-    expect(bucketTotals([totals]).reportOnlyBytes).toBe(1024);
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(buckets.actionableBytes).toBe(0);
+    expect(buckets.unrecognisedBytes).toBe(1024);
   });
 
   it("falls back to the class table when the runner reports no verb key", () => {
@@ -642,7 +721,6 @@ describe("the four states", () => {
       census_status: "pending",
     });
     expect(survey.censusStatus).toBe("pending");
-    expect(survey.summaryHasReclaimableBytes).toBe(true);
     expect(Number.isNaN(survey.summaryReclaimableBytes)).toBe(true);
     expect(canClaimNothingToReclaim(survey)).toBe(false);
     expect(measuredZeroBuckets(survey)).toEqual({
@@ -665,6 +743,7 @@ describe("the four states", () => {
     const survey = surveyOf({
       items: [],
       summary: { reclaimable_bytes: 0, report_only_bytes: 0 },
+      scan: COMPLETE_SCAN,
       census_status: "fresh",
     });
     expect(canClaimNothingToReclaim(survey)).toBe(true);
@@ -928,18 +1007,157 @@ describe("per-status byte qualifiers", () => {
   });
 });
 
-describe("intra-class verb conflict", () => {
-  it("refuses to let payload order decide actionability", () => {
+// ---------------------------------------------------------------------------
+// X1: a class whose items disagree about `verb`. This is the shape the REAL
+// machine produces, and the shape every other fixture in this file avoided --
+// which is why both suites stayed green while the page told the operator there
+// were no candidates for the classes the cleanup verb covers.
+// ---------------------------------------------------------------------------
+
+describe("a class whose roots disagree about `verb`", () => {
+  /**
+   * `sibling-worktree` as it actually arrives: `<wt>/target` is owned by the
+   * worktree reclaim engine (blocked, verb stripped) and `<wt>/target-<slug>`
+   * is this reaper's own (reclaimable, verb set). The runner's own test
+   * `paths_owned_by_other_engines_are_reported_but_never_candidates` builds
+   * exactly this.
+   */
+  const mixed = () =>
+    surveyOf({
+      items: [
+        ownedElsewhereItem({ id: "a", bytes: 100 }),
+        item({
+          id: "b",
+          path: "D:\\wt\\target-slug",
+          class: "sibling-worktree",
+          status: "reclaimable",
+          verb: "orphan-target-reaper",
+          bytes: 500,
+        }),
+      ],
+      census_status: "fresh",
+    });
+
+  it("keeps the CLASS verb from the class, not from the first item", () => {
+    const [totals] = aggregateByClass(mixed());
+    expect(totals.classId).toBe("sibling-worktree");
+    // Not `unrecognised`: the disagreement is the runner answering per root.
+    expect(totals.verb).toBe("v1");
+    expect(totals.note).toBe(KNOWN_DISK_CLASSES["sibling-worktree"].note);
+    // ...and no note accusing the runner of contradicting itself.
+    expect(totals.note).not.toMatch(/conflicting|contradict|unresolved/i);
+  });
+
+  it("routes each root on its OWN verdict — actionable bytes are not hidden", () => {
+    const buckets = bucketTotals(aggregateByClass(mixed()));
+    // Before the fix: actionable 0, unrecognised 500, and a hidden tile.
+    expect(buckets.actionableBytes).toBe(500);
+    expect(buckets.actionableItems).toBe(1);
+    expect(buckets.unrecognisedBytes).toBe(0);
+    expect(buckets.unrecognisedItems).toBe(0);
+    // The owned-elsewhere root is held by another engine — blocked, not
+    // report-only and not actionable.
+    expect(buckets.blockedBytes).toBe(100);
+    expect(buckets.blockedItems).toBe(1);
+    expect(buckets.reportOnlyBytes).toBe(0);
+  });
+
+  it("still counts every root exactly once", () => {
+    const buckets = bucketTotals(aggregateByClass(mixed()));
+    expect(
+      buckets.actionableBytes +
+        buckets.reportOnlyBytes +
+        buckets.unrecognisedBytes +
+        buckets.blockedBytes
+    ).toBe(600);
+    expect(
+      buckets.actionableItems +
+        buckets.reportOnlyItems +
+        buckets.unrecognisedItems +
+        buckets.blockedItems
+    ).toBe(2);
+  });
+
+  it("handles `sibling-nongit` mixed the same way (pool slots and agent dirs)", () => {
     const survey = surveyOf({
       items: [
-        item({ id: "a", class: "container", verb: "reaper", bytes: 10 }),
-        item({ id: "b", class: "container", verb: null, bytes: 20 }),
+        ownedElsewhereItem({
+          id: "p",
+          path: "D:\\target-pool\\slot-0",
+          class: "sibling-nongit",
+          reason: "owned-by-build-pool",
+          bytes: 7,
+        }),
+        ownedElsewhereItem({
+          id: "u",
+          path: "D:\\target-agent",
+          class: "sibling-nongit",
+          reason: "ownership-unknown",
+          bytes: 11,
+        }),
+        item({
+          id: "o",
+          path: "D:\\target-orphan",
+          class: "sibling-nongit",
+          status: "reclaimable",
+          verb: "orphan-target-reaper",
+          bytes: 13,
+        }),
       ],
       census_status: "fresh",
     });
     const [totals] = aggregateByClass(survey);
-    expect(totals.verbConflicts).toBe(1);
-    expect(totals.verb).toBe("unrecognised");
-    expect(totals.note).toMatch(/conflicting answers/i);
+    expect(totals.verb).toBe("v1");
+    const buckets = bucketTotals([totals]);
+    expect(buckets.actionableBytes).toBe(13);
+    expect(buckets.blockedBytes).toBe(18);
+    expect(buckets.unrecognisedBytes).toBe(0);
+    expect(buckets.reportOnlyBytes).toBe(0);
+  });
+
+  it("never offers an owned-elsewhere root as actionable, whatever its status", () => {
+    // Routing keys on the REASON the runner gave, not on the verb it stripped.
+    // `reclaimable` beside `owned-by-build-pool` is a shape the runner cannot
+    // emit; if one ever arrives, the owner's claim wins over the status —
+    // offering another engine's slot for deletion is the expensive direction
+    // to be wrong in.
+    const survey = surveyOf({
+      items: [
+        item({
+          id: "x",
+          class: "sibling-nongit",
+          status: "reclaimable",
+          reason: "owned-by-build-pool",
+          verb: "orphan-target-reaper",
+          bytes: 64,
+        }),
+      ],
+      census_status: "fresh",
+    });
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(buckets.actionableBytes).toBe(0);
+    expect(buckets.blockedBytes).toBe(64);
+  });
+
+  it("keeps the per-bucket unknown/partial counts on the right tile", () => {
+    const survey = surveyOf({
+      items: [
+        ownedElsewhereItem({ id: "a", bytes: null }),
+        item({
+          id: "b",
+          class: "sibling-worktree",
+          status: "reclaimable",
+          verb: "orphan-target-reaper",
+          bytes: 500,
+          bytes_partial: true,
+        }),
+      ],
+      census_status: "fresh",
+    });
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(buckets.actionablePartialByteItems).toBe(1);
+    expect(buckets.actionableUnknownByteItems).toBe(0);
+    expect(buckets.blockedUnknownByteItems).toBe(1);
+    expect(buckets.blockedPartialByteItems).toBe(0);
   });
 });
