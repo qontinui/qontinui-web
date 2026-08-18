@@ -10,7 +10,7 @@ import { useSidebar } from "@/contexts/sidebar-context";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { STORAGE_KEYS } from "@qontinui/navigation";
 import { toast } from "sonner";
-import { getComponent } from "@/lib/extension-slots";
+import { useSlotComponent } from "@/lib/extension-slots";
 import type { CreateOrganizationDialogProps } from "@/lib/cloud-component-slots";
 import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
 import { useSidebarProjects } from "./_hooks/use-sidebar-projects";
@@ -162,12 +162,15 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
 
 /**
  * Renders cloud-control's `CreateOrganizationDialog` if registered, or
- * nothing in OSS-only mode. Resolved via the slot registry on every
- * render so cloud-control's `registerCloudExtensions` call can land
- * after the OSS app shell mounts (no module-load-order coupling).
+ * nothing in OSS-only mode. `useSlotComponent` *subscribes* to the slot
+ * registry, so cloud-control's `registerCloudExtensions` call can land
+ * after the OSS app shell mounts (no module-load-order coupling) and this
+ * component re-renders when it does. Resolving on every render would not be
+ * enough on its own — it only helps if something else triggers another
+ * render; the subscription is what makes the late registration land.
  */
 function CreateOrganizationDialogSlot(props: CreateOrganizationDialogProps) {
-  const Slot = getComponent<CreateOrganizationDialogProps>(
+  const Slot = useSlotComponent<CreateOrganizationDialogProps>(
     "createOrganizationDialog",
   );
   return Slot ? <Slot {...props} /> : null;

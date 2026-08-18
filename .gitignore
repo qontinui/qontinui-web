@@ -40,6 +40,7 @@ package-lock.json
 next.config.js
 frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
+!frontend/scripts/cloud-control-overlay.mjs
 !frontend/scripts/check-browser-safe-imports.mjs
 !frontend/scripts/export-test-coverage.mjs
 !frontend/scripts/prod-probes/
@@ -131,3 +132,6 @@ frontend/yarn.lock
 # .mcp.json at launch. It is a live credential and must never be committed.
 # (Was previously only in .git/info/exclude — local-only, lost on fresh clone/CI.)
 .mcp.json
+
+# Git-Bash crash dumps — never commit
+*.stackdump

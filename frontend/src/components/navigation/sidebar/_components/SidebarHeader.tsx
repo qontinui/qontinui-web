@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { getComponent } from "@/lib/extension-slots";
+import { useSlotComponent } from "@/lib/extension-slots";
 import type {
   OrganizationSwitcherProps,
   SwitcherOrganization,
@@ -30,9 +30,12 @@ export function SidebarHeader({
 }: SidebarHeaderProps) {
   // Resolves to cloud-control's real switcher in composed deploys, or
   // `undefined` in OSS-only — in which case the entire wrapper section
-  // below is skipped (no empty bordered container).
+  // below is skipped (no empty bordered container). `useSlotComponent`
+  // subscribes to the registry, so a `registerCloudExtensions` call that
+  // lands after this header first renders re-renders it; a bare per-render
+  // read would only resolve if something else happened to re-render us.
   const OrganizationSwitcher =
-    getComponent<OrganizationSwitcherProps>("organizationSwitcher");
+    useSlotComponent<OrganizationSwitcherProps>("organizationSwitcher");
 
   return (
     <>
