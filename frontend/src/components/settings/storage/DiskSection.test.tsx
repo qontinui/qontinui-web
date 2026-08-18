@@ -70,13 +70,38 @@ function reportOnlyRoot(over: Record<string, unknown> = {}) {
 }
 
 /**
+ * A root ANOTHER ENGINE owns, in the shape `render_item` actually produces:
+ * `<wt>/target` is the canonical build-dir name the worktree reclaim engine
+ * owns, so the reaper refuses it — and because that refusal is
+ * `SkipReason::owned_elsewhere()`, the verb is STRIPPED. Its class is still
+ * `sibling-worktree`, the same class whose `target-<slug>` roots carry a verb.
+ */
+function ownedElsewhereRoot(over: Record<string, unknown> = {}) {
+  return {
+    id: "o",
+    path: "D:/wt/target",
+    class: "sibling-worktree",
+    status: "blocked",
+    reason: "owned-by-worktree-reclaim",
+    reason_detail:
+      "`target` is the canonical build-dir name the worktree reclaim engine " +
+      "owns.",
+    verb: null,
+    ...over,
+  };
+}
+
+/**
  * The runner's measured-empty answer. `summary.reclaimable_bytes: 0` is the
  * MEASUREMENT; without the key the page may not claim "nothing to reclaim"
- * (absence is unknown), so the default fixture has to carry it explicitly.
+ * (absence is unknown), so the default fixture has to carry it explicitly —
+ * and `scan` has to say the walk finished, which is why a completed census
+ * always carries the block.
  */
 const EMPTY_MEASURED = {
   items: [],
   summary: { reclaimable_bytes: 0, report_only_bytes: 0 },
+  scan: { dirs_visited: 1200, truncated: false, read_errors: [] },
   census_status: "fresh",
 };
 
@@ -751,6 +776,54 @@ describe("DiskSection — reclaim survey", () => {
       container.querySelector("[data-disk-absent-buckets]")?.textContent ?? ""
     ).not.toMatch(/cleanup verb covers/i);
     expect(screen.getByText(/holds .cargo-lock/i)).toBeInTheDocument();
+  });
+
+  it("SHOWS the actionable tile for a class whose roots disagree about `verb`", async () => {
+    // X1. `verb` is a per-ITEM verdict: `<wt>/target` is owned by the worktree
+    // reclaim engine (verb stripped) while `<wt>/target-<slug>` in the SAME
+    // class is this reaper's own (verb set). Read as class metadata, the
+    // disagreement collapsed the class to "unrecognised" and hid the tile --
+    // while the table below it listed a reclaimable root WITH a verb, and the
+    // page printed "no candidates for the classes the cleanup verb covers".
+    // A fabricated absence over the exact population this feature exists for.
+    runnerFetch.mockResolvedValue({
+      items: [
+        ownedElsewhereRoot({ id: "a", bytes: 2 * 1024 ** 3 }),
+        {
+          id: "b",
+          path: "D:/wt/target-slug",
+          class: "sibling-worktree",
+          status: "reclaimable",
+          verb: "orphan-target-reaper",
+          bytes: 5 * 1024 ** 3,
+        },
+      ],
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="actionable"]')
+      ).not.toBeNull()
+    );
+    const actionable = container.querySelector(
+      '[data-disk-bucket="actionable"]'
+    );
+    expect(actionable?.textContent).toContain("5.0 GiB");
+    expect(actionable?.textContent).toContain("1 target dir");
+    expect(actionable?.textContent).not.toMatch(/\b0 B\b/);
+    // The owned-elsewhere root is held by another engine, so it is on the
+    // blocked tile -- not folded into the actionable bytes, and not dropped.
+    expect(container.textContent).toContain("2.0 GiB");
+    // No "no candidates" sentence for the class that plainly HAS candidates.
+    expect(
+      container.querySelector("[data-disk-absent-buckets]")?.textContent ?? ""
+    ).not.toMatch(/cleanup verb covers/i);
+    // And no note telling the operator the runner contradicted itself.
+    expect(container.textContent).not.toMatch(
+      /conflicting answers|contradict/i
+    );
+    expect(container.textContent).not.toMatch(/unrecognised class/i);
   });
 
   it("does not kick a refresh walk on mount — only the button does", async () => {

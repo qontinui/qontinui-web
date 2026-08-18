@@ -557,13 +557,25 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   // anti-fabrication check. That function is the ONLY implementation of this
   // rule; a second copy of a safety check is how the two drift apart.
   const measuredZero = measuredZeroBuckets(survey);
-  // A class whose every root is BLOCKED still has candidates. Gating the tile
-  // on the reclaimable count alone would report "no candidates" for a class
-  // whose bytes are visible in the table two elements below.
+  // Two independent reasons to show a tile, because either one alone is a way
+  // to hide real bytes:
+  //
+  // - the bucket HAS roots. This is the per-item fact, and it is what the
+  //   class-level test missed: a root the runner marked reclaimable WITH a
+  //   verb is actionable even if its class is one this build cannot place, and
+  //   hiding its tile printed "no candidates" over the exact population this
+  //   feature exists to surface.
+  // - the class exists but every one of its roots is held. Gating on the
+  //   bucket alone would then report "no candidates" for a class whose bytes
+  //   are visible in the table two elements below.
   const hasV1Class = totals.some((t) => t.verb === "v1");
   const hasReportOnlyClass = totals.some((t) => t.verb === "deferred-v2");
-  const showActionable = hasV1Class || measuredZero.actionable;
-  const showReportOnly = hasReportOnlyClass || measuredZero.reportOnly;
+  const showActionable =
+    buckets.actionableItems > 0 || hasV1Class || measuredZero.actionable;
+  const showReportOnly =
+    buckets.reportOnlyItems > 0 ||
+    hasReportOnlyClass ||
+    measuredZero.reportOnly;
 
   const absentBuckets: string[] = [];
   if (!showActionable) {
@@ -744,7 +756,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 unknownItems={buckets.blockedUnknownByteItems}
                 partialItems={buckets.blockedPartialByteItems}
                 itemCount={buckets.blockedItems}
-                detail="something holds these now: a live build, a pin, a dirty tree or another engine that owns the path"
+                detail="the runner refused these: a live build, a pin, a dirty tree, another engine that owns the path, or a check that could not confirm nothing does"
               />
             ) : null}
           </div>
