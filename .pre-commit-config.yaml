@@ -61,13 +61,19 @@ repos:
 
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint
-        entry: .pre-commit-hooks/check_web_boundary.sh
-        language: script
+        entry: python scripts/ci/check_web_boundary.py --files
+        language: system
         files: ^backend/app/.*\.py$
-        # Mirrors .github/workflows/web-boundary-lint.yml — catches the
-        # boundary violation before push. `qontinui-schemas` is exempt
-        # (shared Pydantic types). `backend/app/api/embeddings.py` is
-        # allowlisted defensively pending Phase 8 (embeddings runner-bridge).
+        # SAME SCRIPT as .github/workflows/web-boundary-lint.yml and
+        # .qontinui/ci.toml's `web-boundary-lint` step — catches the boundary
+        # violation before push. It used to be a third copy of the logic
+        # (.pre-commit-hooks/check_web_boundary.sh, deleted by Phase 5 of plan
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity);
+        # `--files` is the same scan restricted to the changed-file list
+        # pre-commit appends. `qontinui-schemas` is exempt (shared Pydantic
+        # types). `backend/app/api/embeddings.py` is allowlisted defensively
+        # pending Phase 8 (embeddings runner-bridge). See the script's module
+        # docstring for the rule itself.
 
 ci:
   autofix_prs: true
