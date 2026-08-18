@@ -7,16 +7,20 @@ Comprehensive collaboration components for qontinui-web, including real-time pre
 > `TeamMemberList`, `InviteMemberDialog` — are no longer importable
 > from `@/components/collaboration` or have OSS-side stub files. They
 > are React components registered by `@qontinui/cloud-control` into
-> the `getComponent(name)` slot via
+> the component-slot registry via
 > `registerCloudExtensions({ components: { ... } })`. OSS consumers
-> retrieve them with `getComponent<P>(slotName)` and render
+> retrieve them with `useSlotComponent<P>(slotName)` and render
 > conditionally — `undefined` means single-tenant deploy with nothing
-> to render. Prop contracts live in
+> to render. Use the hook, never a bare `getComponent<P>(slotName)`:
+> that is an unsubscribed read, so a slot filled after the consumer's
+> first render — which is the normal case, since the cloud-control
+> bundle loads asynchronously — never re-renders the consumer and the
+> component silently never appears. Prop contracts live in
 > `frontend/src/lib/cloud-component-slots.ts`. See `orgs/index.ts` for
 > the type re-exports. The "Usage" snippets below for those four
 > components show the legacy direct-import shape and are kept for
 > historical reference only — actual integration goes through
-> `getComponent`.
+> `useSlotComponent`.
 
 ## Components Overview
 
