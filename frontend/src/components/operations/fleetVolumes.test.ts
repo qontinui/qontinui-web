@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEVICE_VOLUMES_NOT_YET_READ,
   groupFlatRows,
   indexDeviceVolumes,
+  parseDeviceVolumes,
   parseFleetVolumes,
+  resolveDeviceVolumes,
   resolveMachineVolumes,
   tightestVolume,
   toVolumeReading,
@@ -548,5 +551,147 @@ describe("tightestVolume", () => {
 
   it("returns null (→ unknown) when the read did not answer", () => {
     expect(tightestVolume(VOLUMES_NOT_YET_READ)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-device sibling (Phase 2 — `deviceVolumesUrl`'s first consumer)
+// ---------------------------------------------------------------------------
+
+describe("parseDeviceVolumes", () => {
+  it("parses the per-device envelope the fleet parser cannot", () => {
+    const parsed = parseDeviceVolumes({
+      device_id: DEVICE,
+      volumes: [
+        {
+          volume: "D:",
+          total_bytes: 100,
+          free_bytes: 7,
+          observed_at: "2026-08-16T00:00:00Z",
+        },
+      ],
+    });
+    expect(parsed.state).toBe("parsed");
+    if (parsed.state !== "parsed") return;
+    expect(parsed.deviceId).toBe(DEVICE);
+    expect(parsed.volumes).toHaveLength(1);
+    expect(parsed.skippedRows).toBe(0);
+    // The regression this parser exists for: the FLEET parser rejects this
+    // exact (valid) payload because its rows carry no `device_id`.
+    expect(parseFleetVolumes({ device_id: DEVICE, volumes: [] }).state).toBe(
+      "parsed"
+    );
+  });
+
+  it("reads an EMPTY volumes array as a recognised shape, not a failure", () => {
+    const parsed = parseDeviceVolumes({ device_id: DEVICE, volumes: [] });
+    expect(parsed.state).toBe("parsed");
+    if (parsed.state !== "parsed") return;
+    expect(parsed.volumes).toEqual([]);
+    expect(parsed.skippedRows).toBe(0);
+  });
+
+  it("is UNPARSEABLE when there is no volumes array", () => {
+    const parsed = parseDeviceVolumes({ device_id: DEVICE });
+    expect(parsed.state).toBe("unparseable");
+    if (parsed.state !== "unparseable") return;
+    expect(parsed.reason).toMatch(/not an empty one/i);
+  });
+
+  it("is UNPARSEABLE for a non-object payload", () => {
+    expect(parseDeviceVolumes(null).state).toBe("unparseable");
+    expect(parseDeviceVolumes([]).state).toBe("unparseable");
+  });
+
+  it("counts unreadable rows instead of dropping them", () => {
+    const parsed = parseDeviceVolumes({
+      device_id: DEVICE,
+      volumes: [{ volume: "D:", total_bytes: 1, free_bytes: 1 }, {}, 7],
+    });
+    expect(parsed.state).toBe("parsed");
+    if (parsed.state !== "parsed") return;
+    expect(parsed.volumes).toHaveLength(1);
+    expect(parsed.skippedRows).toBe(2);
+  });
+
+  it("keeps a non-numeric byte count as NaN, never 0", () => {
+    const parsed = parseDeviceVolumes({
+      device_id: DEVICE,
+      volumes: [{ volume: "D:", total_bytes: null, free_bytes: "lots" }],
+    });
+    if (parsed.state !== "parsed") throw new Error("expected parsed");
+    expect(Number.isNaN(parsed.volumes[0].free_bytes)).toBe(true);
+    expect(parsed.volumes[0].free_bytes).not.toBe(0);
+  });
+});
+
+describe("resolveDeviceVolumes", () => {
+  const reading = {
+    volume: "D:",
+    total_bytes: 100,
+    free_bytes: 7,
+    observed_at: null,
+  };
+
+  it("reports readable volumes", () => {
+    const state = resolveDeviceVolumes(
+      { state: "ok", deviceId: DEVICE, volumes: [reading], skippedRows: 0 },
+      DEVICE
+    );
+    expect(state.state).toBe("reported");
+  });
+
+  it("says never_reported ONLY for a clean, empty, successful read", () => {
+    const state = resolveDeviceVolumes(
+      { state: "ok", deviceId: DEVICE, volumes: [], skippedRows: 0 },
+      DEVICE
+    );
+    expect(state.state).toBe("never_reported");
+  });
+
+  it("says UNKNOWN — not never_reported — when rows were dropped", () => {
+    const state = resolveDeviceVolumes(
+      { state: "ok", deviceId: DEVICE, volumes: [], skippedRows: 2 },
+      DEVICE
+    );
+    expect(state.state).toBe("unknown");
+    if (state.state !== "unknown") return;
+    expect(state.reason).toMatch(/could not be read/i);
+    expect(state.reason).toMatch(/not zero/i);
+  });
+
+  it("carries the failure reason through, never an empty list", () => {
+    const state = resolveDeviceVolumes(
+      { state: "unavailable", reason: "coord returned HTTP 502" },
+      DEVICE
+    );
+    expect(state).toEqual({
+      state: "unknown",
+      reason: "coord returned HTTP 502",
+    });
+  });
+
+  it("refuses to attribute another device's answer to this machine", () => {
+    const state = resolveDeviceVolumes(
+      { state: "ok", deviceId: "other", volumes: [reading], skippedRows: 0 },
+      DEVICE
+    );
+    expect(state.state).toBe("unknown");
+    if (state.state !== "unknown") return;
+    expect(state.reason).toMatch(/answered for device other/i);
+  });
+
+  it("accepts a response that named no device at all", () => {
+    const state = resolveDeviceVolumes(
+      { state: "ok", deviceId: null, volumes: [reading], skippedRows: 0 },
+      DEVICE
+    );
+    expect(state.state).toBe("reported");
+  });
+
+  it("starts UNKNOWN before the first read", () => {
+    expect(
+      resolveDeviceVolumes(DEVICE_VOLUMES_NOT_YET_READ, DEVICE).state
+    ).toBe("unknown");
   });
 });

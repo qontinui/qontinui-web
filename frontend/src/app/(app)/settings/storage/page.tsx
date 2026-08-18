@@ -1,10 +1,25 @@
 "use client";
 
+/**
+ * `/settings/storage` — the ONE disk surface.
+ *
+ * Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 2 step 4 (D6,
+ * discoverability): free space + reclaimable build caches live HERE, alongside
+ * the screenshot/video cleanup that already shipped, rather than on a second
+ * disk page. A user hunting for "why is my disk full" has one place to look.
+ *
+ * The media cleanup below was reorganised, not duplicated: the usage bars,
+ * paths and delete buttons are the pre-existing surface, gathered into a
+ * single "Screenshots and videos" block so the new Disk section reads as the
+ * page's headline rather than as a competing fourth card.
+ */
+
 import { useState, useEffect, useCallback } from "react";
 import { useRunnerHealth, runnerApi, type StorageInfo } from "@/lib/runner-api";
 import { RunnerOfflineState } from "@/components/runner/RunnerOfflineState";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
+import { DiskSection } from "@/components/settings/storage/DiskSection";
 import { toast } from "sonner";
 import { Loader2, HardDrive, Trash2, Trash, Info } from "lucide-react";
 
@@ -150,20 +165,26 @@ export default function StorageSettingsPage() {
             Storage
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Local file management and cleanup
+            Disk space on this machine — free space, reclaimable build caches,
+            and screenshot/video cleanup
           </p>
         </div>
       </div>
 
-      {/* Storage Usage */}
+      {/* Disk — free space (Phase 1 telemetry) + the read-only reclaim preview */}
+      <DiskSection />
+
+      {/* Screenshots and videos — the pre-existing cleanup surface, gathered
+          into one block so this page has a single disk story (plan D6). */}
       <div className="rounded-lg border border-border">
         <div className="px-4 py-3 border-b border-border bg-muted/50">
           <h3 className="text-sm font-medium flex items-center gap-2">
             <HardDrive className="size-4" />
-            Storage Usage
+            Screenshots and videos
           </h3>
           <p className="text-xs text-muted-foreground">
-            Current disk usage for screenshots and videos
+            Runner media captured per session — usage, where it lives, and
+            cleanup
           </p>
         </div>
         <div className="p-4 space-y-5">
@@ -184,18 +205,11 @@ export default function StorageSettingsPage() {
             </>
           )}
         </div>
-      </div>
 
-      {/* Storage Locations */}
-      <div className="rounded-lg border border-border">
-        <div className="px-4 py-3 border-b border-border bg-muted/50">
-          <h3 className="text-sm font-medium flex items-center gap-2">
-            <HardDrive className="size-4" />
-            Storage Locations
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Where files are stored on disk
-          </p>
+        <div className="px-4 py-2 border-t border-border bg-muted/30">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Where these files live
+          </h4>
         </div>
         <div className="p-4 space-y-3">
           {storageInfo && (
@@ -227,18 +241,12 @@ export default function StorageSettingsPage() {
             </>
           )}
         </div>
-      </div>
 
-      {/* Storage Cleanup */}
-      <div className="rounded-lg border border-border">
-        <div className="px-4 py-3 border-b border-border bg-muted/50">
-          <h3 className="text-sm font-medium flex items-center gap-2">
-            <Trash2 className="size-4" />
-            Storage Cleanup
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Remove old files to free up disk space
-          </p>
+        <div className="px-4 py-2 border-t border-border bg-muted/30">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+            <Trash2 className="size-3.5" />
+            Cleanup
+          </h4>
         </div>
         <div className="p-4 space-y-4">
           <div className="flex flex-wrap gap-3">
@@ -281,7 +289,10 @@ export default function StorageSettingsPage() {
               ) : (
                 <Trash className="size-4" />
               )}
-              Clear All Storage
+              {/* Named for what it actually clears. Now that this page also
+                  reports build caches, "Clear All Storage" would read as a
+                  claim over bytes this button cannot touch. */}
+              Clear All Screenshots and Videos
             </DestructiveButton>
           </div>
 
