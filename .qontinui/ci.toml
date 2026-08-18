@@ -94,8 +94,18 @@
 #    and a running app. Out of scope for a parity mirror of the GATES.
 #
 # 6. NO [[tools]] ARE DECLARED, AND THAT IS NOT THE SAME AS "NEEDS NOTHING".
-#    The runner's tool registry (ci_node/tools.rs) currently provisions exactly
-#    one tool, cargo-nextest. Every step below assumes `npm` (Node 22, per
+#    The runner's tool registry (ci_node/tools.rs — `static KNOWN_TOOLS` at
+#    :107, and the "The registry is CLOSED" rationale at :20) currently
+#    provisions exactly one tool, cargo-nextest. Cited by line here ON PURPOSE,
+#    against this file's own name-not-line-number rule: a 2026-08-18 review of
+#    the Phase 5 diff reported "there is no tool registry in the runner — `find
+#    -name tools.rs` returns nothing" and recommended deleting the closed-
+#    registry framing. That was a STALE CHECKOUT artifact: the primary
+#    qontinui-runner checkout sat at 33500d706 (2026-08-07, 97 commits behind)
+#    whose ci_node/ has 7 files and no tools.rs, while origin/main has 12
+#    including it — added by a4e040c7c, shipped 2026-08-08 with the preceding
+#    plan. Verify against origin/main, never a local checkout. Every step below
+#    assumes `npm` (Node 22, per
 #    frontend-ci.yml's setup-node) and `poetry` (Python 3.12, per backend-ci.yml's
 #    PYTHON_VERSION) are already on PATH. Until those enter the registry this
 #    repo is not yet a zero-install target; declaring a tool the registry does
@@ -109,6 +119,16 @@
 #    so this is not a new class of assumption — but it IS a new name on PATH and
 #    a manifest that silently assumed it would be lying by omission. `git` was
 #    already assumed by the `openapi-snapshot-drift` step below.
+#
+#    PORTABILITY NOTE, NOT A CORRECTNESS HOLE: bare `python` (as opposed to
+#    `python3`) is typically ABSENT on macOS, and unlike the Actions lane — which
+#    is always ubuntu-latest — this lane runs on whatever a contributor's box is.
+#    The failure mode there is the safe one: the step cannot start, so it fails
+#    LOUD AND RED with a "program not found" spawn error. It cannot produce a
+#    vacuous green, which is the failure this manifest actually guards against.
+#    The fix, when `python` enters the registry (gap 1's problem, not this
+#    file's), is a provisioned interpreter rather than a spelling change here —
+#    `python3` would merely move the same gap to Windows.
 # ===========================================================================
 
 version = 1
@@ -185,15 +205,26 @@ pin = "default-branch"
 # ---------------------------------------------------------------------------
 # REPO-WIDE GATES — first, because they are the only steps here that need no
 # provisioning at all: no npm install, no poetry venv, no sibling repo. Each is
-# an offline scan of the checked-out tree that runs in well under a second, so
-# putting them ahead of `frontend-install` means a dispatch that is going to
-# fail on one of them fails before it pays for a dependency install.
+# an offline scan of the checked-out tree taking a few seconds (measured on this
+# lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for all three), against
+# minutes for the installs that follow. So putting them ahead of
+# `frontend-install` means a dispatch that is going to fail on one of them fails
+# before it pays for a dependency install.
 #
 # These three are NOT string-mirrors of their workflows — both lanes invoke the
-# same committed script, so they cannot drift. Each script exits 1 on the
-# violation it checks for and 2 when it scanned NOTHING (empty input set, or the
-# underlying tool erroring), because a gate that passed because it looked at no
-# files is the vacuous-green failure class this manifest exists to close.
+# same committed script, so they cannot drift.
+#
+# Each script exits 1 on the violation it checks for and 2 when it COULD NOT
+# SCAN. Stated precisely, because the guarantee is narrower than "no green
+# without a scan" and should not be oversold: what each script guarantees is
+# that it never returns 0 after finding its INPUT SET EMPTY or its underlying
+# tool erroring — no revision files, no tracked files, a `git grep` that failed,
+# a path it could not place, a file it could not read. It can still legitimately
+# return 0 having scanned nothing in a case where emptiness is the honest
+# answer: `check_web_boundary.py --files` given a non-empty list of files that
+# are all out of scope says so and passes. That is the pre-commit path, not a
+# gate path; the two dispatch steps below always take the repo-wide branch,
+# where an empty input set is always exit 2.
 # ---------------------------------------------------------------------------
 
 [[steps]]

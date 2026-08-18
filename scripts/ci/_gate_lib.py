@@ -18,13 +18,29 @@ Two conventions every gate script here follows:
    Actions.
 
 2. **Silence is never success.** Every gate script must be able to tell
-   "scanned N files and found no violations" apart from "scanned nothing".
+   "scanned N files and found no violations" apart from "could not scan".
    The second case exits :data:`EXIT_VACUOUS` — a gate that passes because
    its input set was empty is the exact failure class this plan exists to
    eliminate (cf. the 181 self-skipping DB tests, the ``cargo test`` filter
    that matched zero tests and exited 0, and the OpenAPI export that
    silently dropped 31 routes). Use :func:`require_nonempty` for that check
    rather than hand-rolling it.
+
+   State the guarantee precisely, because it is narrower than "never green
+   without a scan": what these scripts promise is that they never return 0
+   after finding their INPUT SET EMPTY, or after the tool they delegate to
+   errored. They may still return 0 having examined no files where emptiness
+   is the honest answer — ``check_web_boundary.py --files`` handed a
+   non-empty list that contains nothing in its scope says exactly that and
+   passes. Emptiness of the INPUT is always an error; emptiness of the
+   in-scope SUBSET of a non-empty input is a result. Do not blur the two:
+   overclaiming here would make the next reader trust a green the code never
+   promised.
+
+   Exit 2 is also deliberately distinct from exit 1 in the other direction.
+   An I/O error, an unplaceable path or a missing scan root must NOT be
+   reported as "violation found" — that sends the reader hunting for a
+   defect that is not in the tree.
 """
 
 from __future__ import annotations
