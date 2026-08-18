@@ -30,28 +30,31 @@
  * the fabricated-zero failure this feature exists to remove. The renderer says
  * "at least X" whenever that count is non-zero.
  *
- * ## Wire shape this module was coded against
+ * ## Wire shape this module is pinned to
  *
- * `GET :9876/disk/reclaimable`, whose Rust wire types are `DiskSurvey` /
- * `DiskReclaimItem` / `ClassSummary` in the runner's
- * `agent_worktree/disk_survey.rs` (route registered in `mcp/disk_reclaim.rs`).
- * The fields this parser actually reads:
+ * `GET :9876/disk/reclaimable` (query: `?refresh=1`, `?waitSecs=N` capped at
+ * 10), whose Rust wire types are `DiskSurvey` / `DiskReclaimItem` /
+ * `ClassSummary` in the runner's `agent_worktree/disk_survey.rs`; the route is
+ * registered in `mcp/disk_reclaim.rs`. **This is the confirmed contract, not a
+ * guess** -- an earlier draft carried speculative envelope tolerance, which is
+ * precisely what produced Phase 1's fleet-wide false "nobody has reported"
+ * claim, so it has been removed.
  *
  * ```jsonc
  * {
  *   "device_id": "<uuid>|null",
  *   "items": [{
- *     "id": "d:/qontinui-root/foo/target",   // optional; falls back to `path`
- *     "path": "D:\\qontinui-root\\foo\\target",
+ *     "id": "d:/qontinui-root/foo/target",   // falls back to `path`
+ *     "path": "D:\qontinui-root\foo\target",
  *     "class": "in-repo-canonical",           // see KNOWN_DISK_CLASSES
  *     "status": "reclaimable" | "blocked",
  *     "reason": "building" | null,
  *     "reason_detail": "a cargo build holds .cargo-lock" | null,
  *     "bytes": 12345678 | null,               // null = UNREADABLE, never 0
- *     "bytes_partial": false,                 // true ⇒ `bytes` is a floor
+ *     "bytes_partial": false,                 // true => `bytes` is a floor
  *     "last_used_at": "2026-08-14T09:00:00Z" | null,
- *     "repo_root": "D:\\qontinui-root\\foo" | null,
- *     "verb": "orphan_target_reaper" | null   // null ⇒ NO v1 verb (report-only)
+ *     "repo_root": "D:\qontinui-root\foo" | null,
+ *     "verb": "orphan_target_reaper" | null   // null => NO v1 verb
  *   }],
  *   "summary": {
  *     "reclaimable_bytes": 12345678 | null,
@@ -63,28 +66,43 @@
  *                    "note": "..." }]
  *   },
  *   "census_status": "pending" | "fresh" | "stale" | "unavailable",
+ *   "census_taken_at": "<rfc3339>" | null,
  *   "census_age_secs": 42,
- *   "census_note": "..."
+ *   "census_build_ms": 40123,
+ *   "census_refreshing": false,
+ *   "census_note": "...",
+ *   "scan": { ... }
  * }
  * ```
  *
- * Three deliberate choices about which half of the payload is authoritative:
+ * ### The four states, which must never render the same string
  *
- * - **Per-class BYTES are aggregated here, from `items[]`.** Each item carries
- *   `class`, `status` and `bytes`, so the totals come from the rows that are
- *   also listed on screen; the two can never disagree with each other.
- *   `summary.reclaimable_bytes` is read only to cross-check — see
- *   {@link surveyDisagreement}.
- * - **The VERB is read from the runner**, per item (falling back to the
- *   matching `by_class` row). The runner is the thing that would execute the
- *   verb, so it is the authority on whether one exists; {@link
- *   KNOWN_DISK_CLASSES} is the fallback for a build that reports no verbs, not
- *   the source of truth.
- * - **`summary.by_class` decides whether a zero is MEASURED.** The runner emits
- *   a row for every class it knows, including classes with zero roots — so its
- *   presence is what licenses the UI to render `0 B` for a class instead of
- *   refusing to. Without it, an empty bucket could equally mean the class was
- *   never surveyed.
+ * | State | Signal | Render |
+ * |---|---|---|
+ * | cold start | `census_status: "pending"`, totals `null` | explicit NOT READY |
+ * | failed | `census_status: "unavailable"`, reason in `census_note` | the reason |
+ * | measured empty | `fresh` + no items + totals `0` | "nothing to reclaim" |
+ * | normal | `fresh` + items | the totals |
+ *
+ * The middle two are the pair that collapse if you are careless, and the whole
+ * feature is the distinction between them. `null` totals mean the runner does
+ * not KNOW; `0` means it MEASURED nothing -- see
+ * {@link DiskSurvey.summaryHasReclaimableBytes}.
+ *
+ * ### Which half of the payload is authoritative
+ *
+ * - **Per-class BYTES are aggregated here, from `items[]`**, so every figure on
+ *   the page comes from rows that are also listed on it. The runner's own
+ *   totals (`reclaimable_bytes`, `report_only_bytes`) are cross-checks --
+ *   {@link surveyDisagreement}, {@link reportOnlyDisagreement} -- and a
+ *   divergence is reported rather than resolved by preferring one silently.
+ * - **The VERB is read from the runner**, per item, falling back to the
+ *   matching `by_class` row and only then to {@link KNOWN_DISK_CLASSES}. The
+ *   runner is the thing that would execute the verb.
+ * - **A measured zero needs positive evidence**: an explicit `0` total, or a
+ *   fully-readable `by_class` reporting `roots: 0` for every class in the
+ *   bucket. Presence of a rollup alone is not enough -- see
+ *   {@link measuredZeroBuckets}.
  */
 
 /** Whether a guard currently refuses to touch a candidate. */
@@ -192,6 +210,23 @@ export const KNOWN_DISK_CLASSES: Record<string, DiskClassInfo> = {
       "Target roots beside a checkout with no git metadata of their own. " +
       "Covered by the v1 cleanup verb.",
   },
+  "owned-by-worktree-reclaim": {
+    label: "Owned by the worktree reclaim engine",
+    verb: "deferred-v2",
+    note:
+      "Reported, not actionable from here: these roots belong to the " +
+      "worktree census/reclaim engine, which is their single owner. A second " +
+      "owner is how the mess this feature exists to fix arose (plan D6), so " +
+      "the bytes are shown and the verb is left to the engine that owns them.",
+  },
+  "owned-by-build-pool": {
+    label: "Owned by the build pool",
+    verb: "deferred-v2",
+    note:
+      "Reported, not actionable from here: the supervisor's build pool and " +
+      "its last-known-good binary are a hard exclusion for every reaper " +
+      "(plan D6) -- deleting the LKG breaks the supervisor's fallback.",
+  },
 };
 
 /**
@@ -233,11 +268,30 @@ export interface DiskSurvey {
    */
   summaryReclaimableBytes: number;
   /**
+   * `true` when the runner sent a `summary.reclaimable_bytes` key at all.
+   *
+   * The runner's four states hinge on this: a `pending` census reports the
+   * totals as `null` (it does not KNOW), while a completed one that found
+   * nothing reports `0` (it MEASURED nothing). Absent and zero must not
+   * collapse together, so the key's presence is recorded apart from its value.
+   */
+  summaryHasReclaimableBytes: boolean;
+  /**
+   * `summary.report_only_bytes` — the runner's own headline for the class it
+   * deliberately ships no verb for. `NaN` when it sent none or sent `null`.
+   */
+  summaryReportOnlyBytes: number;
+  /**
    * `summary.by_class`, or `null` when the runner sent none this parser could
    * read. `null` means the UI may NOT render a measured zero for a class with
    * no items — see {@link parseClassSummaries}.
    */
   byClass: ClassSummaryRow[] | null;
+  /**
+   * Rows of `summary.by_class` that could not be read. Non-zero disqualifies
+   * the rollup from certifying a measured zero — see {@link rollupCertifiesZero}.
+   */
+  byClassSkipped: number;
   /**
    * `summary.bytes_incomplete` — the runner's own statement that at least one
    * byte total above is a lower bound (a truncated walk, an unreadable
@@ -280,15 +334,18 @@ function optionalString(value: unknown): string | null {
 /**
  * Normalise an item's `status`.
  *
- * `reapable` is accepted alongside `reclaimable` because the shape this is
- * modelled on (`GET /agent-worktrees/reclaimable`) spells it that way, and the
- * two routes are siblings written months apart. An unrecognised status is
- * `null` — the item is then counted as unreadable rather than silently
- * defaulted into either bucket, because guessing would put real bytes on the
- * wrong side of the "can I act on this?" line.
+ * Pinned to the runner's ACTUAL contract — `reclaimable` | `blocked` — and
+ * nothing else. An earlier draft also accepted the worktree route's `reapable`
+ * on the guess that the two sibling routes might spell it differently; that
+ * guess is exactly the class of speculative envelope-tolerance that produced
+ * Phase 1's fleet-wide false "nobody has reported" claim, so it is gone.
+ *
+ * An unrecognised status is `null` — the item is counted as unreadable rather
+ * than defaulted into either bucket, because guessing would put real bytes on
+ * the wrong side of the "can I act on this?" line.
  */
 export function toSurveyStatus(value: unknown): DiskSurveyStatus | null {
-  if (value === "reclaimable" || value === "reapable") return "reclaimable";
+  if (value === "reclaimable") return "reclaimable";
   if (value === "blocked") return "blocked";
   return null;
 }
@@ -367,10 +424,29 @@ function toNumberOrNaN(value: unknown): number {
   return typeof value === "number" ? value : Number.NaN;
 }
 
-function toCount(value: unknown): number {
+/**
+ * A count, or `NaN` when the runner sent nothing usable.
+ *
+ * Deliberately NOT defaulted to `0`. This rollup's entire job is to license
+ * the UI to render a measured zero, so a count that defaulted to zero would
+ * manufacture the exact authority it is being consulted for.
+ */
+function toCountOrNaN(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
-    : 0;
+    : Number.NaN;
+}
+
+/** What {@link parseClassSummaries} made of `summary.by_class`. */
+export interface ClassRollup {
+  rows: ClassSummaryRow[];
+  /**
+   * Rows of the rollup that could not be read. NON-ZERO MEANS THE ROLLUP IS
+   * NOT AUTHORITATIVE: a partly-read rollup cannot certify that a class with
+   * no items was measured as empty, because the row saying otherwise may be
+   * one of the ones that was dropped.
+   */
+  skipped: number;
 }
 
 /**
@@ -380,27 +456,104 @@ function toCount(value: unknown): number {
  * the runner measured as empty from a class it never surveyed, and it says so
  * rather than rendering a `0 B` it cannot support.
  */
-export function parseClassSummaries(raw: unknown): ClassSummaryRow[] | null {
+export function parseClassSummaries(raw: unknown): ClassRollup | null {
   if (!Array.isArray(raw)) return null;
-  const out: ClassSummaryRow[] = [];
+  const rows: ClassSummaryRow[] = [];
+  let skipped = 0;
   for (const entry of raw) {
-    if (!isRecord(entry)) continue;
+    if (!isRecord(entry)) {
+      skipped++;
+      continue;
+    }
     const classId = optionalString(entry.class);
-    if (classId === null) continue;
-    out.push({
+    if (classId === null) {
+      skipped++;
+      continue;
+    }
+    rows.push({
       classId,
-      roots: toCount(entry.roots),
+      roots: toCountOrNaN(entry.roots),
       bytes: toNumberOrNaN(entry.bytes),
-      reclaimableRoots: toCount(entry.reclaimable_roots),
+      reclaimableRoots: toCountOrNaN(entry.reclaimable_roots),
       reclaimableBytes: toNumberOrNaN(entry.reclaimable_bytes),
-      rootsWithUnknownBytes: toCount(entry.roots_with_unknown_bytes),
+      rootsWithUnknownBytes: toCountOrNaN(entry.roots_with_unknown_bytes),
       verb: optionalString(entry.verb),
       hasVerbField: Object.hasOwn(entry, "verb"),
       note: optionalString(entry.note),
     });
   }
   // An array that yielded no readable row is unreadable, not empty.
-  return out.length === 0 && raw.length > 0 ? null : out;
+  if (rows.length === 0 && raw.length > 0) return null;
+  return { rows, skipped };
+}
+
+/**
+ * May the caller render a `0 B` tile for a class with no items?
+ *
+ * ONLY when the runner sent a rollup, every row of it was readable, and the
+ * rollup itself reports no roots. The previous form of this check trusted the
+ * mere PRESENCE of the rollup — which let a rollup saying "40 roots,
+ * 1.1 TB" authorise a `0 B` tile derived from a short `items[]`, i.e. a
+ * fabricated zero produced by the anti-fabrication mechanism itself.
+ */
+export function rollupCertifiesZero(
+  survey: DiskSurvey,
+  classIds: readonly string[]
+): boolean {
+  const rollup = survey.byClass;
+  if (rollup === null || survey.byClassSkipped > 0) return false;
+  return classIds.every((classId) => {
+    const row = rollup.find((r) => r.classId === classId);
+    // A class the rollup never mentioned is not certified as empty by it.
+    if (!row) return false;
+    return row.roots === 0;
+  });
+}
+
+/**
+ * Classes the rollup names whose `roots` this build could not read, or which
+ * report more roots than `items[]` carries — i.e. the rollup and the item list
+ * describe different populations.
+ *
+ * A non-empty result means no total on the page may be presented as complete:
+ * the runner told us about roots it did not itemise.
+ */
+export function rollupDisagreement(survey: DiskSurvey): string | null {
+  const rollup = survey.byClass;
+  if (rollup === null) return null;
+  const itemsPerClass = new Map<string, number>();
+  for (const item of survey.items) {
+    if (item.classId === null) continue;
+    itemsPerClass.set(item.classId, (itemsPerClass.get(item.classId) ?? 0) + 1);
+  }
+  const short: string[] = [];
+  const unreadable: string[] = [];
+  for (const row of rollup) {
+    if (!Number.isFinite(row.roots)) {
+      unreadable.push(row.classId);
+      continue;
+    }
+    const listed = itemsPerClass.get(row.classId) ?? 0;
+    if (row.roots > listed)
+      short.push(`${row.classId} (${row.roots} vs ${listed})`);
+  }
+  if (short.length === 0 && unreadable.length === 0) return null;
+  const parts: string[] = [];
+  if (short.length > 0) {
+    parts.push(
+      `the runner's per-class rollup names MORE roots than it itemised for ` +
+        `${short.join(", ")}`
+    );
+  }
+  if (unreadable.length > 0) {
+    parts.push(`its root count could not be read for ${unreadable.join(", ")}`);
+  }
+  return (
+    `The survey's two halves describe different populations: ${parts.join(
+      "; and "
+    )}. Every byte total below is therefore a LOWER BOUND drawn from the ` +
+    `items that were listed, not a measurement of the class.`
+  );
 }
 
 /**
@@ -442,6 +595,7 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
   }
 
   const summary = isRecord(payload.summary) ? payload.summary : null;
+  const rollup = parseClassSummaries(summary?.by_class);
   const summaryBytes = summary?.reclaimable_bytes;
   const censusStatusRaw = optionalString(payload.census_status);
   const ageRaw = payload.census_age_secs;
@@ -461,7 +615,11 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
       items,
       summaryReclaimableBytes:
         typeof summaryBytes === "number" ? summaryBytes : Number.NaN,
-      byClass: parseClassSummaries(summary?.by_class),
+      summaryHasReclaimableBytes:
+        summary !== null && Object.hasOwn(summary, "reclaimable_bytes"),
+      summaryReportOnlyBytes: toNumberOrNaN(summary?.report_only_bytes),
+      byClass: rollup?.rows ?? null,
+      byClassSkipped: rollup?.skipped ?? 0,
       bytesIncomplete: summary?.bytes_incomplete === true,
       skippedItems: skipped,
     },
@@ -493,6 +651,26 @@ export interface DiskClassTotals {
    * they contribute to the total — the total is just not the whole truth.
    */
   partialByteItems: number;
+  /**
+   * The same two counts, split by STATUS.
+   *
+   * The split is not cosmetic: `reclaimableBytes` and `blockedBytes` are
+   * rendered in different columns, and a combined count puts the "at least"
+   * qualifier on whichever column happens to be rendered — claiming a total is
+   * a floor when it is exact, and claiming an exact figure for the total that
+   * actually is a floor. Each column carries its own count.
+   */
+  reclaimableUnknownByteItems: number;
+  reclaimablePartialByteItems: number;
+  blockedUnknownByteItems: number;
+  blockedPartialByteItems: number;
+  /**
+   * Items of this class that disagreed with each other about `verb`. Non-zero
+   * forces {@link verb} to `unrecognised`: the runner gave two answers about
+   * whether a cleanup verb covers this class, and picking whichever arrived
+   * first would decide actionability by array order.
+   */
+  verbConflicts: number;
 }
 
 const UNCLASSIFIED: DiskClassInfo = {
@@ -565,7 +743,22 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
         classId: item.classId,
         label: info.label,
         verb,
-        note: declaredRow?.note ?? info.note,
+        // Note precedence: the runner's own sentence, then a composed one when
+        // the runner's verb CONTRADICTS this build's table (both facts are
+        // shown — overriding one with the other would leave a "cleanup verb"
+        // badge beside a note saying no verb exists), then the table's.
+        note:
+          declaredRow?.note ??
+          (declaresVerb.has && verb !== info.verb
+            ? `The runner reports ${
+                declaresVerb.verb !== null
+                  ? `a cleanup verb ("${declaresVerb.verb}")`
+                  : "NO cleanup verb"
+              } for this class, which is not what this build of the web UI ` +
+              `expects. The runner's answer is used, because it is the thing ` +
+              `that would run the verb. For reference, this build's own note ` +
+              `reads: ${info.note}`
+            : info.note),
         known: isKnownClass(item.classId),
         reclaimableBytes: 0,
         blockedBytes: 0,
@@ -573,18 +766,53 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
         blockedCount: 0,
         unknownByteItems: 0,
         partialByteItems: 0,
+        reclaimableUnknownByteItems: 0,
+        reclaimablePartialByteItems: 0,
+        blockedUnknownByteItems: 0,
+        blockedPartialByteItems: 0,
+        verbConflicts: 0,
       };
       byClass.set(item.classId, entry);
     }
-    if (item.status === "reclaimable") entry.reclaimableCount++;
+    const reclaimable = item.status === "reclaimable";
+    if (reclaimable) entry.reclaimableCount++;
     else entry.blockedCount++;
+
+    // A later item of the same class that disagrees about the verb is a
+    // conflict, not a refinement — recorded rather than resolved by position.
+    if (item.hasVerbField) {
+      const declared = item.verb !== null;
+      const expected = entry.verb === "v1";
+      if (entry.verb !== "unrecognised" && declared !== expected) {
+        entry.verbConflicts++;
+      }
+    }
+
     if (!Number.isFinite(item.bytes) || item.bytes < 0) {
       entry.unknownByteItems++;
+      if (reclaimable) entry.reclaimableUnknownByteItems++;
+      else entry.blockedUnknownByteItems++;
       continue;
     }
-    if (item.bytesPartial) entry.partialByteItems++;
-    if (item.status === "reclaimable") entry.reclaimableBytes += item.bytes;
+    if (item.bytesPartial) {
+      entry.partialByteItems++;
+      if (reclaimable) entry.reclaimablePartialByteItems++;
+      else entry.blockedPartialByteItems++;
+    }
+    if (reclaimable) entry.reclaimableBytes += item.bytes;
     else entry.blockedBytes += item.bytes;
+  }
+  for (const entry of byClass.values()) {
+    if (entry.verbConflicts > 0) {
+      entry.verb = "unrecognised";
+      entry.note =
+        `The runner gave conflicting answers about this class: ` +
+        `${entry.verbConflicts} of its ${entry.reclaimableCount + entry.blockedCount} ` +
+        `roots disagreed with the others about whether a cleanup verb covers ` +
+        `it. Rather than let payload order decide, this page reports the ` +
+        `class as unresolved -- the bytes are real, the actionability is not ` +
+        `established.`;
+    }
   }
   return Array.from(byClass.values()).sort(
     (a, b) =>
@@ -620,6 +848,8 @@ export interface DiskBuckets {
   /** Candidates a guard refuses to touch right now, across every class. */
   blockedBytes: number;
   blockedItems: number;
+  blockedUnknownByteItems: number;
+  blockedPartialByteItems: number;
 }
 
 /** Split the per-class aggregate into the actionable / report-only buckets. */
@@ -639,55 +869,106 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
     unrecognisedPartialByteItems: 0,
     blockedBytes: 0,
     blockedItems: 0,
+    blockedUnknownByteItems: 0,
+    blockedPartialByteItems: 0,
   };
   for (const t of totals) {
     out.blockedBytes += t.blockedBytes;
     out.blockedItems += t.blockedCount;
+    out.blockedUnknownByteItems += t.blockedUnknownByteItems;
+    out.blockedPartialByteItems += t.blockedPartialByteItems;
     if (t.verb === "v1") {
       out.actionableBytes += t.reclaimableBytes;
       out.actionableItems += t.reclaimableCount;
-      out.actionableUnknownByteItems += t.unknownByteItems;
-      out.actionablePartialByteItems += t.partialByteItems;
+      out.actionableUnknownByteItems += t.reclaimableUnknownByteItems;
+      out.actionablePartialByteItems += t.reclaimablePartialByteItems;
     } else if (t.verb === "deferred-v2") {
       out.reportOnlyBytes += t.reclaimableBytes;
       out.reportOnlyItems += t.reclaimableCount;
-      out.reportOnlyUnknownByteItems += t.unknownByteItems;
-      out.reportOnlyPartialByteItems += t.partialByteItems;
+      out.reportOnlyUnknownByteItems += t.reclaimableUnknownByteItems;
+      out.reportOnlyPartialByteItems += t.reclaimablePartialByteItems;
     } else {
       out.unrecognisedBytes += t.reclaimableBytes;
       out.unrecognisedItems += t.reclaimableCount;
-      out.unrecognisedUnknownByteItems += t.unknownByteItems;
-      out.unrecognisedPartialByteItems += t.partialByteItems;
+      out.unrecognisedUnknownByteItems += t.reclaimableUnknownByteItems;
+      out.unrecognisedPartialByteItems += t.reclaimablePartialByteItems;
     }
   }
   return out;
 }
 
 /**
+ * Which headline buckets may render a MEASURED `0 B` rather than being hidden.
+ *
+ * A bucket qualifies only when the runner's rollup is fully readable, names at
+ * least one class that falls in that bucket, and reports `roots: 0` for every
+ * such class. Anything weaker — a missing rollup, a partly-read one, or a row
+ * naming roots the item list does not carry — leaves the bucket hidden and the
+ * caller says ABSENT instead of `0 B`.
+ */
+export function measuredZeroBuckets(survey: DiskSurvey): {
+  actionable: boolean;
+  reportOnly: boolean;
+} {
+  // The runner's own headline totals are the FIRST authority: a completed
+  // census that found nothing reports `0`, while a cold one reports `null`.
+  // An explicit zero is a measurement and licenses a `0 B` tile on its own.
+  const summarySaysZero = (n: number) => Number.isFinite(n) && n === 0;
+  const fromSummary = {
+    actionable: summarySaysZero(survey.summaryReclaimableBytes),
+    reportOnly: summarySaysZero(survey.summaryReportOnlyBytes),
+  };
+
+  const rollup = survey.byClass;
+  if (rollup === null || survey.byClassSkipped > 0) return fromSummary;
+  const verbOf = (row: ClassSummaryRow): DiskClassVerb => {
+    if (row.hasVerbField) return row.verb !== null ? "v1" : "deferred-v2";
+    return classInfo(row.classId).verb;
+  };
+  const forBucket = (want: DiskClassVerb) => {
+    const rows = rollup.filter((r) => verbOf(r) === want);
+    if (rows.length === 0) return false;
+    return rows.every((r) => r.roots === 0);
+  };
+  return {
+    actionable: fromSummary.actionable || forBucket("v1"),
+    reportOnly: fromSummary.reportOnly || forBucket("deferred-v2"),
+  };
+}
+
+/**
  * A sentence describing a survey that contradicts itself, or `null`.
  *
- * The case that matters: an EMPTY `items[]` alongside a `summary` claiming
- * reclaimable bytes. Rendering "nothing to reclaim" there would repeat a
- * number the payload itself disputes, so the caller shows this instead. The
- * reverse (items summing to more than the summary) is reported too — either
- * way the two halves of the answer disagree and neither may be presented as
- * settled fact.
+ * Deliberately NARROW. The exact semantics of `summary.reclaimable_bytes` are
+ * the runner's, and a cross-check that fires on every ordinary difference
+ * (blocked bytes folded into the summary, roots the runner counted but did not
+ * itemise, a paging limit) would put a red warning on every successful load and
+ * train the operator to ignore the honesty banners — which costs more than the
+ * check buys. So only the two differences that CANNOT be an accounting
+ * convention are reported:
+ *
+ * - an EMPTY item list against a summary claiming bytes — rendering "nothing to
+ *   reclaim" there would repeat a number the payload itself disputes;
+ * - items summing to MORE than the summary, which no amount of unlisted roots
+ *   can explain.
+ *
+ * A shortfall in the other direction is expected and already surfaced as a
+ * lower bound (unreadable/partial sizes, {@link rollupDisagreement}).
+ *
+ * The byte predicate matches {@link aggregateByClass} exactly — finite AND
+ * non-negative — so a negative `bytes` cannot be counted here while being
+ * excluded there.
  */
 export function surveyDisagreement(survey: DiskSurvey): string | null {
   const summary = survey.summaryReclaimableBytes;
   if (!Number.isFinite(summary)) return null;
+  const usable = (n: number) => Number.isFinite(n) && n >= 0;
   const derived = survey.items
-    .filter((i) => i.status === "reclaimable" && Number.isFinite(i.bytes))
+    .filter((i) => i.status === "reclaimable" && usable(i.bytes))
     .reduce((sum, i) => sum + i.bytes, 0);
-  if (derived === summary) return null;
-  // Items with unreadable byte counts explain a shortfall honestly; that is
-  // not a contradiction, it is the lower bound this module already declares.
-  const unreadable = survey.items.some(
-    (i) =>
-      i.status === "reclaimable" &&
-      (!Number.isFinite(i.bytes) || i.bytesPartial)
-  );
-  if (unreadable && derived < summary) return null;
+  const emptyButClaimed = survey.items.length === 0 && summary > 0;
+  const overshoot = derived > summary;
+  if (!emptyButClaimed && !overshoot) return null;
   return (
     `The runner's own summary reports ${summary} reclaimable byte` +
     `${summary === 1 ? "" : "s"} while its item list adds up to ${derived}. ` +
@@ -697,17 +978,57 @@ export function surveyDisagreement(survey: DiskSurvey): string | null {
 }
 
 /**
+ * The runner's `report_only_bytes` headline against the item-derived
+ * report-only total, or `null` when they agree (or it sent none).
+ *
+ * The tiles are computed from `items[]` so that every figure on the page comes
+ * from the rows also listed on it. That consistency is worth keeping — but it
+ * means the runner's own headline for the class it will not act on can differ
+ * silently, and that class is ~47 % of the bytes. So a divergence is REPORTED
+ * rather than resolved by quietly preferring one source.
+ */
+export function reportOnlyDisagreement(
+  survey: DiskSurvey,
+  derivedReportOnlyBytes: number
+): string | null {
+  const headline = survey.summaryReportOnlyBytes;
+  if (!Number.isFinite(headline)) return null;
+  if (headline === derivedReportOnlyBytes) return null;
+  return (
+    `The runner's own report-only headline is ${headline} bytes, while the ` +
+    `items it listed for those classes add up to ${derivedReportOnlyBytes}. ` +
+    `The tile shows the item-derived figure, because that is the one the ` +
+    `table below can be checked against -- but the runner is counting ` +
+    `something this page did not receive, so treat the larger of the two as ` +
+    `the floor.`
+  );
+}
+
+/**
  * Is this survey allowed to say "nothing to reclaim"?
  *
- * Only when the census actually completed AND every item was readable. A
- * `pending` census has an empty list because the runner does not KNOW yet, and
- * a survey whose rows were all unreadable has an empty list because we could
- * not read them. Neither is evidence of an empty population.
+ * Only when the census actually completed, every item was readable, and the
+ * runner's own per-class rollup (when it sent one) does not name roots the
+ * item list omitted. A `pending` census has an empty list because the runner
+ * does not KNOW yet; a survey whose rows were all unreadable has an empty list
+ * because we could not read them; and a rollup reporting 40 roots against an
+ * empty item list is the runner telling us the list is short. None of the
+ * three is evidence of an empty population.
  */
 export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
+  // When the runner sent a total, it must be an explicit ZERO. `null` there is
+  // the runner saying it does not know (the cold-census state), which is the
+  // one thing this sentence may never be built on.
+  const totalIsMeasuredZero =
+    !survey.summaryHasReclaimableBytes ||
+    (Number.isFinite(survey.summaryReclaimableBytes) &&
+      survey.summaryReclaimableBytes === 0);
   return (
     survey.items.length === 0 &&
     survey.skippedItems === 0 &&
-    (survey.censusStatus === "fresh" || survey.censusStatus === "stale")
+    (survey.censusStatus === "fresh" || survey.censusStatus === "stale") &&
+    totalIsMeasuredZero &&
+    rollupDisagreement(survey) === null &&
+    surveyDisagreement(survey) === null
   );
 }

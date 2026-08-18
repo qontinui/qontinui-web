@@ -576,11 +576,25 @@ describe("parseDeviceVolumes", () => {
     expect(parsed.deviceId).toBe(DEVICE);
     expect(parsed.volumes).toHaveLength(1);
     expect(parsed.skippedRows).toBe(0);
-    // The regression this parser exists for: the FLEET parser rejects this
-    // exact (valid) payload because its rows carry no `device_id`.
-    expect(parseFleetVolumes({ device_id: DEVICE, volumes: [] }).state).toBe(
-      "parsed"
-    );
+  });
+
+  it("parses what the FLEET parser rejects — the regression it exists for", () => {
+    // A valid one-row per-device envelope. The fleet parser routes it through
+    // the flat grouper, whose rows must each carry their own `device_id`;
+    // these carry none, so it reports `unparseable` and the machine would
+    // render "could not read" forever.
+    const envelope = {
+      device_id: DEVICE,
+      volumes: [
+        { volume: "D:", total_bytes: 100, free_bytes: 7, observed_at: null },
+      ],
+    };
+    expect(parseFleetVolumes(envelope).state).toBe("unparseable");
+    const parsed = parseDeviceVolumes(envelope);
+    expect(parsed.state).toBe("parsed");
+    if (parsed.state !== "parsed") return;
+    expect(parsed.volumes).toHaveLength(1);
+    expect(parsed.skippedRows).toBe(0);
   });
 
   it("reads an EMPTY volumes array as a recognised shape, not a failure", () => {
