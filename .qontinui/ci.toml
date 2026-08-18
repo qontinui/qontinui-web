@@ -11,6 +11,14 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
+# Three gates are stronger than "mirrored": web-boundary-lint, forbid-public-
+# schema and alembic-single-head invoke the SAME committed script the workflow
+# invokes (scripts/ci/*.py), so there is nothing left to keep in sync — the two
+# lanes cannot drift because there is only one copy of the logic. That is the
+# preferred shape for any future gate here; the string-mirroring above is what
+# you settle for when the workflow step is a third-party action or a package.json
+# script this lane must name for itself.
+#
 # Commands are argv arrays (never shell strings); env is limited to the runner's
 # allowlist (qontinui-runner/src-tauri/src/ci_node/manifest.rs::ENV_ALLOWLIST);
 # `[limits]` values are ceilings the executor caps against host-derived sizing.
@@ -45,27 +53,82 @@
 #    in it. "Run safety check" ends in `|| true` — a shell metacharacter that is
 #    banned in argv, and a step that cannot fail is not a gate worth mirroring.
 #
-# 4. The shell-scan workflows: web-boundary-lint.yml ("Scan backend/app for
-#    qontinui.* boundary violations"), forbid-public-schema.yml ("Scan for
-#    forbidden public.* references"), alembic-graph-pr.yml ("Count alembic
-#    heads" / "Fail if chain has more than one head"), secret-scan.yml.
-#    Each is a multi-line `run:` block of pipes, redirects and `$(...)`. The
-#    argv contract has no shell, deliberately. Mirroring them needs a committed
-#    SCRIPT in this repo that both lanes invoke — a worthwhile follow-up, and a
-#    change to the workflows, so it is not smuggled in here.
+# 4. secret-scan.yml's "Run gitleaks" step — A TOOL THIS LANE CANNOT OBTAIN,
+#    AND A DIFF RANGE THAT DOES NOT EXIST OFF GITHUB.
+#    Blockers, in order of how load-bearing they are. None is removed by a
+#    committed script, which is why this gate is NOT extracted the way the three
+#    below were:
+#      * DECISIVE — the scan is `--log-opts <base.sha>..<head.sha>`, i.e. the
+#        commit range of a pull request. This lane dispatches a detached
+#        WORKTREE, not a PR: there is no base/head pair to scan between, and
+#        `GITHUB_TOKEN` / the `github.event.pull_request.*` context are not in
+#        ENV_ALLOWLIST (verified against the runner source) and should not be. A
+#        whole-tree scan instead would be a DIFFERENT gate with different
+#        findings, not a mirror of this one, so substituting it would be
+#        parity theatre.
+#      * DECISIVE — the download URL is hard-coded `gitleaks_${GL}_linux_x64`.
+#        The Actions lane is always ubuntu-latest; this lane runs on whatever
+#        the contributor's box is, including Windows and macOS. The step cannot
+#        be mirrored without re-deriving the platform asset, i.e. rewriting the
+#        gate rather than sharing it.
+#      * SUPPORTING — the step fetches that tarball from github.com at run time.
+#        The ci_node tool registry is CLOSED (a manifest NAMES a tool, it never
+#        supplies a URL) and gitleaks is not in it; an in-manifest curl would be
+#        an unpinned network fetch wearing a step's clothes. Stated as
+#        SUPPORTING and not decisive on purpose: gap 6 below already admits this
+#        manifest assumes npm / poetry / python / git on PATH without registry
+#        entries, so "not in the registry" alone would be a weak argument — it
+#        is a judgement that gitleaks is not ambient on a developer machine the
+#        way those four are, not an absolute bar.
+#    So secret-scan stays Actions-only and its logic stays inline: extracting it
+#    to a script would buy nothing, because there is no second lane to share the
+#    script with. The OTHER THREE shell-scan workflows that used to be listed
+#    here — web-boundary-lint.yml, forbid-public-schema.yml and
+#    alembic-graph-pr.yml — are now expressible and ARE expressed below: Phase 5
+#    of plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity moved
+#    each one's logic into a committed script under scripts/ci/ and rewrote the
+#    workflow to invoke it.
 #
 # 5. style-gate.yml is titled "Style Gate (shadow)" — non-gating by
 #    construction, and it needs a Rust toolchain, a Playwright Chromium install
 #    and a running app. Out of scope for a parity mirror of the GATES.
 #
 # 6. NO [[tools]] ARE DECLARED, AND THAT IS NOT THE SAME AS "NEEDS NOTHING".
-#    The runner's tool registry (ci_node/tools.rs) currently provisions exactly
-#    one tool, cargo-nextest. Every step below assumes `npm` (Node 22, per
+#    The runner's tool registry (ci_node/tools.rs — `static KNOWN_TOOLS` at
+#    :107, and the "The registry is CLOSED" rationale at :20) currently
+#    provisions exactly one tool, cargo-nextest. Cited by line here ON PURPOSE,
+#    against this file's own name-not-line-number rule: a 2026-08-18 review of
+#    the Phase 5 diff reported "there is no tool registry in the runner — `find
+#    -name tools.rs` returns nothing" and recommended deleting the closed-
+#    registry framing. That was a STALE CHECKOUT artifact: the primary
+#    qontinui-runner checkout sat at 33500d706 (2026-08-07, 97 commits behind)
+#    whose ci_node/ has 7 files and no tools.rs, while origin/main has 12
+#    including it — added by a4e040c7c, shipped 2026-08-08 with the preceding
+#    plan. Verify against origin/main, never a local checkout. Every step below
+#    assumes `npm` (Node 22, per
 #    frontend-ci.yml's setup-node) and `poetry` (Python 3.12, per backend-ci.yml's
 #    PYTHON_VERSION) are already on PATH. Until those enter the registry this
 #    repo is not yet a zero-install target; declaring a tool the registry does
 #    not know would be REJECTED at validation, so the honest move is to say so
 #    here rather than to declare a lie.
+#
+#    THE REPO-WIDE GATE STEPS ADD TWO MORE PATH ASSUMPTIONS, recorded here for
+#    the same reason: a bare `python` (>= 3.9; the scripts use only the standard
+#    library) and `git`. `python` is what the workflows themselves invoke on
+#    ubuntu-latest, and `poetry` cannot exist without an interpreter behind it,
+#    so this is not a new class of assumption — but it IS a new name on PATH and
+#    a manifest that silently assumed it would be lying by omission. `git` was
+#    already assumed by the `openapi-snapshot-drift` step below.
+#
+#    PORTABILITY NOTE, NOT A CORRECTNESS HOLE: bare `python` (as opposed to
+#    `python3`) is typically ABSENT on macOS, and unlike the Actions lane — which
+#    is always ubuntu-latest — this lane runs on whatever a contributor's box is.
+#    The failure mode there is the safe one: the step cannot start, so it fails
+#    LOUD AND RED with a "program not found" spawn error. It cannot produce a
+#    vacuous green, which is the failure this manifest actually guards against.
+#    The fix, when `python` enters the registry (gap 1's problem, not this
+#    file's), is a provisioned interpreter rather than a spelling change here —
+#    `python3` would merely move the same gap to Windows.
 # ===========================================================================
 
 version = 1
@@ -138,6 +201,58 @@ pin = "default-branch"
 # "size me from the host", which is the right answer when the manifest author
 # has no measurement to contribute. Adding a table of no-ops would be a lie
 # about what has been measured.
+
+# ---------------------------------------------------------------------------
+# REPO-WIDE GATES — first, because they are the only steps here that need no
+# provisioning at all: no npm install, no poetry venv, no sibling repo. Each is
+# an offline scan of the checked-out tree taking a few seconds (measured on this
+# lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for all three), against
+# minutes for the installs that follow. So putting them ahead of
+# `frontend-install` means a dispatch that is going to fail on one of them fails
+# before it pays for a dependency install.
+#
+# These three are NOT string-mirrors of their workflows — both lanes invoke the
+# same committed script, so they cannot drift.
+#
+# Each script exits 1 on the violation it checks for and 2 when it COULD NOT
+# SCAN. Stated precisely, because the guarantee is narrower than "no green
+# without a scan" and should not be oversold: what each script guarantees is
+# that it never returns 0 after finding its INPUT SET EMPTY or its underlying
+# tool erroring — no revision files, no tracked files, a `git grep` that failed,
+# a path it could not place, a file it could not read. It can still legitimately
+# return 0 having scanned nothing in a case where emptiness is the honest
+# answer: `check_web_boundary.py --files` given a non-empty list of files that
+# are all out of scope says so and passes. That is the pre-commit path, not a
+# gate path; the two dispatch steps below always take the repo-wide branch,
+# where an empty input set is always exit 2.
+# ---------------------------------------------------------------------------
+
+[[steps]]
+name = "web-boundary-lint"
+# web-boundary-lint.yml, step "Scan backend/app for qontinui.* boundary
+# violations". The cloud FastAPI tier must not import the `qontinui` namespace
+# (torch, CV, ML, OCR); shared types come from qontinui-schemas. No working_dir:
+# the script resolves the repo root from its own location, so it behaves
+# identically from any cwd.
+command = ["python", "scripts/ci/check_web_boundary.py"]
+
+[[steps]]
+name = "forbid-public-schema"
+# forbid-public-schema.yml, step "Scan for forbidden public.* references".
+# Post-Phase-7 the default schema holds only alembic's bookkeeping table; domain
+# tables live in project / coord / agent / auth / cloud / strategy / web. The
+# scan is a `git grep` over tracked files, so it needs the dispatch checkout to
+# be a real git worktree — which it is (the `openapi-snapshot-drift` step below
+# already depends on that).
+command = ["python", "scripts/ci/check_forbidden_public_schema.py"]
+
+[[steps]]
+name = "alembic-single-head"
+# alembic-graph-pr.yml, step "Count alembic heads". Offline textual scan of
+# backend/alembic/versions/*.py — it never imports env.py, so it costs nothing
+# and needs no database, which is exactly why this gate CAN live here while the
+# rest of backend-ci.yml's `test` job (gap 1 above) cannot.
+command = ["python", "scripts/ci/count_alembic_heads.py"]
 
 # ---------------------------------------------------------------------------
 # FRONTEND — mirrors frontend-ci.yml's `lint-and-typecheck` job, step for step
