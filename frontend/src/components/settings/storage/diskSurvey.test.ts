@@ -3,7 +3,10 @@ import {
   aggregateByClass,
   bucketTotals,
   canClaimNothingToReclaim,
+  measuredZeroBuckets,
   parseDiskSurvey,
+  reportOnlyDisagreement,
+  rollupDisagreement,
   surveyDisagreement,
   toSurveyItem,
   toSurveyStatus,
@@ -113,10 +116,13 @@ describe("parseDiskSurvey", () => {
 });
 
 describe("toSurveyStatus / toSurveyItem", () => {
-  it("accepts both `reclaimable` and the sibling route's `reapable`", () => {
+  it("accepts exactly the runner's two statuses and nothing else", () => {
     expect(toSurveyStatus("reclaimable")).toBe("reclaimable");
-    expect(toSurveyStatus("reapable")).toBe("reclaimable");
     expect(toSurveyStatus("blocked")).toBe("blocked");
+    // The worktree route's `reapable` is a DIFFERENT route's vocabulary. This
+    // client is pinned to the disk survey's confirmed contract, not to a guess
+    // about which spelling might turn up.
+    expect(toSurveyStatus("reapable")).toBeNull();
   });
 
   it("refuses to guess an unknown status", () => {
@@ -472,5 +478,192 @@ describe("census_status: unavailable", () => {
   it("may never claim there is nothing to reclaim", () => {
     const survey = surveyOf({ items: [], census_status: "unavailable" });
     expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The runner's four distinguishable states (confirmed contract).
+// ---------------------------------------------------------------------------
+
+describe("the four states", () => {
+  it("cold start: pending + null totals may NOT say 'nothing to reclaim'", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: null, report_only_bytes: null },
+      census_status: "pending",
+    });
+    expect(survey.censusStatus).toBe("pending");
+    expect(survey.summaryHasReclaimableBytes).toBe(true);
+    expect(Number.isNaN(survey.summaryReclaimableBytes)).toBe(true);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+    expect(measuredZeroBuckets(survey)).toEqual({
+      actionable: false,
+      reportOnly: false,
+    });
+  });
+
+  it("failed: unavailable carries its reason and claims nothing", () => {
+    const survey = surveyOf({
+      items: [],
+      census_status: "unavailable",
+      census_note: "the workspace root could not be resolved",
+    });
+    expect(survey.censusStatus).toBe("unavailable");
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("measured empty: fresh + no items + totals 0 MAY say so", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0, report_only_bytes: 0 },
+      census_status: "fresh",
+    });
+    expect(canClaimNothingToReclaim(survey)).toBe(true);
+    expect(measuredZeroBuckets(survey)).toEqual({
+      actionable: true,
+      reportOnly: true,
+    });
+  });
+
+  it("a FRESH census with a null total is still not a measured zero", () => {
+    // `null` is the runner saying it does not know. Only `0` is a measurement,
+    // and this is the pair that collapses if you are careless.
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: null },
+      census_status: "fresh",
+    });
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+    expect(measuredZeroBuckets(survey).actionable).toBe(false);
+  });
+
+  it("normal: fresh + items reports the totals", () => {
+    const survey = surveyOf({
+      items: [item({ bytes: 1024 })],
+      summary: { reclaimable_bytes: 1024 },
+      census_status: "fresh",
+    });
+    expect(surveyDisagreement(survey)).toBeNull();
+    expect(bucketTotals(aggregateByClass(survey)).actionableBytes).toBe(1024);
+  });
+});
+
+describe("report_only_bytes headline", () => {
+  it("is parsed and cross-checked against the item-derived total", () => {
+    const survey = surveyOf({
+      items: [item({ class: "in-repo-canonical", bytes: 100 })],
+      summary: { report_only_bytes: 5000 },
+      census_status: "fresh",
+    });
+    expect(survey.summaryReportOnlyBytes).toBe(5000);
+    expect(reportOnlyDisagreement(survey, 100)).toMatch(
+      /report-only headline/i
+    );
+  });
+
+  it("is silent when the two agree, or when the runner sent none", () => {
+    const agree = surveyOf({
+      items: [item({ class: "in-repo-canonical", bytes: 100 })],
+      summary: { report_only_bytes: 100 },
+      census_status: "fresh",
+    });
+    expect(reportOnlyDisagreement(agree, 100)).toBeNull();
+    const absent = surveyOf({ items: [], census_status: "fresh" });
+    expect(reportOnlyDisagreement(absent, 0)).toBeNull();
+  });
+});
+
+describe("engine-owned classes", () => {
+  it("routes worktree- and build-pool-owned roots to report-only", () => {
+    const survey = surveyOf({
+      items: [
+        item({ id: "a", class: "owned-by-worktree-reclaim", bytes: 10 }),
+        item({ id: "b", class: "owned-by-build-pool", bytes: 20 }),
+      ],
+      census_status: "fresh",
+    });
+    const totals = aggregateByClass(survey);
+    expect(totals.every((t) => t.verb === "deferred-v2")).toBe(true);
+    expect(totals.every((t) => t.known)).toBe(true);
+    expect(bucketTotals(totals).reportOnlyBytes).toBe(30);
+  });
+});
+
+describe("measuredZeroBuckets / rollupDisagreement", () => {
+  it("refuses to certify zero from the mere PRESENCE of a rollup", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: {
+        by_class: [
+          { class: "container", roots: 40, verb: "reaper" },
+          { class: "in-repo-canonical", roots: 0, verb: null },
+        ],
+      },
+      census_status: "fresh",
+    });
+    // 40 roots against an empty item list is the runner telling us the list
+    // is short -- rendering a `0 B` actionable tile there would be a
+    // fabricated zero produced by the anti-fabrication check itself.
+    expect(measuredZeroBuckets(survey).actionable).toBe(false);
+    expect(measuredZeroBuckets(survey).reportOnly).toBe(true);
+    expect(rollupDisagreement(survey)).toMatch(/MORE roots than it itemised/i);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("refuses to certify zero from a PARTLY readable rollup", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: {
+        by_class: [{ class: "container", roots: 0, verb: "reaper" }, 7],
+      },
+      census_status: "fresh",
+    });
+    expect(survey.byClassSkipped).toBe(1);
+    expect(measuredZeroBuckets(survey).actionable).toBe(false);
+  });
+
+  it("flags a rollup whose root count could not be read", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { by_class: [{ class: "container", roots: null }] },
+      census_status: "fresh",
+    });
+    expect(Number.isNaN(survey.byClass?.[0].roots ?? 0)).toBe(true);
+    expect(rollupDisagreement(survey)).toMatch(/could not be read/i);
+  });
+});
+
+describe("per-status byte qualifiers", () => {
+  it("keeps the blocked column's unknown counts off the reclaimable total", () => {
+    const survey = surveyOf({
+      items: [
+        item({ id: "a", bytes: 100 }),
+        item({ id: "b", status: "blocked", bytes: null }),
+      ],
+      census_status: "fresh",
+    });
+    const [totals] = aggregateByClass(survey);
+    // The reclaimable total IS exact; the blocked one is the floor.
+    expect(totals.reclaimableUnknownByteItems).toBe(0);
+    expect(totals.blockedUnknownByteItems).toBe(1);
+    const buckets = bucketTotals([totals]);
+    expect(buckets.actionableUnknownByteItems).toBe(0);
+    expect(buckets.blockedUnknownByteItems).toBe(1);
+  });
+});
+
+describe("intra-class verb conflict", () => {
+  it("refuses to let payload order decide actionability", () => {
+    const survey = surveyOf({
+      items: [
+        item({ id: "a", class: "container", verb: "reaper", bytes: 10 }),
+        item({ id: "b", class: "container", verb: null, bytes: 20 }),
+      ],
+      census_status: "fresh",
+    });
+    const [totals] = aggregateByClass(survey);
+    expect(totals.verbConflicts).toBe(1);
+    expect(totals.verb).toBe("unrecognised");
+    expect(totals.note).toMatch(/conflicting answers/i);
   });
 });
