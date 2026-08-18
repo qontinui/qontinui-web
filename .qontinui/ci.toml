@@ -55,16 +55,31 @@
 #
 # 4. secret-scan.yml's "Run gitleaks" step — A TOOL THIS LANE CANNOT OBTAIN,
 #    AND A DIFF RANGE THAT DOES NOT EXIST OFF GITHUB.
-#    Two independent blockers, neither of which a committed script removes:
-#      * the step downloads a gitleaks release tarball from github.com at run
-#        time. The ci_node tool registry is CLOSED — a manifest NAMES a tool, it
-#        never supplies a URL — and gitleaks is not in it. An in-manifest curl
-#        would be an unpinned network fetch wearing a step's clothes.
-#      * the scan is `--log-opts <base.sha>..<head.sha>`, i.e. the commit range
-#        of a pull request. This lane dispatches a WORKTREE, not a PR; there is
-#        no base/head pair to scan between, and `GITHUB_TOKEN` / the
-#        `github.event.pull_request.*` context are not in ENV_ALLOWLIST and
-#        should not be.
+#    Blockers, in order of how load-bearing they are. None is removed by a
+#    committed script, which is why this gate is NOT extracted the way the three
+#    below were:
+#      * DECISIVE — the scan is `--log-opts <base.sha>..<head.sha>`, i.e. the
+#        commit range of a pull request. This lane dispatches a detached
+#        WORKTREE, not a PR: there is no base/head pair to scan between, and
+#        `GITHUB_TOKEN` / the `github.event.pull_request.*` context are not in
+#        ENV_ALLOWLIST (verified against the runner source) and should not be. A
+#        whole-tree scan instead would be a DIFFERENT gate with different
+#        findings, not a mirror of this one, so substituting it would be
+#        parity theatre.
+#      * DECISIVE — the download URL is hard-coded `gitleaks_${GL}_linux_x64`.
+#        The Actions lane is always ubuntu-latest; this lane runs on whatever
+#        the contributor's box is, including Windows and macOS. The step cannot
+#        be mirrored without re-deriving the platform asset, i.e. rewriting the
+#        gate rather than sharing it.
+#      * SUPPORTING — the step fetches that tarball from github.com at run time.
+#        The ci_node tool registry is CLOSED (a manifest NAMES a tool, it never
+#        supplies a URL) and gitleaks is not in it; an in-manifest curl would be
+#        an unpinned network fetch wearing a step's clothes. Stated as
+#        SUPPORTING and not decisive on purpose: gap 6 below already admits this
+#        manifest assumes npm / poetry / python / git on PATH without registry
+#        entries, so "not in the registry" alone would be a weak argument — it
+#        is a judgement that gitleaks is not ambient on a developer machine the
+#        way those four are, not an absolute bar.
 #    So secret-scan stays Actions-only and its logic stays inline: extracting it
 #    to a script would buy nothing, because there is no second lane to share the
 #    script with. The OTHER THREE shell-scan workflows that used to be listed
