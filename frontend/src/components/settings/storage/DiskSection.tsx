@@ -31,7 +31,7 @@
  *   while its own request is in flight. There is no delete verb in this phase.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -78,7 +78,10 @@ import {
   bucketTotals,
   canClaimNothingToReclaim,
   DISK_SURVEY_PATH,
+  measuredZeroBuckets,
   parseDiskSurvey,
+  reportOnlyDisagreement,
+  rollupDisagreement,
   SURVEY_NOT_YET_READ,
   surveyDisagreement,
   type DiskClassTotals,
@@ -89,6 +92,24 @@ import {
 // ---------------------------------------------------------------------------
 // Small shared renderers
 // ---------------------------------------------------------------------------
+
+/**
+ * An in-flight read. Distinct from {@link UnknownPanel} on purpose: a request
+ * that has not answered YET is not a request that failed, and rendering the
+ * failure copy over a pending fetch is the same determinacy error this feature
+ * exists to remove, pointed the other way.
+ */
+function PendingPanel({ label }: { label: string }) {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-md border border-dashed border-border bg-muted/30 p-3"
+      data-disk-pending
+    >
+      <Loader2 className="size-4 animate-spin text-muted-foreground shrink-0" />
+      <p className="text-sm text-muted-foreground">{label}</p>
+    </div>
+  );
+}
 
 /** An explicit "we do not know" panel. Never rendered as a zero or a zero-state. */
 function UnknownPanel({
@@ -271,9 +292,35 @@ function ClassBadge({ verb }: { verb: DiskClassTotals["verb"] }) {
 // Free space (Phase 1 data path — deviceVolumesUrl's first consumer)
 // ---------------------------------------------------------------------------
 
-function FreeSpaceBlock({ volumes }: { volumes: MachineVolumes }) {
+function FreeSpaceBlock({
+  volumes,
+  skippedRows,
+}: {
+  volumes: MachineVolumes;
+  /**
+   * Rows coord returned for THIS device that could not be read while others
+   * could. `resolveDeviceVolumes` reports the count only when NO row survived,
+   * so without this the partly-readable case renders as a complete list — and
+   * the volume that is actually full can be the one silently dropped.
+   */
+  skippedRows: number;
+}) {
   return (
     <div className="space-y-3" data-disk-free-space={volumes.state}>
+      {volumes.state === "reported" && skippedRows > 0 ? (
+        <Alert variant="warning" data-disk-volumes-partial>
+          <AlertTriangle className="size-4" />
+          <AlertTitle>
+            {skippedRows} volume row{skippedRows === 1 ? "" : "s"} could not be
+            read
+          </AlertTitle>
+          <AlertDescription>
+            Coord returned rows for this device that this page could not parse,
+            so the list below is INCOMPLETE. A volume missing from it has not
+            been measured — its absence is not evidence that it is healthy.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {volumes.state === "reported" ? (
         volumes.volumes.map((v, i) => (
           <VolumeRow key={`${i}-${v.volume}`} reading={v} />
@@ -303,13 +350,19 @@ function FreeSpaceBlock({ volumes }: { volumes: MachineVolumes }) {
 // Reclaim survey
 // ---------------------------------------------------------------------------
 
+/** "42s ago" / "7m ago" / "3h ago" / "2d ago". `null` stays unknown. */
+function formatAge(secs: number | null): string | null {
+  if (secs === null) return null;
+  if (secs < 90) return `${Math.round(secs)}s ago`;
+  const minutes = secs / 60;
+  if (minutes < 60) return `${Math.round(minutes)}m ago`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 function CensusFreshness({ survey }: { survey: DiskSurvey }) {
-  const age =
-    survey.censusAgeSecs === null
-      ? null
-      : survey.censusAgeSecs < 90
-        ? `${Math.round(survey.censusAgeSecs)}s ago`
-        : `${Math.round(survey.censusAgeSecs / 60)}m ago`;
+  const age = formatAge(survey.censusAgeSecs);
 
   if (survey.censusStatus === "unavailable") {
     return (
@@ -338,6 +391,10 @@ function CensusFreshness({ survey }: { survey: DiskSurvey }) {
           clean&quot;: the list below is empty because the measurement has not
           run, not because there is nothing there. Press Preview to start a
           walk; it takes minutes on a large tree.
+          {survey.censusRefreshing
+            ? " A walk IS running right now — this panel will keep saying" +
+              " 'not ready' until it finishes."
+            : ""}
           {survey.censusNote ? ` ${survey.censusNote}` : ""}
         </AlertDescription>
       </Alert>
@@ -399,8 +456,8 @@ function ClassTable({ totals }: { totals: DiskClassTotals[] }) {
             <TableCell className="text-right align-top whitespace-nowrap">
               <ByteTotal
                 bytes={t.reclaimableBytes}
-                unknownItems={t.unknownByteItems}
-                partialItems={t.partialByteItems}
+                unknownItems={t.reclaimableUnknownByteItems}
+                partialItems={t.reclaimablePartialByteItems}
               />
               <div className="text-xs text-muted-foreground">
                 {t.reclaimableCount} dir{t.reclaimableCount === 1 ? "" : "s"}
@@ -411,7 +468,15 @@ function ClassTable({ totals }: { totals: DiskClassTotals[] }) {
                 <span className="text-muted-foreground">—</span>
               ) : (
                 <>
-                  {formatBytes(t.blockedBytes)}
+                  {/* Its OWN unknown/partial counts — the blocked total is the
+                      one missing bytes when a blocked root could not be
+                      sized, and the reclaimable column's qualifier says
+                      nothing about it. */}
+                  <ByteTotal
+                    bytes={t.blockedBytes}
+                    unknownItems={t.blockedUnknownByteItems}
+                    partialItems={t.blockedPartialByteItems}
+                  />
                   <div className="text-xs text-muted-foreground">
                     {t.blockedCount} dir{t.blockedCount === 1 ? "" : "s"}
                   </div>
@@ -436,8 +501,10 @@ function BlockedList({ survey }: { survey: DiskSurvey }) {
         Blocked right now ({blocked.length})
       </h4>
       <ul className="space-y-1">
-        {shown.map((item) => (
-          <li key={item.id} className="text-xs">
+        {shown.map((item, i) => (
+          // `id` falls back to `path` and is not guaranteed unique, so the
+          // index disambiguates rather than risking a React key collision.
+          <li key={`${i}-${item.id}`} className="text-xs">
             <span className="font-mono break-all text-foreground">
               {item.path ?? item.id}
             </span>
@@ -467,23 +534,35 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   const buckets = bucketTotals(totals);
   const disagreement = surveyDisagreement(survey);
 
-  // A bucket with no items is a MEASURED zero only when the runner sent a
-  // per-class rollup — it emits a row for every class it knows, including the
-  // ones with zero roots. Without that rollup, an empty bucket could equally
-  // mean the runner never surveyed the class, and a `0 B` tile would be a
-  // measurement nobody took.
-  const zeroIsMeasured = survey.byClass !== null;
+  // A bucket with no reclaimable items is a MEASURED zero only when the
+  // runner's rollup is FULLY readable AND reports `roots: 0` for every class
+  // in that bucket. Trusting the rollup's mere presence would let a rollup
+  // saying "40 roots, 1.1 TB" authorise a `0 B` tile computed from a short
+  // item list -- a fabricated zero produced by the anti-fabrication check.
+  const measuredZero = measuredZeroBuckets(survey);
+  // A class whose every root is BLOCKED still has candidates. Gating the tile
+  // on the reclaimable count alone would report "no candidates" for a class
+  // whose bytes are visible in the table two elements below.
+  const hasV1Class = totals.some((t) => t.verb === "v1");
+  const hasReportOnlyClass = totals.some((t) => t.verb === "deferred-v2");
+  const showActionable = hasV1Class || measuredZero.actionable;
+  const showReportOnly = hasReportOnlyClass || measuredZero.reportOnly;
+
   const absentBuckets: string[] = [];
-  if (!zeroIsMeasured) {
-    if (buckets.actionableItems === 0) {
-      absentBuckets.push(
-        "the classes the cleanup verb covers (worktree, container and non-git target roots)"
-      );
-    }
-    if (buckets.reportOnlyItems === 0) {
-      absentBuckets.push("in-repo target dirs (the report-only class)");
-    }
+  if (!showActionable) {
+    absentBuckets.push(
+      "the classes the cleanup verb covers (worktree, container and non-git target roots)"
+    );
   }
+  if (!showReportOnly) {
+    absentBuckets.push("in-repo target dirs (the report-only class)");
+  }
+
+  const rollupMismatch = rollupDisagreement(survey);
+  const reportOnlyMismatch = reportOnlyDisagreement(
+    survey,
+    buckets.reportOnlyBytes
+  );
 
   return (
     <div className="space-y-4">
@@ -494,6 +573,24 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
           <AlertTriangle className="size-4" />
           <AlertTitle>The survey disagrees with itself</AlertTitle>
           <AlertDescription>{disagreement}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {reportOnlyMismatch ? (
+        <Alert variant="warning" data-disk-report-only-mismatch>
+          <AlertTriangle className="size-4" />
+          <AlertTitle>
+            The runner&apos;s report-only headline differs from its item list
+          </AlertTitle>
+          <AlertDescription>{reportOnlyMismatch}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {rollupMismatch ? (
+        <Alert variant="warning" data-disk-rollup-mismatch>
+          <AlertTriangle className="size-4" />
+          <AlertTitle>The item list is shorter than the rollup</AlertTitle>
+          <AlertDescription>{rollupMismatch}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -539,7 +636,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 and this page cannot tell that apart from a runner that does
                 not survey the class at all. The absent buckets are named
                 below instead. */}
-            {buckets.actionableItems > 0 || zeroIsMeasured ? (
+            {showActionable ? (
               <BucketTile
                 tone="actionable"
                 title="Covered by the cleanup verb"
@@ -550,7 +647,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 detail="worktree, container and non-git target roots"
               />
             ) : null}
-            {buckets.reportOnlyItems > 0 || zeroIsMeasured ? (
+            {showReportOnly ? (
               <BucketTile
                 tone="report-only"
                 title="Report-only — no cleanup verb"
@@ -577,7 +674,8 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 tone="unrecognised"
                 title="Blocked by a guard"
                 bytes={buckets.blockedBytes}
-                unknownItems={0}
+                unknownItems={buckets.blockedUnknownByteItems}
+                partialItems={buckets.blockedPartialByteItems}
                 itemCount={buckets.blockedItems}
                 detail="a live build, a pin or a dirty tree holds these"
               />
@@ -596,7 +694,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
             </p>
           ) : null}
 
-          {buckets.reportOnlyItems > 0 || zeroIsMeasured ? (
+          {showReportOnly ? (
             <Alert variant="warning" data-disk-report-only-explainer>
               <ShieldAlert className="size-4" />
               <AlertTitle>Why the report-only bytes have no button</AlertTitle>
@@ -637,7 +735,12 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
 // ---------------------------------------------------------------------------
 
 export function DiskSection() {
-  const { data: deviceInfo, isLoading: deviceLoading } = useDeviceInfo();
+  const {
+    data: deviceInfo,
+    isLoading: deviceLoading,
+    error: deviceError,
+    isOffline: deviceOffline,
+  } = useDeviceInfo();
   const deviceId = deviceInfo?.device_id ?? null;
 
   const [volumes, setVolumes] = useState<DeviceVolumesFetch>(
@@ -645,14 +748,39 @@ export function DiskSection() {
   );
   const [survey, setSurvey] = useState<DiskSurveyFetch>(SURVEY_NOT_YET_READ);
   const [busy, setBusy] = useState(false);
+  const [volumesInFlight, setVolumesInFlight] = useState(false);
+  const [surveyInFlight, setSurveyInFlight] = useState(false);
+
+  // Request-generation guards. Two reads can be in flight at once (the mount
+  // fetch and a Preview click, or a `deviceId` that changed), and without a
+  // generation check the SLOWER one wins by resolving last — silently
+  // replacing a refreshed answer with a stale snapshot. They also stop a
+  // late response calling setState after unmount.
+  const volumesSeq = useRef(0);
+  const surveySeq = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const loadVolumes = useCallback(async (id: string) => {
+    const seq = ++volumesSeq.current;
+    const current = () => mounted.current && seq === volumesSeq.current;
+    setVolumesInFlight(true);
+    const settle = (next: DeviceVolumesFetch) => {
+      if (!current()) return;
+      setVolumes(next);
+      setVolumesInFlight(false);
+    };
     const url = deviceVolumesUrl(id);
     let response: Response;
     try {
       response = await httpClient.fetch(url);
     } catch (err) {
-      setVolumes({
+      settle({
         state: "unavailable",
         reason:
           `The request to ${url} failed: ` +
@@ -662,12 +790,21 @@ export function DiskSection() {
       return;
     }
     if (!response.ok) {
-      setVolumes({
+      // The status is named rather than guessed at: 401/403 is an expired
+      // session, 422 is a device id the backend would not accept as a UUID,
+      // 502/504 is coord. Attributing all of them to "coord may be down"
+      // would send the reader after the wrong thing.
+      const hint =
+        response.status === 401 || response.status === 403
+          ? "This session is not authorised for the operations API -- signing in again is the likely fix."
+          : response.status === 404 || response.status === 422
+            ? "The backend did not accept this device id, or does not serve the per-device volumes route."
+            : "Coord may be unreachable (502/504), or the volumes route may not be deployed yet.";
+      settle({
         state: "unavailable",
         reason:
           `The per-device volumes read returned HTTP ${response.status}. ` +
-          `Coord may be unreachable (502/504), or the volumes route may not ` +
-          `be deployed yet. This is a failed read, not an empty disk.`,
+          `${hint} This is a failed read, not an empty disk.`,
       });
       return;
     }
@@ -675,7 +812,7 @@ export function DiskSection() {
     try {
       payload = await response.json();
     } catch (err) {
-      setVolumes({
+      settle({
         state: "unavailable",
         reason: `The per-device volumes response was not valid JSON: ${
           err instanceof Error ? err.message : "parse error"
@@ -685,10 +822,10 @@ export function DiskSection() {
     }
     const parsed = parseDeviceVolumes(payload);
     if (parsed.state === "unparseable") {
-      setVolumes({ state: "unavailable", reason: parsed.reason });
+      settle({ state: "unavailable", reason: parsed.reason });
       return;
     }
-    setVolumes({
+    settle({
       state: "ok",
       deviceId: parsed.deviceId,
       volumes: parsed.volumes,
@@ -697,6 +834,13 @@ export function DiskSection() {
   }, []);
 
   const loadSurvey = useCallback(async (refresh: boolean) => {
+    const seq = ++surveySeq.current;
+    setSurveyInFlight(true);
+    const settle = (next: DiskSurveyFetch) => {
+      if (!mounted.current || seq !== surveySeq.current) return;
+      setSurvey(next);
+      setSurveyInFlight(false);
+    };
     const path = refresh ? `${DISK_SURVEY_PATH}?refresh=1` : DISK_SURVEY_PATH;
     let raw: unknown;
     try {
@@ -706,7 +850,7 @@ export function DiskSection() {
       raw = await runnerFetch<unknown>(path, { timeoutMs: 20_000 });
     } catch (err) {
       if (err instanceof RunnerApiError && err.status === 404) {
-        setSurvey({
+        settle({
           state: "unavailable",
           reason:
             `The runner does not serve ${DISK_SURVEY_PATH} (HTTP 404). This ` +
@@ -716,7 +860,7 @@ export function DiskSection() {
         });
         return;
       }
-      setSurvey({
+      settle({
         state: "unavailable",
         reason:
           `The disk survey request failed: ` +
@@ -727,10 +871,10 @@ export function DiskSection() {
     }
     const parsed = parseDiskSurvey(raw);
     if (parsed.state === "unparseable") {
-      setSurvey({ state: "unavailable", reason: parsed.reason });
+      settle({ state: "unavailable", reason: parsed.reason });
       return;
     }
-    setSurvey({ state: "ok", survey: parsed.survey });
+    settle({ state: "ok", survey: parsed.survey });
   }, []);
 
   // First read on mount, without asking for a refresh walk: a page visit must
@@ -759,17 +903,35 @@ export function DiskSection() {
     }
   }, [deviceId, loadSurvey, loadVolumes]);
 
+  // Three different reasons there is no device id, and only ONE of them is a
+  // fact about the machine. A read that failed or never answered cannot
+  // support "the runner did not report a device id" — that is a determinate
+  // negative drawn from a non-answer.
+  const deviceUnresolved: string | null = deviceId
+    ? null
+    : deviceLoading
+      ? "loading"
+      : deviceError || deviceOffline
+        ? "The runner could not be asked which coord device this machine is" +
+          `${deviceError ? ` (${deviceError})` : " -- it is not reachable"}. ` +
+          "That is a failed read, not a machine without a device id."
+        : "The runner answered without a coord device id for this machine, " +
+          "so its free-space telemetry could not be looked up. Nothing here " +
+          "says the disk is fine or full — only that the machine could not " +
+          "be identified.";
+
   const resolvedVolumes: MachineVolumes = deviceId
     ? resolveDeviceVolumes(volumes, deviceId)
     : {
         state: "unknown",
-        reason: deviceLoading
-          ? "Asking the runner which coord device this machine is..."
-          : "The runner did not report a coord device id for this machine, " +
-            "so its free-space telemetry could not be looked up. Nothing " +
-            "here says the disk is fine or full — only that the machine " +
-            "could not be identified.",
+        reason: deviceUnresolved ?? "",
       };
+  const volumesSkipped = volumes.state === "ok" ? volumes.skippedRows : 0;
+  // Nothing has answered yet — neither a result nor a failure.
+  const volumesPending =
+    deviceUnresolved === "loading" ||
+    (volumesInFlight && volumes === DEVICE_VOLUMES_NOT_YET_READ);
+  const surveyPending = surveyInFlight && survey === SURVEY_NOT_YET_READ;
 
   return (
     <div className="rounded-lg border border-border" data-disk-section>
@@ -804,7 +966,14 @@ export function DiskSection() {
           <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Free space
           </h4>
-          <FreeSpaceBlock volumes={resolvedVolumes} />
+          {volumesPending ? (
+            <PendingPanel label="Reading this machine's free space..." />
+          ) : (
+            <FreeSpaceBlock
+              volumes={resolvedVolumes}
+              skippedRows={volumesSkipped}
+            />
+          )}
         </div>
 
         <div className="space-y-3">
@@ -818,7 +987,9 @@ export function DiskSection() {
               nothing on this page removes a build cache.
             </p>
           </div>
-          {survey.state === "ok" ? (
+          {surveyPending ? (
+            <PendingPanel label="Asking the runner what it can reclaim..." />
+          ) : survey.state === "ok" ? (
             <SurveyBody survey={survey.survey} />
           ) : (
             <UnknownPanel

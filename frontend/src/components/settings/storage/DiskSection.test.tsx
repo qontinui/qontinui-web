@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 /**
  * DiskSection — the rendered half of the honesty contract.
@@ -87,11 +93,16 @@ describe("DiskSection — free space", () => {
   });
 
   it("says the device could not be identified rather than showing zero", async () => {
-    useDeviceInfo.mockReturnValue({ data: null, isLoading: false });
+    // The runner ANSWERED and named no device — the one case that supports a
+    // statement about the machine rather than about the read.
+    useDeviceInfo.mockReturnValue({
+      data: { device_name: "box" },
+      isLoading: false,
+    });
     render(<DiskSection />);
     await waitFor(() =>
       expect(
-        screen.getByText(/did not report a coord device id/i)
+        screen.getByText(/answered without a coord device id/i)
       ).toBeInTheDocument()
     );
     expect(httpFetch).not.toHaveBeenCalled();
@@ -346,10 +357,184 @@ describe("DiskSection — reclaim survey", () => {
     expect(screen.queryByText(/Nothing to reclaim/i)).not.toBeInTheDocument();
   });
 
-  it("Preview is present and gated on nothing but its own request", async () => {
+  it("Preview stays enabled when EVERYTHING else has failed", async () => {
+    // The requirement is that Preview is gated on nothing — no arming flag, no
+    // config, no threshold, and not on the health of any other read. So the
+    // worst case is the one worth asserting: no device id, and a survey route
+    // that 404s.
+    useDeviceInfo.mockReturnValue({ data: null, isLoading: false });
+    runnerFetch.mockRejectedValue(new MockRunnerApiError(404, "not found"));
+    render(<DiskSection />);
+    const button = await screen.findByRole("button", { name: /preview/i });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/predates the disk-reclaim survey/i)
+      ).toBeInTheDocument()
+    );
+    expect(button).not.toBeDisabled();
+  });
+
+  it("Preview disables only while its own request is in flight", async () => {
+    let release: (value: unknown) => void = () => {};
     render(<DiskSection />);
     const button = await screen.findByRole("button", { name: /preview/i });
     await waitFor(() => expect(button).not.toBeDisabled());
+
+    runnerFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    fireEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    release({ items: [], census_status: "fresh" });
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it("ships NO delete verb — Preview is the only button in the section", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "reclaimable",
+          bytes: 1024,
+        },
+      ],
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="actionable"]')
+      ).not.toBeNull()
+    );
+    const section = container.querySelector("[data-disk-section]");
+    const buttons = within(section as HTMLElement).queryAllByRole("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toMatch(/preview/i);
+    expect(section?.textContent).not.toMatch(/delete|remove|clear/i);
+  });
+
+  it("renders an in-flight read as PENDING, not as a failed read", async () => {
+    let release: (value: unknown) => void = () => {};
+    runnerFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(container.querySelector("[data-disk-pending]")).not.toBeNull()
+    );
+    // A request that has not answered YET is not a request that failed.
+    expect(
+      screen.queryByText(/the reclaim survey could not be read/i)
+    ).not.toBeInTheDocument();
+    release({ items: [], census_status: "fresh" });
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="measured"]')
+      ).not.toBeNull()
+    );
+  });
+
+  it("says the runner could not be ASKED when device-info itself failed", async () => {
+    useDeviceInfo.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: "Runner not connected",
+    });
+    render(<DiskSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/could not be asked/i)).toBeInTheDocument()
+    );
+    // NOT "the runner answered without a device id" -- that is a determinate
+    // negative drawn from a read that never answered.
+    expect(
+      screen.queryByText(/answered without a coord device id/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("warns when SOME volume rows were unreadable but others survived", async () => {
+    httpFetch.mockResolvedValue(
+      volumesResponse({
+        device_id: DEVICE,
+        volumes: [
+          {
+            volume: "D:",
+            total_bytes: 100,
+            free_bytes: 7,
+            observed_at: null,
+          },
+          {},
+        ],
+      })
+    );
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector("[data-disk-volumes-partial]")
+      ).not.toBeNull()
+    );
+    expect(screen.getByText(/list below is INCOMPLETE/i)).toBeInTheDocument();
+  });
+
+  it("refuses a measured zero when the rollup names roots the items omit", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: {
+        by_class: [
+          { class: "container", roots: 40, verb: "orphan_target_reaper" },
+          { class: "in-repo-canonical", roots: 0, verb: null },
+        ],
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector("[data-disk-rollup-mismatch]")
+      ).not.toBeNull()
+    );
+    // The rollup says 40 roots. A "0 B / 0 target dirs" actionable tile, or a
+    // "nothing to reclaim", would both be fabricated from a short item list.
+    expect(
+      container.querySelector('[data-disk-bucket="actionable"]')
+    ).toBeNull();
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+  });
+
+  it("still shows a v1 class whose every root is BLOCKED", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "blocked",
+          reason: "building",
+          reason_detail: "a cargo build holds .cargo-lock",
+          bytes: 4 * 1024 ** 3,
+        },
+      ],
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="actionable"]')
+      ).not.toBeNull()
+    );
+    // "No candidates for the classes the cleanup verb covers" would be false:
+    // it found one, and a guard is holding it.
+    expect(
+      container.querySelector("[data-disk-absent-buckets]")?.textContent ?? ""
+    ).not.toMatch(/cleanup verb covers/i);
+    expect(screen.getByText(/holds .cargo-lock/i)).toBeInTheDocument();
   });
 
   it("does not kick a refresh walk on mount — only the button does", async () => {

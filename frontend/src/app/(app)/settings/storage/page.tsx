@@ -73,15 +73,23 @@ export default function StorageSettingsPage() {
   const [cleaningVideos, setCleaningVideos] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
 
-  const loadStorageInfo = useCallback(async () => {
-    setLoading(true);
+  /**
+   * `silent` refetches do NOT raise the page-level spinner.
+   *
+   * The spinner replaces the whole page, which unmounts `DiskSection` and
+   * throws away a reclaim survey that can cost minutes of filesystem walking —
+   * so a screenshot cleanup would silently destroy an unrelated result. Only
+   * the first load blanks the page.
+   */
+  const loadStorageInfo = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await runnerApi.getStorageInfo();
       setStorageInfo(data);
     } catch {
       toast.error("Failed to load storage info");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -98,7 +106,7 @@ export default function StorageSettingsPage() {
     try {
       await runnerApi.cleanupStorage("screenshots", 30);
       toast.success("Old screenshots deleted");
-      await loadStorageInfo();
+      await loadStorageInfo(true);
     } catch (err) {
       toast.error(
         `Failed to clean screenshots: ${err instanceof Error ? err.message : "Unknown error"}`
@@ -113,7 +121,7 @@ export default function StorageSettingsPage() {
     try {
       await runnerApi.cleanupStorage("videos", 30);
       toast.success("Old videos deleted");
-      await loadStorageInfo();
+      await loadStorageInfo(true);
     } catch (err) {
       toast.error(
         `Failed to clean videos: ${err instanceof Error ? err.message : "Unknown error"}`
@@ -133,7 +141,7 @@ export default function StorageSettingsPage() {
     try {
       await runnerApi.clearAllStorage();
       toast.success("All storage cleared");
-      await loadStorageInfo();
+      await loadStorageInfo(true);
     } catch (err) {
       toast.error(
         `Failed to clear storage: ${err instanceof Error ? err.message : "Unknown error"}`
