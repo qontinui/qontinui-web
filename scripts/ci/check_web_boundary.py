@@ -40,7 +40,10 @@ Usage:
     python scripts/ci/check_web_boundary.py            # scan backend/app/**/*.py
     python scripts/ci/check_web_boundary.py --files A B  # scan only A and B
 
-Exit codes: 0 clean, 1 violation found, 2 scanned nothing (vacuous).
+Exit codes: 0 clean, 1 violation found, 2 COULD NOT SCAN — an empty input
+set, a path that resolves outside the repo, or a file that would not read.
+Exit 2 is never a pass; it is deliberately distinct from 1 so an I/O problem
+is not reported as a boundary violation the reader would then hunt for.
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _gate_lib import (  # noqa: E402
+    EXIT_VACUOUS,
     EXIT_VIOLATION,
     REPO_ROOT,
     err,
@@ -70,19 +74,38 @@ SCHEMAS_EXEMPT = re.compile(r"qontinui[-_]schemas")
 ALLOWLIST_PREFIXES = ("backend/app/api/embeddings.py:",)
 
 
-def _rel(path: Path) -> str:
-    return path.resolve().relative_to(REPO_ROOT).as_posix()
+def _rel(path: Path) -> str | None:
+    """Repo-relative posix path, or None when ``path`` is outside the repo.
+
+    Returning None rather than letting ``relative_to`` raise matters: an
+    uncaught ValueError here would exit 1, which is the code for "found a
+    violation". A path the gate cannot place is a CANNOT-SCAN condition, and
+    those exit :data:`EXIT_VACUOUS`.
+    """
+    try:
+        return path.resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return None
 
 
 def _scan(files: list[Path]) -> list[str]:
     hits: list[str] = []
     for path in files:
         rel = _rel(path)
+        if rel is None:
+            err(f"{path} resolves outside the repo root {REPO_ROOT}; cannot scan it.")
+            err("A file the gate cannot place is an unknown, not a clean result.")
+            sys.exit(EXIT_VACUOUS)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:  # unreadable file is a gate failure, not a skip
+        except OSError as exc:
+            # A file we could not read is a file we did not scan. That is the
+            # vacuous case (exit 2), NOT a violation (exit 1) — reporting
+            # "boundary violation" for an I/O error would send the reader
+            # hunting for an import that is not there.
             err(f"could not read {rel}: {exc}")
-            sys.exit(EXIT_VIOLATION)
+            err("The scan is incomplete, so this is NOT a clean result.")
+            sys.exit(EXIT_VACUOUS)
         for lineno, line in enumerate(text.splitlines(), start=1):
             if not PATTERN.search(line):
                 continue
@@ -112,7 +135,7 @@ def main() -> int:
         scan_root = REPO_ROOT / SCAN_ROOT
         if not scan_root.is_dir():
             err(f"scan root {SCAN_ROOT}/ does not exist under {REPO_ROOT}.")
-            return 2
+            return EXIT_VACUOUS
         files = sorted(scan_root.rglob("*.py"))
         require_nonempty(len(files), "*.py files", f"{SCAN_ROOT}/")
         where = f"{SCAN_ROOT}/"
@@ -120,16 +143,28 @@ def main() -> int:
         # pre-commit hands us the changed-file list; it filters by the hook's
         # `files:` pattern already, but re-filter so a manual invocation with a
         # wider list behaves identically to the repo-wide scan.
-        candidates = [(REPO_ROOT / f).resolve() for f in args.files]
-        files = [
-            p
-            for p in candidates
-            if p.suffix == ".py" and p.is_file() and _rel(p).startswith(f"{SCAN_ROOT}/")
-        ]
         require_nonempty(
             len(args.files), "files on the command line", "--files (empty list)"
         )
+        files = []
+        for given in args.files:
+            path = (REPO_ROOT / given).resolve()
+            rel = _rel(path)
+            if rel is None:
+                err(f"--files path {given!r} resolves outside the repo root.")
+                err("The gate cannot scan it, and 'cannot scan' is never a pass.")
+                return EXIT_VACUOUS
+            if (
+                path.suffix == ".py"
+                and path.is_file()
+                and rel.startswith(f"{SCAN_ROOT}/")
+            ):
+                files.append(path)
         if not files:
+            # NOT the vacuous case: the caller named files, they were all placed
+            # successfully, and none of them is in this gate's scope. "Nothing
+            # to check here" is a real answer — distinct from "the scan found
+            # no input", which require_nonempty above has already rejected.
             note(
                 f"Boundary lint: none of the {len(args.files)} given file(s) are "
                 f"{SCAN_ROOT}/**/*.py — nothing in scope."
