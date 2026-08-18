@@ -34,7 +34,26 @@ ENV_CONTRACT_SECTION = "env_contract"
 
 # Severity ranking used by the drift service for the overall rollup.
 SeverityT = Literal["info", "warning", "critical"]
-DeltaStatusT = Literal["added", "removed", "changed"]
+
+# How one key differs between the canonical capture and a target capture.
+#
+# * ``added``   — present on the target, absent from canonical.
+# * ``removed`` — present on canonical, MEASURED-AND-ABSENT on the target.
+# * ``changed`` — present on both with different values.
+# * ``unknown`` — the capturing box could not measure the key at all (its probe
+#                 exceeded the capture budget, so the runner omitted the value
+#                 and named the key in the envelope's ``unknown_keys``).
+#
+# ``unknown`` is a STATUS, not a qualifier flag beside ``removed``: a
+# ``removed`` delta asserts "canonical has this, the target does not", and that
+# claim is simply false for a key nobody looked at — a flag alongside it would
+# leave the false assertion on the wire and merely footnote it. This follows
+# :data:`CiNodeReachabilityT` below, whose own comment makes the identical
+# argument for keeping ``unknown`` out of ``offline``: "we do not know" and "it
+# is not there" are different claims. Contrast :attr:`KeyDelta.derived`, which
+# IS a qualifier — a derived key's status is genuinely known, it just is not
+# machine state.
+DeltaStatusT = Literal["added", "removed", "changed", "unknown"]
 
 # What a pulling runner may do with a config section (see
 # app.services.devenv_section_policy). Defined here because it is part of the
@@ -225,6 +244,41 @@ class DispatchEnrollResponse(BaseSchema):
 
     machine: MachineCreatedResponse
     dispatched: bool
+    detail: str | None = None
+
+
+class ReposApplyDispatchRequest(BaseSchema):
+    """Ask a machine's runner to reconcile its cloned repositories.
+
+    The server **requests**; the box decides and acts. Nothing here runs a clone
+    on a developer's machine — the target's own runner receives the directive,
+    applies its LOCAL policy (workspace-root resolution, the incomparable-scope
+    refusal, the disk floor, per-repo auth), and reports. That separation is the
+    same one that retired the agent-dispatch model on 2026-07-13: a clone is
+    arbitrary code arriving on disk, so the authority to perform one stays with
+    the box that owns the box.
+    """
+
+    confirm: bool = False
+    """Whether the box should write, or only plan.
+
+    Defaults to a **dry run**. The runner defaults the same way, so an omitted
+    field asks for a plan at both ends — an omission must never be the dangerous
+    case.
+    """
+
+
+class ReposApplyDispatchResponse(BaseSchema):
+    """Result of a dispatched repos apply.
+
+    ``dispatched`` says only that coord accepted the directive — NOT that the
+    box acted on it, which it may decline to do (no workspace root, incomparable
+    scopes, insufficient disk). The outcome arrives as ordinary drift on the next
+    capture, which is the honest surface for it.
+    """
+
+    dispatched: bool
+    confirm: bool
     detail: str | None = None
 
 
@@ -547,6 +601,31 @@ class ConfigEnvelope(BaseSchema):
     schema_version: int = 1
     captured_at: IsoDatetime
     sections: dict[str, dict[str, str]] = Field(default_factory=dict)
+    unknown_keys: dict[str, list[str]] | None = None
+    """``section -> keys the capturing box could not MEASURE`` (additive).
+
+    A probe that exceeds the capture budget makes the runner omit its key from
+    ``sections`` entirely, and an omitted key is otherwise indistinguishable
+    from a genuinely absent toolchain — so an unmeasured key would be diffed as
+    ``removed``/critical and could drive an install for a version that is
+    already correct. The runner names those keys here instead.
+
+    Three states, all distinguishable and all meaningful:
+
+    * ``None``  — the field never arrived. The runner PREDATES it; nothing can
+      be concluded about whether anything went unmeasured.
+    * ``{}``    — an explicit "every probe completed". The runner always emits
+      the field, empty included, precisely so this differs from ``None``.
+    * non-empty — these keys were not measured on this capture.
+
+    ``None`` is preserved rather than defaulted to ``{}`` because collapsing
+    them would turn "we were never told" into a positive claim that everything
+    was measured — the same absence-is-not-emptiness error the whole field
+    exists to correct. :meth:`to_stored_config` therefore OMITS the key from
+    the persisted envelope when this is ``None``, so an old runner's stored
+    shape (and its content hash) is byte-identical to what it was before this
+    field existed.
+    """
 
     @field_validator("sections", mode="before")
     @classmethod
@@ -592,13 +671,56 @@ class ConfigEnvelope(BaseSchema):
             out[section_name] = coerced
         return out
 
+    @field_validator("unknown_keys", mode="before")
+    @classmethod
+    def _validate_unknown_keys(cls, value: object) -> object:
+        """Validate ``section -> [key, ...]``; dedupe and sort each list.
+
+        Sorted + deduped so two captures that named the same unmeasured keys in
+        a different order hash identically — otherwise the history dedup in
+        ``config_history_repo.append_if_changed`` would append a row per
+        capture on nothing but list order.
+        """
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("unknown_keys must be a mapping of section -> [key, ...]")
+        out: dict[str, list[str]] = {}
+        for section_name, keys in value.items():
+            if not isinstance(section_name, str):
+                raise ValueError("unknown_keys section names must be strings")
+            if isinstance(keys, str) or not isinstance(keys, list | tuple | set):
+                raise ValueError(
+                    f"unknown_keys['{section_name}'] must be a list of key names"
+                )
+            cleaned: set[str] = set()
+            for key in keys:
+                if not isinstance(key, str):
+                    raise ValueError(
+                        f"unknown_keys['{section_name}'] entries must be strings"
+                    )
+                cleaned.add(key)
+            out[section_name] = sorted(cleaned)
+        return out
+
     def to_stored_config(self) -> dict:
-        """Serialize the envelope for JSONB persistence (post-backstop)."""
-        return {
+        """Serialize the envelope for JSONB persistence (post-backstop).
+
+        ``unknown_keys`` is written as a SIBLING of ``sections`` (mirroring the
+        runner's wire shape) and is omitted entirely when the agent did not send
+        it. Omission — not an empty dict — is what keeps "this runner predates
+        the field" readable in the store, and it also leaves a pre-existing
+        runner's persisted bytes (hence its content hash, hence the history
+        dedup) exactly as they were.
+        """
+        stored: dict = {
             "schema_version": self.schema_version,
             "captured_at": self.captured_at.isoformat(),
             "sections": self.sections,
         }
+        if self.unknown_keys is not None:
+            stored["unknown_keys"] = self.unknown_keys
+        return stored
 
 
 class CanonicalConfigResponse(BaseSchema):
@@ -638,7 +760,13 @@ class CanonicalConfigResponse(BaseSchema):
 
 
 class KeyDelta(BaseSchema):
-    """A single key-level difference between canonical and a target machine."""
+    """A single key-level difference between canonical and a target machine.
+
+    ``status`` may be ``"unknown"`` — see :data:`DeltaStatusT`. That is not a
+    difference that was observed; it is one side of the comparison declining to
+    claim it measured the key. It is reported (never dropped) so the gap stays
+    visible, at ``info`` severity, and it does not make a machine out-of-sync.
+    """
 
     key: str
     status: DeltaStatusT

@@ -222,6 +222,11 @@ from app.models.visual_comparison_result import (
     VisualComparisonResult,
     VisualComparisonStatus,
 )
+from app.models.work_artifact import (
+    WorkArtifact,
+    WorkArtifactEdge,
+    WorkArtifactVersion,
+)
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
 from app.models.workflow_execution_history import WorkflowExecutionHistory
 from app.models.workflow_step_type import (
@@ -512,6 +517,10 @@ __all__ = [
     "WrapperRating",
     "WrapperComment",
     "WrapperInstallEvent",
+    # Plan & Prompt Library (agent.work_artifacts — plans, prompts, reports)
+    "WorkArtifact",
+    "WorkArtifactVersion",
+    "WorkArtifactEdge",
 ]
 
 # Cloud-control extension hook — no-op when no cloud-control package has

@@ -74,6 +74,27 @@ export interface HttpOptions extends RequestInit {
    * message instead of the real backend error.
    */
   timeoutMs?: number;
+  /**
+   * Response statuses this request must NOT retry, even though the default
+   * policy retries 429 and every 5xx.
+   *
+   * For a status that is a real transient fault, retrying is right. For one a
+   * server returns *deliberately and persistently*, it is pure waste: the
+   * caller pays `1 + maxRetries` requests and the full backoff wall clock to
+   * arrive at the same answer, and any poller behind it stacks its own
+   * interval on top of that chain.
+   *
+   * The live case is coord's `503 schema_migration_pending` (see the
+   * `/admin/coord/notifications` surface): coord answers it for as long as a
+   * table's alembic revision has not deployed, which is by design a window of
+   * hours or days, not a blip.
+   *
+   * Per-request and threaded as an ARGUMENT, deliberately — unlike
+   * `maxRetries`, which reassigns the shared `retryStrategy` and so changes
+   * behaviour for every other caller of this client. Default `[]` preserves
+   * the existing policy exactly.
+   */
+  noRetryStatuses?: number[];
 }
 
 /**
@@ -216,6 +237,7 @@ export class HttpClient {
       skipAuth = false,
       maxRetries = 3,
       timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+      noRetryStatuses,
       ...fetchOptions
     } = options;
 
@@ -224,7 +246,13 @@ export class HttpClient {
       this.retryStrategy = new RetryStrategy({ maxRetries });
     }
 
-    return this.executeRequestWithRetry(url, fetchOptions, skipAuth, timeoutMs);
+    return this.executeRequestWithRetry(
+      url,
+      fetchOptions,
+      skipAuth,
+      timeoutMs,
+      noRetryStatuses
+    );
   }
 
   private async executeRequestWithRetry(
@@ -232,6 +260,7 @@ export class HttpClient {
     options: RequestInit,
     skipAuth: boolean,
     timeoutMs: number,
+    noRetryStatuses?: number[],
     attempt: number = 1
   ): Promise<Response> {
     // Execute single request
@@ -320,8 +349,16 @@ export class HttpClient {
       this.maybeHandleAuthRejection(response.status, skipAuth);
     }
 
-    // Use RetryStrategy for rate limiting and server errors
-    if (response.status === 429 || response.status >= 500) {
+    // Use RetryStrategy for rate limiting and server errors — unless the
+    // caller declared this status deliberate-and-persistent rather than
+    // transient (`noRetryStatuses`), in which case retrying only multiplies
+    // the request count and the latency to reach the same answer. Checked
+    // BEFORE entering the chain, so an opted-out status costs exactly one
+    // request.
+    if (
+      (response.status === 429 || response.status >= 500) &&
+      !noRetryStatuses?.includes(response.status)
+    ) {
       return this.retryStrategy.executeWithRetry(
         () => this.executeSingleRequest(url, options, skipAuth, timeoutMs),
         attempt

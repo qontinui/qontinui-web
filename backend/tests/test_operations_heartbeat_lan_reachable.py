@@ -166,9 +166,13 @@ def _owned_device(*, hostname: str, port: int) -> Any:
         derived_status="offline",
         last_heartbeat=None,
         created_at=now,
+        capability_user_paired=True,
         ci_runner_status=None,
         ci_runner_labels=None,
         ci_runner_last_job_at=None,
+        # Mirrors ``Device.is_ci_runner``; this stand-in is a paired
+        # workstation, so it is never CI infrastructure.
+        is_ci_runner=False,
     )
 
 

@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
   extractSymbol,
+  formatBytes,
+  percentFree,
+  readingAgeMs,
   summarizeClearanceProvenance,
   SYMBOL_NAME_MAX_LEN,
   SYMBOL_CLAIMS_TOP_N,
+  VOLUME_CRIT_FREE_BYTES,
+  VOLUME_WARN_FREE_BYTES,
+  volumeSeverity,
 } from "./utils";
 
 /**
@@ -149,8 +155,89 @@ describe("summarizeClearanceProvenance", () => {
   });
 
   it("renders ids without cleared_via using the neutral 'cleared' verb", () => {
-    expect(
-      summarizeClearanceProvenance({ cleared_under_rule: RULE })
-    ).toBe("cleared under rule 9e8d7c6b");
+    expect(summarizeClearanceProvenance({ cleared_under_rule: RULE })).toBe(
+      "cleared under rule 9e8d7c6b"
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Volume free-space formatters (disk monitoring Phase 1)
+// ---------------------------------------------------------------------------
+//
+// These are the last mile of the honesty rule: a value that could not be
+// computed must SAY so. Every one of these assertions exists to stop a
+// fabricated `0`.
+
+describe("formatBytes", () => {
+  it("formats binary units with an explicit GiB/TiB label", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(1024)).toBe("1.0 KiB");
+    expect(formatBytes(100 * 1024 ** 3)).toBe("100.0 GiB");
+    expect(formatBytes(4 * 1024 ** 4)).toBe("4.0 TiB");
+  });
+
+  it("returns 'unknown' for a value that could not be computed", () => {
+    expect(formatBytes(Number.NaN)).toBe("unknown");
+    expect(formatBytes(null)).toBe("unknown");
+    expect(formatBytes(undefined)).toBe("unknown");
+    expect(formatBytes(-1)).toBe("unknown");
+    expect(formatBytes(Number.POSITIVE_INFINITY)).toBe("unknown");
+  });
+});
+
+describe("percentFree", () => {
+  it("computes a one-decimal percentage", () => {
+    expect(percentFree(50, 100)).toBe(50);
+    expect(percentFree(1, 3)).toBe(33.3);
+  });
+
+  it("returns null — not 0 — when the total is unusable", () => {
+    expect(percentFree(10, 0)).toBeNull();
+    expect(percentFree(10, -1)).toBeNull();
+    expect(percentFree(Number.NaN, 100)).toBeNull();
+    expect(percentFree(10, Number.NaN)).toBeNull();
+  });
+});
+
+describe("volumeSeverity", () => {
+  it("bands on the runner's own thresholds (100 GiB warn / 25 GiB crit)", () => {
+    expect(volumeSeverity(VOLUME_WARN_FREE_BYTES)).toBe("ok");
+    expect(volumeSeverity(VOLUME_WARN_FREE_BYTES - 1)).toBe("warn");
+    expect(volumeSeverity(VOLUME_CRIT_FREE_BYTES)).toBe("warn");
+    expect(volumeSeverity(VOLUME_CRIT_FREE_BYTES - 1)).toBe("critical");
+    expect(volumeSeverity(0)).toBe("critical");
+  });
+
+  it("returns null — NOT 'ok' — for a non-finite reading", () => {
+    // `NaN < CRIT` and `NaN < WARN` are BOTH false, so a naive banding falls
+    // through to the green arm and badges an unmeasured volume as healthy.
+    // The guard lives here, in the shared helper, rather than at each call
+    // site: the next consumer is the one that forgets to check.
+    expect(volumeSeverity(Number.NaN)).toBeNull();
+    expect(volumeSeverity(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(volumeSeverity(Number.NEGATIVE_INFINITY)).toBeNull();
+    expect(volumeSeverity(Number.NaN)).not.toBe("ok");
+  });
+});
+
+describe("readingAgeMs", () => {
+  it("returns null for an absent or unparseable timestamp", () => {
+    expect(readingAgeMs(null)).toBeNull();
+    expect(readingAgeMs(undefined)).toBeNull();
+    expect(readingAgeMs("not-a-date")).toBeNull();
+  });
+
+  it("clamps a future timestamp to 0 rather than going negative", () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    expect(readingAgeMs(future)).toBe(0);
+  });
+
+  it("measures elapsed time for a past timestamp", () => {
+    const past = new Date(Date.now() - 120_000).toISOString();
+    const age = readingAgeMs(past);
+    expect(age).not.toBeNull();
+    expect(age!).toBeGreaterThanOrEqual(119_000);
   });
 });

@@ -21,6 +21,7 @@ from app.services.permissions.organization_access import (
     check_organization_membership,
     get_personal_organization,
     get_user_organization_role,
+    resolve_personal_organization,
 )
 from app.services.permissions.permission_service import (
     PermissionService,
@@ -48,6 +49,7 @@ __all__ = [
     "get_user_accessible_projects",
     # Organization access functions
     "get_personal_organization",
+    "resolve_personal_organization",
     "check_organization_membership",
     "can_user_manage_organization",
     "get_user_organization_role",

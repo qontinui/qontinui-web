@@ -29,7 +29,9 @@ interface FakeTokenManager {
   clearTokens: ReturnType<typeof vi.fn>;
 }
 
-function makeTokenManager(overrides: Partial<Record<keyof FakeTokenManager, unknown>> = {}): FakeTokenManager {
+function makeTokenManager(
+  overrides: Partial<Record<keyof FakeTokenManager, unknown>> = {}
+): FakeTokenManager {
   return {
     getAccessToken: vi.fn(() => "tok"),
     getRefreshToken: vi.fn(() => "refresh"),
@@ -47,12 +49,13 @@ function makeTokenManager(overrides: Partial<Record<keyof FakeTokenManager, unkn
 function mockFetchOnce(status: number): void {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      new Response(JSON.stringify({}), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ),
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({}), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        })
+    )
   );
 }
 
@@ -78,6 +81,107 @@ async function countSessionExpired(run: () => Promise<void>): Promise<number> {
   return count;
 }
 
+describe("HttpClient noRetryStatuses", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function countedFetch(status: number): { calls: () => number } {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        return new Response(JSON.stringify({}), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+    );
+    return { calls: () => calls };
+  }
+
+  it("retries a 5xx by default", async () => {
+    // The baseline the opt-out is measured against. MEASURED, not assumed:
+    // `executeRequestWithRetry` makes the first request itself and THEN hands
+    // a fresh `requestFn` to `executeWithRetry`, which runs it once more
+    // before its own attempt counter applies — so `maxRetries: 3` costs FIVE
+    // requests, with 1s + 2s + 4s + 8s of backoff between them (~15s), not
+    // the four/~7s a reading of the config alone suggests.
+    const counter = countedFetch(503);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/api/v1/operations/x");
+    await vi.advanceTimersByTimeAsync(30_000);
+    const res = await pending;
+
+    expect(res.status).toBe(503);
+    expect(counter.calls()).toBe(5);
+  });
+
+  it("makes exactly one request for an opted-out status", async () => {
+    // Coord's `503 schema_migration_pending` is deliberate and persistent for
+    // the whole pre-migration window, so retrying it only multiplies the
+    // request count and the time to first paint.
+    const counter = countedFetch(503);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    const res = await client.fetch("https://api.test/api/v1/operations/x", {
+      noRetryStatuses: [503],
+    });
+
+    expect(res.status).toBe(503);
+    expect(counter.calls()).toBe(1);
+  });
+
+  it("still retries OTHER 5xx on a request that opts 503 out", async () => {
+    const counter = countedFetch(500);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/api/v1/operations/x", {
+      noRetryStatuses: [503],
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    const res = await pending;
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(5);
+  });
+
+  it("does not leak the opt-out to other callers of the same client", async () => {
+    // The reason this is an ARGUMENT rather than a `maxRetries` override:
+    // `maxRetries` reassigns the client's SHARED retryStrategy, so using it
+    // here would silently disable retries app-wide.
+    const counter = countedFetch(503);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    await client.fetch("https://api.test/a", { noRetryStatuses: [503] });
+    expect(counter.calls()).toBe(1);
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/b");
+    await vi.advanceTimersByTimeAsync(30_000);
+    await pending;
+
+    expect(counter.calls()).toBe(6); // 1 opted-out + 5 for the normal call
+  });
+});
+
 describe("HttpClient auth-rejection halt", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -96,13 +200,17 @@ describe("HttpClient auth-rejection halt", () => {
     const onExpired = vi.fn();
     client.setSessionExpiredHandler(onExpired);
 
-    const r1 = await client.fetch("https://api.test/api/v1/operations/device-status");
+    const r1 = await client.fetch(
+      "https://api.test/api/v1/operations/device-status"
+    );
     expect(r1.status).toBe(403);
     expect(onExpired).toHaveBeenCalledTimes(1);
     expect(tm.clearTokens).toHaveBeenCalled();
 
     // A second poll that also 403s must NOT re-fire the handler (debounced).
-    const r2 = await client.fetch("https://api.test/api/v1/operations/merge/queue");
+    const r2 = await client.fetch(
+      "https://api.test/api/v1/operations/merge/queue"
+    );
     expect(r2.status).toBe(403);
     expect(onExpired).toHaveBeenCalledTimes(1);
   });
@@ -201,8 +309,8 @@ describe("HttpClient auth-rejection halt", () => {
     expect(onExpired).not.toHaveBeenCalled();
     expect(
       warnSpy.mock.calls.some((args) =>
-        String(args[0]).includes("attempting token refresh"),
-      ),
+        String(args[0]).includes("attempting token refresh")
+      )
     ).toBe(false);
   });
 
@@ -216,7 +324,9 @@ describe("HttpClient auth-rejection halt", () => {
     const onExpired = vi.fn();
     client.setSessionExpiredHandler(onExpired);
 
-    const r = await client.fetch("https://api.test/api/v1/operations/device-status");
+    const r = await client.fetch(
+      "https://api.test/api/v1/operations/device-status"
+    );
     expect(r.status).toBe(403);
     expect(onExpired).not.toHaveBeenCalled();
     expect(tm.clearTokens).not.toHaveBeenCalled();
@@ -233,7 +343,9 @@ describe("HttpClient auth-rejection halt", () => {
     const onExpired = vi.fn();
     client.setSessionExpiredHandler(onExpired);
 
-    const r = await client.fetch("https://api.test/api/v1/operations/device-status");
+    const r = await client.fetch(
+      "https://api.test/api/v1/operations/device-status"
+    );
     expect(r.status).toBe(401);
     expect(onExpired).not.toHaveBeenCalled();
   });
@@ -268,7 +380,7 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
-      }),
+      })
     );
     return captured;
   }
@@ -293,7 +405,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
     it(`attaches the active-tenant header on ${url}`, async () => {
       localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
       const captured = captureFetchHeaders();
-      const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+      const client = new HttpClient(
+        makeTokenManager() as unknown as TokenManager
+      );
       await client.fetch(url);
       expect(captured.current["X-Qontinui-Active-Tenant"]).toBe(TENANT);
     });
@@ -301,7 +415,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
 
   it("omits the header when no tenant is selected", async () => {
     const captured = captureFetchHeaders();
-    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
     await client.fetch("https://api.test/api/v1/operations/fleet");
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
@@ -309,7 +425,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   it("does NOT attach the header on unrelated (non-proxy) URLs", async () => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
     const captured = captureFetchHeaders();
-    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
     await client.fetch("https://api.test/api/v1/projects");
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
@@ -317,7 +435,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   it("does NOT attach the header on /constraints/ (runner proxy, not coord)", async () => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
     const captured = captureFetchHeaders();
-    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
     await client.fetch("https://api.test/api/v1/constraints/active");
     expect(captured.current["X-Qontinui-Active-Tenant"]).toBeUndefined();
   });
@@ -325,7 +445,9 @@ describe("HttpClient X-Qontinui-Active-Tenant forwarding", () => {
   it("does NOT attach the header on skipAuth requests", async () => {
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, TENANT);
     const captured = captureFetchHeaders();
-    const client = new HttpClient(makeTokenManager() as unknown as TokenManager);
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
     await client.fetch("https://api.test/api/v1/operations/fleet", {
       skipAuth: true,
     });
@@ -360,7 +482,7 @@ describe("HttpClient reactive refresh on 401", () => {
         new Response(JSON.stringify({}), {
           status: 401,
           headers: { "Content-Type": "application/json" },
-        }),
+        })
     );
     vi.stubGlobal("fetch", fetchMock);
     return fetchMock;
@@ -507,13 +629,13 @@ describe("HttpClient reactive refresh on 401", () => {
                 error: "invalid_grant",
                 error_description: "Refresh Token has been revoked",
               }),
-              { status: 400, headers: { "Content-Type": "application/json" } },
+              { status: 400, headers: { "Content-Type": "application/json" } }
             )
           : new Response(JSON.stringify({}), {
               status: 401,
               headers: { "Content-Type": "application/json" },
-            }),
-      ),
+            })
+      )
     );
 
     const events = await countSessionExpired(async () => {
@@ -649,7 +771,7 @@ describe("HttpClient reactive refresh on 401", () => {
           status: calls % 2 === 1 ? 401 : 200,
           headers: { "Content-Type": "application/json" },
         });
-      }),
+      })
     );
     const tm = makeTokenManager({
       getAccessToken: vi.fn(() => "expired"),

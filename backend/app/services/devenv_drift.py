@@ -8,20 +8,27 @@ how the target differs from canonical.
 Severity heuristic
 ------------------
 
-* A ``removed`` delta (a key present on canonical but absent on the
-  target) is always ``"critical"`` — a missing piece of required topology
-  is the most dangerous drift.
+* A ``removed`` delta (a key present on canonical but MEASURED-AND-ABSENT
+  on the target) is ``"critical"`` by default — a missing piece of required
+  topology is the most dangerous drift — **unless the section overrides it**
+  via ``_REMOVED_SEVERITY_OVERRIDE``. ``repos`` does: a repository the box has
+  not cloned is that section's ordinary case, and one the developer cannot
+  clone is unclearable, so a blanket ``critical`` would pin the rollup there
+  forever. A key the target never measured is not ``removed`` at all; see the
+  unmeasured-key rule below.
 * Otherwise the base severity is derived from the section name:
 
-  ===================  ==========
-  section              base sev
-  ===================  ==========
-  ``db_schema``        critical
-  ``versions``         critical
-  ``services``         warning
-  ``env_contract``     warning
-  (unknown)            info
-  ===================  ==========
+  ===================  ==========  ===============
+  section              base sev    removed sev
+  ===================  ==========  ===============
+  ``db_schema``        critical    critical
+  ``versions``         critical    critical
+  ``services``         warning     critical
+  ``env_contract``     warning     critical
+  ``claude_accounts``  warning     critical
+  ``repos``            warning     **warning**
+  (unknown)            info        critical
+  ===================  ==========  ===============
 
 * A ``schema_version`` mismatch between the two envelopes forces the
   overall report severity to ``"critical"`` regardless of per-key deltas.
@@ -48,6 +55,28 @@ not assert drift the box cannot have:
   value, so the section is flagged ``process_scoped=True`` and its severity
   and ``in_sync`` contribution are left untouched. Suppressing it would hide
   real missing configuration; labelling lets the UI caveat it.
+* **An UNMEASURED key is ``unknown``, never ``removed``.** A capture probe that
+  exceeds the runner's budget makes the runner omit the key rather than guess,
+  and it names the omission in the envelope's ``unknown_keys``
+  (``section -> [key, ...]``, a sibling of ``sections``). Diffing such a key as
+  ``removed`` would assert the box lacks a toolchain nobody looked for — and
+  ``removed`` is always critical, so a slow probe alone could drive an install
+  of a version that is already correct. Those keys are emitted with
+  ``status="unknown"`` at ``"info"`` severity and are excluded from
+  ``in_sync``. The severity follows the heuristic's own logic rather than the
+  section table: the table ranks CONFIRMED drift by blast radius, and this is
+  not confirmed drift at all — it is an information gap, exactly the category
+  the derived-key rule already reports at ``"info"``. Anything higher would let
+  the capture budget, which is a property of the measuring process and not of
+  the box, decide a machine's reported severity — the nondeterminism this rule
+  exists to remove. The gap is still fully visible in the report; it just does
+  not masquerade as a finding. This applies symmetrically: a key CANONICAL
+  could not measure would otherwise read as ``added`` on every peer that did
+  measure it, which is the same false claim inverted.
+
+  An envelope with **no** ``unknown_keys`` key at all comes from a runner
+  predating the field; nothing is treated as unknown and the diff behaves
+  exactly as it did before. An explicit ``{}`` means every probe completed.
 
 The overall report severity is the max severity across all deltas (and the
 schema-version override). :func:`rollup_environment` aggregates multiple
@@ -79,6 +108,29 @@ _SECTION_BASE_SEVERITY: dict[str, SeverityT] = {
     "services": "warning",
     "env_contract": "warning",
     "claude_accounts": "warning",
+    # A missing repository blocks SOME work, not the box's ability to run, and
+    # `db_schema`-grade severity would drown the signal — see
+    # ``_REMOVED_SEVERITY_OVERRIDE`` for the half of this that actually decides
+    # the motivating case.
+    "repos": "warning",
+}
+
+# Per-section override of the ``removed``-delta severity.
+#
+# A ``removed`` delta is ``"critical"`` by default because a missing piece of
+# required topology is the most dangerous drift. That default is wrong for at
+# least one section, and the difference is not cosmetic: for ``repos``, "canonical
+# has it and the target does not" is the ORDINARY case the section exists to
+# report, not an emergency. Worse, a box whose developer lacks access to a private
+# repository can never clear it — so a blanket ``critical`` pins the whole
+# environment rollup to ``critical`` permanently on a condition the box cannot
+# act on. A rollup that is always critical is not a louder signal, it is a dead
+# one, which is the "drift signal rots" failure the repos plan names as a risk.
+#
+# Sections absent here keep the blanket ``"critical"``, so this table changes
+# nothing that existed before it.
+_REMOVED_SEVERITY_OVERRIDE: dict[str, SeverityT] = {
+    "repos": "warning",
 }
 
 
@@ -94,6 +146,15 @@ def _section_base_severity(section: str) -> SeverityT:
     return _SECTION_BASE_SEVERITY.get(section, "info")
 
 
+def _removed_severity(section: str) -> SeverityT:
+    """Severity for a ``removed`` delta in ``section``.
+
+    ``"critical"`` unless the section opts out — see
+    ``_REMOVED_SEVERITY_OVERRIDE`` for why an opt-out exists at all.
+    """
+    return _REMOVED_SEVERITY_OVERRIDE.get(section, "critical")
+
+
 def _extract_sections(envelope: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Pull the ``sections`` map out of a stored config envelope."""
     sections = envelope.get("sections", {})
@@ -103,6 +164,31 @@ def _extract_sections(envelope: dict[str, Any]) -> dict[str, dict[str, str]]:
     for name, body in sections.items():
         if isinstance(body, dict):
             out[str(name)] = {str(k): str(v) for k, v in body.items()}
+    return out
+
+
+def _extract_unknown_keys(envelope: dict[str, Any]) -> dict[str, set[str]]:
+    """Pull ``unknown_keys`` (``section -> {key}``) out of a stored envelope.
+
+    Returns an empty mapping both when the field is absent (a runner predating
+    it) and when it is an explicit ``{}``. The two ARE different claims — "we
+    were never told" vs "everything was measured" — but they are different
+    claims about the same empty set of unmeasured keys, so the diff behaves
+    identically either way. The distinction is preserved in the store (see
+    ``ConfigEnvelope.to_stored_config``) for readers that need it.
+
+    A malformed value is ignored rather than raised on: this reads envelopes
+    that were persisted long ago, and refusing to diff a machine because one
+    advisory field is misshapen would lose the real drift signal too.
+    """
+    raw = envelope.get("unknown_keys")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, set[str]] = {}
+    for name, keys in raw.items():
+        if isinstance(keys, str) or not isinstance(keys, list | tuple | set):
+            continue
+        out[str(name)] = {str(k) for k in keys}
     return out
 
 
@@ -131,6 +217,8 @@ def diff_envelopes(
     """
     canon_sections = _extract_sections(canonical)
     actual_sections = _extract_sections(actual)
+    canon_unknown = _extract_unknown_keys(canonical)
+    actual_unknown = _extract_unknown_keys(actual)
 
     canon_sv = _schema_version(canonical)
     actual_sv = _schema_version(actual)
@@ -148,6 +236,8 @@ def diff_envelopes(
     for section_name in all_section_names:
         canon_kv = canon_sections.get(section_name, {})
         actual_kv = actual_sections.get(section_name, {})
+        canon_unmeasured = canon_unknown.get(section_name, set())
+        actual_unmeasured = actual_unknown.get(section_name, set())
         base_sev = _section_base_severity(section_name)
 
         deltas: list[KeyDelta] = []
@@ -162,15 +252,44 @@ def diff_envelopes(
             # the box, so they are never machine drift at any status.
             derived = is_derived_key(section_name, key)
 
-            if in_canon and not in_actual:
-                # Canonical key missing on target — critical, unless derived.
+            # A key the capturing box did not MEASURE. Checked before the
+            # present/absent arms below because it is the reason the key is
+            # absent, and the arms would otherwise read that absence as a
+            # finding. Guarded on the key genuinely being absent on that side:
+            # a runner naming a key it nevertheless reported a value for is
+            # contradicting itself, and the measured value is the stronger
+            # evidence.
+            unmeasured_on_actual = not in_actual and key in actual_unmeasured
+            unmeasured_on_canon = not in_canon and key in canon_unmeasured
+
+            if unmeasured_on_actual or unmeasured_on_canon:
+                # "We could not measure this" is not "you are missing this".
+                # Always "info": this is an information gap, not confirmed
+                # drift, so the per-section blast-radius table does not apply
+                # (see the module docstring's unmeasured-key rule).
+                deltas.append(
+                    KeyDelta(
+                        key=key,
+                        status="unknown",
+                        expected=expected,
+                        actual=actual_val,
+                        severity="info",
+                        derived=derived,
+                    )
+                )
+            elif in_canon and not in_actual:
+                # Canonical key measured-and-missing on target — critical unless
+                # derived, or unless the section overrides it
+                # (``_removed_severity``).
                 deltas.append(
                     KeyDelta(
                         key=key,
                         status="removed",
                         expected=expected,
                         actual=None,
-                        severity="info" if derived else "critical",
+                        severity=(
+                            "info" if derived else _removed_severity(section_name)
+                        ),
                         derived=derived,
                     )
                 )
@@ -209,7 +328,13 @@ def diff_envelopes(
                 )
             )
             all_delta_severities.extend(d.severity for d in deltas)
-            if any(not d.derived for d in deltas):
+            # ``unknown`` is excluded alongside ``derived``: ``in_sync`` is a
+            # claim about the BOX, and a probe that ran out of budget is a fact
+            # about the measuring process. Letting it flip the oracle would make
+            # the verdict depend on how busy the machine was during capture —
+            # the nondeterminism this whole change removes. The gap is still
+            # reported, so it is visible rather than silently dropped.
+            if any(not d.derived and d.status != "unknown" for d in deltas):
                 has_real_drift = True
 
     overall = _max_severity(all_delta_severities)

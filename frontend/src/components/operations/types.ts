@@ -532,10 +532,17 @@ export interface FleetStatus {
    * hostname; grouping and React keys still use the hostname.
    */
   machine_display_names?: Record<string, string>;
+  /** Workstations only — self-hosted CI runners are counted separately. */
   total_runners: number;
   total_healthy: number;
   total_running_tasks: number;
   total_claude_sessions: number;
+  /**
+   * Self-hosted CI runners owned by this caller, categorised server-side by
+   * `Device.is_ci_runner`. Optional because a backend predating the
+   * categorisation omits it — read it as `?? 0`, never assume presence.
+   */
+  total_ci_runners?: number;
 }
 
 export interface RunnerTaskRun {
@@ -582,6 +589,79 @@ export interface CiRunnerInfo {
   lastJobAt: string | null;
 }
 
+// ============================================================================
+// Volume free space (disk monitoring, Phase 1)
+//
+// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 1 steps
+// 8-11. The rows originate in coord's `worktree_volume` oplog (already
+// alembic-authored — this phase adds NO migration), are read over coord
+// HTTP (web never reads coord's Postgres schema), and reach the browser via
+// `GET /api/v1/operations/fleet/volumes`.
+//
+// The whole point of this surface is honesty about what is NOT known, so the
+// telemetry state is modelled as a discriminated union rather than as
+// "maybe-empty array": a device that has never reported, a read that failed,
+// and a device that genuinely has zero free bytes are three different facts
+// and must never render the same (plan D10 / `silent-empty-is-unknown`).
+// ============================================================================
+
+/**
+ * One volume's latest capacity snapshot — the `DISTINCT ON (volume)` head of
+ * coord's append-only volume oplog, passed through untouched by the web
+ * proxy.
+ *
+ * `observed_at` is coord's stored timestamp, NOT a render-time clock: it is
+ * what makes stale telemetry visibly stale instead of silently authoritative.
+ * `null` means coord served a row without one, which renders as an unknown
+ * age — never as "just now".
+ */
+export interface VolumeReading {
+  /** Mount point / drive letter as the runner probed it, e.g. `"D:"`. */
+  volume: string;
+  total_bytes: number;
+  free_bytes: number;
+  /** RFC 3339, or `null` when coord served no timestamp. */
+  observed_at: string | null;
+}
+
+/** One device's entry in the fleet volumes payload. */
+export interface DeviceVolumes {
+  device_id: string;
+  /**
+   * Optional secondary join key. Coord's `VolumeRow` carries only
+   * `device_id`; a coord that joins `coord.devices` may additionally echo the
+   * hostname, and the dashboard uses it as a fallback when a machine has no
+   * live `device_status` row to resolve its `device_id` from.
+   */
+  hostname?: string | null;
+  volumes: VolumeReading[];
+  /**
+   * How many of THIS device's rows the parser could not read (absent when
+   * none were). Load-bearing, not diagnostics: a device whose every row was
+   * dropped ends up with `volumes: []`, which is indistinguishable from "this
+   * device has never reported" unless the drop is recorded. With this set,
+   * `resolveMachineVolumes` says UNKNOWN instead of making that claim.
+   */
+  skipped_rows?: number;
+}
+
+/**
+ * What is known about ONE machine's disk telemetry. Exhaustive by
+ * construction — there is no "absent" case, because absence is exactly the
+ * thing this union forces the caller to name.
+ *
+ * - `reported` — coord returned at least one volume row. Renders bars + age.
+ * - `never_reported` — the read SUCCEEDED and the device has no rows. This is
+ *   a fact about the device, not about the read.
+ * - `unknown` — the read did not answer (proxy/coord error), or the machine
+ *   could not be mapped to a coord device at all. Carries the reason, and
+ *   MUST NOT be rendered as zero, empty, or healthy.
+ */
+export type MachineVolumes =
+  | { state: "reported"; deviceId: string; volumes: VolumeReading[] }
+  | { state: "never_reported"; deviceId: string }
+  | { state: "unknown"; reason: string };
+
 export interface MachineGroup {
   hostname: string;
   /**
@@ -610,6 +690,29 @@ export interface MachineGroup {
    * when the machine does not have CI runner capability.
    */
   ciRunner?: CiRunnerInfo;
+  /**
+   * True when this group is CI **infrastructure** rather than a workstation
+   * — i.e. the host's only devices are self-hosted CI runners.
+   *
+   * The backend decides the category (`Device.is_ci_runner`, mirroring
+   * `capability_user_paired = false AND ci_runner_labels IS NOT NULL`) and
+   * excludes those devices from `FleetStatus.runners`, so a pure-CI host
+   * arrives here with an empty `runners` array and a populated `ciRunner`.
+   * A workstation that *also* hosts a CI runner keeps `false` — it is still
+   * a workstation, and it still renders in the machines section.
+   */
+  isCiInfrastructure?: boolean;
+  /**
+   * Disk telemetry for this machine (disk-monitoring Phase 1). REQUIRED, and
+   * deliberately not optional: every construction site has to say what is
+   * known, so a machine can never silently render as if it had no disks. Use
+   * `{ state: "unknown", reason }` when the answer is not available.
+   *
+   * Note this applies to CI infrastructure too (`isCiInfrastructure`, added
+   * concurrently on main): a CI host's disk is exactly the disk that fills up,
+   * so those groups carry real telemetry rather than being exempted.
+   */
+  volumes: MachineVolumes;
 }
 
 // ============================================================================

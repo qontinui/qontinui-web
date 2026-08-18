@@ -5144,6 +5144,239 @@
         "title": "CandidateBoundingBox",
         "type": "object"
       },
+      "CandidateCoordLink": {
+        "description": "Everything coord-owned about a candidate, with its own honesty flags.\n\nFetched over coord's HTTP API \u2014 web NEVER reads coord's Postgres schema\n(house rule; ``tests/test_coord_schema_boundary_guard.py`` enforces it).\nEach half carries its own state so an unreachable coord is distinguishable\nfrom a genuine empty.",
+        "properties": {
+          "linked_prs": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateLinkedPr"
+            },
+            "title": "Linked Prs",
+            "type": "array"
+          },
+          "linked_prs_state": {
+            "default": "unlinked",
+            "enum": [
+              "available",
+              "unavailable",
+              "unlinked"
+            ],
+            "title": "Linked Prs State",
+            "type": "string"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          },
+          "work_unit_state": {
+            "default": "unlinked",
+            "enum": [
+              "linked",
+              "dangling",
+              "unavailable",
+              "unlinked"
+            ],
+            "title": "Work Unit State",
+            "type": "string"
+          },
+          "work_unit_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Status"
+          },
+          "work_unit_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Title"
+          }
+        },
+        "title": "CandidateCoordLink",
+        "type": "object"
+      },
+      "CandidateDependency": {
+        "description": "A ``depends_on`` target that is NOT in a terminal state.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "status"
+        ],
+        "title": "CandidateDependency",
+        "type": "object"
+      },
+      "CandidateLinkedPr": {
+        "description": "A PR citation coord recorded against the linked work unit.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch"
+          },
+          "cited_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cited At"
+          },
+          "merged": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "state": {
+            "default": "unknown",
+            "enum": [
+              "merged",
+              "unmerged",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "title": "CandidateLinkedPr",
+        "type": "object"
+      },
+      "CandidatePromptLink": {
+        "description": "One producer in the prompt chain that led to a plan.\n\nReached by walking ``authored_plan`` / ``feeds`` / ``produced_report``\nedges BACKWARDS from the plan. ``depth`` 1 is the artifact that directly\nproduced it; higher numbers are further upstream.",
+        "properties": {
+          "depth": {
+            "title": "Depth",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "slug",
+          "title",
+          "relation",
+          "depth"
+        ],
+        "title": "CandidatePromptLink",
+        "type": "object"
+      },
       "CandidateStatus": {
         "description": "Review status of a template candidate.",
         "enum": [
@@ -5640,6 +5873,74 @@
           "extra_metadata"
         ],
         "title": "CaptureActionResponse",
+        "type": "object"
+      },
+      "CaptureDoorHealth": {
+        "description": "One capture door's contribution to the corpus.\n\n``count`` alone cannot answer \"is the agent door being used?\" \u2014 a door\nthat fed 40 artifacts and then went quiet in March looks identical to a\nlive one. ``last_touched_at`` is the field that separates them.\n\nIt is ``max(updated_at)``, i.e. LAST TOUCHED, not last captured: a kind\ncorrection bumps it without any capture. Named for what it measures.",
+        "properties": {
+          "captured_by": {
+            "title": "Captured By",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "first_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First At"
+          },
+          "known": {
+            "default": true,
+            "title": "Known",
+            "type": "boolean"
+          },
+          "last_touched_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Touched At"
+          }
+        },
+        "required": [
+          "captured_by",
+          "count"
+        ],
+        "title": "CaptureDoorHealth",
+        "type": "object"
+      },
+      "CaptureHealthResponse": {
+        "description": "Corpus census by capture door.\n\nEvery door in :data:`CapturedBy` appears, **including the ones with zero\nartifacts**. That is the point of the panel: \"the agent door has written\nnothing\" is the finding, and a door that is simply missing from the list\nreads as an absent feature rather than an unused one.",
+        "properties": {
+          "doors": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureDoorHealth"
+            },
+            "title": "Doors",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "doors"
+        ],
+        "title": "CaptureHealthResponse",
         "type": "object"
       },
       "CaptureScreenshotResponse": {
@@ -8649,6 +8950,23 @@
             },
             "title": "Sections",
             "type": "object"
+          },
+          "unknown_keys": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unknown Keys"
           }
         },
         "required": [
@@ -14838,6 +15156,146 @@
         "title": "DisplayNode",
         "type": "object"
       },
+      "DivergentGroup": {
+        "description": "A ``(kind, slug)`` whose copies do not agree on content.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "variant_count": {
+            "title": "Variant Count",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/DivergentVariant"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "slug",
+          "variant_count",
+          "variants"
+        ],
+        "title": "DivergentGroup",
+        "type": "object"
+      },
+      "DivergentResponse": {
+        "description": "All divergence groups visible to the caller.",
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/DivergentGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "kind_fork_total": {
+            "default": 0,
+            "title": "Kind Fork Total",
+            "type": "integer"
+          },
+          "kind_forks": {
+            "items": {
+              "$ref": "#/components/schemas/KindForkGroup"
+            },
+            "title": "Kind Forks",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "groups",
+          "total"
+        ],
+        "title": "DivergentResponse",
+        "type": "object"
+      },
+      "DivergentVariant": {
+        "description": "One of the conflicting copies in a divergence group.",
+        "properties": {
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "kind_locked",
+          "content_sha256",
+          "source_repo",
+          "source_path",
+          "title",
+          "status",
+          "current_version",
+          "updated_at"
+        ],
+        "title": "DivergentVariant",
+        "type": "object"
+      },
       "DomainKnowledgeCreate": {
         "description": "Schema for creating domain knowledge.",
         "properties": {
@@ -20714,6 +21172,219 @@
         "title": "FlagAnchor",
         "type": "object"
       },
+      "FleetPolicyPut": {
+        "additionalProperties": false,
+        "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
+        "properties": {
+          "change_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Note"
+          },
+          "domain": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Domain",
+            "type": "string"
+          },
+          "level": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Level",
+            "type": "string"
+          },
+          "master_enabled": {
+            "default": true,
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "scope_band": {
+            "default": "tenant",
+            "enum": [
+              "system",
+              "tenant",
+              "repo"
+            ],
+            "title": "Scope Band",
+            "type": "string"
+          },
+          "scope_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Key"
+          }
+        },
+        "required": [
+          "domain",
+          "level"
+        ],
+        "title": "FleetPolicyPut",
+        "type": "object"
+      },
+      "FleetPolicyView": {
+        "description": "The requested domain's resolved policy \u2014 and ONLY that domain's.\n\n``effective_level`` is what a device actually resolves, which is not the\nsame as the level that was last written: coord folds ``master_enabled``\nin (a disabled master resolves ``off`` whatever ``level`` says), and a\ntenant with no row at all resolves ``off`` / ``resolved_scope: \"none\"``.\nThat last case is why ``resolved_scope`` is surfaced: \"off because nobody\never wrote a row\" and \"off because someone turned it off\" are different\nfacts about the fleet and the operator is entitled to tell them apart.",
+        "properties": {
+          "can_edit": {
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "effective_level": {
+            "title": "Effective Level",
+            "type": "string"
+          },
+          "keys_not_shown": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys Not Shown",
+            "type": "array"
+          },
+          "keys_not_shown_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fleet_resources_row",
+                  "this_domain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keys Not Shown Source"
+          },
+          "master_enabled": {
+            "title": "Master Enabled",
+            "type": "boolean"
+          },
+          "resolved_scope": {
+            "title": "Resolved Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "effective_level",
+          "master_enabled",
+          "resolved_scope",
+          "can_edit"
+        ],
+        "title": "FleetPolicyView",
+        "type": "object"
+      },
+      "FleetPolicyWriteResult": {
+        "description": "What the write did, and \u2014 separately \u2014 what devices now resolve.\n\nThe two halves are kept apart deliberately. ``written_level`` is coord's\necho of the write; ``effective`` is a SECOND, fresh read of the same\ndomain. They can legitimately differ (a more specific scope band wins, or\n``master_enabled`` is false), and the operator needs the resolved value,\nnot the hopeful one.\n\nWhen the read-back itself fails, ``effective`` is ``None`` and\n``readback_error`` says why. That is UNKNOWN \u2014 it is NOT \"the write took\neffect\"; assuming the written value is what devices resolve is exactly the\nassertion this field exists to refuse.",
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "effective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FleetPolicyView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "readback_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Readback Error"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "versioned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versioned"
+          },
+          "written_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Level"
+          },
+          "written_master_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Master Enabled"
+          }
+        },
+        "required": [
+          "ok",
+          "domain"
+        ],
+        "title": "FleetPolicyWriteResult",
+        "type": "object"
+      },
       "FolderCreateRequest": {
         "description": "Request to create a folder.",
         "properties": {
@@ -23145,7 +23816,7 @@
         "type": "object"
       },
       "KeyDelta": {
-        "description": "A single key-level difference between canonical and a target machine.",
+        "description": "A single key-level difference between canonical and a target machine.\n\n``status`` may be ``\"unknown\"`` \u2014 see :data:`DeltaStatusT`. That is not a\ndifference that was observed; it is one side of the comparison declining to\nclaim it measured the key. It is reported (never dropped) so the gap stays\nvisible, at ``info`` severity, and it does not make a machine out-of-sync.",
         "properties": {
           "actual": {
             "anyOf": [
@@ -23191,7 +23862,8 @@
             "enum": [
               "added",
               "removed",
-              "changed"
+              "changed",
+              "unknown"
             ],
             "title": "Status",
             "type": "string"
@@ -23203,6 +23875,58 @@
           "severity"
         ],
         "title": "KeyDelta",
+        "type": "object"
+      },
+      "KindForkGroup": {
+        "description": "A ``(slug, source_repo)`` whose copies disagree on ``kind``.\n\nA DIFFERENT failure from :class:`DivergentGroup`, which groups by\n``(kind, slug)`` and therefore cannot see a fork whose whole\ndistinguishing feature is that the kinds differ. This is the class the\nkind-lock fix prevents going forward and that the scan-safe upsert now\nrefuses to resolve (it 409s instead of picking a winner), so it is\nreported here rather than left invisible.\n\n``resolvable`` is ``True`` when exactly one variant is ``kind_locked`` \u2014\nthe scanner can then unambiguously prefer that row and the fork will heal\nitself. ``False`` means an operator must pick, via ``PATCH .../kind``.",
+        "properties": {
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
+          "resolvable": {
+            "title": "Resolvable",
+            "type": "boolean"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "variant_count": {
+            "title": "Variant Count",
+            "type": "integer"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/DivergentVariant"
+            },
+            "title": "Variants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "source_repo",
+          "kinds",
+          "variant_count",
+          "resolvable",
+          "variants"
+        ],
+        "title": "KindForkGroup",
         "type": "object"
       },
       "KnownIssueCreate": {
@@ -27626,6 +28350,42 @@
         "title": "NotificationUpdate",
         "type": "object"
       },
+      "NotificationsMarkReadBody": {
+        "additionalProperties": false,
+        "description": "Body for ``POST /operations/notifications/mark-read``.\n\nMirrors coord's ``MarkReadRequest``. **Coord remains the authority** \u2014 this\nmodel is defence in depth at the boundary, not a second source of truth, so\nit must be kept in lockstep and must never accept something coord rejects.\n\nThe shape exists in this exact form because of a defect found in coord\nreview 2026-08-15. Coord took ``Option<Json<MarkReadRequest>>``, and axum\nmaps **every** deserialization failure to ``None`` \u2014 a wrong\n``Content-Type``, a non-UUID id, or the natural TypeScript spelling\n``{\"notificationIds\": [...]}`` all arrived as ``None``, which the SQL then\nread as *mark the entire tenant read*. Ninety days of read state, destroyed\nby a typo, with no mark-UNREAD anywhere in the API to undo it.\n\nSo the two operations are DISJOINT and both EXPLICIT:\n\n- ``{\"notification_ids\": [\"<uuid>\", ...]}`` \u2014 mark exactly those rows. An\n  empty list marks nothing, which is a legitimate no-op.\n- ``{\"all\": true}`` \u2014 mark everything unread for this principal.\n\nSetting both, setting neither, or spelling ``all`` as anything but ``true``\nis rejected. Absent/``null`` no longer means \"all\"; that overload is\nprecisely what made the bug reachable, and the fix is worth nothing if this\nhop quietly re-introduces it.\n\n``extra=\"forbid\"`` is the other half: a misspelled field is a loud reject\nhere rather than a silently-ignored key that leaves the request looking\nlike the dangerous empty body.",
+        "properties": {
+          "all": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Must be `true` when present: mark every unread notification for the calling principal. Mutually exclusive with `notification_ids`. There is no undo.",
+            "title": "All"
+          },
+          "notification_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mark exactly these notifications read. Empty list = no-op. Mutually exclusive with `all`.",
+            "title": "Notification Ids"
+          }
+        },
+        "title": "NotificationsMarkReadBody",
+        "type": "object"
+      },
       "NotifyWhenGreenRequest": {
         "additionalProperties": false,
         "description": "Body for ``POST /operations/ci-status/notify-when-green``.\n\nRegisters a ``CiGreen`` gate bound to ``(repo, head_sha)``. The\noptional ``continuation_prompt`` becomes the gate's continuation\nspawn ``initial_prompt`` so the gate engine can hand a follow-up\nprompt to an agent when the repo goes green.\n\n``gate_class`` is coord's freeform gate-classification string\n(recommended vocabulary: ``security-surface`` / ``routine-review`` /\n``ops-confirm``). Coord's per-tenant ``gate_clearance`` policy matrix\nkeys off it to decide who may clear the resulting gate, so dropping\nit silently would silently change an authorization outcome.\n\n``extra=\"forbid\"`` is deliberate: before ``gate_class`` was declared\nhere, a caller that sent it had the field swallowed at validation \u2014\nno 400, no log line, and a gate registered under the wrong clearance\nrules. Rejecting unknown keys makes the NEXT such drift a typed 422\ninstead of another silent swallow. The only in-tree caller\n(``CiStatusPanel.tsx``) sends exactly ``repo`` + ``head_sha``.\n\nA BLANK ``gate_class`` is rejected rather than forwarded. Coord's\n``normalize_gate_class`` trims and empty-filters it back to ``None``,\nso ``\"\"`` / ``\"   \"`` would register an UNCLASSIFIED gate under the\ndefault clearance authority with no 4xx and no warning \u2014 the same\nsilent-authorization-downgrade this model exists to close, just moved\none layer down. Coord calls a blank class \"an authoring accident, not\na class\"; this rejects it at the edge, where the caller can see it.",
@@ -27810,6 +28570,106 @@
           "flow"
         ],
         "title": "OnboardingConnectStateRequest",
+        "type": "object"
+      },
+      "OpenFollowup": {
+        "description": "Work a plan SURFACED and deliberately did not do, with no owner yet.\n\nThe row is a ``spawned_followup`` edge whose ``to_id`` is still NULL. The\noriginating artifact is denormalized in so the queue renders without an\nN+1 fetch, and ``note`` carries the finding itself \u2014 with no far end there\nis nowhere else for it to live, which is why the schema requires it.",
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "edge_id": {
+            "format": "uuid",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "from_kind": {
+            "title": "From Kind",
+            "type": "string"
+          },
+          "from_slug": {
+            "title": "From Slug",
+            "type": "string"
+          },
+          "from_title": {
+            "title": "From Title",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "from_id",
+          "from_kind",
+          "from_slug",
+          "from_title",
+          "note",
+          "created_at",
+          "age_days"
+        ],
+        "title": "OpenFollowup",
+        "type": "object"
+      },
+      "OpenFollowupResponse": {
+        "description": "A page of open (unclaimed) follow-ups.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OpenFollowup"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "ordering": {
+            "const": "oldest_first",
+            "default": "oldest_first",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "OpenFollowupResponse",
         "type": "object"
       },
       "OrganizationCreate": {
@@ -29668,6 +30528,185 @@
           "created_at"
         ],
         "title": "PhaseResultResponse",
+        "type": "object"
+      },
+      "PlanCandidate": {
+        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.",
+        "properties": {
+          "age_days": {
+            "title": "Age Days",
+            "type": "number"
+          },
+          "authored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored At"
+          },
+          "coord": {
+            "$ref": "#/components/schemas/CandidateCoordLink"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
+          "last_touched": {
+            "title": "Last Touched",
+            "type": "string"
+          },
+          "prompt_chain": {
+            "items": {
+              "$ref": "#/components/schemas/CandidatePromptLink"
+            },
+            "title": "Prompt Chain",
+            "type": "array"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unmet_depends_on": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateDependency"
+            },
+            "title": "Unmet Depends On",
+            "type": "array"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "kind_locked",
+          "slug",
+          "title",
+          "status",
+          "created_at",
+          "last_touched",
+          "age_days",
+          "coord"
+        ],
+        "title": "PlanCandidate",
+        "type": "object"
+      },
+      "PlanCandidateResponse": {
+        "description": "A page of candidates plus the honesty flags for the whole read.",
+        "properties": {
+          "coord_available": {
+            "default": true,
+            "title": "Coord Available",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "open_followup_total": {
+            "default": 0,
+            "title": "Open Followup Total",
+            "type": "integer"
+          },
+          "open_followups": {
+            "items": {
+              "$ref": "#/components/schemas/OpenFollowup"
+            },
+            "title": "Open Followups",
+            "type": "array"
+          },
+          "ordering": {
+            "const": "oldest_vetted_first",
+            "default": "oldest_vetted_first",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PlanCandidateResponse",
         "type": "object"
       },
       "PopularPackageResponse": {
@@ -33961,6 +35000,48 @@
           "name"
         ],
         "title": "RepoRefRequest",
+        "type": "object"
+      },
+      "ReposApplyDispatchRequest": {
+        "description": "Ask a machine's runner to reconcile its cloned repositories.\n\nThe server **requests**; the box decides and acts. Nothing here runs a clone\non a developer's machine \u2014 the target's own runner receives the directive,\napplies its LOCAL policy (workspace-root resolution, the incomparable-scope\nrefusal, the disk floor, per-repo auth), and reports. That separation is the\nsame one that retired the agent-dispatch model on 2026-07-13: a clone is\narbitrary code arriving on disk, so the authority to perform one stays with\nthe box that owns the box.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "title": "ReposApplyDispatchRequest",
+        "type": "object"
+      },
+      "ReposApplyDispatchResponse": {
+        "description": "Result of a dispatched repos apply.\n\n``dispatched`` says only that coord accepted the directive \u2014 NOT that the\nbox acted on it, which it may decline to do (no workspace root, incomparable\nscopes, insufficient disk). The outcome arrives as ordinary drift on the next\ncapture, which is the honest surface for it.",
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dispatched",
+          "confirm"
+        ],
+        "title": "ReposApplyDispatchResponse",
         "type": "object"
       },
       "ResendDeviceVerificationRequest": {
@@ -48391,6 +49472,786 @@
         "title": "WakeRequiredResponse",
         "type": "object"
       },
+      "WorkArtifactDetail": {
+        "description": "Single-artifact read: body + full version log + edges BOTH ways.\n\n``coord`` carries the linked work unit and its PR citations, with the same\nhonesty flags ``/candidates`` uses \u2014 see :class:`CandidateCoordLink`. It is\nALWAYS present (defaulting to ``work_unit_state: \"unlinked\"``) so a\nconsumer never has to distinguish \"the field is missing\" from \"there is no\nlink\", and it is ``unavailable`` rather than empty whenever coord could not\nbe read. ``include_coord=false`` skips the fetch, which reports\n``unavailable`` for a linked artifact \u2014 deliberately, because \"we did not\nlook\" is not \"there is nothing there\".",
+        "properties": {
+          "authored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored At"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "captured_by": {
+            "title": "Captured By",
+            "type": "string"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "coord": {
+            "$ref": "#/components/schemas/CandidateCoordLink"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/WorkArtifactVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "created_by_user_id",
+          "kind",
+          "kind_locked",
+          "slug",
+          "title",
+          "status",
+          "content_sha256",
+          "source_path",
+          "source_repo",
+          "work_unit_slug",
+          "repos",
+          "authored_at",
+          "captured_by",
+          "current_version",
+          "created_at",
+          "updated_at",
+          "body",
+          "versions",
+          "edges"
+        ],
+        "title": "WorkArtifactDetail",
+        "type": "object"
+      },
+      "WorkArtifactEdgeClaim": {
+        "description": "Claim an open ``spawned_followup`` by naming the artifact that owns it.\n\n``PATCH /plan-library/edges/{edge_id}``. The edge stops being an open\nfollow-up and becomes an ordinary two-ended provenance link, so it drops\nout of ``GET /plan-library/followups`` while staying traceable from the\noriginating artifact's edge list.",
+        "properties": {
+          "to_id": {
+            "format": "uuid",
+            "title": "To Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_id"
+        ],
+        "title": "WorkArtifactEdgeClaim",
+        "type": "object"
+      },
+      "WorkArtifactEdgeCreate": {
+        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the four two-ended relations, supply EXACTLY ONE of ``to_id``\n(outgoing) or ``from_id`` (incoming) \u2014 plus ``supersedes``, five in all.\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
+        "properties": {
+          "from_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "relation": {
+            "enum": [
+              "produced_report",
+              "feeds",
+              "authored_plan",
+              "supersedes",
+              "depends_on",
+              "spawned_followup"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "to_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Id"
+          }
+        },
+        "required": [
+          "relation"
+        ],
+        "title": "WorkArtifactEdgeCreate",
+        "type": "object"
+      },
+      "WorkArtifactEdgeRead": {
+        "description": "One provenance edge, with the far end's identity denormalized in.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "direction": {
+            "enum": [
+              "outgoing",
+              "incoming"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "from_id": {
+            "format": "uuid",
+            "title": "From Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "peer_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Kind"
+          },
+          "peer_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Slug"
+          },
+          "peer_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Title"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "to_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Id"
+          }
+        },
+        "required": [
+          "id",
+          "from_id",
+          "to_id",
+          "relation",
+          "note",
+          "created_by",
+          "created_at",
+          "direction"
+        ],
+        "title": "WorkArtifactEdgeRead",
+        "type": "object"
+      },
+      "WorkArtifactKindPatch": {
+        "description": "Correct one artifact's ``kind`` and lock it against future scans.\n\nThe door Phase 5's inline kind correction needs. Sets ``kind_locked``\nunconditionally \u2014 even when the kind is unchanged \u2014 because the lock\nrecords that a human/agent asserted it.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "investigation_prompt",
+              "plan_authoring_prompt",
+              "implementation_prompt",
+              "investigation_report",
+              "handoff",
+              "plan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "WorkArtifactKindPatch",
+        "type": "object"
+      },
+      "WorkArtifactListResponse": {
+        "description": "A page of list rows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkArtifactSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "WorkArtifactListResponse",
+        "type": "object"
+      },
+      "WorkArtifactSummary": {
+        "description": "List-row shape \u2014 everything except the (potentially huge) body.",
+        "properties": {
+          "authored_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored At"
+          },
+          "captured_by": {
+            "title": "Captured By",
+            "type": "string"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_locked": {
+            "title": "Kind Locked",
+            "type": "boolean"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "created_by_user_id",
+          "kind",
+          "kind_locked",
+          "slug",
+          "title",
+          "status",
+          "content_sha256",
+          "source_path",
+          "source_repo",
+          "work_unit_slug",
+          "repos",
+          "authored_at",
+          "captured_by",
+          "current_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkArtifactSummary",
+        "type": "object"
+      },
+      "WorkArtifactUpsert": {
+        "description": "Upsert payload. Identity is ``(kind, slug, source_repo)`` + the\nserver-derived organization \u2014 those three fields are the natural key,\neverything else is content or metadata that the upsert overwrites.\n\nNOTE the absence of ``organization_id``. See the module docstring.",
+        "properties": {
+          "authored_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored At"
+          },
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "captured_by": {
+            "default": "agent",
+            "enum": [
+              "runner_scan",
+              "agent",
+              "operator"
+            ],
+            "title": "Captured By",
+            "type": "string"
+          },
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "kind": {
+            "enum": [
+              "investigation_prompt",
+              "plan_authoring_prompt",
+              "implementation_prompt",
+              "investigation_report",
+              "handoff",
+              "plan"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "kind_is_heuristic": {
+            "default": false,
+            "title": "Kind Is Heuristic",
+            "type": "boolean"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "slug": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "status": {
+            "default": "",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "maxLength": 1024,
+            "title": "Title",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          }
+        },
+        "required": [
+          "kind",
+          "slug"
+        ],
+        "title": "WorkArtifactUpsert",
+        "type": "object"
+      },
+      "WorkArtifactUpsertResponse": {
+        "description": "Upsert outcome.\n\nThe \"304-equivalent\" the plan asks for: an unchanged ``content_sha256``\nreturns ``changed=False`` (and the response carries the\n``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).\nA literal HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/WorkArtifactSummary"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changed",
+          "created",
+          "artifact"
+        ],
+        "title": "WorkArtifactUpsertResponse",
+        "type": "object"
+      },
+      "WorkArtifactVersionRead": {
+        "description": "One immutable revision snapshot.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description"
+          },
+          "content_sha256": {
+            "title": "Content Sha256",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "document_id": {
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "document_id",
+          "version_number",
+          "body",
+          "content_sha256",
+          "change_description",
+          "created_by",
+          "created_at"
+        ],
+        "title": "WorkArtifactVersionRead",
+        "type": "object"
+      },
       "WorkflowDispatchRequest": {
         "description": "Request body for ``POST /api/v1/runners/{runner_id}/dispatch``.\n\n``target`` is either the literal string ``\"auto\"`` (pick the healthiest\nrunner owned by the current user) or the UUID of a specific runner the\nuser owns.",
         "properties": {
@@ -62527,6 +64388,65 @@
           }
         ],
         "summary": "Regenerate Enrollment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/devenv/machines/{machine_id}/repos-apply-dispatch": {
+      "post": {
+        "description": "Ask this machine's runner to reconcile its cloned repositories.\n\nThe server REQUESTS; the box DECIDES. Coord publishes a directive on\n``events.devenv.repos_apply_requested.<device_id>``; the target's own runner\nruns its local apply and re-captures. Nothing here executes a clone.\n\n``dispatched: true`` means coord accepted the directive \u2014 not that the box\nacted on it. The runner may legitimately decline (no workspace root\nresolved, canonical and this box on incomparable scopes, free disk below the\nfloor), and the outcome shows up as ordinary drift on the next capture.\n\nPlan ``2026-08-06-devenv-repos-section``, P4.",
+        "operationId": "api_v1_devenv_machines_machine_id_repos_apply_dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "machine_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Machine Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReposApplyDispatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReposApplyDispatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Dispatch Repos Apply",
         "tags": [
           "environments"
         ]
@@ -77164,7 +79084,7 @@
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body/attrs. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.",
+        "description": "Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_writable?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_writable`` is the per-document agent write access flag\n(``true`` = agents may write this document via\n``coord_write_prompt_document``, ``false`` = they may not). It is\ndeliberately NOT attrs-shaped: supplying it takes coord's **versioning**\npath even when nothing else changes, because who may write a policy\ndocument is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting it leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {
@@ -78526,6 +80446,50 @@
         ]
       }
     },
+    "/api/v1/operations/devices/{device_id}/volumes": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/devices/{device_id}/volumes`` (tenant-scoped).\n\nReturns the latest capacity snapshot per volume for ONE device \u2014 the\n``DISTINCT ON (volume)`` head of coord's append-only volume oplog.\nResponse shape is coord-authored and passed through untouched::\n\n    {\"device_id\": \"<uuid>\", \"volumes\": [\n        {\"volume\": \"D:\", \"total_bytes\": 4000787030016,\n         \"free_bytes\": 98923937792, \"observed_at\": \"<rfc3339>\"}, ...]}\n\nA device with no telemetry yields an EMPTY ``volumes`` list, which the\ncaller renders as UNKNOWN (plan D10). This route never invents a row and\nnever zero-fills \u2014 \"never reported\" and \"reported 0 bytes free\" are\ndifferent facts and must not render the same.\n\nNOTE: intentionally unwired in Phase 1 \u2014 the fleet read covers every\nmachine card, so no frontend caller exists yet. Phase 2 (per-device\ndrill-down) is its first consumer; this is not an accidentally-dead route.",
+        "operationId": "api_v1_operations_devices_device_id_volumes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Device Volumes Api V1 Operations Devices  Device Id  Volumes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Device Volumes",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/federation/reports": {
       "get": {
         "description": "List memory federation reports from coord (paginated, filterable).",
@@ -78683,7 +80647,7 @@
     },
     "/api/v1/operations/fleet": {
       "get": {
-        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]],\n    \"total_runners\": int, \"total_healthy\": int, \"total_running_tasks\": int,\n    \"total_claude_sessions\": int }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.\n\nThe ``total_*`` aggregates feed the FleetOverview stat row\n(``frontend/src/components/operations/FleetOverview.tsx`` reads\n``total_runners`` / ``total_healthy`` / ``total_running_tasks``):\n\n* ``total_runners`` \u2014 every runner in the merged list (DB-paired +\n  heartbeat-only beacons).\n* ``total_healthy`` \u2014 merged-list entries whose ``derivedStatus`` is\n  ``\"healthy\"`` (same staleness-gated derivation the list itself uses).\n* ``total_running_tasks`` \u2014 heartbeat-reported running-task counts from\n  the beacon registry (no live fan-out to runners on this poll path;\n  ``GET /fleet/tasks`` remains the live-fetch surface).",
+        "description": "Return the user's fleet (runners + cross-machine Claude sessions).\n\nResponse shape:\n    ``{ \"runners\": list[Runner], \"claude_sessions\": dict[hostname, list[ClaudeSession]],\n    \"total_runners\": int, \"total_healthy\": int, \"total_running_tasks\": int,\n    \"total_claude_sessions\": int }``\n\nThe ``runners`` list uses the canonical wire shape (with\n``derived_status``, ``ws_connected``, ...). The ``claude_sessions``\nsection comes from the in-memory cross-machine fleet registry.\n\nThe ``total_*`` aggregates feed the FleetOverview stat row\n(``frontend/src/components/operations/FleetOverview.tsx`` reads\n``total_runners`` / ``total_healthy`` / ``total_running_tasks``):\n\n* ``total_runners`` \u2014 every **workstation** in the merged list (DB-paired\n  + heartbeat-only beacons). Self-hosted CI runners are excluded; they\n  are counted by ``total_ci_runners`` instead.\n* ``total_healthy`` \u2014 merged-list entries whose ``derivedStatus`` is\n  ``\"healthy\"`` (same staleness-gated derivation the list itself uses).\n* ``total_ci_runners`` \u2014 self-hosted CI runners, categorised by\n  :attr:`app.models.device.Device.is_ci_runner`. These are live\n  infrastructure (registered by coord's ``ci_runner_registrar``), not\n  clutter and not workstations.\n* ``total_running_tasks`` \u2014 heartbeat-reported running-task counts from\n  the beacon registry (no live fan-out to runners on this poll path;\n  ``GET /fleet/tasks`` remains the live-fetch surface).",
         "operationId": "api_v1_operations_fleet_get",
         "responses": {
           "200": {
@@ -78705,6 +80669,120 @@
           }
         ],
         "summary": "Get Fleet Status",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet-policy": {
+      "get": {
+        "description": "Read one fleet-policy domain's RESOLVED value for the caller's tenant.\n\nReturns what devices actually resolve, not the last thing written. See\n:class:`FleetPolicyView` for why ``resolved_scope`` matters and the module\ncomment above for the ``fleet_resources`` blocks this strips.\n\n``can_edit`` is computed with the SAME rule\n``require_coord_tenant_admin`` applies to the PUT \u2014 the operator's roles in\nthe EFFECTIVE tenant, plus the superuser bypass. Using\n``identity.is_admin`` here (as some older proxies do) would be wrong in\nboth directions: it is a union across every tenant, so an Administrator of\ntenant A who is a Developer of the active tenant B would get an enabled\nbutton and a 403, and a qontinui superuser who is not a coord tenant admin\nwould get a disabled button for a write that would have succeeded.",
+        "operationId": "api_v1_operations_fleet_policy_get",
+        "parameters": [
+          {
+            "description": "Policy domain to read",
+            "in": "query",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "description": "Policy domain to read",
+              "minLength": 1,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve as this repo would (only affects repo-band rows).",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Resolve as this repo would (only affects repo-band rows).",
+              "title": "Repo"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetPolicyView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Policy",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Write one fleet-policy domain, then READ BACK what devices resolve.\n\nTenant-admin gated web-side; coord re-checks with ``rbac::is_tenant_admin``\nand answers 403 ``admin_required`` otherwise, which passes through\nverbatim.\n\nThe read-back is a separate GET rather than a reuse of the PUT's own echo.\nA write that lands is not the same fact as a value that resolves \u2014 a\nmore specific repo-band row, a false ``master_enabled``, or a stale replica\nall break the equivalence \u2014 and the operator asked what the fleet sees.",
+        "operationId": "api_v1_operations_fleet_policy_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetPolicyPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetPolicyWriteResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Fleet Policy",
         "tags": [
           "operations"
         ]
@@ -79117,6 +81195,28 @@
           }
         ],
         "summary": "Get All Tasks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/volumes": {
+      "get": {
+        "description": "Proxy coord's ``GET /coord/fleet/volumes`` (tenant-scoped).\n\nThe fleet-wide sibling of :func:`get_device_volumes`: the latest\ncapacity snapshot per ``(device, volume)`` across every device in the\ncaller's tenant, so the fleet dashboard can render one machine card per\ndevice without N per-device requests. Response shape is coord-authored::\n\n    {\"devices\": [{\"device_id\": \"<uuid>\", \"volumes\": [VolumeRow, ...]},\n                 ...], \"count\": <int>}\n\nDevices absent from the payload have NEVER reported volume telemetry.\nThat is UNKNOWN, not zero \u2014 see the section note above.",
+        "operationId": "api_v1_operations_fleet_volumes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Volumes Api V1 Operations Fleet Volumes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Volumes",
         "tags": [
           "operations"
         ]
@@ -80865,6 +82965,154 @@
           }
         },
         "summary": "Get Migrations Queue",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/notifications": {
+      "get": {
+        "description": "Return the ``coord.notifications`` feed for the calling principal.\n\nResponse envelope mirrors coord:\n``{\"notifications\": [...], \"next_cursor\": str|null, \"total\": N,\n\"unread_count\": N}``. ``total`` and ``unread_count`` are server-computed\nscalars distinct from the page \u2014 consumers (notably the ``CoordNav``\nbadge) MUST read those and never derive a count from\n``notifications.length``, which is the page size.\n\nEvery paging/filter param is forwarded **verbatim** and only when the\ncaller set it: a proxy that swallowed ``limit`` would re-create, one\nlayer up, exactly the ignored-paging defect this plan exists to fix.\nBounds live in coord (single clamp, single place); this hop adds none.\n\nTenant-scoped and operator-bearer-forwarding, same posture as the\nsibling ``/operations/alerts`` rollup \u2014 coord derives the read-state\nprincipal (``operator:<uuid>`` / ``device:<uuid>``) from that bearer.",
+        "operationId": "api_v1_operations_notifications_get",
+        "parameters": [
+          {
+            "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. Forwarded verbatim \u2014 coord owns the default and the clamp.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque keyset cursor from a prior response's ``next_cursor``.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "Filter by notification kind.",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by notification kind.",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Restrict to notifications the calling principal has not read.",
+            "in": "query",
+            "name": "unread_only",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to notifications the calling principal has not read.",
+              "title": "Unread Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Notifications Api V1 Operations Notifications Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coord Notifications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/notifications/mark-read": {
+      "post": {
+        "description": "Mark notifications read for the calling principal.\n\nExactly one of two disjoint, explicit operations \u2014 see\n:class:`NotificationsMarkReadBody` for why the \"absent body means mark\neverything\" spelling was removed rather than merely discouraged:\n\n- ``{\"notification_ids\": [\"<uuid>\", ...]}`` \u2192 mark those rows.\n- ``{\"all\": true}`` \u2192 mark every unread row for this principal.\n\nAnything else \u2014 both arms, neither arm, ``{\"all\": false}``, an unknown or\nmisspelled field, a non-UUID id \u2014 is rejected here and never reaches coord.\nThe arm-selection rule answers ``400`` to match coord's own status for it;\ntype/shape violations answer FastAPI's standard ``422``. Both are hard\nrejects, and neither can degrade into a mark-all.\n\nCoord answers ``{\"marked\": N, \"unread_count\": N}``.\n\nGated on ``get_tenant_id`` rather than ``require_coord_tenant_admin``:\nread state is **per-principal** (coord derives ``actor_key`` solely from\nthe forwarded bearer, and no body field can influence it), so this mutates\nonly the caller's own view and is not an administrative action. Marking\nread is idempotent coord-side \u2014 ``ON CONFLICT DO NOTHING``, so re-marking\nnever moves an existing ``read_at``.",
+        "operationId": "api_v1_operations_notifications_mark_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationsMarkReadBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Coord Notifications Mark Read Api V1 Operations Notifications Mark Read Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Coord Notifications Mark Read",
         "tags": [
           "operations"
         ]
@@ -84683,6 +86931,925 @@
         "summary": "Get Phase Result",
         "tags": [
           "phase-results"
+        ]
+      }
+    },
+    "/api/v1/plan-library": {
+      "get": {
+        "operationId": "api_v1_plan_library_get",
+        "parameters": [
+          {
+            "description": "Exact artifact kind",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact artifact kind",
+              "title": "Kind"
+            }
+          },
+          {
+            "description": "Exact match on the OPAQUE status text. Unknown values return an empty page \u2014 they are never rejected.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the OPAQUE status text. Unknown values return an empty page \u2014 they are never rejected.",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "Matches the repos[] array or source_repo",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Matches the repos[] array or source_repo",
+              "title": "Repo"
+            }
+          },
+          {
+            "description": "Full-text query over title+body",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Full-text query over title+body",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Only artifacts updated at/after this timestamp",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only artifacts updated at/after this timestamp",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+            "in": "query",
+            "name": "work_unit_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+              "title": "Work Unit Slug"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List work artifacts (plans, prompts, reports, handoffs)",
+        "tags": [
+          "plan-library"
+        ]
+      },
+      "post": {
+        "description": "Insert or update one artifact.\n\nUnchanged content is a no-op: the response carries ``changed=false``,\n``X-Artifact-Unchanged: true`` and an ``ETag`` of the digest, and neither\n``current_version`` nor the version log moves. That is the plan's\n\"304-equivalent\" \u2014 a literal 304 cannot carry the body the caller needs\nto assert the version did not move.",
+        "operationId": "api_v1_plan_library_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactUpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upsert a work artifact by (organization, kind, slug, source_repo)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/candidates": {
+      "get": {
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.",
+        "operationId": "api_v1_plan_library_candidates_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Fetch the coord-owned signals (work unit + PR citations). Set false for a purely local, coord-free read.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Fetch the coord-owned signals (work unit + PR citations). Set false for a purely local, coord-free read.",
+              "title": "Include Coord",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanCandidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unshipped plans with the ranking INPUTS attached (no score)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/capture-health": {
+      "get": {
+        "description": "Which door is actually feeding the store.\n\nThe deterministic scanner is the backbone (design decision D3) and the\nagent write door is the addition that captures what a scan cannot see \u2014\nad-hoc worktree prompts, and the provenance edges only the agent that ran\nthe chain knows. If the agent door is unused, the corpus is quietly\nmissing exactly that half, and nothing else on this page would say so.\n\nEvery door in the schema's vocabulary is returned, **zeros included** \u2014 an\nunused door must render as ``0``, not as an absent row. A row with\n``known: false`` is a value the CHECK constraint allows that this build\ndoes not recognise; it is surfaced rather than swallowed.",
+        "operationId": "api_v1_plan_library_capture_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaptureHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Corpus census by capture door (scan / agent / operator)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/divergent": {
+      "get": {
+        "description": "Two distinct forks, reported side by side.\n\n``groups`` \u2014 same ``(kind, slug)``, different ``content_sha256``: the same\ndocument captured from two repos/checkouts that have drifted apart.\n\n``kind_forks`` \u2014 same ``(slug, source_repo)``, different ``kind``: the\nclass the kind-lock fix prevents, and the one the scan-safe upsert now\nrefuses to resolve on its own (it 409s rather than pick a winner). Grouping\nby ``(kind, slug)`` structurally cannot see these, which is why they are\nreported separately rather than folded into ``groups``.",
+        "operationId": "api_v1_plan_library_divergent_get",
+        "parameters": [
+          {
+            "description": "Restrict to one artifact kind",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to one artifact kind",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DivergentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Artifacts that disagree \u2014 on content, or on kind",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/edges/{edge_id}": {
+      "patch": {
+        "description": "Turn an open ``spawned_followup`` into a two-ended provenance edge.\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. When\nsomebody finally writes the plan (or report, or prompt) that owns work an\nearlier plan surfaced, this is how the two get connected. The ORIGINAL edge\nrow is updated rather than replaced: the follow-up drops out of\n``GET /plan-library/followups`` but stays on the originating artifact's\nedge list, so the trail from \"this plan surfaced it\" to \"that plan owns it\"\nsurvives.\n\nFailure modes, each distinguished on purpose:\n\n* **404** \u2014 no such edge in the caller's organization scope. Edges carry no\n  org of their own; the scope is inherited from the originating artifact,\n  so an edge id is not a global handle.\n* **422 (relation)** \u2014 the edge is not a ``spawned_followup``. The other\n  relations are two-ended already and there is nothing to claim.\n* **422 (target)** \u2014 ``to_id`` names no artifact the caller can see.\n  Checked here so the message is actionable; the FK would otherwise\n  surface it as a 500.\n* **409** \u2014 already claimed. Claiming is NOT idempotent across different\n  targets: silently re-pointing the edge would erase the first claim with\n  no trace and leave two callers each believing they own the work. The\n  response names the current owner.",
+        "operationId": "api_v1_plan_library_edges_edge_id_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "edge_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Edge Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactEdgeClaim"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Claim an open follow-up by naming the artifact that owns it",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/export": {
+      "get": {
+        "description": "The bulk half of Phase 4 \u2014 the tenant's corpus back out as markdown.\n\nPlan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4, which\nexists to pay for design decision D2 (the DB is authoritative for reads).\nMaking the DB primary silently drops the **distributed durability** git gave\nfor free: git keeps N copies, a database keeps one plus whatever backups\nexist. Before this route there was no export path at ALL \u2014 zero\nmarkdown-emitting exporters across qontinui-coord and this backend. That is\nnot polish; it is the price of D2, and D5 says so explicitly.\n\n**Verbatim bodies, always.** Each entry is the stored body's UTF-8 bytes,\nunmodified \u2014 no re-rendered front matter, no normalized headings, no\ninjected status block. The status block is already IN the body (it is the\nmarkdown the scanner captured), and re-rendering one would fork the exported\ntext from the stored text. Fidelity is the whole product here, and it is\nexactly what Phase 4's gate measures: a plan exported and re-scanned must\ncome back with an unchanged ``content_sha256``. Any transformation, however\ncosmetic, fails that round trip.\n\n**Export only, never import.** This route reads the authoritative store and\nemits copies. It has no write half by design (Risk: \"export without\ndiscipline recreates the fork\") \u2014 a bidirectional git sync would rebuild\nprecisely the divergent-corpus problem this plan exists to close. Copies\nflow OUT of the authority; nothing flows back in except through the scanner.\n\n**No git push here.** D3 demotes git to an OPTIONAL per-tenant export\ntarget, so the archive is a plain download and **no tenant is required to\nown a repo**. A configured git target is a later, opt-in layer over this\nsame byte stream, not a precondition for getting your plans out.\n\nThe filter grammar is the list route's, verbatim (shared\n``_apply_filters``), so \"export what I am looking at\" cannot drift from what\nthe page showed.",
+        "operationId": "api_v1_plan_library_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_unit_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5000,
+              "description": "Hard bound on archived artifacts. When it truncates, the response says so in `X-Export-Truncated` \u2014 a silently short export is indistinguishable from a short corpus.",
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "A zip archive; one `<kind>/<slug>.md` per artifact."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Bulk export the filtered corpus as a zip of verbatim .md files",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/followups": {
+      "get": {
+        "description": "The queryable form of \"worth its own plan\".\n\nPhase 7 of ``2026-08-16-plan-corpus-authority-and-run-provenance``. A plan\nroutinely surfaces work it deliberately does not do, and until this route\nthat lived ONLY as prose in the plan body \u2014 unrecoverable from the data, so\nnothing could answer \"show me follow-ups with no owning plan\". It is now a\n``spawned_followup`` edge whose ``to_id`` is still NULL, and this is the\nread that lists them.\n\n**Open only.** A follow-up that has been claimed\n(``PATCH /plan-library/edges/{edge_id}``) is an ordinary two-ended\nprovenance edge and drops out of this list \u2014 but it is not deleted, and it\nstays on the originating artifact's edge list, so the trail from \"this plan\nsurfaced it\" to \"that plan owns it\" survives the claim.\n\n**Oldest first**, and that is the useful default rather than an arbitrary\none: an old unowned follow-up is work the fleet has known about and\nrepeatedly not picked up. ``total`` is the unpaged count, so a bounded page\ncan never be mistaken for the whole queue.",
+        "operationId": "api_v1_plan_library_followups_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenFollowupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Follow-ups a plan identified but nobody owns yet",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}": {
+      "get": {
+        "description": "One artifact, with everything the operator page's detail view renders.\n\nThe ``coord`` block is resolved over coord's HTTP API (never its Postgres\nschema \u2014 invariant 4) and carries its own honesty flags:\n\n* no ``work_unit_slug`` at all \u2192 ``unlinked``. A first-class normal state:\n  the link is optional and most artifacts have none.\n* a slug coord does not know \u2192 ``dangling``. ALSO normal \u2014 the link has no\n  FK by design and MAY dangle. It is never a 404 on this read.\n* coord unreachable \u2192 ``unavailable`` on both halves. UNKNOWN, not empty.\n\n``linked_prs_state`` is tracked separately from ``work_unit_state`` for a\nconcrete reason: today's deployed coord registers no HTTP route for the\ncitation LIST (it exists only as an MCP tool), so that half reads\n``unavailable`` even when the work unit resolves fine. Rendering an empty\nPR list there would assert something this read has not established.",
+        "operationId": "api_v1_plan_library_artifact_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resolve the linked coord work unit and its PR citations. Set false for a purely local, coord-free read \u2014 the coord block then reports 'unavailable' for a linked artifact, because 'we did not look' is not the same answer as 'there is nothing there'.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Resolve the linked coord work unit and its PR citations. Set false for a purely local, coord-free read \u2014 the coord block then reports 'unavailable' for a linked artifact, because 'we did not look' is not the same answer as 'there is nothing there'.",
+              "title": "Include Coord",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One artifact with its body, version log and edges both ways",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}/edges": {
+      "post": {
+        "description": "Create one provenance edge.\n\nSupply exactly one of ``to_id`` (this artifact \u2192 that one, an OUTGOING\nedge) or ``from_id`` (that artifact \u2192 this one, an INCOMING edge).\nRe-posting an identical triple is idempotent and returns 200.\n\n**``spawned_followup`` is the exception, and the only one.** It records\nwork this artifact SURFACED and deliberately did not do, which by\ndefinition has no artifact to point at yet, so it may be posted with BOTH\nendpoints omitted::\n\n    {\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}\n\n``note`` is then required and must not be blank \u2014 with no far end it is the\nentire content of the row, and an empty one puts an unactionable entry in\nthe open-follow-ups queue forever. Supplying ``to_id`` is still allowed and\nrecords a follow-up that already has an owner; ``from_id`` is not, because\nthe relation is inherently outgoing (this artifact surfaced that work).\nRe-posting the same note is idempotent on ``(from_id, relation, note)``,\nwhile a DIFFERENT note is a second follow-up \u2014 a plan may surface several.\n\nEvery other relation still REJECTS a null target here, with a 422 rather\nthan a database error. That is deliberate belt and braces:\n``ck_work_artifact_edges_open_target`` would refuse the row anyway, but\n``/candidates`` computes unmet dependencies by joining ``depends_on``\nthrough ``to_id``, so a null target slipping in would make a blocked plan\nread as ready \u2014 the failure is quiet enough to be worth two guards.\n\nA self-edge is refused. ``/candidates`` walks ``depends_on`` to compute\nunmet dependencies, so an artifact pointing at itself becomes its own\npermanently-unmet blocker and can never be reported as ready \u2014 and the\nprompt-chain walk would have to defend against the same cycle. There is\nno provenance relation an artifact can meaningfully hold with itself.",
+        "operationId": "api_v1_plan_library_artifact_id_edges_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactEdgeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactEdgeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Link this artifact to another (outgoing or incoming)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}/export": {
+      "get": {
+        "description": "One artifact, back out as the markdown it came from.\n\nPlan ``2026-08-16-plan-corpus-authority-and-run-provenance`` Phase 4.\n\n**The body is emitted verbatim** \u2014 the stored UTF-8 bytes, with no\nre-rendering of any kind. This is what makes the phase's gate meaningful:\nexport a plan, feed it back through the runner scanner, and its\n``content_sha256`` must be unchanged. The digest is returned in\n``X-Content-Sha256`` so a caller can check the round trip without a second\nrequest.\n\n``version_number`` addresses the shipped version log\n(``agent.work_artifact_versions``, unique on\n``(document_id, version_number)``) rather than only head \u2014 the plan asks for\nexactly this, and it costs nothing because the snapshots are already\nrecorded.\n\n**Authorization is on the PARENT, not the version.** The artifact is\nresolved through the org-scoped read first, and only then is the version\nfetched by ``document_id``; ``document_id`` alone is not a boundary. A\nmissing artifact and a missing version are both 404, and the version 404\nnames the versions that DO exist rather than leaving the caller guessing.",
+        "operationId": "api_v1_plan_library_artifact_id_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Export this historical snapshot instead of head. Reuses the shipped `agent.work_artifact_versions` log \u2014 nothing new is recorded to make an old version exportable.",
+            "in": "query",
+            "name": "version_number",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Export this historical snapshot instead of head. Reuses the shipped `agent.work_artifact_versions` log \u2014 nothing new is recorded to make an old version exportable.",
+              "title": "Version Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {}
+            },
+            "description": "The stored body, byte-for-byte."
+          },
+          "404": {
+            "description": "No such artifact, or no such version_number."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One artifact as its verbatim markdown (head, or a given version)",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/{artifact_id}/kind": {
+      "patch": {
+        "description": "Set ``kind`` deliberately and mark it ``kind_locked``.\n\nThe door the library's inline kind correction needs. Heuristics only ever\nset an INITIAL kind; this is where that guess gets overruled, and the lock\nis what stops the next runner scan from quietly putting the guess back\n(which, because ``kind`` is part of the artifact's identity, would fork the\ndocument into a second row rather than merely re-label it).\n\nThe lock is set even when ``kind`` is unchanged \u2014 confirming a guessed kind\nis itself the assertion that makes it stick.\n\n409 when another artifact already occupies\n``(org, kind, slug, source_repo)``: that is a genuine identity collision\nand merging the two rows is an operator decision, not one this write may\nguess at.\n\n**Cognito-only, unlike every other route in this module.** A device JWT\ngets a 401 here by design: the lock exists to overrule the runner scan's\nheuristic, so a door the scan itself could use to set the lock on its own\nguess would cancel out the only mechanism constraining it. The correction\nis an operator's assertion and it takes an operator's credential.",
+        "operationId": "api_v1_plan_library_artifact_id_kind_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkArtifactKindPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkArtifactSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Correct an artifact's kind and LOCK it against future re-scans",
+        "tags": [
+          "plan-library"
         ]
       }
     },

@@ -11,8 +11,9 @@
  * persona-shaped dropdown groups, mirroring the fleet-page split
  * (developer / merge maintainer / fleet operator):
  *
- *   Pipeline · Pull Requests · Gates · Alerts(•N)   ← direct, daily
- *   Work ▾    Plans / Questions / Agents / History / Lands
+ *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
+ *                                                   ← direct, daily
+ *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
  *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
  *   Infra ▾°  Trees / Spawn / Deploys / Git Ops / Federation / Memory /
  *             Onboarding / Onboarding Status
@@ -28,6 +29,24 @@
  * The Alerts tab polls the unresolved-alerts rollup for a live count badge
  * (red when any unresolved alert is critical) — the nav-level analogue of
  * the fleet page's traffic light.
+ *
+ * Notifications is the FIFTH direct tab, and that is a deliberate, argued
+ * exception to the four-tab rule above rather than an oversight
+ * (plan `2026-08-05-coord-notifications-type-and-tab.md`, Change 4).
+ * Two reasons, in order:
+ *
+ *  1. Its unread badge is not satisfiable from inside a collapsed dropdown —
+ *     a group trigger shows the GROUP name, not a per-item count, so an
+ *     unread count on a menu item is invisible until the menu is opened,
+ *     which defeats the point of the badge entirely.
+ *  2. Notifications ("what happened while I was away?") is a daily-cadence
+ *     surface by the type's own definition, which is the stated admission
+ *     criterion for a direct tab. It sits immediately after Alerts so the
+ *     two event surfaces read as a pair.
+ *
+ * The cost, said plainly: the direct row is now five wide. That still fits
+ * one row at normal widths. If a SIXTH is ever proposed, revisit the group
+ * split rather than appending again.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -37,6 +56,7 @@ import {
   Activity,
   AlertTriangle,
   Anchor,
+  Bell,
   BookOpen,
   Boxes,
   ChevronDown,
@@ -51,6 +71,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  Library,
   MessageSquare,
   NotebookText,
   Package,
@@ -75,6 +96,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
+import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 
 const log = createLogger("CoordNav");
 
@@ -82,6 +104,16 @@ const ALERTS_API = "/api/v1/operations/alerts";
 /** Alerts churn at incident cadence — one poll a minute keeps the badge
  *  honest without adding meaningful load next to the page-level pollers. */
 const ALERTS_POLL_MS = 60_000;
+
+/** `?limit=1`: the badge wants the `unread_count` SCALAR, not the page.
+ *  Asking for one row keeps a nav-wide 60s poll cheap on every console
+ *  page while still carrying the count. */
+const NOTIFICATIONS_API = "/api/v1/operations/notifications?limit=1";
+/** Same nav-level cadence as the alerts badge, and deliberately NOT the
+ *  page-level `POLL_INTERVAL_MS = 10_000`: the nav badge is a background
+ *  hint rendered on every console page, the page poller is the foreground
+ *  surface. Do not raise this to 10s. */
+const NOTIFICATIONS_POLL_MS = ALERTS_POLL_MS;
 
 interface NavLeaf {
   href: string;
@@ -136,6 +168,15 @@ const DIRECT_TABS: NavLeaf[] = [
     icon: AlertTriangle,
     testId: "coord-nav-alerts",
   },
+  {
+    // Fifth direct tab by argued exception — see the header block. Placed
+    // immediately after Alerts: conditions ("what is wrong now?") and
+    // events ("what happened while I was away?") read as a pair.
+    href: "/admin/coord/notifications",
+    label: "Notifications",
+    icon: Bell,
+    testId: "coord-nav-notifications",
+  },
 ];
 
 const GROUPS: NavGroup[] = [
@@ -149,6 +190,16 @@ const GROUPS: NavGroup[] = [
         label: "Plans",
         icon: FileText,
         testId: "coord-nav-plans",
+      },
+      {
+        // Sits beside Plans deliberately: Plans is coord's work units, this is
+        // the prompt/plan CORPUS those units are authored from. Distinct path
+        // (not /plans/library) so the Plans item's startsWith active-match
+        // doesn't double-highlight — same reasoning as the Onboarding pair.
+        href: "/admin/coord/plan-library",
+        label: "Plan Library",
+        icon: Library,
+        testId: "coord-nav-plan-library",
       },
       {
         href: "/admin/coord/questions",
@@ -360,6 +411,60 @@ function useAlertsBadge(): { count: number; critical: boolean } {
   return { count, critical };
 }
 
+/** Live UNREAD-notification count for the Notifications tab badge.
+ *
+ *  Best-effort, like `useAlertsBadge`: a failed poll (including coord's
+ *  `503 schema_migration_pending` before the `coord.notifications` migration
+ *  deploys) logs a warning and is otherwise ignored — never an error state in
+ *  a nav that sits on every console page.
+ *
+ *  Concretely, "ignored" means the LAST KNOWN count keeps rendering rather
+ *  than the badge disappearing. That is deliberate: the count is a hint, a
+ *  poll failure is evidence about the network and not about the mailbox, and
+ *  clearing the badge would assert "nothing unread" on no evidence — the
+ *  silent-empty-is-unknown trap. Before the first successful poll the count is
+ *  0 and no badge renders, so a route that has never answered stays quiet.
+ *
+ *  The 503 is opted out of `HttpClient`'s 5xx retry
+ *  (`NOTIFICATIONS_REQUEST_OPTIONS`): during the pre-migration window this poll
+ *  runs on every console page, and the default policy measures at 5 requests
+ *  over ~15s — so retrying would make a badge nobody can see yet cost five
+ *  requests a minute per open console tab.
+ *
+ *  ⚠️ It deliberately does NOT copy `useAlertsBadge`'s `setCount(alerts.length)`.
+ *  `/coord/notifications` is genuinely paged, so the returned row count is the
+ *  PAGE SIZE — a badge reading it would pin at that constant forever no matter
+ *  how many unread events exist. `unread_count` is a server-computed scalar,
+ *  distinct from the page, and it is the only honest source for this number. */
+function useNotificationsBadge(): { count: number } {
+  const [count, setCount] = useState(0);
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const body = await httpClient.get<{ unread_count?: number }>(
+        NOTIFICATIONS_API,
+        NOTIFICATIONS_REQUEST_OPTIONS
+      );
+      const unread = body?.unread_count;
+      // A response without the scalar is UNKNOWN, not zero — leave the
+      // previous value alone rather than silently clearing the badge.
+      if (typeof unread === "number" && Number.isFinite(unread)) {
+        setCount(unread);
+      }
+    } catch (err) {
+      log.warn("notifications badge fetch failed", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCount();
+    const id = setInterval(fetchCount, NOTIFICATIONS_POLL_MS);
+    return () => clearInterval(id);
+  }, [fetchCount]);
+
+  return { count };
+}
+
 const TAB_BASE =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors whitespace-nowrap";
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
@@ -369,6 +474,7 @@ export default function CoordNav() {
   const pathname = usePathname() ?? "";
   const { user } = useAuth();
   const alertsBadge = useAlertsBadge();
+  const notificationsBadge = useNotificationsBadge();
 
   // Operator-infra entries are cross-tenant/fleet-wide surfaces — gate them on
   // `is_superuser` (the operator axis), matching the other operator-only admin
@@ -381,8 +487,24 @@ export default function CoordNav() {
   const renderDirect = (leaf: NavLeaf) => {
     const Icon = leaf.icon;
     const active = isLeafActive(pathname, leaf);
-    const showAlertsBadge =
-      leaf.testId === "coord-nav-alerts" && alertsBadge.count > 0;
+    // Per-tab count badge. Zero renders nothing at all — an empty surface
+    // should look empty, not like a surface reporting "0".
+    const badge =
+      leaf.testId === "coord-nav-alerts"
+        ? {
+            testId: "coord-nav-alerts-badge",
+            count: alertsBadge.count,
+            critical: alertsBadge.critical,
+          }
+        : leaf.testId === "coord-nav-notifications"
+          ? {
+              testId: "coord-nav-notifications-badge",
+              count: notificationsBadge.count,
+              // Notifications are events, not conditions — nothing about an
+              // unread count is "critical", so it never takes the red accent.
+              critical: false,
+            }
+          : null;
     return (
       <Link
         key={leaf.href}
@@ -392,19 +514,19 @@ export default function CoordNav() {
       >
         <Icon className="h-3.5 w-3.5" />
         {leaf.label}
-        {showAlertsBadge && (
+        {badge && badge.count > 0 && (
           <span
-            data-testid="coord-nav-alerts-badge"
+            data-testid={badge.testId}
             className={cn(
               "rounded-full px-1.5 text-[10px] font-bold leading-4",
-              alertsBadge.critical
+              badge.critical
                 ? "bg-red-500/25 text-red-200"
                 : active
                   ? "bg-primary-foreground/20"
                   : "bg-muted text-foreground"
             )}
           >
-            {alertsBadge.count}
+            {badge.count}
           </span>
         )}
       </Link>

@@ -21,35 +21,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Rocket } from "lucide-react";
+import { formatRelative } from "@/components/admin/coord/QuestionCard";
+import {
+  describePlanStatus,
+  PLAN_TONE_CLASS,
+} from "@/components/admin/coord/planStatus";
 
 export interface CoordPlanRow {
   slug: string;
   title?: string;
   status?: string;
   current_phase?: string | null;
+  /** coord `work_units.created_at` — the sort key operators asked for. */
+  created_at?: string | null;
   updated_at?: string | null;
   shipped_at?: string | null;
-}
-
-function statusVariant(
-  status?: string
-): "default" | "destructive" | "secondary" | "outline" {
-  switch ((status ?? "").toLowerCase()) {
-    case "shipped":
-      return "default";
-    case "archived":
-      return "secondary";
-    case "blocked":
-      return "destructive";
-    case "in_progress":
-    case "in-progress":
-      return "default";
-    case "drafted":
-    case "vetted":
-      return "outline";
-    default:
-      return "outline";
-  }
 }
 
 export function PlanCard({ plan }: { plan: CoordPlanRow }) {
@@ -71,9 +57,21 @@ export function PlanCard({ plan }: { plan: CoordPlanRow }) {
               <span className="font-mono text-sm font-medium truncate">
                 {plan.slug}
               </span>
-              {plan.status && (
-                <Badge variant={statusVariant(plan.status)}>{plan.status}</Badge>
-              )}
+              {(() => {
+                const tag = describePlanStatus(plan.status);
+                return (
+                  <Badge
+                    variant="outline"
+                    className={PLAN_TONE_CLASS[tag.tone]}
+                    title={tag.title}
+                    data-testid="coord-plan-status-tag"
+                    data-tone={tag.tone}
+                    data-recognised={tag.recognised ? "true" : "false"}
+                  >
+                    {tag.label}
+                  </Badge>
+                );
+              })()}
               {plan.current_phase && (
                 <Badge variant="outline" className="text-xs">
                   phase: {plan.current_phase}
@@ -83,11 +81,27 @@ export function PlanCard({ plan }: { plan: CoordPlanRow }) {
             {plan.title && (
               <p className="text-sm text-foreground">{plan.title}</p>
             )}
-            {(plan.updated_at || plan.shipped_at) && (
-              <p className="text-xs text-muted-foreground">
-                {plan.shipped_at
-                  ? `shipped at ${plan.shipped_at}`
-                  : `updated ${plan.updated_at}`}
+            {(plan.created_at || plan.updated_at || plan.shipped_at) && (
+              <p
+                className="text-xs text-muted-foreground flex flex-wrap gap-x-3"
+                data-testid="coord-plan-card-dates"
+              >
+                {plan.created_at && (
+                  <span title={`Created ${plan.created_at}`}>
+                    created {formatRelative(plan.created_at)}
+                  </span>
+                )}
+                {plan.shipped_at ? (
+                  <span title={`Shipped ${plan.shipped_at}`}>
+                    shipped {formatRelative(plan.shipped_at)}
+                  </span>
+                ) : (
+                  plan.updated_at && (
+                    <span title={`Updated ${plan.updated_at}`}>
+                      updated {formatRelative(plan.updated_at)}
+                    </span>
+                  )
+                )}
               </p>
             )}
           </Link>
