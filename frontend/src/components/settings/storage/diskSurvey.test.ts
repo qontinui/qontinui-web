@@ -316,3 +316,161 @@ describe("canClaimNothingToReclaim", () => {
     expect(canClaimNothingToReclaim(survey)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fields the RUNNER's actual wire types carry (verified against the runner's
+// `agent_worktree/disk_survey.rs`), which the aggregate treats as
+// authoritative over this module's own class table.
+// ---------------------------------------------------------------------------
+
+describe("runner-declared verb", () => {
+  it("puts an item with a verb in the actionable bucket, whatever its class", () => {
+    const survey = surveyOf({
+      items: [
+        item({ class: "some-future-class", verb: "orphan_target_reaper" }),
+      ],
+      census_status: "fresh",
+    });
+    const [totals] = aggregateByClass(survey);
+    expect(totals.verb).toBe("v1");
+    expect(bucketTotals([totals]).actionableBytes).toBe(1024);
+  });
+
+  it("treats an explicit `verb: null` as report-only, not unrecognised", () => {
+    const survey = surveyOf({
+      items: [item({ class: "some-future-class", verb: null })],
+      census_status: "fresh",
+    });
+    const [totals] = aggregateByClass(survey);
+    expect(totals.verb).toBe("deferred-v2");
+    expect(bucketTotals([totals]).reportOnlyBytes).toBe(1024);
+  });
+
+  it("falls back to the class table when the runner reports no verb key", () => {
+    const survey = surveyOf({
+      items: [item({ class: "in-repo-canonical" })],
+      census_status: "fresh",
+    });
+    expect(aggregateByClass(survey)[0].verb).toBe("deferred-v2");
+    const known = surveyOf({
+      items: [item({ class: "container" })],
+      census_status: "fresh",
+    });
+    expect(aggregateByClass(known)[0].verb).toBe("v1");
+  });
+
+  it("takes the verb from `by_class` when the item omits it", () => {
+    const survey = surveyOf({
+      items: [item({ class: "some-future-class" })],
+      summary: {
+        by_class: [{ class: "some-future-class", verb: null, roots: 1 }],
+      },
+      census_status: "fresh",
+    });
+    expect(aggregateByClass(survey)[0].verb).toBe("deferred-v2");
+  });
+
+  it("prefers the runner's own class note over the built-in one", () => {
+    const survey = surveyOf({
+      items: [item({ class: "container" })],
+      summary: {
+        by_class: [{ class: "container", verb: "reaper", note: "runner says" }],
+      },
+      census_status: "fresh",
+    });
+    expect(aggregateByClass(survey)[0].note).toBe("runner says");
+  });
+});
+
+describe("by_class presence", () => {
+  it("is null when the runner sent none — the UI may not render measured zeros", () => {
+    expect(surveyOf({ items: [], census_status: "fresh" }).byClass).toBeNull();
+  });
+
+  it("is null when the rollup existed but no row could be read", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { by_class: [{ roots: 1 }, 7] },
+      census_status: "fresh",
+    });
+    expect(survey.byClass).toBeNull();
+  });
+
+  it("keeps a class the runner measured as genuinely zero", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: {
+        by_class: [
+          {
+            class: "container",
+            roots: 0,
+            bytes: null,
+            reclaimable_roots: 0,
+            reclaimable_bytes: null,
+            roots_with_unknown_bytes: 0,
+            verb: "reaper",
+            note: "n/a",
+          },
+        ],
+      },
+      census_status: "fresh",
+    });
+    expect(survey.byClass).toHaveLength(1);
+    expect(survey.byClass?.[0].roots).toBe(0);
+    // A null byte total stays NaN — "unknown", not "0 B".
+    expect(Number.isNaN(survey.byClass?.[0].bytes ?? 0)).toBe(true);
+  });
+});
+
+describe("lower-bound flags", () => {
+  it("counts a partially-sized root apart from an unreadable one", () => {
+    const survey = surveyOf({
+      items: [
+        item({ id: "a", bytes: 100, bytes_partial: true }),
+        item({ id: "b", bytes: null }),
+        item({ id: "c", bytes: 50 }),
+      ],
+      census_status: "fresh",
+    });
+    const [totals] = aggregateByClass(survey);
+    // The partial root's bytes ARE counted (it is a floor, not unknown).
+    expect(totals.reclaimableBytes).toBe(150);
+    expect(totals.partialByteItems).toBe(1);
+    expect(totals.unknownByteItems).toBe(1);
+  });
+
+  it("carries the runner's own bytes_incomplete flag", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { bytes_incomplete: true },
+      census_status: "fresh",
+    });
+    expect(survey.bytesIncomplete).toBe(true);
+  });
+
+  it("does not call a shortfall a contradiction when a root was partial", () => {
+    const survey = surveyOf({
+      items: [item({ bytes: 100, bytes_partial: true })],
+      summary: { reclaimable_bytes: 500 },
+      census_status: "fresh",
+    });
+    expect(surveyDisagreement(survey)).toBeNull();
+  });
+});
+
+describe("census_status: unavailable", () => {
+  it("is preserved as its own state, not flattened into unknown", () => {
+    const survey = surveyOf({
+      items: [],
+      census_status: "unavailable",
+      census_note: "the workspace root could not be resolved",
+    });
+    expect(survey.censusStatus).toBe("unavailable");
+    expect(survey.censusNote).toBe("the workspace root could not be resolved");
+  });
+
+  it("may never claim there is nothing to reclaim", () => {
+    const survey = surveyOf({ items: [], census_status: "unavailable" });
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+});
