@@ -44,3 +44,65 @@ jobs:
       - name: Unit tests
         working-directory: ./frontend
         run: npm test
+
+  composed-cloud-build:
+    # The other job builds the OSS-only shape, which is the ONLY shape any CI
+    # exercised before this one existed — and it is the shape in which
+    # @qontinui/cloud-control registers nothing by design. So every defect in
+    # the composition was invisible here, and the extension surface shipped
+    # completely inert: an unresolvable `webpackIgnore` import, in a Server
+    # Component, whose failure a `.catch(() => {})` swallowed.
+    #
+    # This job builds the composed cloud shape — the one qontinui.io actually
+    # runs. `npm test` picks up the composed half of
+    # `cloud-extensions-boot.registration.test.tsx` (skipped in the OSS job),
+    # which asserts that cloud-control's services and components are really in
+    # the client-side slot registry. The build then proves webpack can compile
+    # the package's raw sources inside the host graph.
+    #
+    # Mirrors how the BACKEND half of this same composition is already gated
+    # in backend-ci.yml: check out the sibling repo, install it as an explicit
+    # step, run the suite against it. cloud-control is AGPL/public, so the
+    # checkout needs no extra credentials.
+    #
+    # See frontend/docs/composed-cloud-build.md.
+    name: Composed cloud build (with @qontinui/cloud-control)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout qontinui-web
+        uses: actions/checkout@v5
+
+      # actions/checkout cannot write outside $GITHUB_WORKSPACE, so the
+      # sibling lands inside it. The overlay script takes the path explicitly,
+      # so it does not have to be the usual `../qontinui-cloud-control`.
+      - name: Checkout qontinui-cloud-control
+        uses: actions/checkout@v5
+        with:
+          repository: qontinui/qontinui-cloud-control
+          path: .sibling/qontinui-cloud-control
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Install the cloud-control overlay
+        working-directory: ./frontend
+        env:
+          QONTINUI_CLOUD_CONTROL_PATH: ${{ github.workspace }}/.sibling/qontinui-cloud-control
+        run: npm run cloud:install
+
+      - name: Unit tests (composed)
+        working-directory: ./frontend
+        run: npm test
+
+      - name: Build (composed)
+        working-directory: ./frontend
+        run: npm run build
