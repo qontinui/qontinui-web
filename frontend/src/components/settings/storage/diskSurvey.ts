@@ -42,7 +42,7 @@
  *
  * ```jsonc
  * {
- *   "device_id": "<uuid>|null",
+ *   "workspace_root": "D:\qontinui-root" | null,
  *   "items": [{
  *     "id": "d:/qontinui-root/foo/target",   // falls back to `path`
  *     "path": "D:\qontinui-root\foo\target",
@@ -71,9 +71,30 @@
  *   "census_build_ms": 40123,
  *   "census_refreshing": false,
  *   "census_note": "...",
- *   "scan": { ... }
+ *   "scan": {                                  // null until a walk completed
+ *     "dirs_visited": 12345,
+ *     "truncated": false,                      // true => `items` is a PREFIX
+ *     "read_errors": [{ "path": "...", "error": "..." }],
+ *     "roots_with_unknown_bytes": 0,
+ *     "roots_with_partial_bytes": 0
+ *   }
  * }
  * ```
+ *
+ * ### Two different ways an answer can be short
+ *
+ * `scan.truncated` and `summary.bytes_incomplete` are NOT the same fact and are
+ * not rendered as one:
+ *
+ * - `scan.truncated` — the walk hit its visit ceiling, so `items[]` is a PREFIX
+ *   of the population. Roots that were never reached are missing ENTIRELY; they
+ *   are unvisited, not absent.
+ * - `summary.bytes_incomplete` — the roots that ARE listed include at least one
+ *   whose size is a floor (an unreadable subtree, a root that could not be
+ *   sized, or a directory read error).
+ *
+ * Collapsing them would tell an operator "these numbers are a bit low" when the
+ * truth is "you are not looking at the whole list".
  *
  * ### The four states, which must never render the same string
  *
@@ -177,6 +198,14 @@ export interface DiskClassInfo {
  * at **1,669.8 GB — 47 % of all target bytes on this box — and D6 puts its
  * verb in v2**. So the page shows a very large number the user cannot act on,
  * and that has to be legible rather than confusing.
+ *
+ * FOUR, and exactly four: `TargetClass::all()` in the runner's
+ * `orphan_target_reaper.rs` emits `in-repo-canonical`, `sibling-worktree`,
+ * `container`, `sibling-nongit` and nothing else. `owned-by-worktree-reclaim`
+ * and `owned-by-build-pool` used to be listed here as classes; they are
+ * `SkipReason::token()` values and arrive on `item.reason`, never on
+ * `item.class`, so entries for them were dead weight that also implied a
+ * class vocabulary the runner does not have.
  */
 export const KNOWN_DISK_CLASSES: Record<string, DiskClassInfo> = {
   "in-repo-canonical": {
@@ -210,24 +239,18 @@ export const KNOWN_DISK_CLASSES: Record<string, DiskClassInfo> = {
       "Target roots beside a checkout with no git metadata of their own. " +
       "Covered by the v1 cleanup verb.",
   },
-  "owned-by-worktree-reclaim": {
-    label: "Owned by the worktree reclaim engine",
-    verb: "deferred-v2",
-    note:
-      "Reported, not actionable from here: these roots belong to the " +
-      "worktree census/reclaim engine, which is their single owner. A second " +
-      "owner is how the mess this feature exists to fix arose (plan D6), so " +
-      "the bytes are shown and the verb is left to the engine that owns them.",
-  },
-  "owned-by-build-pool": {
-    label: "Owned by the build pool",
-    verb: "deferred-v2",
-    note:
-      "Reported, not actionable from here: the supervisor's build pool and " +
-      "its last-known-good binary are a hard exclusion for every reaper " +
-      "(plan D6) -- deleting the LKG breaks the supervisor's fallback.",
-  },
 };
+
+/**
+ * The runner's `SkipReason` token for "this class has no v1 verb".
+ *
+ * It is the reason EVERY `in-repo-canonical` root arrives blocked:
+ * `boundary_verdict` returns `Err(SkipReason::ReportOnly)` unconditionally for
+ * a class with no verb, and `disk_survey.rs` maps any `Err` to
+ * `status: "blocked"`. So "blocked" for that class does not mean a guard is
+ * holding anything — it means no verb exists, which is a different sentence.
+ */
+export const REPORT_ONLY_REASON = "report-only";
 
 /**
  * Freshness of the census the survey was derived from.
@@ -245,9 +268,37 @@ export type CensusStatus =
   | "unavailable"
   | "unknown";
 
+/** One directory the walk could not read. A failed read, never a zero. */
+export interface DiskScanError {
+  path: string | null;
+  error: string | null;
+}
+
+/**
+ * `scan` — what the WALK managed to see, as opposed to what the roots it found
+ * measured. `null` when the runner sent none (no snapshot yet, or a build that
+ * does not report it), which is UNKNOWN and not "the walk was complete".
+ */
+export interface DiskScanStats {
+  /** `null` when the runner sent no usable count. */
+  dirsVisited: number | null;
+  /**
+   * The visit ceiling was hit: `items[]` is a PREFIX of the population, so a
+   * root that is absent from the list may simply never have been reached.
+   */
+  truncated: boolean;
+  /**
+   * `true` when the runner sent a `truncated` key at all. A build that does not
+   * report it has not told us the walk was complete.
+   */
+  hasTruncatedField: boolean;
+  readErrors: DiskScanError[];
+  rootsWithUnknownBytes: number | null;
+  rootsWithPartialBytes: number | null;
+}
+
 /** A parsed survey. Every field is what the runner said, or an explicit gap. */
 export interface DiskSurvey {
-  deviceId: string | null;
   /**
    * `unknown` when the runner sent a value this build does not recognise, or
    * none at all. It must NOT collapse into `fresh` — an unreadable freshness
@@ -289,15 +340,24 @@ export interface DiskSurvey {
   byClass: ClassSummaryRow[] | null;
   /**
    * Rows of `summary.by_class` that could not be read. Non-zero disqualifies
-   * the rollup from certifying a measured zero — see {@link rollupCertifiesZero}.
+   * the rollup from certifying a measured zero — see {@link measuredZeroBuckets},
+   * which is the live path that consults it.
    */
   byClassSkipped: number;
   /**
    * `summary.bytes_incomplete` — the runner's own statement that at least one
    * byte total above is a lower bound (a truncated walk, an unreadable
    * subtree, a root it could not size).
+   *
+   * Distinct from {@link scan}`.truncated`, which says the LIST is short. This
+   * one says the listed rows are under-sized.
    */
   bytesIncomplete: boolean;
+  /**
+   * `scan` — the walk's own report on itself, or `null` when the runner sent
+   * none. See {@link DiskScanStats}.
+   */
+  scan: DiskScanStats | null;
   /**
    * Entries in `items[]` this parser could not read at all. Load-bearing, not
    * diagnostics: without it, a payload of ten unreadable items renders as
@@ -488,26 +548,34 @@ export function parseClassSummaries(raw: unknown): ClassRollup | null {
 }
 
 /**
- * May the caller render a `0 B` tile for a class with no items?
+ * Parse `scan`, or `null` when the runner sent nothing readable.
  *
- * ONLY when the runner sent a rollup, every row of it was readable, and the
- * rollup itself reports no roots. The previous form of this check trusted the
- * mere PRESENCE of the rollup — which let a rollup saying "40 roots,
- * 1.1 TB" authorise a `0 B` tile derived from a short `items[]`, i.e. a
- * fabricated zero produced by the anti-fabrication mechanism itself.
+ * `null` is UNKNOWN, not "the walk was complete": a build that does not report
+ * `scan` has told us nothing about whether `items[]` is the whole population,
+ * and defaulting `truncated` to `false` would manufacture a completeness claim
+ * the payload never made. {@link DiskScanStats.hasTruncatedField} keeps the
+ * same distinction one level down, for a `scan` object missing the key.
  */
-export function rollupCertifiesZero(
-  survey: DiskSurvey,
-  classIds: readonly string[]
-): boolean {
-  const rollup = survey.byClass;
-  if (rollup === null || survey.byClassSkipped > 0) return false;
-  return classIds.every((classId) => {
-    const row = rollup.find((r) => r.classId === classId);
-    // A class the rollup never mentioned is not certified as empty by it.
-    if (!row) return false;
-    return row.roots === 0;
-  });
+export function parseScanStats(raw: unknown): DiskScanStats | null {
+  if (!isRecord(raw)) return null;
+  const errorsRaw = Array.isArray(raw.read_errors) ? raw.read_errors : [];
+  const readErrors: DiskScanError[] = errorsRaw.map((entry) =>
+    isRecord(entry)
+      ? { path: optionalString(entry.path), error: optionalString(entry.error) }
+      : { path: null, error: null }
+  );
+  const count = (value: unknown): number | null => {
+    const n = toCountOrNaN(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    dirsVisited: count(raw.dirs_visited),
+    truncated: raw.truncated === true,
+    hasTruncatedField: Object.hasOwn(raw, "truncated"),
+    readErrors,
+    rootsWithUnknownBytes: count(raw.roots_with_unknown_bytes),
+    rootsWithPartialBytes: count(raw.roots_with_partial_bytes),
+  };
 }
 
 /**
@@ -603,7 +671,6 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
   return {
     state: "parsed",
     survey: {
-      deviceId: optionalString(payload.device_id),
       censusStatus: toCensusStatus(censusStatusRaw),
       censusStatusRaw,
       censusAgeSecs:
@@ -621,6 +688,7 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
       byClass: rollup?.rows ?? null,
       byClassSkipped: rollup?.skipped ?? 0,
       bytesIncomplete: summary?.bytes_incomplete === true,
+      scan: parseScanStats(payload.scan),
       skippedItems: skipped,
     },
   };
@@ -835,7 +903,11 @@ export interface DiskBuckets {
   actionableItems: number;
   actionableUnknownByteItems: number;
   actionablePartialByteItems: number;
-  /** `in-repo-canonical` and anything else whose verb is deferred. */
+  /**
+   * `in-repo-canonical` and anything else whose verb is deferred — the WHOLE
+   * class, both statuses. See {@link bucketTotals} for why the status split
+   * does not apply to this bucket.
+   */
   reportOnlyBytes: number;
   reportOnlyItems: number;
   reportOnlyUnknownByteItems: number;
@@ -845,14 +917,38 @@ export interface DiskBuckets {
   unrecognisedItems: number;
   unrecognisedUnknownByteItems: number;
   unrecognisedPartialByteItems: number;
-  /** Candidates a guard refuses to touch right now, across every class. */
+  /**
+   * Candidates something actually HOLDS right now — a live build, a pin, a
+   * dirty worktree, another engine that owns the path.
+   *
+   * Report-only classes are excluded: their roots arrive `blocked` because no
+   * verb exists, not because anything is holding them, and counting them here
+   * both double-counts the report-only bucket and describes 47 % of the bytes
+   * on this box with a sentence that is false.
+   */
   blockedBytes: number;
   blockedItems: number;
   blockedUnknownByteItems: number;
   blockedPartialByteItems: number;
 }
 
-/** Split the per-class aggregate into the actionable / report-only buckets. */
+/**
+ * Split the per-class aggregate into the actionable / report-only buckets.
+ *
+ * The four buckets PARTITION the items — every root lands in exactly one — so
+ * that an operator adding the tiles up gets the survey's own total rather than
+ * a number inflated by roots counted twice.
+ *
+ * The report-only bucket takes the whole class, `blocked` rows included. That
+ * is not a convenience: the runner **never** emits an `in-repo-canonical` row
+ * with `status: "reclaimable"` — `boundary_verdict` returns
+ * `Err(SkipReason::ReportOnly)` unconditionally for a verbless class and
+ * `disk_survey.rs` maps every `Err` to `blocked` — so a report-only bucket
+ * sourced from `reclaimableBytes` alone is ALWAYS `0`, and the tile renders a
+ * bare `0 B` over the largest class on the machine. Taking the class total is
+ * also exactly what the runner's own `summary.report_only_bytes` means: it is
+ * `by_class[in-repo-canonical].bytes`, every status.
+ */
 export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
   const out: DiskBuckets = {
     actionableBytes: 0,
@@ -873,6 +969,17 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
     blockedPartialByteItems: 0,
   };
   for (const t of totals) {
+    if (t.verb === "deferred-v2") {
+      // The WHOLE class, both statuses — see the docstring above. Its blocked
+      // rows are deliberately NOT added to `blocked*`: nothing is holding them.
+      out.reportOnlyBytes += t.reclaimableBytes + t.blockedBytes;
+      out.reportOnlyItems += t.reclaimableCount + t.blockedCount;
+      out.reportOnlyUnknownByteItems +=
+        t.reclaimableUnknownByteItems + t.blockedUnknownByteItems;
+      out.reportOnlyPartialByteItems +=
+        t.reclaimablePartialByteItems + t.blockedPartialByteItems;
+      continue;
+    }
     out.blockedBytes += t.blockedBytes;
     out.blockedItems += t.blockedCount;
     out.blockedUnknownByteItems += t.blockedUnknownByteItems;
@@ -882,11 +989,6 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
       out.actionableItems += t.reclaimableCount;
       out.actionableUnknownByteItems += t.reclaimableUnknownByteItems;
       out.actionablePartialByteItems += t.reclaimablePartialByteItems;
-    } else if (t.verb === "deferred-v2") {
-      out.reportOnlyBytes += t.reclaimableBytes;
-      out.reportOnlyItems += t.reclaimableCount;
-      out.reportOnlyUnknownByteItems += t.reclaimableUnknownByteItems;
-      out.reportOnlyPartialByteItems += t.reclaimablePartialByteItems;
     } else {
       out.unrecognisedBytes += t.reclaimableBytes;
       out.unrecognisedItems += t.reclaimableCount;
@@ -1007,27 +1109,41 @@ export function reportOnlyDisagreement(
 /**
  * Is this survey allowed to say "nothing to reclaim"?
  *
- * Only when the census actually completed, every item was readable, and the
- * runner's own per-class rollup (when it sent one) does not name roots the
- * item list omitted. A `pending` census has an empty list because the runner
- * does not KNOW yet; a survey whose rows were all unreadable has an empty list
- * because we could not read them; and a rollup reporting 40 roots against an
- * empty item list is the runner telling us the list is short. None of the
- * three is evidence of an empty population.
+ * Only when the census actually completed, the runner MEASURED a zero, the walk
+ * itself was complete, every item was readable, and the runner's own per-class
+ * rollup (when it sent one) does not name roots the item list omitted. Each
+ * clause exists because some empty list is not an empty population:
+ *
+ * - a `pending` census has an empty list because the runner does not KNOW yet;
+ * - a survey whose rows were all unreadable has one because we could not read
+ *   them;
+ * - a rollup reporting 40 roots against an empty item list is the runner
+ *   telling us the list is short;
+ * - a walk that hit its 200k visit ceiling, or that could not read some subtree
+ *   before it found any root, reports `bytes_incomplete` — the list is a
+ *   PREFIX, and "we stopped looking" is not "there is nothing there";
+ * - a runner that sent NO `summary.reclaimable_bytes` at all told us nothing
+ *   about the total. Absence is UNKNOWN, and this is the function whose whole
+ *   job is refusing to turn an unknown into a measured zero, so treating a
+ *   missing key as `0` was the exact inversion of its own docstring. Note the
+ *   present-but-`null` case is separate and already handled: the key's
+ *   presence is recorded by `Object.hasOwn`, its value survives as `NaN`, and
+ *   `NaN` fails the finite test below.
  */
 export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
-  // When the runner sent a total, it must be an explicit ZERO. `null` there is
-  // the runner saying it does not know (the cold-census state), which is the
-  // one thing this sentence may never be built on.
+  // The runner must have sent an explicit ZERO. `null` there is the runner
+  // saying it does not know (the cold-census state), and an ABSENT key is this
+  // build not having been told — neither may support this sentence.
   const totalIsMeasuredZero =
-    !survey.summaryHasReclaimableBytes ||
-    (Number.isFinite(survey.summaryReclaimableBytes) &&
-      survey.summaryReclaimableBytes === 0);
+    Number.isFinite(survey.summaryReclaimableBytes) &&
+    survey.summaryReclaimableBytes === 0;
   return (
     survey.items.length === 0 &&
     survey.skippedItems === 0 &&
     (survey.censusStatus === "fresh" || survey.censusStatus === "stale") &&
     totalIsMeasuredZero &&
+    !survey.bytesIncomplete &&
+    survey.scan?.truncated !== true &&
     rollupDisagreement(survey) === null &&
     surveyDisagreement(survey) === null
   );
