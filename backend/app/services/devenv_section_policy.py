@@ -135,13 +135,25 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
 # collector, so the whole prefix is repo-derived.
 #
 # ``python_dep_`` is the Python twin, built as ``format!("python_dep_{dep}")``
-# by the same collector from the dependency manifest next to the capturing
-# binary's ``CARGO_MANIFEST_DIR``. It is derived for exactly the reason
-# ``node_dep_`` is — it measures WHICH SOURCE TREE the binary was built from,
-# not the box — and it converges by installing the project's dependencies, so
-# there is no apply action a runner could offer for it. It therefore gets the
+# by the same collector from the dependency manifest it resolves for the
+# capturing binary. Like ``node_dep_``, the stored value is the DECLARED
+# CONSTRAINT out of that manifest, not an installed version — so it is derived
+# for exactly the reason ``node_dep_`` is: it measures WHICH SOURCE TREE the
+# binary was built from, not the box, and it converges by pulling the repo
+# rather than by an apply. It therefore gets the
 # same treatment as ``node_dep_``: reported with ``derived=True`` at ``info``
 # severity and excluded from ``in_sync``, never actionable drift.
+#
+# WHAT THIS PREFIX DOES **NOT** DO, so nobody mistakes it for parity proof:
+# because the value is a declared constraint out of a COMMITTED manifest, two
+# boxes at the same commit agree here no matter what is actually installed in
+# their environments. So ``python_dep_*`` can never answer "do these two boxes
+# have the same packages installed" — and being derived, it is excluded from
+# ``in_sync``, so it cannot make a divergent box look drifted either. An
+# INSTALLED-inventory signal is a separate, BOX-level fact and must NOT be
+# registered here: registering it would classify it ``info`` and drop it out of
+# ``in_sync``, re-creating the exact "reports clean while measuring nothing"
+# failure that motivated capturing Python at all.
 #
 # ORDERING CONSTRAINT — do not delete this registration, and do not let a
 # runner emit ``python_dep_*`` before it is live. This policy is

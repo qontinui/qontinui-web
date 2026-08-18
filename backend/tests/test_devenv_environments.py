@@ -269,7 +269,14 @@ class TestDiffEnvelopes:
         assert _delta(_section(report, "versions"), "node_dep_react").derived is True
 
     def test_python_dep_prefix_is_also_derived(self) -> None:
-        """The ``python_dep_*`` prefix rule applies on the drift path too."""
+        """The ``python_dep_*`` prefix rule applies on the drift path too.
+
+        The ``in_sync`` assertion is the operationally load-bearing one: being
+        derived is only meaningful because it drops the delta out of the
+        ``in_sync`` oracle. The pre-existing derived-stays-in-sync test covers
+        the EXPLICIT-key path only, so without this the prefix -> ``in_sync``
+        link is unasserted for ``node_dep_`` and ``python_dep_`` alike.
+        """
         canonical = _envelope({"versions": {"python_dep_requests": "2.32.3"}})
         actual = _envelope({"versions": {"python_dep_requests": "2.31.0"}})
         report = devenv_drift.diff_envelopes(canonical, actual)
@@ -278,6 +285,7 @@ class TestDiffEnvelopes:
         assert delta.derived is True
         assert delta.severity == "info"
         assert report.severity == "info"
+        assert report.in_sync is True
 
     def test_removed_derived_key_is_not_critical(self) -> None:
         """``removed`` is normally always critical — derived keys are the exception."""
@@ -795,9 +803,10 @@ class TestDerivedKeys:
     def test_python_dep_prefix_is_derived(self) -> None:
         """``python_dep_*`` is repo-derived, and ONLY that exact prefix is.
 
-        Python dependency versions come from the manifest next to the capturing
-        binary and converge by installing the project's dependencies, so — like
-        ``node_dep_*`` — they can never be an apply action. Registering the
+        The stored value is the DECLARED CONSTRAINT out of a committed
+        manifest, not an installed version, so — like ``node_dep_*`` — it
+        converges by pulling the repo and can never be an apply action.
+        Registering the
         prefix here is a PREREQUISITE for the runner emitting the keys:
         ``is_derived_key`` answers False for an unrecognized prefix, so an
         unregistered ``python_dep_*`` would silently become actionable drift in
