@@ -200,11 +200,7 @@ export interface CaptureHealthResponse {
 
 // ──────────────────── coord link (candidates read) ────────────────────
 
-export type CoordLinkState =
-  | "linked"
-  | "dangling"
-  | "unavailable"
-  | "unlinked";
+export type CoordLinkState = "linked" | "dangling" | "unavailable" | "unlinked";
 
 export type CoordPrState = "available" | "unavailable" | "unlinked";
 
@@ -278,41 +274,10 @@ export const PLAN_CAPTURE_DOMAIN = "plan_capture";
 export const PLAN_CAPTURE_LEVELS = ["off", "record"] as const;
 export type PlanCaptureLevel = (typeof PLAN_CAPTURE_LEVELS)[number];
 
-export interface FleetPolicyView {
-  domain: string;
-  /** What devices ACTUALLY resolve — not necessarily what was last written. */
-  effective_level: string;
-  master_enabled: boolean;
-  /** `"repo" | "tenant" | "system"`, or `"none"` when NO row matched. */
-  resolved_scope: string;
-  /**
-   * Whether the caller may write, computed with the SAME effective-tenant rule
-   * the PUT is gated on — not coord's cross-tenant `is_admin` union.
-   */
-  can_edit: boolean;
-  /**
-   * Control blocks coord returned that this view does not carry. Named rather
-   * than silently dropped, so a reader who wonders where `controls` went gets
-   * an answer.
-   */
-  keys_not_shown: string[];
-  /**
-   * `"fleet_resources_row"` — those blocks are a DIFFERENT domain's data and
-   * must never be read as this domain's. `"this_domain"` — the caller asked
-   * about `fleet_resources` itself. `null` — coord sent none.
-   */
-  keys_not_shown_source: "fleet_resources_row" | "this_domain" | null;
-}
-
-export interface FleetPolicyWriteResult {
-  ok: boolean;
-  domain: string;
-  written_level: string | null;
-  written_master_enabled: boolean | null;
-  versioned: boolean | null;
-  version: number | null;
-  updated_by: string | null;
-  /** A SECOND, fresh read. `null` + `readback_error` = UNKNOWN, not "applied". */
-  effective: FleetPolicyView | null;
-  readback_error: string | null;
-}
+// `FleetPolicyView` / `FleetPolicyWriteResult` moved to the shared module when
+// the `policy_write` dial became a second consumer — one wire contract, one
+// definition. Re-exported here so this file's public surface is unchanged.
+export type {
+  FleetPolicyView,
+  FleetPolicyWriteResult,
+} from "../_shared/fleetPolicy";

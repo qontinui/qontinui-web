@@ -33,6 +33,7 @@
  */
 
 import { NotebookText } from "lucide-react";
+import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
@@ -54,6 +55,18 @@ export default function PromptDocumentsPage() {
       </div>
 
       <PromptDocumentList />
+
+      {/*
+        The tenant-wide autonomy dial sits with the per-document write-access
+        control it composes with. Two controls governing one question — "what
+        may an agent do to this policy?" — belong on one page; the per-document
+        setting decides WHETHER, this decides HOW MUCH, and the answer is the
+        more restrictive of the two. Coord's own refusal message sends operators
+        to this page for the first, so the second must be here too.
+      */}
+      <div className="border-t border-border pt-8">
+        <PolicyWriteDialControl />
+      </div>
 
       {/*
         Session compliance lives on this page rather than behind its own nav
