@@ -54,7 +54,10 @@
  *     "bytes_partial": false,                 // true => `bytes` is a floor
  *     "last_used_at": "2026-08-14T09:00:00Z" | null,
  *     "repo_root": "D:\qontinui-root\foo" | null,
- *     "verb": "orphan_target_reaper" | null   // null => NO v1 verb
+ *     "verb": "orphan-target-reaper" | null   // PER ITEM: who would remove
+ *                                             // THIS root; null => nobody
+ *                                             // here (another engine owns it,
+ *                                             // or the class has no verb)
  *   }],
  *   "summary": {
  *     "reclaimable_bytes": 12345678 | null,
@@ -107,8 +110,8 @@
  *
  * The middle two are the pair that collapse if you are careless, and the whole
  * feature is the distinction between them. `null` totals mean the runner does
- * not KNOW; `0` means it MEASURED nothing -- see
- * {@link DiskSurvey.summaryHasReclaimableBytes}.
+ * not KNOW; `0` means it MEASURED nothing -- and only the second may license
+ * the sentence, see {@link canClaimNothingToReclaim}.
  *
  * ### Which half of the payload is authoritative
  *
@@ -117,9 +120,18 @@
  *   totals (`reclaimable_bytes`, `report_only_bytes`) are cross-checks --
  *   {@link surveyDisagreement}, {@link reportOnlyDisagreement} -- and a
  *   divergence is reported rather than resolved by preferring one silently.
- * - **The VERB is read from the runner**, per item, falling back to the
- *   matching `by_class` row and only then to {@link KNOWN_DISK_CLASSES}. The
- *   runner is the thing that would execute the verb.
+ * - **The two VERB fields answer two different questions and are read
+ *   separately.** `summary.by_class[].verb` is CLASS metadata (the runner's
+ *   `TargetClass::has_verb()`), so it — falling back to
+ *   {@link KNOWN_DISK_CLASSES} — is what {@link DiskClassTotals.verb} and the
+ *   class badge are derived from. `items[].verb` is a PER-ITEM verdict: which
+ *   engine would remove THIS root, `null` when the refusal says another engine
+ *   owns the path (`render_item` in `disk_survey.rs` strips it for every
+ *   `SkipReason::owned_elsewhere()`). A class therefore contains items that
+ *   disagree about `verb` as a matter of course — `<wt>/target` (owned by the
+ *   worktree reclaim engine, `verb: null`) beside `<wt>/target-<slug>`
+ *   (`verb: "orphan-target-reaper"`) — and each item is bucketed on its own
+ *   verdict by {@link bucketOfItem}.
  * - **A measured zero needs positive evidence**: an explicit `0` total, or a
  *   fully-readable `by_class` reporting `roots: 0` for every class in the
  *   bucket. Presence of a rollup alone is not enough -- see
@@ -160,13 +172,26 @@ export interface DiskSurveyItem {
   repoRoot: string | null;
   /**
    * `true` when the runner sent a `verb` key at all. Distinguishes "the runner
-   * says no verb covers this class" (`verb: null`) from "this runner build
-   * does not report verbs", which are different facts about actionability.
+   * says no verb would act on THIS root" (`verb: null`) from "this runner
+   * build does not report verbs", which are different facts about
+   * actionability.
    */
   hasVerbField: boolean;
   /**
-   * Which engine would remove this if the verb were armed, as the RUNNER
-   * declares it. `null` with {@link hasVerbField} set ⇒ report-only in v1.
+   * Which engine would remove THIS ROOT if the verb were armed, as the RUNNER
+   * declares it — a per-item VERDICT, not class metadata.
+   *
+   * `render_item` in the runner's `disk_survey.rs` derives it from the
+   * verdict: `null` whenever the refusal is `SkipReason::owned_elsewhere()`
+   * (`owned-by-worktree-reclaim`, `owned-by-build-pool`, `ownership-unknown`,
+   * `report-only`), because the field names WHO would act and that is not this
+   * engine. A refusal on the reaper's own guards (building, dirty, kept,
+   * grace) KEEPS the verb.
+   *
+   * So two roots of the SAME class legitimately disagree about it, and reading
+   * it as a statement about the class is a category error — see
+   * {@link bucketOfItem}. {@link DiskSurveyItem.reason} says which of the two
+   * `null` cases applies.
    */
   verb: string | null;
 }
@@ -253,6 +278,25 @@ export const KNOWN_DISK_CLASSES: Record<string, DiskClassInfo> = {
 export const REPORT_ONLY_REASON = "report-only";
 
 /**
+ * The runner's `SkipReason::owned_elsewhere()` tokens — the refusals that say
+ * **another engine owns this path** (or that we could not tell which does).
+ *
+ * They are the reasons `render_item` strips `item.verb` for, so an item
+ * carrying one arrives with `verb: null` beside siblings of the SAME class
+ * that carry a verb. Listed here so the bucket router keys on the reason the
+ * runner gave rather than on the absence it caused.
+ *
+ * `report-only` is deliberately NOT in this set even though the runner counts
+ * it as owned-elsewhere: it is the only one that is a statement about the
+ * CLASS having no verb, and it drives its own bucket ({@link bucketOfItem}).
+ */
+export const OWNED_ELSEWHERE_REASONS: ReadonlySet<string> = new Set([
+  "owned-by-worktree-reclaim",
+  "owned-by-build-pool",
+  "ownership-unknown",
+]);
+
+/**
  * Freshness of the census the survey was derived from.
  *
  * `unavailable` is the runner's own "the preview could not be computed, and
@@ -289,7 +333,9 @@ export interface DiskScanStats {
   truncated: boolean;
   /**
    * `true` when the runner sent a `truncated` key at all. A build that does not
-   * report it has not told us the walk was complete.
+   * report it has not told us the walk was complete — which is why
+   * {@link canClaimNothingToReclaim} requires this to be `true` rather than
+   * settling for `truncated !== true`, a test an absent key passes.
    */
   hasTruncatedField: boolean;
   readErrors: DiskScanError[];
@@ -315,18 +361,14 @@ export interface DiskSurvey {
   items: DiskSurveyItem[];
   /**
    * `summary.reclaimable_bytes`, or `NaN` when the runner sent no usable
-   * total. Used ONLY for the cross-check in {@link surveyDisagreement}.
+   * total — which covers BOTH "the key was absent" and "the runner sent
+   * `null`". Both are UNKNOWN and both are refused everywhere a measured zero
+   * is required ({@link canClaimNothingToReclaim},
+   * {@link measuredZeroBuckets}), so the two are deliberately not tracked
+   * apart: a `summaryHasReclaimableBytes` flag lived here for one commit and
+   * nothing ever read it.
    */
   summaryReclaimableBytes: number;
-  /**
-   * `true` when the runner sent a `summary.reclaimable_bytes` key at all.
-   *
-   * The runner's four states hinge on this: a `pending` census reports the
-   * totals as `null` (it does not KNOW), while a completed one that found
-   * nothing reports `0` (it MEASURED nothing). Absent and zero must not
-   * collapse together, so the key's presence is recorded apart from its value.
-   */
-  summaryHasReclaimableBytes: boolean;
   /**
    * `summary.report_only_bytes` — the runner's own headline for the class it
    * deliberately ships no verb for. `NaN` when it sent none or sent `null`.
@@ -554,7 +596,9 @@ export function parseClassSummaries(raw: unknown): ClassRollup | null {
  * `scan` has told us nothing about whether `items[]` is the whole population,
  * and defaulting `truncated` to `false` would manufacture a completeness claim
  * the payload never made. {@link DiskScanStats.hasTruncatedField} keeps the
- * same distinction one level down, for a `scan` object missing the key.
+ * same distinction one level down, for a `scan` object missing the key, and
+ * {@link canClaimNothingToReclaim} consults BOTH — it is the one sentence on
+ * the page that needs the walk to have reported itself complete.
  */
 export function parseScanStats(raw: unknown): DiskScanStats | null {
   if (!isRecord(raw)) return null;
@@ -682,8 +726,6 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
       items,
       summaryReclaimableBytes:
         typeof summaryBytes === "number" ? summaryBytes : Number.NaN,
-      summaryHasReclaimableBytes:
-        summary !== null && Object.hasOwn(summary, "reclaimable_bytes"),
       summaryReportOnlyBytes: toNumberOrNaN(summary?.report_only_bytes),
       byClass: rollup?.rows ?? null,
       byClassSkipped: rollup?.skipped ?? 0,
@@ -694,11 +736,47 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
   };
 }
 
+/**
+ * Which headline tile one root belongs to. The four PARTITION the item list —
+ * see {@link bucketOfItem}.
+ */
+export type DiskBucketKind =
+  | "actionable"
+  | "report-only"
+  | "unrecognised"
+  | "blocked";
+
+/** One bucket's share of a class. Every item lands in exactly one. */
+export interface DiskBucketSlice {
+  bytes: number;
+  items: number;
+  /** Items whose `bytes` were unreadable — EXCLUDED from {@link bytes}. */
+  unknownByteItems: number;
+  /** Items whose `bytes` arrived but is itself a floor (`bytes_partial`). */
+  partialByteItems: number;
+}
+
+function emptySlice(): DiskBucketSlice {
+  return { bytes: 0, items: 0, unknownByteItems: 0, partialByteItems: 0 };
+}
+
 /** Per-class aggregate, derived from `items[]`. */
 export interface DiskClassTotals {
   /** The class string the runner sent, or `null` when it sent none. */
   classId: string | null;
   label: string;
+  /**
+   * CLASS metadata: whether the v1 cleanup verb reaches this class at all.
+   *
+   * Read from `summary.by_class[].verb` (the runner's own
+   * `TargetClass::has_verb()`), falling back to {@link KNOWN_DISK_CLASSES}.
+   * **Never derived from `items[].verb`**, which is a per-item verdict — doing
+   * so made every mixed class (`<wt>/target` beside `<wt>/target-<slug>`)
+   * render as `unrecognised` and hid the actionable tile behind a false "no
+   * candidates". This drives the class BADGE and which tiles are shown at all;
+   * which bucket each root's BYTES land in is {@link bucketOfItem}'s answer,
+   * per item.
+   */
   verb: DiskClassVerb;
   note: string;
   /** `true` when {@link KNOWN_DISK_CLASSES} has an entry for `classId`. */
@@ -733,12 +811,15 @@ export interface DiskClassTotals {
   blockedUnknownByteItems: number;
   blockedPartialByteItems: number;
   /**
-   * Items of this class that disagreed with each other about `verb`. Non-zero
-   * forces {@link verb} to `unrecognised`: the runner gave two answers about
-   * whether a cleanup verb covers this class, and picking whichever arrived
-   * first would decide actionability by array order.
+   * This class's items split by the bucket each one's OWN verdict puts it in.
+   *
+   * A class is routinely split across buckets — that is the runner answering a
+   * per-root question, not contradicting itself — so the split is carried here
+   * rather than recomputed from a single class-level verb. {@link bucketTotals}
+   * only sums these, which is what makes the four buckets a partition by
+   * construction.
    */
-  verbConflicts: number;
+  buckets: Record<DiskBucketKind, DiskBucketSlice>;
 }
 
 const UNCLASSIFIED: DiskClassInfo = {
@@ -774,6 +855,58 @@ function classInfo(classId: string | null): DiskClassInfo {
 }
 
 /**
+ * Which headline bucket ONE root belongs to, from its OWN verdict.
+ *
+ * The runner answers per root, so this must too. `item.verb` is stripped
+ * whenever the refusal is `SkipReason::owned_elsewhere()`, which means a class
+ * legitimately carries both shapes at once — on this machine `sibling-worktree`
+ * holds `<wt>/target` (the basename the worktree reclaim engine owns ⇒
+ * `verb: null`) beside `<wt>/target-<slug>` (⇒ `verb: "orphan-target-reaper"`),
+ * and `sibling-nongit` holds `target-pool/slot-0` and `target-agent` the same
+ * way. Treating that disagreement as a class-level contradiction is what hid
+ * the actionable tile behind a false "no candidates".
+ *
+ * `classVerb` is consulted only where the ITEM said nothing — a runner build
+ * that does not report `verb` at all.
+ */
+export function bucketOfItem(
+  item: DiskSurveyItem,
+  classVerb: DiskClassVerb
+): DiskBucketKind {
+  // 1. Report-only. This refusal says NO VERB EXISTS for the class, not that
+  //    anything is holding the path, so both of its statuses belong here --
+  //    which is also what the runner's own `summary.report_only_bytes` counts
+  //    (`by_class[in-repo-canonical].bytes`, every status).
+  if (item.reason === REPORT_ONLY_REASON || classVerb === "deferred-v2") {
+    return "report-only";
+  }
+  // 2. Another engine owns this path, or we could not tell which does. Keyed
+  //    on the REASON rather than on the stripped verb, so the item is placed
+  //    by what the runner said and not by the absence that said it -- and so a
+  //    contradictory row (owned elsewhere yet `reclaimable`) can never be
+  //    offered as actionable.
+  if (item.reason !== null && OWNED_ELSEWHERE_REASONS.has(item.reason)) {
+    return "blocked";
+  }
+  // 3. Any other refusal is a HOLD on this root: a live build, a pin, a dirty
+  //    worktree. It is the ITEM's verdict, so it stands whether or not this
+  //    build recognises its class -- the runner's refusal is a fact about the
+  //    root, and our not knowing the class does not soften it.
+  if (item.status === "blocked") return "blocked";
+  // 4. Reclaimable, with the runner naming the engine that would remove it:
+  //    actionable, no matter what its siblings report. A reclaimable root the
+  //    runner explicitly gave NO verb for is a shape the runner cannot emit
+  //    today; if one ever arrives, this page cannot say what would act on it,
+  //    so it is surfaced as unrecognised rather than offered as actionable.
+  if (item.hasVerbField) {
+    return item.verb !== null ? "actionable" : "unrecognised";
+  }
+  // 5. A build that sent no `verb` key told us nothing per item; the class's
+  //    own disposition is all that is left to read.
+  return classVerb === "v1" ? "actionable" : "unrecognised";
+}
+
+/**
  * Aggregate a survey's items by class, biggest reclaimable total first.
  *
  * Classes with no items do NOT appear: a class the runner never mentioned has
@@ -793,15 +926,18 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
       const declaredRow =
         item.classId === null ? undefined : declared.get(item.classId);
       // The RUNNER is the authority on whether a verb covers a class — it is
-      // the thing that would run the verb. Reading its declaration means a
-      // class it adds later lands in the right bucket without a web release,
-      // and the hardcoded table below is only the fallback for a runner that
-      // does not report verbs at all.
-      const declaresVerb = item.hasVerbField
-        ? { has: true, verb: item.verb }
-        : declaredRow?.hasVerbField
-          ? { has: true, verb: declaredRow.verb }
-          : { has: false, verb: null };
+      // the thing that would run the verb — but the authority lives in
+      // `summary.by_class[].verb`, which IS class metadata
+      // (`TargetClass::has_verb()`). Reading it means a class the runner adds
+      // later lands in the right bucket without a web release, and the
+      // hardcoded table is the fallback for a runner that does not report it.
+      //
+      // `items[].verb` is deliberately NOT consulted here: it is a per-item
+      // verdict, so deriving the class from it made a class with one
+      // owned-elsewhere root report as `unrecognised` and hid its tile.
+      const declaresVerb = declaredRow?.hasVerbField
+        ? { has: true, verb: declaredRow.verb }
+        : { has: false, verb: null };
       const verb: DiskClassVerb = declaresVerb.has
         ? declaresVerb.verb !== null
           ? "v1"
@@ -838,7 +974,12 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
         reclaimablePartialByteItems: 0,
         blockedUnknownByteItems: 0,
         blockedPartialByteItems: 0,
-        verbConflicts: 0,
+        buckets: {
+          actionable: emptySlice(),
+          "report-only": emptySlice(),
+          unrecognised: emptySlice(),
+          blocked: emptySlice(),
+        },
       };
       byClass.set(item.classId, entry);
     }
@@ -846,41 +987,28 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
     if (reclaimable) entry.reclaimableCount++;
     else entry.blockedCount++;
 
-    // A later item of the same class that disagrees about the verb is a
-    // conflict, not a refinement — recorded rather than resolved by position.
-    if (item.hasVerbField) {
-      const declared = item.verb !== null;
-      const expected = entry.verb === "v1";
-      if (entry.verb !== "unrecognised" && declared !== expected) {
-        entry.verbConflicts++;
-      }
-    }
+    // Each root is routed on its OWN verdict, into exactly one slice. Siblings
+    // of the same class disagreeing about `verb` is the runner answering a
+    // per-root question, not a defect — see `bucketOfItem`.
+    const slice = entry.buckets[bucketOfItem(item, entry.verb)];
+    slice.items++;
 
     if (!Number.isFinite(item.bytes) || item.bytes < 0) {
       entry.unknownByteItems++;
+      slice.unknownByteItems++;
       if (reclaimable) entry.reclaimableUnknownByteItems++;
       else entry.blockedUnknownByteItems++;
       continue;
     }
     if (item.bytesPartial) {
       entry.partialByteItems++;
+      slice.partialByteItems++;
       if (reclaimable) entry.reclaimablePartialByteItems++;
       else entry.blockedPartialByteItems++;
     }
+    slice.bytes += item.bytes;
     if (reclaimable) entry.reclaimableBytes += item.bytes;
     else entry.blockedBytes += item.bytes;
-  }
-  for (const entry of byClass.values()) {
-    if (entry.verbConflicts > 0) {
-      entry.verb = "unrecognised";
-      entry.note =
-        `The runner gave conflicting answers about this class: ` +
-        `${entry.verbConflicts} of its ${entry.reclaimableCount + entry.blockedCount} ` +
-        `roots disagreed with the others about whether a cleanup verb covers ` +
-        `it. Rather than let payload order decide, this page reports the ` +
-        `class as unresolved -- the bytes are real, the actionability is not ` +
-        `established.`;
-    }
   }
   return Array.from(byClass.values()).sort(
     (a, b) =>
@@ -898,7 +1026,11 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
  * would either overstate what the product can do or hide 47 % of the bytes.
  */
 export interface DiskBuckets {
-  /** Classes the v1 cleanup verb covers. */
+  /**
+   * Roots the RUNNER says a cleanup verb would remove: `status: "reclaimable"`
+   * with a `verb`. Per item, not per class — a root the runner would act on is
+   * actionable even when a sibling of its class is owned by another engine.
+   */
   actionableBytes: number;
   actionableItems: number;
   actionableUnknownByteItems: number;
@@ -912,19 +1044,30 @@ export interface DiskBuckets {
   reportOnlyItems: number;
   reportOnlyUnknownByteItems: number;
   reportOnlyPartialByteItems: number;
-  /** Classes this build does not recognise — neither claim applies to them. */
+  /**
+   * Roots this page cannot place: a reclaimable root of a class this build
+   * does not recognise, from a runner that named no verb for it. Neither claim
+   * — "you can clean this" nor "something holds it" — is supported, so they
+   * get their own tile rather than being folded into one that is.
+   */
   unrecognisedBytes: number;
   unrecognisedItems: number;
   unrecognisedUnknownByteItems: number;
   unrecognisedPartialByteItems: number;
   /**
-   * Candidates something actually HOLDS right now — a live build, a pin, a
-   * dirty worktree, another engine that owns the path.
+   * Candidates the runner REFUSED for a reason other than "no verb exists" — a
+   * live build, a pin, a dirty worktree, another engine that owns the path, or
+   * a probe that could not establish that nothing does (`ownership-unknown`).
    *
-   * Report-only classes are excluded: their roots arrive `blocked` because no
-   * verb exists, not because anything is holding them, and counting them here
-   * both double-counts the report-only bucket and describes 47 % of the bytes
-   * on this box with a sentence that is false.
+   * Report-only roots are excluded: they arrive `blocked` because no verb
+   * exists, not because anything is holding them, and counting them here both
+   * double-counts the report-only bucket and describes 47 % of the bytes on
+   * this box with a sentence that is false.
+   *
+   * A refusal on a class this build does not recognise DOES land here: the
+   * verdict and its reason are the runner's, and our not recognising the class
+   * says nothing about whether the root is held. Only the class's disposition
+   * is unknown, and that is what the class table reports.
    */
   blockedBytes: number;
   blockedItems: number;
@@ -933,15 +1076,24 @@ export interface DiskBuckets {
 }
 
 /**
- * Split the per-class aggregate into the actionable / report-only buckets.
+ * Sum the per-class bucket slices into the four headline tiles.
  *
  * The four buckets PARTITION the items — every root lands in exactly one — so
  * that an operator adding the tiles up gets the survey's own total rather than
- * a number inflated by roots counted twice.
+ * a number inflated by roots counted twice. That property is now structural:
+ * {@link aggregateByClass} increments exactly one slice per item and this
+ * function only adds slices up, so no class can be dropped and none counted
+ * twice.
  *
- * The report-only bucket takes the whole class, `blocked` rows included. That
- * is not a convenience: the runner **never** emits an `in-repo-canonical` row
- * with `status: "reclaimable"` — `boundary_verdict` returns
+ * Routing is PER ITEM ({@link bucketOfItem}), not per class. A class is not a
+ * homogeneous population: `sibling-worktree` carries roots this reaper would
+ * remove alongside roots another engine owns, and the earlier class-level
+ * routing had to pick one answer for both — which it did by taking the first
+ * item's, then declaring the rest a contradiction and hiding the tile.
+ *
+ * The report-only bucket still takes the whole class, `blocked` rows included.
+ * That is not a convenience: the runner **never** emits an `in-repo-canonical`
+ * row with `status: "reclaimable"` — `boundary_verdict` returns
  * `Err(SkipReason::ReportOnly)` unconditionally for a verbless class and
  * `disk_survey.rs` maps every `Err` to `blocked` — so a report-only bucket
  * sourced from `reclaimableBytes` alone is ALWAYS `0`, and the tile renders a
@@ -969,32 +1121,29 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
     blockedPartialByteItems: 0,
   };
   for (const t of totals) {
-    if (t.verb === "deferred-v2") {
-      // The WHOLE class, both statuses — see the docstring above. Its blocked
-      // rows are deliberately NOT added to `blocked*`: nothing is holding them.
-      out.reportOnlyBytes += t.reclaimableBytes + t.blockedBytes;
-      out.reportOnlyItems += t.reclaimableCount + t.blockedCount;
-      out.reportOnlyUnknownByteItems +=
-        t.reclaimableUnknownByteItems + t.blockedUnknownByteItems;
-      out.reportOnlyPartialByteItems +=
-        t.reclaimablePartialByteItems + t.blockedPartialByteItems;
-      continue;
-    }
-    out.blockedBytes += t.blockedBytes;
-    out.blockedItems += t.blockedCount;
-    out.blockedUnknownByteItems += t.blockedUnknownByteItems;
-    out.blockedPartialByteItems += t.blockedPartialByteItems;
-    if (t.verb === "v1") {
-      out.actionableBytes += t.reclaimableBytes;
-      out.actionableItems += t.reclaimableCount;
-      out.actionableUnknownByteItems += t.reclaimableUnknownByteItems;
-      out.actionablePartialByteItems += t.reclaimablePartialByteItems;
-    } else {
-      out.unrecognisedBytes += t.reclaimableBytes;
-      out.unrecognisedItems += t.reclaimableCount;
-      out.unrecognisedUnknownByteItems += t.reclaimableUnknownByteItems;
-      out.unrecognisedPartialByteItems += t.reclaimablePartialByteItems;
-    }
+    const a = t.buckets.actionable;
+    out.actionableBytes += a.bytes;
+    out.actionableItems += a.items;
+    out.actionableUnknownByteItems += a.unknownByteItems;
+    out.actionablePartialByteItems += a.partialByteItems;
+
+    const r = t.buckets["report-only"];
+    out.reportOnlyBytes += r.bytes;
+    out.reportOnlyItems += r.items;
+    out.reportOnlyUnknownByteItems += r.unknownByteItems;
+    out.reportOnlyPartialByteItems += r.partialByteItems;
+
+    const u = t.buckets.unrecognised;
+    out.unrecognisedBytes += u.bytes;
+    out.unrecognisedItems += u.items;
+    out.unrecognisedUnknownByteItems += u.unknownByteItems;
+    out.unrecognisedPartialByteItems += u.partialByteItems;
+
+    const b = t.buckets.blocked;
+    out.blockedBytes += b.bytes;
+    out.blockedItems += b.items;
+    out.blockedUnknownByteItems += b.unknownByteItems;
+    out.blockedPartialByteItems += b.partialByteItems;
   }
   return out;
 }
@@ -1122,6 +1271,13 @@ export function reportOnlyDisagreement(
  * - a walk that hit its 200k visit ceiling, or that could not read some subtree
  *   before it found any root, reports `bytes_incomplete` — the list is a
  *   PREFIX, and "we stopped looking" is not "there is nothing there";
+ * - a runner that sent NO `scan` block, or a `scan` without a `truncated` key,
+ *   has not told us the walk was complete. `truncated !== true` passes for both
+ *   of those absences, so the walk must POSITIVELY report itself complete:
+ *   `scan` present, carrying the key, and reading `false`. The real runner
+ *   always sends `scan` alongside a `fresh`/`stale` census (`disk_survey.rs`
+ *   omits it only for `pending` and `unavailable`, both already refused
+ *   above), so this rejects only a build that cannot support the sentence;
  * - a runner that sent NO `summary.reclaimable_bytes` at all told us nothing
  *   about the total. Absence is UNKNOWN, and this is the function whose whole
  *   job is refusing to turn an unknown into a measured zero, so treating a
@@ -1137,13 +1293,18 @@ export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
   const totalIsMeasuredZero =
     Number.isFinite(survey.summaryReclaimableBytes) &&
     survey.summaryReclaimableBytes === 0;
+  // The walk must SAY it was complete, not merely fail to say it was short.
+  const walkSaysComplete =
+    survey.scan !== null &&
+    survey.scan.hasTruncatedField &&
+    !survey.scan.truncated;
   return (
     survey.items.length === 0 &&
     survey.skippedItems === 0 &&
     (survey.censusStatus === "fresh" || survey.censusStatus === "stale") &&
     totalIsMeasuredZero &&
     !survey.bytesIncomplete &&
-    survey.scan?.truncated !== true &&
+    walkSaysComplete &&
     rollupDisagreement(survey) === null &&
     surveyDisagreement(survey) === null
   );
