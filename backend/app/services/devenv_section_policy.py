@@ -133,8 +133,29 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
 
 # Per-dependency keys are built as ``format!("node_dep_{dep}")`` by the
 # collector, so the whole prefix is repo-derived.
+#
+# ``python_dep_`` is the Python twin, built as ``format!("python_dep_{dep}")``
+# by the same collector from the dependency manifest next to the capturing
+# binary's ``CARGO_MANIFEST_DIR``. It is derived for exactly the reason
+# ``node_dep_`` is — it measures WHICH SOURCE TREE the binary was built from,
+# not the box — and it converges by installing the project's dependencies, so
+# there is no apply action a runner could offer for it. It therefore gets the
+# same treatment as ``node_dep_``: reported with ``derived=True`` at ``info``
+# severity and excluded from ``in_sync``, never actionable drift.
+#
+# ORDERING CONSTRAINT — do not delete this registration, and do not let a
+# runner emit ``python_dep_*`` before it is live. This policy is
+# server-authoritative (see the module docstring): it is delivered to every box
+# alongside the pulled config, and ``is_derived_key`` conservatively answers
+# False for a prefix it does not recognise. So a runner that emits
+# ``python_dep_*`` against a server without this entry does not fail loudly —
+# every Python dependency on every machine silently reclassifies as actionable
+# drift in the ``applyable`` ``versions`` section, and each box advertises an
+# "apply" for package versions it has no apply path for. That is the same trap
+# ``repos_scope_kind`` documents above, and the reason this classifier change
+# must land BEFORE the collector change that emits the keys.
 _DERIVED_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
-    "versions": ("node_dep_",),
+    "versions": ("node_dep_", "python_dep_"),
 }
 
 
