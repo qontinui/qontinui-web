@@ -268,6 +268,17 @@ class TestDiffEnvelopes:
 
         assert _delta(_section(report, "versions"), "node_dep_react").derived is True
 
+    def test_python_dep_prefix_is_also_derived(self) -> None:
+        """The ``python_dep_*`` prefix rule applies on the drift path too."""
+        canonical = _envelope({"versions": {"python_dep_requests": "2.32.3"}})
+        actual = _envelope({"versions": {"python_dep_requests": "2.31.0"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        delta = _delta(_section(report, "versions"), "python_dep_requests")
+        assert delta.derived is True
+        assert delta.severity == "info"
+        assert report.severity == "info"
+
     def test_removed_derived_key_is_not_critical(self) -> None:
         """``removed`` is normally always critical — derived keys are the exception."""
         canonical = _envelope({"versions": {"tauri": "2.0.0"}})
@@ -780,6 +791,42 @@ class TestDerivedKeys:
             "runner_crate_version",
             "tauri",
         ]
+
+    def test_python_dep_prefix_is_derived(self) -> None:
+        """``python_dep_*`` is repo-derived, and ONLY that exact prefix is.
+
+        Python dependency versions come from the manifest next to the capturing
+        binary and converge by installing the project's dependencies, so — like
+        ``node_dep_*`` — they can never be an apply action. Registering the
+        prefix here is a PREREQUISITE for the runner emitting the keys:
+        ``is_derived_key`` answers False for an unrecognized prefix, so an
+        unregistered ``python_dep_*`` would silently become actionable drift in
+        the ``applyable`` ``versions`` section on every box.
+
+        The negative cases are what prove the classification is keyed on the
+        prefix rather than being vacuously true for anything Python-ish.
+        """
+        from app.services import devenv_section_policy as sp
+
+        assert sp.is_derived_key("versions", "python_dep_requests") is True
+        assert sp.is_derived_key("versions", "python_dep_pydantic") is True
+        # A near-miss key that was never registered stays NOT derived.
+        assert sp.is_derived_key("versions", "python_pkg_requests") is False
+        assert sp.is_derived_key("versions", "pythondep_requests") is False
+        # Machine facts in the same section are untouched by the prefix rule.
+        assert sp.is_derived_key("versions", "python") is False
+        # Section-scoped: the prefix is registered under ``versions`` only.
+        assert sp.is_derived_key("services", "python_dep_requests") is False
+        derived = sp.derived_keys_map(
+            {
+                "versions": {
+                    "python": "3.13",
+                    "python_dep_requests": "2.32.3",
+                    "python_pkg_requests": "2.32.3",
+                }
+            }
+        )
+        assert derived == {"versions": ["python_dep_requests"]}
 
     def test_probe_scope_kind_is_derived(self) -> None:
         """Capture provenance is reported but is never an apply action.
