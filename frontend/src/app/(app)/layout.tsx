@@ -15,7 +15,8 @@ import { ProductModeProvider } from "@/contexts/product-mode-context";
 import { AdvancedAutomationProvider } from "@/contexts/advanced-automation-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BetaBanner } from "@/components/beta-banner";
+import { useSlotComponent } from "@/lib/extension-slots";
+import type { BetaBannerProps } from "@/lib/cloud-component-slots";
 import { useAuth } from "@/contexts/auth-context";
 import { MentionRealtimeSubscriber } from "@/app/(app)/strategy/_components/MentionRealtimeSubscriber";
 import { HelperRedirectGate } from "@/components/helper-portal/HelperRedirectGate";
@@ -114,6 +115,18 @@ function AppAuthGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Renders cloud-control's beta banner if registered, or nothing in OSS-only
+ * mode. `useSlotComponent` subscribes to the slot registry, so the
+ * `registerCloudExtensions` call carried by the fire-and-forget
+ * `import(CLOUD_CONTROL_PKG)` in the root layout can land after this shell
+ * has mounted and still cause the banner to appear.
+ */
+function BetaBannerSlot() {
+  const Slot = useSlotComponent<BetaBannerProps>("betaBanner");
+  return Slot ? <Slot /> : null;
+}
+
 function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { isCollapsed } = useSidebar();
   const { user } = useAuth();
@@ -144,7 +157,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
           isCollapsed ? "ml-16" : "ml-64"
         )}
       >
-        <BetaBanner />
+        <BetaBannerSlot />
         <main className="flex-1 min-h-0 overflow-hidden">{children}</main>
       </div>
       <Suspense fallback={null}>
