@@ -14,12 +14,26 @@ import { ActivityFeed } from "@/components/profile/activity-feed";
 import { Button } from "@/components/ui/button";
 import { Crown, Shield, ArrowLeft, Cable } from "lucide-react";
 import { toast } from "sonner";
+import { useSlotComponent } from "@/lib/extension-slots";
+import type { SubscriptionBadgeProps } from "@/lib/cloud-component-slots";
 import type {
   StorageUsage,
   ActivityLog,
   ProfileUpdateData,
 } from "@/services/profile-service";
 import type { User } from "@/types/auth-types";
+
+/**
+ * Renders cloud-control's subscription-tier badge if registered, or nothing
+ * in OSS-only mode. `useSlotComponent` subscribes to the slot registry, so
+ * the `registerCloudExtensions` call carried by the fire-and-forget
+ * `import(CLOUD_CONTROL_PKG)` in the root layout can land after this page
+ * has mounted and still cause the badge to appear.
+ */
+function SubscriptionBadgeSlot() {
+  const Slot = useSlotComponent<SubscriptionBadgeProps>("subscriptionBadge");
+  return Slot ? <Slot /> : null;
+}
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
@@ -118,6 +132,11 @@ export default function ProfilePage() {
               <p className="text-muted-foreground">@{user.username}</p>
             </div>
             <div className="flex items-center gap-2">
+              {/* Tier first: it is the account's primary commercial fact and
+                  is unconditional, while the two badges below are not — so
+                  leading with it keeps the row's meaning stable regardless
+                  of `is_superuser` / `is_beta`. */}
+              <SubscriptionBadgeSlot />
               {user.is_superuser && (
                 <Badge className="bg-yellow-500/10 text-yellow-500">
                   <Crown className="w-3 h-3 mr-1" />
