@@ -3,8 +3,10 @@ import {
   aggregateByClass,
   bucketTotals,
   canClaimNothingToReclaim,
+  KNOWN_DISK_CLASSES,
   measuredZeroBuckets,
   parseDiskSurvey,
+  parseScanStats,
   reportOnlyDisagreement,
   rollupDisagreement,
   surveyDisagreement,
@@ -45,17 +47,39 @@ function item(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * A report-only row IN THE ONLY SHAPE THE RUNNER CAN EMIT ONE.
+ *
+ * `in-repo-canonical` never arrives `reclaimable`: `boundary_verdict` returns
+ * `Err(SkipReason::ReportOnly)` unconditionally for a class with no verb
+ * (`orphan_target_reaper.rs`), and `render_item` maps every `Err` to
+ * `status: "blocked"` with the reason token attached. Fixtures that spelled it
+ * `status: "reclaimable"` were testing a payload that cannot exist — which is
+ * exactly why the tile rendering `0 B` over 1.67 TB passed its own suite.
+ */
+function reportOnlyItem(over: Record<string, unknown> = {}) {
+  return item({
+    id: "d:/repo/target",
+    class: "in-repo-canonical",
+    status: "blocked",
+    reason: "report-only",
+    reason_detail:
+      "Inside a canonical repo checkout. Measured and reported, but v1 has " +
+      "no cleanup verb for this class.",
+    verb: null,
+    ...over,
+  });
+}
+
 describe("parseDiskSurvey", () => {
   it("parses the documented envelope", () => {
     const survey = surveyOf({
-      device_id: "dev-1",
       items: [item()],
       summary: { reclaimable_bytes: 1024 },
       census_status: "fresh",
       census_age_secs: 12,
       census_note: "walk took 40s",
     });
-    expect(survey.deviceId).toBe("dev-1");
     expect(survey.censusStatus).toBe("fresh");
     expect(survey.censusAgeSecs).toBe(12);
     expect(survey.censusNote).toBe("walk took 40s");
@@ -183,13 +207,17 @@ describe("aggregateByClass", () => {
 
   it("marks in-repo-canonical as report-only, verb deferred", () => {
     const survey = surveyOf({
-      items: [item({ class: "in-repo-canonical", bytes: 999 })],
+      items: [reportOnlyItem({ bytes: 999 })],
       census_status: "fresh",
     });
     const [totals] = aggregateByClass(survey);
     expect(totals.verb).toBe("deferred-v2");
     expect(totals.known).toBe(true);
     expect(totals.note).toMatch(/no cleanup verb ships for this class yet/i);
+    // The bytes land in the BLOCKED column, because that is the only status
+    // the runner can give this class. The class total is what the tile needs.
+    expect(totals.reclaimableBytes).toBe(0);
+    expect(totals.blockedBytes).toBe(999);
   });
 
   it("keeps an unrecognised class visible instead of dropping its bytes", () => {
@@ -231,7 +259,7 @@ describe("bucketTotals", () => {
       items: [
         item({ id: "a", class: "container", bytes: 100 }),
         item({ id: "b", class: "sibling-worktree", bytes: 200 }),
-        item({ id: "c", class: "in-repo-canonical", bytes: 5000 }),
+        reportOnlyItem({ id: "c", bytes: 5000 }),
         item({ id: "d", class: "mystery", bytes: 9 }),
         item({ id: "e", class: "container", status: "blocked", bytes: 3 }),
       ],
@@ -243,15 +271,66 @@ describe("bucketTotals", () => {
     expect(buckets.reportOnlyBytes).toBe(5000);
     expect(buckets.reportOnlyItems).toBe(1);
     expect(buckets.unrecognisedBytes).toBe(9);
+    // Only the CONTAINER root is guard-held. The report-only root is blocked
+    // too, but nothing is holding it, and counting it here would both make the
+    // tile's copy false and count its bytes twice.
     expect(buckets.blockedBytes).toBe(3);
     expect(buckets.blockedItems).toBe(1);
+  });
+
+  it("sources the report-only bucket from the WHOLE class, not just reclaimable rows", () => {
+    // The regression W1: the runner cannot emit an in-repo-canonical row with
+    // `status: "reclaimable"`, so a bucket summed from `reclaimableBytes` alone
+    // is always 0 -- and the tile printed a bare `0 B` over the biggest class
+    // on the machine while its bytes were relabelled "blocked by a guard".
+    const survey = surveyOf({
+      items: [
+        reportOnlyItem({ id: "a", bytes: 1_000_000 }),
+        reportOnlyItem({ id: "b", bytes: 700_000 }),
+      ],
+      summary: { report_only_bytes: 1_700_000 },
+      census_status: "fresh",
+    });
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(buckets.reportOnlyBytes).toBe(1_700_000);
+    expect(buckets.reportOnlyItems).toBe(2);
+    expect(buckets.blockedBytes).toBe(0);
+    expect(buckets.blockedItems).toBe(0);
+    // ...and the tile figure now matches the runner's own headline, which is
+    // `by_class[in-repo-canonical].bytes` -- every status, not just reclaimable.
+    expect(buckets.reportOnlyBytes).toBe(survey.summaryReportOnlyBytes);
+  });
+
+  it("keeps the four buckets a PARTITION — no root counted twice", () => {
+    const survey = surveyOf({
+      items: [
+        item({ id: "a", class: "container", bytes: 100 }),
+        item({ id: "b", class: "container", status: "blocked", bytes: 30 }),
+        reportOnlyItem({ id: "c", bytes: 5000 }),
+        item({ id: "d", class: "mystery", bytes: 9 }),
+      ],
+      census_status: "fresh",
+    });
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(
+      buckets.actionableBytes +
+        buckets.reportOnlyBytes +
+        buckets.unrecognisedBytes +
+        buckets.blockedBytes
+    ).toBe(5139);
+    expect(
+      buckets.actionableItems +
+        buckets.reportOnlyItems +
+        buckets.unrecognisedItems +
+        buckets.blockedItems
+    ).toBe(4);
   });
 
   it("propagates the unknown-size counts so the UI can say 'at least'", () => {
     const survey = surveyOf({
       items: [
         item({ id: "a", class: "container", bytes: undefined }),
-        item({ id: "b", class: "in-repo-canonical", bytes: undefined }),
+        reportOnlyItem({ id: "b", bytes: undefined }),
       ],
       census_status: "fresh",
     });
@@ -259,6 +338,20 @@ describe("bucketTotals", () => {
     expect(buckets.actionableUnknownByteItems).toBe(1);
     expect(buckets.reportOnlyUnknownByteItems).toBe(1);
     expect(buckets.actionableBytes).toBe(0);
+    // The report-only class's unreadable root must not leak into the blocked
+    // tile's qualifier either.
+    expect(buckets.blockedUnknownByteItems).toBe(0);
+  });
+
+  it("carries a report-only root's PARTIAL-size count into the report-only tile", () => {
+    const survey = surveyOf({
+      items: [reportOnlyItem({ bytes: 4096, bytes_partial: true })],
+      census_status: "fresh",
+    });
+    const buckets = bucketTotals(aggregateByClass(survey));
+    expect(buckets.reportOnlyBytes).toBe(4096);
+    expect(buckets.reportOnlyPartialByteItems).toBe(1);
+    expect(buckets.blockedPartialByteItems).toBe(0);
   });
 });
 
@@ -299,11 +392,67 @@ describe("surveyDisagreement", () => {
 describe("canClaimNothingToReclaim", () => {
   it("is TRUE only for a completed census with a genuinely empty result", () => {
     expect(
-      canClaimNothingToReclaim(surveyOf({ items: [], census_status: "fresh" }))
+      canClaimNothingToReclaim(
+        surveyOf({
+          items: [],
+          summary: { reclaimable_bytes: 0 },
+          census_status: "fresh",
+        })
+      )
     ).toBe(true);
     expect(
-      canClaimNothingToReclaim(surveyOf({ items: [], census_status: "stale" }))
+      canClaimNothingToReclaim(
+        surveyOf({
+          items: [],
+          summary: { reclaimable_bytes: 0 },
+          census_status: "stale",
+        })
+      )
     ).toBe(true);
+  });
+
+  it("is FALSE when the runner sent NO reclaimable_bytes at all", () => {
+    // W4: absence is UNKNOWN. This is the function whose docstring says a
+    // missing total may never license the sentence, and it used to read a
+    // missing key as a measured zero -- the exact inversion.
+    const survey = surveyOf({ items: [], census_status: "fresh" });
+    expect(survey.summaryHasReclaimableBytes).toBe(false);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("is FALSE for a present-but-null total (the cold-census shape)", () => {
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: null },
+      census_status: "fresh",
+    });
+    expect(survey.summaryHasReclaimableBytes).toBe(true);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("is FALSE when the walk was TRUNCATED before it found anything", () => {
+    // W3: 200k visit cap hit before the first root. `fresh` + `items: []` +
+    // `reclaimable_bytes: 0` looks exactly like a clean machine, and is not.
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0, bytes_incomplete: true },
+      scan: { dirs_visited: 200_000, truncated: true, read_errors: [] },
+      census_status: "fresh",
+    });
+    expect(survey.scan?.truncated).toBe(true);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+  });
+
+  it("is FALSE when the runner flags bytes_incomplete on an empty list", () => {
+    // Permission-denied subtrees, with no `scan` block at all: the ONLY signal
+    // is `bytes_incomplete`, which the predicate never consulted.
+    const survey = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0, bytes_incomplete: true },
+      census_status: "fresh",
+    });
+    expect(survey.bytesIncomplete).toBe(true);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
   });
 
   it("is FALSE for a pending (cold-start) census", () => {
@@ -551,7 +700,7 @@ describe("the four states", () => {
 describe("report_only_bytes headline", () => {
   it("is parsed and cross-checked against the item-derived total", () => {
     const survey = surveyOf({
-      items: [item({ class: "in-repo-canonical", bytes: 100 })],
+      items: [reportOnlyItem({ bytes: 100 })],
       summary: { report_only_bytes: 5000 },
       census_status: "fresh",
     });
@@ -563,7 +712,7 @@ describe("report_only_bytes headline", () => {
 
   it("is silent when the two agree, or when the runner sent none", () => {
     const agree = surveyOf({
-      items: [item({ class: "in-repo-canonical", bytes: 100 })],
+      items: [reportOnlyItem({ bytes: 100 })],
       summary: { report_only_bytes: 100 },
       census_status: "fresh",
     });
@@ -571,21 +720,148 @@ describe("report_only_bytes headline", () => {
     const absent = surveyOf({ items: [], census_status: "fresh" });
     expect(reportOnlyDisagreement(absent, 0)).toBeNull();
   });
-});
 
-describe("engine-owned classes", () => {
-  it("routes worktree- and build-pool-owned roots to report-only", () => {
+  it("STOPS firing on an ordinary real load once the bucket is class-sourced", () => {
+    // W5. Before W1 the derived report-only total was structurally 0 while the
+    // headline carried the whole class, so this alert rendered on EVERY load --
+    // the "train the operator to ignore honesty banners" outcome the sibling
+    // docstring says was designed out. It must now be silent by construction.
     const survey = surveyOf({
       items: [
-        item({ id: "a", class: "owned-by-worktree-reclaim", bytes: 10 }),
-        item({ id: "b", class: "owned-by-build-pool", bytes: 20 }),
+        reportOnlyItem({ id: "a", bytes: 1_000_000_000 }),
+        reportOnlyItem({ id: "b", bytes: 669_800_000 }),
+        item({ id: "c", class: "container", bytes: 4096 }),
+      ],
+      summary: {
+        reclaimable_bytes: 4096,
+        report_only_bytes: 1_669_800_000,
+      },
+      census_status: "fresh",
+    });
+    const derived = bucketTotals(aggregateByClass(survey)).reportOnlyBytes;
+    expect(derived).toBe(1_669_800_000);
+    expect(reportOnlyDisagreement(survey, derived)).toBeNull();
+    expect(surveyDisagreement(survey)).toBeNull();
+  });
+});
+
+describe("engine-owned skip reasons", () => {
+  it("carries owned-by-* as a REASON on a blocked root, never as a class", () => {
+    // W8: `owned-by-worktree-reclaim` / `owned-by-build-pool` are
+    // `SkipReason::token()` values. They arrive on `item.reason`; the class is
+    // still one of the runner's four. Listing them in KNOWN_DISK_CLASSES
+    // described a class vocabulary the runner does not have.
+    const survey = surveyOf({
+      items: [
+        item({
+          id: "a",
+          class: "sibling-worktree",
+          status: "blocked",
+          reason: "owned-by-worktree-reclaim",
+          bytes: 10,
+        }),
+        item({
+          id: "b",
+          class: "container",
+          status: "blocked",
+          reason: "owned-by-build-pool",
+          bytes: 20,
+        }),
       ],
       census_status: "fresh",
     });
+    expect(survey.items.map((i) => i.reason)).toEqual([
+      "owned-by-worktree-reclaim",
+      "owned-by-build-pool",
+    ]);
     const totals = aggregateByClass(survey);
-    expect(totals.every((t) => t.verb === "deferred-v2")).toBe(true);
-    expect(totals.every((t) => t.known)).toBe(true);
-    expect(bucketTotals(totals).reportOnlyBytes).toBe(30);
+    expect(totals.map((t) => t.classId).sort()).toEqual([
+      "container",
+      "sibling-worktree",
+    ]);
+    // Owner-held roots ARE guard-held — something else owns the path — so they
+    // belong in the blocked bucket, not the report-only one.
+    const buckets = bucketTotals(totals);
+    expect(buckets.blockedBytes).toBe(30);
+    expect(buckets.reportOnlyBytes).toBe(0);
+  });
+
+  it("does not list the skip-reason tokens as classes", () => {
+    expect(Object.hasOwn(KNOWN_DISK_CLASSES, "owned-by-worktree-reclaim")).toBe(
+      false
+    );
+    expect(Object.hasOwn(KNOWN_DISK_CLASSES, "owned-by-build-pool")).toBe(
+      false
+    );
+    // Exactly the runner's `TargetClass::all()`, and nothing else.
+    expect(Object.keys(KNOWN_DISK_CLASSES).sort()).toEqual([
+      "container",
+      "in-repo-canonical",
+      "sibling-nongit",
+      "sibling-worktree",
+    ]);
+  });
+});
+
+describe("scan stats", () => {
+  it("parses the walk's own report on itself", () => {
+    const survey = surveyOf({
+      items: [item()],
+      scan: {
+        dirs_visited: 12_345,
+        truncated: true,
+        read_errors: [{ path: "D:\\x", error: "permission denied" }],
+        roots_with_unknown_bytes: 2,
+        roots_with_partial_bytes: 1,
+      },
+      census_status: "fresh",
+    });
+    expect(survey.scan?.dirsVisited).toBe(12_345);
+    expect(survey.scan?.truncated).toBe(true);
+    expect(survey.scan?.readErrors).toHaveLength(1);
+    expect(survey.scan?.readErrors[0].error).toBe("permission denied");
+    expect(survey.scan?.rootsWithUnknownBytes).toBe(2);
+    expect(survey.scan?.rootsWithPartialBytes).toBe(1);
+  });
+
+  it("is null when the runner sent none — UNKNOWN, not 'the walk was complete'", () => {
+    expect(surveyOf({ items: [], census_status: "fresh" }).scan).toBeNull();
+    expect(parseScanStats(undefined)).toBeNull();
+    expect(parseScanStats("nope")).toBeNull();
+  });
+
+  it("records whether `truncated` was reported at all", () => {
+    expect(parseScanStats({ dirs_visited: 5 })?.hasTruncatedField).toBe(false);
+    expect(parseScanStats({ truncated: false })?.hasTruncatedField).toBe(true);
+  });
+
+  it("keeps an unreadable count as null rather than as zero", () => {
+    const scan = parseScanStats({ dirs_visited: "many", truncated: false });
+    expect(scan?.dirsVisited).toBeNull();
+    expect(scan?.rootsWithUnknownBytes).toBeNull();
+  });
+
+  it("separates 'the LIST is short' from 'the listed rows are under-sized'", () => {
+    // W6. A truncated walk whose listed roots were all sized exactly is a very
+    // different answer from a complete walk with one unreadable subtree, and
+    // only `scan` carries the first fact.
+    const prefix = surveyOf({
+      items: [item()],
+      summary: { bytes_incomplete: false },
+      scan: { dirs_visited: 200_000, truncated: true, read_errors: [] },
+      census_status: "fresh",
+    });
+    expect(prefix.scan?.truncated).toBe(true);
+    expect(prefix.bytesIncomplete).toBe(false);
+
+    const underSized = surveyOf({
+      items: [item({ bytes_partial: true })],
+      summary: { bytes_incomplete: true },
+      scan: { dirs_visited: 900, truncated: false, read_errors: [] },
+      census_status: "fresh",
+    });
+    expect(underSized.scan?.truncated).toBe(false);
+    expect(underSized.bytesIncomplete).toBe(true);
   });
 });
 

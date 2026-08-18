@@ -44,6 +44,42 @@ const { DiskSection } = await import("./DiskSection");
 
 const DEVICE = "11111111-1111-1111-1111-111111111111";
 
+/**
+ * A report-only root IN THE ONLY SHAPE THE RUNNER CAN EMIT ONE.
+ *
+ * `in-repo-canonical` never arrives `reclaimable`: the reaper's
+ * `boundary_verdict` returns `Err(SkipReason::ReportOnly)` unconditionally for
+ * a verbless class and `disk_survey.rs` maps every `Err` to `blocked`. The
+ * fixtures here used to say `status: "reclaimable"`, so every report-only
+ * assertion passed against a payload that cannot exist — which is why the tile
+ * rendering `0 B` over 1.67 TB shipped with a green suite.
+ */
+function reportOnlyRoot(over: Record<string, unknown> = {}) {
+  return {
+    id: "r",
+    path: "D:/repo/target",
+    class: "in-repo-canonical",
+    status: "blocked",
+    reason: "report-only",
+    reason_detail:
+      "Inside a canonical repo checkout. Measured and reported, but v1 has " +
+      "no cleanup verb for this class.",
+    verb: null,
+    ...over,
+  };
+}
+
+/**
+ * The runner's measured-empty answer. `summary.reclaimable_bytes: 0` is the
+ * MEASUREMENT; without the key the page may not claim "nothing to reclaim"
+ * (absence is unknown), so the default fixture has to carry it explicitly.
+ */
+const EMPTY_MEASURED = {
+  items: [],
+  summary: { reclaimable_bytes: 0, report_only_bytes: 0 },
+  census_status: "fresh",
+};
+
 function volumesResponse(body: unknown, ok = true, status = 200) {
   return {
     ok,
@@ -61,7 +97,7 @@ beforeEach(() => {
   httpFetch.mockResolvedValue(
     volumesResponse({ device_id: DEVICE, volumes: [] })
   );
-  runnerFetch.mockResolvedValue({ items: [], census_status: "fresh" });
+  runnerFetch.mockResolvedValue(EMPTY_MEASURED);
 });
 
 describe("DiskSection — free space", () => {
@@ -164,6 +200,58 @@ describe("DiskSection — reclaim survey", () => {
     expect(screen.getByText(/Nothing to reclaim/i)).toBeInTheDocument();
   });
 
+  it("will NOT claim it when the runner sent no reclaimable_bytes at all", async () => {
+    // W4: `fresh` + an empty list + no total is the runner not having told us.
+    runnerFetch.mockResolvedValue({ items: [], census_status: "fresh" });
+    const { container } = render(<DiskSection />);
+    await waitFor(() => expect(runnerFetch).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(container.querySelector("[data-disk-unknown]")).not.toBeNull()
+    );
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+  });
+
+  it("renders an empty list from a TRUNCATED walk as its own state", async () => {
+    // W3: the 200k visit cap hit before the walk found any root. `fresh` +
+    // `items: []` + `reclaimable_bytes: 0` is indistinguishable from a clean
+    // machine unless `bytes_incomplete` / `scan.truncated` are consulted.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: { reclaimable_bytes: 0, bytes_incomplete: true },
+      scan: { dirs_visited: 200000, truncated: true, read_errors: [] },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/visit ceiling/i);
+    expect(panel?.textContent).toMatch(/200[,.\s]?000 directories/);
+    // It must not read as the generic "could not parse" copy either — the
+    // operator needs "the walk stopped early", not "the answer was unreadable".
+    expect(panel?.textContent).toMatch(/never reached/i);
+  });
+
+  it("renders an empty list with bytes_incomplete but no scan block distinctly", async () => {
+    // Permission-denied subtrees: the ONLY signal is `bytes_incomplete`.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: { reclaimable_bytes: 0, bytes_incomplete: true },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+  });
+
   it("separates the actionable bytes from the report-only ones, with the why", async () => {
     runnerFetch.mockResolvedValue({
       items: [
@@ -174,14 +262,12 @@ describe("DiskSection — reclaim survey", () => {
           status: "reclaimable",
           bytes: 2 * 1024 ** 3,
         },
-        {
-          id: "b",
-          path: "D:/repo/target",
-          class: "in-repo-canonical",
-          status: "reclaimable",
-          bytes: 8 * 1024 ** 3,
-        },
+        reportOnlyRoot({ id: "b", bytes: 8 * 1024 ** 3 }),
       ],
+      summary: {
+        reclaimable_bytes: 2 * 1024 ** 3,
+        report_only_bytes: 8 * 1024 ** 3,
+      },
       census_status: "fresh",
       census_age_secs: 30,
     });
@@ -203,6 +289,136 @@ describe("DiskSection — reclaim survey", () => {
     expect(
       screen.getByText(/Why the report-only bytes have no button/i)
     ).toBeInTheDocument();
+  });
+
+  it("shows the report-only tile's REAL bytes, never a bare 0 B", async () => {
+    // W1/W2 regression. Against the payload the runner actually emits, the
+    // tile used to read "0 B · 0 target dirs" while 1.67 TB was relabelled
+    // into the "Blocked by a guard" tile — whose copy claimed a live build, a
+    // pin or a dirty tree was holding bytes that nothing is holding.
+    runnerFetch.mockResolvedValue({
+      items: [
+        reportOnlyRoot({
+          id: "a",
+          path: "D:/one/target",
+          bytes: 5 * 1024 ** 3,
+        }),
+        reportOnlyRoot({
+          id: "b",
+          path: "D:/two/target",
+          bytes: 3 * 1024 ** 3,
+        }),
+      ],
+      summary: { reclaimable_bytes: 0, report_only_bytes: 8 * 1024 ** 3 },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="report-only"]')
+      ).not.toBeNull()
+    );
+    const reportOnly = container.querySelector(
+      '[data-disk-bucket="report-only"]'
+    );
+    expect(reportOnly?.textContent).toContain("8.0 GiB");
+    expect(reportOnly?.textContent).toContain("2 target dirs");
+    expect(reportOnly?.textContent).not.toMatch(/\b0 B\b/);
+    // Those same bytes must NOT also appear as guard-held.
+    expect(
+      container.querySelector('[data-disk-bucket="unrecognised"]')
+    ).toBeNull();
+    expect(container.textContent).not.toMatch(/a live build, a pin/i);
+  });
+
+  it("stops the report-only divergence Alert firing on an ordinary load", async () => {
+    // W5. It used to render on EVERY real load (headline ~1.67 TB vs a derived
+    // total that was structurally 0), training the operator to ignore the
+    // honesty banners the whole feature is built out of.
+    runnerFetch.mockResolvedValue({
+      items: [
+        reportOnlyRoot({ id: "a", bytes: 1024 ** 3 }),
+        {
+          id: "c",
+          path: "D:/wt/target",
+          class: "container",
+          status: "reclaimable",
+          bytes: 4096,
+          verb: "orphan_target_reaper",
+        },
+      ],
+      summary: { reclaimable_bytes: 4096, report_only_bytes: 1024 ** 3 },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="report-only"]')
+      ).not.toBeNull()
+    );
+    expect(
+      container.querySelector("[data-disk-report-only-mismatch]")
+    ).toBeNull();
+    expect(container.querySelector("[data-disk-disagreement]")).toBeNull();
+  });
+
+  it("says the LIST is a prefix separately from the totals being floors", async () => {
+    // W6: `scan.truncated` and `summary.bytes_incomplete` are two different
+    // shortfalls and get two different sentences.
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "reclaimable",
+          bytes: 1024,
+        },
+      ],
+      summary: { bytes_incomplete: true },
+      scan: {
+        dirs_visited: 200000,
+        truncated: true,
+        read_errors: [{ path: "D:/x", error: "permission denied" }],
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector("[data-disk-scan-truncated]")
+      ).not.toBeNull()
+    );
+    expect(
+      container.querySelector("[data-disk-scan-truncated]")?.textContent
+    ).toMatch(/PREFIX of the population/i);
+    expect(
+      container.querySelector("[data-disk-bytes-incomplete]")?.textContent
+    ).toMatch(/1 directory failed to read/i);
+  });
+
+  it("does not print a partially-sized blocked root as an exact measurement", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "blocked",
+          reason: "building",
+          reason_detail: "a cargo build holds .cargo-lock",
+          bytes: 1024,
+          bytes_partial: true,
+        },
+      ],
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(container.querySelector("[data-disk-blocked-list]")).not.toBeNull()
+    );
+    const list = container.querySelector("[data-disk-blocked-list]");
+    expect(list?.textContent).toMatch(/at least 1.0 KiB \(sized only partly\)/);
   });
 
   it("renders a missing byte count as 'at least', never as a zero total", async () => {
@@ -388,7 +604,7 @@ describe("DiskSection — reclaim survey", () => {
     );
     fireEvent.click(button);
     await waitFor(() => expect(button).toBeDisabled());
-    release({ items: [], census_status: "fresh" });
+    release(EMPTY_MEASURED);
     await waitFor(() => expect(button).not.toBeDisabled());
   });
 
@@ -434,7 +650,7 @@ describe("DiskSection — reclaim survey", () => {
     expect(
       screen.queryByText(/the reclaim survey could not be read/i)
     ).not.toBeInTheDocument();
-    release({ items: [], census_status: "fresh" });
+    release(EMPTY_MEASURED);
     await waitFor(() =>
       expect(
         container.querySelector('[data-disk-empty="measured"]')
