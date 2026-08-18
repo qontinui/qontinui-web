@@ -258,6 +258,82 @@ describe("DiskSection — reclaim survey", () => {
     ).toMatch(/rather than as 0 B/i);
   });
 
+  it("renders census_status 'unavailable' as a failure, with the runner's reason", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [],
+      census_status: "unavailable",
+      census_note: "the workspace root could not be resolved",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(screen.getByText(/could not run/i)).toBeInTheDocument()
+    );
+    expect(
+      screen.getByText(/workspace root could not be resolved/i)
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+  });
+
+  it("renders a MEASURED zero when the runner sent a per-class rollup", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "reclaimable",
+          bytes: 1024,
+          verb: "orphan_target_reaper",
+        },
+      ],
+      summary: {
+        by_class: [
+          { class: "container", roots: 1, verb: "orphan_target_reaper" },
+          { class: "in-repo-canonical", roots: 0, verb: null },
+        ],
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-bucket="report-only"]')
+      ).not.toBeNull()
+    );
+    // The runner emits a row per class, so 0 here IS a measurement — and the
+    // "we cannot tell absent from zero" caveat must NOT appear.
+    expect(
+      container.querySelector('[data-disk-bucket="report-only"]')?.textContent
+    ).toContain("0 B");
+    expect(container.querySelector("[data-disk-absent-buckets]")).toBeNull();
+  });
+
+  it("says the totals are floors when the runner flags an incomplete walk", async () => {
+    runnerFetch.mockResolvedValue({
+      items: [
+        {
+          id: "a",
+          path: "D:/wt/target",
+          class: "container",
+          status: "reclaimable",
+          bytes: 1024,
+          bytes_partial: true,
+        },
+      ],
+      summary: { bytes_incomplete: true },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector("[data-disk-bytes-incomplete]")
+      ).not.toBeNull()
+    );
+    expect(
+      container.querySelector('[data-disk-bucket="actionable"]')?.textContent
+    ).toContain("sized only partly");
+  });
+
   it("warns when candidates could not be read at all", async () => {
     runnerFetch.mockResolvedValue({
       items: [{ status: "???" }],

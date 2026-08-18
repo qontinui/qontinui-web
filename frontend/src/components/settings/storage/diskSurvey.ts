@@ -32,9 +32,10 @@
  *
  * ## Wire shape this module was coded against
  *
- * The runner route did not exist when this was written (the sibling Phase 2
- * runner change adds it), so the shape below is the plan's own specification —
- * `GET /agent-worktrees/reclaimable`'s shape, narrowed to cargo target roots:
+ * `GET :9876/disk/reclaimable`, whose Rust wire types are `DiskSurvey` /
+ * `DiskReclaimItem` / `ClassSummary` in the runner's
+ * `agent_worktree/disk_survey.rs` (route registered in `mcp/disk_reclaim.rs`).
+ * The fields this parser actually reads:
  *
  * ```jsonc
  * {
@@ -46,22 +47,44 @@
  *     "status": "reclaimable" | "blocked",
  *     "reason": "building" | null,
  *     "reason_detail": "a cargo build holds .cargo-lock" | null,
- *     "bytes": 12345678,
- *     "last_used_at": "2026-08-14T09:00:00Z" | null
+ *     "bytes": 12345678 | null,               // null = UNREADABLE, never 0
+ *     "bytes_partial": false,                 // true ⇒ `bytes` is a floor
+ *     "last_used_at": "2026-08-14T09:00:00Z" | null,
+ *     "repo_root": "D:\\qontinui-root\\foo" | null,
+ *     "verb": "orphan_target_reaper" | null   // null ⇒ NO v1 verb (report-only)
  *   }],
- *   "summary": { "reclaimable_bytes": 12345678, ... },
- *   "census_status": "pending" | "fresh" | "stale",
+ *   "summary": {
+ *     "reclaimable_bytes": 12345678 | null,
+ *     "report_only_bytes": 98765432 | null,
+ *     "bytes_incomplete": false,
+ *     "by_class": [{ "class": ..., "roots": 0, "bytes": null,
+ *                    "reclaimable_roots": 0, "reclaimable_bytes": null,
+ *                    "roots_with_unknown_bytes": 0, "verb": null,
+ *                    "note": "..." }]
+ *   },
+ *   "census_status": "pending" | "fresh" | "stale" | "unavailable",
  *   "census_age_secs": 42,
- *   "census_note": "..." | null
+ *   "census_note": "..."
  * }
  * ```
  *
- * **Per-class bytes are aggregated HERE, from `items[]`** — deliberately not
- * read out of `summary`. Each item already carries `class`, `status` and
- * `bytes`, so the aggregate is derivable from the authoritative rows, and the
- * page therefore does not break if the runner spells its per-class summary
- * differently. `summary.reclaimable_bytes` (the fleet-wide total) IS read, and
- * only to cross-check the aggregate — see {@link surveyDisagreement}.
+ * Three deliberate choices about which half of the payload is authoritative:
+ *
+ * - **Per-class BYTES are aggregated here, from `items[]`.** Each item carries
+ *   `class`, `status` and `bytes`, so the totals come from the rows that are
+ *   also listed on screen; the two can never disagree with each other.
+ *   `summary.reclaimable_bytes` is read only to cross-check — see
+ *   {@link surveyDisagreement}.
+ * - **The VERB is read from the runner**, per item (falling back to the
+ *   matching `by_class` row). The runner is the thing that would execute the
+ *   verb, so it is the authority on whether one exists; {@link
+ *   KNOWN_DISK_CLASSES} is the fallback for a build that reports no verbs, not
+ *   the source of truth.
+ * - **`summary.by_class` decides whether a zero is MEASURED.** The runner emits
+ *   a row for every class it knows, including classes with zero roots — so its
+ *   presence is what licenses the UI to render `0 B` for a class instead of
+ *   refusing to. Without it, an empty bucket could equally mean the class was
+ *   never surveyed.
  */
 
 /** Whether a guard currently refuses to touch a candidate. */
@@ -86,8 +109,27 @@ export interface DiskSurveyItem {
    * while looking precise.
    */
   bytes: number;
+  /**
+   * `bytes` is a LOWER BOUND — some subtree under this root could not be read.
+   * Rendered as "at least", never dropped: a partial sum presented as exact is
+   * the same class of lie as a fabricated zero, just quieter.
+   */
+  bytesPartial: boolean;
   /** RFC 3339, or `null`. */
   lastUsedAt: string | null;
+  /** Enclosing checkout / linked worktree, when the root lives inside one. */
+  repoRoot: string | null;
+  /**
+   * `true` when the runner sent a `verb` key at all. Distinguishes "the runner
+   * says no verb covers this class" (`verb: null`) from "this runner build
+   * does not report verbs", which are different facts about actionability.
+   */
+  hasVerbField: boolean;
+  /**
+   * Which engine would remove this if the verb were armed, as the RUNNER
+   * declares it. `null` with {@link hasVerbField} set ⇒ report-only in v1.
+   */
+  verb: string | null;
 }
 
 /**
@@ -152,8 +194,21 @@ export const KNOWN_DISK_CLASSES: Record<string, DiskClassInfo> = {
   },
 };
 
-/** Freshness of the census the survey was derived from. */
-export type CensusStatus = "pending" | "fresh" | "stale" | "unknown";
+/**
+ * Freshness of the census the survey was derived from.
+ *
+ * `unavailable` is the runner's own "the preview could not be computed, and
+ * `census_note` says why" — a FAILURE, not a freshness question, and it must
+ * not be rendered as an empty result. `unknown` is this parser's verdict on a
+ * status string it does not recognise (or none at all), which must not collapse
+ * into `fresh`.
+ */
+export type CensusStatus =
+  | "pending"
+  | "fresh"
+  | "stale"
+  | "unavailable"
+  | "unknown";
 
 /** A parsed survey. Every field is what the runner said, or an explicit gap. */
 export interface DiskSurvey {
@@ -177,6 +232,18 @@ export interface DiskSurvey {
    * total. Used ONLY for the cross-check in {@link surveyDisagreement}.
    */
   summaryReclaimableBytes: number;
+  /**
+   * `summary.by_class`, or `null` when the runner sent none this parser could
+   * read. `null` means the UI may NOT render a measured zero for a class with
+   * no items — see {@link parseClassSummaries}.
+   */
+  byClass: ClassSummaryRow[] | null;
+  /**
+   * `summary.bytes_incomplete` — the runner's own statement that at least one
+   * byte total above is a lower bound (a truncated walk, an unreadable
+   * subtree, a root it could not size).
+   */
+  bytesIncomplete: boolean;
   /**
    * Entries in `items[]` this parser could not read at all. Load-bearing, not
    * diagnostics: without it, a payload of ten unreadable items renders as
@@ -250,13 +317,90 @@ export function toSurveyItem(raw: unknown): DiskSurveyItem | null {
     reason: optionalString(raw.reason),
     reasonDetail: optionalString(raw.reason_detail),
     bytes: typeof bytes === "number" ? bytes : Number.NaN,
+    bytesPartial: raw.bytes_partial === true,
     lastUsedAt: optionalString(raw.last_used_at),
+    repoRoot: optionalString(raw.repo_root),
+    // `verb: null` is the runner SAYING "no v1 verb covers this class", which
+    // is a different fact from a runner that never sent the field. Only the
+    // former may drive the report-only bucket, so the presence of the key is
+    // recorded separately from its value.
+    hasVerbField: Object.hasOwn(raw, "verb"),
+    verb: optionalString(raw.verb),
   };
 }
 
 function toCensusStatus(raw: string | null): CensusStatus {
-  if (raw === "pending" || raw === "fresh" || raw === "stale") return raw;
+  if (
+    raw === "pending" ||
+    raw === "fresh" ||
+    raw === "stale" ||
+    raw === "unavailable"
+  ) {
+    return raw;
+  }
   return "unknown";
+}
+
+/**
+ * One row of `summary.by_class`.
+ *
+ * The runner emits a row for EVERY class it knows, including classes with zero
+ * roots — so a zero here is a measured zero, unlike the absence of items in a
+ * class, which proves nothing. That distinction is what lets the UI render a
+ * genuine `0 B` for a class instead of refusing to.
+ */
+export interface ClassSummaryRow {
+  classId: string;
+  roots: number;
+  /** `NaN` when the runner could size none of this class's roots. */
+  bytes: number;
+  reclaimableRoots: number;
+  reclaimableBytes: number;
+  rootsWithUnknownBytes: number;
+  /** `null` ⇒ the runner says no v1 verb covers this class. */
+  verb: string | null;
+  hasVerbField: boolean;
+  note: string | null;
+}
+
+function toNumberOrNaN(value: unknown): number {
+  return typeof value === "number" ? value : Number.NaN;
+}
+
+function toCount(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+/**
+ * Parse `summary.by_class`, or `null` when the runner sent no readable one.
+ *
+ * `null` is load-bearing: without a per-class rollup the UI cannot tell a class
+ * the runner measured as empty from a class it never surveyed, and it says so
+ * rather than rendering a `0 B` it cannot support.
+ */
+export function parseClassSummaries(raw: unknown): ClassSummaryRow[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: ClassSummaryRow[] = [];
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue;
+    const classId = optionalString(entry.class);
+    if (classId === null) continue;
+    out.push({
+      classId,
+      roots: toCount(entry.roots),
+      bytes: toNumberOrNaN(entry.bytes),
+      reclaimableRoots: toCount(entry.reclaimable_roots),
+      reclaimableBytes: toNumberOrNaN(entry.reclaimable_bytes),
+      rootsWithUnknownBytes: toCount(entry.roots_with_unknown_bytes),
+      verb: optionalString(entry.verb),
+      hasVerbField: Object.hasOwn(entry, "verb"),
+      note: optionalString(entry.note),
+    });
+  }
+  // An array that yielded no readable row is unreadable, not empty.
+  return out.length === 0 && raw.length > 0 ? null : out;
 }
 
 /**
@@ -317,6 +461,8 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
       items,
       summaryReclaimableBytes:
         typeof summaryBytes === "number" ? summaryBytes : Number.NaN,
+      byClass: parseClassSummaries(summary?.by_class),
+      bytesIncomplete: summary?.bytes_incomplete === true,
       skippedItems: skipped,
     },
   };
@@ -341,6 +487,12 @@ export interface DiskClassTotals {
    * non-zero — the renderer says "at least".
    */
   unknownByteItems: number;
+  /**
+   * Items whose `bytes` WAS readable but is itself a lower bound
+   * (`bytes_partial`). Counted apart from {@link unknownByteItems} because
+   * they contribute to the total — the total is just not the whole truth.
+   */
+  partialByteItems: number;
 }
 
 const UNCLASSIFIED: DiskClassInfo = {
@@ -384,21 +536,43 @@ function classInfo(classId: string | null): DiskClassInfo {
  */
 export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
   const byClass = new Map<string | null, DiskClassTotals>();
+  // The runner's own per-class rollup, indexed for the verb + note lookup.
+  const declared = new Map<string, ClassSummaryRow>();
+  for (const row of survey.byClass ?? []) declared.set(row.classId, row);
+
   for (const item of survey.items) {
     let entry = byClass.get(item.classId);
     if (!entry) {
       const info = classInfo(item.classId);
+      const declaredRow =
+        item.classId === null ? undefined : declared.get(item.classId);
+      // The RUNNER is the authority on whether a verb covers a class — it is
+      // the thing that would run the verb. Reading its declaration means a
+      // class it adds later lands in the right bucket without a web release,
+      // and the hardcoded table below is only the fallback for a runner that
+      // does not report verbs at all.
+      const declaresVerb = item.hasVerbField
+        ? { has: true, verb: item.verb }
+        : declaredRow?.hasVerbField
+          ? { has: true, verb: declaredRow.verb }
+          : { has: false, verb: null };
+      const verb: DiskClassVerb = declaresVerb.has
+        ? declaresVerb.verb !== null
+          ? "v1"
+          : "deferred-v2"
+        : info.verb;
       entry = {
         classId: item.classId,
         label: info.label,
-        verb: info.verb,
-        note: info.note,
+        verb,
+        note: declaredRow?.note ?? info.note,
         known: isKnownClass(item.classId),
         reclaimableBytes: 0,
         blockedBytes: 0,
         reclaimableCount: 0,
         blockedCount: 0,
         unknownByteItems: 0,
+        partialByteItems: 0,
       };
       byClass.set(item.classId, entry);
     }
@@ -408,6 +582,7 @@ export function aggregateByClass(survey: DiskSurvey): DiskClassTotals[] {
       entry.unknownByteItems++;
       continue;
     }
+    if (item.bytesPartial) entry.partialByteItems++;
     if (item.status === "reclaimable") entry.reclaimableBytes += item.bytes;
     else entry.blockedBytes += item.bytes;
   }
@@ -431,14 +606,17 @@ export interface DiskBuckets {
   actionableBytes: number;
   actionableItems: number;
   actionableUnknownByteItems: number;
+  actionablePartialByteItems: number;
   /** `in-repo-canonical` and anything else whose verb is deferred. */
   reportOnlyBytes: number;
   reportOnlyItems: number;
   reportOnlyUnknownByteItems: number;
+  reportOnlyPartialByteItems: number;
   /** Classes this build does not recognise — neither claim applies to them. */
   unrecognisedBytes: number;
   unrecognisedItems: number;
   unrecognisedUnknownByteItems: number;
+  unrecognisedPartialByteItems: number;
   /** Candidates a guard refuses to touch right now, across every class. */
   blockedBytes: number;
   blockedItems: number;
@@ -450,12 +628,15 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
     actionableBytes: 0,
     actionableItems: 0,
     actionableUnknownByteItems: 0,
+    actionablePartialByteItems: 0,
     reportOnlyBytes: 0,
     reportOnlyItems: 0,
     reportOnlyUnknownByteItems: 0,
+    reportOnlyPartialByteItems: 0,
     unrecognisedBytes: 0,
     unrecognisedItems: 0,
     unrecognisedUnknownByteItems: 0,
+    unrecognisedPartialByteItems: 0,
     blockedBytes: 0,
     blockedItems: 0,
   };
@@ -466,14 +647,17 @@ export function bucketTotals(totals: DiskClassTotals[]): DiskBuckets {
       out.actionableBytes += t.reclaimableBytes;
       out.actionableItems += t.reclaimableCount;
       out.actionableUnknownByteItems += t.unknownByteItems;
+      out.actionablePartialByteItems += t.partialByteItems;
     } else if (t.verb === "deferred-v2") {
       out.reportOnlyBytes += t.reclaimableBytes;
       out.reportOnlyItems += t.reclaimableCount;
       out.reportOnlyUnknownByteItems += t.unknownByteItems;
+      out.reportOnlyPartialByteItems += t.partialByteItems;
     } else {
       out.unrecognisedBytes += t.reclaimableBytes;
       out.unrecognisedItems += t.reclaimableCount;
       out.unrecognisedUnknownByteItems += t.unknownByteItems;
+      out.unrecognisedPartialByteItems += t.partialByteItems;
     }
   }
   return out;
@@ -499,7 +683,9 @@ export function surveyDisagreement(survey: DiskSurvey): string | null {
   // Items with unreadable byte counts explain a shortfall honestly; that is
   // not a contradiction, it is the lower bound this module already declares.
   const unreadable = survey.items.some(
-    (i) => i.status === "reclaimable" && !Number.isFinite(i.bytes)
+    (i) =>
+      i.status === "reclaimable" &&
+      (!Number.isFinite(i.bytes) || i.bytesPartial)
   );
   if (unreadable && derived < summary) return null;
   return (

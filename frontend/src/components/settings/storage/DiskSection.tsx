@@ -180,22 +180,35 @@ function VolumeRow({ reading }: { reading: VolumeReading }) {
   );
 }
 
-/** Bytes plus an explicit lower-bound qualifier when some sizes were unreadable. */
+/**
+ * Bytes plus an explicit lower-bound qualifier.
+ *
+ * Two independent reasons a total can be a floor rather than a measurement:
+ * roots whose size could not be read AT ALL (`unknownItems`, excluded from the
+ * sum), and roots the runner sized only partially (`partialItems`, included but
+ * itself a floor). Either one makes "at least" the honest prefix.
+ */
 function ByteTotal({
   bytes,
   unknownItems,
+  partialItems = 0,
 }: {
   bytes: number;
   unknownItems: number;
+  partialItems?: number;
 }) {
+  const qualifiers: string[] = [];
+  if (unknownItems > 0) qualifiers.push(`${unknownItems} of unknown size`);
+  if (partialItems > 0) qualifiers.push(`${partialItems} sized only partly`);
+  const lowerBound = qualifiers.length > 0;
   return (
     <>
-      {unknownItems > 0 ? "at least " : ""}
+      {lowerBound ? "at least " : ""}
       {formatBytes(bytes)}
-      {unknownItems > 0 ? (
+      {lowerBound ? (
         <span className="text-xs font-normal text-muted-foreground">
           {" "}
-          ({unknownItems} of unknown size)
+          ({qualifiers.join(", ")})
         </span>
       ) : null}
     </>
@@ -206,6 +219,7 @@ function BucketTile({
   title,
   bytes,
   unknownItems,
+  partialItems = 0,
   itemCount,
   detail,
   tone,
@@ -213,6 +227,7 @@ function BucketTile({
   title: string;
   bytes: number;
   unknownItems: number;
+  partialItems?: number;
   itemCount: number;
   detail: string;
   tone: "actionable" | "report-only" | "unrecognised";
@@ -232,7 +247,11 @@ function BucketTile({
         {title}
       </p>
       <p className={`text-xl font-semibold ${accent}`}>
-        <ByteTotal bytes={bytes} unknownItems={unknownItems} />
+        <ByteTotal
+          bytes={bytes}
+          unknownItems={unknownItems}
+          partialItems={partialItems}
+        />
       </p>
       <p className="text-xs text-muted-foreground">
         {itemCount} target dir{itemCount === 1 ? "" : "s"} · {detail}
@@ -292,6 +311,22 @@ function CensusFreshness({ survey }: { survey: DiskSurvey }) {
         ? `${Math.round(survey.censusAgeSecs)}s ago`
         : `${Math.round(survey.censusAgeSecs / 60)}m ago`;
 
+  if (survey.censusStatus === "unavailable") {
+    return (
+      <Alert variant="destructive" data-disk-census="unavailable">
+        <AlertTriangle className="size-4" />
+        <AlertTitle>The survey could not run</AlertTitle>
+        <AlertDescription>
+          The runner reports that it could not compute this preview at all.
+          {survey.censusNote
+            ? ` It says: ${survey.censusNote}`
+            : " It gave no reason."}{" "}
+          Nothing below is a measurement of this disk, and an empty list here is
+          not evidence that there is nothing to reclaim.
+        </AlertDescription>
+      </Alert>
+    );
+  }
   if (survey.censusStatus === "pending") {
     return (
       <Alert variant="warning" data-disk-census="pending">
@@ -365,6 +400,7 @@ function ClassTable({ totals }: { totals: DiskClassTotals[] }) {
               <ByteTotal
                 bytes={t.reclaimableBytes}
                 unknownItems={t.unknownByteItems}
+                partialItems={t.partialByteItems}
               />
               <div className="text-xs text-muted-foreground">
                 {t.reclaimableCount} dir{t.reclaimableCount === 1 ? "" : "s"}
@@ -431,16 +467,22 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   const buckets = bucketTotals(totals);
   const disagreement = surveyDisagreement(survey);
 
-  // Buckets the survey said nothing about. Named explicitly, because their
-  // absence is NOT a measured zero — see the comment on the tile grid.
+  // A bucket with no items is a MEASURED zero only when the runner sent a
+  // per-class rollup — it emits a row for every class it knows, including the
+  // ones with zero roots. Without that rollup, an empty bucket could equally
+  // mean the runner never surveyed the class, and a `0 B` tile would be a
+  // measurement nobody took.
+  const zeroIsMeasured = survey.byClass !== null;
   const absentBuckets: string[] = [];
-  if (buckets.actionableItems === 0) {
-    absentBuckets.push(
-      "the classes the cleanup verb covers (worktree, container and non-git target roots)"
-    );
-  }
-  if (buckets.reportOnlyItems === 0) {
-    absentBuckets.push("in-repo target dirs (the report-only class)");
+  if (!zeroIsMeasured) {
+    if (buckets.actionableItems === 0) {
+      absentBuckets.push(
+        "the classes the cleanup verb covers (worktree, container and non-git target roots)"
+      );
+    }
+    if (buckets.reportOnlyItems === 0) {
+      absentBuckets.push("in-repo target dirs (the report-only class)");
+    }
   }
 
   return (
@@ -497,22 +539,24 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 and this page cannot tell that apart from a runner that does
                 not survey the class at all. The absent buckets are named
                 below instead. */}
-            {buckets.actionableItems > 0 ? (
+            {buckets.actionableItems > 0 || zeroIsMeasured ? (
               <BucketTile
                 tone="actionable"
                 title="Covered by the cleanup verb"
                 bytes={buckets.actionableBytes}
                 unknownItems={buckets.actionableUnknownByteItems}
+                partialItems={buckets.actionablePartialByteItems}
                 itemCount={buckets.actionableItems}
                 detail="worktree, container and non-git target roots"
               />
             ) : null}
-            {buckets.reportOnlyItems > 0 ? (
+            {buckets.reportOnlyItems > 0 || zeroIsMeasured ? (
               <BucketTile
                 tone="report-only"
                 title="Report-only — no cleanup verb"
                 bytes={buckets.reportOnlyBytes}
                 unknownItems={buckets.reportOnlyUnknownByteItems}
+                partialItems={buckets.reportOnlyPartialByteItems}
                 itemCount={buckets.reportOnlyItems}
                 detail="in-repo target dirs; deferred to a later phase"
               />
@@ -523,6 +567,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 title="Class not recognised here"
                 bytes={buckets.unrecognisedBytes}
                 unknownItems={buckets.unrecognisedUnknownByteItems}
+                partialItems={buckets.unrecognisedPartialByteItems}
                 itemCount={buckets.unrecognisedItems}
                 detail="this page cannot say whether a verb covers them"
               />
@@ -551,7 +596,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
             </p>
           ) : null}
 
-          {buckets.reportOnlyItems > 0 ? (
+          {buckets.reportOnlyItems > 0 || zeroIsMeasured ? (
             <Alert variant="warning" data-disk-report-only-explainer>
               <ShieldAlert className="size-4" />
               <AlertTitle>Why the report-only bytes have no button</AlertTitle>
@@ -566,6 +611,17 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 understate the disk by the single biggest number on the page.
               </AlertDescription>
             </Alert>
+          ) : null}
+
+          {survey.bytesIncomplete ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-disk-bytes-incomplete
+            >
+              The runner reports that at least one byte total above is a LOWER
+              BOUND — its walk was truncated, or a subtree could not be read.
+              The real figure is larger by an unknown amount.
+            </p>
           ) : null}
 
           <ClassTable totals={totals} />
