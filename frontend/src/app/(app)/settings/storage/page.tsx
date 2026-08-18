@@ -151,17 +151,14 @@ export default function StorageSettingsPage() {
     }
   };
 
-  if (healthLoading || loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (isOffline) {
-    return <RunnerOfflineState />;
-  }
+  // INV-D1 at the PAGE level: the two guards below are about the RUNNER's
+  // media API, and they used to sit above everything, so an offline runner
+  // blanked the whole page -- including the free-space read, which comes from
+  // COORD and needs no runner at all. A page that renders nothing is a page
+  // that cannot say why. So they now gate only the block they describe, and
+  // the Disk section renders unconditionally; it reports its own two data
+  // paths' failures itself, each with the reason attached.
+  const mediaBlocked = healthLoading || loading || isOffline;
 
   return (
     <div className="p-6 space-y-6">
@@ -179,141 +176,158 @@ export default function StorageSettingsPage() {
         </div>
       </div>
 
-      {/* Disk — free space (Phase 1 telemetry) + the read-only reclaim preview */}
+      {/* Disk — free space (Phase 1 telemetry) + the read-only reclaim preview.
+          ABOVE the runner-health guards on purpose: free space is a coord read
+          and stays answerable while the runner is offline. */}
       <DiskSection />
 
-      {/* Screenshots and videos — the pre-existing cleanup surface, gathered
-          into one block so this page has a single disk story (plan D6). */}
-      <div className="rounded-lg border border-border">
-        <div className="px-4 py-3 border-b border-border bg-muted/50">
-          <h3 className="text-sm font-medium flex items-center gap-2">
-            <HardDrive className="size-4" />
-            Screenshots and videos
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            Runner media captured per session — usage, where it lives, and
-            cleanup
-          </p>
-        </div>
-        <div className="p-4 space-y-5">
-          {storageInfo && (
-            <>
-              <StorageProgressBar
-                label="Screenshots"
-                usageMb={storageInfo.screenshot_usage_mb}
-                maxMb={storageInfo.screenshot_max_mb}
-                fileCount={storageInfo.screenshot_file_count}
-              />
-              <StorageProgressBar
-                label="Videos"
-                usageMb={storageInfo.video_usage_mb}
-                maxMb={storageInfo.video_max_mb}
-                fileCount={storageInfo.video_file_count}
-              />
-            </>
-          )}
-        </div>
-
-        <div className="px-4 py-2 border-t border-border bg-muted/30">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Where these files live
-          </h4>
-        </div>
-        <div className="p-4 space-y-3">
-          {storageInfo && (
-            <>
-              <div className="space-y-1">
-                <span
-                  data-content-role="label"
-                  data-content-label="screenshot path label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Screenshot path
-                </span>
-                <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
-                  {storageInfo.screenshot_path}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <span
-                  data-content-role="label"
-                  data-content-label="video path label"
-                  className="text-xs text-muted-foreground"
-                >
-                  Video path
-                </span>
-                <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
-                  {storageInfo.video_path}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="px-4 py-2 border-t border-border bg-muted/30">
-          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-            <Trash2 className="size-3.5" />
-            Cleanup
-          </h4>
-        </div>
-        <div className="p-4 space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <Button
-              onClick={handleCleanupScreenshots}
-              disabled={cleaningScreenshots || clearingAll}
-              variant="warning"
-              size="sm"
-            >
-              {cleaningScreenshots ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-              Delete Screenshots (30+ days)
-            </Button>
-            <Button
-              onClick={handleCleanupVideos}
-              disabled={cleaningVideos || clearingAll}
-              variant="warning"
-              size="sm"
-            >
-              {cleaningVideos ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-              Delete Videos (30+ days)
-            </Button>
+      {mediaBlocked ? (
+        healthLoading || loading ? (
+          <div
+            className="flex items-center justify-center py-20"
+            data-storage-media="loading"
+          >
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
           </div>
-
-          <div className="border-t border-border pt-4">
-            <DestructiveButton
-              onClick={handleClearAll}
-              disabled={clearingAll || cleaningScreenshots || cleaningVideos}
-              size="sm"
-            >
-              {clearingAll ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Trash className="size-4" />
-              )}
-              {/* Named for what it actually clears. Now that this page also
-                  reports build caches, "Clear All Storage" would read as a
-                  claim over bytes this button cannot touch. */}
-              Clear All Screenshots and Videos
-            </DestructiveButton>
+        ) : (
+          <div data-storage-media="offline">
+            <RunnerOfflineState />
           </div>
-
-          <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
-            <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
+        )
+      ) : (
+        /* Screenshots and videos — the pre-existing cleanup surface, gathered
+           into one block so this page has a single disk story (plan D6). */
+        <div className="rounded-lg border border-border">
+          <div className="px-4 py-3 border-b border-border bg-muted/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <HardDrive className="size-4" />
+              Screenshots and videos
+            </h3>
             <p className="text-xs text-muted-foreground">
-              Screenshots and videos are organized by session. Cleanup
-              operations only affect files older than the specified number of
-              days.
+              Runner media captured per session — usage, where it lives, and
+              cleanup
             </p>
           </div>
+          <div className="p-4 space-y-5">
+            {storageInfo && (
+              <>
+                <StorageProgressBar
+                  label="Screenshots"
+                  usageMb={storageInfo.screenshot_usage_mb}
+                  maxMb={storageInfo.screenshot_max_mb}
+                  fileCount={storageInfo.screenshot_file_count}
+                />
+                <StorageProgressBar
+                  label="Videos"
+                  usageMb={storageInfo.video_usage_mb}
+                  maxMb={storageInfo.video_max_mb}
+                  fileCount={storageInfo.video_file_count}
+                />
+              </>
+            )}
+          </div>
+
+          <div className="px-4 py-2 border-t border-border bg-muted/30">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Where these files live
+            </h4>
+          </div>
+          <div className="p-4 space-y-3">
+            {storageInfo && (
+              <>
+                <div className="space-y-1">
+                  <span
+                    data-content-role="label"
+                    data-content-label="screenshot path label"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Screenshot path
+                  </span>
+                  <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
+                    {storageInfo.screenshot_path}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span
+                    data-content-role="label"
+                    data-content-label="video path label"
+                    className="text-xs text-muted-foreground"
+                  >
+                    Video path
+                  </span>
+                  <p className="text-sm font-mono text-foreground bg-muted px-3 py-2 rounded-md border border-border break-all">
+                    {storageInfo.video_path}
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="px-4 py-2 border-t border-border bg-muted/30">
+            <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Trash2 className="size-3.5" />
+              Cleanup
+            </h4>
+          </div>
+          <div className="p-4 space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button
+                onClick={handleCleanupScreenshots}
+                disabled={cleaningScreenshots || clearingAll}
+                variant="warning"
+                size="sm"
+              >
+                {cleaningScreenshots ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                Delete Screenshots (30+ days)
+              </Button>
+              <Button
+                onClick={handleCleanupVideos}
+                disabled={cleaningVideos || clearingAll}
+                variant="warning"
+                size="sm"
+              >
+                {cleaningVideos ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash2 className="size-4" />
+                )}
+                Delete Videos (30+ days)
+              </Button>
+            </div>
+
+            <div className="border-t border-border pt-4">
+              <DestructiveButton
+                onClick={handleClearAll}
+                disabled={clearingAll || cleaningScreenshots || cleaningVideos}
+                size="sm"
+              >
+                {clearingAll ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Trash className="size-4" />
+                )}
+                {/* Named for what it actually clears. Now that this page also
+                  reports build caches, "Clear All Storage" would read as a
+                  claim over bytes this button cannot touch. */}
+                Clear All Screenshots and Videos
+              </DestructiveButton>
+            </div>
+
+            <div className="flex items-start gap-2 p-3 rounded-md bg-blue-500/5 border border-blue-500/10">
+              <Info className="size-4 text-blue-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-muted-foreground">
+                Screenshots and videos are organized by session. Cleanup
+                operations only affect files older than the specified number of
+                days.
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

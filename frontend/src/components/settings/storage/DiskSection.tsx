@@ -490,7 +490,14 @@ function ClassTable({ totals }: { totals: DiskClassTotals[] }) {
   );
 }
 
-/** Up to 8 blocked candidates with the guard that blocked each one. */
+/**
+ * Up to 8 candidates the runner refused, with the reason it gave for each.
+ *
+ * The heading says "not removable", not "blocked by a guard": every
+ * report-only root arrives with `status: "blocked"` too, and for those nothing
+ * is holding anything — there is simply no verb. Each row carries the runner's
+ * own `reason_detail`, so the distinction is legible per item as well.
+ */
 function BlockedList({ survey }: { survey: DiskSurvey }) {
   const blocked = survey.items.filter((i) => i.status === "blocked");
   if (blocked.length === 0) return null;
@@ -498,7 +505,7 @@ function BlockedList({ survey }: { survey: DiskSurvey }) {
   return (
     <div className="space-y-2" data-disk-blocked-list>
       <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Blocked right now ({blocked.length})
+        Not removable right now ({blocked.length})
       </h4>
       <ul className="space-y-1">
         {shown.map((item, i) => (
@@ -514,7 +521,14 @@ function BlockedList({ survey }: { survey: DiskSurvey }) {
                 item.reason ??
                 "the runner gave no reason for the block"}
               {" · "}
-              {formatBytes(item.bytes)}
+              {/* A partially-sized root is a FLOOR. Printing it bare would
+                  present a lower bound as a measurement -- the same class of
+                  lie as a fabricated zero, one item at a time. (`bytes` that
+                  never arrived is already handled: `formatBytes` says
+                  "unknown".) */}
+              {item.bytesPartial && Number.isFinite(item.bytes)
+                ? `at least ${formatBytes(item.bytes)} (sized only partly)`
+                : formatBytes(item.bytes)}
             </span>
           </li>
         ))}
@@ -534,11 +548,14 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   const buckets = bucketTotals(totals);
   const disagreement = surveyDisagreement(survey);
 
-  // A bucket with no reclaimable items is a MEASURED zero only when the
-  // runner's rollup is FULLY readable AND reports `roots: 0` for every class
-  // in that bucket. Trusting the rollup's mere presence would let a rollup
-  // saying "40 roots, 1.1 TB" authorise a `0 B` tile computed from a short
-  // item list -- a fabricated zero produced by the anti-fabrication check.
+  // A bucket with no items is a MEASURED zero only on positive evidence:
+  // `measuredZeroBuckets` takes the runner's own headline total when it is an
+  // explicit `0`, and otherwise a rollup that is FULLY readable and reports
+  // `roots: 0` for every class in the bucket. Trusting the rollup's mere
+  // presence would let one saying "40 roots, 1.1 TB" authorise a `0 B` tile
+  // computed from a short item list -- a fabricated zero produced by the
+  // anti-fabrication check. That function is the ONLY implementation of this
+  // rule; a second copy of a safety check is how the two drift apart.
   const measuredZero = measuredZeroBuckets(survey);
   // A class whose every root is BLOCKED still has candidates. Gating the tile
   // on the reclaimable count alone would report "no candidates" for a class
@@ -563,6 +580,19 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
     survey,
     buckets.reportOnlyBytes
   );
+
+  // Two DIFFERENT shortfalls, rendered as two different sentences:
+  // `scan.truncated` means the LIST is a prefix; `bytes_incomplete` means the
+  // listed rows are under-sized. Collapsing them tells an operator "these
+  // numbers are a bit low" when the truth is "you are not seeing the list".
+  const truncatedWalk = survey.scan?.truncated === true;
+  const readErrorCount = survey.scan?.readErrors.length ?? 0;
+  const incompleteWalk = truncatedWalk || survey.bytesIncomplete;
+  const dirsVisited = survey.scan?.dirsVisited ?? null;
+  const afterNDirs =
+    dirsVisited === null
+      ? ""
+      : ` after ${dirsVisited.toLocaleString()} directories`;
 
   return (
     <div className="space-y-4">
@@ -618,6 +648,38 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
             Nothing to reclaim. The census completed and found no cargo target
             roots that qualify — this is a measured answer, not a missing one.
           </p>
+        ) : incompleteWalk ? (
+          // An empty list from a walk the RUNNER says was short is the one
+          // shape that most looks like a clean disk and is not one. It gets
+          // its own panel because the generic "not a measurement" copy below
+          // does not say the thing an operator needs to hear: the walk stopped
+          // early, so it may never have reached the roots that are there.
+          <div
+            className="flex items-start gap-2 rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 p-3"
+            data-disk-empty="incomplete"
+          >
+            <AlertTriangle className="size-4 text-amber-600 dark:text-amber-500 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-600 dark:text-amber-500">
+                Unknown — the walk stopped short and found nothing on the way
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The census returned no candidates, but the runner also reports
+                that this walk was INCOMPLETE
+                {truncatedWalk
+                  ? ` — it hit its visit ceiling${afterNDirs}, so the list is a` +
+                    " prefix of a population it never finished enumerating"
+                  : readErrorCount > 0
+                    ? ` — ${readErrorCount} director${
+                        readErrorCount === 1 ? "y" : "ies"
+                      } could not be read`
+                    : " (a truncated walk, or a subtree it could not read)"}
+                . An empty list from a walk that stopped early says nothing
+                about what is on this disk: the roots may simply be somewhere
+                the walk never reached. Press Preview to run a fresh census.
+              </p>
+            </div>
+          </div>
         ) : (
           <UnknownPanel
             headline="the candidate list is empty, but that is not a measurement"
@@ -669,6 +731,11 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 detail="this page cannot say whether a verb covers them"
               />
             ) : null}
+            {/* Report-only roots are NOT counted here. They arrive `blocked`
+                only because no verb exists for their class, so calling them
+                guard-held would attribute ~47 % of the bytes on this box to a
+                live build that does not exist -- and would count them twice,
+                since the report-only tile carries the whole class. */}
             {buckets.blockedItems > 0 ? (
               <BucketTile
                 tone="unrecognised"
@@ -677,7 +744,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 unknownItems={buckets.blockedUnknownByteItems}
                 partialItems={buckets.blockedPartialByteItems}
                 itemCount={buckets.blockedItems}
-                detail="a live build, a pin or a dirty tree holds these"
+                detail="something holds these now: a live build, a pin, a dirty tree or another engine that owns the path"
               />
             ) : null}
           </div>
@@ -711,14 +778,32 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
             </Alert>
           ) : null}
 
+          {truncatedWalk ? (
+            <p
+              className="text-xs text-amber-600 dark:text-amber-500"
+              data-disk-scan-truncated
+            >
+              The walk hit its visit ceiling{afterNDirs}, so the list below is a
+              PREFIX of the population, not all of it. Roots the walk never
+              reached are missing entirely — they are unvisited, not absent, and
+              no total here is a measurement of this machine.
+            </p>
+          ) : null}
+
           {survey.bytesIncomplete ? (
             <p
               className="text-xs text-muted-foreground"
               data-disk-bytes-incomplete
             >
-              The runner reports that at least one byte total above is a LOWER
-              BOUND — its walk was truncated, or a subtree could not be read.
-              The real figure is larger by an unknown amount.
+              {`${
+                truncatedWalk ? "Separately: at least" : "At least"
+              } one byte total above is a LOWER BOUND — a subtree could not be read, or a root could not be sized${
+                readErrorCount > 0
+                  ? ` (${readErrorCount} director${
+                      readErrorCount === 1 ? "y" : "ies"
+                    } failed to read)`
+                  : ""
+              }. The real figure is larger by an unknown amount. This is about the roots that ARE listed; whether the LIST is complete is a separate question.`}
             </p>
           ) : null}
 
