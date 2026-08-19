@@ -17,6 +17,9 @@ from __future__ import annotations
 import ast
 import json
 import math
+import os
+import types
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import get_type_hints
 
@@ -28,6 +31,7 @@ from tests.memory_recall.scorer import (
     CREDIT_Z_THRESHOLD,
     LOWER_IS_BETTER_METRICS,
     CaseScore,
+    SuiteScore,
     aggregate,
     correction_precedence,
     dcg_at_k,
@@ -539,22 +543,124 @@ class TestPairedDelta:
         with pytest.raises(ValueError):
             json.dumps({"z": uniform.z}, allow_nan=False)
 
-    def test_the_cost_metrics_are_flagged_as_lower_is_better(self) -> None:
-        # `promoted` is literally candidate > control, so the two
-        # cost-shaped metrics need their direction reported, not assumed.
-        assert "noise_rate_at_10" in LOWER_IS_BETTER_METRICS
-        assert "token_cost_at_10" in LOWER_IS_BETTER_METRICS
-        assert "recall_at_10" not in LOWER_IS_BETTER_METRICS
+    #: Four cases whose per-case noise differences are around -0.375 with a
+    #: small, non-zero spread, so |z| lands far above CREDIT_Z_THRESHOLD
+    #: without tripping the uniform-lift (se == 0) branch.
+    _QUIET = (0.1, 0.1, 0.1, 0.2)
+    _NOISY = (0.5, 0.5, 0.5, 0.5)
 
+    @staticmethod
+    def _noise(values: tuple[float, ...]) -> list[CaseScore]:
+        return [
+            _case(f"c{i}", noise_rate_at_10=v) for i, v in enumerate(values, start=1)
+        ]
+
+    def test_the_cost_metrics_are_flagged_as_lower_is_better(self) -> None:
+        # `promoted` is deliberately literal — candidate > control — so on a
+        # cost-shaped metric it reads "scored higher", which is worse. That
+        # literalness is the reason the direction has to be REPORTED
+        # alongside it (see the driver test below) rather than inferred.
         noisier = paired_delta(
-            [_case("a", noise_rate_at_10=0.1), _case("b", noise_rate_at_10=0.1)],
-            [_case("a", noise_rate_at_10=0.5), _case("b", noise_rate_at_10=0.3)],
+            self._noise(self._QUIET),
+            self._noise(self._NOISY),
             metric="noise_rate_at_10",
         )
-        # Higher noise. `promoted` says "scored higher", which on this
-        # metric is worse — the flag above is what tells a reader so.
         assert noisier.promoted is True
         assert noisier.metric in LOWER_IS_BETTER_METRICS
+
+    def test_a_significant_improvement_on_a_lower_is_better_metric_is_credited(
+        self,
+    ) -> None:
+        """Noise falls hard: z is about -15, and that is a CREDITED win.
+
+        An unsigned ``z >= CREDIT_Z_THRESHOLD`` reads False here — it
+        withholds credit from the largest improvement the harness can
+        measure, on a metric the report renders with a "lower is better"
+        marker beside the flag.
+        """
+        quieter = paired_delta(
+            self._noise(self._NOISY),
+            self._noise(self._QUIET),
+            metric="noise_rate_at_10",
+        )
+        assert quieter.mean_lift < 0
+        assert quieter.z <= -CREDIT_Z_THRESHOLD
+        assert quieter.credited_2sigma is True
+        # `promoted` stays literal and stays False: the candidate did not
+        # score higher. The two flags mean different things and this is
+        # exactly the case that shows it.
+        assert quieter.promoted is False
+
+    def test_a_significant_regression_on_a_lower_is_better_metric_is_not_credited(
+        self,
+    ) -> None:
+        """The mirror, and the more dangerous half.
+
+        An unsigned threshold labels this significant REGRESSION
+        ``credited_2sigma=True`` and prints it next to ``lower_is_better``.
+        """
+        noisier = paired_delta(
+            self._noise(self._QUIET),
+            self._noise(self._NOISY),
+            metric="noise_rate_at_10",
+        )
+        assert noisier.mean_lift > 0
+        assert noisier.z >= CREDIT_Z_THRESHOLD
+        assert noisier.credited_2sigma is False
+
+    def test_a_higher_is_better_metric_keeps_the_unsigned_reading(self) -> None:
+        """The flip must be confined to LOWER_IS_BETTER_METRICS."""
+        better = paired_delta(
+            [_case(f"c{i}", recall_at_10=v) for i, v in enumerate(self._QUIET, 1)],
+            [_case(f"c{i}", recall_at_10=v) for i, v in enumerate(self._NOISY, 1)],
+            metric="recall_at_10",
+        )
+        assert better.z >= CREDIT_Z_THRESHOLD
+        assert better.credited_2sigma is True
+
+        worse = paired_delta(
+            [_case(f"c{i}", recall_at_10=v) for i, v in enumerate(self._NOISY, 1)],
+            [_case(f"c{i}", recall_at_10=v) for i, v in enumerate(self._QUIET, 1)],
+            metric="recall_at_10",
+        )
+        assert worse.z <= -CREDIT_Z_THRESHOLD
+        assert worse.credited_2sigma is False
+
+    def test_the_driver_reports_the_direction_of_every_paired_metric(self) -> None:
+        """``lower_is_better`` has exactly one consumer, and nothing tested it.
+
+        Deleting the key from ``_paired_rows`` left the whole suite green:
+        the only coverage it had was a test that restated the literal
+        contents of ``LOWER_IS_BETTER_METRICS``. A reader of the PR comment
+        who sees ``promoted: true`` on ``noise_rate_at_10`` with no
+        direction beside it reads a regression as a win, which is the
+        misreading the field exists to prevent — so the field's presence in
+        the rendered row is what has to be asserted.
+        """
+        tree = ast.parse(_driver_source())
+        rows = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_paired_rows"
+        ]
+        assert len(rows) == 1, "the driver's paired-row renderer was renamed"
+        keys = {
+            key.value
+            for node in ast.walk(rows[0])
+            if isinstance(node, ast.Dict)
+            for key in node.keys
+            if isinstance(key, ast.Constant)
+        }
+        assert {
+            "metric",
+            "promoted",
+            "credited_2sigma",
+            "credit_z_threshold",
+            "lower_is_better",
+        } <= keys, (
+            "the driver's paired row stopped reporting a field the two "
+            f"booleans cannot be read without: {sorted(keys)}"
+        )
 
 
 class TestShuffleDetection:
@@ -795,6 +901,115 @@ def _leaves(value: object) -> list[object]:
     return [value]
 
 
+#: Every call name that can pull bytes back off a filesystem. The driver may
+#: not point one of these at the sealed side.
+_READ_PRIMITIVES = frozenset(
+    {
+        "open",
+        "read",
+        "read_bytes",
+        "read_text",
+        "readlines",
+        "load",
+        "loads",
+        "iterdir",
+        "glob",
+        "rglob",
+        "listdir",
+        "scandir",
+        "walk",
+    }
+)
+
+#: What makes an expression sealed-shaped on its face. Deliberately coarse:
+#: a false positive costs a rename, a false negative costs the seal.
+_SEALED_TOKENS = ("holdout", "sealed")
+
+
+def _is_none(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def _sealed_read_violations(source: str) -> list[str]:
+    """Every read primitive in ``source`` whose expression is sealed-derived.
+
+    Substring-matching a single call's own source segment — which is what
+    this check did until 2026-08-19 — is evaded by one intermediate
+    variable::
+
+        directory = Path(os.environ[SEALED_DIR_ENV])
+        scores = json.loads((directory / "holdout-hybrid.json").read_text())
+
+    The ``read_text`` call's own segment names neither "holdout" nor
+    "sealed" once the filename comes from a variable, so the old check saw
+    nothing. Sealed-ness is therefore PROPAGATED here: a binding whose
+    right-hand side is sealed-shaped taints its targets, run to a fixpoint
+    so a chain of intermediates cannot launder it, and a tainted name
+    anywhere inside a read call's expression is a violation.
+
+    ``test_the_sealed_read_detector_catches_an_indirection`` is the positive
+    control — without it this function's clean verdict over the driver
+    proves nothing, since the driver contains no read primitive at all.
+    """
+    tree = ast.parse(source)
+    tainted: set[str] = set()
+
+    def _is_sealed(node: ast.AST | None) -> bool:
+        if node is None:
+            return False
+        segment = (ast.get_source_segment(source, node) or "").lower()
+        if any(token in segment for token in _SEALED_TOKENS):
+            return True
+        return any(
+            isinstance(child, ast.Name) and child.id in tainted
+            for child in ast.walk(node)
+        )
+
+    def _bound_names(target: ast.AST) -> set[str]:
+        return {c.id for c in ast.walk(target) if isinstance(c, ast.Name)}
+
+    while True:
+        grew = False
+        for node in ast.walk(tree):
+            values: list[ast.AST | None]
+            targets: list[ast.AST]
+            if isinstance(node, ast.Assign):
+                values, targets = [node.value], list(node.targets)
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                values, targets = [node.value], [node.target]
+            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                values, targets = [node.iter], [node.target]
+            elif isinstance(node, ast.withitem):
+                values = [node.context_expr]
+                targets = [node.optional_vars] if node.optional_vars else []
+            else:
+                continue
+            if not any(_is_sealed(value) for value in values):
+                continue
+            for target in targets:
+                for name in _bound_names(target) - tainted:
+                    tainted.add(name)
+                    grew = True
+        if not grew:
+            break
+
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        elif isinstance(node.func, ast.Name):
+            name = node.func.id
+        else:
+            continue
+        if name not in _READ_PRIMITIVES:
+            continue
+        if _is_sealed(node):
+            violations.append(ast.get_source_segment(source, node) or name)
+    return violations
+
+
 class TestHoldoutSplit:
     """The split must be a partition, stratified, and identical everywhere."""
 
@@ -946,6 +1161,164 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             "deliberately."
         )
 
+    def test_the_two_destinations_cannot_be_configured_to_coincide(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The module's own claim, CHECKED rather than asserted in prose.
+
+        ``holdout.py`` says the sealed directory and the report path "never
+        coincide" and then never looked at the report path. A run that
+        pointed both at one place would write holdout scores exactly where
+        the PR comment step reads.
+        """
+        collision = tmp_path / "same-place"
+        monkeypatch.setenv(ho.SEALED_DIR_ENV, str(collision))
+        monkeypatch.setenv(ho.REPORT_PATH_ENV, str(collision))
+        with pytest.raises(ValueError, match="never be the file"):
+            ho.sealed_directory()
+
+        monkeypatch.setenv(ho.REPORT_PATH_ENV, str(tmp_path / "recall-eval.json"))
+        assert ho.sealed_directory() == collision
+
+    def test_the_fallback_directory_identifies_its_run(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``backend-ci.yml`` sets neither variable, so this is the real path.
+
+        A fixed shared name under ``gettempdir()`` collected
+        ``holdout-*.json`` from every earlier branch that ran the suite on
+        the same machine, indistinguishable from this run's. Nothing reads
+        them, so it was never a leak — but the sealed file's whole purpose
+        is to be audited afterwards by someone who needs to know which run
+        wrote it.
+        """
+        monkeypatch.delenv(ho.SEALED_DIR_ENV, raising=False)
+        monkeypatch.delenv(ho.REPORT_PATH_ENV, raising=False)
+        monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+
+        local = ho.sealed_directory()
+        assert str(os.getpid()) in local.name
+        # Stable within the process: the driver calls `sealed_runner()` once
+        # per arm and all three must land in ONE directory.
+        assert ho.sealed_directory() == local
+
+        monkeypatch.setenv("GITHUB_RUN_ID", "1234567890")
+        in_ci = ho.sealed_directory()
+        assert "1234567890" in in_ci.name
+        assert in_ci != local
+
+    def test_the_module_exposes_no_mutable_constant(self) -> None:
+        """The other half of the surface pin — and the one that was missing.
+
+        ``PUBLIC_CALLABLES`` pins callables only, on the stated grounds that
+        "a ``str`` cannot return a score". True, and beside the point: a
+        ``dict`` can. ``LAST_SUITE: dict = {}`` at module scope, written by
+        ``score()``, passes every one of the other five mechanisms — the
+        return is still ``None``, ``__slots__`` is untouched, the runner
+        still has one public member, the directory is still write-only, no
+        frame holds a score — and hands the holdout to anyone who imports
+        the module.
+
+        Two assertions, because the name pin alone is editable: the second
+        requires every public constant to be IMMUTABLE, which a mutable
+        module-scope stash cannot satisfy by being added to the set.
+        """
+        non_callables = {
+            name: value
+            for name, value in vars(ho).items()
+            if not name.startswith("_")
+            and not callable(value)
+            and not isinstance(value, types.ModuleType)
+            # `from __future__ import annotations` binds a `_Feature`.
+            and getattr(type(value), "__module__", "") != "__future__"
+        }
+        assert set(non_callables) == ho.PUBLIC_CONSTANTS, (
+            "the holdout module's constant surface changed: "
+            f"{sorted(set(non_callables) ^ ho.PUBLIC_CONSTANTS)}. A module-scope "
+            "container here is a place a holdout score can be stashed and read "
+            "back — if it really is inert, add it to PUBLIC_CONSTANTS "
+            "deliberately."
+        )
+        mutable = {
+            name: value
+            for name, value in non_callables.items()
+            if not isinstance(value, (str, bytes, int, float, frozenset, tuple))
+        }
+        assert mutable == {}, (
+            f"a public constant is mutable: {sorted(mutable)}. A dict, list or "
+            "set at module scope is somewhere `score()` can write a suite to, "
+            "which is the one thing this module has no other mechanism against."
+        )
+
+    def test_a_write_failure_renders_no_score_in_any_frame(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The interpreter's own error reporting is a sixth path out.
+
+        ``backend/pytest.ini`` sets ``--showlocals`` unconditionally and
+        ``-q`` does not cancel it, so an exception escaping ``score()``
+        prints EVERY traceback frame's locals into the job log on the PR
+        checks page. The write must still raise (the seal may not be silent
+        about its own breakage) — so what has to be true instead is that no
+        frame on the way out is holding a score.
+
+        This is a mechanism, not a rule: it provokes the two realistic
+        failures (a ``mkdir`` that cannot succeed, a write that cannot) and
+        inspects the actual ``f_locals`` of every frame in the actual
+        traceback.
+        """
+        sealed_metrics = (
+            "recall_at_5",
+            "recall_at_10",
+            "recall_at_20",
+            "reciprocal_rank",
+            "ndcg_at_10",
+            "noise_rate_at_10",
+            "token_cost_at_10",
+            "correction_precedence",
+        )
+
+        def _explode(*args: object, **kwargs: object) -> None:
+            raise OSError(30, "Read-only file system")
+
+        # `mkdir` is the read-only-mount / foreign-uid failure; `open` is
+        # the disk-full one. Both used to propagate out of the same frame
+        # that held `suite` and `payload`.
+        for target in ("mkdir", "open"):
+            with monkeypatch.context() as patched:
+                patched.setattr(Path, target, _explode, raising=True)
+                with pytest.raises(OSError) as raised:
+                    self._score(tmp_path)
+
+            # Only the frames of the module under test. This test's own
+            # frame legitimately holds `sealed_metrics` below, and the
+            # property being asserted is about `holdout.py`'s frames.
+            frames = []
+            walker = raised.value.__traceback__
+            while walker is not None:
+                if walker.tb_frame.f_code.co_filename == ho.__file__:
+                    frames.append(walker.tb_frame)
+                walker = walker.tb_next
+            assert len(frames) >= 2, (
+                f"patching Path.{target} raised out of {len(frames)} holdout "
+                "frame(s); expected `score` and the write helper it delegates to"
+            )
+
+            for frame in frames:
+                for name, value in frame.f_locals.items():
+                    assert not isinstance(value, (SuiteScore, CaseScore)), (
+                        f"frame {frame.f_code.co_name} holds a score object in "
+                        f"local {name!r} while raising — --showlocals renders it"
+                    )
+                    leaked = [m for m in sealed_metrics if m in repr(value)]
+                    assert not leaked, (
+                        f"frame {frame.f_code.co_name} local {name!r} renders "
+                        f"holdout metric(s) {leaked} into a traceback the CI "
+                        "log prints in full. Serialise before the write and "
+                        "drop the score-bearing locals, or wrap them so their "
+                        "repr withholds the contents."
+                    )
+
     def test_the_sealed_write_actually_happens(self, tmp_path: Path) -> None:
         """Positive control: the seal must not be vacuously satisfied.
 
@@ -980,15 +1353,43 @@ class TestSealedHoldoutIsUnreachableByConstruction:
     def test_the_split_report_carries_no_score(self) -> None:
         """The only holdout-derived block in the report is number-free.
 
-        Every metric this harness produces is a float, so "no float
-        anywhere in this block" is a mechanical statement of "no score
-        leaked into the report" — and one a leak cannot satisfy.
+        Stated TOTALLY: a leaf is a string, or an int under one of the two
+        pinned count keys. The old spelling was "no float anywhere", which
+        three of this harness's own metrics walk straight past — see
+        :func:`~tests.memory_recall.holdout.split_report_violations`.
         """
         split = ho.split_cases([(f"case-{i:02d}", "only") for i in range(1, 11)])
         report = ho.split_report(split)
-        assert not [leaf for leaf in _leaves(report) if isinstance(leaf, float)]
+        assert ho.split_report_violations(report) == []
         assert report["holdout_cases"] == split.holdout_count
         assert report["holdout_case_ids"] == list(split.holdout)
+
+    def test_an_int_metric_in_the_split_block_is_a_violation(self) -> None:
+        """The half "no float" never covered, and the plan headlines it.
+
+        ``SuiteScore.total_token_cost_at_10``, ``.correction_pairs`` and
+        ``.correction_precedence_passes`` are ``int``. A
+        ``"holdout_token_cost": 374`` grown into the split block is a
+        holdout score in the emitted report, and a float-only check calls
+        it clean.
+        """
+        clean = ho.split_report(ho.split_cases([("a", "x"), ("b", "x")]))
+
+        leaked_int = dict(clean, holdout_token_cost=374)
+        assert ho.split_report_violations(leaked_int) == ["holdout_token_cost=374"]
+
+        leaked_float = dict(clean, holdout_recall_at_10=0.42)
+        assert ho.split_report_violations(leaked_float) == ["holdout_recall_at_10=0.42"]
+
+        # Nesting is not an escape either — the DB-side check used to walk
+        # `report["split"].values()` one level deep.
+        nested = dict(clean, holdout_means={"mrr": 0.31})
+        assert ho.split_report_violations(nested) == ["mrr=0.31"]
+
+        # The two pinned count keys stay legal wherever they appear, and a
+        # bool is not one of them: `False` is one `+` away from `0`.
+        assert ho.split_report_violations({"train_cases": 41}) == []
+        assert ho.split_report_violations({"train_cases": True}) == ["train_cases=True"]
 
     def test_the_driver_discards_the_sealed_call(self) -> None:
         """The call's value is thrown away SYNTACTICALLY, in the parse tree.
@@ -1024,44 +1425,69 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             )
 
     def test_the_driver_never_reads_the_sealed_output(self) -> None:
-        """No read primitive in the driver touches anything holdout-shaped."""
-        source = _driver_source()
-        tree = ast.parse(source)
-        read_primitives = {
-            "open",
-            "read",
-            "read_bytes",
-            "read_text",
-            "readlines",
-            "load",
-            "loads",
-            "iterdir",
-            "glob",
-            "rglob",
-            "listdir",
-            "scandir",
-            "walk",
-        }
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if isinstance(node.func, ast.Attribute):
-                name = node.func.attr
-            elif isinstance(node.func, ast.Name):
-                name = node.func.id
-            else:
-                continue
-            if name not in read_primitives:
-                continue
-            segment = (ast.get_source_segment(source, node) or "").lower()
-            assert "holdout" not in segment and "sealed" not in segment, (
-                f"the driver reads from the sealed side: {segment!r}. The "
-                "sealed directory is not on any read path it uses, and that "
-                "is the whole property."
+        """No read primitive in the driver touches anything sealed-derived."""
+        violations = _sealed_read_violations(_driver_source())
+        assert violations == [], (
+            f"the driver reads from the sealed side: {violations}. The sealed "
+            "directory is not on any read path it uses, and that is the whole "
+            "property."
+        )
+
+    def test_the_sealed_read_detector_catches_an_indirection(self) -> None:
+        """Positive control for the check above, and it is load-bearing.
+
+        The driver contains no read primitive at all, so a clean verdict
+        from :func:`_sealed_read_violations` over it is consistent with a
+        detector that finds nothing ever. What the detector has to catch is
+        the cheap evasion: bind the sealed directory to a name, then read
+        through the name, so no read call's own source segment mentions the
+        holdout. Each snippet below is that evasion at one more remove.
+        """
+        direct = "json.loads(Path(sealed_directory() / 'x.json').read_text())"
+        one_hop = (
+            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+            "payload = json.loads((directory / 'x.json').read_text())\n"
+        )
+        two_hops = (
+            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+            "elsewhere = directory\n"
+            "payload = json.loads((elsewhere / 'x.json').read_text())\n"
+        )
+        loop = (
+            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+            "for path in directory.iterdir():\n"
+            "    payload = json.loads(path.read_text())\n"
+        )
+        for label, snippet in (
+            ("direct", direct),
+            ("one_hop", one_hop),
+            ("two_hops", two_hops),
+            ("loop", loop),
+        ):
+            assert _sealed_read_violations(snippet), (
+                f"the sealed-read detector missed the {label} evasion — it is "
+                "substring-matching one call's segment again, which is the "
+                "hole this control exists to keep closed"
             )
 
+        # ...and it does not simply flag every read: the tuning path's own
+        # single legitimate read (the report) must stay clean, or the check
+        # above would be passing for the wrong reason.
+        assert (
+            _sealed_read_violations(
+                "report = json.loads(Path(os.environ[REPORT_PATH_ENV]).read_text())\n"
+            )
+            == []
+        )
+
     def test_the_driver_imports_no_reader(self) -> None:
-        """Allowlist the holdout symbols the tuning path may even name."""
+        """Allowlist the holdout symbols the tuning path may even name.
+
+        ``SEALED_DIR_ENV`` used to sit in this allowlist although the driver
+        does not import it. An unused entry is not free: it licences exactly
+        the binding — ``Path(os.environ[SEALED_DIR_ENV])`` — that the
+        sealed-read check has to work hardest to catch.
+        """
         tree = ast.parse(_driver_source())
         imported: set[str] = set()
         for node in ast.walk(tree):
@@ -1073,11 +1499,125 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         assert imported <= {
             "CaseSplit",
             "HoldoutObservation",
-            "SEALED_DIR_ENV",
             "sealed_runner",
             "split_cases",
             "split_report",
+            "split_report_violations",
         }, f"the driver imported an unexpected holdout symbol: {sorted(imported)}"
+
+    def test_the_holdout_leg_guards_correction_seeding(self) -> None:
+        """Both legs of ``_run_arm`` get their correction pair the same way.
+
+        The train leg has always asserted that both halves of a pair were
+        actually seeded — "would score a silent precedence fail". The
+        sealed leg passed ``case.correction`` straight through with no such
+        check, under a comment claiming "same arm, same client, same
+        integrity checks". Two of the twelve correction cases are sealed by
+        the current draw, so renaming a corrector key in ``cases.json``
+        without updating ``records.json`` killed the train side loudly and
+        wrote a silent ``False`` into ``holdout-*.json`` forever, where
+        nothing reads it.
+
+        Asserted as "there is ONE door", not as "there are two asserts":
+        the guard is the door, so a leg that bypasses it is what fails here.
+        """
+        tree = ast.parse(_driver_source())
+        run_arm = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_run_arm"
+        ]
+        assert len(run_arm) == 1, "the driver's per-arm runner was renamed"
+
+        def _is_guarded(node: ast.AST) -> bool:
+            return (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_seeded_correction"
+            )
+
+        corrections = [
+            keyword
+            for node in ast.walk(run_arm[0])
+            if isinstance(node, ast.Call)
+            for keyword in node.keywords
+            if keyword.arg == "correction"
+        ]
+        assert len(corrections) >= 2, (
+            "expected a correction on both the train leg (`score_case`) and "
+            f"the sealed leg (`HoldoutObservation`); found {len(corrections)}"
+        )
+        for keyword in corrections:
+            value = keyword.value
+            assert _is_guarded(value) or (
+                isinstance(value, ast.Name)
+                and any(
+                    isinstance(assign, ast.Assign)
+                    and _is_guarded(assign.value)
+                    and any(
+                        isinstance(t, ast.Name) and t.id == value.id
+                        for t in assign.targets
+                    )
+                    for assign in ast.walk(run_arm[0])
+                )
+            ), (
+                "a leg of `_run_arm` builds a correction pair without going "
+                "through `_seeded_correction`. On the sealed leg that is a "
+                "silent precedence fail written into a file nothing reads."
+            )
+
+    def test_the_workflow_path_filter_covers_every_module_the_driver_imports(
+        self,
+    ) -> None:
+        """A change that moves the numbers must be able to TRIGGER the job.
+
+        ``memory-recall-eval.yml`` is ``paths:``-filtered, and the filter
+        listed the harness's own files but not ``test_memory_api_db.py`` —
+        from which the driver imports ``_SETUP_SQL`` (the corpus DDL) and
+        ``HashingStubEmbedder``, whose ``_vec`` synthesises the query vector
+        for both hybrid arms. Editing ``_vec`` moves every hybrid number and
+        the entire paired comparison, and until 2026-08-19 that shipped with
+        no eval run and no PR comment at all.
+
+        Scoped to ``tests.`` imports on purpose: those are the harness's own
+        substrate, and there is no reason for one of them to sit outside a
+        filter that already lists the rest.
+        """
+        workflow = _WORKFLOW.read_text(encoding="utf-8")
+        patterns = [
+            line.strip().lstrip("- ").strip("'\"")
+            for line in workflow.split("paths:", 1)[1]
+            .split("workflow_dispatch")[0]
+            .splitlines()
+            if line.strip().startswith("- ")
+        ]
+        assert patterns, "the workflow no longer has a paths filter"
+
+        repo_root = _WORKFLOW.parents[2]
+        backend = Path("backend")
+        tree = ast.parse(_driver_source())
+        required: set[str] = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            module = node.module or ""
+            if not module.startswith("tests."):
+                continue
+            base = backend / Path(*module.split("."))
+            if (repo_root / base).is_dir():
+                required |= {
+                    (base / f"{alias.name}.py").as_posix() for alias in node.names
+                }
+            else:
+                required.add(base.with_suffix(".py").as_posix())
+
+        assert required, "the driver stopped importing the harness modules"
+        for path in sorted(required):
+            assert any(fnmatch(path, pattern) for pattern in patterns), (
+                f"{path} is imported by the eval driver but no `paths:` entry in "
+                "memory-recall-eval.yml matches it — a change there moves the "
+                "reported numbers with no eval job and no PR comment"
+            )
 
     def test_the_comment_step_reads_only_the_report(self) -> None:
         """The last link: the PR comment has no path to the sealed file."""
@@ -1163,27 +1703,70 @@ class TestPerComponentWiringMarker:
             WiringLedger(())
 
     def test_the_driver_marks_every_declared_component(self) -> None:
-        """All five the plan names are promoted somewhere in the harness."""
-        assert set(MEMORY_RECALL_COMPONENTS) == {
-            "fts_only",
-            "hybrid",
-            "hybrid_link",
-            "paired",
-            "sealed_holdout",
-        }
+        """All five the plan names are promoted, and this says so WITHOUT a DB.
+
+        The previous version of this test looked for the two literal
+        ``mark_wired("paired" | "sealed_holdout", ...)`` calls and stopped
+        there, because the three arms are marked through ``_run_arm``'s
+        ``arm`` parameter rather than a literal. Deleting
+        ``wiring.mark_wired(arm, ...)`` outright left it green — only the
+        Postgres-gated ``report["wiring"]["not_wired"] == []`` caught that,
+        which means it went uncaught everywhere Postgres is absent, i.e.
+        every local run and every non-eval CI job.
+
+        So the arm marking is now read the way it is actually written: a
+        ``mark_wired`` call taking ``_run_arm``'s own ``arm`` parameter,
+        plus the ``arm=`` literals at the REPORTED call sites (the ones
+        that pass a ledger). Their union has to be the declared set.
+        """
         tree = ast.parse(_driver_source())
-        marked: set[str] = set()
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "mark_wired"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-            ):
-                marked.add(str(node.args[0].value))
-        # The three arms are marked through the `arm` variable rather than
-        # a literal, so only the two component-specific literals appear.
-        assert {"paired", "sealed_holdout"} <= marked, (
-            f"the driver stopped marking a component explicitly: {sorted(marked)}"
+
+        literal_marks = {
+            str(node.args[0].value)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "mark_wired"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+        }
+
+        run_arm = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_run_arm"
+        ]
+        assert len(run_arm) == 1, "the driver's per-arm runner was renamed"
+        marks_its_arm = [
+            node
+            for node in ast.walk(run_arm[0])
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "mark_wired"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id == "arm"
+        ]
+        assert marks_its_arm, (
+            "`_run_arm` no longer promotes the arm it ran. Every reported arm "
+            "would sit at `not_wired` in a complete run — a marker claiming "
+            "the instrumentation never executed when it did."
+        )
+
+        reported_arms = {
+            keyword.value.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_run_arm"
+            and any(
+                kw.arg == "wiring" and not _is_none(kw.value) for kw in node.keywords
+            )
+            for keyword in node.keywords
+            if keyword.arg == "arm" and isinstance(keyword.value, ast.Constant)
+        }
+        assert literal_marks | reported_arms == set(MEMORY_RECALL_COMPONENTS), (
+            "the components the driver actually promotes are no longer the "
+            f"declared set: {sorted(literal_marks | reported_arms)} vs "
+            f"{sorted(MEMORY_RECALL_COMPONENTS)}"
         )

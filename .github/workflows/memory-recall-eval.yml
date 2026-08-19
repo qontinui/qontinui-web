@@ -35,6 +35,16 @@ on:
       # The job runs this suite first and lets a failure fail the job, so a
       # change to it must be able to trigger the job that gates on it.
       - 'backend/tests/test_memory_recall_scorer.py'
+      # The driver IMPORTS this module: `_SETUP_SQL` (the corpus DDL),
+      # `HashingStubEmbedder` (whose `_vec` synthesises the query vector for
+      # both hybrid arms) and `_content_sha256`. A change to `_vec` moves
+      # every hybrid number and the entire paired comparison, so a change
+      # here must be able to trigger the job — it was missing until
+      # 2026-08-19, which meant that class of change shipped with no eval
+      # run and no PR comment at all.
+      - 'backend/tests/test_memory_api_db.py'
+      # `TEST_DATABASE_URL`, which decides whether the harness runs or skips.
+      - 'backend/tests/conftest.py'
       - '.github/workflows/memory-recall-eval.yml'
   workflow_dispatch: {}
 
