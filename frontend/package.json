@@ -15,7 +15,7 @@
     "start": "next start",
     "lint": "next lint --max-warnings 0",
     "lint:fix": "next lint --fix",
-    "type-check": "tsc --noEmit",
+    "type-check": "tsc --noEmit -p tsconfig.typecheck.json",
     "check:browser-safe-imports": "node scripts/check-browser-safe-imports.mjs",
     "cloud:install": "node scripts/cloud-control-overlay.mjs install",
     "cloud:remove": "node scripts/cloud-control-overlay.mjs remove",

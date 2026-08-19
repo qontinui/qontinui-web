@@ -31,6 +31,27 @@ const cloudControlPresent = fs.existsSync(
   path.resolve(__dirname, 'node_modules/@qontinui/cloud-control/package.json')
 );
 
+// `@cloud/*` — the build-time route alias. Every mounted cloud route is a
+// two-line `page.tsx` under `src/app/` that re-exports through this prefix,
+// so which module a cloud path renders is decided by webpack resolution at
+// build time rather than by a runtime registry lookup. That is what keeps
+// SSR, per-route `metadata` and server components available to cloud routes;
+// a registry read forfeits all three because the registry only ever exists
+// behind a client boundary. See docs/composed-cloud-build.md.
+//
+// Deliberately NOT in tsconfig.json `paths`: Next feeds those into webpack
+// via `JsConfigPathsPlugin`, which taps `described-resolve` ahead of the
+// alias plugin — a `@cloud/*` entry there would win over the mapping below
+// and silently resolve every composed build back to the OSS stubs. `tsc`
+// gets its own mapping from `tsconfig.typecheck.json`, which Next never
+// reads.
+const CLOUD_ALIAS_TARGET = path.resolve(
+  __dirname,
+  cloudControlPresent
+    ? 'node_modules/@qontinui/cloud-control/frontend/src'
+    : 'src/cloud-absent'
+);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -98,6 +119,15 @@ const nextConfig = {
         'src/cloud-absent/index.ts'
       );
     }
+
+    // The route alias, on BOTH arms — present, it points into the linked
+    // package's sources; absent, at the `cloud-absent/` mirror whose modules
+    // call `notFound()` (or, for the two paths OSS already served, keep the
+    // redirect they had). One entry, no runtime branch, and a cloud route
+    // that gains no host `page.tsx` is caught by
+    // `src/cloud-absent/cloud-route-shims.test.ts` rather than 404ing in
+    // production.
+    config.resolve.alias['@cloud'] = CLOUD_ALIAS_TARGET;
 
     // Only alias @qontinui/schemas when the local package exists (dev environment).
     // In CI/Vercel builds, the parent directory is not available. All schemas
@@ -174,11 +204,15 @@ const nextConfig = {
         destination: '/operations',
         permanent: true,
       },
-      {
-        source: '/admin',
-        destination: '/admin/architecture',
-        permanent: false,
-      },
+      // NOTE: `/admin` -> `/admin/architecture` used to live here. A
+      // `redirects()` entry is matched before the filesystem, so it shadowed
+      // any page mounted at `/admin` — including cloud-control's admin
+      // dashboard, which `appRoutes` has registered since the extension
+      // surface existed. The redirect moved into
+      // `src/cloud-absent/routes/admin/page.tsx`, so OSS-only builds still
+      // land on `/admin/architecture` (same destination, same 307) while the
+      // composed build renders the cloud page. See
+      // docs/composed-cloud-build.md.
     ]
   },
   eslint: {

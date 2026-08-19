@@ -37,9 +37,16 @@ jobs:
         working-directory: ./frontend
         run: npm run lint
 
+      # `npm run type-check`, NOT a bare `npx tsc --noEmit`: the script points
+      # tsc at `tsconfig.typecheck.json`, which is where the `@cloud/*` route
+      # alias is declared. That mapping cannot live in `tsconfig.json` —
+      # Next feeds tsconfig `paths` to webpack via `JsConfigPathsPlugin`,
+      # which would then override the alias and resolve every composed cloud
+      # build back to the OSS stubs. A bare `tsc` here fails on all eleven
+      # route shims. See frontend/tsconfig.typecheck.json.
       - name: TypeScript check
         working-directory: ./frontend
-        run: npx tsc --noEmit
+        run: npm run type-check
 
       - name: Unit tests
         working-directory: ./frontend
@@ -98,6 +105,19 @@ jobs:
         env:
           QONTINUI_CLOUD_CONTROL_PATH: ${{ github.workspace }}/.sibling/qontinui-cloud-control
         run: npm run cloud:install
+
+      # Lint and type-check run in BOTH shapes, not just OSS. In the composed
+      # shape `@cloud/*` resolves into cloud-control's raw sources, so this is
+      # the only place they are type-checked at all — the package has no
+      # tsconfig, no build step and no CI of its own, and it is checked here
+      # under this app's `strict` settings.
+      - name: Lint (composed)
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: TypeScript check (composed)
+        working-directory: ./frontend
+        run: npm run type-check
 
       - name: Unit tests (composed)
         working-directory: ./frontend
