@@ -20,6 +20,9 @@ __all__ = [
     "get_authenticated_device_user",
     "get_audit_actor_user_id",
     "get_audit_actor_user",
+    "get_audit_actor_principal",
+    "ActorPrincipal",
+    "ActorKind",
 ]
 
 from uuid import UUID
@@ -111,7 +114,7 @@ async def get_current_user_from_ws(token: str) -> User:
 
 
 # Type annotations for forward references
-from typing import TYPE_CHECKING  # noqa: E402
+from typing import TYPE_CHECKING, Literal  # noqa: E402
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401
@@ -252,6 +255,117 @@ async def get_authenticated_device_user(
 # without raising on a missing/cookie-only request before we have tried both.
 _optional_bearer_scheme = HTTPBearer(auto_error=False)
 
+#: Which credential arm proved the caller.
+#:
+#: ``"operator"`` — a Cognito user JWT (a human in a browser, or anything
+#: holding a user token). ``"device"`` — a coord-issued device-token JWT (the
+#: runner, and the agent doors it hosts). The two are not interchangeable
+#: DOWNSTREAM of this service: coord's operator routes resolve a tenant from an
+#: ``OperatorContext`` and 403 a device JWT, while its ``agent-`` twins lift the
+#: tenant from a verified device JWT and reject a Cognito bearer.
+ActorKind = Literal["operator", "device"]
+
+
+class ActorPrincipal:
+    """The acting :class:`~app.models.user.User` PLUS *which* credential arm
+    authenticated them.
+
+    The dual-auth dependencies resolve two structurally different callers to
+    the same ``User`` and then throw the distinction away. That is fine while
+    the only question is "whose organization scopes this write", and wrong the
+    moment a handler has to make a decision that depends on the CREDENTIAL
+    rather than on the person — the case that forced this type into existence
+    is ``plan_library``'s coord probe, which forwards the caller's bearer
+    verbatim to coord: a Cognito bearer must go to coord's operator
+    (``TenantId``) doors and a coord device JWT must go to its ``agent-``
+    twins, because each tier rejects the other's credential.
+
+    Sniffing the token inside the handler would be the wrong place to answer
+    that: the dependency has ALREADY decided which arm authenticated, so a
+    second, weaker guess (does this look like a JWT? does it have a
+    ``device_id``?) can only drift away from the first. ``kind`` is that first
+    decision, carried forward.
+
+    ``claims`` is the verified device JWT's claim set on the device arm and
+    ``None`` on the operator arm — deliberately, so a caller cannot read
+    claims without having established that a device authenticated.
+    """
+
+    __slots__ = ("user", "kind", "claims")
+
+    def __init__(
+        self,
+        user: User,
+        kind: ActorKind,
+        claims: dict | None = None,
+    ) -> None:
+        self.user = user
+        self.kind = kind
+        self.claims = claims
+
+    @property
+    def is_device(self) -> bool:
+        """Did a coord-issued device JWT authenticate this request?"""
+        return self.kind == "device"
+
+    def __repr__(self) -> str:  # pragma: no cover — debugging aid
+        return f"ActorPrincipal(kind={self.kind!r}, user_id={self.user.id!r})"
+
+
+async def _resolve_actor_principal(
+    user: User | None,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> ActorPrincipal:
+    """THE dual-auth decision tree — one implementation, three dependencies.
+
+    This is a plain coroutine, not a FastAPI dependency, precisely so the
+    dependencies below can call it by hand: a ``Depends()`` default is inert
+    when a dependency is invoked directly, so delegating to a *dependency*
+    would silently re-run resolution instead of sharing it. Delegating to this
+    takes the already-resolved inputs and cannot diverge.
+
+    Precedence and failure modes, spelled out because both are load-bearing:
+
+    * A resolved Cognito user WINS outright and the device path is never
+      consulted — a forwarded device token cannot override the authenticated
+      browser user.
+    * With no Cognito user, the presented bearer is verified as a device token
+      and the caller becomes the device's paired operator (its owning user).
+      That is deliberately the only way a device acquires an organization
+      scope: the org comes from a credential the runner owns, never from the
+      request.
+    * A bearer that fails device verification propagates that 401 (or the 503
+      from an unreachable coord JWKS) — it never falls through to success.
+    * Neither a Cognito user nor a bearer → 401. There is no anonymous path.
+    """
+    if user is not None:
+        return ActorPrincipal(user=user, kind="operator")
+
+    if credentials is not None:
+        claims, device_user = await _verify_device_jwt(credentials.credentials)
+        return ActorPrincipal(user=device_user, kind="device", claims=claims)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required.",
+    )
+
+
+async def get_audit_actor_principal(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> ActorPrincipal:
+    """Resolve the acting principal — the ``User`` AND the arm that proved them.
+
+    The principal-kind-carrying variant of :func:`get_audit_actor_user`, with
+    IDENTICAL precedence and failure modes (both delegate to
+    :func:`_resolve_actor_principal`). Depend on this one when the handler must
+    treat a runner-originated request differently from a browser one; depend on
+    the plain ``User`` variant otherwise, so a route does not acquire a
+    distinction it has no use for.
+    """
+    return await _resolve_actor_principal(user, credentials)
+
 
 async def get_audit_actor_user_id(
     user: User | None = Depends(current_active_user_optional),
@@ -270,18 +384,11 @@ async def get_audit_actor_user_id(
       operator (the device's owning user).
 
     Returns the owning user's id. Raises 401 if neither path authenticates.
+    See :func:`_resolve_actor_principal` for the decision tree all three
+    dual-auth dependencies share.
     """
-    if user is not None:
-        return user.id
-
-    if credentials is not None:
-        _claims, device_user = await _verify_device_jwt(credentials.credentials)
-        return device_user.id
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required.",
-    )
+    principal = await _resolve_actor_principal(user, credentials)
+    return principal.user.id
 
 
 async def get_audit_actor_user(
@@ -299,33 +406,12 @@ async def get_audit_actor_user(
     principal's email. Returning only the id there would force each handler to
     re-load the row the dependency already had in hand.
 
-    Precedence and failure modes, spelled out because both are load-bearing:
-
-    * A resolved Cognito user WINS outright and the device path is never
-      consulted — a forwarded device token cannot override the authenticated
-      browser user.
-    * With no Cognito user, the presented bearer is verified as a device token
-      and the caller becomes the device's paired operator (its owning user).
-      That is deliberately the only way a device acquires an organization
-      scope: the org comes from a credential the runner owns, never from the
-      request.
-    * A bearer that fails device verification propagates that 401 (or the 503
-      from an unreachable coord JWKS) — it never falls through to success.
-    * Neither a Cognito user nor a bearer → 401. There is no anonymous path.
-
-    This deliberately does NOT delegate to :func:`get_audit_actor_user_id`:
-    that is a FastAPI dependency whose ``Depends()`` defaults are inert when
-    called by hand, so reusing it would re-run the resolution rather than share
-    it. The duplication is four lines and keeps both honest.
+    The decision tree itself lives in :func:`_resolve_actor_principal` — one
+    implementation shared by all three dual-auth dependencies, so "same
+    precedence, same failure modes" is structural rather than a promise three
+    copies have to keep. (It is a plain coroutine, not a dependency: sharing a
+    *dependency* by calling it by hand would leave its ``Depends()`` defaults
+    inert and re-run the resolution instead.)
     """
-    if user is not None:
-        return user
-
-    if credentials is not None:
-        _claims, device_user = await _verify_device_jwt(credentials.credentials)
-        return device_user
-
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Authentication required.",
-    )
+    principal = await _resolve_actor_principal(user, credentials)
+    return principal.user
