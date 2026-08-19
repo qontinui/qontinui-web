@@ -30,6 +30,7 @@ fresh per-request connections there too).
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import math
@@ -287,9 +288,9 @@ _SETUP_SQL = [
     # monotone write-order key the recency tiebreaks sort on. Written as
     # ALTERs for the same persistent-test-DB reason the anchors block
     # above is: a table created by an older run must be upgraded in place.
-    # The four steps are the migration's four steps, in its order (add
-    # nullable, backfill, NOT NULL, identity + setval) — see that file for
-    # why each is load-bearing.
+    # The five steps are the migration's five steps, in its order (add
+    # nullable, backfill, NOT NULL, identity + setval, unique index) — see
+    # that file for why each is load-bearing.
     """
     ALTER TABLE coord.memory_records
         ADD COLUMN IF NOT EXISTS seq BIGINT
@@ -331,6 +332,10 @@ _SETUP_SQL = [
         COALESCE((SELECT max(seq) FROM coord.memory_records), 0) + 1,
         false
     )
+    """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_memory_records_seq
+        ON coord.memory_records (seq)
     """,
 ]
 
@@ -3001,6 +3006,20 @@ class TestListRecords:
 
         bad = mc.client.get("/api/v1/memory/records", params={"cursor": "not-a-cursor"})
         assert bad.status_code == 400
+
+        # Well-formed base64 whose `seq` half is a plain integer Python
+        # accepts but bigint cannot hold. It must be rejected at DECODE
+        # (400), not carried into `CAST(:cursor_seq AS bigint)` where
+        # asyncpg raises an uncaught DataError and the caller gets a 500.
+        # Same for the shapes `int()` silently normalizes — whitespace, a
+        # sign, PEP-515 underscores, non-ASCII digits — which would make
+        # the cursor codec a non-inverse.
+        for seq_half in ("9" * 25, " 1", "+1", "1_0", "٣"):
+            token = base64.urlsafe_b64encode(
+                f"2026-08-19T00:00:00+00:00|{seq_half}".encode()
+            ).decode("ascii")
+            resp = mc.client.get("/api/v1/memory/records", params={"cursor": token})
+            assert resp.status_code == 400, (seq_half, resp.status_code)
 
 
 # ---------------------------------------------------------------------------
