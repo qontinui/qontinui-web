@@ -148,17 +148,24 @@ export function ClearanceRuleList({
           <div className="space-y-2" data-testid="system-clearance-rules">
             {systemRules.map((rule) => {
               const parsed = parseGateClearancePayload(rule.payload);
+              // An unreadable built-in (unknown authority, or no payload at
+              // all) still needs an override path — it is exactly the row a
+              // user most wants to take over. Seed whatever class it names and
+              // let them choose the authority; a built-in with no class at all
+              // governs nothing, so there is nothing to override.
+              const seedClass =
+                parsed?.gate_class ?? rawGateClass(rule.payload);
               return (
                 <RuleRow
                   key={rule.policy_id}
                   rule={rule}
                   saving={saving}
                   onOverride={
-                    parsed
+                    seedClass
                       ? () =>
                           onOverrideSystemDefault({
-                            gateClass: parsed.gate_class,
-                            authority: parsed.authority,
+                            gateClass: seedClass,
+                            authority: parsed?.authority ?? "operator_only",
                           })
                       : undefined
                   }
@@ -180,12 +187,20 @@ export function ClearanceRuleList({
             <AlertDialogTitle>Delete this clearance rule?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3">
-                <p>
-                  <span className="font-medium">{deleteTarget?.name}</span>{" "}
-                  decides who may clear{" "}
-                  <code className="font-mono">{deleteClass}</code> gates. After
-                  deleting it, that class is decided by:
-                </p>
+                {deleteClass === null ? (
+                  <p>
+                    <span className="font-medium">{deleteTarget?.name}</span>{" "}
+                    names no gate class, so it decides nothing today. Deleting
+                    it changes no gate&apos;s clearance authority.
+                  </p>
+                ) : (
+                  <p>
+                    <span className="font-medium">{deleteTarget?.name}</span>{" "}
+                    decides who may clear{" "}
+                    <code className="font-mono">{deleteClass}</code> gates.
+                    After deleting it, that class is decided by:
+                  </p>
+                )}
                 {afterDelete && (
                   <div className="rounded-md border border-border bg-muted/40 p-3">
                     <EffectiveAuthorityCell effective={afterDelete} />
