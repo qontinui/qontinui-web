@@ -1,7 +1,7 @@
 """coord.sessions — tool-grain activity columns (tool_name/digest/model/state_started_at)
 
 Revision ID: coord_sessions_tool_activity
-Revises: memseq_01
+Revises: replpres_01
 Create Date: 2026-08-19
 
 Phase 1 of plan ``D:/qontinui-root/plans/
@@ -124,7 +124,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_sessions_tool_activity"
-down_revision: str | Sequence[str] | None = "memseq_01"
+down_revision: str | Sequence[str] | None = "replpres_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
