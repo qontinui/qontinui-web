@@ -392,18 +392,34 @@ async def _soft_tenant_id(request: Request) -> UUID | None:
         return None
 
 
-def _coord_pr(raw: object) -> CandidateLinkedPr:
+def _coord_pr(raw: object, *, merged_is_degraded: bool = False) -> CandidateLinkedPr:
     """Project one coord citation onto :class:`CandidateLinkedPr`.
 
     Defensive about shape: coord's citation projection is
     ``{repo, pr_number, merged, branch, cited_at, sources}`` today, but this
     read must not 500 on a coord that grew or lost a field.
+
+    ``merged_is_degraded`` — coord answered with ``merged_degraded_reason``,
+    meaning its ``merged`` predicate is running in its DEGRADED form: the
+    durable ``merge_commit_sha`` arm is dropped (a column it needs has not
+    been migrated yet) and **every PR coord ff-landed reads ``merged: false``**.
+    A ``false`` under that flag is UNKNOWN, not an observation, and coord
+    ff-lands PRs routinely — so it is projected as ``state: "unknown"`` with
+    ``merged: None`` rather than rendered as the fact "unmerged". A ``true`` is
+    unaffected: the degraded arm narrows the disjunction, so it can only
+    produce false NEGATIVES.
+
+    This is the same "absence is UNKNOWN, not zero" discipline the enclosing
+    block applies to the citation list, one level down — on the individual
+    row's merged state.
     """
     if not isinstance(raw, dict):
         return CandidateLinkedPr()
 
     merged = raw.get("merged")
     merged_bool = merged if isinstance(merged, bool) else None
+    if merged_is_degraded and merged_bool is False:
+        merged_bool = None
     pr_number = raw.get("pr_number")
     sources = raw.get("sources")
     return CandidateLinkedPr(
@@ -418,6 +434,19 @@ def _coord_pr(raw: object) -> CandidateLinkedPr:
         branch=raw.get("branch") if isinstance(raw.get("branch"), str) else None,
         cited_at=str(raw["cited_at"]) if raw.get("cited_at") is not None else None,
         sources=[str(s) for s in sources] if isinstance(sources, list) else [],
+    )
+
+
+def _merged_is_degraded(payload: object) -> bool:
+    """Did coord flag its ``merged`` predicate as running DEGRADED?
+
+    ``merged_degraded_reason`` is coord's own admission that the durable
+    ``merge_commit_sha`` arm of the predicate is dropped (a column it needs is
+    unmigrated), so every PR coord ff-landed reads ``merged: false``. Its
+    presence is the whole signal; the body is prose.
+    """
+    return (
+        isinstance(payload, dict) and payload.get("merged_degraded_reason") is not None
     )
 
 
@@ -446,12 +475,18 @@ def _citation_error_text(raw: object) -> str:
     "pg_code": "42P01", "message": …}`` for the pre-migration window, or a
     ``pg_error`` context object — and this read must survive either without
     500ing, so the shape is probed rather than assumed.
+
+    ``context`` is probed alongside ``message`` because ``pg_error``'s
+    ``to_body()`` emits NO ``message`` at all when it has structured PG detail
+    to report; the failing operation's name lives in ``context``. Reading only
+    ``error`` there would reduce the whole reason line to ``"db_error"``, which
+    tells an operator nothing about what failed.
     """
     text: str
     if isinstance(raw, dict):
         parts = [
             str(raw[key])
-            for key in ("error", "message")
+            for key in ("error", "pg_code", "context", "message")
             if isinstance(raw.get(key), str) and raw.get(key)
         ]
         text = ": ".join(parts) if parts else str(raw)
@@ -462,8 +497,32 @@ def _citation_error_text(raw: object) -> str:
     return f"coord could not read citations: {text}"
 
 
+#: coord's error code for ``CitationListing::SurfaceUnavailable`` — *the unit
+#: is yours, and the relation backing the citation join is absent* (``42P01``,
+#: a pre-migration window). It rides in the ``error`` field of the 503 body,
+#: and it is what tells this read that a 503 on the citation sub-resource is
+#: coord ANSWERING rather than coord being unreachable.
+_CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
+
+#: Cap on how much of coord's error body rides in ``unavailable_reason``.
+_BODY_EXCERPT_MAX_CHARS = 200
+
+
+def _detail_text(detail: object) -> str:
+    """coord's response body as text, however ``_proxy_coord_get`` wrapped it.
+
+    That helper raises ``HTTPException(status_code=resp.status_code,
+    detail=resp.text)``, so the body is already in hand — but its own transport
+    mapping raises a plain string instead, and a caller must not have to know
+    which.
+    """
+    if isinstance(detail, str):
+        return detail
+    return str(detail)
+
+
 def _is_transport_failure(
-    http_status: int, *, service_unavailable_is_an_answer: bool = False
+    http_status: int, *, body: str = "", answered_marker: str | None = None
 ) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
@@ -479,25 +538,25 @@ def _is_transport_failure(
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
 
-    ``service_unavailable_is_an_answer`` — the ONE typed exception, and it is
-    hop-scoped rather than global. coord's citation read answers ``503`` for
-    ``SurfaceUnavailable``: *this unit is yours, and the relation backing the
-    citation join is absent* (``42P01``, a pre-migration window). That is coord
-    ANSWERING about one sub-resource — the same class as the 401/403/405 above,
-    one status band up — so it must land as a per-slug ``unavailable`` and must
-    NOT trip the page-wide circuit, or a schema-migration window would report
-    the whole of coord as down and blank the work-unit half of every remaining
-    row (which reads fine).
+    ``answered_marker`` — the ONE exception, and it is granted on the BODY, not
+    on the status. coord's citation read answers ``503`` with
+    ``{"error": "citation_surface_unavailable", …}``, which is coord ANSWERING
+    about one sub-resource — the same class as the 401/403/405 above, one
+    status band up. It must land as a per-slug ``unavailable`` and must NOT
+    trip the page-wide circuit, or a schema-migration window would report the
+    whole of coord as down and blank the work-unit half of every remaining row
+    (which reads fine).
 
-    Why it is safe to make that exception on the citations hop specifically:
-    that hop is only ever reached after the PRESENCE hop on the same slug
-    SUCCEEDED, which is direct evidence coord is up. A 503 from a load balancer
-    with no healthy target cannot reach this branch — it fails the presence hop
-    first, where 503 keeps its transport-class reading and trips the circuit as
-    before. So the exception is granted exactly where a 503 is provably coord's
-    own answer, and nowhere else.
+    Keying it on the marker rather than on "the citations hop passed a flag" is
+    what keeps the carve-out as narrow as it claims to be. The tempting
+    argument — *the citations hop only runs after the presence hop succeeded,
+    so coord is provably up* — is FALSE across the gap between two sequential
+    requests: coord can go down between them (a deploy, an ECS rotation, an ALB
+    target drain), and then an infrastructure 503 would be read as "coord
+    answered" and leave ``coord_available`` reporting true through a total
+    outage. An ALB's untyped 503 carries no marker, so it still trips.
     """
-    if http_status == 503 and service_unavailable_is_an_answer:
+    if http_status == 503 and answered_marker is not None and answered_marker in body:
         return False
     return http_status >= 500
 
@@ -539,11 +598,13 @@ class _CoordProbe:
     trying the operator door and falling back on 403 — a 403 is also what a
     genuine cross-tenant read returns, so that fallback would paper over a
     tenant-boundary error, and it doubles the round-trips on the hot path.
+
+    It is REQUIRED rather than defaulted: a default would silently reinstate
+    exactly this bug at the next call site that forgets the argument, and the
+    failure mode is a quiet ``unavailable`` rather than an exception.
     """
 
-    def __init__(
-        self, tenant_id: UUID | None, *, actor_kind: ActorKind = "operator"
-    ) -> None:
+    def __init__(self, tenant_id: UUID | None, *, actor_kind: ActorKind) -> None:
         self.tenant_id = tenant_id
         self.actor_kind: ActorKind = actor_kind
         #: The coord door tier this probe's reads go to. Both hops use it —
@@ -564,7 +625,7 @@ class _CoordProbe:
             self.reason = reason
 
     async def _get(
-        self, path: str, *, service_unavailable_is_an_answer: bool = False
+        self, path: str, *, answered_marker: str | None = None
     ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
@@ -584,11 +645,10 @@ class _CoordProbe:
         not evidence of an absence of PRs"); the circuit obeys it too, or the
         one flag whose job is signalling a real coord outage can never do so.
 
-        ``service_unavailable_is_an_answer`` forwards to
-        :func:`_is_transport_failure` and extends that same reading to coord's
-        typed ``503 SurfaceUnavailable`` on the citations sub-resource. It is
-        passed by the citations hop ONLY — see that function for why the hop
-        ordering is what makes the exception safe.
+        ``answered_marker`` forwards to :func:`_is_transport_failure` and
+        extends that same reading to coord's typed ``503`` on the citations
+        sub-resource — but only when coord's own error code is in the body, so
+        an untyped 503 from a load balancer still trips.
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -608,10 +668,20 @@ class _CoordProbe:
                     forward_bearer=True,
                 )
             except HTTPException as exc:
+                # coord's body is already in hand (``_proxy_coord_get`` puts
+                # ``resp.text`` in ``detail``), and it is what separates a typed
+                # answer from an infrastructure failure — so it decides the
+                # classification AND rides in the reason, rather than being
+                # discarded into a bare "coord returned 503".
+                body = _detail_text(exc.detail)
                 detail = f"coord returned {exc.status_code}"
+                excerpt = body.strip()
+                if excerpt:
+                    if len(excerpt) > _BODY_EXCERPT_MAX_CHARS:
+                        excerpt = excerpt[: _BODY_EXCERPT_MAX_CHARS - 1] + "…"
+                    detail = f"{detail}: {excerpt}"
                 if _is_transport_failure(
-                    exc.status_code,
-                    service_unavailable_is_an_answer=service_unavailable_is_an_answer,
+                    exc.status_code, body=body, answered_marker=answered_marker
                 ):
                     self._trip(detail)
                 return None, exc.status_code, detail
@@ -636,14 +706,35 @@ class _CoordProbe:
         us the read did not happen — ``citations_error`` sits beside an EMPTY
         list precisely so that list cannot be mistaken for an observation of
         zero, and flattening the two would destroy the one property this whole
-        block exists to protect.
+        block exists to protect. The error field alone is enough to detect the
+        block: coord's sibling ``delivery``/``delivery_error`` pair OMITS the
+        value key entirely when the read failed, so keying only on ``citations``
+        would miss the shape its own neighbour already uses.
+
+        A ``citations`` that is present but is NOT a list is likewise an error,
+        not an empty list. This method shape-sniffs by design, so the one thing
+        it must never do with an unrecognised shape is report it as an
+        observation of zero.
         """
-        if not isinstance(payload, dict) or "citations" not in payload:
+        if not isinstance(payload, dict):
             return None
-        raw = payload.get("citations")
-        rows = list(raw) if isinstance(raw, list) else []
+        if "citations" not in payload and "citations_error" not in payload:
+            return None
+
         error = payload.get("citations_error")
-        return rows, None if error is None else _citation_error_text(error)
+        if error is not None:
+            return [], _citation_error_text(error)
+
+        raw = payload.get("citations")
+        if not isinstance(raw, list):
+            return [], _citation_error_text(
+                {
+                    "error": "unrecognised_citations_shape",
+                    "message": f"coord returned `citations` as {type(raw).__name__}, "
+                    "not a list",
+                }
+            )
+        return list(raw), None
 
     async def link_for(self, slug: str) -> CandidateCoordLink:
         """Resolve one work-unit slug into its coord block.
@@ -666,16 +757,25 @@ class _CoordProbe:
         carries its citations inline (:meth:`_inline_citations`), so a
         device-principal page pays one round-trip per slug instead of two —
         and works against a coord that has not yet shipped the dedicated
-        sub-resource.
+        sub-resource. One consequence worth knowing: a device caller therefore
+        never reaches the 503 branch below, because the same
+        surface-unavailable condition reaches it as an inline
+        ``citations_error`` instead. Both land on ``unavailable``.
 
         coord's three-state answer on the citations sub-resource maps straight
         onto this block. ``200`` → ``available``, and an empty list there IS an
         observation of zero. ``404`` → the unit is not ours, or not there.
-        ``503`` ``SurfaceUnavailable`` (the citation relation is unreadable) →
-        ``unavailable`` for THIS slug and, deliberately, nothing at all about
-        coord's health: it does not trip the page-wide circuit, because coord
-        answering about one sub-resource is coord answering (see
+        ``503`` carrying coord's ``citation_surface_unavailable`` code (the
+        citation relation is unreadable) → ``unavailable`` for THIS slug and,
+        deliberately, nothing at all about coord's health: coord answering about
+        one sub-resource is coord answering. An UNTYPED 503 keeps its ordinary
+        transport reading and still trips the circuit (see
         :func:`_is_transport_failure`).
+
+        A successful read can still carry a caveat: ``merged_degraded_reason``
+        says coord's ``merged`` predicate is running degraded, so a
+        ``merged: false`` on those rows is UNKNOWN rather than "unmerged" — see
+        :func:`_coord_pr`.
 
         Absence of a route, of permission, or of a readable relation is never
         evidence of an absence of PRs. Reporting an empty PR list in any of
@@ -724,21 +824,28 @@ class _CoordProbe:
                 link.unavailable_reason = inline_error
                 return link
             link.linked_prs_state = "available"
-            link.linked_prs = [_coord_pr(row) for row in rows]
+            # The by-slug door does not emit ``merged_degraded_reason`` today
+            # (only the citation sub-resource does), so this reads as False
+            # there — but it is read from the payload rather than hardcoded, so
+            # the caveat is honoured the moment that door starts carrying it.
+            link.linked_prs = [
+                _coord_pr(row, merged_is_degraded=_merged_is_degraded(payload))
+                for row in rows
+            ]
             return link
 
         cites, cite_status, cite_error = await self._get(
             f"{self._coord_base}/{encoded}/citations",
-            # coord's typed 503 on THIS sub-resource is an answer about the
-            # citation relation, not a verdict on coord's reachability — and
-            # this hop only runs because the presence hop above succeeded.
-            service_unavailable_is_an_answer=True,
+            # A 503 whose body carries coord's own code is an answer about the
+            # citation relation, not a verdict on coord's reachability. An
+            # untyped 503 is still an outage and still trips.
+            answered_marker=_CITATION_SURFACE_UNAVAILABLE,
         )
         if cites is None:
-            # Includes 401/403/404/405 and coord's 503 ``SurfaceUnavailable``
-            # — absence of a route, of permission to call it, or of a readable
-            # citation relation is not evidence of an absence of PRs. None of
-            # those trips the page-wide circuit; see ``_is_transport_failure``.
+            # Includes 401/403/404/405 and coord's typed 503 — absence of a
+            # route, of permission to call it, or of a readable citation
+            # relation is not evidence of an absence of PRs. None of those
+            # trips the page-wide circuit; see ``_is_transport_failure``.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = (
                 cite_error or f"coord returned {cite_status} for citations"
@@ -747,15 +854,19 @@ class _CoordProbe:
 
         sub = self._inline_citations(cites)
         if sub is not None and sub[1] is not None:
-            # The sub-resource can carry the same honesty flag its inline twin
-            # does. A 200 whose body says the read did not happen is still
-            # "did not happen".
+            # A forward guard, not a shape coord emits today: the sub-resource
+            # answers 503 rather than flagging a 200. But a body that says the
+            # read did not happen still means it did not happen, whatever the
+            # status line says — and the inline twin already uses this shape.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = sub[1]
             return link
 
         link.linked_prs_state = "available"
-        link.linked_prs = [_coord_pr(row) for row in _citation_rows(cites)]
+        link.linked_prs = [
+            _coord_pr(row, merged_is_degraded=_merged_is_degraded(cites))
+            for row in _citation_rows(cites)
+        ]
         return link
 
 
