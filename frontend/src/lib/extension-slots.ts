@@ -5,15 +5,17 @@
  * runs as a single-tenant install.
  *
  * The proprietary `@qontinui/cloud-control` package side-effect-registers
- * its routes, components, services, and contexts at module-load time by
- * calling `registerCloudExtensions(...)` from its `src/index.ts`.
+ * its services and components at module-load time by calling
+ * `registerCloudExtensions(...)` from its `src/index.ts`.
  *
  * **How the package gets loaded.** `components/cloud-extensions-boot.tsx` is
  * a `"use client"` module with a *static* `import "@qontinui/cloud-control"`,
  * rendered as the first child of `<body>` in `app/layout.tsx`. It is static
- * on purpose: a static import is hoisted and evaluated before the importing
- * module's body runs, so registration completes before any consumer of this
- * registry renders. It replaced a fire-and-forget dynamic import in the root
+ * on purpose: webpack puts the package in the client entry graph and the
+ * import is evaluated when that graph loads, so registration is done before
+ * React hydrates — no effect, no promise, nothing to await. (An
+ * effect-driven import would resolve after first paint, leaving every slot
+ * transiently empty.) It replaced a fire-and-forget dynamic import in the root
  * layout — a `webpackIgnore`-annotated `import(CLOUD_CONTROL_PKG)` with a
  * `.catch(() => {})` — which never loaded the package at all: `webpackIgnore`
  * left the bare specifier in the emitted bundle for the *browser* to resolve,
