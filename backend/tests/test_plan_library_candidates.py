@@ -584,7 +584,7 @@ class TestCandidatesHttp:
             raise HTTPException(status_code=504, detail="timeout waiting for coord")
 
         fake = AsyncMock(side_effect=_coord_down)
-        probe = _CoordProbe(None)
+        probe = _CoordProbe(None, actor_kind="operator")
         with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
             links = await _coord_links(
                 [_slug(f"gate-{i}") for i in range(slug_count)], probe
@@ -1115,19 +1115,19 @@ class TestCoordDoorTierFollowsThePrincipal:
 
 
 class TestCoordServiceUnavailableOnTheCitationRead:
-    """coord's ``503 SurfaceUnavailable`` is coord ANSWERING about one
-    sub-resource — the unit is yours and the citation relation is unreadable.
-    It must land as a per-slug ``unavailable`` and must NOT trip the page-wide
-    circuit: a schema-migration window would otherwise report the whole of
-    coord as down and blank the work-unit half of every remaining row, which
-    reads fine.
+    """coord's typed ``503 citation_surface_unavailable`` is coord ANSWERING
+    about one sub-resource — the unit is yours and the citation relation is
+    unreadable. It must land as a per-slug ``unavailable`` and must NOT trip
+    the page-wide circuit: a schema-migration window would otherwise report the
+    whole of coord as down and blank the work-unit half of every remaining row,
+    which reads fine.
 
-    The exception is granted on the citations hop ONLY. That hop is reached
-    only after the PRESENCE hop on the same slug succeeded, which is direct
-    evidence coord is up — so a 503 from a load balancer with no healthy target
-    cannot reach it. It fails the presence hop first, where 503 keeps its
-    transport-class reading (asserted below, and by
-    ``test_only_transport_class_failures_trip_the_circuit``).
+    The carve-out is keyed on coord's error CODE in the body, not on which hop
+    asked. The tempting argument — the citations hop runs only after the
+    presence hop succeeded, so coord is provably up — does not survive the gap
+    between two sequential requests: coord can go down between them (a deploy,
+    an ECS rotation, an ALB target drain). The tests below pin both halves: a
+    typed 503 does not trip, an UNTYPED 503 on the same hop does.
     """
 
     async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
@@ -1142,7 +1142,14 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             if path.endswith("/citations"):
                 raise HTTPException(
                     status_code=503,
-                    detail='{"error":"citation_surface_unavailable"}',
+                    detail=json.dumps(
+                        {
+                            "error": "citation_surface_unavailable",
+                            "pg_code": "42P01",
+                            "message": "citation surface unavailable: retry once "
+                            "the alembic migration has applied.",
+                        }
+                    ),
                 )
             return {"work_unit": {"slug": wu, "status": "vetted"}}
 
@@ -1233,3 +1240,199 @@ class TestCoordServiceUnavailableOnTheCitationRead:
         assert link["linked_prs_state"] == "unavailable"
         assert link["linked_prs"] == []
         assert "db_error" in link["unavailable_reason"]
+
+    async def test_an_UNTYPED_503_on_the_citations_hop_still_trips(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The half that keeps the carve-out narrow.
+
+        coord going down BETWEEN the two hops is a real window — the presence
+        hop succeeding is evidence coord was up then, not now. A load balancer
+        with no healthy target answers 503 with no coord error code in it, and
+        that must still read as an outage: otherwise ``coord_available`` would
+        report true straight through a total outage, which is the one thing
+        that flag exists to say.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("mid-outage"),
+                work_unit_slug=_slug("wu-mid-outage"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail="<html><body>503 Service Unavailable</body></html>",
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["coord_available"] is False, (
+            "an untyped 503 — the shape a load balancer with no healthy target "
+            "returns — was read as coord ANSWERING, so a total outage would "
+            "report coord_available: true"
+        )
+
+    async def test_the_reason_carries_coords_own_words(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``unavailable_reason`` is the only breadcrumb this read leaves.
+
+        A bare "coord returned 503" cannot tell an operator whether to wait for
+        a migration or to page someone, and the body that answers it is already
+        in hand.
+        """
+        wu = _slug("wu-reason")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("reason"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail=json.dumps(
+                        {
+                            "error": "citation_surface_unavailable",
+                            "message": "retry once the alembic migration has applied.",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        reason = row["coord"]["unavailable_reason"]
+        assert "503" in reason
+        assert "citation_surface_unavailable" in reason
+
+
+class TestUnknownIsNotAnObservation:
+    """The same discipline one level down — on a single citation row.
+
+    ``linked_prs_state: "available"`` says the LIST is a real answer. It says
+    nothing about whether each row's ``merged`` flag is one, and coord is
+    explicit that sometimes it is not.
+    """
+
+    async def test_a_degraded_merged_predicate_reads_unknown_not_unmerged(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``merged_degraded_reason`` means ``merged: false`` is UNKNOWN.
+
+        coord's degraded predicate drops the durable ``merge_commit_sha`` arm,
+        so every PR it ff-landed reads ``merged: false`` — and coord ff-lands
+        routinely. Rendering those as the fact "unmerged" would assert the
+        opposite of what coord just said, which is the exact defect class this
+        whole read is careful about, applied to a row instead of a list.
+        """
+        wu = _slug("wu-degraded")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("degraded"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                return {
+                    "work_unit_id": str(uuid4()),
+                    "citations": [
+                        {"repo": "qontinui-web", "pr_number": 1, "merged": False},
+                        {"repo": "qontinui-web", "pr_number": 2, "merged": True},
+                    ],
+                    "merged_degraded_reason": {
+                        "error": "merged_predicate_degraded",
+                        "missing_column": "merge_commit_sha",
+                        "message": "a merged: false on these rows is UNKNOWN.",
+                    },
+                }
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        # The LIST is still a real answer — the caveat is per row.
+        assert link["linked_prs_state"] == "available"
+        by_number = {p["pr_number"]: p for p in link["linked_prs"]}
+        assert by_number[1]["state"] == "unknown", (
+            "a degraded `merged: false` was rendered as the fact 'unmerged'"
+        )
+        assert by_number[1]["merged"] is None
+        # A `true` is unaffected: the degraded arm narrows the disjunction, so
+        # it can only produce false NEGATIVES.
+        assert by_number[2]["state"] == "merged"
+        assert by_number[2]["merged"] is True
+
+    async def test_without_the_flag_a_false_is_still_an_observation(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The guard must not swallow the normal case."""
+        wu = _slug("wu-nodegrade")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("nodegrade"), work_unit_slug=wu
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_ok(
+                {"slug": wu, "status": "vetted"},
+                [{"repo": "qontinui-web", "pr_number": 7, "merged": False}],
+            ),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        pr = row["coord"]["linked_prs"][0]
+        assert pr["state"] == "unmerged"
+        assert pr["merged"] is False
+
+    async def test_a_citations_field_that_is_not_a_list_is_unavailable(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """An unrecognised shape is UNKNOWN, never an observation of zero.
+
+        The inline fast path shape-sniffs by design, so the one thing it must
+        never do with a shape it does not recognise is report it as "this plan
+        has no PRs".
+        """
+        wu = _slug("wu-shape")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("shape"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            return {
+                "work_unit": {"slug": wu, "status": "vetted"},
+                "citations": {"unexpected": "envelope"},
+            }
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "shape" in link["unavailable_reason"]
