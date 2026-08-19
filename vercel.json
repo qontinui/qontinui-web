@@ -2,6 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": true
-  },
-  "installCommand": "bash frontend/scripts/vercel-install.sh --config-source root"
+  }
 }
