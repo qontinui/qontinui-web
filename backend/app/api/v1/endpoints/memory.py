@@ -72,6 +72,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast, get_args
@@ -308,20 +309,48 @@ def _content_hash(content: str) -> str:
 _VALID_KINDS = frozenset(get_args(MemoryKind))
 
 
-def _encode_cursor(created_at: datetime, memory_id: UUID) -> str:
-    """Opaque keyset cursor over ``(created_at, memory_id)``."""
-    raw = f"{created_at.isoformat()}|{memory_id}"
+# The cursor's ``seq`` half, parsed STRICTLY. ``int()`` alone is too
+# permissive in two directions and both are reachable from a client-supplied
+# query param: it accepts an integer of ANY magnitude (only >4300 digits
+# raises), so an out-of-int64 value survives decode and dies downstream at
+# ``CAST(:cursor_seq AS bigint)`` as an uncaught asyncpg ``DataError`` — a 500
+# where the docstring promises 400 — and it also accepts surrounding
+# whitespace, a sign, PEP-515 underscores and non-ASCII digits (``"1_0"`` -> 10,
+# ``"٣"`` -> 3), which would make encode/decode a non-inverse. Digits only,
+# then a range check.
+_CURSOR_SEQ_RE = re.compile(r"\A[0-9]{1,19}\Z")
+_MAX_BIGINT = 2**63 - 1
+
+
+def _encode_cursor(created_at: datetime, seq: int) -> str:
+    """Opaque keyset cursor over ``(created_at, seq)``.
+
+    The token's composition is NOT a client contract — it is base64 of an
+    internal pair, and callers only ever echo it back. It moved from
+    ``(created_at, memory_id)`` to ``(created_at, seq)`` in lockstep with
+    ``list_records_page``'s ``ORDER BY``, because a keyset that disagrees
+    with its sort skips and repeats rows. Old tokens are NOT accepted:
+    a cursor minted before that change decodes as malformed (400), which
+    is the honest answer — silently reinterpreting it would page against
+    the wrong key.
+    """
+    raw = f"{created_at.isoformat()}|{seq}"
     return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
 
 
-def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+def _decode_cursor(cursor: str) -> tuple[datetime, int]:
     """Inverse of :func:`_encode_cursor`; 400 on anything malformed."""
     try:
         raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        created_raw, sep, id_raw = raw.partition("|")
+        created_raw, sep, seq_raw = raw.partition("|")
         if not sep:
             raise ValueError("missing separator")
-        return datetime.fromisoformat(created_raw), UUID(id_raw)
+        if not _CURSOR_SEQ_RE.match(seq_raw):
+            raise ValueError("seq is not a plain decimal integer")
+        seq = int(seq_raw)
+        if seq > _MAX_BIGINT:
+            raise ValueError("seq out of bigint range")
+        return datetime.fromisoformat(created_raw), seq
     except (ValueError, binascii.Error, UnicodeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -843,10 +872,13 @@ async def list_records(
     caps at 50, and relevance-ranks — unusable for a full mirror).
     ``kinds`` is repeatable and/or CSV; ``since`` filters on the
     freshest of updated/created; ``cursor`` is the opaque
-    ``(created_at, memory_id)`` keyset token from the previous page.
+    ``(created_at, seq)`` keyset token from the previous page.
     Each record carries its outbound ``links``. Ordering is
-    ``created_at DESC, memory_id DESC`` — stable under concurrent
-    writes (new rows only ever prepend).
+    ``created_at DESC, seq DESC`` — newest first in WRITE order (``seq``
+    is the monotone write-order key; a batch write shares one
+    ``created_at``, so the old ``memory_id`` UUID tiebreak paginated a
+    batch in random order) and stable under concurrent writes (new rows
+    only ever prepend).
     """
     kind_filter = _parse_kinds(kinds)
     cursor_key = _decode_cursor(cursor) if cursor else None
@@ -892,7 +924,7 @@ async def list_records(
         for row in rows
     ]
     next_cursor = (
-        _encode_cursor(rows[-1]["created_at"], rows[-1]["memory_id"])
+        _encode_cursor(rows[-1]["created_at"], rows[-1]["seq"])
         if len(rows) == limit
         else None
     )
