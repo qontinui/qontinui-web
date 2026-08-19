@@ -78,17 +78,40 @@ alembic is the SOLE author of ``coord.*`` schema (served policy
 ``qontinui-coord/tests/coord_schema_authorship.rs``), which is why this DDL
 lives in qontinui-web even though only coord reads it.
 
-Time-in-state index: the shipped ``session_stall_watcher``
-(``crates/coord/src/session_stall_watcher.rs``) scans
-``WHERE state='active' AND <clock> < now() - interval ...``; Phase 5 re-keys it
-from ``last_progress_at`` onto ``state_started_at``. A partial index on
-``(state_started_at) WHERE state='active'`` mirrors the sibling
-``coord_sessions_active_progress_idx`` (and the
+Time-in-state index — PROVISIONED, not yet load-bearing. Be precise about
+this, because an index whose justification outruns the facts reads as tuning
+and is really dead weight. As shipped today, ``session_stall_watcher``
+(``crates/coord/src/session_stall_watcher.rs``) cannot use this index:
+
+* its live flip keys on ``last_progress_at`` (``WHERE state='active' AND ...
+  AND last_progress_at < $1``), which the sibling
+  ``coord_sessions_active_progress_idx`` already serves;
+* its observe-mode scan carries NO time predicate at all (eligibility is
+  decided in Rust), so it reads every active row and no index on either clock
+  changes that; and
+* it ships in ``observe`` by default, and the plan's section 7 explicitly
+  forbids promoting it to ``live`` in any phase of this plan.
+
+The index becomes useful only after Phase 5 re-keys that scan from
+``last_progress_at`` onto ``state_started_at`` AND the watcher is later
+promoted under a different plan. It is created here rather than there because
+the column and its index belong in one revision, and because an index built
+while the column is still empty is free.
+
+The PREDICATE axis is deliberate and is correct today: both watcher queries
+scan ``state`` (active|pending_resolution|stale|closed), NOT ``session_status``
+(working|blocked|stalled|waiting_human|finished) — two orthogonal columns on
+this table, and indexing the wrong one is the easy mistake here. Partial on
+``state='active'`` because a closed/stale session is never a stall candidate,
+so the index stays proportional to the LIVE fleet rather than to session
+history. Mirrors the sibling ``coord_sessions_active_progress_idx`` and the
 ``coord_sessions_tenant_state_idx`` heartbeat-scan posture in
-``coord_session_substrate.py``) and keeps that watcher off a full-table scan.
-Partial on ``state='active'`` because a closed/stale session is never a stall
-candidate, so the index stays proportional to the LIVE fleet rather than to
-session history.
+``coord_session_substrate.py``.
+
+Built without ``CONCURRENTLY`` — alembic's transactional runner rules it out,
+and the sibling does the same. It holds a SHARE lock on ``coord.sessions`` for
+the duration of the build; the partial predicate keeps that duration
+proportional to the live fleet.
 
 Raw ``op.execute`` with ``ADD COLUMN IF NOT EXISTS`` — the collision-safe
 convention used by the other coord.* migrations

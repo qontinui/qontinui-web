@@ -439,8 +439,15 @@ function SessionsTable({
                         /* The digest is an opaque fingerprint, not a
                            description of the work — it hangs off the tool
                            cell as a "same call repeating?" hint and is never
-                           rendered as prose. */
-                        title={s.tool_input_digest ?? undefined}
+                           rendered as prose. Gated on tool_name as well as on
+                           the digest: without the guard, a row carrying a
+                           digest but no tool name would put an invisible
+                           tooltip on an em dash. */
+                        title={
+                          s.tool_name?.trim() && s.tool_input_digest
+                            ? s.tool_input_digest
+                            : undefined
+                        }
                       >
                         {orDash(s.tool_name)}
                       </TableCell>
