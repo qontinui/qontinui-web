@@ -58,15 +58,25 @@ SCORES:
   boundary it already had (:func:`_write_sealed_document`, which receives an
   opaque :class:`_SealedDocument`) — its failures name a path and an errno,
   so its message is worth keeping verbatim.
+
+  ``from None`` is the whole mechanism and it is ONE token. ``--showlocals``
+  renders every frame of every exception in the DISPLAYED CHAIN, so
+  ``from error`` — or a bare ``raise`` — puts ``_sealed_payload``'s frame,
+  holding ``scores``, straight back on the page. Measured 2026-08-20: with
+  the token mutated, ``aggregate`` raising rendered
+  ``('ValueError', '_sealed_payload', ['scores', ...])`` while the suite
+  stayed green, because the test walked only ``exc.__traceback__``. It walks
+  ``__cause__`` and unsuppressed ``__context__`` now, and asserts that a
+  :class:`SealedHoldoutError` is the ONLY displayed exception.
   The exception MESSAGE is the other rendered surface, which is why
   :class:`SealedHoldoutError` carries only a type and a ``file:line``:
   ``json.dumps`` quotes the offending value (``... are not JSON compliant:
   inf``) and that value is a holdout metric.
   ``test_no_failure_renders_a_score_in_any_frame`` provokes all three
-  statements and asserts an ALLOWLIST of permitted local names per frame,
-  because a denylist of metric names passes a tuple of bare floats
-  (``(0.0417, 0.0833)`` is neither a score object nor a repr that names a
-  metric).
+  statements and asserts an ALLOWLIST of permitted local names, over every
+  frame of every exception in the chain — because a denylist of metric
+  names passes a tuple of bare floats (``(0.0417, 0.0833)`` is neither a
+  score object nor a repr that names a metric).
 
 Together those make the honest claim: **no holdout score reaches a gate, a
 verdict, the emitted report, or the PR comment through any code path this
