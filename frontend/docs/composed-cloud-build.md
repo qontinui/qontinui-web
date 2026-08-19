@@ -321,13 +321,72 @@ exists, builds, and is gated in CI.
 
 ## CI
 
-`.github/workflows/frontend-ci.yml` runs both shapes: `lint-and-typecheck` is
-the OSS-only tree, and `composed-cloud-build` checks out
-`qontinui/qontinui-cloud-control`, installs the overlay, and runs lint,
-type-check and the unit tests plus a full `next build`. A change in either
-repo that breaks the composition fails there rather than at deploy.
+Four lanes gate this composition, and a fifth is recorded because it gates
+nothing. The table is the whole answer to "is X checked, and where" — read it
+before adding a step, because two of the cells that look like coverage are not.
 
-Lint and type-check run in **both** jobs deliberately. The composed job is the
-only place cloud-control's sources are type-checked anywhere — the package has
-no tsconfig, no build step and no CI of its own — and `@cloud/*` only resolves
-to them there.
+| Lane | Shape | lint | type-check | unit tests | build |
+|---|---|---|---|---|---|
+| **qontinui-web** Actions — `lint-and-typecheck` | OSS-only | ✅ | ✅ | ✅ | — |
+| **qontinui-web** Actions — `composed-cloud-build` | composed | ⚠️ host files only | ✅ **incl. cloud-control's sources** | ✅ | ✅ |
+| **qontinui-web** local-CI (`.qontinui/ci.toml`) | both, in sequence | ⚠️ host files only | ✅ **incl. cloud-control's sources** | ✅ | ✅ |
+| **qontinui-cloud-control** Actions — `composed-typecheck` | composed | — | ✅ | ✅ | — |
+| **qontinui-cloud-control** local-CI (`.qontinui/ci.toml`) | — | — | — | — | — |
+
+**The composed jobs are where cloud-control's frontend is checked at all.** The
+package has no tsconfig, no build step and no CI of its own, and `@cloud/*`
+resolves into its raw sources only when the overlay is present. A change in
+either repo that breaks the composition fails in CI rather than at deploy.
+
+**Why cloud-control has its own composed job.** `composed-cloud-build` triggers
+on `frontend/**` of *this* repo, so it never runs on a cloud-control PR. Until
+`composed-typecheck` was added, that meant a cloud-control PR ran no JS/TS gate
+of any kind: a type error, or an import of a host module that does not exist,
+merged green and reddened the next unrelated qontinui-web frontend PR, whose
+author did not cause it. `composed-typecheck` in
+`qontinui-cloud-control/.github/workflows/ci.yml` builds the same composition
+with the overlay pointed at *that* PR, so the failure lands on the change that
+caused it. It runs `npm test` as well as `npm run type-check`, because
+`cloud-absent/cloud-route-shims.test.ts` is what catches a cloud route added
+with no host shim — a file-existence fact `tsc` cannot see.
+
+The consequence is intended: **a cloud-control PR that adds a route is red until
+its qontinui-web shim PR exists.** That is a declared adaptation pair, and a
+route that should exist but stay unmounted goes in that test's `UNMOUNTED` list.
+
+### Two things that look like coverage and are not
+
+**1. Lint never reaches cloud-control's sources, in any lane.** `.eslintrc.json`
+`ignorePatterns` contains `"node_modules/"`, and the overlay links the package
+to exactly `frontend/node_modules/@qontinui/cloud-control`. The `@cloud/*` alias
+does not change this — ESLint takes its file set from directory globs, never
+from the module graph, so an alias changes *resolution* and not *which files are
+linted*. Type-check is different precisely because `tsc` follows imports.
+
+**2. `Lint (composed)` is therefore a duplicate of the OSS `Lint`** — the same
+file set, the same rules, and no type-aware rules configured (`.eslintrc.json`
+extends `next/core-web-vitals` + `next/typescript` and sets no
+`parserOptions.project`). It cannot report anything the OSS lint did not. It is
+kept for now because a symmetric job list is easier to reason about than an
+asymmetric one, and it costs seconds — but it is a removal candidate, and if it
+goes it must go from `.qontinui/ci.toml` in the same PR.
+
+### The local-CI lane
+
+`.qontinui/ci.toml` mirrors `frontend-ci.yml`'s gate commands for the
+runner-as-CI-node lane, and it gets both shapes out of **one** worktree by
+ordering: `frontend-lint` / `frontend-typecheck` / `frontend-test` run before
+the overlay exists, then `composed-cloud-install` flips the switch and
+`composed-lint` / `composed-typecheck` / `composed-test` / `composed-build`
+run after it. That works because the presence of
+`frontend/node_modules/@qontinui/cloud-control` is the *only* switch.
+
+Two divergences from the Actions job, both forced and both recorded in the
+manifest: that lane passes **no** `QONTINUI_CLOUD_CONTROL_PATH` (its executor
+materialises the sibling exactly where `cloud-control-overlay.mjs`'s
+`DEFAULT_SOURCE` already looks, and the variable is not on the runner's env
+allowlist anyway), and cloud-control's own manifest **cannot** mirror
+`composed-typecheck` — every step of that job needs its working directory
+inside a sibling checkout, and manifest `working_dir` values may not contain a
+parent component. It is disclosed there under "STILL NOT GATED, AND WHY" rather
+than silently dropped.
