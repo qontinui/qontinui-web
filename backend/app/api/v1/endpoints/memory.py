@@ -72,6 +72,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast, get_args
@@ -308,6 +309,19 @@ def _content_hash(content: str) -> str:
 _VALID_KINDS = frozenset(get_args(MemoryKind))
 
 
+# The cursor's ``seq`` half, parsed STRICTLY. ``int()`` alone is too
+# permissive in two directions and both are reachable from a client-supplied
+# query param: it accepts an integer of ANY magnitude (only >4300 digits
+# raises), so an out-of-int64 value survives decode and dies downstream at
+# ``CAST(:cursor_seq AS bigint)`` as an uncaught asyncpg ``DataError`` — a 500
+# where the docstring promises 400 — and it also accepts surrounding
+# whitespace, a sign, PEP-515 underscores and non-ASCII digits (``"1_0"`` -> 10,
+# ``"٣"`` -> 3), which would make encode/decode a non-inverse. Digits only,
+# then a range check.
+_CURSOR_SEQ_RE = re.compile(r"\A[0-9]{1,19}\Z")
+_MAX_BIGINT = 2**63 - 1
+
+
 def _encode_cursor(created_at: datetime, seq: int) -> str:
     """Opaque keyset cursor over ``(created_at, seq)``.
 
@@ -331,7 +345,12 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int]:
         created_raw, sep, seq_raw = raw.partition("|")
         if not sep:
             raise ValueError("missing separator")
-        return datetime.fromisoformat(created_raw), int(seq_raw)
+        if not _CURSOR_SEQ_RE.match(seq_raw):
+            raise ValueError("seq is not a plain decimal integer")
+        seq = int(seq_raw)
+        if seq > _MAX_BIGINT:
+            raise ValueError("seq out of bigint range")
+        return datetime.fromisoformat(created_raw), seq
     except (ValueError, binascii.Error, UnicodeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
