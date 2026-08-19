@@ -207,8 +207,8 @@ const nextConfig = {
       // NOTE: `/admin` -> `/admin/architecture` used to live here. A
       // `redirects()` entry is matched before the filesystem, so it shadowed
       // any page mounted at `/admin` — including cloud-control's admin
-      // dashboard, which `appRoutes` has registered since the extension
-      // surface existed. The redirect moved into
+      // dashboard, which the extension surface had been registering (into a
+      // registry nothing read) since it existed. The redirect moved into
       // `src/cloud-absent/routes/admin/page.tsx`, so OSS-only builds still
       // land on `/admin/architecture` (same destination, same 307) while the
       // composed build renders the cloud page. See

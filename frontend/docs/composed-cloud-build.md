@@ -221,6 +221,22 @@ Skip 2 or 4 and the composed CI job fails; skip 3 and the OSS build fails to
 resolve the specifier. Both are build-time facts, which is the point — a
 mis-mounted route is a red build, not a 404 discovered in production.
 
+**A shim forwards `default` and nothing else.** Route segment config
+(`metadata`, `dynamic`, `revalidate`, `generateStaticParams`, …) is read by
+Next from the *page module in the server graph* — which is the shim, not the
+module it re-exports. So a `export const dynamic` in cloud-control's page is
+inert; if a cloud route needs one, re-export it from the shim too:
+
+```ts
+export { default, metadata } from "@cloud/routes/pricing/page";
+```
+
+Nothing depends on this today (`app/layout.tsx` sets `dynamic =
+"force-dynamic"` for the whole app), which is exactly why it is worth writing
+down before someone adds a `metadata` export and watches it do nothing. The
+capability is real — that is the SSR/metadata advantage option D has over a
+registry — but it lives on the shim.
+
 **The inventory both sides are diffed against is cloud-control's filesystem**,
 not a list: `cloud-route-shims.test.ts` walks its `routes/` tree and treats
 every `page.tsx` outside a `_`-prefixed folder as a route. That is what

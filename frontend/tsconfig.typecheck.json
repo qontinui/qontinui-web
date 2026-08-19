@@ -22,7 +22,7 @@
 // really checked.
 //
 // Trade-off, stated rather than hidden: editors read `tsconfig.json`, so an
-// IDE reports `@cloud/*` as unresolved in the eleven route shims. They are
+// IDE reports `@cloud/*` as unresolved in the route shims. They are
 // two-line re-exports, `npm run type-check` and CI cover them, and the
 // alternative is a paths entry that breaks the composed build.
 {
