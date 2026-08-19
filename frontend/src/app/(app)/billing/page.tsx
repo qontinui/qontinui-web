@@ -1,5 +1,5 @@
 /**
- * `/billing/canceled` — mounted from `@qontinui/cloud-control` at build time.
+ * `/billing` — mounted from `@qontinui/cloud-control` at build time.
  *
  * `@cloud` resolves to the package's `frontend/src/` in the composed cloud
  * build and to `src/cloud-absent/` otherwise, so this one line is the whole
@@ -7,4 +7,4 @@
  * self-hosters, and no runtime registry, client boundary or loader race in
  * either. See `docs/composed-cloud-build.md`.
  */
-export { default } from "@cloud/routes/billing/canceled/page";
+export { default } from "@cloud/routes/billing/page";
