@@ -147,6 +147,46 @@ describe("resolutionCandidates", () => {
     ]);
   });
 
+  it("keeps a repo-scoped SYSTEM row — the system band has no repo predicate", () => {
+    // resolver.rs: `OR ($4::uuid IS NOT NULL AND tenant_id = $4)` — the system
+    // arm carries no repo clause at all, so a repo-scoped built-in still
+    // decides. Dropping it would report "audience default" for a class a
+    // system rule actually governs.
+    const systemRepoScoped = rule({
+      gate_class: "c",
+      authority: "operator_only",
+      built_in: true,
+      repo: "qontinui-web",
+    });
+    expect(inertReason(systemRepoScoped)).toBeNull();
+    const effective = resolveEffectiveAuthority([systemRepoScoped], "c");
+    expect(effective.kind).toBe("rule");
+    if (effective.kind !== "rule") return;
+    expect(effective.band).toBe("system");
+    expect(effective.authority).toBe("operator_only");
+  });
+
+  it("ranks a repo-'' workspace row in the Repo band, above every tenant row", () => {
+    // `$3 = repo.unwrap_or("")`, so `repo = ''` satisfies `repo = $3` and
+    // computes scope_band 0 — ahead of a tenant-wide row of ANY priority.
+    const tenantWide = rule({
+      gate_class: "c",
+      authority: "operator_only",
+      priority: 1,
+    });
+    const repoBand = rule({
+      gate_class: "c",
+      authority: "agent_any",
+      priority: 9999,
+      repo: "",
+    });
+    const effective = resolveEffectiveAuthority([tenantWide, repoBand], "c");
+    expect(effective.kind).toBe("rule");
+    if (effective.kind !== "rule") return;
+    expect(effective.rule.policy_id).toBe(repoBand.policy_id);
+    expect(effective.authority).toBe("agent_any");
+  });
+
   it("drops every row coord's SELECT would not return", () => {
     const kept = rule({ gate_class: "c" });
     const dropped = [
@@ -167,7 +207,7 @@ describe("resolutionCandidates", () => {
 describe("inertReason names the clause that excludes a row", () => {
   it.each([
     ["disabled", rule({ enabled: false })],
-    ["repo-scoped", rule({ repo: "qontinui-coord" })],
+    ["repo-scoped", rule({ repo: "qontinui-coord" })], // workspace row only
     ["expired", rule({ expires_at: "2020-01-01T00:00:00Z" })],
     ["no-class", rule({ payload: { authority: "agent_any" } })],
     [

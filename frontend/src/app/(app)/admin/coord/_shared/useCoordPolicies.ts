@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { CoordPolicyRow } from "./coordPolicies";
 import {
@@ -46,12 +46,19 @@ export interface UseCoordPoliciesOptions {
   sort?: (a: CoordPolicyRow, b: CoordPolicyRow) => number;
   /** Singular noun for toast copy. Default `"rule"`. */
   noun?: string;
-  /** Message for a failed list call. Defaults to `Failed to load <noun>s`. */
+  /** Headline for a failed list call. Defaults to `Failed to load <noun>s`;
+   *  the underlying error text is appended either way. */
   loadFailMessage?: string;
 }
 
 export interface UseCoordPoliciesResult<TCreate, TUpdate> {
   rules: CoordPolicyRow[];
+  /**
+   * True only while the FIRST list call is in flight. A mutation's refetch
+   * deliberately does not raise it — flipping a page to a full-height
+   * "Loading…" after every create/delete unmounts what the user was reading.
+   * Use `saving` for in-flight edits instead.
+   */
   loading: boolean;
   saving: boolean;
   /**
@@ -88,12 +95,14 @@ export function useCoordPolicies<TCreate, TUpdate>(
   const { filter, sort, noun = "rule", loadFailMessage } = options;
   const [rules, setRules] = useState<CoordPolicyRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Cleared by the first completed load, so subsequent refetches are silent.
+  const firstLoadDone = useRef(false);
   const [saving, setSaving] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
 
   const loadRules = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!firstLoadDone.current) setLoading(true);
       const res = await listCoordPolicies();
       const items = (res.policies ?? []).filter((r) => filter(r));
       if (sort) items.sort(sort);
@@ -101,12 +110,14 @@ export function useCoordPolicies<TCreate, TUpdate>(
       setLoadFailed(false);
     } catch (err) {
       setLoadFailed(true);
+      // The headline names WHAT failed (an `httpClient` error message alone
+      // often does not); the error text is appended, never swallowed.
+      const headline = loadFailMessage ?? `Failed to load ${noun}s`;
       toast.error(
-        err instanceof Error
-          ? err.message
-          : (loadFailMessage ?? `Failed to load ${noun}s`)
+        err instanceof Error ? `${headline}: ${err.message}` : headline
       );
     } finally {
+      firstLoadDone.current = true;
       setLoading(false);
     }
   }, [filter, sort, noun, loadFailMessage]);
@@ -221,8 +232,10 @@ export function useCoordPolicies<TCreate, TUpdate>(
       setSaving(true);
       return await fn();
     } finally {
-      setSaving(false);
+      // Reload BEFORE releasing `saving`: clearing it first re-enables the
+      // controls against the pre-edit list.
       await loadRules();
+      setSaving(false);
     }
   };
 

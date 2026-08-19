@@ -712,6 +712,10 @@ export function summarizeClearanceProvenance(
     // No band supplied → the un-annotated phrase, identical to today. An
     // explicit "unknown" is a different statement (the set was read and the
     // rule is gone) and is called out.
+    // `?? "unknown"` picks the LOOKUP KEY for the un-annotated phrase ("under
+    // rule <id>"); it is not a claim that the band is unknown. The explicit
+    // "(band unknown)" suffix below fires only when the caller actually said
+    // so — i.e. it read the rule set and the rule was not in it.
     const band = opts?.ruleBand ?? "unknown";
     parts.push(`${RULE_BAND_PHRASES[band]} ${shortId(rule)}`);
     if (opts?.ruleBand === "unknown") parts.push("(band unknown)");

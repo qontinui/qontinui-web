@@ -14,9 +14,10 @@
  *  - `policies::resolver::fetch_policies_by_domain` — the candidate set and its
  *    order: `enabled = true`, unexpired, tenant band ∪ system band, ordered
  *    `scope_band ASC, priority ASC, created_at ASC`. Gates carry no repo, so
- *    the resolver queries with `repo: None` and a repo-scoped row can NEVER
- *    match (coord's create route rejects new ones with a 400, but rows written
- *    before that guard can still exist).
+ *    the resolver queries with `repo: None` and a repo-scoped WORKSPACE row can
+ *    never match (coord's create route rejects new ones with a 400, but rows
+ *    written before that guard can still exist). System rows are matched
+ *    repo-agnostically and are unaffected.
  *  - `gates_authority::pick_rule` — first row whose `payload.gate_class`
  *    equals the gate's class **exactly** and whose `payload.authority` parses;
  *    a row with a missing/mismatched class or an unparseable authority is
@@ -113,12 +114,35 @@ export function ruleBand(row: CoordPolicyRow): RuleBand {
   return row.built_in ? "system" : "tenant";
 }
 
-/** Band precedence, mirroring the resolver's `scope_band` (tenant 1, system 2). */
+/**
+ * Band precedence, mirroring the resolver's computed `scope_band`:
+ *
+ * ```sql
+ * WHEN tenant_id = $1 AND repo IS NOT NULL AND repo = $3 THEN 0   -- Repo
+ * WHEN tenant_id = $1 AND repo IS NULL             THEN 1        -- Tenant
+ * ELSE 2                                                          -- System
+ * ```
+ *
+ * A gate carries no repo, so the resolver binds `$3 = repo.unwrap_or("")` —
+ * which means the Repo band is reachable by exactly one degenerate row, a
+ * tenant row whose `repo` is the empty string. It outranks every other tenant
+ * row regardless of priority, so rank it where coord ranks it rather than
+ * folding it in with the tenant band.
+ */
 function bandRank(row: CoordPolicyRow): number {
-  return row.built_in ? 2 : 1;
+  if (row.built_in) return 2;
+  return row.repo === "" ? 0 : 1;
 }
 
-/** Is this row a `gate_clearance` rule at all? */
+/**
+ * Is this row a `gate_clearance` rule at all?
+ *
+ * Coord's predicate is `COALESCE(decision_domain, kind) = 'gate_clearance'`,
+ * so a row with a NULL `decision_domain` and `kind = 'gate_clearance'` would
+ * also match. That row cannot exist today — `kind` is coord's closed
+ * `PolicyKind` enum and `gate_clearance` is not one of its variants — so
+ * keying on the column alone is exact, not a narrowing.
+ */
 export function isGateClearanceRow(row: CoordPolicyRow): boolean {
   return row.decision_domain === GATE_CLEARANCE_DOMAIN;
 }
@@ -160,7 +184,7 @@ export type InertReason =
 export const INERT_EXPLANATIONS: Record<InertReason, string> = {
   disabled: "Disabled — coord only resolves enabled rules.",
   "repo-scoped":
-    "Scoped to a repo. Gates carry no repo, so a repo-scoped rule can never match.",
+    "Scoped to a repo. Gates carry no repo, so a repo-scoped workspace rule can never match.",
   expired: "Expired — coord only resolves unexpired rules.",
   "no-class": "No `payload.gate_class` — coord skips rules it cannot key.",
   "unknown-authority":
@@ -172,9 +196,18 @@ export function inertReason(
   now: number = Date.now()
 ): InertReason | null {
   if (!row.enabled) return "disabled";
-  // The resolver binds `repo.unwrap_or("")` for a gate, so only NULL (or the
-  // degenerate empty string) can satisfy `repo IS NULL OR repo = $3`.
-  if (row.repo !== null && row.repo !== "") return "repo-scoped";
+  // The repo predicate applies to the TENANT arm of the resolver's WHERE only:
+  //
+  //   (tenant_id = $1 AND (repo IS NULL OR repo = $3))
+  //   OR ($4::uuid IS NOT NULL AND tenant_id = $4)   <- system band, no repo
+  //
+  // "System rows are matched repo-agnostically (a system default applies to
+  // every repo)" — resolver.rs. So a repo-scoped SYSTEM row is a live
+  // candidate and must NOT be reported inert; only a workspace row is killed
+  // by its repo. (`$3` is `repo.unwrap_or("")` for a gate, so the degenerate
+  // empty string also survives — see `bandRank`.)
+  if (!row.built_in && row.repo !== null && row.repo !== "")
+    return "repo-scoped";
   if (row.expires_at !== null) {
     const t = new Date(row.expires_at).getTime();
     if (!Number.isNaN(t) && t <= now) return "expired";

@@ -33,6 +33,7 @@ import {
   rawGateClass,
   RECOMMENDED_GATE_CLASSES,
   resolveEffectiveAuthority,
+  resolveWithout,
   type ClearanceAuthority,
 } from "../gateClearance";
 import type { ClearanceRuleInput } from "../_hooks/useGateClearanceRules";
@@ -144,8 +145,17 @@ export function ClearanceRuleEditorDialog({
   const priorityNum = Number.parseInt(priority, 10);
   const priorityValid = Number.isFinite(priorityNum);
 
+  // The class this rule is MOVING AWAY from, when the edit re-points it.
+  // Vacating a class is a real consequence — the class it leaves usually has no
+  // other rule and falls to the audience default, which for agent-audience
+  // gates is the loosest setting there is — so it gets its own preview.
+  const vacatedClass =
+    editing && existing && existing.gate_class !== gateClass
+      ? existing.gate_class
+      : null;
+
   // Live consequence preview: who decides this class today vs. after the save.
-  const { before, after } = useMemo(() => {
+  const { before, after, vacatedAfter } = useMemo(() => {
     const others = rule
       ? rules.filter((r) => r.policy_id !== rule.policy_id)
       : rules;
@@ -158,13 +168,33 @@ export function ClearanceRuleEditorDialog({
       expires_at: null,
       priority: priorityValid ? priorityNum : 100,
       decision_domain: "gate_clearance",
+      // A payload change is a REPLACE: coord creates a genuinely new row, so
+      // the saved rule sorts LAST in the resolver's `created_at ASC` tie-break,
+      // not where the row being edited sits today. Using the old timestamp here
+      // would show this rule winning a tie the replacement would actually lose.
+      created_at: payloadChanged
+        ? PREVIEW_ROW_TEMPLATE.created_at
+        : (rule?.created_at ?? PREVIEW_ROW_TEMPLATE.created_at),
       payload: { gate_class: gateClass, authority },
     };
     return {
       before: resolveEffectiveAuthority(rules, gateClass),
       after: resolveEffectiveAuthority([...others, draft], gateClass),
+      vacatedAfter:
+        vacatedClass && rule
+          ? resolveWithout(rules, vacatedClass, rule.policy_id)
+          : null,
     };
-  }, [rules, rule, gateClass, authority, priorityNum, priorityValid]);
+  }, [
+    rules,
+    rule,
+    gateClass,
+    authority,
+    priorityNum,
+    priorityValid,
+    payloadChanged,
+    vacatedClass,
+  ]);
 
   const canSave =
     gateClass.length > 0 && name.trim().length > 0 && priorityValid && !saving;
@@ -350,6 +380,24 @@ export function ClearanceRuleEditorDialog({
                   </p>
                   <EffectiveAuthorityCell effective={after} />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {vacatedClass && vacatedAfter && (
+            <div
+              className="rounded-lg border border-warning/40 bg-warning/5 p-3"
+              data-testid="clearance-editor-vacated-preview"
+            >
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                This rule no longer covers{" "}
+                <code className="font-mono">{vacatedClass}</code>
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                After saving, gates in that class will be decided by:
+              </p>
+              <div className="mt-2">
+                <EffectiveAuthorityCell effective={vacatedAfter} />
               </div>
             </div>
           )}
