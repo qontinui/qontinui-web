@@ -120,9 +120,10 @@ not assert drift the box cannot have:
   we do not know that the two boxes differ, only that nobody can say they agree.
 
 * **INCOMPARABLE inventories are not drift either — the mirror failure.** The
-  same capture carries two comparability markers,
-  ``python_installed_env_kind`` (``venv`` | ``system`` | ``unknown``) and
-  ``python_installed_scope_kind``. They exist because the digest is a function
+  same capture carries three comparability markers,
+  ``python_installed_env_kind`` (``venv`` | ``not_venv`` | ``unknown``),
+  ``python_installed_scope_kind`` and ``python_installed_interpreter`` (the
+  interpreter's ``MAJOR.MINOR``). They exist because the digest is a function
   of WHICH environment was inventoried: the interpreter comes off the inherited
   PATH, so one box captured from an activated venv and captured again from a
   plain shell produces two different digests with nothing wrong on either side.
@@ -141,7 +142,7 @@ not assert drift the box cannot have:
   emits them un-derived precisely so they cannot be swallowed at ``info``. See
   ``_inventory_incomparable``.
 
-* **A key that is a MEASUREMENT is never an apply action.** All five
+* **A key that is a MEASUREMENT is never an apply action.** All six
   ``python_installed_*`` keys are real box state (so a difference IS drift and
   DOES break ``in_sync``, at full severity) but none of them is settable —
   ``python_installed_digest`` is a sha256 over the installed packages, and the
@@ -251,23 +252,43 @@ _INSTALLED_PROBE_MEASURED = "measured"
 # The COMPARABILITY GATE keys. Each states a property of HOW the inventory was
 # taken, and two captures whose values differ did not measure the same thing:
 #
-# * ``python_installed_env_kind`` (``venv`` | ``system`` | ``unknown``) — which
-#   kind of Python environment the interpreter was in. The interpreter comes off
+# * ``python_installed_env_kind`` (``venv`` | ``not_venv`` | ``unknown``) —
+#   whether the interpreter was inside a virtualenv. The interpreter comes off
 #   the inherited PATH, so the SAME box inventoried from an activated venv and
 #   from a plain shell yields different digests with nothing wrong on either
 #   side. The runner sources this from the interpreter itself
-#   (``sys.prefix != sys.base_prefix``), never from ``VIRTUAL_ENV``.
+#   (``sys.prefix != sys.base_prefix``), never from ``VIRTUAL_ENV``. Note the
+#   value is ``not_venv``, NOT ``system``: the test only establishes "not a
+#   venv", which conda envs, pyenv installs and any second system python all
+#   satisfy — so this marker alone is a WEAK claim, which is why the runner
+#   added the interpreter key below.
 # * ``python_installed_scope_kind`` — which probe scope the inventory ran in.
 #   The non-derived twin of ``probe_scope_kind``; the runner emits it precisely
 #   so a scope difference cannot be swallowed as ``info`` the way the derived
 #   one is.
+# * ``python_installed_interpreter`` — the interpreter's ``MAJOR.MINOR``, read
+#   in the SAME invocation that produced the digest (so it cannot disagree with
+#   what it certifies). It gates for the reason the whole gate exists: two boxes
+#   on 3.12 and 3.13 are not measuring the same thing, yet both report
+#   ``not_venv`` and would otherwise pass on ``env_kind`` alone and have their
+#   digests compared — the exact class this rule catches. ``MAJOR.MINOR`` and
+#   not the patch, deliberately: a patch bump does not change which packages are
+#   installed, so gating on it would manufacture incomparability.
 #
-# Both are ordinary drift in their own right (a real, measured difference the
+# All three are ordinary drift in their own right (real, measured differences an
 # operator can act on), so they keep their normal delta. What they gate is the
 # READING of the digest/count keys below.
+#
+# The gate NARROWS incomparability rather than closing it, and the runner says
+# so: two boxes on different conda envs of the same minor version still compare,
+# ``PYTHONPATH``/``.pth`` extend ``sys.path`` invisibly to all three markers,
+# and two different venvs both report ``venv``. Every residual leaves this rule
+# reporting drift that may be incomparable — never the reverse — so it fails in
+# the direction that stays visible.
 _INSTALLED_COMPARABILITY_KEYS = (
     "python_installed_env_kind",
     "python_installed_scope_kind",
+    "python_installed_interpreter",
 )
 
 # The keys whose comparison the gate governs: the inventory measurement itself.

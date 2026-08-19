@@ -521,8 +521,10 @@ class TestUnmeasuredInstalledInventory:
     The runner's installed-inventory capture reports ``measured`` when it
     genuinely read the environment and otherwise names the REASON it could not
     (``scope_unusable``, ``python_absent``, ``probe_failed``, ``probe_timeout``,
-    ``unparseable_output``), omitting the count/digest rather than reporting
-    zero packages. Every other rule in the oracle keys on a DIFFERENCE, so two
+    ``unparseable_output``), omitting the count/digest/interpreter rather than
+    reporting zero packages. The runner's contract is explicit that a consumer
+    should match on ``measured`` and treat EVERY other value — including one
+    added later — as not-clean, which is the polarity these tests pin. Every other rule in the oracle keys on a DIFFERENCE, so two
     boxes that both failed to measure for the same reason are byte-identical and
     would be reported in sync — parity asserted from two identical notes saying
     nobody looked. These tests pin the rule that closes that hole: a probe value
@@ -576,6 +578,7 @@ class TestUnmeasuredInstalledInventory:
                 "python_installed_probe": "measured",
                 "python_installed_scope_kind": "default",
                 "python_installed_env_kind": "venv",
+                "python_installed_interpreter": "3.13",
                 "python_installed_count": "214",
                 "python_installed_digest": "sha256:abc123",
             }
@@ -748,7 +751,7 @@ class TestUnmeasuredInstalledInventory:
             {
                 "versions": {
                     "python_installed_probe": "measured",
-                    "python_installed_env_kind": "system",
+                    "python_installed_env_kind": "not_venv",
                     "python_installed_count": "97",
                     "python_installed_digest": "sha256:def456",
                 }
@@ -802,7 +805,8 @@ class TestUnmeasuredInstalledInventory:
     def test_agreeing_markers_leave_digest_drift_alone(self) -> None:
         """Over-suppression guard: the gate only fires on DISAGREEING markers.
 
-        Both boxes measured venvs in the same scope kind, so their digests are
+        Both boxes measured venvs, in the same scope kind, on the same
+        interpreter minor — every marker agrees — so their digests are
         comparable and a difference between them is ordinary, actionable drift.
         A gate that fired here would mute the very signal the installed
         inventory exists to produce.
@@ -813,6 +817,7 @@ class TestUnmeasuredInstalledInventory:
                     "python_installed_probe": "measured",
                     "python_installed_env_kind": "venv",
                     "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
                     "python_installed_digest": "sha256:abc123",
                 }
             }
@@ -823,6 +828,7 @@ class TestUnmeasuredInstalledInventory:
                     "python_installed_probe": "measured",
                     "python_installed_env_kind": "venv",
                     "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
                     "python_installed_digest": "sha256:def456",
                 }
             }
@@ -834,14 +840,27 @@ class TestUnmeasuredInstalledInventory:
         assert digest.severity == "critical"
         assert report.in_sync is False
 
-    def test_a_marker_on_one_side_only_does_not_gate(self) -> None:
+    @pytest.mark.parametrize(
+        ("marker", "value"),
+        [
+            ("python_installed_env_kind", "venv"),
+            ("python_installed_scope_kind", "default"),
+            # The sixth key. A runner one round older emits no interpreter at
+            # all, which is exactly the skew this guard is about.
+            ("python_installed_interpreter", "3.13"),
+        ],
+    )
+    def test_a_marker_on_one_side_only_does_not_gate(
+        self, marker: str, value: str
+    ) -> None:
         """A marker only one capture reports is runner skew, not incomparability.
 
         Refusing to compare on a one-sided marker would let an OLD runner —
         which emits no marker at all — mute a real digest difference on every
         peer that does emit one. Both-sides-present is required, so the
         ``added`` marker is reported as the ordinary difference it is and the
-        digest drift survives.
+        digest drift survives. Parametrized over all three markers so a new one
+        cannot quietly acquire the weaker one-sided behaviour.
         """
         canonical = _envelope(
             {
@@ -855,7 +874,7 @@ class TestUnmeasuredInstalledInventory:
             {
                 "versions": {
                     "python_installed_probe": "measured",
-                    "python_installed_env_kind": "venv",
+                    marker: value,
                     "python_installed_digest": "sha256:def456",
                 }
             }
@@ -864,14 +883,68 @@ class TestUnmeasuredInstalledInventory:
 
         section = _section(report, "versions")
         assert _delta(section, "python_installed_digest").status == "changed"
-        assert _delta(section, "python_installed_env_kind").status == "added"
+        assert _delta(section, marker).status == "added"
+        assert report.in_sync is False
+
+    def test_differing_interpreter_minor_gates_the_digest(self) -> None:
+        """The blind spot the sixth key was added to close.
+
+        ``env_kind`` alone only separates venv from not-venv, so two boxes on
+        3.12 and 3.13 — different interpreters, wholly different site-packages —
+        both report ``not_venv``, pass a two-marker gate, and have their digests
+        compared as if they measured the same thing. That is precisely the class
+        this rule exists to catch, so the interpreter gates too.
+
+        MAJOR.MINOR is what the runner publishes, on purpose: a patch bump does
+        not change which packages are installed, so gating on the patch would
+        manufacture incomparability where none exists. Nothing here needs to
+        know that — the rule compares values — but a fixture carrying a patch
+        version would be testing a contract the runner does not offer.
+        """
+        canonical = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "not_venv",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.12",
+                    "python_installed_count": "214",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "not_venv",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_count": "197",
+                    "python_installed_digest": "sha256:def456",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+        section = _section(report, "versions")
+
+        # The two markers that USED to be the whole gate agree here — without
+        # the interpreter this pair would have compared clean-or-drifted.
+        assert "python_installed_env_kind" not in [d.key for d in section.deltas]
+        for key in ("python_installed_count", "python_installed_digest"):
+            assert _delta(section, key).status == "unverified", key
+            assert _delta(section, key).severity == "warning", key
+        interpreter = _delta(section, "python_installed_interpreter")
+        assert interpreter.status == "changed"
+        assert interpreter.derived is False
+        assert interpreter.observation_only is True
         assert report.in_sync is False
 
     def test_unmeasured_side_reports_the_reason_and_gates_the_numbers(self) -> None:
         """Both rules at once, on the shape a real failure actually produces.
 
         The runner sets ``python_installed_env_kind = "unknown"`` whenever it
-        measured nothing — never ``system`` — so an unmeasurable box trips the
+        measured nothing — never ``not_venv`` — so an unmeasurable box trips the
         probe rule AND disagrees on the marker. The report must name the reason
         (that is what the operator acts on) and must not turn canonical's
         numbers into ``removed`` drift on a box that never looked.
@@ -919,6 +992,7 @@ class TestUnmeasuredInstalledInventory:
             "python_installed_probe": "python_absent",
             "python_installed_scope_kind": "default",
             "python_installed_env_kind": "venv",
+            "python_installed_interpreter": "3.13",
             "python_installed_count": "214",
             "python_installed_digest": "sha256:abc123",
         }
@@ -994,7 +1068,19 @@ class TestUnmeasuredInstalledInventory:
         """
         from app.services import devenv_section_policy as sp
 
-        assert sp.is_observation_only_key("versions", "python_installed_digest") is True
+        # Every key the capture emits, verified rather than assumed — the
+        # prefix rule is supposed to cover a key added by a later runner round
+        # with no server change, and ``python_installed_interpreter`` is the
+        # first key to actually test that claim.
+        for key in (
+            "python_installed_probe",
+            "python_installed_scope_kind",
+            "python_installed_env_kind",
+            "python_installed_interpreter",
+            "python_installed_count",
+            "python_installed_digest",
+        ):
+            assert sp.is_observation_only_key("versions", key) is True, key
         assert sp.is_observation_only_key("versions", "python") is False
         assert sp.is_observation_only_key("versions", "python_dep_requests") is False
         assert sp.is_observation_only_key("versions", "node") is False

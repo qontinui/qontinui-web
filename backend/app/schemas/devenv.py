@@ -50,10 +50,10 @@ SeverityT = Literal["info", "warning", "critical"]
 #                    says the fact was never measured
 #                    (``python_installed_probe`` other than ``measured``), or
 #                    the two captures are not comparable at all (their
-#                    ``python_installed_env_kind`` / ``..._scope_kind`` markers
-#                    disagree, so their digests were taken over different
-#                    environments). Both must read as neither clean nor
-#                    drifted.
+#                    ``python_installed_env_kind`` / ``..._scope_kind`` /
+#                    ``..._interpreter`` markers disagree, so their digests were
+#                    taken over different environments). Both must read as
+#                    neither clean nor drifted.
 #
 # ``unknown`` is a STATUS, not a qualifier flag beside ``removed``: a
 # ``removed`` delta asserts "canonical has this, the target does not", and that
