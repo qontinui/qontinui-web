@@ -39,12 +39,15 @@ const cloudControlPresent = fs.existsSync(
 // a registry read forfeits all three because the registry only ever exists
 // behind a client boundary. See docs/composed-cloud-build.md.
 //
-// Deliberately NOT in tsconfig.json `paths`: Next feeds those into webpack
-// via `JsConfigPathsPlugin`, which taps `described-resolve` ahead of the
-// alias plugin — a `@cloud/*` entry there would win over the mapping below
-// and silently resolve every composed build back to the OSS stubs. `tsc`
-// gets its own mapping from `tsconfig.typecheck.json`, which Next never
-// reads.
+// Deliberately NOT in tsconfig.json `paths`. Next feeds those into webpack as
+// `JsConfigPathsPlugin`, which taps `described-resolve`; webpack's own
+// `resolve.alias` is an `AliasPlugin` on `raw-resolve`, and enhanced-resolve
+// runs `described-resolve` strictly BEFORE `raw-resolve`. So a `@cloud/*`
+// entry in tsconfig.json wins over the mapping below on pipeline ordering —
+// not on plugin registration order — and silently resolves every composed
+// build back to the OSS stubs. `tsc` gets its own mapping from
+// `tsconfig.typecheck.json`, which Next never reads, and
+// `cloud-route-shims.test.ts` asserts the entry never reappears.
 const CLOUD_ALIAS_TARGET = path.resolve(
   __dirname,
   cloudControlPresent
