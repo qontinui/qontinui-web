@@ -343,6 +343,8 @@ _PAIRED_METRICS: Mapping[str, str] = {
 #: Metrics where a HIGHER mean is WORSE — recall's price, not its reward.
 #: :attr:`PairedResult.promoted` is a literal ``candidate > control``, so on
 #: these two it reads "scored higher", which is the opposite of "better".
+#: :attr:`PairedResult.credited_2sigma` reads the OTHER way and flips its
+#: sign on these metrics — see :func:`paired_delta`.
 LOWER_IS_BETTER_METRICS: frozenset[str] = frozenset(
     {"noise_rate_at_10", "token_cost_at_10"}
 )
@@ -389,7 +391,10 @@ class PairedResult:
     ``promoted`` is literally ``candidate_mean > control_mean``. For the
     metrics in :data:`LOWER_IS_BETTER_METRICS` a higher mean is worse, so
     there it means "scored higher", not "did better" — read the metric name
-    before reading the flag.
+    before reading the flag. ``credited_2sigma`` is the opposite: it is
+    direction-AWARE, because a label that said "significant" for a
+    significant regression would be actively misleading rather than merely
+    literal.
     """
 
     #: The metric name as the CALLER spelled it (``mrr`` stays ``mrr``).
@@ -414,7 +419,10 @@ class PairedResult:
     z: float
     #: What banks: ``candidate_mean > control_mean``.
     promoted: bool
-    #: A reported LABEL: ``z >= CREDIT_Z_THRESHOLD``. Never a gate.
+    #: A reported LABEL: the lift is a significant IMPROVEMENT, i.e.
+    #: ``z >= CREDIT_Z_THRESHOLD`` — or ``-z >= CREDIT_Z_THRESHOLD`` on a
+    #: metric in :data:`LOWER_IS_BETTER_METRICS`, where improvement is a
+    #: negative lift. Never a gate.
     credited_2sigma: bool
     #: ``n < 2``, so no sample sd exists. :attr:`sd`, :attr:`se` and
     #: :attr:`z` are ``0.0`` placeholders in that case — stated explicitly
@@ -565,6 +573,15 @@ def paired_delta(
         se = sd / math.sqrt(n)
         z = mean_lift / se
 
+    # Direction-aware, and it has to be. `z` is the signed z of
+    # `candidate - control`; on a LOWER_IS_BETTER metric an IMPROVEMENT is
+    # a negative lift, so an unsigned `z >= 2` would label a significant
+    # noise *reduction* False and a significant noise *regression* True —
+    # and the report renders that flag beside a "lower is better" marker.
+    # `credited_2sigma` means "a significant improvement", so improvement is
+    # what the sign has to be measured against.
+    directed_z = -z if metric in LOWER_IS_BETTER_METRICS else z
+
     return PairedResult(
         metric=metric,
         n=n,
@@ -575,6 +592,6 @@ def paired_delta(
         se=se,
         z=z,
         promoted=promoted,
-        credited_2sigma=z >= CREDIT_Z_THRESHOLD,
+        credited_2sigma=directed_z >= CREDIT_Z_THRESHOLD,
         insufficient_n=False,
     )

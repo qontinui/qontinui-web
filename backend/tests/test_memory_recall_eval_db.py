@@ -56,7 +56,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -86,6 +86,7 @@ from tests.memory_recall.holdout import (
     sealed_runner,
     split_cases,
     split_report,
+    split_report_violations,
 )
 from tests.memory_recall.scorer import (
     CREDIT_Z_THRESHOLD,
@@ -153,6 +154,37 @@ def train_cases(golden: fx.GoldenSet, split: CaseSplit) -> list[fx.GoldenCase]:
     aggregate mean, which is no less a leak for being averaged.
     """
     return [c for c in golden.cases if not split.is_holdout(c.case_id)]
+
+
+def _seeded_correction(
+    case: fx.GoldenCase, record_by_key: Mapping[str, fx.GoldenRecord]
+) -> tuple[str, str] | None:
+    """``case.correction``, having CHECKED both halves were actually seeded.
+
+    The single door both legs of :func:`_run_arm` go through, and that is
+    the point rather than tidiness. A correction pair whose corrector key
+    does not exist in the corpus scores a silent ``correction_precedence``
+    fail — the record it should have outranked was never there to outrank.
+    On the train side that lands in the report, where a human reads it. On
+    the SEALED side it lands in ``holdout-*.json``, which nothing reads,
+    so it would sit there wrong forever.
+
+    Two of the twelve correction cases are sealed by the current draw, and
+    the sealed leg used to pass ``case.correction`` straight through with
+    no check at all while its comment claimed "same integrity checks".
+    Routing both legs through one function is what makes that comment
+    true; ``test_the_holdout_leg_guards_correction_seeding`` in
+    ``test_memory_recall_scorer.py`` is what keeps it true.
+    """
+    correction = case.correction
+    if correction is None:
+        return None
+    assert correction[0] in record_by_key and correction[1] in record_by_key, (
+        f"case {case.case_id} names a correction pair "
+        f"{correction!r} that was never seeded — it would score a silent "
+        "precedence fail rather than a loud fixture error"
+    )
+    return correction
 
 
 def _exec(engine: AsyncEngine, statements: Sequence[str]) -> None:
@@ -460,11 +492,7 @@ def _run_arm(
         ]
         if reached_by_edge:
             link_only[case.case_id] = reached_by_edge
-        correction = case.correction
-        if correction is not None:
-            # Guard against a fixture whose pair references a record that
-            # was never seeded — that would score a silent precedence fail.
-            assert correction[0] in record_by_key and correction[1] in record_by_key
+        correction = _seeded_correction(case, record_by_key)
         scores.append(
             score_case(
                 case_id=case.case_id,
@@ -478,10 +506,12 @@ def _run_arm(
 
     if wiring is not None:
         # The sealed leg. These cases are queried exactly like the train
-        # cases — same arm, same client, same integrity checks below. What
-        # differs is where their SCORE goes: into the sealed runner, which
-        # writes it out and returns nothing. No `CaseScore` for a holdout
-        # case is ever constructed in this function's frame.
+        # cases — same arm, same client, and the SAME correction-seeding
+        # guard, via `_seeded_correction`; the arm/link_arm discriminators
+        # below cover both legs' responses together. What differs is where
+        # their SCORE goes: into the sealed runner, which writes it out and
+        # returns nothing. No `CaseScore` for a holdout case is ever
+        # constructed in this function's frame.
         for case in golden.cases:
             if not split.is_holdout(case.case_id):
                 continue
@@ -508,7 +538,7 @@ def _run_arm(
                         )
                     ),
                     relevant=tuple(case.relevant),
-                    correction=case.correction,
+                    correction=_seeded_correction(case, record_by_key),
                 )
             )
 
@@ -1323,9 +1353,17 @@ class TestBaselineReport:
         # from its two counts.
         assert report["split"]["holdout_cases"] == split.holdout_count
         assert set(report["split"]["holdout_case_ids"]) == split.holdout_set
-        assert not any(
-            isinstance(value, float) for value in report["split"].values()
-        ), "the split block grew a float — the only floats here are scores"
+        # RECURSIVE, and by the same total rule the pure suite applies: a
+        # leaf is a string, or an int under one of the two pinned count
+        # keys. The check here used to be a shallow `isinstance(v, float)`
+        # over `.values()`, which a nested `{"holdout_means": {...}}` walked
+        # straight past, and which three int-valued metrics
+        # (total_token_cost_at_10, correction_pairs,
+        # correction_precedence_passes) were never covered by at all.
+        assert split_report_violations(report["split"]) == [], (
+            "the split block grew a leaf that is not a string or a pinned "
+            f"count: {split_report_violations(report['split'])}"
+        )
         for arm_row in report["arms"]:
             assert arm_row["cases"] == split.train_count, (
                 f"{arm_row['arm']} reported a denominator of {arm_row['cases']}, "
@@ -1389,9 +1427,18 @@ class TestLinkArmUnderAProductionLikeCutoff:
 
         client, mapping = seeded
 
+        # Train cases only. This count is link PLUMBING, not a score — but
+        # the sibling test at the bottom of this class restricts itself to
+        # train with the rationale "the holdout exists so that no verdict is
+        # read off its cases", and a verdict IS read off this count (`> 0` /
+        # `== 0`). Two tests in one file disagreeing about where the line
+        # falls is worse than the marginal coverage the extra nine cases buy,
+        # so both now sit on the same side of it.
+        cases = train_cases(golden, golden_split(golden))
+
         def link_only_count() -> int:
             total = 0
-            for case in golden.cases:
+            for case in cases:
                 body = client.query(
                     case.query_text, case.query_embedding, link_expansion=True
                 )

@@ -31,6 +31,18 @@ SCORES:
   :data:`SEALED_DIR_ENV`, which the driver never opens. The tuning path
   reads exactly one file — the report at ``MEMORY_RECALL_EVAL_REPORT`` —
   and no holdout number is ever written into it.
+* **No frame that can raise holds a score.** The five mechanisms above all
+  govern code this harness wrote; none of them governs the INTERPRETER's
+  own error reporting. ``backend/pytest.ini`` passes ``--showlocals``
+  unconditionally, so any exception escaping :meth:`SealedHoldoutRunner.score`
+  prints every traceback frame's locals into a public CI job log — and the
+  statements that can realistically fail (``mkdir`` on a read-only mount or
+  a directory owned by another uid, a write on a full disk) used to sit in
+  the same frame as ``suite`` and ``payload``. The write is now isolated in
+  :func:`_write_sealed_document`, which receives an opaque
+  :class:`_SealedDocument`, and ``score`` drops its score-bearing locals
+  before calling it. ``test_a_write_failure_renders_no_score_in_any_frame``
+  is the mechanism that keeps it that way.
 
 Together those make the honest claim: **no holdout score reaches a gate, a
 verdict, the emitted report, or the PR comment through any code path this
@@ -60,6 +72,12 @@ from tests.memory_recall.scorer import CaseScore, aggregate, score_case
 #: destinations never coincide.
 SEALED_DIR_ENV = "MEMORY_RECALL_HOLDOUT_DIR"
 
+#: The report path the CI comment step reads. Named here ONLY so
+#: :func:`sealed_directory` can check itself against it: the docstring above
+#: claims "the two destinations never coincide", and a claim nothing checks
+#: is a rule rather than a mechanism.
+REPORT_PATH_ENV = "MEMORY_RECALL_EVAL_REPORT"
+
 #: Salt for the split hash. Bump it to REDRAW the split — which invalidates
 #: every holdout number recorded under the old draw, so bump it deliberately
 #: and say so in the commit, never as a drive-by.
@@ -74,8 +92,7 @@ HOLDOUT_EVERY = 5
 #: that adding a reader — ``load_holdout``, ``read_scores``, anything that
 #: could hand a holdout number back — fails the structural test in
 #: ``test_memory_recall_scorer.py`` instead of silently opening a path to
-#: the tuning side. Constants are not listed: a ``str`` cannot return a
-#: score.
+#: the tuning side.
 PUBLIC_CALLABLES: frozenset[str] = frozenset(
     {
         "CaseSplit",
@@ -86,8 +103,37 @@ PUBLIC_CALLABLES: frozenset[str] = frozenset(
         "split_cases",
         "split_key",
         "split_report",
+        "split_report_violations",
     }
 )
+
+#: Every public NON-callable this module defines, pinned for the same reason
+#: as :data:`PUBLIC_CALLABLES`. This used to be left unpinned on the grounds
+#: that "a ``str`` cannot return a score" — true, and beside the point: a
+#: ``dict`` can. A module-scope ``LAST_SUITE: dict = {}`` that :meth:`score`
+#: wrote into would satisfy every other mechanism in this file — ``score``
+#: still returns ``None``, ``__slots__`` is untouched, the runner still has
+#: one public member, the sealed directory is still write-only — and hand a
+#: holdout number to anyone who imports the module. So the constant surface
+#: is pinned too, and the structural test additionally requires every entry
+#: to be IMMUTABLE, which is the half a future addition cannot talk its way
+#: past by editing this set.
+PUBLIC_CONSTANTS: frozenset[str] = frozenset(
+    {
+        "HOLDOUT_EVERY",
+        "PUBLIC_CALLABLES",
+        "PUBLIC_CONSTANTS",
+        "REPORT_PATH_ENV",
+        "SEALED_DIR_ENV",
+        "SPLIT_REPORT_INT_KEYS",
+        "SPLIT_VERSION",
+    }
+)
+
+#: The ONLY keys in a :func:`split_report` block whose value may be an
+#: ``int``. Every other leaf must be a ``str`` — see
+#: :func:`split_report_violations` for why "no float" was not enough.
+SPLIT_REPORT_INT_KEYS: frozenset[str] = frozenset({"train_cases", "holdout_cases"})
 
 
 @dataclass(frozen=True)
@@ -188,11 +234,10 @@ def split_report(split: CaseSplit) -> dict[str, object]:
     """The ONLY holdout-derived block the emitted report is allowed to carry.
 
     Counts, ids and the algorithm — **never a score**. The invariant is
-    mechanical and asserted in the pure test suite: *every leaf of this
-    dict is a string or an int-valued count; no float appears anywhere*.
-    Every metric this harness produces is a float, so a float here would
-    be the first visible symptom of a holdout number leaking into the
-    report, and the assertion fires before a human ever reads it.
+    mechanical and asserted in both test suites via
+    :func:`split_report_violations`: *every leaf of this dict is a string,
+    or an int under one of the two keys in* :data:`SPLIT_REPORT_INT_KEYS`.
+    Anything else is a violation, and a score has nowhere left to be.
 
     The case ids are included on purpose. They are already derivable from
     the committed fixture plus :func:`split_cases`, so withholding them
@@ -216,6 +261,52 @@ def split_report(split: CaseSplit) -> dict[str, object]:
     }
 
 
+def split_report_violations(block: object, *, key: str = "") -> list[str]:
+    """Every leaf of a :func:`split_report` block that could carry a score.
+
+    The rule, stated **totally**: a leaf is a ``str``, or an ``int`` whose
+    key is in :data:`SPLIT_REPORT_INT_KEYS`. Everything else — a float, a
+    bool, a ``None``, an ``int`` under any other key — comes back as a
+    ``"<key>=<value!r>"`` string for the caller to fail on. An empty list is
+    the only passing result.
+
+    **Why not "no float anywhere", which is what this used to say.** That
+    formulation is not total, and the counterexample is in this repo:
+    :class:`~tests.memory_recall.scorer.SuiteScore` reports
+    ``total_token_cost_at_10``, ``correction_pairs`` and
+    ``correction_precedence_passes`` as ``int``, and the plan's baseline
+    table headlines two of them. A ``"holdout_token_cost": 374`` added to
+    :func:`split_report` would have sailed past a float-only check in both
+    suites. Pinning the int keys instead of pinning the type is what makes
+    the invariant cover the metrics that are not floats.
+
+    The counterpart to copy is
+    :meth:`~tests.memory_recall.wiring.WiringLedger.as_report`, whose
+    strings-only invariant has always been total.
+    """
+    if isinstance(block, Mapping):
+        return [
+            violation
+            for child_key, item in block.items()
+            for violation in split_report_violations(item, key=str(child_key))
+        ]
+    if isinstance(block, (list, tuple)):
+        return [
+            violation
+            for item in block
+            for violation in split_report_violations(item, key=key)
+        ]
+    if isinstance(block, str):
+        return []
+    if (
+        isinstance(block, int)
+        and not isinstance(block, bool)
+        and key in SPLIT_REPORT_INT_KEYS
+    ):
+        return []
+    return [f"{key or '<root>'}={block!r}"]
+
+
 @dataclass(frozen=True)
 class HoldoutObservation:
     """One holdout case as OBSERVED — a ranking, never a score.
@@ -231,6 +322,53 @@ class HoldoutObservation:
     relevant: tuple[str, ...]
     #: ``(corrector_key, corrected_key)`` for a correction pair, else None.
     correction: tuple[str, str] | None = None
+
+
+@dataclass(frozen=True, repr=False)
+class _SealedDocument:
+    """A serialised sealed payload whose ``repr`` withholds its contents.
+
+    Not decoration, and not paranoia about ``print``. ``backend/pytest.ini``
+    passes ``--showlocals``, which pytest applies to EVERY frame of a
+    traceback, and ``-q`` does not cancel it. A plain ``str`` handed to
+    :func:`_write_sealed_document` would put the whole holdout JSON —
+    recall@5/@10/@20, MRR, nDCG, noise rate — into the locals of the one
+    frame that is expected to raise. This wrapper puts a length there
+    instead. :meth:`text` is called on the value stack at the write, so the
+    string is never bound to a name in that frame either.
+    """
+
+    _text: str
+
+    def __repr__(self) -> str:
+        return f"<sealed document: {len(self._text)} chars, contents withheld>"
+
+    def text(self) -> str:
+        return self._text
+
+
+def _write_sealed_document(
+    directory: Path, filename: str, document: _SealedDocument
+) -> None:
+    """Write one already-serialised sealed document, atomically.
+
+    Split out of :meth:`SealedHoldoutRunner.score` for exactly one reason:
+    **this is the frame that raises.** ``mkdir`` fails on a read-only mount
+    or on a shared temp directory another uid owns; the write fails on a
+    full disk. Those failures must still propagate — the seal may not be
+    silent about its own breakage — but the frame they propagate out of now
+    holds a path, a filename and an opaque document, so ``--showlocals`` has
+    nothing to render.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / filename
+    # `allow_nan=False` was applied at serialisation for the same reason the
+    # report emit uses it: bare `Infinity`/`NaN` are not JSON and would only
+    # be discovered by whoever eventually opens this file.
+    temporary = destination.with_suffix(".json.tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(document.text())
+    temporary.replace(destination)
 
 
 class SealedHoldoutRunner:
@@ -268,7 +406,11 @@ class SealedHoldoutRunner:
 
         There is no return value to check, so a caller cannot branch on
         the holdout at all. A failure to WRITE raises — the seal must not
-        also be silent about its own breakage.
+        also be silent about its own breakage. It raises out of
+        :func:`_write_sealed_document`, and every score-bearing local is
+        dropped from THIS frame before that call, because ``--showlocals``
+        would otherwise render them into the CI log; see the module
+        docstring's sixth bullet.
         """
         scores: list[CaseScore] = [
             score_case(
@@ -317,32 +459,73 @@ class SealedHoldoutRunner:
                 for s in scores
             ],
         }
-        self._directory.mkdir(parents=True, exist_ok=True)
-        destination = self._directory / f"holdout-{arm}.json"
-        # `allow_nan=False` for the same reason the report emit uses it:
-        # bare `Infinity`/`NaN` are not JSON and would only be discovered
-        # by whoever eventually opens this file.
-        temporary = destination.with_suffix(".json.tmp")
-        temporary.write_text(
-            json.dumps(payload, indent=2, sort_keys=True, allow_nan=False),
-            encoding="utf-8",
+        filename = f"holdout-{arm}.json"
+        document = _SealedDocument(
+            json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
         )
-        temporary.replace(destination)
+        # Drop every score-bearing local BEFORE the first statement that can
+        # raise. `--showlocals` renders each frame of a traceback, so an
+        # OSError out of the write would otherwise print `suite` and
+        # `payload` — the holdout's own numbers — into a public job log.
+        # What survives here is deliberate: `observations` are rankings, not
+        # scores (the driver already holds them), and `content_bytes` is
+        # fixture data.
+        del scores, suite, payload
+        _write_sealed_document(self._directory, filename, document)
+
+
+def _fallback_directory() -> Path:
+    """The temp destination used when :data:`SEALED_DIR_ENV` is unset.
+
+    **Self-identifying, deliberately.** This was a fixed shared name
+    (``<tmp>/memory-recall-holdout``) until 2026-08-19, and ``backend-ci.yml``
+    sets neither environment variable — so every run of the suite dropped
+    its ``holdout-*.json`` into the same place, on top of files from earlier
+    branches that were indistinguishable from this run's. Nothing reads
+    them, so that was never a leak; it defeated the one purpose the sealed
+    file has, which is to be auditable AFTER the fact by a human who needs
+    to know which run produced the number.
+
+    The token is stable WITHIN a process — the driver calls
+    :func:`sealed_runner` once per arm and all three must land in one
+    directory — so it is the run id and the pid, never a timestamp.
+    """
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    token = f"{run_id}-{os.getpid()}" if run_id else str(os.getpid())
+    return Path(tempfile.gettempdir()) / f"memory-recall-holdout-{token}"
 
 
 def sealed_directory() -> Path:
     """Where holdout scores go. Never the report path.
 
-    Falls back to a temp directory when :data:`SEALED_DIR_ENV` is unset, so
-    a local run still exercises the write leg (and still cannot read it
-    back). CI sets the variable and uploads the directory as a build
+    Falls back to :func:`_fallback_directory` when :data:`SEALED_DIR_ENV` is
+    unset, so a local run still exercises the write leg (and still cannot
+    read it back). CI sets the variable and uploads the directory as a build
     artifact — a human reads it later, on purpose, after the tuning
     decision; the PR comment never does.
+
+    Raises:
+        ValueError: the sealed directory and :data:`REPORT_PATH_ENV` name
+            the same place. The module docstring claims "the two
+            destinations never coincide"; this is where that claim is
+            CHECKED rather than merely asserted in prose. A run that
+            pointed both at one path would write holdout scores exactly
+            where the PR comment step reads.
     """
     configured = os.environ.get(SEALED_DIR_ENV)
-    if configured:
-        return Path(configured)
-    return Path(tempfile.gettempdir()) / "memory-recall-holdout"
+    directory = Path(configured) if configured else _fallback_directory()
+
+    report = os.environ.get(REPORT_PATH_ENV)
+    if (
+        report
+        and Path(report).expanduser().resolve() == directory.expanduser().resolve()
+    ):
+        raise ValueError(
+            f"{SEALED_DIR_ENV} and {REPORT_PATH_ENV} both resolve to "
+            f"{directory} — the sealed holdout's destination may never be "
+            "the file the PR comment step reads"
+        )
+    return directory
 
 
 def sealed_runner(directory: Path | None = None) -> SealedHoldoutRunner:
