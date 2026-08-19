@@ -513,6 +513,20 @@ async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
     statement as an uncorrelated scalar subquery, so it is drawn from the
     same snapshot as the counts.
 
+    "Newest first" is a WRITE-ORDER guarantee, and that is why both the
+    inner ``LIMIT`` and the outer ``array_agg`` order by ``created_at
+    DESC, seq DESC`` — the two must agree, or the cap and the ordering
+    select different rows. ``seq`` is the monotone write-order key
+    (migration ``memseq_01``); the previous ``memory_id DESC`` tiebreak
+    made the order *total* but not *recency-faithful*, because a batch
+    write (``insert_records_batch``, one statement, one transaction)
+    gives every row the identical ``created_at`` and ``memory_id`` is a
+    random UUID — so the ``LIMIT`` admitted a write-order-arbitrary
+    sample of any batch straddling the cap. ``created_at`` stays the
+    PRIMARY sort key: it is the documented notion of recency and callers
+    backdate it, so ``seq`` decides only what ``created_at`` cannot
+    separate.
+
     The bucket tallies ride existing indexes
     (``idx_memory_records_tenant_kind_created``,
     ``idx_memory_records_tenant_scope``).
@@ -547,16 +561,16 @@ async def facets(session: AsyncSession, tenant_id: UUID) -> MemoryContentFacets:
                         SELECT COALESCE(
                             array_agg(
                                 t.title
-                                ORDER BY t.created_at DESC, t.memory_id DESC
+                                ORDER BY t.created_at DESC, t.seq DESC
                             ),
                             ARRAY[]::text[]
                         )
                         FROM (
-                            SELECT r.title, r.created_at, r.memory_id
+                            SELECT r.title, r.created_at, r.seq
                             FROM coord.memory_records r
                             WHERE r.tenant_id = :tenant_id
                               AND {_RETRIEVAL_LIVE_PREDICATE}
-                            ORDER BY r.created_at DESC, r.memory_id DESC
+                            ORDER BY r.created_at DESC, r.seq DESC
                             LIMIT :titles_limit
                         ) t
                     ) AS recent_titles
@@ -1565,7 +1579,7 @@ async def anchored_search(
               WHERE {" OR ".join(element_match)}
           )
         ORDER BY {_retention_score_sql("now()")} DESC,
-                 r.created_at DESC, r.memory_id DESC
+                 r.created_at DESC, r.seq DESC
         LIMIT :limit
         """
     ).bindparams(bindparam("scopes", expanding=True))
@@ -1943,6 +1957,8 @@ async def fetch_outbound_links(
         SELECT link_id, source_id, target_id, relation, description, created_at
         FROM coord.memory_links
         WHERE tenant_id = :tenant_id AND source_id IN :ids
+        -- Justified, not overlooked: no LIMIT truncates this full-set
+        -- read, so the random-UUID tiebreak selects nothing.
         ORDER BY created_at ASC, link_id ASC
         """
     ).bindparams(bindparam("ids", expanding=True))
@@ -2210,6 +2226,8 @@ async def graph_edges(
         SELECT DISTINCT link_id, source_id, target_id, relation,
                         description, created_at
         FROM walk
+        -- Justified, not overlooked: no LIMIT truncates this full-set
+        -- read, so the random-UUID tiebreak selects nothing.
         ORDER BY created_at ASC, link_id ASC
         """
     )
@@ -2239,20 +2257,29 @@ async def list_records_page(
     tenant_id: UUID,
     kinds: list[str] | None,
     since: datetime | None,
-    cursor: tuple[datetime, UUID] | None,
+    cursor: tuple[datetime, int] | None,
     limit: int,
     now: datetime | None,
 ) -> list[dict[str, Any]]:
-    """One keyset page of LIVE records, newest-first-stable.
+    """One keyset page of LIVE records, newest-first in WRITE order.
 
     Liveness = not tombstoned, not superseded, validity not ended
     (matching retrieval visibility, and evaluated the same
     transaction-consistent way — ``now=None`` means "not at a
     caller-named instant", see :data:`_EFFECTIVE_NOW_SQL`). Ordering
     (and the keyset) is
-    ``(created_at DESC, memory_id DESC)``; ``since`` filters on the
+    ``(created_at DESC, seq DESC)``; ``since`` filters on the
     freshest of ``updated_at`` / ``created_at`` so a sync pull picks up
     both new rows and in-place updates.
+
+    ``seq`` — not ``memory_id`` — is the tiebreak because a batch write
+    (``insert_records_batch``, one statement, one transaction) gives every
+    row the identical ``created_at``, and ``memory_id`` is a random UUID:
+    paginating on it walks a batch in an order unrelated to how it was
+    written. The keyset comparison MUST stay in lockstep with this
+    ``ORDER BY`` — a cursor that disagrees with its sort skips and repeats
+    rows. Each row therefore carries its ``seq`` out to the caller, which
+    is what the endpoint encodes into the opaque cursor token.
     """
     clauses = [
         "r.tenant_id = :tenant_id",
@@ -2270,20 +2297,20 @@ async def list_records_page(
         params["since"] = since
     if cursor is not None:
         clauses.append(
-            "(r.created_at, r.memory_id)"
+            "(r.created_at, r.seq)"
             " < (CAST(:cursor_created_at AS timestamptz),"
-            " CAST(:cursor_memory_id AS uuid))"
+            " CAST(:cursor_seq AS bigint))"
         )
         params["cursor_created_at"] = cursor[0]
-        params["cursor_memory_id"] = cursor[1]
+        params["cursor_seq"] = cursor[1]
     stmt = text(
         f"""
         SELECT r.memory_id, r.title, r.content, r.kind, r.scope, r.scope_ref,
                r.importance, r.content_hash, r.created_at, r.updated_at,
-               r.source, r.anchors, r.anchor_state
+               r.source, r.anchors, r.anchor_state, r.seq
         FROM coord.memory_records r
         WHERE {" AND ".join(clauses)}
-        ORDER BY r.created_at DESC, r.memory_id DESC
+        ORDER BY r.created_at DESC, r.seq DESC
         LIMIT :limit
         """
     )
@@ -2295,6 +2322,7 @@ async def list_records_page(
         d = dict(r)
         d["memory_id"] = UUID(str(d["memory_id"]))
         d["importance"] = float(d["importance"])
+        d["seq"] = int(d["seq"])
         out.append(d)
     return out
 
@@ -3322,6 +3350,8 @@ async def fetch_cluster_candidates(
               AND embedding IS NOT NULL
               AND anchors = '[]'::jsonb
               AND {_not_lifecycle_held()}
+            -- Justified, not overlooked: a work-queue scan wants progress
+            -- and fairness, not recency, so a UUID tiebreak is harmless.
             ORDER BY created_at ASC, memory_id ASC
             LIMIT :limit
             """
@@ -3657,6 +3687,8 @@ async def fetch_reindex_batch(
                     AND j.status IN ('pending', 'claimed')
                     AND j.target_ids @> ARRAY[r.memory_id]
               )
+            -- Justified, not overlooked: a work-queue scan wants progress
+            -- and fairness, not recency, so a UUID tiebreak is harmless.
             ORDER BY r.created_at ASC, r.memory_id ASC
             LIMIT :limit
             """
