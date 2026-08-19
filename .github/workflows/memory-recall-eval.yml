@@ -29,6 +29,13 @@ on:
       - 'backend/app/services/memory_*'
       - 'backend/app/jobs/memory_*'
       - 'backend/app/api/v1/endpoints/memory.py'
+      # `get_async_db` — the session factory every arm's queries run on.
+      # The driver imports it to override the dependency, so a change to
+      # how sessions are made is a change to what the harness measures. It
+      # matched no pattern here until 2026-08-20, because the filter test
+      # checked only the driver's `tests.` imports and the numbers come out
+      # of `app/`.
+      - 'backend/app/api/deps.py'
       - 'backend/tests/memory_recall/**'
       - 'backend/tests/fixtures/memory_golden/**'
       - 'backend/tests/test_memory_recall_eval_db.py'
