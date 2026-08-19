@@ -31,18 +31,42 @@ SCORES:
   :data:`SEALED_DIR_ENV`, which the driver never opens. The tuning path
   reads exactly one file — the report at ``MEMORY_RECALL_EVAL_REPORT`` —
   and no holdout number is ever written into it.
-* **No frame that can raise holds a score.** The five mechanisms above all
-  govern code this harness wrote; none of them governs the INTERPRETER's
-  own error reporting. ``backend/pytest.ini`` passes ``--showlocals``
-  unconditionally, so any exception escaping :meth:`SealedHoldoutRunner.score`
-  prints every traceback frame's locals into a public CI job log — and the
-  statements that can realistically fail (``mkdir`` on a read-only mount or
-  a directory owned by another uid, a write on a full disk) used to sit in
-  the same frame as ``suite`` and ``payload``. The write is now isolated in
-  :func:`_write_sealed_document`, which receives an opaque
-  :class:`_SealedDocument`, and ``score`` drops its score-bearing locals
-  before calling it. ``test_a_write_failure_renders_no_score_in_any_frame``
-  is the mechanism that keeps it that way.
+* **No frame of an escaping traceback holds a score.** The five mechanisms
+  above all govern code this harness wrote; none of them governs the
+  INTERPRETER's own error reporting. ``backend/pytest.ini`` passes
+  ``--showlocals`` unconditionally, so any exception escaping
+  :meth:`SealedHoldoutRunner.score` prints every traceback frame's locals
+  into a public CI job log.
+
+  Three statements can raise, and until 2026-08-20 only the third was
+  covered. ``aggregate`` rejects a denominator below the data; ``json.dumps``
+  rejects a non-finite metric under ``allow_nan=False``; ``mkdir``/the write
+  fail on a read-only mount, a foreign uid or a full disk. The first two sat
+  in ``score``'s own frame with ``scores``, ``suite`` and ``payload`` bound —
+  a traceback there rendered the entire holdout report into the job log. Only
+  the write had been isolated, and the test provoked only the write.
+
+  Relocating the ``del`` does not close it: the frames that COMPUTE a score
+  (``score_case``, ``aggregate``, a serialising helper) hold one by
+  definition, so no arrangement of statements can make the claim true by
+  structure alone. What makes it true is a boundary that ends the traceback
+  above them. :func:`_sealed_document` computes and serialises inside a
+  ``try`` and re-raises :class:`SealedHoldoutError` ``from None``, so the
+  escaping traceback begins at that ``raise`` and the score-bearing frames
+  beneath it are never rendered. Its own locals are its parameters, which
+  are rankings and fixture bytes, never scores. The write keeps the
+  boundary it already had (:func:`_write_sealed_document`, which receives an
+  opaque :class:`_SealedDocument`) — its failures name a path and an errno,
+  so its message is worth keeping verbatim.
+  The exception MESSAGE is the other rendered surface, which is why
+  :class:`SealedHoldoutError` carries only a type and a ``file:line``:
+  ``json.dumps`` quotes the offending value (``... are not JSON compliant:
+  inf``) and that value is a holdout metric.
+  ``test_no_failure_renders_a_score_in_any_frame`` provokes all three
+  statements and asserts an ALLOWLIST of permitted local names per frame,
+  because a denylist of metric names passes a tuple of bare floats
+  (``(0.0417, 0.0833)`` is neither a score object nor a repr that names a
+  metric).
 
 Together those make the honest claim: **no holdout score reaches a gate, a
 verdict, the emitted report, or the PR comment through any code path this
@@ -68,13 +92,13 @@ from tests.memory_recall.scorer import CaseScore, aggregate, score_case
 
 #: Environment variable naming the directory the holdout scores are written
 #: to. Deliberately NOT ``MEMORY_RECALL_EVAL_REPORT``: the report path is
-#: what the CI comment step reads, and the whole point is that these two
-#: destinations never coincide.
+#: what the CI comment step reads, and the whole point is that the report
+#: never lands in this directory — neither AS it nor INSIDE it.
 SEALED_DIR_ENV = "MEMORY_RECALL_HOLDOUT_DIR"
 
 #: The report path the CI comment step reads. Named here ONLY so
 #: :func:`sealed_directory` can check itself against it: the docstring above
-#: claims "the two destinations never coincide", and a claim nothing checks
+#: claims the two destinations never coincide, and a claim nothing checks
 #: is a rule rather than a mechanism.
 REPORT_PATH_ENV = "MEMORY_RECALL_EVAL_REPORT"
 
@@ -97,6 +121,7 @@ PUBLIC_CALLABLES: frozenset[str] = frozenset(
     {
         "CaseSplit",
         "HoldoutObservation",
+        "SealedHoldoutError",
         "SealedHoldoutRunner",
         "sealed_directory",
         "sealed_runner",
@@ -324,7 +349,7 @@ class HoldoutObservation:
     correction: tuple[str, str] | None = None
 
 
-@dataclass(frozen=True, repr=False)
+@dataclass(frozen=True, repr=False, slots=True)
 class _SealedDocument:
     """A serialised sealed payload whose ``repr`` withholds its contents.
 
@@ -336,6 +361,20 @@ class _SealedDocument:
     frame that is expected to raise. This wrapper puts a length there
     instead. :meth:`text` is called on the value stack at the write, so the
     string is never bound to a name in that frame either.
+
+    ``slots=True`` removes the instance ``__dict__``, so ``vars(document)``
+    raises ``TypeError`` and ``document.__dict__`` raises ``AttributeError``
+    instead of handing the plaintext back past the withheld ``repr``.
+
+    **What it does NOT close, measured rather than assumed:**
+    :func:`dataclasses.asdict` reads ``fields()``, not ``__dict__``, and
+    still returns ``{'_text': ...}``; a pickle round-trip still carries the
+    text (a slotted dataclass gets ``__getstate__``/``__setstate__``); and
+    :func:`gc.get_referents` still lists the ``str`` object, because slot
+    values are referents too. None of the three is on a traceback path — the
+    sixth bullet's claim is about frames, and held either way — so this is
+    two cheap doors closed, not a seal. ``test_the_sealed_document_holds_the_line_it_can``
+    pins both halves so neither is overstated later.
     """
 
     _text: str
@@ -345,6 +384,45 @@ class _SealedDocument:
 
     def text(self) -> str:
         return self._text
+
+
+class SealedHoldoutError(RuntimeError):
+    """Sealing the holdout failed — with the original detail DISCARDED.
+
+    Raised by :func:`_sealed_document` in place of whatever ``aggregate``,
+    :func:`json.dumps` or the payload build raised. The substitution is the
+    mechanism behind the module docstring's sixth bullet: ``raise ... from
+    None`` makes THIS the escaping exception, so the traceback pytest
+    renders with ``--showlocals`` begins at that ``raise`` and the frames
+    beneath it — the ones that hold ``scores``, ``suite`` and ``payload`` by
+    definition — are never rendered at all.
+
+    The original message goes with them, deliberately: ``json.dumps``
+    reports a non-finite value by quoting it (``Out of range float values
+    are not JSON compliant: inf``), and that value is a holdout metric. What
+    survives is the exception TYPE and the ``file:line`` it came from, which
+    is what a reader needs to go and look. Reproduce locally to see the rest.
+
+    The write is NOT wrapped in this: its failures name a path and an errno
+    and hold nothing else, so :func:`_write_sealed_document` keeps its
+    verbatim ``OSError``.
+    """
+
+
+def _origin(error: BaseException) -> str:
+    """``file:line`` of the innermost frame of ``error``'s traceback.
+
+    Total by construction — it is called from an ``except`` block whose own
+    failure would put the original exception's ``repr`` (and so its message)
+    into a rendered frame, which is the leak this whole path exists to
+    close.
+    """
+    innermost = error.__traceback__
+    if innermost is None:
+        return "an unknown location"
+    while innermost.tb_next is not None:
+        innermost = innermost.tb_next
+    return f"{Path(innermost.tb_frame.f_code.co_filename).name}:{innermost.tb_lineno}"
 
 
 def _write_sealed_document(
@@ -362,13 +440,128 @@ def _write_sealed_document(
     """
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / filename
-    # `allow_nan=False` was applied at serialisation for the same reason the
-    # report emit uses it: bare `Infinity`/`NaN` are not JSON and would only
-    # be discovered by whoever eventually opens this file.
     temporary = destination.with_suffix(".json.tmp")
     with temporary.open("w", encoding="utf-8") as handle:
         handle.write(document.text())
     temporary.replace(destination)
+
+
+def _sealed_payload(
+    *,
+    arm: str,
+    vector_arm: str,
+    observations: Sequence[HoldoutObservation],
+    content_bytes: Mapping[str, int],
+    case_count: int,
+) -> dict[str, object]:
+    """Score every observation and build the JSON body. **Holds scores.**
+
+    This is the frame the module docstring's sixth bullet cannot make
+    score-free — ``scores``, ``suite`` and the payload itself live here, and
+    ``aggregate`` and ``score_case`` below hold their own. It is never on an
+    escaping traceback because :func:`_sealed_document` catches everything it
+    raises and substitutes :class:`SealedHoldoutError` ``from None``.
+    """
+    scores: list[CaseScore] = [
+        score_case(
+            case_id=observation.case_id,
+            case_class=observation.case_class,
+            ranked=observation.ranked,
+            relevant=observation.relevant,
+            content_bytes=content_bytes,
+            correction=observation.correction,
+        )
+        for observation in observations
+    ]
+    suite = aggregate(arm, vector_arm, scores, case_count=case_count)
+    return {
+        "_warning": (
+            "SEALED HOLDOUT SCORES. Nothing in the eval harness reads this "
+            "file: it exists so a human can audit the holdout AFTER the "
+            "tuning decision was made. Do not wire it into the report, a "
+            "gate, or the PR comment — that would delete the only property "
+            "this split has."
+        ),
+        "arm": suite.arm,
+        "vector_arm": suite.vector_arm,
+        "case_count": suite.case_count,
+        "scored_cases": suite.scored_cases,
+        "missing_cases": suite.missing_cases,
+        "recall_at_5": suite.recall_at_5,
+        "recall_at_10": suite.recall_at_10,
+        "recall_at_20": suite.recall_at_20,
+        "mrr": suite.mrr,
+        "ndcg_at_10": suite.ndcg_at_10,
+        "noise_rate_at_10": suite.noise_rate_at_10,
+        "total_token_cost_at_10": suite.total_token_cost_at_10,
+        "correction_pairs": suite.correction_pairs,
+        "correction_precedence_passes": suite.correction_precedence_passes,
+        "cases": [
+            {
+                "case_id": s.case_id,
+                "case_class": s.case_class,
+                "recall_at_10": s.recall_at_10,
+                "reciprocal_rank": s.reciprocal_rank,
+                "ndcg_at_10": s.ndcg_at_10,
+                "noise_rate_at_10": s.noise_rate_at_10,
+                "correction_precedence": s.correction_precedence,
+            }
+            for s in scores
+        ],
+    }
+
+
+def _sealed_document(
+    *,
+    arm: str,
+    vector_arm: str,
+    observations: Sequence[HoldoutObservation],
+    content_bytes: Mapping[str, int],
+    case_count: int,
+) -> _SealedDocument:
+    """The scoring + serialising boundary. **Nothing score-bearing escapes.**
+
+    The counterpart to :func:`_write_sealed_document`, and the half that was
+    missing until 2026-08-19. The write could be made safe structurally
+    because its inputs carry no score; scoring cannot — ``aggregate`` holds
+    the list it is validating, ``json.dumps`` is reached with the payload
+    built. So the boundary here is the ``except``: every failure of the
+    compute-and-serialise pair is replaced by a :class:`SealedHoldoutError`
+    raised from THIS frame, whose locals are the parameters above.
+
+    ``observations`` are rankings and ``content_bytes`` is fixture data —
+    the driver already holds both — so ``--showlocals`` on the escaping
+    traceback renders nothing the tuning side did not put in.
+
+    ``allow_nan=False`` for the same reason the report emit uses it: bare
+    ``Infinity``/``NaN`` are not JSON and would otherwise be discovered by
+    whoever eventually opens the file.
+    """
+    try:
+        return _SealedDocument(
+            json.dumps(
+                _sealed_payload(
+                    arm=arm,
+                    vector_arm=vector_arm,
+                    observations=observations,
+                    content_bytes=content_bytes,
+                    case_count=case_count,
+                ),
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+        )
+    except Exception as error:  # noqa: BLE001 - re-raised, never swallowed
+        origin = _origin(error)
+        raise SealedHoldoutError(
+            f"sealing the holdout for arm {arm!r} failed with "
+            f"{type(error).__name__} at {origin}. The original message and "
+            "traceback are discarded on purpose — --showlocals would render "
+            "the score-bearing frames beneath this one into a public CI log, "
+            "and json.dumps quotes the offending metric in its own message. "
+            "Reproduce locally to see them."
+        ) from None
 
 
 class SealedHoldoutRunner:
@@ -405,73 +598,49 @@ class SealedHoldoutRunner:
         divisor.
 
         There is no return value to check, so a caller cannot branch on
-        the holdout at all. A failure to WRITE raises — the seal must not
-        also be silent about its own breakage. It raises out of
-        :func:`_write_sealed_document`, and every score-bearing local is
-        dropped from THIS frame before that call, because ``--showlocals``
-        would otherwise render them into the CI log; see the module
-        docstring's sixth bullet.
+        the holdout at all. Both a failure to SCORE and a failure to WRITE
+        raise — the seal must not also be silent about its own breakage —
+        but neither raises out of THIS frame holding a score. Scoring and
+        serialising happen behind :func:`_sealed_document`, which substitutes
+        a :class:`SealedHoldoutError` for anything the score-bearing frames
+        raise; the write happens behind :func:`_write_sealed_document`, whose
+        inputs are a path, a filename and an opaque document. This frame
+        binds no score at any point, so there is no ``del`` to get wrong.
+
+        The denominator is checked HERE rather than being left to
+        :func:`~tests.memory_recall.scorer.aggregate`. Not redundancy:
+        ``aggregate``'s message is the useful one ("case_count=1 is smaller
+        than the 2 scores handed in") and it is exactly the message the
+        sanitising boundary would throw away. Checking against
+        ``len(observations)`` — which equals the score count by
+        construction — keeps that diagnosis in a frame that holds only
+        rankings.
+
+        Raises:
+            ValueError: ``case_count`` is negative, or smaller than the
+                number of observations handed in.
+            SealedHoldoutError: scoring or serialising failed.
+            OSError: the sealed directory could not be created or written.
         """
-        scores: list[CaseScore] = [
-            score_case(
-                case_id=observation.case_id,
-                case_class=observation.case_class,
-                ranked=observation.ranked,
-                relevant=observation.relevant,
-                content_bytes=content_bytes,
-                correction=observation.correction,
+        if case_count < 0:
+            raise ValueError(f"case_count must not be negative, got {case_count}")
+        if case_count < len(observations):
+            raise ValueError(
+                f"case_count={case_count} is smaller than the "
+                f"{len(observations)} holdout observations handed in — a "
+                "denominator below the data would inflate every sealed mean"
             )
-            for observation in observations
-        ]
-        suite = aggregate(arm, vector_arm, scores, case_count=case_count)
-        payload = {
-            "_warning": (
-                "SEALED HOLDOUT SCORES. Nothing in the eval harness reads this "
-                "file: it exists so a human can audit the holdout AFTER the "
-                "tuning decision was made. Do not wire it into the report, a "
-                "gate, or the PR comment — that would delete the only property "
-                "this split has."
+        _write_sealed_document(
+            self._directory,
+            f"holdout-{arm}.json",
+            _sealed_document(
+                arm=arm,
+                vector_arm=vector_arm,
+                observations=observations,
+                content_bytes=content_bytes,
+                case_count=case_count,
             ),
-            "arm": suite.arm,
-            "vector_arm": suite.vector_arm,
-            "case_count": suite.case_count,
-            "scored_cases": suite.scored_cases,
-            "missing_cases": suite.missing_cases,
-            "recall_at_5": suite.recall_at_5,
-            "recall_at_10": suite.recall_at_10,
-            "recall_at_20": suite.recall_at_20,
-            "mrr": suite.mrr,
-            "ndcg_at_10": suite.ndcg_at_10,
-            "noise_rate_at_10": suite.noise_rate_at_10,
-            "total_token_cost_at_10": suite.total_token_cost_at_10,
-            "correction_pairs": suite.correction_pairs,
-            "correction_precedence_passes": suite.correction_precedence_passes,
-            "cases": [
-                {
-                    "case_id": s.case_id,
-                    "case_class": s.case_class,
-                    "recall_at_10": s.recall_at_10,
-                    "reciprocal_rank": s.reciprocal_rank,
-                    "ndcg_at_10": s.ndcg_at_10,
-                    "noise_rate_at_10": s.noise_rate_at_10,
-                    "correction_precedence": s.correction_precedence,
-                }
-                for s in scores
-            ],
-        }
-        filename = f"holdout-{arm}.json"
-        document = _SealedDocument(
-            json.dumps(payload, indent=2, sort_keys=True, allow_nan=False)
         )
-        # Drop every score-bearing local BEFORE the first statement that can
-        # raise. `--showlocals` renders each frame of a traceback, so an
-        # OSError out of the write would otherwise print `suite` and
-        # `payload` — the holdout's own numbers — into a public job log.
-        # What survives here is deliberate: `observations` are rankings, not
-        # scores (the driver already holds them), and `content_bytes` is
-        # fixture data.
-        del scores, suite, payload
-        _write_sealed_document(self._directory, filename, document)
 
 
 def _fallback_directory() -> Path:
@@ -505,26 +674,33 @@ def sealed_directory() -> Path:
     decision; the PR comment never does.
 
     Raises:
-        ValueError: the sealed directory and :data:`REPORT_PATH_ENV` name
-            the same place. The module docstring claims "the two
-            destinations never coincide"; this is where that claim is
-            CHECKED rather than merely asserted in prose. A run that
-            pointed both at one path would write holdout scores exactly
-            where the PR comment step reads.
+        ValueError: the report named by :data:`REPORT_PATH_ENV` IS the
+            sealed directory, or sits INSIDE it. This is where the module
+            docstring's "the two destinations never coincide" is CHECKED
+            rather than merely asserted in prose.
+
+            Containment, not just equality, and the containing case is the
+            realistic one: ``MEMORY_RECALL_HOLDOUT_DIR=${{
+            github.workspace }}`` with the report at
+            ``${{ github.workspace }}/recall-eval.json`` passes an
+            equality check while dropping every ``holdout-*.json`` beside
+            the report — and ``actions/upload-artifact`` publishes the
+            workspace. An equality-only guard would have called that
+            configuration clean.
     """
     configured = os.environ.get(SEALED_DIR_ENV)
     directory = Path(configured) if configured else _fallback_directory()
 
     report = os.environ.get(REPORT_PATH_ENV)
-    if (
-        report
-        and Path(report).expanduser().resolve() == directory.expanduser().resolve()
-    ):
-        raise ValueError(
-            f"{SEALED_DIR_ENV} and {REPORT_PATH_ENV} both resolve to "
-            f"{directory} — the sealed holdout's destination may never be "
-            "the file the PR comment step reads"
-        )
+    if report:
+        report_path = Path(report).expanduser().resolve()
+        resolved = directory.expanduser().resolve()
+        if report_path == resolved or report_path.is_relative_to(resolved):
+            raise ValueError(
+                f"{REPORT_PATH_ENV}={report_path} is {SEALED_DIR_ENV}={resolved} "
+                "or lies inside it — the sealed holdout's destination may never "
+                "be, nor contain, the file the PR comment step reads"
+            )
     return directory
 
 

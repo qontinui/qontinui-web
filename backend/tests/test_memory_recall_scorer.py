@@ -15,13 +15,18 @@ to change these constants too, deliberately.
 from __future__ import annotations
 
 import ast
+import dataclasses
+import gc
 import json
 import math
 import os
+import pickle
+import re
 import types
+from collections.abc import Callable
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import get_type_hints
+from typing import cast, get_type_hints
 
 import pytest
 
@@ -644,11 +649,11 @@ class TestPairedDelta:
             if isinstance(node, ast.FunctionDef) and node.name == "_paired_rows"
         ]
         assert len(rows) == 1, "the driver's paired-row renderer was renamed"
-        keys = {
-            key.value
+        pairs = {
+            key.value: value
             for node in ast.walk(rows[0])
             if isinstance(node, ast.Dict)
-            for key in node.keys
+            for key, value in zip(node.keys, node.values, strict=True)
             if isinstance(key, ast.Constant)
         }
         assert {
@@ -657,9 +662,20 @@ class TestPairedDelta:
             "credited_2sigma",
             "credit_z_threshold",
             "lower_is_better",
-        } <= keys, (
+        } <= set(pairs), (
             "the driver's paired row stopped reporting a field the two "
-            f"booleans cannot be read without: {sorted(keys)}"
+            f"booleans cannot be read without: {sorted(pairs)}"
+        )
+        # Shape alone is not the property. `"lower_is_better": False`
+        # hardcoded satisfies "the key is present" and reports every
+        # cost metric as higher-is-better, which is the exact misreading
+        # the field exists to prevent — so the VALUE has to be derived
+        # from the pinned set.
+        direction = ast.get_source_segment(_driver_source(), pairs["lower_is_better"])
+        assert direction is not None and "LOWER_IS_BETTER_METRICS" in direction, (
+            "the driver's `lower_is_better` is no longer derived from "
+            f"LOWER_IS_BETTER_METRICS — it renders {direction!r}. A literal "
+            "there is a direction label that cannot follow the metric set."
         )
 
 
@@ -892,6 +908,48 @@ def _driver_source() -> str:
     return _DRIVER.read_text(encoding="utf-8")
 
 
+#: The holdout module itself. It WRITES to the sealed directory by design, so
+#: the read-primitive check would flag its own ``temporary.open("w")`` — it is
+#: the sealed side, not the tuning path, and is the one module excluded from
+#: the cross-module scan below.
+_SEALED_MODULE = Path(ho.__file__).resolve()
+
+
+def _tuning_path_sources() -> dict[str, str]:
+    """Every module on the TUNING side, by path, for the sealed-read check.
+
+    The check used to parse the driver and nothing else, so the evasion was
+    not even an evasion: put the read in a new module and import it. A
+    ``tests/memory_recall/audit.py`` that opened ``holdout-*.json`` and
+    returned the suite would have been invisible, and the driver calling it
+    would have been a plain function call with no sealed token in sight.
+
+    Scope: the driver, every ``tests.``-module it imports, and every module
+    in the harness package — minus :data:`_SEALED_MODULE`, which is the
+    side doing the writing.
+    """
+    sources = {_DRIVER.as_posix(): _driver_source()}
+    candidates: set[Path] = set(_DRIVER.parent.glob("memory_recall/*.py"))
+
+    for node in ast.walk(ast.parse(_driver_source())):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        module = node.module or ""
+        if not module.startswith("tests."):
+            continue
+        base = _DRIVER.parents[1] / Path(*module.split("."))
+        if base.is_dir():
+            candidates |= {base / f"{alias.name}.py" for alias in node.names}
+        else:
+            candidates.add(base.with_suffix(".py"))
+
+    for path in candidates:
+        if path.resolve() == _SEALED_MODULE or not path.is_file():
+            continue
+        sources[path.as_posix()] = path.read_text(encoding="utf-8")
+    return sources
+
+
 def _leaves(value: object) -> list[object]:
     """Every scalar in a nested report block, for leaf-TYPE assertions."""
     if isinstance(value, dict):
@@ -920,6 +978,11 @@ _READ_PRIMITIVES = frozenset(
         "walk",
     }
 )
+
+#: Callables that turn a read primitive into a differently-named one. Matching
+#: reads by CALL NAME alone made every one of these invisible: ``opener =
+#: functools.partial(open, sealed)`` then ``opener()`` names no primitive.
+_PARTIAL_APPLIERS = frozenset({"partial", "partialmethod"})
 
 #: What makes an expression sealed-shaped on its face. Deliberately coarse:
 #: a false positive costs a rename, a false negative costs the seal.
@@ -950,9 +1013,35 @@ def _sealed_read_violations(source: str) -> list[str]:
     ``test_the_sealed_read_detector_catches_an_indirection`` is the positive
     control — without it this function's clean verdict over the driver
     proves nothing, since the driver contains no read primitive at all.
+
+    **Two structural gaps, both closed on 2026-08-20** after a reviewer ran
+    ten evasions against it and five walked through.
+
+    *Taint never crossed a function boundary or a walrus.* The binding-form
+    list handled ``Assign``/``AnnAssign``/``AugAssign``/``For``/``withitem``
+    and nothing else, so ``def _where(): return
+    Path(os.environ[SEALED_DIR_ENV])`` — the most ordinary extraction
+    refactor there is, and exactly what the positive control's own two
+    lines would become — left the detector silent. ``NamedExpr``,
+    ``Return`` (which taints the enclosing function's NAME, so a call to it
+    is sealed-shaped), parameter defaults, ``except ... as`` and ``match``
+    captures are all binding forms here now.
+
+    *Reads were matched by call NAME.* ``reader = sealed.read_text`` then
+    ``reader()``, or ``functools.partial(open, sealed)`` then ``opener()``,
+    are reads through a callable whose name is in no list. So a second
+    fixpoint set tracks names bound to a read primitive — directly, through
+    another such name, or through a partial application — and a call to one
+    of those counts as a read.
+
+    Over-approximation is the intended direction throughout (returns are
+    collected with ``ast.walk``, so a nested function's return taints its
+    parent's name too): a false positive costs a rename, a false negative
+    costs the seal.
     """
     tree = ast.parse(source)
     tainted: set[str] = set()
+    readers: set[str] = set()
 
     def _is_sealed(node: ast.AST | None) -> bool:
         if node is None:
@@ -968,27 +1057,108 @@ def _sealed_read_violations(source: str) -> list[str]:
     def _bound_names(target: ast.AST) -> set[str]:
         return {c.id for c in ast.walk(target) if isinstance(c, ast.Name)}
 
+    def _aliases_a_read(node: ast.AST | None) -> bool:
+        """``node`` evaluates to a read primitive WITHOUT calling one."""
+        if isinstance(node, ast.Attribute):
+            return node.attr in _READ_PRIMITIVES
+        if isinstance(node, ast.Name):
+            return node.id in _READ_PRIMITIVES or node.id in readers
+        if isinstance(node, ast.Call):
+            func = node.func
+            applier = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else getattr(func, "id", "")
+            )
+            if applier in _PARTIAL_APPLIERS and node.args:
+                return _aliases_a_read(node.args[0])
+        return False
+
+    functions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+    def _bindings() -> list[tuple[list[ast.AST | None], list[str]]]:
+        """Every ``(source expressions, names they bind)`` pair in the tree."""
+        pairs: list[tuple[list[ast.AST | None], list[str]]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                pairs.append(
+                    (
+                        [node.value],
+                        sorted(set().union(*map(_bound_names, node.targets))),
+                    )
+                )
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+                pairs.append(([node.value], sorted(_bound_names(node.target))))
+            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                pairs.append(([node.iter], sorted(_bound_names(node.target))))
+            elif isinstance(node, ast.withitem):
+                pairs.append(
+                    (
+                        [node.context_expr],
+                        sorted(_bound_names(node.optional_vars))
+                        if node.optional_vars
+                        else [],
+                    )
+                )
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                pairs.append(([node.type], [node.name]))
+            elif isinstance(node, ast.Match):
+                captured = {
+                    capture.name
+                    for capture in ast.walk(node)
+                    if isinstance(capture, (ast.MatchAs, ast.MatchStar))
+                    and capture.name is not None
+                } | {
+                    capture.rest
+                    for capture in ast.walk(node)
+                    if isinstance(capture, ast.MatchMapping)
+                    and capture.rest is not None
+                }
+                pairs.append(([node.subject], sorted(captured)))
+        for function in functions:
+            arguments = function.args
+            positional = arguments.posonlyargs + arguments.args
+            defaults = arguments.defaults
+            for argument, default in zip(
+                positional[len(positional) - len(defaults) :], defaults, strict=True
+            ):
+                pairs.append(([default], [argument.arg]))
+            for argument, keyword_default in zip(
+                arguments.kwonlyargs, arguments.kw_defaults, strict=True
+            ):
+                if keyword_default is not None:
+                    pairs.append(([keyword_default], [argument.arg]))
+            # A function that RETURNS something sealed makes its own name
+            # sealed-shaped, so `(_where() / "x.json").read_text()` is caught.
+            pairs.append(
+                (
+                    [
+                        statement.value
+                        for statement in ast.walk(function)
+                        if isinstance(statement, ast.Return)
+                        and statement.value is not None
+                    ],
+                    [function.name],
+                )
+            )
+        return pairs
+
+    bindings = _bindings()
     while True:
         grew = False
-        for node in ast.walk(tree):
-            values: list[ast.AST | None]
-            targets: list[ast.AST]
-            if isinstance(node, ast.Assign):
-                values, targets = [node.value], list(node.targets)
-            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-                values, targets = [node.value], [node.target]
-            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
-                values, targets = [node.iter], [node.target]
-            elif isinstance(node, ast.withitem):
-                values = [node.context_expr]
-                targets = [node.optional_vars] if node.optional_vars else []
-            else:
-                continue
-            if not any(_is_sealed(value) for value in values):
-                continue
-            for target in targets:
-                for name in _bound_names(target) - tainted:
+        for values, names in bindings:
+            sealed = any(_is_sealed(value) for value in values)
+            reads = any(_aliases_a_read(value) for value in values)
+            for name in names:
+                if sealed and name not in tainted:
                     tainted.add(name)
+                    grew = True
+                if reads and name not in readers:
+                    readers.add(name)
                     grew = True
         if not grew:
             break
@@ -1003,7 +1173,7 @@ def _sealed_read_violations(source: str) -> list[str]:
             name = node.func.id
         else:
             continue
-        if name not in _READ_PRIMITIVES:
+        if name not in _READ_PRIMITIVES and name not in readers:
             continue
         if _is_sealed(node):
             violations.append(ast.get_source_segment(source, node) or name)
@@ -1161,6 +1331,38 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             "deliberately."
         )
 
+    def test_the_sealed_document_holds_the_line_it_can(self) -> None:
+        """The wrapper's rendering routes, and — as loudly — its limits.
+
+        ``repr``, ``str`` and ``__format__`` are the three ways a value
+        reaches a traceback or a log line, and all three are withheld. That
+        is the property the sixth bullet needs and it is asserted first.
+
+        ``slots=True`` closes ``vars()`` and ``__dict__`` on top of it.
+        It does NOT close :func:`dataclasses.asdict` (which reads
+        ``fields()``), pickle, or :func:`gc.get_referents` — all three still
+        return the plaintext, measured here rather than assumed, because a
+        docstring that claimed them would be an overclaim someone later
+        relies on. None of the three is on a traceback path.
+        """
+        document = ho._SealedDocument("recall_at_10=0.9375 mrr=0.5")
+
+        for rendering in (repr(document), str(document), format(document)):
+            assert "0.9375" not in rendering and "recall_at_10" not in rendering
+            assert "contents withheld" in rendering
+
+        with pytest.raises(TypeError):
+            vars(document)
+        with pytest.raises(AttributeError):
+            document.__dict__  # noqa: B018 - the AttributeError IS the assertion
+        assert type(document).__slots__ == ("_text",)
+
+        # The honest other half. If one of these ever starts raising, that
+        # is a genuine improvement — but it has to be measured, not claimed.
+        assert dataclasses.asdict(document) == {"_text": "recall_at_10=0.9375 mrr=0.5"}
+        assert pickle.loads(pickle.dumps(document)).text() == document.text()
+        assert document.text() in gc.get_referents(document)
+
     def test_the_two_destinations_cannot_be_configured_to_coincide(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1170,13 +1372,36 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         coincide" and then never looked at the report path. A run that
         pointed both at one place would write holdout scores exactly where
         the PR comment step reads.
+
+        **Containment, not just equality**, and the containing case is the
+        realistic one: an equality-only guard called
+        ``MEMORY_RECALL_HOLDOUT_DIR=${{ github.workspace }}`` with
+        ``MEMORY_RECALL_EVAL_REPORT=${{ github.workspace }}/recall-eval.json``
+        clean, while every ``holdout-*.json`` landed beside the report and
+        ``actions/upload-artifact`` published the workspace.
         """
         collision = tmp_path / "same-place"
         monkeypatch.setenv(ho.SEALED_DIR_ENV, str(collision))
         monkeypatch.setenv(ho.REPORT_PATH_ENV, str(collision))
-        with pytest.raises(ValueError, match="never be the file"):
+        with pytest.raises(ValueError, match="never be, nor contain, the file"):
             ho.sealed_directory()
 
+        # The report INSIDE the sealed directory — the workspace shape.
+        monkeypatch.setenv(ho.REPORT_PATH_ENV, str(collision / "recall-eval.json"))
+        with pytest.raises(ValueError, match="never be, nor contain, the file"):
+            ho.sealed_directory()
+
+        # ...and deeper in, since a nested artifact directory is the same
+        # publication hazard one level down.
+        monkeypatch.setenv(
+            ho.REPORT_PATH_ENV, str(collision / "artifacts" / "recall-eval.json")
+        )
+        with pytest.raises(ValueError, match="never be, nor contain, the file"):
+            ho.sealed_directory()
+
+        # A sibling is fine, and has to stay fine: this is the configuration
+        # CI actually uses, so a containment check that rejected it would be
+        # a false positive that turns the whole guard off.
         monkeypatch.setenv(ho.REPORT_PATH_ENV, str(tmp_path / "recall-eval.json"))
         assert ho.sealed_directory() == collision
 
@@ -1239,18 +1464,33 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             "back — if it really is inert, add it to PUBLIC_CONSTANTS "
             "deliberately."
         )
+        # The immutability half is asserted over EVERY module-scope value,
+        # not just the public ones. Both halves above filter on
+        # `not name.startswith("_")`, so `_LAST_SUITE: dict = {}` was
+        # covered by neither: not in the name pin (private), not in the
+        # mutability check (same filter). It is one underscore away from the
+        # stash the whole test exists to stop, and `holdout.score` can write
+        # to it exactly as easily.
         mutable = {
             name: value
-            for name, value in non_callables.items()
-            if not isinstance(value, (str, bytes, int, float, frozenset, tuple))
+            for name, value in vars(ho).items()
+            if not callable(value)
+            and not isinstance(value, types.ModuleType)
+            and getattr(type(value), "__module__", "") != "__future__"
+            and not isinstance(value, (str, bytes, int, float, frozenset, tuple))
+            # `__builtins__`, `__spec__`, `__loader__` and friends are the
+            # interpreter's, not this module's surface.
+            and not (name.startswith("__") and name.endswith("__"))
         }
         assert mutable == {}, (
-            f"a public constant is mutable: {sorted(mutable)}. A dict, list or "
-            "set at module scope is somewhere `score()` can write a suite to, "
-            "which is the one thing this module has no other mechanism against."
+            f"a module-scope constant is mutable: {sorted(mutable)}. A dict, "
+            "list or set at module scope is somewhere `score()` can write a "
+            "suite to, which is the one thing this module has no other "
+            "mechanism against — and a leading underscore exempts it from "
+            "neither this check nor `score`'s reach."
         )
 
-    def test_a_write_failure_renders_no_score_in_any_frame(
+    def test_no_failure_renders_a_score_in_any_frame(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The interpreter's own error reporting is a sixth path out.
@@ -1258,14 +1498,29 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         ``backend/pytest.ini`` sets ``--showlocals`` unconditionally and
         ``-q`` does not cancel it, so an exception escaping ``score()``
         prints EVERY traceback frame's locals into the job log on the PR
-        checks page. The write must still raise (the seal may not be silent
-        about its own breakage) — so what has to be true instead is that no
-        frame on the way out is holding a score.
+        checks page. Every one of these failures must still raise (the seal
+        may not be silent about its own breakage) — so what has to be true
+        instead is that no frame on the way out is holding a score.
 
-        This is a mechanism, not a rule: it provokes the two realistic
-        failures (a ``mkdir`` that cannot succeed, a write that cannot) and
-        inspects the actual ``f_locals`` of every frame in the actual
-        traceback.
+        **Three statements can raise, and this used to provoke only one.**
+        The previous version patched ``Path.mkdir``/``Path.open``, i.e. the
+        one statement that already sat behind a boundary; it was written to
+        the mechanism rather than to the claim. Measured on ``6a8dc730``,
+        the two it skipped rendered::
+
+            aggregate() raises   -> frame score: {'scores': [...]}
+            json.dumps() raises  -> frame score: {'scores', 'suite', 'payload'}
+
+        — the whole holdout report, in the frame ``--showlocals`` prints.
+        All five provocations below are exercised now.
+
+        The assertion is an ALLOWLIST of permitted local NAMES per frame,
+        not a denylist of score-shaped values. A denylist is what the
+        previous version had, and ``means = (suite.recall_at_5, suite.mrr)``
+        walks past it: the value is neither a ``SuiteScore`` nor a
+        ``CaseScore``, and its repr — ``(0.0417, 0.0833)`` — names no
+        metric, while the numbers print just the same. A new local in these
+        frames now has to be added here deliberately.
         """
         sealed_metrics = (
             "recall_at_5",
@@ -1277,21 +1532,96 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             "token_cost_at_10",
             "correction_precedence",
         )
+        #: What each holdout frame may bind while an exception passes
+        #: through it. `_sealed_payload` is deliberately ABSENT: it holds
+        #: `scores` and `suite` by definition, and the property is that it
+        #: never appears on an escaping traceback at all.
+        permitted = {
+            "score": {
+                "self",
+                "arm",
+                "vector_arm",
+                "observations",
+                "content_bytes",
+                "case_count",
+            },
+            "_sealed_document": {
+                "arm",
+                "vector_arm",
+                "observations",
+                "content_bytes",
+                "case_count",
+                "origin",
+            },
+            "_write_sealed_document": {
+                "directory",
+                "filename",
+                "document",
+                "destination",
+                "temporary",
+                "handle",
+            },
+        }
 
         def _explode(*args: object, **kwargs: object) -> None:
             raise OSError(30, "Read-only file system")
 
-        # `mkdir` is the read-only-mount / foreign-uid failure; `open` is
-        # the disk-full one. Both used to propagate out of the same frame
-        # that held `suite` and `payload`.
-        for target in ("mkdir", "open"):
-            with monkeypatch.context() as patched:
-                patched.setattr(Path, target, _explode, raising=True)
-                with pytest.raises(OSError) as raised:
-                    self._score(tmp_path)
+        def _aggregate_blows_up(*args: object, **kwargs: object) -> SuiteScore:
+            # The message quotes a score on purpose: a boundary that
+            # forwarded the original message would leak it.
+            raise ValueError("denominator check failed, scores=[0.8125, 0.4375]")
+
+        def _aggregate_returns_infinity(
+            arm: str, vector_arm: str, scores: object, *, case_count: int
+        ) -> SuiteScore:
+            suite = aggregate(
+                arm,
+                vector_arm,
+                cast("list[CaseScore]", scores),
+                case_count=case_count,
+            )
+            return dataclasses.replace(suite, mrr=math.inf)
+
+        # (label, how to provoke it, what must escape). The first two are
+        # the cases the previous version of this test never reached.
+        provocations: list[tuple[str, Callable[[], None], type[BaseException]]] = [
+            (
+                "a denominator below the data",
+                lambda: self._score(tmp_path, case_count=0),
+                ValueError,
+            ),
+            (
+                "aggregate() raises",
+                lambda: self._provoke(
+                    tmp_path, monkeypatch, ho, "aggregate", _aggregate_blows_up
+                ),
+                ho.SealedHoldoutError,
+            ),
+            (
+                "json.dumps() raises on a non-finite metric",
+                lambda: self._provoke(
+                    tmp_path, monkeypatch, ho, "aggregate", _aggregate_returns_infinity
+                ),
+                ho.SealedHoldoutError,
+            ),
+            (
+                "mkdir cannot succeed (read-only mount, foreign uid)",
+                lambda: self._provoke(tmp_path, monkeypatch, Path, "mkdir", _explode),
+                OSError,
+            ),
+            (
+                "the write cannot succeed (full disk)",
+                lambda: self._provoke(tmp_path, monkeypatch, Path, "open", _explode),
+                OSError,
+            ),
+        ]
+
+        for label, provoke, expected in provocations:
+            with pytest.raises(expected) as raised:
+                provoke()
 
             # Only the frames of the module under test. This test's own
-            # frame legitimately holds `sealed_metrics` below, and the
+            # frame legitimately holds `sealed_metrics` above, and the
             # property being asserted is about `holdout.py`'s frames.
             frames = []
             walker = raised.value.__traceback__
@@ -1299,25 +1629,68 @@ class TestSealedHoldoutIsUnreachableByConstruction:
                 if walker.tb_frame.f_code.co_filename == ho.__file__:
                     frames.append(walker.tb_frame)
                 walker = walker.tb_next
-            assert len(frames) >= 2, (
-                f"patching Path.{target} raised out of {len(frames)} holdout "
-                "frame(s); expected `score` and the write helper it delegates to"
+            assert frames, (
+                f"{label}: nothing raised out of holdout.py at all — the "
+                "provocation no longer reaches the code it is aimed at"
             )
 
             for frame in frames:
+                where = frame.f_code.co_name
+                assert where in permitted, (
+                    f"{label}: an unexpected holdout frame {where!r} is on the "
+                    "escaping traceback. Frames that compute a score must stay "
+                    "behind a boundary that substitutes the exception; if this "
+                    "one genuinely holds none, add it to `permitted` with its "
+                    "allowed locals."
+                )
+                unexpected = set(frame.f_locals) - permitted[where]
+                assert not unexpected, (
+                    f"{label}: frame {where} binds {sorted(unexpected)} while "
+                    "raising. --showlocals prints every local of every frame "
+                    "into the public job log, so a new name here has to be "
+                    "shown to carry no score and then allowlisted."
+                )
                 for name, value in frame.f_locals.items():
                     assert not isinstance(value, (SuiteScore, CaseScore)), (
-                        f"frame {frame.f_code.co_name} holds a score object in "
-                        f"local {name!r} while raising — --showlocals renders it"
+                        f"{label}: frame {where} holds a score object in local "
+                        f"{name!r} while raising — --showlocals renders it"
                     )
                     leaked = [m for m in sealed_metrics if m in repr(value)]
                     assert not leaked, (
-                        f"frame {frame.f_code.co_name} local {name!r} renders "
-                        f"holdout metric(s) {leaked} into a traceback the CI "
-                        "log prints in full. Serialise before the write and "
-                        "drop the score-bearing locals, or wrap them so their "
-                        "repr withholds the contents."
+                        f"{label}: frame {where} local {name!r} renders holdout "
+                        f"metric(s) {leaked} into a traceback the CI log prints "
+                        "in full."
                     )
+
+            # The message is the other rendered surface. `json.dumps` names
+            # the offending float in its own text, and a forwarded
+            # `aggregate` message would carry the list it rejected.
+            message = str(raised.value)
+            quoted = re.search(r"\b(0\.\d+|inf(inity)?|nan)\b", message, re.I)
+            assert quoted is None, (
+                f"{label}: the escaping message quotes a holdout value "
+                f"({quoted.group(0)!r} in {message!r}) — the message is rendered "
+                "into the job log exactly like the locals are"
+            )
+            assert (
+                raised.value.__context__ is None or raised.value.__suppress_context__
+            ), (
+                f"{label}: the original exception is still chained, so pytest "
+                "renders its frames — and their locals — beneath this one"
+            )
+
+    def _provoke(
+        self,
+        directory: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        target: object,
+        attribute: str,
+        replacement: object,
+    ) -> None:
+        """Run one sealed score with ``target.attribute`` replaced."""
+        with monkeypatch.context() as patched:
+            patched.setattr(target, attribute, replacement, raising=True)
+            self._score(directory)
 
     def test_the_sealed_write_actually_happens(self, tmp_path: Path) -> None:
         """Positive control: the seal must not be vacuously satisfied.
@@ -1424,14 +1797,30 @@ class TestSealedHoldoutIsUnreachableByConstruction:
                 "design exists to prevent."
             )
 
-    def test_the_driver_never_reads_the_sealed_output(self) -> None:
-        """No read primitive in the driver touches anything sealed-derived."""
-        violations = _sealed_read_violations(_driver_source())
-        assert violations == [], (
-            f"the driver reads from the sealed side: {violations}. The sealed "
-            "directory is not on any read path it uses, and that is the whole "
-            "property."
+    def test_the_tuning_path_never_reads_the_sealed_output(self) -> None:
+        """No read primitive ANYWHERE on the tuning side is sealed-derived.
+
+        Scoped to the driver alone until 2026-08-20, which made the check
+        evadable by not evading it: a new ``tests/memory_recall/audit.py``
+        that read ``holdout-*.json`` and handed the suite back would never
+        have been parsed, and the driver calling it is an ordinary function
+        call with no sealed token in it. Every module on the tuning side is
+        scanned now — see :func:`_tuning_path_sources` for the boundary and
+        why ``holdout.py`` itself is the one exclusion.
+        """
+        scanned = _tuning_path_sources()
+        assert _DRIVER.as_posix() in scanned, "the driver dropped out of the scan"
+        assert len(scanned) > 1, (
+            "only the driver was scanned — the cross-module resolution broke, "
+            "and a reader in a sibling module would be invisible again"
         )
+        for path, source in sorted(scanned.items()):
+            violations = _sealed_read_violations(source)
+            assert violations == [], (
+                f"{path} reads from the sealed side: {violations}. The sealed "
+                "directory is not on any read path the tuning side uses, and "
+                "that is the whole property."
+            )
 
     def test_the_sealed_read_detector_catches_an_indirection(self) -> None:
         """Positive control for the check above, and it is load-bearing.
@@ -1442,32 +1831,68 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         the cheap evasion: bind the sealed directory to a name, then read
         through the name, so no read call's own source segment mentions the
         holdout. Each snippet below is that evasion at one more remove.
+
+        **The four original snippets were all ``Assign`` chains**, so they
+        confirmed only the arm that already worked. A reviewer ran ten
+        evasions on 2026-08-20 and five went through — the five added below.
+        Two of them are not evasions at all but ordinary refactors:
+        extracting the positive control's own two lines into ``def
+        _sealed_dir(): return Path(os.environ[SEALED_DIR_ENV])`` silently
+        turned the detector clean, and so did a walrus.
         """
-        direct = "json.loads(Path(sealed_directory() / 'x.json').read_text())"
-        one_hop = (
-            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
-            "payload = json.loads((directory / 'x.json').read_text())\n"
-        )
-        two_hops = (
-            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
-            "elsewhere = directory\n"
-            "payload = json.loads((elsewhere / 'x.json').read_text())\n"
-        )
-        loop = (
-            "directory = Path(os.environ[SEALED_DIR_ENV])\n"
-            "for path in directory.iterdir():\n"
-            "    payload = json.loads(path.read_text())\n"
-        )
-        for label, snippet in (
-            ("direct", direct),
-            ("one_hop", one_hop),
-            ("two_hops", two_hops),
-            ("loop", loop),
-        ):
+        snippets = {
+            "direct": "json.loads(Path(sealed_directory() / 'x.json').read_text())",
+            "one_hop": (
+                "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+                "payload = json.loads((directory / 'x.json').read_text())\n"
+            ),
+            "two_hops": (
+                "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+                "elsewhere = directory\n"
+                "payload = json.loads((elsewhere / 'x.json').read_text())\n"
+            ),
+            "loop": (
+                "directory = Path(os.environ[SEALED_DIR_ENV])\n"
+                "for path in directory.iterdir():\n"
+                "    payload = json.loads(path.read_text())\n"
+            ),
+            # Taint has to cross a function boundary: the return value makes
+            # the FUNCTION NAME sealed-shaped. The name here is deliberately
+            # NEUTRAL — `_sealed_dir` would match `_SEALED_TOKENS` on its own
+            # segment and this snippet would pass without the return arm
+            # working at all (it did, until the mutation run caught it).
+            "function_return": (
+                "def _destination():\n"
+                "    return Path(os.environ[SEALED_DIR_ENV])\n"
+                "payload = json.loads((_destination() / 'x.json').read_text())\n"
+            ),
+            "walrus": (
+                "if (directory := Path(os.environ[SEALED_DIR_ENV])).exists():\n"
+                "    payload = json.loads((directory / 'x.json').read_text())\n"
+            ),
+            "parameter_default": (
+                "def _read(directory=Path(os.environ[SEALED_DIR_ENV])):\n"
+                "    return (directory / 'x.json').read_text()\n"
+            ),
+            # ...and the read primitive itself can be renamed out of the
+            # match list, which no amount of taint tracking would catch.
+            "bound_method_alias": (
+                "target = Path(os.environ[SEALED_DIR_ENV]) / 'x.json'\n"
+                "reader = target.read_text\n"
+                "payload = reader()\n"
+            ),
+            "partial_application": (
+                "target = Path(os.environ[SEALED_DIR_ENV]) / 'x.json'\n"
+                "opener = functools.partial(open, target)\n"
+                "handle = opener()\n"
+            ),
+        }
+        for label, snippet in snippets.items():
             assert _sealed_read_violations(snippet), (
                 f"the sealed-read detector missed the {label} evasion — it is "
-                "substring-matching one call's segment again, which is the "
-                "hole this control exists to keep closed"
+                "substring-matching one call's segment again, or taint stopped "
+                "at a binding form it does not know, which is the hole this "
+                "control exists to keep closed"
             )
 
         # ...and it does not simply flag every read: the tuning path's own
@@ -1487,6 +1912,11 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         does not import it. An unused entry is not free: it licences exactly
         the binding — ``Path(os.environ[SEALED_DIR_ENV])`` — that the
         sealed-read check has to work hardest to catch.
+
+        **``import`` and ``from ... import`` both, since 2026-08-20.** This
+        walked only ``ImportFrom``, so ``import tests.memory_recall.holdout
+        as ho`` bound the whole module — every symbol in it, allowlisted or
+        not — and the allowlist below saw an empty set to check.
         """
         tree = ast.parse(_driver_source())
         imported: set[str] = set()
@@ -1495,6 +1925,17 @@ class TestSealedHoldoutIsUnreachableByConstruction:
                 "memory_recall.holdout"
             ):
                 imported |= {alias.name for alias in node.names}
+            elif isinstance(node, ast.Import):
+                whole_module = [
+                    alias.name
+                    for alias in node.names
+                    if alias.name.endswith("memory_recall.holdout")
+                ]
+                assert not whole_module, (
+                    f"the driver imports {whole_module} as a whole module. That "
+                    "binds every symbol in it, allowlisted or not, and makes "
+                    "the allowlist below vacuous — import the names it needs."
+                )
         assert imported, "the driver stopped importing the holdout module"
         assert imported <= {
             "CaseSplit",
@@ -1530,6 +1971,17 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         assert len(run_arm) == 1, "the driver's per-arm runner was renamed"
 
         def _is_guarded(node: ast.AST) -> bool:
+            """The guard call, or an explicit ``None``.
+
+            ``correction=None`` says "this case has no pair" and is the
+            honest value for a leg that does not seed one — it cannot
+            smuggle an unverified pair through, because there is no pair.
+            Without this arm a third leg added later with a literal
+            ``correction=None`` fails a check it does not breach, and the
+            cheapest way to make that green is to weaken the guard.
+            """
+            if _is_none(node):
+                return True
             return (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
@@ -1566,6 +2018,22 @@ class TestSealedHoldoutIsUnreachableByConstruction:
                 "silent precedence fail written into a file nothing reads."
             )
 
+        # `_is_guarded` itself, on synthetic nodes — the two real legs are
+        # both `_seeded_correction(...)` calls, so the loop above exercises
+        # exactly one of its three answers. An explicit `correction=None`
+        # says "this case has no pair" and cannot smuggle an unverified one
+        # through; a third leg added later with that literal would otherwise
+        # fail a check it does not breach, and the cheapest way to make that
+        # green is to weaken the guard.
+        assert _is_guarded(ast.parse("None", mode="eval").body)
+        assert _is_guarded(
+            ast.parse("_seeded_correction(case, seeded)", mode="eval").body
+        )
+        assert not _is_guarded(
+            ast.parse("(case.corrector_key, case.corrected_key)", mode="eval").body
+        )
+        assert not _is_guarded(ast.parse("case.correction", mode="eval").body)
+
     def test_the_workflow_path_filter_covers_every_module_the_driver_imports(
         self,
     ) -> None:
@@ -1579,9 +2047,15 @@ class TestSealedHoldoutIsUnreachableByConstruction:
         the entire paired comparison, and until 2026-08-19 that shipped with
         no eval run and no PR comment at all.
 
-        Scoped to ``tests.`` imports on purpose: those are the harness's own
-        substrate, and there is no reason for one of them to sit outside a
-        filter that already lists the rest.
+        **``app.`` imports too, since 2026-08-20.** This checked ``tests.``
+        only — and the numbers come out of ``app/``. The four ``app.``
+        imports were never checked at all, and one was already unmatched:
+        ``from app.api.deps import get_async_db`` resolves to
+        ``backend/app/api/deps.py``, which no pattern in the filter touched.
+        That the other three DO match is prefix coincidence
+        (``backend/app/services/memory_*``), not something the test defended.
+        The stated rationale — "a change that moves the numbers must be able
+        to TRIGGER the job" — points straight at ``app/``.
         """
         workflow = _WORKFLOW.read_text(encoding="utf-8")
         patterns = [
@@ -1601,7 +2075,7 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             if not isinstance(node, ast.ImportFrom):
                 continue
             module = node.module or ""
-            if not module.startswith("tests."):
+            if module.split(".")[0] not in {"tests", "app"}:
                 continue
             base = backend / Path(*module.split("."))
             if (repo_root / base).is_dir():
