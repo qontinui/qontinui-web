@@ -41,45 +41,24 @@ jobs:
         id: heads
         working-directory: backend
         run: |
-          # alembic heads runs OFFLINE (no DB) when given a chain dir;
-          # it parses revision files only. We want a count, not the IDs
-          # for the gate logic; the IDs go in the comment body if there's
-          # a problem.
+          # THE COUNTER LIVES IN `scripts/ci/count_alembic_heads.py`. This step
+          # used to carry its own inline copy of it — a fourth one, alongside
+          # alembic-graph-pr.yml, .qontinui/ci.toml and the manifest. Phase 5 of
+          # plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
+          # made it one script that every lane invokes.
+          #
+          # `--report-only` is what keeps THIS workflow informational: the shared
+          # script exits 1 on a forked chain (that is the point of the PR gate),
+          # and under `set -e` that would abort this step before the comment
+          # below is ever posted. It still exits non-zero if the scan proved
+          # nothing, which SHOULD redden this job — a counter that counted no
+          # revisions has told us nothing about the chain.
+          #
+          # The script is CWD-independent (it resolves the repo root from its own
+          # location), so running it from `backend/` is fine. Its stdout keeps the
+          # `HEAD_COUNT=` / `HEAD=` line format this step's shell parses below.
           set -euo pipefail
-          # Use the alembic API directly to avoid env.py's DB connection.
-          # The "heads" subcommand of alembic CLI does need to load env.py
-          # which imports app models; we sidestep that with a python
-          # one-liner that scans versions/*.py for revisions with no
-          # children.
-          python -c "
-          import os, re, glob
-          # Match both legacy 'revision = \"x\"' and modern 'revision: str = \"x\"'
-          # syntaxes. The colon-prefixed type annotation can contain letters
-          # (e.g. ': str = ', ': str | None = '), so '[: ]+' is too narrow —
-          # use an optional ':<non-eq chars>' segment between the keyword and =.
-          rev_re = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*[\"\'](.+?)[\"\']', re.M)
-          down_re = re.compile(r'^down_revision\s*(?::[^=]*)?\s*=\s*(.+)$', re.M)
-          revs = {}
-          parents = set()
-          for p in glob.glob('alembic/versions/*.py'):
-              with open(p, encoding='utf-8') as f:
-                  s = f.read()
-              m = rev_re.search(s)
-              if not m:
-                  continue
-              rev = m.group(1)
-              dm = down_re.search(s)
-              down = dm.group(1).strip() if dm else 'None'
-              # down might be a tuple, list, None, or a quoted string —
-              # we only care about counting, so just look for child references.
-              for ref in re.findall(r'[\"\'](\w[\w]*)[\"\']', down):
-                  parents.add(ref)
-              revs[rev] = down
-          heads = [r for r in revs if r not in parents]
-          print('HEAD_COUNT=' + str(len(heads)))
-          for h in heads:
-              print('HEAD=' + h)
-          " | tee heads.txt
+          python ../scripts/ci/count_alembic_heads.py --report-only | tee heads.txt
           count=$(grep -c '^HEAD=' heads.txt || true)
           # grep exiting 2 (hard error) leaves count empty, which would make the
           # `[ -gt ]` below a usage error rather than a comparison. Normalise.
