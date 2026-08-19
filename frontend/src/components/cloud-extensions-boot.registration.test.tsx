@@ -43,15 +43,38 @@ describe("cloud-control extension registration", () => {
       // reading of some other file's side effect.
       expect(slots.getService("billingService")).toBeUndefined();
       expect(slots.getComponent("organizationSwitcher")).toBeUndefined();
+      expect(slots.getSlots().appRoutes).toHaveLength(0);
+      expect(slots.getSlots().marketingRoutes).toHaveLength(0);
+      expect(slots.getSlots().navItems).toHaveLength(0);
 
       await import("@/components/cloud-extensions-boot");
 
       expect(slots.getService("billingService")).toBeDefined();
       expect(slots.getService("organizationService")).toBeDefined();
+
+      // All SIX registered component slots, not the four this file first
+      // covered. `betaBanner` and `subscriptionBadge` arrived later
+      // (cloud-control `ecaa460`) and are precisely the two whose absence
+      // from the live site sent someone looking, and so found the loader
+      // dead — a guard that does not cover them would have stayed green
+      // through the exact failure it exists to catch.
       expect(slots.getComponent("organizationSwitcher")).toBeDefined();
       expect(slots.getComponent("createOrganizationDialog")).toBeDefined();
       expect(slots.getComponent("teamMemberList")).toBeDefined();
       expect(slots.getComponent("inviteMemberDialog")).toBeDefined();
+      expect(slots.getComponent("betaBanner")).toBeDefined();
+      expect(slots.getComponent("subscriptionBadge")).toBeDefined();
+
+      // Routes and nav are registered by the same one `registerCloudExtensions`
+      // call, but they are a separate consumer path — nothing reads them
+      // through `getComponent`, so a regression that emptied them would not
+      // show up in any assertion above. Asserting non-empty rather than an
+      // exact count keeps this a liveness guard: cloud-control adding a route
+      // is not a qontinui-web regression.
+      const registry = slots.getSlots();
+      expect(registry.appRoutes.length).toBeGreaterThan(0);
+      expect(registry.marketingRoutes.length).toBeGreaterThan(0);
+      expect(registry.navItems.length).toBeGreaterThan(0);
     },
     // This import pulls cloud-control's whole module graph (~45 raw .ts/.tsx
     // files) through vite's transform on demand. That is ~20s on a warm run
@@ -94,6 +117,9 @@ describe("cloud-control extension registration", () => {
       expect(slots.getComponent("organizationSwitcher")).toBeUndefined();
       expect(slots.getSlots().services.size).toBe(0);
       expect(slots.getSlots().components.size).toBe(0);
+      expect(slots.getSlots().appRoutes).toHaveLength(0);
+      expect(slots.getSlots().marketingRoutes).toHaveLength(0);
+      expect(slots.getSlots().navItems).toHaveLength(0);
     }
   );
 });

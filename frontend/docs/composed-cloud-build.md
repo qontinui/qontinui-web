@@ -144,17 +144,90 @@ string.
 
 ## Deploying the composed shape
 
-**Not wired yet, and deliberately named rather than papered over.** The
-frontend deploys through Vercel, and the repo's `vercel.json` sets no
-`installCommand` / `buildCommand` — those live in the Vercel project settings,
-which this repo cannot change. Vercel also clones only this repo, so there is
-no sibling checkout for the overlay to link to. Making qontinui.io serve the
-composed shape needs a Vercel install command that fetches
-`qontinui/qontinui-cloud-control` and then runs
-`npm run cloud:install -- --source <path>` — a settings change, not a code one.
-Until that lands, the production frontend runs the OSS shape, exactly as it
-did before this mechanism existed. What changed is that the composed shape now
-exists, builds, and is gated in CI.
+**Wired.** qontinui.io deploys through Vercel's Git integration, and
+`vercel.json` sets an `installCommand` that builds the composed shape:
+
+```json
+"installCommand": "bash frontend/scripts/vercel-install.sh --config-source root"
+```
+
+`scripts/vercel-install.sh` runs `npm ci`, clones
+`qontinui/qontinui-cloud-control` (public — no credential) at the commit
+pinned in `frontend/cloud-control.pin` into `<repo>/.sibling/`, links it with
+`npm run cloud:install -- --source <that>`, and then **verifies the overlay
+landed and exits non-zero if it did not**. That last step is the design: a
+clone failure that quietly fell back to the OSS shape would deploy qontinui.io
+without the org switcher, the beta banner, the subscription badge, and with
+`billingService` / `organizationService` as throwing stubs — and would report
+success. It is the same failure shape as the `.catch(() => {})` loader this
+mechanism replaced. Vercel keeps the previous deployment serving when a build
+fails, so failing loud costs no availability.
+
+The layout mirrors `frontend-ci.yml`'s `composed-cloud-build` job exactly
+(sibling checked out to `.sibling/qontinui-cloud-control`, linked from there),
+so the deploy path is the path CI already proves green on every PR rather than
+a second arrangement nothing exercises.
+
+**Bumping cloud-control is a qontinui-web commit.** `cloud-control.pin` holds a
+full commit sha, and the script checks out that commit — it never follows a
+branch. cloud-control publishes no release tags, so a sha is the pin. A
+floating `main` would let a cloud-control push change what qontinui.io serves
+with no qontinui-web commit at all: an untracked input to a production build.
+Editing the pin puts the change through qontinui-web review and through
+`composed-cloud-build`, which builds the two repos together.
+
+### Which `vercel.json` — and why there are two
+
+Vercel reads `vercel.json` from the project's **Root Directory**, and this repo
+has both a `frontend/` and a `backend/`. Which one the qontinui-web project is
+rooted at is a dashboard setting recorded nowhere in the tree, and no Vercel
+credential is reachable from a dev session to read it (the Vercel CLI's
+`auth.json` under `%APPDATA%/xdg.data/com.vercel.cli/` has been an empty `{}`
+since 2026-07-12).
+
+The available evidence favours the **repo root**: `39cb6f87` set
+`git.deploymentEnabled: false` in the root `vercel.json` on 2026-05-02 and
+`aabaaf39` set it back on 2026-05-17, and Vercel created **zero** deployments
+for main commits inside that window (sampled `08db0242`, `4fb69ed1`,
+`26519749`, `0b83f939`, `12de6861`, `80ae61bd` — all 0) against a
+`Production/vercel[bot]` deployment for `f2b72d06` just before it and for
+`096c7eb0` just after. That is the root file demonstrably steering Vercel,
+twice. It is not conclusive for `installCommand` specifically, so the command
+is installed in **both** candidate locations — `vercel.json` and
+`frontend/vercel.json` — and whichever Vercel reads wins while the other sits
+inert.
+
+Each passes a different `--config-source`, and the script writes it into
+`public/composed-build.json`, which the deployment then serves. One
+unauthenticated GET answers all three questions at once:
+
+```console
+$ curl https://qontinui.io/composed-build.json
+{
+  "composed": true,
+  "configSource": "root",
+  "cloudControlSha": "d89aa6f4905145a9484cbe848643e2d20ab99359",
+  "webCommitSha": "...",
+  "generatedBy": "frontend/scripts/vercel-install.sh"
+}
+```
+
+`middleware.ts`'s matcher excludes `*.json`, so the file is reachable without a
+session. It is written **last**, only on the path where the overlay verified —
+so an OSS build serves a 404 there rather than a claim it cannot back, and a
+404 is the honest signal that the shape is OSS. Once a deployment has answered,
+delete the `vercel.json` that did **not** win.
+
+### The claim this section replaces
+
+Until this landed, this document said the install and build commands *"live in
+the Vercel project settings, which this repo cannot change"*, and deferred the
+last mile as an operator-only change. That was wrong, and being wrong here is
+what kept the whole extension surface inert in production after the loader was
+fixed: `installCommand` and `buildCommand` in `vercel.json` take precedence
+over the dashboard settings, so it was always a code change. A doc that
+mis-scopes a code change as an operator change is how the same gap gets
+deferred a second time.
 
 ## CI
 

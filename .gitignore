@@ -41,6 +41,7 @@ next.config.js
 frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
 !frontend/scripts/cloud-control-overlay.mjs
+!frontend/scripts/vercel-install.sh
 !frontend/scripts/check-browser-safe-imports.mjs
 !frontend/scripts/export-test-coverage.mjs
 !frontend/scripts/prod-probes/
@@ -135,3 +136,9 @@ frontend/yarn.lock
 
 # Git-Bash crash dumps — never commit
 *.stackdump
+
+# Composed cloud build (frontend/scripts/vercel-install.sh) — both generated
+# at install time on the deployment, never committed. See
+# frontend/docs/composed-cloud-build.md.
+/.sibling/
+frontend/public/composed-build.json
