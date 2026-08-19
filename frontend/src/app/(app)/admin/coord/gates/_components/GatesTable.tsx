@@ -30,6 +30,12 @@ import type {
   ProgressBasis,
 } from "@/services/admin-dev-service";
 import { summarizeClearanceProvenance } from "@/components/operations/utils";
+import type { CoordPolicyRow } from "../../_shared/coordPolicies";
+import {
+  clearanceBandIndex,
+  lookupClearanceBand,
+  type ClearanceRuleBand,
+} from "../../_shared/clearanceRuleBand";
 import { ShadowReapEvidence } from "./ShadowReap";
 import { GateActions } from "./GateActions";
 
@@ -243,12 +249,30 @@ function GateIdCell({ gate }: { gate: GateOverviewRow }) {
 /**
  * Sub-line under the verdict badge: who moved the gate to a terminal verdict,
  * via which door, under which rule — e.g. "attested by agent <id> on <device>
- * under rule <id>" (plan `2026-07-27-configurable-gate-clearance-authority`
- * Phase 6). Renders nothing when coord doesn't emit the provenance columns
- * yet (pre-deploy), so the cell stays byte-identical to today.
+ * under tenant rule <id>" (plan
+ * `2026-07-27-configurable-gate-clearance-authority` Phase 6; the BAND half is
+ * plan `2026-08-10-agent-gate-management-must-ship-in-the-product` P3).
+ * Renders nothing when coord doesn't emit the provenance columns yet
+ * (pre-deploy), so the cell stays byte-identical to today.
+ *
+ * The band is NOT on the gates wire — coord returns the deciding rule's id and
+ * nothing else about it — so it is derived by looking that id up in the
+ * workspace's current `gate_clearance` rule set (`bandIndex`). When the set was
+ * READ and no longer carries the id, the line says "band unknown"; when the set
+ * was never read the line simply names no band. Neither ever picks the likely
+ * answer.
  */
-function ClearanceProvenanceLine({ gate }: { gate: GateOverviewRow }) {
-  const summary = summarizeClearanceProvenance(gate);
+function ClearanceProvenanceLine({
+  gate,
+  bandIndex,
+}: {
+  gate: GateOverviewRow;
+  bandIndex: ReadonlyMap<string, ClearanceRuleBand> | null;
+}) {
+  const summary = summarizeClearanceProvenance(gate, {
+    ruleBand: lookupClearanceBand(gate.cleared_under_rule, bandIndex),
+    noteAudienceDefault: true,
+  });
   if (!summary) return null;
   return (
     <div
@@ -270,11 +294,19 @@ const ALL = "__all__";
 export function GatesTable({
   gates,
   onActed,
+  clearanceRules = null,
 }: {
   gates: GateOverviewRow[];
   /** Refetch the overview after a successful gate action (coord is the source
    *  of truth — the page re-fetches rather than optimistically mutating). */
   onActed: () => void;
+  /**
+   * The workspace's `gate_clearance` rules, used ONLY to name the band of a
+   * gate's deciding rule. `null` — the default — means "not loaded", and the
+   * provenance line then names no band at all, exactly as before bands
+   * existed.
+   */
+  clearanceRules?: readonly CoordPolicyRow[] | null;
 }) {
   const [search, setSearch] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
@@ -293,6 +325,13 @@ export function GatesTable({
     const gate = new URLSearchParams(window.location.search).get("gate");
     if (gate) setSearch(gate);
   }, []);
+
+  // `policy_id -> band` for the provenance sub-line. Stays `null` (= no band
+  // claim) when the caller did not supply a rule set.
+  const bandIndex = useMemo(
+    () => clearanceBandIndex(clearanceRules),
+    [clearanceRules]
+  );
 
   const verdictOptions = useMemo(
     () => Array.from(new Set(gates.map((g) => g.verdict))).sort(),
@@ -477,7 +516,7 @@ export function GatesTable({
                     >
                       {g.verdict}
                     </Badge>
-                    <ClearanceProvenanceLine gate={g} />
+                    <ClearanceProvenanceLine gate={g} bandIndex={bandIndex} />
                   </TableCell>
                   <TableCell className="text-sm whitespace-nowrap tabular-nums">
                     {formatAge(g.age_secs)}

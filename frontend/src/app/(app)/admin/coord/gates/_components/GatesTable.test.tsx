@@ -24,6 +24,7 @@ vi.mock("./ShadowReap", () => ({ ShadowReapEvidence: () => null }));
 
 import { GatesTable } from "./GatesTable";
 import type { GateOverviewRow } from "@/services/admin-dev-service";
+import type { CoordPolicyRow } from "../../_shared/coordPolicies";
 
 function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
   return {
@@ -189,6 +190,123 @@ describe("GatesTable search + gate-id", () => {
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b");
+  });
+
+  // -- clearance-rule BAND (plan 2026-08-10-agent-gate-management P3) -------
+  //
+  // Coord's gates wire carries the deciding rule's ID and nothing about which
+  // band it came from. The band shown must therefore AGREE with the rule set
+  // the table was handed — these assert exactly that, and that neither absent
+  // arm is filled in with a guess.
+
+  const RULE_ID = "9e8d7c6b-0000-0000-0000-000000000003";
+
+  const clearedUnderRule = () =>
+    gate({
+      verdict: "cleared",
+      cleared_via: "agent_attest",
+      cleared_under_rule: RULE_ID,
+    });
+
+  function clearanceRule(built_in: boolean): CoordPolicyRow {
+    return {
+      policy_id: RULE_ID,
+      tenant_id: "t-1",
+      repo: null,
+      name: "routine-review",
+      kind: null,
+      decision_domain: "gate_clearance",
+      mode: "data_driven",
+      autonomy_level: "always_escalate",
+      payload: { gate_class: "routine-review", authority: "agent_any" },
+      condition: {},
+      action: {},
+      priority: 100,
+      enabled: true,
+      rationale: null,
+      default_source: null,
+      expires_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      created_by: "op",
+      updated_at: "2026-01-01T00:00:00Z",
+      updated_by: "op",
+      built_in,
+      override_state: null,
+      system_rule_id: null,
+    };
+  }
+
+  it("names the band from the supplied rule set — tenant when the rule is the workspace's", () => {
+    render(
+      <GatesTable
+        gates={[clearedUnderRule()]}
+        onActed={() => {}}
+        clearanceRules={[clearanceRule(false)]}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe("attested under tenant rule 9e8d7c6b");
+  });
+
+  it("…and system when the SAME rule id is a built-in in that set", () => {
+    render(
+      <GatesTable
+        gates={[clearedUnderRule()]}
+        onActed={() => {}}
+        clearanceRules={[clearanceRule(true)]}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe("attested under system default rule 9e8d7c6b");
+  });
+
+  it("says 'band unknown' when the loaded rule set no longer has the rule", () => {
+    render(
+      <GatesTable
+        gates={[clearedUnderRule()]}
+        onActed={() => {}}
+        clearanceRules={[]}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe("attested under rule 9e8d7c6b (band unknown)");
+  });
+
+  it("says no clearance rule matched when an agent door cleared with no rule", () => {
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            verdict: "cleared",
+            cleared_via: "agent_attest",
+            cleared_by_device_id: "1b2c3d4e-0000-0000-0000-000000000002",
+          }),
+        ]}
+        onActed={() => {}}
+        clearanceRules={[]}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe(
+      "attested by 1b2c3d4e — no clearance rule matched (audience default)",
+    );
+  });
+
+  it("makes no audience-default claim for an operator door", () => {
+    render(
+      <GatesTable
+        gates={[gate({ verdict: "cleared", cleared_via: "operator_route" })]}
+        onActed={() => {}}
+        clearanceRules={[]}
+      />,
+    );
+    expect(
+      screen.getByTestId("gates-clearance-provenance").textContent,
+    ).toBe("cleared by operator");
   });
 
   it("the copy button writes the FULL gate id to the clipboard", async () => {
