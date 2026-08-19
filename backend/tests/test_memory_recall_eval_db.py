@@ -63,7 +63,16 @@ from app.services.memory_store import ARM_LIMIT as _ARM_LIMIT
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.memory_recall import fixtures as fx
-from tests.memory_recall.scorer import CaseScore, SuiteScore, aggregate, score_case
+from tests.memory_recall.scorer import (
+    CREDIT_Z_THRESHOLD,
+    LOWER_IS_BETTER_METRICS,
+    CaseScore,
+    PairedResult,
+    SuiteScore,
+    aggregate,
+    paired_delta,
+    score_case,
+)
 
 # The seeded-corpus substrate is REUSED from the API suite rather than
 # re-derived: there is no ORM model for coord.memory_records (raw-SQL
@@ -389,7 +398,7 @@ def _run_arm(
     )
     vector_arm = arms_seen.pop()
     return ArmRun(
-        suite=aggregate(arm, vector_arm, scores),
+        suite=aggregate(arm, vector_arm, scores, case_count=len(golden.cases)),
         scores=scores,
         vector_arm=vector_arm,
         rankings=rankings,
@@ -450,6 +459,14 @@ class TestArmIntegrity:
         assert fts_only.suite.case_count == len(golden.cases)
         assert len(fts_only.scores) == len(golden.cases)
         assert fts_only.suite.case_count > 0
+        # `case_count` is now the DECLARED denominator handed to
+        # `aggregate()`, so on its own it can no longer witness coverage —
+        # `missing_cases` is what does. Zero here means every case in the
+        # set produced a real score rather than contributing a 0.0 to the
+        # means. Assert both, so a future per-case tolerance shows up as a
+        # failure here instead of as a quietly lower headline.
+        assert fts_only.suite.missing_cases == 0
+        assert fts_only.suite.scored_cases == len(golden.cases)
 
     def test_a_mismatched_model_tag_degrades_the_arm_and_is_caught(
         self, eval_engine: AsyncEngine, golden: fx.GoldenSet
@@ -746,6 +763,7 @@ class TestHarnessDetectsRegressions:
                 )
                 for c in golden.cases
             ],
+            case_count=len(golden.cases),
         )
 
     def test_reversing_the_returned_order_degrades_the_ranking(
@@ -913,6 +931,45 @@ class TestBaselineReport:
             "correction_pairs": suite.correction_pairs,
             "correction_precedence_passes": suite.correction_precedence_passes,
             "correction_precedence_rate": round(suite.correction_precedence_rate, 4),
+            # The denominator, made legible. `cases` above is the divisor;
+            # this says how many of those actually produced a score. A
+            # non-zero value means every mean above is a floor.
+            "missing_cases": suite.missing_cases,
+            "scored_cases": suite.scored_cases,
+        }
+
+    @staticmethod
+    def _paired_rows(result: PairedResult) -> dict[str, Any]:
+        """One paired comparison, rendered JSON-safe.
+
+        ``z`` can legitimately be infinite (a perfectly uniform non-zero
+        lift), and ``json.dumps`` would emit a bare ``Infinity`` that no
+        conforming parser accepts — including the ``JSON.parse`` in the CI
+        comment step. So the numeric field goes ``null`` in exactly that
+        case and ``z_display`` carries the honest string. ``null`` here
+        means "not finite", never "not significant": read ``z_infinite``
+        and ``insufficient_n`` alongside it.
+        """
+        finite_z = None if result.z_is_infinite or result.insufficient_n else result.z
+        return {
+            "metric": result.metric,
+            "n": result.n,
+            "control_mean": round(result.control_mean, 6),
+            "candidate_mean": round(result.candidate_mean, 6),
+            "mean_lift": round(result.mean_lift, 6),
+            "sd": round(result.sd, 6),
+            "se": round(result.se, 6),
+            "z": None if finite_z is None else round(finite_z, 4),
+            "z_display": result.z_display,
+            "z_infinite": result.z_is_infinite,
+            "insufficient_n": result.insufficient_n,
+            # Two fields, never one conflated boolean. `promoted` banks;
+            # `credited_2sigma` is a reported label. promoted=True with
+            # credited_2sigma=False is an expected outcome, not an error.
+            "promoted": result.promoted,
+            "credited_2sigma": result.credited_2sigma,
+            "credit_z_threshold": CREDIT_Z_THRESHOLD,
+            "lower_is_better": result.metric in LOWER_IS_BETTER_METRICS,
         }
 
     @staticmethod
@@ -986,9 +1043,30 @@ class TestBaselineReport:
                 "hybrid": self._by_class(hybrid_scores),
                 "hybrid_link": self._by_class(hybrid_link.scores),
             },
+            # Paired comparison — the per-case data the arms already
+            # retained, finally used. `fts_only` is the control because it
+            # is what production runs today; `hybrid` is the candidate.
+            # Between-case difficulty cancels because both arms ran exactly
+            # the same case set (which `paired_delta` enforces rather than
+            # assumes).
+            "paired": {
+                "control": fts_suite.arm,
+                "candidate": hybrid_suite.arm,
+                "metrics": {
+                    metric: self._paired_rows(
+                        paired_delta(fts_scores, hybrid_scores, metric=metric)
+                    )
+                    for metric in ("recall_at_10", "mrr", "ndcg_at_10")
+                },
+            },
         }
 
-        rendered = json.dumps(report, indent=2, sort_keys=True)
+        # `allow_nan=False` deliberately: Python's default emits bare
+        # `Infinity`/`NaN` literals, which are NOT valid JSON and blow up
+        # the `JSON.parse` in the CI comment step — the paired block's `z`
+        # can legitimately be infinite. Fail loudly here rather than
+        # shipping a report that silently breaks the only reader.
+        rendered = json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
         print("\n=== MEMORY RECALL EVAL ===\n" + rendered)
 
         destination = os.environ.get(REPORT_PATH_ENV)
@@ -1001,6 +1079,18 @@ class TestBaselineReport:
         assert report["arms"][0]["cases"] > 0
         assert report["arms"][1]["cases"] > 0
         assert report["arms"][2]["cases"] > 0
+        # The paired block compared the WHOLE case set, not a subset that
+        # happened to survive both arms. `paired_delta` already raises on a
+        # mismatched set; this pins the denominator to the golden set too,
+        # so a shrunken run cannot report a clean-looking comparison.
+        paired_metrics = report["paired"]["metrics"]
+        assert set(paired_metrics) == {"recall_at_10", "mrr", "ndcg_at_10"}
+        for row in paired_metrics.values():
+            assert row["n"] == len(golden.cases), (
+                f"paired comparison on {row['metric']} covered {row['n']} of "
+                f"{len(golden.cases)} cases"
+            )
+            assert row["insufficient_n"] is False
 
 
 class TestLinkArmUnderAProductionLikeCutoff:
@@ -1123,7 +1213,12 @@ class TestLinkArmUnderAProductionLikeCutoff:
                 )
                 for case in golden.cases
             ]
-            return aggregate("fts_only", "skipped_no_embedding", scores)
+            return aggregate(
+                "fts_only",
+                "skipped_no_embedding",
+                scores,
+                case_count=len(golden.cases),
+            )
 
         baseline, expanded = run(False), run(True)
 
