@@ -11,7 +11,11 @@
  *     most-recent activity.
  *  2. Sessions table — filtered (live / user_id / since) list of
  *     `coord.agent_sessions` rows. Click a row to expand the
- *     lineage panel.
+ *     lineage panel. Also carries the tool-grain activity columns
+ *     (tool / model / time-in-state) from plan
+ *     `2026-08-11-coord-hook-sourced-agent-status` Phase 5a — every one
+ *     of which is NULL until that plan's Phase 3 hook reports, so the
+ *     table must (and does) render a dash rather than an empty cell.
  *  3. Lineage panel (per expanded row) — UNION ALL timeline of
  *     agent_worktrees / claims_audit / build_events /
  *     merge_proposals rows for that session, grouped by kind under
@@ -50,7 +54,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LineageTimeline } from "@/components/sessions/LineageTimeline";
-import type { LineageResponse } from "@/components/sessions/types";
+import type {
+  LineageResponse,
+  SessionToolActivity,
+} from "@/components/sessions/types";
 import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
 
@@ -62,7 +69,19 @@ const API = `${ApiConfig.API_BASE_URL}/api/v1/admin/agent-sessions`;
 // Wire shapes — mirror the FastAPI route JSON exactly.
 // ---------------------------------------------------------------------------
 
-interface AgentSession {
+/**
+ * One `coord.agent_sessions` row as coord's `/coord/agent-sessions` envelope
+ * emits it, plus the web proxy's name enrichment.
+ *
+ * `extends SessionToolActivity` adds the tool-grain fields (`tool_name` /
+ * `tool_input_digest` / `model` / `state_started_at`) from plan
+ * `2026-08-11-coord-hook-sourced-agent-status`. Those columns land inert
+ * (alembic `coord_sessions_tool_activity`) and stay NULL until that plan's
+ * Phase 3 hook reports; the web proxy passes coord's row through verbatim, so
+ * on a coord that predates them the keys are simply ABSENT. Every renderer
+ * below therefore treats absent and null identically.
+ */
+interface AgentSession extends SessionToolActivity {
   id: string;
   user_id: string | null;
   device_id: string | null;
@@ -110,6 +129,39 @@ function relativeTime(iso?: string | null): string {
 function shortId(id?: string | null): string {
   if (!id) return "—";
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
+/**
+ * "How long has this session been in its CURRENT state?" — derived from
+ * `state_started_at`, which a tool ping deliberately does NOT reset (unlike
+ * the progress clock behind `last_seen`). Plan
+ * `2026-08-11-coord-hook-sourced-agent-status` §3.1.
+ *
+ * Distinct from `relativeTime` on purpose: this is a DURATION ("40m in
+ * state"), not a point in the past ("40m ago"), and the em dash covers all
+ * three unknown shapes — absent key, null column, unparseable timestamp — so
+ * a pre-Phase-3 fleet renders a clean dash rather than `undefined`/`NaN`.
+ */
+function timeInState(iso?: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  // Clamp at 0: a coord clock marginally ahead of the browser must read
+  // "0s", never a negative duration.
+  const sec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ${min % 60}m`;
+  return `${Math.floor(hr / 24)}d ${hr % 24}h`;
+}
+
+/** Render a nullable free-text cell as an em dash when unknown. */
+function orDash(value?: string | null) {
+  const text = value?.trim();
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  return <>{text}</>;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +385,9 @@ function SessionsTable({
                 <TableHead>name</TableHead>
                 <TableHead>first seen</TableHead>
                 <TableHead>last seen</TableHead>
+                <TableHead>tool</TableHead>
+                <TableHead>model</TableHead>
+                <TableHead className="text-right">in state</TableHead>
                 <TableHead className="w-[80px]">status</TableHead>
               </TableRow>
             </TableHeader>
@@ -379,6 +434,22 @@ function SessionsTable({
                       <TableCell className="text-xs text-muted-foreground">
                         {relativeTime(s.last_seen)}
                       </TableCell>
+                      <TableCell
+                        className="font-mono text-xs"
+                        /* The digest is an opaque fingerprint, not a
+                           description of the work — it hangs off the tool
+                           cell as a "same call repeating?" hint and is never
+                           rendered as prose. */
+                        title={s.tool_input_digest ?? undefined}
+                      >
+                        {orDash(s.tool_name)}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {orDash(s.model)}
+                      </TableCell>
+                      <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                        {timeInState(s.state_started_at)}
+                      </TableCell>
                       <TableCell>
                         {isLive ? (
                           <Badge variant="default">LIVE</Badge>
@@ -389,7 +460,7 @@ function SessionsTable({
                     </TableRow>
                     {isExpanded && (
                       <TableRow data-testid="agent-sessions-lineage-row">
-                        <TableCell colSpan={8} className="bg-muted/10 p-4">
+                        <TableCell colSpan={11} className="bg-muted/10 p-4">
                           <LineagePanel sessionId={s.id} isLive={isLive} />
                         </TableCell>
                       </TableRow>
