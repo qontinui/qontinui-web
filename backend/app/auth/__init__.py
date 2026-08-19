@@ -1,1 +1,0 @@
-"""FastAPI-Users authentication configuration."""
