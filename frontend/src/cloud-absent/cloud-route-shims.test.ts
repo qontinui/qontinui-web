@@ -9,15 +9,17 @@
  * facts too — file existence and specifier text — rather than a runtime
  * registry read.
  *
- * That matters because the guard originally proposed for this — assert
- * `getSlots().appRoutes` is non-empty — would have passed on the server while
- * the browser registry stayed empty, so it never covered the actual bug. The
+ * That matters because the guard originally proposed for this — assert the
+ * registry's `appRoutes` is non-empty — would have passed on the server while
+ * the browser registry stayed empty, so it never covered the actual bug.
+ * That array has since been deleted outright; the inventory both sides are
+ * diffed against is now each repo's filesystem. The
  * four things that CAN go wrong with option D are:
  *
- *   1. cloud-control registers a route and no host shim is added — the route
+ *   1. cloud-control ships a route and no host shim is added — the route
  *      404s in the cloud deployment, silently. `mirrors cloud-control's
- *      appRoutes inventory exactly` fails loudly on it, in the composed CI
- *      job that has cloud-control checked out.
+ *      route modules exactly` fails loudly on it, in the composed CI job
+ *      that has cloud-control checked out.
  *   2. a shim exists but the `cloud-absent/` mirror does not — the OSS build
  *      fails to resolve `@cloud/...`. Caught in both shapes.
  *   3. the stubs stop being stubs — an OSS build serving something other
@@ -50,7 +52,7 @@ const OVERLAY = path.resolve(FRONTEND, "node_modules/@qontinui/cloud-control");
 const composed = fs.existsSync(path.join(OVERLAY, "package.json"));
 
 type Shim = {
-  /** The path cloud-control registers in `appRoutes`. */
+  /** The URL path this route serves. */
   route: string;
   /** Module specifier suffix: `@cloud/<module>`. */
   module: string;
@@ -70,20 +72,26 @@ const NOT_FOUND = { kind: "notFound" } as const;
  */
 const SHIMS: Shim[] = [
   {
+    route: "/billing",
+    module: "routes/billing/page",
+    page: "(app)/billing/page.tsx",
+    absent: NOT_FOUND,
+  },
+  {
     route: "/billing/success",
-    module: "routes/billing/success",
+    module: "routes/billing/success/page",
     page: "(app)/billing/success/page.tsx",
     absent: NOT_FOUND,
   },
   {
     route: "/billing/canceled",
-    module: "routes/billing/canceled",
+    module: "routes/billing/canceled/page",
     page: "(app)/billing/canceled/page.tsx",
     absent: NOT_FOUND,
   },
   {
     route: "/pricing",
-    module: "routes/pricing",
+    module: "routes/pricing/page",
     page: "(app)/pricing/page.tsx",
     absent: NOT_FOUND,
   },
@@ -150,9 +158,12 @@ const SHIMS: Shim[] = [
  * pull cloud-control's real pages, which is not what this case is about.
  */
 const STUB_IMPORTS: Record<string, () => Promise<{ default: () => never }>> = {
-  "routes/billing/success": () => import("@cloud/routes/billing/success"),
-  "routes/billing/canceled": () => import("@cloud/routes/billing/canceled"),
-  "routes/pricing": () => import("@cloud/routes/pricing"),
+  "routes/billing/page": () => import("@cloud/routes/billing/page"),
+  "routes/billing/success/page": () =>
+    import("@cloud/routes/billing/success/page"),
+  "routes/billing/canceled/page": () =>
+    import("@cloud/routes/billing/canceled/page"),
+  "routes/pricing/page": () => import("@cloud/routes/pricing/page"),
   "routes/admin/page": () => import("@cloud/routes/admin/page"),
   "routes/admin/mobile/page": () => import("@cloud/routes/admin/mobile/page"),
   "routes/organizations/page": () => import("@cloud/routes/organizations/page"),
@@ -169,53 +180,92 @@ const STUB_IMPORTS: Record<string, () => Promise<{ default: () => never }>> = {
 };
 
 /**
- * cloud-control's `appRoutes` array, read from source rather than imported.
+ * Route modules cloud-control ships, taken from its `routes/` tree.
  *
- * NOTE for whoever deletes `appRoutes` (plan phase 5, "retire the dead half of
- * ExtensionSlots"): this throws when the array is gone, which is the correct
- * loud failure — it means the inventory this table is diffed against no longer
- * exists and the guard needs a new source of truth (the `routes/` directory
- * listing is the obvious one). Do not delete the test with the array.
+ * This replaced a regex over the package's old `appRoutes` array when plan
+ * phase 5 deleted that array (it never worked — Next resolves the App Router
+ * from the filesystem at build time, so a runtime array of routes could not
+ * become URLs). The filesystem is now the source of truth on BOTH sides,
+ * which is the point: the thing being compared is the thing that decides.
  *
- * Read from source rather than imported because:
- * the array is a `lazy(() => import(...))` table whose evaluation would drag
- * the package's whole module graph into this test, and the only facts wanted
- * here are the registered path and the module it points at.
+ * The contract, stated in cloud-control's `frontend/src/index.ts` header:
+ * every route is `routes/<path>/page.tsx`, mirroring the App Router.
+ * Supporting modules use any other name, or live in `_`-prefixed folders.
+ * A route added as `routes/foo.tsx` is therefore invisible here — hence the
+ * rename of `pricing.tsx` / `billing/{success,canceled}.tsx` into that shape
+ * when this guard was written.
  */
-function readRegisteredAppRoutes(): Array<{ route: string; module: string }> {
-  const source = fs.readFileSync(
-    path.join(OVERLAY, "frontend/src/index.ts"),
-    "utf8"
-  );
-  const block = /appRoutes:\s*\[([\s\S]*?)\n {2}\],/.exec(source);
-  if (!block?.[1]) {
-    throw new Error(
-      "could not locate the appRoutes array in cloud-control's frontend/src/index.ts"
-    );
-  }
-  const entries = [
-    ...block[1].matchAll(/path:\s*"([^"]+)",[\s\S]*?import\("\.\/([^"]+)"\)/g),
-  ];
-  return entries.map((m) => ({ route: m[1]!, module: m[2]! }));
+function readCloudRouteModules(): string[] {
+  const root = path.join(OVERLAY, "frontend/src/routes");
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith("_")) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name === "page.tsx") {
+        found.push(
+          "routes/" +
+            path
+              .relative(root, full)
+              .split(path.sep)
+              .join("/")
+              .replace(/\.tsx$/, "")
+        );
+      }
+    }
+  };
+  walk(root);
+  return found.sort();
 }
+
+/**
+ * Route modules that exist in cloud-control but are deliberately NOT mounted.
+ *
+ * Every entry needs a reason, and the reason has to be a decision rather than
+ * an omission — an unmounted route is invisible in the running app, so this
+ * list is the only place the choice is recorded.
+ */
+const UNMOUNTED: Record<string, string> = {
+  // qontinui-web serves a 92-line privacy policy at /privacy to every
+  // deployment. cloud-control's is a different 326-line document about the
+  // hosted service's data handling, and which one binds hosted users is a
+  // legal call, open in the plan's "Open questions". Mounting it by default
+  // would be answering that question silently.
+  "routes/privacy/page":
+    "pending a legal decision on which privacy policy binds hosted users",
+};
 
 describe("cloud route shims", () => {
   it.skipIf(!composed)(
-    "mirrors cloud-control's appRoutes inventory exactly",
+    "mirrors cloud-control's route modules exactly",
     () => {
-      const registered = readRegisteredAppRoutes();
+      const shipped = readCloudRouteModules();
 
-      // Sanity: the parse found something. A regex that silently matched
-      // nothing would make the comparison below vacuous.
-      expect(registered.length).toBeGreaterThan(0);
+      // Sanity: the walk found something. An empty result — a moved
+      // directory, a bad OVERLAY path — would make the comparison vacuous.
+      expect(shipped.length).toBeGreaterThan(0);
 
       // Both directions in one assertion: a cloud route with no host shim
-      // AND a host shim for a route cloud-control no longer registers.
-      expect(registered).toEqual(
-        SHIMS.map(({ route, module }) => ({ route, module }))
-      );
+      // AND a host shim for a route cloud-control no longer ships. Anything
+      // deliberately left unmounted has to say so in UNMOUNTED.
+      const expected = [
+        ...SHIMS.map((s) => s.module),
+        ...Object.keys(UNMOUNTED),
+      ].sort();
+      expect(shipped).toEqual(expected);
     }
   );
+
+  it.skipIf(!composed)("has no stale UNMOUNTED entries", () => {
+    // An UNMOUNTED entry for a module that no longer exists reads as a live
+    // pending decision when there is nothing left to decide.
+    const shipped = new Set(readCloudRouteModules());
+    for (const [module, reason] of Object.entries(UNMOUNTED)) {
+      expect(shipped.has(module), `${module}: ${reason}`).toBe(true);
+    }
+  });
 
   it("has a host page.tsx re-exporting each route through @cloud", () => {
     for (const shim of SHIMS) {
@@ -274,7 +324,7 @@ describe("cloud route shims", () => {
       // The reason option D was chosen over every registry-based option is
       // that it keeps cloud routes server-renderable: the module a cloud
       // path resolves to is decided by the bundler, so it lands in the
-      // SERVER graph like any other page. A `getSlots()` lookup cannot —
+      // SERVER graph like any other page. A runtime registry lookup cannot —
       // the registry only exists behind a client boundary.
       //
       // So render one through the same `@cloud` specifier `src/app/`'s shim
@@ -284,7 +334,7 @@ describe("cloud route shims", () => {
       // resolution path, which they all share.
       const { renderToStaticMarkup } = await import("react-dom/server");
       const { createElement } = await import("react");
-      const PricingPage = (await import("@cloud/routes/pricing")).default;
+      const PricingPage = (await import("@cloud/routes/pricing/page")).default;
 
       const html = renderToStaticMarkup(createElement(PricingPage));
 

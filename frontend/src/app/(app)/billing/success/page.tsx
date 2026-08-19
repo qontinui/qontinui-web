@@ -7,4 +7,4 @@
  * self-hosters, and no runtime registry, client boundary or loader race in
  * either. See `docs/composed-cloud-build.md`.
  */
-export { default } from "@cloud/routes/billing/success";
+export { default } from "@cloud/routes/billing/success/page";

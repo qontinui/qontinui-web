@@ -24,8 +24,10 @@
  * `tsconfig.typecheck.json`). Every mirrored route module default-exports a
  * component that calls `notFound()`, except the two paths OSS already served
  * — `routes/organizations/page.tsx` and `routes/admin/page.tsx` — which keep
- * their existing redirects. `cloud-route-shims.test.ts` holds the mirror and
- * the `src/app/` shims to cloud-control's `appRoutes` inventory.
+ * their existing redirects. It also carries `nav-items.ts`, the empty
+ * stand-in for the sidebar entries cloud-control contributes.
+ * `cloud-route-shims.test.ts` holds the mirror and the `src/app/` shims to
+ * cloud-control's route inventory — every `routes/<path>/page.tsx` it ships.
  */
 
 export {};
