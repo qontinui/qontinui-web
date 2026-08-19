@@ -1460,7 +1460,7 @@
             "type": "string"
           },
           "disposition": {
-            "default": "block",
+            "default": "degrade",
             "description": "block | degrade | warn_proceed",
             "title": "Disposition",
             "type": "string"

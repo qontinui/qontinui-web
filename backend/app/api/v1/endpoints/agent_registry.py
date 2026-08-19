@@ -167,7 +167,10 @@ class AgentRegistryEntry(BaseModel):
     policy_required: bool = False
     fanout_bound: int | str | None = None
     enabled: bool = True
-    disposition: str = Field("block", description="block | degrade | warn_proceed")
+    # Defaults to `degrade`, not `block`, for the same reason as the fallback
+    # in `_merge_effective`: an unset disposition means "keep the gate, do the
+    # work inline", never "refuse the gated action".
+    disposition: str = Field("degrade", description="block | degrade | warn_proceed")
     source: str = Field("default", description="default | user_pref")
 
 
@@ -256,7 +259,19 @@ def _merge_effective(
             continue
         pref = prefs_by_agent.get(name)
         enabled = bool(row.get("enabled", True))
-        disposition = str(row.get("disposition") or "block")
+        # Unset disposition falls back to DEGRADE, matching the documented
+        # contract (`agent_registry_01` migration: "NULL = unset -> coord's
+        # degrade default") and served policy: "A disable arriving with NO
+        # recorded disposition falls back to degrade -- the only option that
+        # both honours the cost decision and keeps the gate."
+        #
+        # This previously read "block", which is the most destructive reading
+        # available: `block` means DO NOT PERFORM THE GATED ACTION (do not
+        # open the PR at all), where `degrade` means do the review inline. The
+        # fallback was dormant while every agent seeded enabled -- disposition
+        # only matters for a DISABLED policy-required agent -- so making
+        # code-review off-by-default is exactly what would have armed it.
+        disposition = str(row.get("disposition") or "degrade")
         source = "default"
         if pref is not None:
             source = "user_pref"

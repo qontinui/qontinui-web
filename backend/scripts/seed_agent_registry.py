@@ -20,7 +20,17 @@ Column mapping
   extracted for querying only.
 * ``policy_required`` — ``true`` for ``code-reviewer`` (pre-PR review is
   policy-mandated), ``false`` otherwise.
-* ``default_enabled`` — ``true``; ``spawn_path`` — ``in_session_subagent``.
+* ``default_enabled`` — ``false`` for a policy-required agent, ``true``
+  otherwise; ``spawn_path`` — ``in_session_subagent``. A policy-required
+  agent is spawned by POLICY, with no per-use decision by the user, so it
+  is the one class that must be opted INTO: the spawn runs on the user's
+  own AI account and "the user owns the subscription and manages the spend"
+  (served policy ``agent-spawn-authorization``). An ordinary agent still
+  defaults ON — it only ever spawns because a session deliberately invoked
+  it for work the user asked for, so defaulting it off would just break
+  delegation. Off-by-default here is NOT a downgrade of the review gate:
+  a disabled policy-required agent resolves through its ``disposition``
+  (default ``degrade`` = the session reviews inline, no spawn, gate kept).
 * ``allowed_dispositions`` / ``fanout_bound`` / ``trigger_condition`` are
   left at their DB defaults and never overwritten — they are coord/operator
   managed knobs, not properties of the definition file.
@@ -93,6 +103,17 @@ class AgentDefinition:
     def policy_required(self) -> bool:
         return self.agent_name in POLICY_REQUIRED_AGENTS
 
+    @property
+    def default_enabled(self) -> bool:
+        """Seed a policy-required agent OFF; everything else ON.
+
+        Derived from ``policy_required`` rather than a second hand-kept set,
+        so a future policy-required agent cannot ship silently spawning on
+        the user's account because someone updated one list and not the
+        other.
+        """
+        return not self.policy_required
+
 
 def _parse_frontmatter(raw: str) -> dict[str, str]:
     """Parse the flat ``key: value`` YAML frontmatter block, if present.
@@ -133,7 +154,13 @@ _UPSERT_SQL = text(
          default_enabled, policy_required, definition_body)
     VALUES
         (:tenant_id, :agent_name, :purpose, 'in_session_subagent', :model,
-         :effort, true, :policy_required, :definition_body)
+         :effort, :default_enabled, :policy_required, :definition_body)
+    -- `default_enabled` is deliberately ABSENT from the update list: it is a
+    -- CONSENT value, not a definition-derived one. Re-running the seeder
+    -- refreshes what the .md file says (purpose/model/effort/body) and must
+    -- never reach back through a tenant's recorded choice — least of all
+    -- re-enabling a spawn they turned off. It is a seed, i.e. an initial
+    -- value only.
     ON CONFLICT (tenant_id, agent_name) DO UPDATE SET
         purpose         = EXCLUDED.purpose,
         model           = EXCLUDED.model,
@@ -161,6 +188,7 @@ async def seed(
                 model=d.model,
                 effort=d.effort,
                 policy_required=d.policy_required,
+                default_enabled=d.default_enabled,
                 body_chars=len(d.definition_body),
                 dry_run=dry_run,
             )
@@ -174,6 +202,7 @@ async def seed(
                     "purpose": d.purpose,
                     "model": d.model,
                     "effort": d.effort,
+                    "default_enabled": d.default_enabled,
                     "policy_required": d.policy_required,
                     "definition_body": d.definition_body,
                 },
