@@ -108,10 +108,13 @@ export function useGateClearanceRules() {
       try {
         await createCoordPolicy<GateClearanceCreate>(buildCreateBody(input));
       } catch (err) {
+        // NOT "nothing changed": a request can fail on the RESPONSE (timeout,
+        // 502 after commit) with the row already written. The refreshed list
+        // `runSequence` fetches is the honest evidence — point at it.
         toast.error(
-          err instanceof Error
-            ? `Replace failed — nothing changed: ${err.message}`
-            : "Replace failed — nothing changed"
+          (err instanceof Error ? `${err.message}. ` : "") +
+            "The replacement was not confirmed. The list has been refreshed — " +
+            "check whether a duplicate rule was created before retrying."
         );
         return false;
       }
