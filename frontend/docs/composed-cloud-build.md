@@ -144,17 +144,75 @@ string.
 
 ## Deploying the composed shape
 
-**Not wired yet, and deliberately named rather than papered over.** The
-frontend deploys through Vercel, and the repo's `vercel.json` sets no
-`installCommand` / `buildCommand` — those live in the Vercel project settings,
-which this repo cannot change. Vercel also clones only this repo, so there is
-no sibling checkout for the overlay to link to. Making qontinui.io serve the
-composed shape needs a Vercel install command that fetches
-`qontinui/qontinui-cloud-control` and then runs
-`npm run cloud:install -- --source <path>` — a settings change, not a code one.
-Until that lands, the production frontend runs the OSS shape, exactly as it
-did before this mechanism existed. What changed is that the composed shape now
-exists, builds, and is gated in CI.
+Wired, in `vercel.json`'s `installCommand`:
+
+```
+npm ci
+rm -rf /tmp/qontinui-cloud-control
+git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control /tmp/qontinui-cloud-control
+npm run cloud:install -- --source /tmp/qontinui-cloud-control
+```
+
+(one `&&` chain in the JSON; split here for readability. The `rm -rf` keeps it
+idempotent if the step is ever re-run in a warm container.)
+
+Vercel clones only this repo, so the sibling has to be fetched during install.
+cloud-control is public, so no credential is involved — the same bare clone
+`frontend-ci.yml` already does.
+
+**An earlier revision of this section said the install command "lives in the
+Vercel project settings, which this repo cannot change." That was wrong, and it
+is the reason the last mile sat undone while everything upstream of it shipped.**
+`installCommand` and `buildCommand` in `vercel.json` take precedence over the
+dashboard's project settings, so this is a code change and always was.
+
+Only the **Root Directory** is dashboard-only, and Vercel reads `vercel.json`
+from it — so which of this repo's two `vercel.json` files governs the build is
+not knowable from the tree. The evidence says `frontend/`: the repo root holds no
+buildable app (its `package.json` has a `type-check` script and nothing else), so
+a root-directory-is-the-repo-root project could not build the Next.js app at all.
+The command is therefore landed in **both** files, identical apart from the
+leading `cd frontend`. Exactly one is read; the other is inert.
+
+**Which one is decided by measuring production, not the preview.** Preview
+deployments here are behind Vercel Deployment Protection, and the failure is
+disguised: a protected preview answers **HTTP 200** and serves a complete
+Next.js app — Vercel's _own login page_, 65 chunks of it. Status code, chunk
+count and a green `Vercel` check all read healthy while the probe examines a
+build it never saw. The only reliable tell is `<title>Login - Vercel</title>`.
+
+qontinui.io is public, so probe there, with a **control marker** alongside the
+one under test so a negative is provably a real absence:
+
+| Marker  | String                                              | Meaning                                                                                                                  |
+| ------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Control | `is only available in the cloud-control deployment` | this app's own `cloudOnlySlot` message, present in **both** shapes — finding it proves the scan reached the right chunks |
+| Cloud   | `beta-banner-dismissed`                             | a localStorage key only cloud-control's `beta-banner.tsx` has                                                            |
+
+Fetch `https://qontinui.io`, collect its `/_next/static/**.js` chunks, and grep
+them. In a composed build the cloud marker lands in `chunks/app/layout-*.js` —
+the root-layout chunk every page references, so scanning the homepage's chunk
+list is sufficient. On 2026-08-19, before this wiring: control **found**, cloud
+**absent** — production was the OSS shape.
+
+If a future reader finds only one `vercel.json` here, that is the answer, and it
+was measured that way.
+
+**A failed clone fails the build, on purpose.** There is no fallback to the OSS
+shape. A fallback would deploy a site silently missing billing and organisation
+UI and report success — the same class of defect as the `.catch(() => {})` this
+whole mechanism replaced, and the one with no detector. A failed build leaves the
+previous deployment serving, so failing loud costs no availability.
+
+**The sibling is not pinned; `main` floats.** That means a cloud-control merge
+changes the next qontinui.io build with no qontinui-web commit. It is deliberate,
+and it matches how every other first-party sibling here is consumed — `ui-bridge`
+and `schemas` are live links, not pins. The mitigation is that the pair is
+validated together on every qontinui-web PR by `composed-cloud-build`, which
+floats `main` the same way; pinning production while CI floats would mean CI stops
+gating what actually ships. If cloud-control ever needs to move independently of
+qontinui.io, pin the clone to a tag here and check out the same ref in
+`frontend-ci.yml` — change both or neither.
 
 ## CI
 

@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci && rm -rf /tmp/qontinui-cloud-control && git clone --depth 1 https://github.com/qontinui/qontinui-cloud-control /tmp/qontinui-cloud-control && npm run cloud:install -- --source /tmp/qontinui-cloud-control"
+}
