@@ -959,6 +959,38 @@ def _leaves(value: object) -> list[object]:
     return [value]
 
 
+def _displayed_exceptions(error: BaseException) -> list[BaseException]:
+    """Every exception pytest RENDERS for ``error``, outermost first.
+
+    ``--showlocals`` applies to every frame of every exception in the
+    DISPLAYED CHAIN, not just to the one that escaped. Walking only
+    ``error.__traceback__`` — which the frame test did until 2026-08-20 —
+    therefore inspects a strict subset of what the job log prints, and the
+    part it skips is exactly the part the sanitising boundary exists to
+    suppress. Mutating ``raise ... from None`` to ``from error`` at
+    ``holdout.py`` left the whole suite green while putting
+    ``_sealed_payload``'s frame — holding ``scores`` — back on the page.
+
+    The traversal mirrors CPython's own display rule: follow ``__cause__``
+    when set (``raise X from Y``), otherwise ``__context__`` unless
+    ``__suppress_context__`` (which ``from None`` sets). Cycle-guarded,
+    because a hand-set ``__cause__`` can make one.
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif current.__context__ is not None and not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return chain
+
+
 #: Every call name that can pull bytes back off a filesystem. The driver may
 #: not point one of these at the sealed side.
 _READ_PRIMITIVES = frozenset(
@@ -1532,10 +1564,37 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             "token_cost_at_10",
             "correction_precedence",
         )
+        # `observations` is allowlisted below, so the reason has to be
+        # stated as a check rather than left implicit. `HoldoutObservation`
+        # is an INPUT — what the retrieval system returned, which the driver
+        # built and passed in — and the pin here is what stops it quietly
+        # growing a score field later. It is also on the traceback either
+        # way: the driver's `_run_arm` holds the same list in the frame
+        # directly below `score`, so hiding it inside `holdout.py` would
+        # rename the leak rather than close it.
+        assert [f.name for f in dataclasses.fields(ho.HoldoutObservation)] == [
+            "case_id",
+            "case_class",
+            "ranked",
+            "relevant",
+            "correction",
+        ], (
+            "HoldoutObservation's fields changed. It is allowlisted in every "
+            "frame below on the grounds that it carries a RANKING and never a "
+            "score — a new field has to be shown to keep that true."
+        )
+
         #: What each holdout frame may bind while an exception passes
         #: through it. `_sealed_payload` is deliberately ABSENT: it holds
         #: `scores` and `suite` by definition, and the property is that it
-        #: never appears on an escaping traceback at all.
+        #: never appears on any RENDERED traceback — neither the escaping
+        #: exception's nor a chained one's. `error` is absent for the same
+        #: reason: the handler binds it, but Python's implicit
+        #: `del` at the end of an `except` block runs even as the block
+        #: raises, so it is gone by the time the frame is rendered — and if
+        #: a future edit keeps it alive under any name, that name is not in
+        #: this set. Its `args` carry `json.dumps`'s message, which quotes
+        #: the offending metric.
         permitted = {
             "score": {
                 "self",
@@ -1620,15 +1679,36 @@ class TestSealedHoldoutIsUnreachableByConstruction:
             with pytest.raises(expected) as raised:
                 provoke()
 
-            # Only the frames of the module under test. This test's own
-            # frame legitimately holds `sealed_metrics` above, and the
-            # property being asserted is about `holdout.py`'s frames.
+            chain = _displayed_exceptions(raised.value)
+
+            # `raise ... from None` is the mechanism the whole boundary rests
+            # on, and it is ONE token. Mutating it to `from error` left the
+            # entire suite green while re-rendering `_sealed_payload`'s
+            # frame — and its `scores` — into the job log, because
+            # --showlocals covers every exception in the displayed chain and
+            # this test walked only the escaping one. So where the boundary
+            # is what raised, assert that it SEVERED the chain.
+            if expected is ho.SealedHoldoutError:
+                assert len(chain) == 1, (
+                    f"{label}: the sanitising boundary re-raised WITH the "
+                    f"original ({[type(e).__name__ for e in chain]}). "
+                    "`raise SealedHoldoutError(...) from None` is the "
+                    "mechanism: `from error` — or a bare `raise` — puts the "
+                    "score-bearing frames beneath the boundary back on the "
+                    "rendered page."
+                )
+
+            # Only the frames of the module under test, across EVERY
+            # exception in the chain. This test's own frame legitimately
+            # holds `sealed_metrics` above, and the property being asserted
+            # is about `holdout.py`'s frames.
             frames = []
-            walker = raised.value.__traceback__
-            while walker is not None:
-                if walker.tb_frame.f_code.co_filename == ho.__file__:
-                    frames.append(walker.tb_frame)
-                walker = walker.tb_next
+            for displayed in chain:
+                walker = displayed.__traceback__
+                while walker is not None:
+                    if walker.tb_frame.f_code.co_filename == ho.__file__:
+                        frames.append(walker.tb_frame)
+                    walker = walker.tb_next
             assert frames, (
                 f"{label}: nothing raised out of holdout.py at all — the "
                 "provocation no longer reaches the code it is aimed at"
@@ -1662,22 +1742,18 @@ class TestSealedHoldoutIsUnreachableByConstruction:
                         "in full."
                     )
 
-            # The message is the other rendered surface. `json.dumps` names
-            # the offending float in its own text, and a forwarded
+            # The message is the other rendered surface, and every message in
+            # the chain is printed, not just the escaping one. `json.dumps`
+            # names the offending float in its own text, and a forwarded
             # `aggregate` message would carry the list it rejected.
-            message = str(raised.value)
-            quoted = re.search(r"\b(0\.\d+|inf(inity)?|nan)\b", message, re.I)
-            assert quoted is None, (
-                f"{label}: the escaping message quotes a holdout value "
-                f"({quoted.group(0)!r} in {message!r}) — the message is rendered "
-                "into the job log exactly like the locals are"
-            )
-            assert (
-                raised.value.__context__ is None or raised.value.__suppress_context__
-            ), (
-                f"{label}: the original exception is still chained, so pytest "
-                "renders its frames — and their locals — beneath this one"
-            )
+            for displayed in chain:
+                message = str(displayed)
+                quoted = re.search(r"\b(0\.\d+|inf(inity)?|nan)\b", message, re.I)
+                assert quoted is None, (
+                    f"{label}: a message in the displayed chain quotes a holdout "
+                    f"value ({quoted.group(0)!r} in {message!r}) — messages are "
+                    "rendered into the job log exactly like the locals are"
+                )
 
     def _provoke(
         self,
