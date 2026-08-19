@@ -838,3 +838,398 @@ class TestCandidatesHttp:
         assert body["limit"] == 1
         assert len(body["items"]) == 1
         assert body["total"] >= 3
+
+
+# ===========================================================================
+# Layer 3 — WHICH coord door the reads go to (the principal decides)
+# ===========================================================================
+#
+# Plan ``2026-08-16-coord-work-unit-citation-http-read`` D1. Coord has two door
+# tiers over the same rows and each rejects the other's credential: the
+# ``/coord/work-units/...`` reads resolve their tenant from a Cognito
+# ``OperatorContext`` (403 ``tenant_not_resolved`` for a device JWT), and the
+# ``/coord/agent-work-units/...`` twins lift it from a verified device JWT (and
+# reject a Cognito bearer). ``/candidates`` forwards the CALLER'S bearer
+# verbatim, and its callers are both principals — the operator page holds a
+# Cognito token, ``mcp/plan_library.rs`` holds the runner's device JWT. Sending
+# both to one tier is why a runner-originated read reported ``unavailable`` on
+# every linked row.
+#
+# What is asserted below is the PATH, not just the outcome: an assertion that
+# only checked ``linked_prs_state`` would pass just as well against a probe
+# that asked the wrong door and got lucky with a mock.
+
+DEVICE_BEARER = "a-coord-issued-device-jwt"
+
+
+def _build_device_app(*, db_session: AsyncSession):
+    """Mount the router with NO Cognito user — only a device bearer resolves.
+
+    ``current_active_user_optional`` is pinned to ``None`` rather than left
+    live: the point of these tests is which ARM of the dual-auth dependency
+    answers, so the Cognito arm's verdict has to be the test's input.
+    """
+    from app.api.deps import current_active_user_optional, get_async_db
+    from app.api.v1.endpoints.plan_library import router as plan_library_router
+
+    app = FastAPI()
+    app.dependency_overrides[current_active_user_optional] = lambda: None
+
+    async def _db_override():
+        yield db_session
+
+    app.dependency_overrides[get_async_db] = _db_override
+    app.include_router(plan_library_router, prefix=API_PREFIX)
+    return app
+
+
+@pytest_asyncio.fixture()
+async def device_client(async_db_session: AsyncSession, api_user, monkeypatch):
+    """A client holding ONLY the runner's device bearer.
+
+    ``deps._verify_device_jwt`` is stubbed — coord's JWKS is not under test
+    here, the door choice is. Any OTHER token raises the same 401 the real
+    verifier raises, so a test that authenticated on a token it did not mean to
+    present fails loudly instead of passing for the wrong reason.
+    """
+    from app.api import deps
+
+    async def _fake_verify(token: str):
+        if token != DEVICE_BEARER:
+            raise HTTPException(status_code=401, detail="Invalid device token.")
+        return ({"device_id": str(uuid4()), "user_id": str(api_user.id)}, api_user)
+
+    monkeypatch.setattr(deps, "_verify_device_jwt", _fake_verify)
+
+    app = _build_device_app(db_session=async_db_session)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {DEVICE_BEARER}"},
+    ) as http_client:
+        yield http_client
+
+
+class TestCoordDoorTierFollowsThePrincipal:
+    async def test_an_operator_principal_reads_the_operator_doors(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A Cognito caller must NOT be routed to the agent doors.
+
+        The agent tier rejects a Cognito bearer, so getting this backwards
+        breaks the operator page in exactly the way the device caller is broken
+        today — which is why the path itself is asserted, in both directions.
+        """
+        wu = _slug("wu-op")
+        await _plan(async_db_session, org_id=None, slug=_slug("op"), work_unit_slug=wu)
+
+        fake = _coord_ok({"slug": wu, "status": "vetted"}, [])
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        called = [c.args[0] for c in fake.await_args_list]
+        assert called == [
+            f"/coord/work-units/{wu}",
+            f"/coord/work-units/{wu}/citations",
+        ]
+        assert not any("agent-work-units" in path for path in called)
+
+    async def test_a_device_principal_reads_the_agent_doors(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The strand this plan exists to cut.
+
+        The runner forwards its coord DEVICE JWT, which coord's operator tier
+        403s. Both hops have an ``agent-`` twin and both must use it — routing
+        only the citations hop would leave every row reading
+        ``work_unit_state: "unavailable"``, the same bug one level up.
+        """
+        wu = _slug("wu-dev")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("dev"), work_unit_slug=wu
+        )
+
+        fake = _coord_ok(
+            {"slug": wu, "status": "in_progress", "title": "The unit"},
+            [
+                {
+                    "repo": "qontinui-web",
+                    "pr_number": 994,
+                    "merged": True,
+                    "branch": "feat/x",
+                    "cited_at": "2026-08-01T00:00:00+00:00",
+                    "sources": ["manual_backfill"],
+                }
+            ],
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        called = [c.args[0] for c in fake.await_args_list]
+        assert called == [
+            f"/coord/agent-work-units/{wu}",
+            f"/coord/agent-work-units/{wu}/citations",
+        ]
+        assert not any(path.startswith("/coord/work-units") for path in called)
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["work_unit_title"] == "The unit"
+        assert link["linked_prs_state"] == "available"
+        assert [
+            (p["repo"], p["pr_number"], p["state"]) for p in link["linked_prs"]
+        ] == [("qontinui-web", 994, "merged")]
+
+    async def test_the_detail_read_routes_by_principal_too(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``GET /{id}`` builds its own probe — it needs the same routing."""
+        wu = _slug("wu-detail")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("detail"), work_unit_slug=wu
+        )
+
+        fake = _coord_ok({"slug": wu, "status": "vetted"}, [])
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(f"{API_PREFIX}/{plan.id}")
+
+        assert resp.status_code == 200, resp.text
+        called = [c.args[0] for c in fake.await_args_list]
+        assert all(path.startswith("/coord/agent-work-units/") for path in called), (
+            called
+        )
+        assert resp.json()["coord"]["linked_prs_state"] == "available"
+
+    async def test_inline_citations_on_the_agent_door_skip_the_second_hop(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """coord's agent by-slug read already carries its citations.
+
+        Its operator twin deliberately does not (the dashboard payload stays
+        lean), so this is an opportunistic saving, not a contract: one
+        round-trip per slug instead of two, and it works against a coord that
+        has not yet shipped the dedicated sub-resource.
+        """
+        wu = _slug("wu-inline")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("inline"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            assert not path.endswith("/citations"), f"the second hop ran anyway: {path}"
+            return {
+                "work_unit": {"slug": wu, "status": "shipped"},
+                "recent_history": [],
+                "citations": [
+                    {
+                        "repo": "qontinui-runner",
+                        "pr_number": 1044,
+                        "merged": True,
+                        "branch": "feat/y",
+                        "cited_at": "2026-08-02T00:00:00+00:00",
+                        "sources": ["manual_backfill"],
+                    }
+                ],
+                "delivery": {"shipped": True, "evidence_complete": True},
+            }
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert fake.await_count == 1, "the inline citations were not used"
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "available"
+        assert [p["pr_number"] for p in link["linked_prs"]] == [1044]
+
+    async def test_an_inline_citations_error_is_unavailable_not_empty(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``citations_error`` beside an EMPTY list is UNKNOWN, never zero.
+
+        coord emits exactly that shape during the pre-migration window, and
+        reading the empty list as "this plan has no PRs" is the single collapse
+        the whole honest-degradation posture exists to prevent.
+        """
+        wu = _slug("wu-inline-err")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("inline-err"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            return {
+                "work_unit": {"slug": wu, "status": "vetted"},
+                "recent_history": [],
+                "citations": [],
+                "citations_error": {
+                    "error": "citation_surface_unavailable",
+                    "pg_code": "42P01",
+                    "message": "citation surface unavailable: a relation backing "
+                    "the citation join is absent.",
+                },
+            }
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "coord ANSWERED — a typed citation error is not an outage"
+        )
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "citation_surface_unavailable" in link["unavailable_reason"]
+
+    async def test_a_successful_empty_citation_list_is_available_and_empty(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The other side of the same coin: a read that SUCCEEDED and found
+        nothing is an observation, and must be reported as one."""
+        wu = _slug("wu-empty")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("empty"), work_unit_slug=wu
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_ok({"slug": wu, "status": "vetted"}, []),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "available"
+        assert link["linked_prs"] == []
+        assert link["unavailable_reason"] is None
+
+
+class TestCoordServiceUnavailableOnTheCitationRead:
+    """coord's ``503 SurfaceUnavailable`` is coord ANSWERING about one
+    sub-resource — the unit is yours and the citation relation is unreadable.
+    It must land as a per-slug ``unavailable`` and must NOT trip the page-wide
+    circuit: a schema-migration window would otherwise report the whole of
+    coord as down and blank the work-unit half of every remaining row, which
+    reads fine.
+
+    The exception is granted on the citations hop ONLY. That hop is reached
+    only after the PRESENCE hop on the same slug succeeded, which is direct
+    evidence coord is up — so a 503 from a load balancer with no healthy target
+    cannot reach it. It fails the presence hop first, where 503 keeps its
+    transport-class reading (asserted below, and by
+    ``test_only_transport_class_failures_trip_the_circuit``).
+    """
+
+    async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        wu = _slug("wu-503")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("surface"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail='{"error":"citation_surface_unavailable"}',
+                )
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "a typed 503 about ONE sub-resource tripped the page-wide circuit "
+            "— coord answered, so the outage flag must stay true or it can "
+            "never report a real outage"
+        )
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked", (
+            "the presence hop succeeded; only the citation half is unknown"
+        )
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "503" in link["unavailable_reason"]
+
+    async def test_a_503_on_the_PRESENCE_hop_still_trips_the_circuit(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The half the exception must NOT swallow.
+
+        Nothing has answered yet at that point, so a 503 there is the ordinary
+        "coord is unreachable" reading and the circuit has to trip — otherwise
+        an LB with no healthy target would report ``coord_available: true``.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("down"),
+                work_unit_slug=_slug("wu-down-503"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=503, detail="no healthy upstream")
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["coord_available"] is False
+        assert fake.await_count < 4, "the circuit did not trip on a presence-hop 503"
+        for row in body["items"]:
+            if row["coord"]["work_unit_slug"]:
+                assert row["coord"]["linked_prs_state"] == "unavailable"
+                assert row["coord"]["linked_prs"] == []
+
+    async def test_a_200_whose_body_reports_a_citation_error_is_unavailable(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The sub-resource may carry the honesty flag inside a 200 too.
+
+        A body that says the read did not happen still means it did not happen,
+        whatever the status line says.
+        """
+        wu = _slug("wu-200err")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("bodyerr"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                return {
+                    "citations": [],
+                    "citations_error": {"error": "db_error", "pg": "42P01"},
+                }
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "db_error" in link["unavailable_reason"]
