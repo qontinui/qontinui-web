@@ -32,6 +32,9 @@ on:
       - 'backend/tests/memory_recall/**'
       - 'backend/tests/fixtures/memory_golden/**'
       - 'backend/tests/test_memory_recall_eval_db.py'
+      # The job runs this suite first and lets a failure fail the job, so a
+      # change to it must be able to trigger the job that gates on it.
+      - 'backend/tests/test_memory_recall_scorer.py'
       - '.github/workflows/memory-recall-eval.yml'
   workflow_dispatch: {}
 
@@ -222,6 +225,79 @@ jobs:
                 );
               }
               lines.push('', '</details>', '');
+
+              // Paired comparison (plan 2026-08-11 §3.3 items 1-2). Every
+              // field is optional-guarded: a report written by an older
+              // harness has no `paired` key at all and must render a note
+              // rather than throw and lose the whole comment.
+              const paired = r.paired;
+              const pmetrics = (paired && paired.metrics) || null;
+              if (pmetrics && Object.keys(pmetrics).length > 0) {
+                const num = (x, digits) =>
+                  typeof x === 'number' && isFinite(x) ? x.toFixed(digits) : null;
+                const signed = (x, digits) => {
+                  const v = num(x, digits);
+                  if (v === null) return '_n/a_';
+                  return (x >= 0 ? '+' : '') + v;
+                };
+                const flag = (b) => (b === true ? '**yes**' : b === false ? 'no' : '_n/a_');
+
+                lines.push(
+                  `**Paired comparison** — candidate \`${paired.candidate || 'hybrid'}\` ` +
+                    `vs control \`${paired.control || 'fts_only'}\`, matched case-by-case.`,
+                  '',
+                  '| Metric | n | mean lift | z | `promoted` | `credited_2sigma` |',
+                  '|---|---|---|---|---|---|',
+                );
+                for (const name of Object.keys(pmetrics)) {
+                  const p = pmetrics[name] || {};
+                  const n = typeof p.n === 'number' ? String(p.n) : '_n/a_';
+                  const zCell = p.insufficient_n
+                    ? '_n<2_'
+                    : '`' + (p.z_display || num(p.z, 4) || 'n/a') + '`';
+                  const lowerBetter = p.lower_is_better === true ? ' ↓better' : '';
+                  lines.push(
+                    `| ${name}${lowerBetter} | ${n} | ${signed(p.mean_lift, 4)} | ${zCell} ` +
+                      `| ${flag(p.promoted)} | ${flag(p.credited_2sigma)} |`,
+                  );
+                }
+                lines.push(
+                  '',
+                  '> `promoted` and `credited_2sigma` are **separate on purpose and are never',
+                  '> collapsed**. `promoted` = `candidate_mean > control_mean` — that is what banks.',
+                  '> `credited_2sigma` = `z >= 2.0` — a reported label, not a gate. A candidate that',
+                  '> banks a real lift at z=1.71 is `promoted` **and not** `credited_2sigma`: an',
+                  '> expected outcome, not an error. Permissive bank, honest label.',
+                  '',
+                );
+              } else {
+                lines.push(
+                  '_No paired comparison in this report — it was written by a harness',
+                  'predating plan `2026-08-11-coord-ambient-recall-and-efficacy-statistical-rigor`.',
+                  'That is a missing measurement, not a null result._',
+                  '',
+                );
+              }
+
+              // Denominator honesty: `cases` is the divisor every mean above
+              // was taken over. If any arm scored fewer cases than that, the
+              // missing ones contributed 0.0 and the headline is a FLOOR.
+              const shortArms = (r.arms || []).filter((a) => (a.missing_cases || 0) > 0);
+              if (shortArms.length > 0) {
+                lines.push(
+                  '⚠️ **Some cases did not score.** The missing cases contributed `0.0` to',
+                  'every mean and were **kept in the denominator** (dropping them would',
+                  'shrink the divisor and overstate the result — the fair-subset',
+                  'extrapolation trap). The numbers above are a floor:',
+                  '',
+                  ...shortArms.map(
+                    (a) =>
+                      `- \`${a.arm}\`: ${a.missing_cases} of ${a.cases} cases missing ` +
+                      `(${a.scored_cases} scored)`,
+                  ),
+                  '',
+                );
+              }
 
               if (process.env.OUTCOME === 'fail') {
                 lines.push(
