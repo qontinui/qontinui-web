@@ -119,7 +119,12 @@ jobs:
         working-directory: ./frontend
         run: npm run type-check
 
+      # Declares the shape so `cloud-route-shims.test.ts` can assert it agrees.
+      # Without it the composed cases are skipped on a silently-failed overlay
+      # and the job goes green having tested the OSS shape twice.
       - name: Unit tests (composed)
+        env:
+          QONTINUI_COMPOSED_BUILD: "1"
         working-directory: ./frontend
         run: npm test
 

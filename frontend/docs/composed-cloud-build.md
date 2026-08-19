@@ -189,12 +189,25 @@ be a pure regression:
 
 It looks like the obvious place for it, and putting it there breaks the
 composed build **silently**. Next passes tsconfig `paths` to webpack as
-`JsConfigPathsPlugin`, a user resolve plugin. enhanced-resolve applies user
-plugins before its built-in ones, both tap `described-resolve`, and the hook
-bails on the first tap that resolves — so a `@cloud/*` entry in
-`tsconfig.json` wins over `config.resolve.alias` and every composed build
-quietly resolves back to the OSS stubs. The build stays green and serves the
-wrong thing.
+`JsConfigPathsPlugin`, which taps `described-resolve`. Webpack's own
+`resolve.alias` is an `AliasPlugin` registered on `raw-resolve`, and
+enhanced-resolve's pipeline runs `described-resolve` → `raw-resolve`. So the
+tsconfig entry is consulted first and wins — on **pipeline ordering**, which is
+architectural, not on plugin registration order, which would be incidental. A
+`@cloud/*` entry in `tsconfig.json` therefore beats `config.resolve.alias` and
+every composed build quietly resolves back to the OSS stubs. The build stays
+green and serves the wrong thing.
+
+One narrowing worth knowing: `JsConfigPathsPlugin` tries its candidates with
+`forEachBail` and falls through when **none** exist on disk. The fatal shape is
+an entry whose first *existing* candidate is the wrong one — exactly what
+copying the webpack alias (`@cloud/* → ./src/cloud-absent/*`) produces. Copying
+the composed-first pair from `tsconfig.typecheck.json` would accidentally
+behave. Don't rely on that: `cloud-route-shims.test.ts` → *keeps @cloud out of
+tsconfig.json paths* rejects any `@cloud` key outright, because every other gate
+is blind to this (tsc reads the typecheck config, whose `paths` replaces the
+base's wholesale; vitest declares its own alias; `next build` runs with
+`typescript.ignoreBuildErrors`).
 
 `tsc` still needs a mapping, so it gets one in **`tsconfig.typecheck.json`**,
 which extends `tsconfig.json` and which Next never reads.
@@ -215,7 +228,16 @@ CI covers them in both shapes.
 2. Add `src/app/(app)/<path>/page.tsx` re-exporting
    `@cloud/routes/<path>/page`.
 3. Add `src/cloud-absent/routes/<path>/page.tsx`.
-4. Add the entry to `SHIMS` in `src/cloud-absent/cloud-route-shims.test.ts`.
+4. Add `shim("routes/<path>/page")` to `SHIMS` **and** the matching entry to
+   `STUB_IMPORTS`, both in `src/cloud-absent/cloud-route-shims.test.ts`. The
+   OSS case needs the second one — its specifiers are static so the bundler can
+   see them, which rules out deriving them from `SHIMS`.
+
+**Land cloud-control first.** `composed-cloud-build` checks out cloud-control's
+default branch, so a qontinui-web PR cannot be validated against an unlanded
+cloud-control change, and the two repos have a fixed landing order: the route
+lands in cloud-control, then the shim lands here. The reverse turns this repo's
+CI red for a change made in the other one — see *A gap worth naming* below.
 
 Skip 2 or 4 and the composed CI job fails; skip 3 and the OSS build fails to
 resolve the specifier. Both are build-time facts, which is the point — a
@@ -244,6 +266,29 @@ replaced the regex over the deleted `appRoutes` array, and it is why step 1's
 filename matters — a page added as `routes/foo.tsx` is invisible to the guard.
 A route that should exist but not be mounted goes in `UNMOUNTED`, with a
 reason.
+
+### A gap worth naming: the cross-repo guard fires in the wrong repo
+
+`composed-cloud-build` is the only thing that type-checks cloud-control's
+frontend or checks the route inventory — that package has no tsconfig, no
+frontend build, and its own `ci.yml` runs Python gates plus an import check
+under an explicit *"every gate here runs standalone — no sibling checkout"*
+constraint. So the guard lives here, and it reads cloud-control's **default
+branch**.
+
+The consequence: a cloud-control PR that adds, renames or removes a
+`routes/<path>/page.tsx` goes green in cloud-control, lands, and then turns
+**qontinui-web's `main`** red on its next run. The repo that made the change
+never sees the failure, and the repo that did nothing gets the red.
+
+That is why *Adding a route* says to land cloud-control first — the ordering is
+a workaround for this, not a preference. The real fix is a `repository_dispatch`
+from cloud-control into qontinui-web, or a cloud-control job that checks out
+qontinui-web and runs the same guard (the way `backend-ci.yml` already handles
+the backend half of this composition; the "no sibling checkout" rule is about
+the local CI-node lane, so a GitHub-hosted job can carve out). Until then, treat
+a red `mirrors cloud-control's route modules exactly` on main as *someone landed
+a cloud-control route change*, not as a regression here.
 
 ### Adding a sidebar entry
 

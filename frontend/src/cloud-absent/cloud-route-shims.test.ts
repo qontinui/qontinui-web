@@ -51,18 +51,44 @@ const FRONTEND = process.cwd();
 const OVERLAY = path.resolve(FRONTEND, "node_modules/@qontinui/cloud-control");
 const composed = fs.existsSync(path.join(OVERLAY, "package.json"));
 
+type Absent = { kind: "notFound" } | { kind: "redirect"; to: string };
+
 type Shim = {
-  /** The URL path this route serves. */
-  route: string;
-  /** Module specifier suffix: `@cloud/<module>`. */
+  /** Module specifier suffix: `@cloud/<module>`. Everything else derives. */
   module: string;
-  /** Host `page.tsx`, relative to `src/app/`. */
+  /** The URL path this route serves. Derived. */
+  route: string;
+  /** Host `page.tsx`, relative to `src/app/`. Derived. */
   page: string;
   /** What the OSS `cloud-absent/` stub does. */
-  absent: { kind: "notFound" } | { kind: "redirect"; to: string };
+  absent: Absent;
 };
 
 const NOT_FOUND = { kind: "notFound" } as const;
+
+/**
+ * One module specifier decides the other two fields.
+ *
+ * They used to be three hand-written strings, which meant a `SHIMS` row could
+ * be internally inconsistent and still go green: the composed case checks
+ * `module` against cloud-control's tree and another case checks `page`
+ * against the host's, but nothing compared the two to each other, and `route`
+ * was never asserted on at all. A row mapping `routes/billing/page` to
+ * `(app)/pricing/page.tsx` satisfied both walks, because both files exist.
+ *
+ * Deriving removes the class. The two rules every route obeys:
+ *   module `routes/<p>/page`  ->  page `(app)/<p>/page.tsx`
+ *                             ->  route `/<p>`, with `[id]` written `:id`
+ */
+function shim(module: string, absent: Absent = NOT_FOUND): Shim {
+  const rel = module.replace(/^routes\//, "").replace(/\/page$/, "");
+  return {
+    module,
+    page: `(app)/${rel}/page.tsx`,
+    route: "/" + rel.replace(/\[([^\]]+)\]/g, ":$1"),
+    absent,
+  };
+}
 
 /**
  * The inventory, in cloud-control's registration order. `:id` becomes an App
@@ -71,84 +97,28 @@ const NOT_FOUND = { kind: "notFound" } as const;
  * trusting it.
  */
 const SHIMS: Shim[] = [
-  {
-    route: "/billing",
-    module: "routes/billing/page",
-    page: "(app)/billing/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/billing/success",
-    module: "routes/billing/success/page",
-    page: "(app)/billing/success/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/billing/canceled",
-    module: "routes/billing/canceled/page",
-    page: "(app)/billing/canceled/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/pricing",
-    module: "routes/pricing/page",
-    page: "(app)/pricing/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/admin",
-    module: "routes/admin/page",
-    page: "(app)/admin/page.tsx",
-    // Not a 404: OSS `/admin` redirected to `/admin/architecture` from
-    // next.config.mjs `redirects()`, which shadowed any page mounted here.
-    // The redirect moved into the stub so self-hosters keep the entry point
-    // to a live admin section. See the stub's own docstring.
-    absent: { kind: "redirect", to: "/admin/architecture" },
-  },
-  {
-    route: "/admin/mobile",
-    module: "routes/admin/mobile/page",
-    page: "(app)/admin/mobile/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/organizations",
-    module: "routes/organizations/page",
-    page: "(app)/organizations/page.tsx",
-    // Also not a 404: this path has always redirected to /settings/account
-    // in OSS, where the self-hosted org affordances live.
-    absent: { kind: "redirect", to: "/settings/account" },
-  },
-  {
-    route: "/organizations/new",
-    module: "routes/organizations/new/page",
-    page: "(app)/organizations/new/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/organizations/:id",
-    module: "routes/organizations/[id]/page",
-    page: "(app)/organizations/[id]/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/organizations/:id/members",
-    module: "routes/organizations/[id]/members/page",
-    page: "(app)/organizations/[id]/members/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/organizations/:id/settings",
-    module: "routes/organizations/[id]/settings/page",
-    page: "(app)/organizations/[id]/settings/page.tsx",
-    absent: NOT_FOUND,
-  },
-  {
-    route: "/invitations/accept",
-    module: "routes/invitations/accept/page",
-    page: "(app)/invitations/accept/page.tsx",
-    absent: NOT_FOUND,
-  },
+  shim("routes/billing/page"),
+  shim("routes/billing/success/page"),
+  shim("routes/billing/canceled/page"),
+  shim("routes/pricing/page"),
+  // Not a 404: OSS `/admin` redirected to `/admin/architecture` from
+  // next.config.mjs `redirects()`, which shadowed any page mounted here. The
+  // redirect moved into the stub so self-hosters keep the entry point to a
+  // live admin section. See the stub's docstring for the two cosmetic
+  // differences that move introduces.
+  shim("routes/admin/page", { kind: "redirect", to: "/admin/architecture" }),
+  shim("routes/admin/mobile/page"),
+  // Also not a 404: this path has always redirected to /settings/account in
+  // OSS, where the self-hosted org affordances live.
+  shim("routes/organizations/page", {
+    kind: "redirect",
+    to: "/settings/account",
+  }),
+  shim("routes/organizations/new/page"),
+  shim("routes/organizations/[id]/page"),
+  shim("routes/organizations/[id]/members/page"),
+  shim("routes/organizations/[id]/settings/page"),
+  shim("routes/invitations/accept/page"),
 ];
 
 /**
@@ -196,22 +166,58 @@ const STUB_IMPORTS: Record<string, () => Promise<{ default: () => never }>> = {
  * when this guard was written.
  */
 function readCloudRouteModules(): string[] {
+  return walkRouteFiles()
+    .filter((f) => f.endsWith("/page"))
+    .sort();
+}
+
+/**
+ * Every App-Router-significant file under cloud-control's `routes/`, as module
+ * specifiers with the extension stripped.
+ *
+ * Deliberately wider than `page.tsx`. Next treats a whole family of filenames
+ * as routing conventions - `route`, `layout`, `loading`, `error`,
+ * `not-found`, `template`, `default` - and a `page` in any of `.tsx` / `.ts` /
+ * `.jsx` / `.mdx`. A walk that recognised only `page.tsx` would let a cloud
+ * route ship a `loading.tsx` (or a `route.ts` API handler) that the host never
+ * mounts and nothing anywhere reports. The inventory case takes only the
+ * `page` entries; `refuses route conventions the shim cannot forward` rejects
+ * the rest loudly, because a shim re-exports a module's default and has no
+ * answer for a per-segment convention file.
+ */
+const ROUTE_CONVENTIONS = [
+  "page",
+  "route",
+  "layout",
+  "loading",
+  "error",
+  "not-found",
+  "template",
+  "default",
+];
+const ROUTE_FILE = new RegExp(
+  `^(${ROUTE_CONVENTIONS.join("|")})[.](tsx|ts|jsx|js|mdx)$`
+);
+
+function walkRouteFiles(): string[] {
   const root = path.join(OVERLAY, "frontend/src/routes");
   const found: string[] = [];
   const walk = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name.startsWith("_")) continue;
+      // Private FOLDERS only. The old check also skipped files, which would
+      // have hidden an `_page.tsx` typo instead of surfacing it.
+      if (entry.isDirectory() && entry.name.startsWith("_")) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(full);
-      } else if (entry.name === "page.tsx") {
+      } else if (ROUTE_FILE.test(entry.name)) {
         found.push(
           "routes/" +
             path
               .relative(root, full)
               .split(path.sep)
               .join("/")
-              .replace(/\.tsx$/, "")
+              .replace(/\.(tsx|ts|jsx|js|mdx)$/, "")
         );
       }
     }
@@ -238,6 +244,47 @@ const UNMOUNTED: Record<string, string> = {
 };
 
 describe("cloud route shims", () => {
+  // H1. The `@cloud` mapping lives in `tsconfig.typecheck.json` and MUST NOT
+  // reappear in `tsconfig.json`: Next hands tsconfig `paths` to webpack as
+  // `JsConfigPathsPlugin`, which resolves on the `described-resolve` hook,
+  // strictly BEFORE the built-in alias plugin runs on `raw-resolve`. A
+  // `@cloud/*` entry there therefore wins over `config.resolve.alias` and
+  // silently resolves every composed build back to the OSS stubs.
+  //
+  // Every other gate is blind to it. `npm run type-check` reads
+  // tsconfig.typecheck.json, whose `paths` REPLACES the base's wholesale (tsc
+  // merges compilerOptions key by key), so tsc never sees the rogue entry;
+  // vitest declares its own alias; and `next build` succeeds while serving
+  // the wrong modules, with `typescript.ignoreBuildErrors` on besides. The
+  // invariant needs an assertion of its own or it is prose only.
+  it("keeps @cloud out of tsconfig.json paths", () => {
+    const base = JSON.parse(
+      fs.readFileSync(path.resolve(FRONTEND, "tsconfig.json"), "utf8")
+    ) as { compilerOptions?: { paths?: Record<string, unknown> } };
+    const offenders = Object.keys(base.compilerOptions?.paths ?? {}).filter(
+      (k) => k.startsWith("@cloud")
+    );
+    expect(
+      offenders,
+      "move these to tsconfig.typecheck.json - see its header for why"
+    ).toEqual([]);
+  });
+
+  // Which shape a run is in decides which cases below are skipped, and
+  // nothing asserted it. The composed CI job sets QONTINUI_COMPOSED_BUILD=1,
+  // so a job whose overlay silently failed to link now fails here instead of
+  // going green with every composed case quietly skipped.
+  it("agrees with CI about which build shape this is", () => {
+    const declared = process.env.QONTINUI_COMPOSED_BUILD;
+    if (declared === undefined) return; // local run, nothing declared
+    expect(
+      composed,
+      `QONTINUI_COMPOSED_BUILD=${declared} but the overlay is ${
+        composed ? "present" : "ABSENT"
+      } at ${OVERLAY}`
+    ).toBe(declared === "1");
+  });
+
   it.skipIf(!composed)(
     "mirrors cloud-control's route modules exactly",
     () => {
@@ -259,13 +306,80 @@ describe("cloud route shims", () => {
   );
 
   it.skipIf(!composed)("has no stale UNMOUNTED entries", () => {
-    // An UNMOUNTED entry for a module that no longer exists reads as a live
-    // pending decision when there is nothing left to decide.
+    // Two properties, and the second is not implied by the inventory case
+    // above (which fails on a stale key too, but only as one half of an
+    // array-equality mismatch that says nothing about which half is wrong):
+    // the module still exists, AND it is genuinely unmounted rather than an
+    // entry someone forgot to delete when they added its shim.
     const shipped = new Set(readCloudRouteModules());
+    const mounted = new Set(SHIMS.map((sh) => sh.module));
     for (const [module, reason] of Object.entries(UNMOUNTED)) {
-      expect(shipped.has(module), `${module}: ${reason}`).toBe(true);
+      expect(
+        shipped.has(module),
+        `UNMOUNTED names ${module} (${reason}) but cloud-control no longer ships it - delete the entry`
+      ).toBe(true);
+      expect(
+        mounted.has(module),
+        `${module} is in UNMOUNTED and also has a shim, so it IS mounted - delete the UNMOUNTED entry`
+      ).toBe(false);
     }
   });
+
+  // A shim re-exports a module's `default`. That works for `page`; it has no
+  // meaning for `layout` / `loading` / `error` / `route` / the rest, which
+  // Next resolves per-segment from the HOST's tree. Shipping one in
+  // cloud-control is silently inert, so refuse it at build time rather than
+  // let someone write a `loading.tsx` that never renders.
+  it.skipIf(!composed)(
+    "refuses route conventions the shim cannot forward",
+    () => {
+      const unforwardable = walkRouteFiles().filter(
+        (f) => !f.endsWith("/page")
+      );
+      expect(
+        unforwardable,
+        "the @cloud shim forwards `default` only; these files would never take effect"
+      ).toEqual([]);
+    }
+  );
+
+  // Route segment config (`metadata`, `dynamic`, `revalidate`, ...) is read by
+  // Next off the page module IN THE SERVER GRAPH - which is the shim, not the
+  // module it re-exports. An `export const dynamic` in cloud-control is inert
+  // unless the shim forwards it BY NAME. Harmless today only because the root
+  // layout forces dynamic app-wide; an export that looks live and is not is
+  // exactly the trap docs/composed-cloud-build.md warns about.
+  it.skipIf(!composed)(
+    "forwards any route segment config a cloud page declares",
+    () => {
+      const SEGMENT_CONFIG =
+        /^export\s+(?:const|async\s+function|function)\s+(dynamic|dynamicParams|revalidate|fetchCache|runtime|preferredRegion|maxDuration|generateStaticParams|metadata|generateMetadata)\b/;
+      for (const sh of SHIMS) {
+        const cloudFile = path.join(
+          OVERLAY,
+          "frontend/src",
+          `${sh.module}.tsx`
+        );
+        if (!fs.existsSync(cloudFile)) continue;
+        const declared = fs
+          .readFileSync(cloudFile, "utf8")
+          .split(/\r?\n/)
+          .map((line) => SEGMENT_CONFIG.exec(line)?.[1])
+          .filter((name): name is string => Boolean(name));
+        if (declared.length === 0) continue;
+        const shimSource = fs.readFileSync(
+          path.resolve(FRONTEND, "src/app", sh.page),
+          "utf8"
+        );
+        for (const name of declared) {
+          expect(
+            shimSource.includes(name),
+            `${sh.module} exports \`${name}\` but ${sh.page} does not re-export it, so Next never sees it`
+          ).toBe(true);
+        }
+      }
+    }
+  );
 
   it("has a host page.tsx re-exporting each route through @cloud", () => {
     for (const shim of SHIMS) {
