@@ -20,19 +20,19 @@
 # deployment serving when a build fails, so failing loud costs no
 # availability.
 #
-# WHICH vercel.json — and why there are two
+# WHERE THIS IS INVOKED FROM
 #
-# Vercel reads `vercel.json` from the project's Root Directory, and this repo
-# has both a `frontend/` and a `backend/`. Which one the qontinui-web project
-# is rooted at is a dashboard setting that is recorded nowhere in the tree,
-# and no Vercel credential is available from a dev session to read it. So the
-# command is installed in BOTH candidate locations; whichever Vercel reads
-# wins and the other is inert. Each passes a different `--config-source`, and
-# this script writes it into `public/composed-build.json`, which the
-# deployment then serves — so one unauthenticated GET of
-# `https://<deployment>/composed-build.json` answers all three questions at
-# once: was the build composed, which vercel.json was read, and at which
-# cloud-control commit. The inert file is deleted once that answer is in.
+# The qontinui-web Vercel project's Root Directory is `frontend`, so Vercel
+# reads `frontend/vercel.json` and runs this with `frontend/` as the working
+# directory. (The repo-root `vercel.json` still steers the Git integration —
+# `git.deploymentEnabled` there demonstrably gates deploys — but its build
+# fields are not read.) The script does not depend on that: it resolves
+# `FRONTEND_DIR` from its own location, so it behaves identically invoked from
+# either directory.
+#
+# `--config-source` is recorded verbatim in the marker below, which is how a
+# deployment's shape is read back from outside: `frontend` for a Vercel build,
+# `ci` for the `vercel-install-script` job that gates this file.
 #
 # See frontend/docs/composed-cloud-build.md.
 
@@ -75,6 +75,14 @@ REMOTE="https://github.com/qontinui/qontinui-cloud-control.git"
 
 echo "[vercel-install] config source : $CONFIG_SOURCE"
 echo "[vercel-install] frontend      : $FRONTEND_DIR"
+
+# Clear the marker FIRST. It is written only on the verified path at the end,
+# but a re-run over a tree that already has one — a retried build, a local
+# re-invocation — would otherwise fail somewhere in the middle and leave the
+# PREVIOUS run's "composed": true sitting there, describing a tree that is now
+# half-installed. A marker that outlives the run that earned it is exactly the
+# unbackable claim this file exists to prevent.
+rm -f "$MARKER_FILE"
 
 # ── the pin ─────────────────────────────────────────────────────────────────
 # `--depth 1` of a moving `main` would make a qontinui-web deploy able to

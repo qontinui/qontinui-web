@@ -5,13 +5,11 @@ on:
     branches: [main, develop]
     paths:
       - "frontend/**"
-      - "vercel.json"
       - ".github/workflows/frontend-ci.yml"
   push:
     branches: [main, develop]
     paths:
       - "frontend/**"
-      - "vercel.json"
       - ".github/workflows/frontend-ci.yml"
   workflow_dispatch:
 
@@ -106,6 +104,16 @@ jobs:
             if (m.cloudControlSha !== pin) throw new Error(`marker sha ${m.cloudControlSha} != pin ${pin}`);
             console.log("marker OK:", JSON.stringify(m));
           ' "$PIN"
+
+      # Type-check the PINNED combination. `composed-cloud-build` builds
+      # cloud-control's default branch, deliberately, so it detects drift — but
+      # that means nothing anywhere builds the pair that actually deploys.
+      # `preserveSymlinks` + the overlay put cloud-control's raw sources inside
+      # this app's `strict` graph, so this is a real check of the two together:
+      # it is what caught the type defects cloud-control `d89aa6f` repairs.
+      - name: TypeScript check (pinned composition)
+        working-directory: ./frontend
+        run: npm run type-check
 
       # The guard the deploy leans on: if the overlay is NOT there, the script
       # must fail rather than quietly hand Vercel the OSS shape. Asserting the

@@ -353,10 +353,10 @@ string.
 ## Deploying the composed shape
 
 **Wired.** qontinui.io deploys through Vercel's Git integration, and
-`vercel.json` sets an `installCommand` that builds the composed shape:
+`frontend/vercel.json` sets an `installCommand` that builds the composed shape:
 
 ```json
-"installCommand": "bash frontend/scripts/vercel-install.sh --config-source root"
+"installCommand": "bash scripts/vercel-install.sh --config-source frontend"
 ```
 
 `scripts/vercel-install.sh` runs `npm ci`, clones
@@ -381,60 +381,70 @@ full commit sha, and the script checks out that commit — it never follows a
 branch. cloud-control publishes no release tags, so a sha is the pin. A
 floating `main` would let a cloud-control push change what qontinui.io serves
 with no qontinui-web commit at all: an untracked input to a production build.
-Editing the pin puts the change through qontinui-web review and through
-`composed-cloud-build`, which builds the two repos together.
+Editing the pin puts the change through qontinui-web review and CI.
 
-### Which `vercel.json` — and why there are two
+**The pin and CI's floating `main` are deliberately different inputs**, and it
+matters which job reads which. `composed-cloud-build` checks cloud-control out
+at its **default branch**: that is what makes it a cross-repo *drift detector*,
+and pointing it at the pin would trade that away. `vercel-install-script` reads
+the **pin**, and type-checks the result — so the combination that actually
+deploys is built by something before it is built by Vercel. Neither job alone
+covers both, which is why there are two. When the pin lags `main`, expect the
+two to disagree; that disagreement is the signal to bump.
+
+### Which `vercel.json`, and how that was settled
 
 Vercel reads `vercel.json` from the project's **Root Directory**, and this repo
-has both a `frontend/` and a `backend/`. Which one the qontinui-web project is
-rooted at is a dashboard setting recorded nowhere in the tree, and no Vercel
-credential is reachable from a dev session to read it (the Vercel CLI's
-`auth.json` under `%APPDATA%/xdg.data/com.vercel.cli/` has been an empty `{}`
-since 2026-07-12).
+has both a `frontend/` and a `backend/`. That setting is recorded nowhere in the
+tree and no Vercel credential is reachable from a dev session (the CLI's
+`auth.json` has been an empty `{}` since 2026-07-12), so it was an open question
+when this landed. It is not any more: **the Root Directory is `frontend`**, so
+`frontend/vercel.json` is the file that carries the install command.
 
-The available evidence favours the **repo root**: `39cb6f87` set
-`git.deploymentEnabled: false` in the root `vercel.json` on 2026-05-02 and
-`aabaaf39` set it back on 2026-05-17, and Vercel created **zero** deployments
-for main commits inside that window (sampled `08db0242`, `4fb69ed1`,
-`26519749`, `0b83f939`, `12de6861`, `80ae61bd` — all 0) against a
-`Production/vercel[bot]` deployment for `f2b72d06` just before it and for
-`096c7eb0` just after. That is the root file demonstrably steering Vercel,
-twice. It is not conclusive for `installCommand` specifically, so the command
-is installed in **both** candidate locations — `vercel.json` and
-`frontend/vercel.json` — and whichever Vercel reads wins while the other sits
-inert.
-
-Each passes a different `--config-source`, and the script writes it into
-`public/composed-build.json`, which the deployment then serves. One
-unauthenticated GET answers all three questions at once:
+The read that settled it needs no credential. Vercel's GitHub App posts a
+comment on every PR whose body begins `[vc]: #<hash>:<base64>`, and that payload
+is the project config as Vercel itself sees it:
 
 ```console
-$ curl https://qontinui.io/composed-build.json
-{
-  "composed": true,
-  "configSource": "root",
-  "cloudControlSha": "d89aa6f4905145a9484cbe848643e2d20ab99359",
-  "webCommitSha": "...",
-  "generatedBy": "frontend/scripts/vercel-install.sh"
-}
+$ gh pr view <n> --repo qontinui/qontinui-web --json comments \
+    --jq '.comments[]|select(.author.login=="vercel")|.body' \
+  | head -1 | sed 's/^\[vc\]: #[^:]*://' | base64 -d
+{"isMonorepo":true,...,"rootDirectory":"frontend"}
 ```
 
-`middleware.ts`'s matcher excludes `*.json`, so the file is reachable without a
-session. It is written **last**, only on the path where the overlay verified —
-so an OSS build serves a 404 there rather than a claim it cannot back, and a
-404 is the honest signal that the shape is OSS. Once a deployment has answered,
-delete the `vercel.json` that did **not** win.
+Worth keeping, because the obvious evidence points the other way and is not
+wrong — it is answering a different question. The **repo-root** `vercel.json`
+demonstrably steers Vercel: `39cb6f87` set `git.deploymentEnabled: false` there
+on 2026-05-02 and `aabaaf39` set it back on 2026-05-17, and Vercel created zero
+deployments for main commits inside that window (`08db0242`, `4fb69ed1`,
+`26519749`, `0b83f939`, `12de6861`, `80ae61bd`) against `Production/vercel[bot]`
+deployments for `f2b72d06` just before and `096c7eb0` just after. So the Git
+integration reads the repository root while the **build** settings come from the
+Root Directory. Both files matter; they do not matter for the same keys.
 
-**Ask production, not a preview.** Vercel Deployment Protection is on for
-preview deployments — a `*.vercel.app` deployment URL answers `302` to
-`vercel.com/sso-api`, for `/composed-build.json` as for everything else, so
-that read needs a Vercel session an agent does not have. The production alias
-is not protected (`verify-frontend-deploy.yml` crawls `https://qontinui.io`
-unauthenticated for exactly this reason), so `curl
-https://qontinui.io/composed-build.json` is the read that resolves it. Until
-then both files stand, which costs nothing: each is either the live one or an
-ignored file.
+### Reading a deployment's shape back
+
+`--config-source` is recorded verbatim in `public/composed-build.json`, which the
+deployment serves. `middleware.ts`'s matcher excludes `*.json`, so the file needs
+no session:
+
+```console
+$ curl -s https://qontinui.io/composed-build.json
+{ "composed": true, "configSource": "frontend", "cloudControlSha": "…", … }
+```
+
+It is written **last**, only on the path where the overlay verified, so an OSS
+build serves a 404 there rather than a claim it cannot back.
+
+**Ask production, not a preview.** Vercel Deployment Protection covers preview
+deployments, and it fails in a disguised way: a protected `*.vercel.app` URL
+redirects to `vercel.com/sso-api` and — following that redirect — answers
+**HTTP 200** with a complete Next.js app that is Vercel's own login page. A
+naive marker or chunk grep against it reports "not composed" for a build it
+never looked at. The production alias is not protected (`verify-frontend-deploy.yml`
+crawls `https://qontinui.io` unauthenticated for exactly this reason), so
+production is where this probe is run. Parse the response as JSON and treat a
+parse failure as *unknown*, never as *OSS*.
 
 ### What gates the install script
 
