@@ -62,7 +62,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SCRIPT_DIR.parent
 REPO_ROOT = BACKEND_DIR.parent
-OUTPUT_PATH = REPO_ROOT / "frontend" / "src" / "lib" / "api-client" / "openapi-schema.json"
+OUTPUT_PATH = (
+    REPO_ROOT / "frontend" / "src" / "lib" / "api-client" / "openapi-schema.json"
+)
 # The BASE (OSS-only) variant — what prod api.qontinui.io serves (no
 # cloud-control). Declared-route source for coord's Ξ_RouteServing observer.
 BASE_OUTPUT_PATH = (
@@ -121,9 +123,7 @@ def _canonicalize_operation_ids(schema: dict) -> None:
             continue
         for method, operation in item.items():
             if method.lower() in _HTTP_METHODS and isinstance(operation, dict):
-                slug = re.sub(
-                    r"[^a-z0-9]+", "_", f"{path}_{method}".lower()
-                ).strip("_")
+                slug = re.sub(r"[^a-z0-9]+", "_", f"{path}_{method}".lower()).strip("_")
                 operation["operationId"] = slug
 
 
@@ -131,7 +131,10 @@ def main() -> int:
     base = "--base" in sys.argv[1:]
     unknown = [a for a in sys.argv[1:] if a != "--base"]
     if unknown:
-        print(f"unknown argument(s): {unknown} (only --base is supported)", file=sys.stderr)
+        print(
+            f"unknown argument(s): {unknown} (only --base is supported)",
+            file=sys.stderr,
+        )
         return 2
 
     if base:
