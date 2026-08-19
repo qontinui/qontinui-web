@@ -122,6 +122,15 @@ jobs:
           TESTING: 1
           REDIS_ENABLED: false
           MEMORY_RECALL_EVAL_REPORT: ${{ github.workspace }}/recall-eval.json
+          # The sealed holdout's destination — a DIFFERENT place from the
+          # report above, and that separation is the mechanism, not tidiness.
+          # The harness writes the holdout scores here and returns nothing;
+          # nothing downstream reads this directory. It is uploaded as a
+          # build artifact so a human can audit the holdout AFTER the tuning
+          # decision was made. The comment step below must never read it —
+          # `test_the_comment_step_reads_only_the_report` in
+          # tests/test_memory_recall_scorer.py fails if it starts.
+          MEMORY_RECALL_HOLDOUT_DIR: ${{ github.workspace }}/recall-holdout
         run: |
           set -euo pipefail
           # The scorer suite is pure logic and must pass — it is what makes
@@ -154,6 +163,19 @@ jobs:
             echo "::warning::the recall harness produced no report — it skipped (no Postgres or no pgvector). This is NOT a passing result."
           fi
 
+      # Upload, never read. The holdout scores leave this job as an artifact
+      # a human downloads deliberately; no step here parses them, and the
+      # comment step below cannot reach them. Placed BEFORE the comment step
+      # on purpose: the structural test asserts the github-script body never
+      # names this path.
+      - name: Upload the sealed holdout scores
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-recall-holdout
+          path: ${{ github.workspace }}/recall-holdout
+          if-no-files-found: ignore
+
       - name: Comment the scores on the PR
         if: always()
         uses: actions/github-script@v7
@@ -177,15 +199,69 @@ jobs:
             } else {
               const r = JSON.parse(fs.readFileSync(path, 'utf8'));
               const pct = (x) => (x * 100).toFixed(1) + '%';
-              const arm = (name) => r.arms.find((a) => a.arm === name);
+              const arm = (name) => (r.arms || []).find((a) => a.arm === name);
               const fts = arm('fts_only');
               const hyb = arm('hybrid');
 
+              // Per-component wiring markers (plan 2026-08-11 §3.3 item 5
+              // residual). `not_wired` means that component's instrumentation
+              // never ran: UNKNOWN, and never renderable as a measured zero.
+              // A report predating the marker has no `wiring` key at all —
+              // also unknown, and emphatically NOT "everything was wired".
+              const wiring = (r.wiring && r.wiring.components) || null;
+              const statusOf = (name) => {
+                if (!wiring) return null;
+                const entry = wiring[name];
+                return entry && entry.status ? entry.status : null;
+              };
+              const notWired = (name) => statusOf(name) === 'not_wired';
+              // The rule that stops a marker becoming a measurement: an
+              // unwired component renders as words, never as `0` / `0.0%`.
+              const cell = (name, row, render) => {
+                if (notWired(name)) return '🚫 _not wired — unknown_';
+                if (!row) return '❔ _absent from report_';
+                return render(row);
+              };
+              const caseCount = (row) =>
+                row && typeof row.cases === 'number' ? row.cases : '?';
+
               lines.push(
-                `Golden set: **${r.records} records, ${fts.cases} cases** · ` +
+                `Golden set: **${r.records} records, ${caseCount(fts)} train cases** · ` +
                   `vectors: \`${r.embedding_source}\``,
                 '',
               );
+
+              if (wiring) {
+                lines.push(
+                  '**Component wiring.** `not_wired` means that component never ran —',
+                  '**unknown, not a measured zero.** A component with no instrumentation',
+                  'has no number, and none is shown for it below.',
+                  '',
+                  '| Component | Marker |',
+                  '|---|---|',
+                );
+                for (const name of Object.keys(wiring)) {
+                  const entry = wiring[name] || {};
+                  const detail = entry.detail ? ` — ${entry.detail}` : '';
+                  const marker =
+                    entry.status === 'wired'
+                      ? '✅ `wired`'
+                      : entry.status === 'not_wired'
+                        ? '🚫 `not_wired` — _nothing measured; unknown_'
+                        : `❔ \`${String(entry.status)}\``;
+                  lines.push(`| \`${name}\` | ${marker}${detail} |`);
+                }
+                lines.push('');
+              } else {
+                lines.push(
+                  '❔ **No per-component wiring markers in this report.** It was written by',
+                  'a harness predating plan',
+                  '`2026-08-11-coord-ambient-recall-and-efficacy-statistical-rigor`, so',
+                  'whether each arm actually ran is **unknown**. The absence of a marker is',
+                  'not evidence that everything was wired.',
+                  '',
+                );
+              }
 
               if (!r.semantic_quality_measurable) {
                 lines.push(
@@ -197,34 +273,55 @@ jobs:
                 );
               }
 
+              // Every cell goes through `cell()`, so an arm marked
+              // `not_wired` renders "unknown" in its whole column instead of
+              // a plausible-looking row of zeroes.
+              const row = (label, render) =>
+                `| ${label} | ${cell('fts_only', fts, render)} | ${cell('hybrid', hyb, render)} |`;
+
               lines.push(
                 '| Metric | `fts_only` (production today) | `hybrid` |',
                 '|---|---|---|',
-                `| reported \`vector_arm\` | \`${fts.vector_arm}\` | \`${hyb.vector_arm}\` |`,
-                `| Recall@5 | ${pct(fts.recall_at_5)} | ${pct(hyb.recall_at_5)} |`,
-                `| Recall@10 | ${pct(fts.recall_at_10)} | ${pct(hyb.recall_at_10)} |`,
-                `| Recall@20 | ${pct(fts.recall_at_20)} | ${pct(hyb.recall_at_20)} |`,
-                `| MRR | ${fts.mrr.toFixed(4)} | ${hyb.mrr.toFixed(4)} |`,
-                `| nDCG@10 | ${fts.ndcg_at_10.toFixed(4)} | ${hyb.ndcg_at_10.toFixed(4)} |`,
-                `| Noise rate@10 | ${pct(fts.noise_rate_at_10)} | ${pct(hyb.noise_rate_at_10)} |`,
-                `| Token cost@10 (bytes) | ${fts.total_token_cost_at_10.toLocaleString()} | ${hyb.total_token_cost_at_10.toLocaleString()} |`,
-                `| Correction precedence | ${fts.correction_precedence_passes}/${fts.correction_pairs} | ${hyb.correction_precedence_passes}/${hyb.correction_pairs} |`,
+                row('reported `vector_arm`', (a) => `\`${a.vector_arm}\``),
+                row('Recall@5', (a) => pct(a.recall_at_5)),
+                row('Recall@10', (a) => pct(a.recall_at_10)),
+                row('Recall@20', (a) => pct(a.recall_at_20)),
+                row('MRR', (a) => a.mrr.toFixed(4)),
+                row('nDCG@10', (a) => a.ndcg_at_10.toFixed(4)),
+                row('Noise rate@10', (a) => pct(a.noise_rate_at_10)),
+                row('Token cost@10 (bytes)', (a) =>
+                  a.total_token_cost_at_10.toLocaleString(),
+                ),
+                row(
+                  'Correction precedence',
+                  (a) => `${a.correction_precedence_passes}/${a.correction_pairs}`,
+                ),
                 '',
-                '<details><summary>Per class (Recall@10 / MRR)</summary>',
-                '',
-                '| Class | `fts_only` | `hybrid` |',
-                '|---|---|---|',
               );
 
-              for (const cls of Object.keys(r.by_class.fts_only)) {
-                const f = r.by_class.fts_only[cls];
-                const h = r.by_class.hybrid[cls];
+              const clsFts = (r.by_class && r.by_class.fts_only) || null;
+              const clsHyb = (r.by_class && r.by_class.hybrid) || null;
+              if (clsFts && clsHyb) {
                 lines.push(
-                  `| ${cls} (${f.cases}) | ${f.recall_at_10.toFixed(3)} / ${f.mrr.toFixed(3)} ` +
-                    `| ${h.recall_at_10.toFixed(3)} / ${h.mrr.toFixed(3)} |`,
+                  '<details><summary>Per class (Recall@10 / MRR)</summary>',
+                  '',
+                  '| Class | `fts_only` | `hybrid` |',
+                  '|---|---|---|',
                 );
+                for (const cls of Object.keys(clsFts)) {
+                  const f = clsFts[cls];
+                  const h = clsHyb[cls] || null;
+                  const pair = (x) =>
+                    x ? `${x.recall_at_10.toFixed(3)} / ${x.mrr.toFixed(3)}` : '_n/a_';
+                  // Through `cell()` here too: a stale per-class block for an
+                  // arm marked `not_wired` must not render as a measurement.
+                  lines.push(
+                    `| ${cls} (${f.cases}) | ${cell('fts_only', f, pair)} ` +
+                      `| ${cell('hybrid', h, pair)} |`,
+                  );
+                }
+                lines.push('', '</details>', '');
               }
-              lines.push('', '</details>', '');
 
               // Paired comparison (plan 2026-08-11 §3.3 items 1-2). Every
               // field is optional-guarded: a report written by an older
@@ -232,7 +329,30 @@ jobs:
               // rather than throw and lose the whole comment.
               const paired = r.paired;
               const pmetrics = (paired && paired.metrics) || null;
-              if (pmetrics && Object.keys(pmetrics).length > 0) {
+              if (notWired('paired')) {
+                // Checked BEFORE the data: a `not_wired` paired comparison
+                // with a stale block in the report must read as "did not
+                // run", never as a result.
+                lines.push(
+                  '🚫 **Paired comparison `not_wired`** — the comparison did not run for',
+                  'this report. That is **unknown**, not "no lift": no mean, no z, and',
+                  'no `promoted` verdict was produced.',
+                  '',
+                );
+              } else if (
+                statusOf('paired') === 'wired' &&
+                !(pmetrics && Object.keys(pmetrics).length > 0)
+              ) {
+                // Marker and data disagree. Report the contradiction rather
+                // than falling through to the "older harness" note, which
+                // would be a wrong explanation stated confidently.
+                lines.push(
+                  '❔ **The paired comparison is marked `wired` but carries no metrics.**',
+                  'The marker and the data disagree, so treat the comparison as',
+                  '**unknown** and read the job log — this is a harness bug, not a result.',
+                  '',
+                );
+              } else if (pmetrics && Object.keys(pmetrics).length > 0) {
                 const num = (x, digits) =>
                   typeof x === 'number' && isFinite(x) ? x.toFixed(digits) : null;
                 const signed = (x, digits) => {
@@ -275,6 +395,34 @@ jobs:
                   '_No paired comparison in this report — it was written by a harness',
                   'predating plan `2026-08-11-coord-ambient-recall-and-efficacy-statistical-rigor`.',
                   'That is a missing measurement, not a null result._',
+                  '',
+                );
+              }
+
+              // Sealed holdout (plan 2026-08-11 §3.3 item 4). NOTHING here
+              // is a holdout score, and there is none in the report to
+              // render: the harness writes them to a directory of their own
+              // and returns no value. What is shown is the split's shape —
+              // which is why every number below comes from `r.split`'s
+              // counts and never from a metric.
+              const split = r.split || null;
+              if (notWired('sealed_holdout')) {
+                lines.push(
+                  '🚫 **Sealed holdout `not_wired`** — no holdout was scored in this run.',
+                  'That is **unknown**, not a clean sheet: nothing was held back, so',
+                  'nothing independent of the numbers above was measured.',
+                  '',
+                );
+              } else if (split) {
+                lines.push(
+                  `**Sealed holdout** — the numbers above are over the ` +
+                    `**${split.train_cases} train cases**; ` +
+                    `**${split.holdout_cases}** are held out (\`${split.algorithm}\`).`,
+                  'The holdout scores are written to a directory this job uploads as an',
+                  'artifact and **never reads** — `score()` returns nothing, so no holdout',
+                  'number can reach this comment, a gate, or a verdict. The holdout',
+                  '*cases* are committed fixture data and perfectly visible; only the',
+                  '*scores* have no path back.',
                   '',
                 );
               }
