@@ -218,6 +218,31 @@ so an OSS build serves a 404 there rather than a claim it cannot back, and a
 404 is the honest signal that the shape is OSS. Once a deployment has answered,
 delete the `vercel.json` that did **not** win.
 
+**Ask production, not a preview.** Vercel Deployment Protection is on for
+preview deployments — a `*.vercel.app` deployment URL answers `302` to
+`vercel.com/sso-api`, for `/composed-build.json` as for everything else, so
+that read needs a Vercel session an agent does not have. The production alias
+is not protected (`verify-frontend-deploy.yml` crawls `https://qontinui.io`
+unauthenticated for exactly this reason), so `curl
+https://qontinui.io/composed-build.json` is the read that resolves it. Until
+then both files stand, which costs nothing: each is either the live one or an
+ignored file.
+
+### What gates the install script
+
+`frontend-ci.yml`'s `vercel-install-script` job runs `vercel-install.sh`
+end-to-end on Linux and asserts three things: the overlay resolves, the marker
+is valid JSON naming the same sha as `cloud-control.pin`, and — with the pin
+pointed at a sha that resolves to nothing — the script exits **non-zero and
+writes no marker**. That last case is the one the design is about, so testing
+only the success path would leave it uncovered.
+
+It is a separate job from `composed-cloud-build` on purpose.
+`composed-cloud-build` checks cloud-control out at its floating `main`, which
+is what makes it a cross-repo drift detector; pointing it at the pin instead
+would trade that away. So one job proves the two repos still compose, and the
+other proves the script that ships them does what it says.
+
 ### The claim this section replaces
 
 Until this landed, this document said the install and build commands *"live in
