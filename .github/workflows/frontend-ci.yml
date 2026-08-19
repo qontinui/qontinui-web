@@ -113,8 +113,16 @@ jobs:
           # A well-formed sha that resolves to nothing: the fetch must fail,
           # and the script must exit non-zero WITHOUT writing a marker.
           echo '0000000000000000000000000000000000000000' > frontend/cloud-control.pin
-          bash frontend/scripts/vercel-install.sh --config-source ci
-          rc=$?
+          # Actions runs `run:` blocks under `bash -e`, and that errexit is
+          # applied outside this script — a bare call would abort the step the
+          # moment the install command exits non-zero, which is the very thing
+          # this test is trying to observe. An `if` condition suspends errexit
+          # for the command it tests, so the exit code survives to be asserted.
+          if bash frontend/scripts/vercel-install.sh --config-source ci; then
+            rc=0
+          else
+            rc=$?
+          fi
           cp /tmp/pin.bak frontend/cloud-control.pin
           if [ "$rc" -eq 0 ]; then
             echo 'script exited 0 with an unresolvable pin' >&2
