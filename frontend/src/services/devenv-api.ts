@@ -44,8 +44,8 @@ export type Severity = "info" | "warning" | "critical";
  *   nothing. Either the value itself says the fact was never measured
  *   (`python_installed_probe` carrying a failure reason instead of `measured`),
  *   or the two captures are not comparable at all (their
- *   `python_installed_env_kind` / `..._scope_kind` markers disagree, so the
- *   digests were taken over different environments). The OPPOSITE verdict to
+ *   `python_installed_env_kind` / `..._scope_kind` / `..._interpreter`
+ *   markers disagree, so the digests were taken over different environments). The OPPOSITE verdict to
  *   `unknown` despite the family resemblance: this one DOES break `in_sync`,
  *   because two boxes that both failed to measure agree on every installed key
  *   and would otherwise be reported clean on the strength of two identical

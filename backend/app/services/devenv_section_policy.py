@@ -197,14 +197,30 @@ def is_derived_key(section: str, key: str) -> bool:
 # action can SET it, because it is a measurement of something else.
 #
 # ``python_installed_*`` is the case that forced the distinction. The runner's
-# installed-inventory capture emits five keys into ``versions``, which the
+# installed-inventory capture emits six keys into ``versions``, which the
 # section table classifies ``applyable``:
 #
 #   python_installed_probe        WHY/HOW the environment was (not) measured
 #   python_installed_scope_kind   which probe scope it was measured in
-#   python_installed_env_kind     venv | system | unknown (comparability)
+#   python_installed_env_kind     venv | not_venv | unknown (comparability)
+#   python_installed_interpreter  the interpreter's MAJOR.MINOR (comparability)
 #   python_installed_count        how many distributions were installed
 #   python_installed_digest       sha256 over the sorted `name==version` list
+#
+# The prefix rule is what keeps this list from having to be maintained: the
+# sixth key (``python_installed_interpreter``, added by a later runner round)
+# was classified correctly the moment it appeared, with no server change. That
+# is the intended property — an enumerated allow-list here would have handed
+# every box an apply for a key nobody had registered yet.
+#
+# The ORACLE cannot use a prefix, because it needs to know what each key MEANS
+# (attestation / comparability marker / measurement), so it declares the family
+# explicitly in ``devenv_drift._INVENTORY_KEY_ROLES``. That asymmetry is a trap
+# with a history: when the interpreter key arrived, this prefix absorbed it
+# silently while the oracle's list did not, and the oracle reported "canonical
+# has an interpreter, this box does not" against boxes that had never looked. A
+# consistency test now asserts every key in that table is covered by this
+# prefix, so the two cannot drift apart again without a red test.
 #
 # None of them is settable. "Set python_installed_digest to sha256:abc…" is not
 # an instruction a human or an agent can carry out; the box converges by

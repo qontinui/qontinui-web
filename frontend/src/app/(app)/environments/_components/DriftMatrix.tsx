@@ -380,9 +380,10 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
       </div>
       {unmeasured && (
         <p className="mt-1 text-[11px] text-muted-foreground">
-          A capture probe for this key exceeded its budget, so it was never
-          measured. That is not the same as the key being absent — it is not
-          counted as drift and nothing here is safe to apply.
+          One of the two captures never measured this key — its probe exceeded
+          the budget, or that runner does not report this key at all. Either
+          way it is not the same as the key being absent from the machine: it is
+          not counted as drift and nothing here is safe to apply.
         </p>
       )}
       {unverified && (

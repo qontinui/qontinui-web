@@ -321,9 +321,23 @@ function HistorySectionDiff({ section }: { section: SectionDrift }) {
 
 /** Badge text for a delta status — prose for the two non-difference ones. */
 function statusText(status: KeyDelta["status"]): string {
-  if (status === "unknown") return "not measured";
-  if (status === "unverified") return "unverified";
-  return status;
+  switch (status) {
+    case "unknown":
+      return "not measured";
+    case "unverified":
+      return "unverified";
+    case "added":
+    case "removed":
+    case "changed":
+      return status;
+    default: {
+      // Same guard as DriftMatrix's `statusLabel`: assigning to `never` makes a
+      // future member of DeltaStatus a COMPILE error here rather than a badge
+      // rendering a raw wire literal.
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
 }
 
 function HistoryDeltaRow({ delta }: { delta: KeyDelta }) {

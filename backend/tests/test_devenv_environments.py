@@ -521,8 +521,10 @@ class TestUnmeasuredInstalledInventory:
     The runner's installed-inventory capture reports ``measured`` when it
     genuinely read the environment and otherwise names the REASON it could not
     (``scope_unusable``, ``python_absent``, ``probe_failed``, ``probe_timeout``,
-    ``unparseable_output``), omitting the count/digest rather than reporting
-    zero packages. Every other rule in the oracle keys on a DIFFERENCE, so two
+    ``unparseable_output``), omitting the count/digest/interpreter rather than
+    reporting zero packages. The runner's contract is explicit that a consumer
+    should match on ``measured`` and treat EVERY other value — including one
+    added later — as not-clean, which is the polarity these tests pin. Every other rule in the oracle keys on a DIFFERENCE, so two
     boxes that both failed to measure for the same reason are byte-identical and
     would be reported in sync — parity asserted from two identical notes saying
     nobody looked. These tests pin the rule that closes that hole: a probe value
@@ -576,6 +578,7 @@ class TestUnmeasuredInstalledInventory:
                 "python_installed_probe": "measured",
                 "python_installed_scope_kind": "default",
                 "python_installed_env_kind": "venv",
+                "python_installed_interpreter": "3.13",
                 "python_installed_count": "214",
                 "python_installed_digest": "sha256:abc123",
             }
@@ -748,7 +751,7 @@ class TestUnmeasuredInstalledInventory:
             {
                 "versions": {
                     "python_installed_probe": "measured",
-                    "python_installed_env_kind": "system",
+                    "python_installed_env_kind": "not_venv",
                     "python_installed_count": "97",
                     "python_installed_digest": "sha256:def456",
                 }
@@ -771,6 +774,12 @@ class TestUnmeasuredInstalledInventory:
         assert marker.derived is False
         # ... and it is still not something an apply can set.
         assert marker.observation_only is True
+        # Capped BELOW the versions table's `critical`: at critical the rollup
+        # badge for "not comparable" is indistinguishable from real package
+        # drift, and there is no remediation line that could ever clear it.
+        assert marker.severity == "warning"
+        assert _section(report, "versions").severity == "warning"
+        assert report.severity == "warning"
         # Neither clean nor silently drifted.
         assert report.in_sync is False
 
@@ -802,7 +811,8 @@ class TestUnmeasuredInstalledInventory:
     def test_agreeing_markers_leave_digest_drift_alone(self) -> None:
         """Over-suppression guard: the gate only fires on DISAGREEING markers.
 
-        Both boxes measured venvs in the same scope kind, so their digests are
+        Both boxes measured venvs, in the same scope kind, on the same
+        interpreter minor — every marker agrees — so their digests are
         comparable and a difference between them is ordinary, actionable drift.
         A gate that fired here would mute the very signal the installed
         inventory exists to produce.
@@ -813,6 +823,7 @@ class TestUnmeasuredInstalledInventory:
                     "python_installed_probe": "measured",
                     "python_installed_env_kind": "venv",
                     "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
                     "python_installed_digest": "sha256:abc123",
                 }
             }
@@ -823,6 +834,7 @@ class TestUnmeasuredInstalledInventory:
                     "python_installed_probe": "measured",
                     "python_installed_env_kind": "venv",
                     "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
                     "python_installed_digest": "sha256:def456",
                 }
             }
@@ -834,14 +846,30 @@ class TestUnmeasuredInstalledInventory:
         assert digest.severity == "critical"
         assert report.in_sync is False
 
-    def test_a_marker_on_one_side_only_does_not_gate(self) -> None:
+    @pytest.mark.parametrize(
+        ("marker", "value", "expected_status"),
+        [
+            ("python_installed_env_kind", "venv", "added"),
+            ("python_installed_scope_kind", "default", "added"),
+            # The sixth key is a marker AND a measurement, so its own status
+            # differs: canonical says ``measured`` yet carries no interpreter,
+            # which by the runner's invariant can only mean that capture's
+            # runner predates the key. That is contract skew (``unknown``,
+            # blocking nothing), not "the target has an extra key".
+            ("python_installed_interpreter", "3.13", "unknown"),
+        ],
+    )
+    def test_a_marker_on_one_side_only_does_not_gate(
+        self, marker: str, value: str, expected_status: str
+    ) -> None:
         """A marker only one capture reports is runner skew, not incomparability.
 
         Refusing to compare on a one-sided marker would let an OLD runner —
         which emits no marker at all — mute a real digest difference on every
-        peer that does emit one. Both-sides-present is required, so the
-        ``added`` marker is reported as the ordinary difference it is and the
-        digest drift survives.
+        peer that does emit one. Both-sides-present is required, so the marker
+        is reported as the ordinary difference (or the skew) it is and the
+        DIGEST DRIFT SURVIVES — that last assertion is the point of the test,
+        and it holds for all three markers.
         """
         canonical = _envelope(
             {
@@ -855,7 +883,7 @@ class TestUnmeasuredInstalledInventory:
             {
                 "versions": {
                     "python_installed_probe": "measured",
-                    "python_installed_env_kind": "venv",
+                    marker: value,
                     "python_installed_digest": "sha256:def456",
                 }
             }
@@ -864,14 +892,68 @@ class TestUnmeasuredInstalledInventory:
 
         section = _section(report, "versions")
         assert _delta(section, "python_installed_digest").status == "changed"
-        assert _delta(section, "python_installed_env_kind").status == "added"
+        assert _delta(section, marker).status == expected_status
+        assert report.in_sync is False
+
+    def test_differing_interpreter_minor_gates_the_digest(self) -> None:
+        """The blind spot the sixth key was added to close.
+
+        ``env_kind`` alone only separates venv from not-venv, so two boxes on
+        3.12 and 3.13 — different interpreters, wholly different site-packages —
+        both report ``not_venv``, pass a two-marker gate, and have their digests
+        compared as if they measured the same thing. That is precisely the class
+        this rule exists to catch, so the interpreter gates too.
+
+        MAJOR.MINOR is what the runner publishes, on purpose: a patch bump does
+        not change which packages are installed, so gating on the patch would
+        manufacture incomparability where none exists. Nothing here needs to
+        know that — the rule compares values — but a fixture carrying a patch
+        version would be testing a contract the runner does not offer.
+        """
+        canonical = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "not_venv",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.12",
+                    "python_installed_count": "214",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "not_venv",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_count": "197",
+                    "python_installed_digest": "sha256:def456",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+        section = _section(report, "versions")
+
+        # The two markers that USED to be the whole gate agree here — without
+        # the interpreter this pair would have compared clean-or-drifted.
+        assert "python_installed_env_kind" not in [d.key for d in section.deltas]
+        for key in ("python_installed_count", "python_installed_digest"):
+            assert _delta(section, key).status == "unverified", key
+            assert _delta(section, key).severity == "warning", key
+        interpreter = _delta(section, "python_installed_interpreter")
+        assert interpreter.status == "changed"
+        assert interpreter.derived is False
+        assert interpreter.observation_only is True
         assert report.in_sync is False
 
     def test_unmeasured_side_reports_the_reason_and_gates_the_numbers(self) -> None:
         """Both rules at once, on the shape a real failure actually produces.
 
         The runner sets ``python_installed_env_kind = "unknown"`` whenever it
-        measured nothing — never ``system`` — so an unmeasurable box trips the
+        measured nothing — never ``not_venv`` — so an unmeasurable box trips the
         probe rule AND disagrees on the marker. The report must name the reason
         (that is what the operator acts on) and must not turn canonical's
         numbers into ``removed`` drift on a box that never looked.
@@ -904,6 +986,275 @@ class TestUnmeasuredInstalledInventory:
             assert _delta(section, key).status == "unverified", key
         assert report.in_sync is False
 
+    def test_one_sided_probe_failure_is_never_confirmed_drift(self) -> None:
+        """The realistic field case: canonical measured, the peer's probe failed.
+
+        This is what actually happens — one box has a broken or absent Python —
+        and it used to come out ``critical`` with ``has_real_drift`` set: the
+        interpreter read ``removed`` ("canonical has one, this box does not")
+        and ``env_kind`` read ``changed`` (``venv`` -> ``unknown``), both at the
+        ``versions`` table's ``critical``, both about a box that never looked,
+        and neither clearable because these keys get no remediation line. An
+        environment rollup pinned at ``critical`` with no apply path is the
+        "drift signal rots" failure this module names as its own risk.
+
+        Every inventory key must therefore land on the evidence-gap side, and
+        the report's severity must stay ``warning``.
+        """
+        canonical = _envelope(
+            {
+                "versions": {
+                    "python": "3.13",
+                    "python_installed_probe": "measured",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_env_kind": "venv",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_count": "214",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "versions": {
+                    "python": "3.13",
+                    "python_installed_probe": "probe_failed",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_env_kind": "unknown",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+        section = _section(report, "versions")
+
+        for key in (
+            "python_installed_probe",
+            "python_installed_env_kind",
+            "python_installed_interpreter",
+            "python_installed_count",
+            "python_installed_digest",
+        ):
+            delta = _delta(section, key)
+            assert delta.status == "unverified", key
+            assert delta.severity == "warning", key
+        # Not in sync — nobody can say these two agree — but NOT critical, and
+        # nothing claims the box is missing something it never looked for.
+        assert report.in_sync is False
+        assert report.severity == "warning"
+        assert section.severity == "warning"
+        assert [d.status for d in section.deltas if d.status == "removed"] == []
+
+    def test_env_kind_unknown_is_a_sentinel_not_a_third_environment(self) -> None:
+        """``unknown`` means "I did not measure", so it is never a ``changed``.
+
+        The runner writes ``env_kind = "unknown"`` on every failure path and
+        asserts the biconditional (``env_kind != "unknown"`` iff measured) in
+        its own capture test. Reporting ``venv`` -> ``unknown`` as a difference
+        would claim the box's environment changed when what changed is whether
+        anyone looked — and would do it at ``critical`` on a key no apply can
+        set.
+
+        The polarity is deliberately narrow, unlike the probe's: ``venv`` and
+        ``not_venv`` are both real observations, so only the one sentinel value
+        counts.
+        """
+        canonical = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "venv",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_count": "214",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        actual = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "python_absent",
+                    "python_installed_env_kind": "unknown",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(canonical, actual)
+
+        env_kind = _delta(_section(report, "versions"), "python_installed_env_kind")
+        assert env_kind.status == "unverified"
+        assert env_kind.severity == "warning"
+
+        # ... while a genuine venv/not_venv difference IS a real difference.
+        both_measured = devenv_drift.diff_envelopes(
+            _envelope(
+                {
+                    "versions": {
+                        "python_installed_probe": "measured",
+                        "python_installed_env_kind": "venv",
+                    }
+                }
+            ),
+            _envelope(
+                {
+                    "versions": {
+                        "python_installed_probe": "measured",
+                        "python_installed_env_kind": "not_venv",
+                    }
+                }
+            ),
+        )
+        real = _delta(_section(both_measured, "versions"), "python_installed_env_kind")
+        assert real.status == "changed"
+
+    def test_mixed_fleet_rollout_does_not_manufacture_drift(self) -> None:
+        """A peer whose runner predates the family is UNKNOWN, not missing six keys.
+
+        The rollout window this change exists to serve: canonical captured by
+        the new runner, a peer still on the old one. Without a participation
+        check all six keys read ``removed`` at ``critical`` on that peer — a
+        false claim (it never looked), unclearable (``observation_only``, so no
+        remediation line), and pinned to the environment rollup for as long as
+        the rollout takes. The sibling ``python_dep_*`` change was harmless on
+        arrival because ``derived`` keys drop out of ``in_sync``;
+        ``observation_only`` deliberately gives no such protection, so the skew
+        is handled here.
+
+        The accepted residual is asserted too: that peer's inventory is UNKNOWN
+        rather than drifted, so it blocks nothing until it upgrades.
+        """
+        canonical = _envelope(
+            {
+                "versions": {
+                    "python": "3.13",
+                    "python_installed_probe": "measured",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_env_kind": "venv",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_count": "214",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        actual = _envelope({"versions": {"python": "3.13"}})
+        report = devenv_drift.diff_envelopes(canonical, actual)
+        section = _section(report, "versions")
+
+        for delta in section.deltas:
+            assert delta.key.startswith("python_installed_"), delta.key
+            assert delta.status == "unknown", delta.key
+            assert delta.severity == "info", delta.key
+        # Visible, but not a verdict: an old capture carries no inventory
+        # evidence in either direction.
+        assert report.in_sync is True
+        assert report.severity == "info"
+
+    def test_temporal_diff_keeps_identical_captures_in_sync(self) -> None:
+        """Blocking case: the same oracle also answers "did anything change?".
+
+        ``diff_envelopes`` serves the config-history endpoint, where both
+        envelopes are captures of ONE machine and ``in_sync`` means "nothing
+        changed between them". "Silence is never success" is a claim about
+        PARITY: two captures of one box that are byte-identical genuinely are
+        unchanged, even when neither measured anything. Applying the parity rule
+        there badges every consecutive pair on a box with a broken Python — and
+        would do it for ``from_id == to_id``.
+        """
+        capture = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "python_absent",
+                    "python_installed_scope_kind": "default",
+                    "python_installed_env_kind": "unknown",
+                }
+            }
+        )
+
+        temporal = devenv_drift.diff_envelopes(capture, dict(capture), temporal=True)
+        assert temporal.in_sync is True
+        assert temporal.sections == []
+        assert temporal.severity == "info"
+
+        # The contrast is the point: the SAME pair compared for parity is not
+        # in sync, because there two boxes are being called equal on the
+        # strength of two identical notes saying nobody looked.
+        parity = devenv_drift.diff_envelopes(capture, dict(capture))
+        assert parity.in_sync is False
+
+    def test_temporal_diff_still_reports_what_changed(self) -> None:
+        """Switching the rules off must not switch the diff off.
+
+        A box whose inventory actually moved between two captures is exactly
+        what the history view exists to show, so the ordinary arms still answer
+        — including when the box stopped measuring between them.
+        """
+        before = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "venv",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_digest": "sha256:abc123",
+                }
+            }
+        )
+        after = _envelope(
+            {
+                "versions": {
+                    "python_installed_probe": "measured",
+                    "python_installed_env_kind": "venv",
+                    "python_installed_interpreter": "3.13",
+                    "python_installed_digest": "sha256:def456",
+                }
+            }
+        )
+        report = devenv_drift.diff_envelopes(before, after, temporal=True)
+
+        digest = _delta(_section(report, "versions"), "python_installed_digest")
+        assert digest.status == "changed"
+        assert report.in_sync is False
+
+    def test_history_endpoint_asks_for_the_temporal_reading(self) -> None:
+        """The wiring, not just the capability.
+
+        The parity default is the safe one (a caller that forgets the flag gets
+        a noisy row, not a false "in sync"), which is exactly why the ONE caller
+        that needs the other reading has to be pinned. The endpoint that uses it
+        is DB-backed and cannot run in this layer, so the call site is asserted
+        directly — a cheap guard on a line whose only other cover is an
+        integration test.
+        """
+        import inspect
+
+        from app.api.v1.endpoints import devenv as devenv_endpoints
+
+        source = inspect.getsource(devenv_endpoints.get_config_history_diff)
+        assert "temporal=True" in source
+
+    def test_inventory_key_table_matches_the_policy_prefix(self) -> None:
+        """The two modules must agree about what the family contains.
+
+        This is the guard for how the interpreter defect happened: the policy
+        module classifies the family by PREFIX (so it absorbed the runner's
+        sixth key silently and correctly) while the oracle declares it KEY BY
+        KEY (so it absorbed nothing, and the new key fell through to the
+        ``removed`` arm at ``critical``). The oracle needs per-key roles and
+        cannot use a prefix, so the two representations stay — but they may
+        never disagree about membership.
+        """
+        from app.services import devenv_section_policy as sp
+
+        for key in devenv_drift._INVENTORY_KEY_ROLES:
+            assert sp.is_observation_only_key("versions", key) is True, key
+        # Every declared key holds at least one known role, so a typo in the
+        # table cannot silently produce a key the verdict function ignores.
+        known = {
+            devenv_drift._ROLE_ATTESTATION,
+            devenv_drift._ROLE_MARKER,
+            devenv_drift._ROLE_MEASUREMENT,
+        }
+        for key, roles in devenv_drift._INVENTORY_KEY_ROLES.items():
+            assert roles, key
+            assert roles <= known, key
+
     def test_installed_keys_are_never_classified_derived(self) -> None:
         """The load-bearing negative: derived would INVERT this rule.
 
@@ -919,6 +1270,7 @@ class TestUnmeasuredInstalledInventory:
             "python_installed_probe": "python_absent",
             "python_installed_scope_kind": "default",
             "python_installed_env_kind": "venv",
+            "python_installed_interpreter": "3.13",
             "python_installed_count": "214",
             "python_installed_digest": "sha256:abc123",
         }
@@ -994,7 +1346,19 @@ class TestUnmeasuredInstalledInventory:
         """
         from app.services import devenv_section_policy as sp
 
-        assert sp.is_observation_only_key("versions", "python_installed_digest") is True
+        # Every key the capture emits, verified rather than assumed — the
+        # prefix rule is supposed to cover a key added by a later runner round
+        # with no server change, and ``python_installed_interpreter`` is the
+        # first key to actually test that claim.
+        for key in (
+            "python_installed_probe",
+            "python_installed_scope_kind",
+            "python_installed_env_kind",
+            "python_installed_interpreter",
+            "python_installed_count",
+            "python_installed_digest",
+        ):
+            assert sp.is_observation_only_key("versions", key) is True, key
         assert sp.is_observation_only_key("versions", "python") is False
         assert sp.is_observation_only_key("versions", "python_dep_requests") is False
         assert sp.is_observation_only_key("versions", "node") is False

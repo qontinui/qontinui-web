@@ -23816,7 +23816,7 @@
         "type": "object"
       },
       "KeyDelta": {
-        "description": "A single key-level difference between canonical and a target machine.\n\n``status`` may be ``\"unknown\"`` \u2014 see :data:`DeltaStatusT`. That is not a\ndifference that was observed; it is one side of the comparison declining to\nclaim it measured the key. It is reported (never dropped) so the gap stays\nvisible, at ``info`` severity, and it does not make a machine out-of-sync.",
+        "description": "A single key-level difference between canonical and a target machine.\n\nTwo of the statuses are not differences at all \u2014 see :data:`DeltaStatusT`:\n\n* ``unknown`` \u2014 one side of the comparison declines to claim it measured the\n  key. Reported (never dropped) so the gap stays visible, at ``info``\n  severity, and it does not make a machine out-of-sync.\n* ``unverified`` \u2014 both sides reported the key, but comparing them proves\n  nothing: the value says the fact was never measured, or the two captures\n  were taken over environments that are not comparable. Reported at\n  ``warning``, and it DOES make a machine out-of-sync, because \"nobody can\n  say these agree\" must never render as agreement.\n\n``derived`` and ``observation_only`` are qualifiers rather than statuses:\nthe difference is genuinely known in both cases, it just is not machine\nstate (``derived``) or is not something an apply can set\n(``observation_only``).",
         "properties": {
           "actual": {
             "anyOf": [

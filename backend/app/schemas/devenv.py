@@ -50,10 +50,10 @@ SeverityT = Literal["info", "warning", "critical"]
 #                    says the fact was never measured
 #                    (``python_installed_probe`` other than ``measured``), or
 #                    the two captures are not comparable at all (their
-#                    ``python_installed_env_kind`` / ``..._scope_kind`` markers
-#                    disagree, so their digests were taken over different
-#                    environments). Both must read as neither clean nor
-#                    drifted.
+#                    ``python_installed_env_kind`` / ``..._scope_kind`` /
+#                    ``..._interpreter`` markers disagree, so their digests were
+#                    taken over different environments). Both must read as
+#                    neither clean nor drifted.
 #
 # ``unknown`` is a STATUS, not a qualifier flag beside ``removed``: a
 # ``removed`` delta asserts "canonical has this, the target does not", and that
@@ -790,10 +790,21 @@ class CanonicalConfigResponse(BaseSchema):
 class KeyDelta(BaseSchema):
     """A single key-level difference between canonical and a target machine.
 
-    ``status`` may be ``"unknown"`` — see :data:`DeltaStatusT`. That is not a
-    difference that was observed; it is one side of the comparison declining to
-    claim it measured the key. It is reported (never dropped) so the gap stays
-    visible, at ``info`` severity, and it does not make a machine out-of-sync.
+    Two of the statuses are not differences at all — see :data:`DeltaStatusT`:
+
+    * ``unknown`` — one side of the comparison declines to claim it measured the
+      key. Reported (never dropped) so the gap stays visible, at ``info``
+      severity, and it does not make a machine out-of-sync.
+    * ``unverified`` — both sides reported the key, but comparing them proves
+      nothing: the value says the fact was never measured, or the two captures
+      were taken over environments that are not comparable. Reported at
+      ``warning``, and it DOES make a machine out-of-sync, because "nobody can
+      say these agree" must never render as agreement.
+
+    ``derived`` and ``observation_only`` are qualifiers rather than statuses:
+    the difference is genuinely known in both cases, it just is not machine
+    state (``derived``) or is not something an apply can set
+    (``observation_only``).
     """
 
     key: str
