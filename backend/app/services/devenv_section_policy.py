@@ -213,6 +213,15 @@ def is_derived_key(section: str, key: str) -> bool:
 # is the intended property — an enumerated allow-list here would have handed
 # every box an apply for a key nobody had registered yet.
 #
+# The ORACLE cannot use a prefix, because it needs to know what each key MEANS
+# (attestation / comparability marker / measurement), so it declares the family
+# explicitly in ``devenv_drift._INVENTORY_KEY_ROLES``. That asymmetry is a trap
+# with a history: when the interpreter key arrived, this prefix absorbed it
+# silently while the oracle's list did not, and the oracle reported "canonical
+# has an interpreter, this box does not" against boxes that had never looked. A
+# consistency test now asserts every key in that table is covered by this
+# prefix, so the two cannot drift apart again without a red test.
+#
 # None of them is settable. "Set python_installed_digest to sha256:abc…" is not
 # an instruction a human or an agent can carry out; the box converges by
 # INSTALLING PACKAGES and the digest follows. Left unclassified they sail

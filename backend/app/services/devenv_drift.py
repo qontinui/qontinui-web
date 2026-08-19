@@ -83,9 +83,9 @@ not assert drift the box cannot have:
   ``python_installed_probe`` in ``versions``: ``measured`` when it genuinely
   read the environment, otherwise the REASON it could not (``scope_unusable``,
   ``python_absent``, ``probe_failed``, ``probe_timeout``,
-  ``unparseable_output``), in which case it omits
-  ``python_installed_count``/``python_installed_digest`` rather than reporting
-  zero packages. That honesty leaves one hole the arms above cannot close,
+  ``unparseable_output``), in which case it omits the three measurement keys
+  (``python_installed_count`` / ``..._digest`` / ``..._interpreter``) rather
+  than reporting zero packages. That honesty leaves one hole the arms above cannot close,
   because every one of them keys on a DIFFERENCE: two boxes that both failed to
   measure **for the same reason** are byte-identical on every installed key,
   produce no delta at all, and the report calls them in sync. It would be
@@ -94,16 +94,34 @@ not assert drift the box cannot have:
   So a ``python_installed_probe`` value that is anything OTHER than
   ``measured`` — on EITHER side, symmetrically, since an unmeasured canonical
   is just as unusable as an unmeasured target — produces its own delta and
-  **prevents** ``in_sync``. See ``_attests_unmeasured_inventory``.
+  **prevents** ``in_sync``. The same treatment covers
+  ``python_installed_env_kind == "unknown"``, which is the runner's not-measured
+  SENTINEL rather than a third kind of environment (its capture test asserts
+  ``env_kind != "unknown"`` iff measured): reporting ``venv`` -> ``unknown`` as
+  a ``changed`` difference would claim the box's environment changed when what
+  changed is whether anyone looked. See ``_value_attests_unmeasured``.
+
+  A measurement key MISSING on one side gets the same verdict for the same
+  reason. The runner emits count/digest/interpreter iff it measured, so their
+  absence is never "you are missing this" — treating it as ``removed`` would
+  assert a box lacks an interpreter when it merely never looked, at
+  ``critical``, and unclearably, since these keys carry no remediation line.
 
   Two properties of that rule matter to the next reader:
 
   - It is polarised on ``measured`` (the one value that means *measured*)
     rather than on a list of known failure reasons, so a reason a future runner
     invents blocks ``in_sync`` on arrival instead of silently reading as clean.
-  - The key being ABSENT entirely is NOT the unmeasured case — it means the
-    capturing runner predates the inventory probe. The rule is inert there, so
-    every box in the field today keeps reporting exactly as it does now.
+  - The FAMILY being absent entirely is NOT the unmeasured case — it means
+    the capturing runner predates the inventory probe. A capture is taken to
+    speak the contract iff it carries ``python_installed_probe``, which the
+    runner writes on every capture; when only one side does, the whole family is
+    reported ``unknown`` at ``info`` and blocks nothing. That keeps the rollout
+    window honest in both directions: today's boxes are unaffected, and a
+    half-upgraded fleet does not pin every peer to ``critical`` on keys its
+    runner was never asked for. The accepted residual — an un-upgraded peer's
+    inventory stays UNKNOWN rather than drifted — is stated at
+    ``_participates_in_inventory``.
 
   The delta gets its own status, ``unverified`` — NOT ``unknown``, which would
   claim the box never measured ``python_installed_probe`` when in fact it
@@ -139,7 +157,11 @@ not assert drift the box cannot have:
   not comparable" — never "clean", never "drifted". The markers THEMSELVES stay
   ordinary deltas: they are real measured differences with a real operator
   action (align how the two runners resolve their interpreter), and the runner
-  emits them un-derived precisely so they cannot be swallowed at ``info``. See
+  emits them un-derived precisely so they cannot be swallowed at ``info``. They
+  are however capped at ``warning`` rather than the ``versions`` table's
+  ``critical`` — see ``_INVENTORY_MARKER_SEVERITY``: at ``critical`` the rollup
+  badge for "not comparable" is indistinguishable from real package drift, and
+  the key has no remediation line to clear it with. See
   ``_inventory_incomparable``.
 
 * **A key that is a MEASUREMENT is never an apply action.** All six
@@ -152,6 +174,13 @@ not assert drift the box cannot have:
   purpose: derived also means "not drift", and reusing it here would drop the
   inventory out of ``in_sync`` — undoing the rule immediately above. See
   ``devenv_section_policy.is_observation_only_key``.
+
+Both installed-inventory rules are PARITY rules — they answer "may these two
+boxes be called equal?". The same function also serves the config-history diff,
+where the two envelopes are two captures of ONE machine and ``in_sync`` means
+"nothing changed between them"; there, two identical captures are the honest
+answer even when neither measured anything. That caller passes
+``temporal=True`` and the inventory rules switch off. See :func:`diff_envelopes`.
 
 The overall report severity is the max severity across all deltas (and the
 schema-version override). :func:`rollup_environment` aggregates multiple
@@ -237,8 +266,9 @@ _INSTALLED_PROBE_KEY = "python_installed_probe"
 # Everything else is a stated reason it could not be — as of the capturing
 # runner: ``scope_unusable``, ``python_absent``, ``probe_failed``,
 # ``probe_timeout``, ``unparseable_output``. That list is documentation, NOT the
-# test: see ``_attests_unmeasured_inventory`` for why the rule is polarised on
-# the single success value instead.
+# test: the rule is polarised on the single success value, which the runner's
+# own contract now asks consumers to do ("match on ``measured`` and treat every
+# other value — including one added later — as not-clean").
 #
 # Verified against the runner's own wire contract
 # (``env_agent/collectors.rs``, ``PythonInventoryProbe::wire``) rather than
@@ -249,53 +279,63 @@ _INSTALLED_PROBE_KEY = "python_installed_probe"
 # which reads exactly like a fleet that never measures anything.
 _INSTALLED_PROBE_MEASURED = "measured"
 
-# The COMPARABILITY GATE keys. Each states a property of HOW the inventory was
-# taken, and two captures whose values differ did not measure the same thing:
-#
-# * ``python_installed_env_kind`` (``venv`` | ``not_venv`` | ``unknown``) —
-#   whether the interpreter was inside a virtualenv. The interpreter comes off
-#   the inherited PATH, so the SAME box inventoried from an activated venv and
-#   from a plain shell yields different digests with nothing wrong on either
-#   side. The runner sources this from the interpreter itself
-#   (``sys.prefix != sys.base_prefix``), never from ``VIRTUAL_ENV``. Note the
-#   value is ``not_venv``, NOT ``system``: the test only establishes "not a
-#   venv", which conda envs, pyenv installs and any second system python all
-#   satisfy — so this marker alone is a WEAK claim, which is why the runner
-#   added the interpreter key below.
-# * ``python_installed_scope_kind`` — which probe scope the inventory ran in.
-#   The non-derived twin of ``probe_scope_kind``; the runner emits it precisely
-#   so a scope difference cannot be swallowed as ``info`` the way the derived
-#   one is.
-# * ``python_installed_interpreter`` — the interpreter's ``MAJOR.MINOR``, read
-#   in the SAME invocation that produced the digest (so it cannot disagree with
-#   what it certifies). It gates for the reason the whole gate exists: two boxes
-#   on 3.12 and 3.13 are not measuring the same thing, yet both report
-#   ``not_venv`` and would otherwise pass on ``env_kind`` alone and have their
-#   digests compared — the exact class this rule catches. ``MAJOR.MINOR`` and
-#   not the patch, deliberately: a patch bump does not change which packages are
-#   installed, so gating on it would manufacture incomparability.
-#
-# All three are ordinary drift in their own right (real, measured differences an
-# operator can act on), so they keep their normal delta. What they gate is the
-# READING of the digest/count keys below.
-#
-# The gate NARROWS incomparability rather than closing it, and the runner says
-# so: two boxes on different conda envs of the same minor version still compare,
-# ``PYTHONPATH``/``.pth`` extend ``sys.path`` invisibly to all three markers,
-# and two different venvs both report ``venv``. Every residual leaves this rule
-# reporting drift that may be incomparable — never the reverse — so it fails in
-# the direction that stays visible.
-_INSTALLED_COMPARABILITY_KEYS = (
-    "python_installed_env_kind",
-    "python_installed_scope_kind",
-    "python_installed_interpreter",
-)
+# The comparability marker whose "I measured nothing" value is a SENTINEL rather
+# than an absence. ``venv``/``not_venv`` are real observations; ``unknown`` is
+# what the runner writes on every failure path, and its own capture test asserts
+# the biconditional ``env_kind != "unknown"`` iff measured. So a ``venv`` ->
+# ``unknown`` difference is never "the environment changed" — it is "one side
+# looked and the other did not".
+_INSTALLED_ENV_KIND_KEY = "python_installed_env_kind"
+_INSTALLED_ENV_KIND_UNMEASURED = "unknown"
 
-# The keys whose comparison the gate governs: the inventory measurement itself.
-_INSTALLED_MEASUREMENT_KEYS = (
-    "python_installed_count",
-    "python_installed_digest",
-)
+# ---------------------------------------------------------------------------
+# ONE declared inventory of the capture's keys, with the ROLE each plays here
+# ---------------------------------------------------------------------------
+#
+# This table exists because the alternative failed in review. The oracle used to
+# carry two hand-written tuples (markers, measurements) while
+# ``devenv_section_policy`` classified the same family by PREFIX. The prefix
+# absorbed the runner's sixth key (``python_installed_interpreter``) silently
+# and correctly; the tuples absorbed nothing, so the new key fell through to the
+# ``removed`` arm and the report asserted "canonical has an interpreter, this box
+# does not" about a box that never looked — at ``critical``, and unclearable
+# because the key is ``observation_only`` and gets no remediation line. That is
+# the exact false claim this module's ``removed``-vs-``unknown`` rule exists to
+# forbid, re-created by the fix for its sibling.
+#
+# A key added by a later runner round STILL lands here unclassified. What the
+# table buys is that "unclassified" now means one thing in one place, and the
+# consistency test in ``test_devenv_environments.py`` fails the moment this
+# table and the policy module's prefix disagree about what the family contains.
+#
+# The roles:
+#
+# * ``attestation`` — the value itself can say "this side measured nothing".
+#   Never a difference to report; always an evidence gap.
+# * ``marker`` — a comparability gate. States a property of HOW the inventory
+#   was taken, so two captures whose markers differ did not measure the same
+#   thing and their digests may not be compared.
+# * ``measurement`` — present IFF the inventory was actually read (the runner
+#   asserts that biconditional in its own capture test). So a side missing one
+#   of these did not measure; it is never "you are missing this".
+#
+# ``python_installed_interpreter`` holds TWO roles, which is the whole reason
+# this is a set-valued table: it gates comparability (3.12 against 3.13 is not
+# the same environment, though both report ``not_venv``) AND it is absent when
+# unmeasured. Treating it as only a marker leaves the ``removed``-at-critical
+# defect in place; treating it as only a measurement loses the gate.
+_ROLE_ATTESTATION = "attestation"
+_ROLE_MARKER = "marker"
+_ROLE_MEASUREMENT = "measurement"
+
+_INVENTORY_KEY_ROLES: dict[str, frozenset[str]] = {
+    _INSTALLED_PROBE_KEY: frozenset({_ROLE_ATTESTATION}),
+    "python_installed_scope_kind": frozenset({_ROLE_MARKER}),
+    _INSTALLED_ENV_KIND_KEY: frozenset({_ROLE_ATTESTATION, _ROLE_MARKER}),
+    "python_installed_interpreter": frozenset({_ROLE_MARKER, _ROLE_MEASUREMENT}),
+    "python_installed_count": frozenset({_ROLE_MEASUREMENT}),
+    "python_installed_digest": frozenset({_ROLE_MEASUREMENT}),
+}
 
 # Severity for an inventory that could not be measured or could not be compared.
 # Not the ``versions`` section's ``critical``: that table ranks CONFIRMED drift
@@ -306,61 +346,193 @@ _INSTALLED_MEASUREMENT_KEYS = (
 # to remove.
 _UNVERIFIED_INVENTORY_SEVERITY: SeverityT = "warning"
 
+# Severity ceiling for a comparability MARKER difference (venv vs not_venv,
+# 3.12 vs 3.13, one scope kind vs another).
+#
+# These stay ordinary ``changed`` deltas — they are real, measured differences
+# and they DO break ``in_sync`` — but they must not be ``critical``. Two
+# reasons, and the second is the one that matters:
+#
+# 1. There is no apply path. The key is ``observation_only``, so it never
+#    appears in a remediation plan; ``critical`` here is unclearable through the
+#    drift surface, which is precisely what ``_REMOVED_SEVERITY_OVERRIDE`` was
+#    introduced to prevent for ``repos``.
+# 2. At ``critical`` the rollup badge for "these two inventories are not
+#    comparable" is IDENTICAL to the badge for real package drift. The rule's
+#    whole point is that the pair reads as neither clean nor drifted, and a
+#    severity a user cannot distinguish does not deliver that.
+_INVENTORY_MARKER_SEVERITY: SeverityT = "warning"
+
+# Verdicts ``_inventory_verdict`` can return.
+_VERDICT_SKEW = "skew"
+_VERDICT_UNVERIFIED = "unverified"
+_VERDICT_MARKER = "marker"
+
+
+def _value_attests_unmeasured(key: str, value: str) -> bool:
+    """Whether ``value`` on one side DECLARES that side measured nothing.
+
+    Two keys carry such a value, with deliberately different polarity:
+
+    * ``python_installed_probe`` — anything that is not ``measured``. The test
+      is never "one of the known failure reasons": a runner that grows a sixth
+      reason must block ``in_sync`` the day it ships, not the day someone
+      remembers to extend a list here, and an unrecognised reason silently
+      reading as *measured* is exactly the failure this rule prevents.
+    * ``python_installed_env_kind`` — exactly ``unknown``, because here the
+      other two values (``venv`` / ``not_venv``) are genuine observations. The
+      open polarity used for the probe would be wrong: it would classify a real
+      venv reading as an evidence gap.
+    """
+    if key == _INSTALLED_PROBE_KEY:
+        return value != _INSTALLED_PROBE_MEASURED
+    if key == _INSTALLED_ENV_KIND_KEY:
+        return value == _INSTALLED_ENV_KIND_UNMEASURED
+    return False
+
 
 def _inventory_incomparable(
     section: str, canon_kv: dict[str, str], actual_kv: dict[str, str]
 ) -> bool:
     """Whether the two captures' inventories may be compared at all.
 
-    True when a comparability marker is present on BOTH sides with DIFFERENT
-    values. Both-sides-present is required: a marker only one side reports is a
-    version skew between the two capturing runners, and refusing to compare on
-    that would let an old runner mute a real digest difference — the
-    over-suppression this rule must not become.
+    True when a comparability marker is present on BOTH sides, neither side's
+    value is a not-measured sentinel, and the values DIFFER.
+
+    Both-sides-present is required: a marker only one side reports is a version
+    skew between the two capturing runners, and refusing to compare on that
+    would let an old runner mute a real digest difference — the
+    over-suppression this rule must not become. Sentinels are skipped because
+    "one side did not measure" is a different finding with its own arm; letting
+    it also read as incomparability would report the same fact twice under two
+    names.
 
     Why refusing matters as much as the unmeasured rule it sits beside: it is
     the mirror failure. Reporting an unmeasured box as clean invents agreement;
-    reporting a digest difference across a venv/system split invents DRIFT — a
+    reporting a digest difference across a venv/not-venv split invents DRIFT — a
     finding with no apply path, on a box where nothing is wrong, which the
     operator can only clear by aligning how the two runners were launched. Both
     ways round, the report must say what it actually knows.
     """
     if section != _INSTALLED_INVENTORY_SECTION:
         return False
-    return any(
-        marker in canon_kv
-        and marker in actual_kv
-        and canon_kv[marker] != actual_kv[marker]
-        for marker in _INSTALLED_COMPARABILITY_KEYS
-    )
+    for marker, roles in _INVENTORY_KEY_ROLES.items():
+        if _ROLE_MARKER not in roles:
+            continue
+        canon_val = canon_kv.get(marker)
+        actual_val = actual_kv.get(marker)
+        if canon_val is None or actual_val is None:
+            continue
+        if _value_attests_unmeasured(marker, canon_val) or _value_attests_unmeasured(
+            marker, actual_val
+        ):
+            continue
+        if canon_val != actual_val:
+            return True
+    return False
 
 
-def _attests_unmeasured_inventory(
-    section: str, key: str, expected: str | None, actual: str | None
-) -> bool:
-    """Whether either side's value DECLARES its installed inventory unmeasured.
+def _inventory_verdict(
+    section: str,
+    key: str,
+    expected: str | None,
+    actual: str | None,
+    *,
+    canon_participates: bool,
+    actual_participates: bool,
+    canon_probe: str | None,
+    actual_probe: str | None,
+    incomparable: bool,
+) -> str | None:
+    """How this inventory key must be reported, or ``None`` for the normal arms.
 
-    True when ``key`` is the installed-probe field and the value present on
-    canonical or on the target is anything other than ``measured``.
+    The ordering below is the rule, not an implementation detail:
 
-    Polarity matters: the test is "not the measured marker", never "one of the
-    known failure reasons". A runner that grows a fifth reason must block
-    ``in_sync`` the day it ships, not the day someone remembers to extend a list
-    here — an unrecognised reason silently reading as *measured* is precisely
-    the failure this rule exists to prevent.
+    1. **Contract skew** wins over everything. If only ONE capture emits the
+       inventory family at all, the other runner predates it — there is no
+       comparison to make, in either direction.
+    2. **An attestation value** wins over any difference. ``venv`` -> ``unknown``
+       is not an environment that changed; it is one side that did not look.
+    3. **A marker difference** wins over the measurement gate, so the report
+       names the marker that made the pair incomparable instead of hiding it
+       behind the digest it governs. This is why ``python_installed_interpreter``
+       shows as ``changed`` when the minors differ, and as ``unverified`` when
+       one side simply never measured.
+    4. **The measurement gate** covers the rest: present on both but
+       incomparable, or absent on one side. The two ways a measurement can be
+       absent are told apart by that side's own probe value, using the runner's
+       invariant that ``probe == "measured"`` iff every measurement key is
+       present:
 
-    A side with NO value is not consulted: an absent key means the capturing
-    runner predates the probe entirely (inert — see the module docstring), and a
-    key omitted via ``unknown_keys`` stays under the budget-unknown rule, which
-    is not a shape this runner produces since it names a reason instead of
-    omitting.
+       * that capture did NOT measure -> an evidence gap (``unverified``);
+       * that capture DID measure yet lacks the key -> its runner predates the
+         key, which is contract skew (``unknown``, blocking nothing). Without
+         this split, the interpreter key's own rollout would mark every
+         mixed-version pair unverified for a key one side simply cannot emit.
     """
-    if section != _INSTALLED_INVENTORY_SECTION or key != _INSTALLED_PROBE_KEY:
-        return False
-    return any(
-        value is not None and value != _INSTALLED_PROBE_MEASURED
+    if section != _INSTALLED_INVENTORY_SECTION:
+        return None
+    roles = _INVENTORY_KEY_ROLES.get(key)
+    if roles is None:
+        return None
+
+    if not (canon_participates and actual_participates):
+        return _VERDICT_SKEW
+
+    if _ROLE_ATTESTATION in roles and any(
+        value is not None and _value_attests_unmeasured(key, value)
         for value in (actual, expected)
-    )
+    ):
+        return _VERDICT_UNVERIFIED
+
+    if (
+        _ROLE_MARKER in roles
+        and expected is not None
+        and actual is not None
+        and expected != actual
+    ):
+        return _VERDICT_MARKER
+
+    if _ROLE_MEASUREMENT in roles:
+        if incomparable:
+            return _VERDICT_UNVERIFIED
+        for value, probe in ((expected, canon_probe), (actual, actual_probe)):
+            if value is not None:
+                continue
+            return (
+                _VERDICT_SKEW
+                if probe == _INSTALLED_PROBE_MEASURED
+                else _VERDICT_UNVERIFIED
+            )
+
+    return _VERDICT_MARKER if _ROLE_MARKER in roles else None
+
+
+def _participates_in_inventory(section_kv: dict[str, str]) -> bool:
+    """Whether this capture speaks the installed-inventory contract at all.
+
+    Witnessed by ``python_installed_probe``, which the runner writes on EVERY
+    capture — measured or not — precisely so an unmeasured box is a stated
+    observation rather than a silent one. A capture without it comes from a
+    runner predating the whole family.
+
+    This is what keeps the rollout window honest. Canonical on a new runner and
+    a peer still on the old one share no inventory keys, and without this check
+    all six read ``removed`` at ``critical`` on every unupgraded box: a false
+    claim ("this box is missing an interpreter" — it never looked), unclearable
+    (``observation_only``, so no remediation line), and pinned to the whole
+    environment rollup for as long as the rollout takes. Compare the sibling
+    ``python_dep_*`` change, which was harmless on arrival because ``derived``
+    keys are dropped from ``in_sync``; ``observation_only`` deliberately gives no
+    such protection, so the skew has to be handled here instead.
+
+    The accepted residual, stated rather than hidden: while a peer runs the old
+    runner, its inventory is UNKNOWN rather than drifted, so the family cannot
+    detect anything on that box until it upgrades. That is the honest reading —
+    an old capture contains no inventory evidence — and the rows stay visible in
+    the report as ``unknown`` instead of vanishing.
+    """
+    return _INSTALLED_PROBE_KEY in section_kv
 
 
 def _max_severity(severities: list[SeverityT]) -> SeverityT:
@@ -435,7 +607,7 @@ def _schema_version(envelope: dict[str, Any]) -> int | None:
 
 
 def diff_envelopes(
-    canonical: dict[str, Any], actual: dict[str, Any]
+    canonical: dict[str, Any], actual: dict[str, Any], *, temporal: bool = False
 ) -> MachineDriftReport:
     """Diff a target ``actual`` envelope against the ``canonical`` envelope.
 
@@ -443,6 +615,28 @@ def diff_envelopes(
     with per-section + overall severity. Machine identity fields
     (``machine_id`` / ``machine_name``) are left ``None`` here; the caller
     fills them in (and the endpoint layer attaches them).
+
+    ``temporal`` says the two envelopes are two captures of the SAME machine
+    over time (the config-history diff), not two machines being compared for
+    parity. That changes what ``in_sync`` MEANS — "nothing changed between these
+    two captures", not "these two boxes agree" — and the installed-inventory
+    rules are only valid for the second question:
+
+    * "Silence is never success" is a claim about PARITY. Two captures of one
+      box that are byte-identical genuinely are the honest answer to "did
+      anything change?", even when neither measured anything — asserting
+      otherwise badges every consecutive pair on a box with a broken Python as
+      drifted, and would even do it for ``from_id == to_id``.
+    * The comparability gate is likewise about two boxes. A box whose env kind
+      or interpreter minor changed BETWEEN captures has genuinely changed, and
+      that is exactly what the history view is asked to show.
+
+    So under ``temporal`` the inventory rules are off and the ordinary
+    difference arms answer. The default is the PARITY behaviour because the two
+    failure modes are not symmetric: a parity caller that forgets the flag gets
+    a false "in sync" on an unmeasured box (the failure this module exists to
+    remove), while a history caller that forgets it gets a noisy row. Defaults
+    should fail in the direction that stays visible.
     """
     canon_sections = _extract_sections(canonical)
     actual_sections = _extract_sections(actual)
@@ -474,13 +668,23 @@ def diff_envelopes(
         canon_unmeasured = canon_unknown.get(section_name, set())
         actual_unmeasured = actual_unknown.get(section_name, set())
         base_sev = _section_base_severity(section_name)
-        # Per-SECTION, not per-key: the gate is a property of the two captures
-        # as a pair (do their comparability markers agree?), and the key it
-        # governs — the digest — carries no trace of it. Computed once here
-        # rather than re-derived inside the key loop.
-        incomparable_inventory = _inventory_incomparable(
+        # Per-SECTION, not per-key: both of these are properties of the two
+        # captures as a PAIR (do their comparability markers agree? do both
+        # speak the inventory contract at all?), and the keys they govern carry
+        # no trace of either. Computed once here rather than re-derived inside
+        # the key loop. Under ``temporal`` they are inert — see
+        # ``diff_envelopes`` for why the inventory rules do not apply to two
+        # captures of one machine.
+        incomparable_inventory = not temporal and _inventory_incomparable(
             section_name, canon_kv, actual_kv
         )
+        canon_participates = _participates_in_inventory(canon_kv)
+        actual_participates = _participates_in_inventory(actual_kv)
+        # Each side's own verdict about whether it measured, which is what tells
+        # "this box did not measure" apart from "this box's runner predates the
+        # key" when a measurement key is missing.
+        canon_probe = canon_kv.get(_INSTALLED_PROBE_KEY)
+        actual_probe = actual_kv.get(_INSTALLED_PROBE_KEY)
 
         deltas: list[KeyDelta] = []
         all_keys = sorted(set(canon_kv) | set(actual_kv))
@@ -510,26 +714,58 @@ def diff_envelopes(
             unmeasured_on_actual = not in_actual and key in actual_unmeasured
             unmeasured_on_canon = not in_canon and key in canon_unmeasured
 
-            # Two independent reasons this key's comparison answers nothing,
-            # collapsed into one delta because the verdict they produce is
-            # identical: the capture SAYS it measured nothing, or the two
-            # captures are not comparable with each other.
-            unverified_inventory = _attests_unmeasured_inventory(
-                section_name, key, expected, actual_val
-            ) or (incomparable_inventory and key in _INSTALLED_MEASUREMENT_KEYS)
+            # How the installed-inventory family must be reported, if this
+            # key belongs to it. ``None`` for every other key — and for every
+            # key at all under ``temporal``.
+            verdict = (
+                None
+                if temporal
+                else _inventory_verdict(
+                    section_name,
+                    key,
+                    expected,
+                    actual_val,
+                    canon_participates=canon_participates,
+                    actual_participates=actual_participates,
+                    canon_probe=canon_probe,
+                    actual_probe=actual_probe,
+                    incomparable=incomparable_inventory,
+                )
+            )
 
-            if unverified_inventory:
+            # A comparability marker keeps its ordinary delta but never at
+            # ``critical`` — see ``_INVENTORY_MARKER_SEVERITY``.
+            marker_capped = verdict == _VERDICT_MARKER
+            change_sev: SeverityT = (
+                "info"
+                if derived
+                else (_INVENTORY_MARKER_SEVERITY if marker_capped else base_sev)
+            )
+            removed_sev: SeverityT = (
+                "info"
+                if derived
+                else (
+                    _INVENTORY_MARKER_SEVERITY
+                    if marker_capped
+                    else _removed_severity(section_name)
+                )
+            )
+
+            if verdict == _VERDICT_UNVERIFIED:
                 # Checked FIRST, ahead of every arm below, because all of them
-                # key on a DIFFERENCE and neither of these cases is one. The
+                # key on a DIFFERENCE and none of these cases is one. The
                 # unmeasured case is two sides that are EQUAL — same probe key,
                 # same failure reason, no delta, a report that says "in sync"
                 # about an environment neither box looked at. The incomparable
                 # case is the mirror: two digests taken over different
                 # environments, whose difference the ``changed`` arm would
                 # publish as drift no apply can clear, and whose EQUALITY would
-                # be no more meaningful. Both also have to win over ``changed``
-                # when the sides disagree — the headline is not "these values
-                # differ", it is "this pair cannot answer".
+                # be no more meaningful. The one-sided case is the third: a
+                # measurement absent because that box never measured, which the
+                # ``removed`` arm would publish as "you are missing this" at
+                # ``critical``. All three have to win over ``changed`` when the
+                # sides disagree — the headline is not "these values differ", it
+                # is "this pair cannot answer".
                 deltas.append(
                     KeyDelta(
                         key=key,
@@ -537,11 +773,29 @@ def diff_envelopes(
                         expected=expected,
                         actual=actual_val,
                         severity=_UNVERIFIED_INVENTORY_SEVERITY,
-                        derived=False,
+                        derived=derived,
                         observation_only=observation_only,
                     )
                 )
                 has_unverified_inventory = True
+            elif verdict == _VERDICT_SKEW:
+                # One capture predates the whole inventory family. Reported as
+                # the information gap it is (``unknown`` at ``info``, excluded
+                # from ``in_sync``) rather than as six ``removed`` findings
+                # against a runner that was never asked the question. See
+                # ``_participates_in_inventory`` for the rollout reasoning and
+                # the residual it accepts.
+                deltas.append(
+                    KeyDelta(
+                        key=key,
+                        status="unknown",
+                        expected=expected,
+                        actual=actual_val,
+                        severity="info",
+                        derived=derived,
+                        observation_only=observation_only,
+                    )
+                )
             elif unmeasured_on_actual or unmeasured_on_canon:
                 # "We could not measure this" is not "you are missing this".
                 # Always "info": this is an information gap, not confirmed
@@ -568,9 +822,7 @@ def diff_envelopes(
                         status="removed",
                         expected=expected,
                         actual=None,
-                        severity=(
-                            "info" if derived else _removed_severity(section_name)
-                        ),
+                        severity=removed_sev,
                         derived=derived,
                         observation_only=observation_only,
                     )
@@ -583,7 +835,7 @@ def diff_envelopes(
                         status="added",
                         expected=None,
                         actual=actual_val,
-                        severity="info" if derived else base_sev,
+                        severity=change_sev,
                         derived=derived,
                         observation_only=observation_only,
                     )
@@ -595,7 +847,7 @@ def diff_envelopes(
                         status="changed",
                         expected=expected,
                         actual=actual_val,
-                        severity="info" if derived else base_sev,
+                        severity=change_sev,
                         derived=derived,
                         observation_only=observation_only,
                     )
