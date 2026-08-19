@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "base_sha": "308a7b84590fc49a87055bca2ec9372ca50b0580",
+  "ours_sha": "7a900a62034b4ee5754b099de5db1b5e17d384b4",
+  "theirs_sha": "308a7b84590fc49a87055bca2ec9372ca50b0580",
+  "entries": [
+    {
+      "path": "frontend/src/components/cloud-extensions-boot.registration.test.tsx",
+      "base_oid": "275dd3face101944e8965cf276bcfb1b4d529e02",
+      "ours_oid": "2470f2e600d978ca0fe0d508a25db10911372758",
+      "theirs_oid": "9f3a0899d5014b7da254f0e124a0001a13fc64b2",
+      "base_path": "frontend/src/components/cloud-extensions-boot.registration.test.tsx.base",
+      "ours_path": "frontend/src/components/cloud-extensions-boot.registration.test.tsx.ours",
+      "theirs_path": "frontend/src/components/cloud-extensions-boot.registration.test.tsx.theirs",
+      "hunks": [
+        "<<<<<<< HEAD\n      for (const name of CLOUD_SERVICES) {\n        expect(slots.getService(name), `service slot ${name}`).toBeDefined();\n      }\n      for (const name of CLOUD_COMPONENTS) {\n        expect(slots.getComponent(name), `component slot ${name}`).toBeDefined();\n      }\n=======\n      expect(slots.getService(\"billingService\")).toBeDefined();\n      expect(slots.getService(\"organizationService\")).toBeDefined();\n\n      // All SIX registered component slots, not the four this file first\n      // covered. `betaBanner` and `subscriptionBadge` arrived later\n      // (cloud-control `ecaa460`) and are precisely the two whose absence\n      // from the live site sent someone looking, and so found the loader\n      // dead — a guard that does not cover them would have stayed green\n      // through the exact failure it exists to catch.\n      expect(slots.getComponent(\"organizationSwitcher\")).toBeDefined();\n      expect(slots.getComponent(\"createOrganizationDialog\")).toBeDefined();\n      expect(slots.getComponent(\"teamMemberList\")).toBeDefined();\n      expect(slots.getComponent(\"inviteMemberDialog\")).toBeDefined();\n      expect(slots.getComponent(\"betaBanner\")).toBeDefined();\n      expect(slots.getComponent(\"subscriptionBadge\")).toBeDefined();\n\n      // Routes and nav are registered by the same one `registerCloudExtensions`\n      // call, but they are a separate consumer path — nothing reads them\n      // through `getComponent`, so a regression that emptied them would not\n      // show up in any assertion above. Asserting non-empty rather than an\n      // exact count keeps this a liveness guard: cloud-control adding a route\n      // is not a qontinui-web regression.\n      const registry = slots.getSlots();\n      expect(registry.appRoutes.length).toBeGreaterThan(0);\n      expect(registry.marketingRoutes.length).toBeGreaterThan(0);\n      expect(registry.navItems.length).toBeGreaterThan(0);\n>>>>>>> d94b7f44 (feat(deploy): build qontinui.io as the composed cloud shape, or fail)\n",
+        "<<<<<<< HEAD\n      for (const name of CLOUD_SERVICES) {\n        expect(slots.getService(name), `service slot ${name}`).toBeUndefined();\n      }\n      for (const name of CLOUD_COMPONENTS) {\n        expect(\n          slots.getComponent(name),\n          `component slot ${name}`\n        ).toBeUndefined();\n      }\n=======\n      expect(slots.getService(\"billingService\")).toBeUndefined();\n      expect(slots.getComponent(\"organizationSwitcher\")).toBeUndefined();\n      expect(slots.getSlots().services.size).toBe(0);\n      expect(slots.getSlots().components.size).toBe(0);\n      expect(slots.getSlots().appRoutes).toHaveLength(0);\n      expect(slots.getSlots().marketingRoutes).toHaveLength(0);\n      expect(slots.getSlots().navItems).toHaveLength(0);\n>>>>>>> d94b7f44 (feat(deploy): build qontinui.io as the composed cloud shape, or fail)\n"
+      ]
+    }
+  ]
+}
