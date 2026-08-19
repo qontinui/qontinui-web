@@ -26,7 +26,14 @@ repos:
 
       - id: tsc-typecheck
         name: TypeScript type check (frontend)
-        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        # `npm run type-check`, NOT a bare `npx tsc --noEmit`: the script
+        # points tsc at tsconfig.typecheck.json, which is the only config
+        # carrying the `@cloud/*` paths mapping. Next reads tsconfig.json and
+        # feeds its paths to webpack, so `@cloud/*` deliberately cannot live
+        # there (see tsconfig.typecheck.json's header). A bare tsc therefore
+        # fails to resolve every route shim. Keep this in step with
+        # frontend-ci.yml, which runs the same script in both build shapes.
+        entry: bash -c 'cd frontend && npm run type-check'
         language: system
         pass_filenames: false
         files: ^frontend/.*\.(ts|tsx)$
