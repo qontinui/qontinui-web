@@ -17,9 +17,15 @@
  * value-free so webpack tree-shakes it to nothing and no cloud-control
  * chunk appears in the OSS client bundle.
  *
- * This directory mirrors `qontinui-cloud-control/frontend/src/` one file at
- * a time; Phase 1b of the route-mounting plan extends it with a `@cloud`
- * alias and per-route stubs that call `notFound()`.
+ * This file covers the PACKAGE specifier. The directory around it covers the
+ * MODULE specifiers: it mirrors `qontinui-cloud-control/frontend/src/` path
+ * for path, and `@cloud/*` resolves here in the OSS shape and into the real
+ * package in the composed one (`next.config.mjs`, `vitest.config.ts`,
+ * `tsconfig.typecheck.json`). Every mirrored route module default-exports a
+ * component that calls `notFound()`, except the two paths OSS already served
+ * — `routes/organizations/page.tsx` and `routes/admin/page.tsx` — which keep
+ * their existing redirects. `cloud-route-shims.test.ts` holds the mirror and
+ * the `src/app/` shims to cloud-control's `appRoutes` inventory.
  */
 
 export {};
