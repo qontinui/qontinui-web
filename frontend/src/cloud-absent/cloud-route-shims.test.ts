@@ -367,7 +367,8 @@ describe("cloud route shims", () => {
         );
       }
     },
-    // Eleven dynamic imports through the alias, each transformed on demand.
+    // One dynamic import per shim through the alias, each transformed on
+    // demand.
     // ~12s observed; the file-wide 20s default is too close to it.
     60_000
   );

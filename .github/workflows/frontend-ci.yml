@@ -42,8 +42,8 @@ jobs:
       # alias is declared. That mapping cannot live in `tsconfig.json` —
       # Next feeds tsconfig `paths` to webpack via `JsConfigPathsPlugin`,
       # which would then override the alias and resolve every composed cloud
-      # build back to the OSS stubs. A bare `tsc` here fails on all eleven
-      # route shims. See frontend/tsconfig.typecheck.json.
+      # build back to the OSS stubs. A bare `tsc` here fails on every route
+      # shim. See frontend/tsconfig.typecheck.json.
       - name: TypeScript check
         working-directory: ./frontend
         run: npm run type-check
