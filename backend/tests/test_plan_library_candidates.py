@@ -1436,3 +1436,348 @@ class TestUnknownIsNotAnObservation:
         assert link["linked_prs_state"] == "unavailable"
         assert link["linked_prs"] == []
         assert "shape" in link["unavailable_reason"]
+
+    async def test_a_degraded_merged_predicate_on_the_INLINE_device_path(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The half that actually matters, and the half that was untested.
+
+        A DEVICE caller short-circuits on the citations coord attaches to the
+        by-slug payload and never makes the sub-resource hop — so a guard that
+        only reads ``merged_degraded_reason`` off the sub-resource protects
+        nobody on this path, and this is the higher-stakes consumer: an agent
+        reading every ff-landed PR as "unmerged" during a degraded window is
+        exactly the wrong answer for the caller most likely to act on it.
+
+        coord emits the field on the by-slug response on the SAME terms as on
+        the sub-resource — same name, same body, present only when degraded —
+        so one predicate serves both.
+        """
+        wu = _slug("wu-inline-degraded")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("inline-degraded"),
+            work_unit_slug=wu,
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            assert not path.endswith("/citations"), f"the second hop ran: {path}"
+            return {
+                "work_unit": {"slug": wu, "status": "shipped"},
+                "recent_history": [],
+                "citations": [
+                    {"repo": "qontinui-coord", "pr_number": 1554, "merged": False},
+                    {"repo": "qontinui-web", "pr_number": 1021, "merged": True},
+                ],
+                "merged_degraded_reason": {
+                    "error": "merged_predicate_degraded",
+                    "missing_column": "merge_commit_sha",
+                    "message": "a merged: false on these rows is UNKNOWN.",
+                },
+            }
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert fake.await_count == 1, "the inline citations were not used"
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        # The LIST is still a real answer — the caveat is per row.
+        assert link["linked_prs_state"] == "available"
+        by_number = {p["pr_number"]: p for p in link["linked_prs"]}
+        assert by_number[1554]["state"] == "unknown", (
+            "a degraded `merged: false` reached a DEVICE caller as the fact "
+            "'unmerged' — the inline path skipped the guard"
+        )
+        assert by_number[1554]["merged"] is None
+        # A `true` is unaffected: the degraded arm narrows the disjunction, so
+        # it can only produce false NEGATIVES.
+        assert by_number[1021]["state"] == "merged"
+        assert by_number[1021]["merged"] is True
+
+    async def test_the_inline_path_without_the_flag_keeps_false_an_observation(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The guard must not swallow the normal case on the device path either.
+
+        This is also the compatibility assertion for a coord that has not
+        deployed the by-slug field yet: no field, no caveat, and a ``false``
+        stays the observation it is today.
+        """
+        wu = _slug("wu-inline-plain")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("inline-plain"),
+            work_unit_slug=wu,
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            return {
+                "work_unit": {"slug": wu, "status": "in_progress"},
+                "recent_history": [],
+                "citations": [
+                    {"repo": "qontinui-coord", "pr_number": 1554, "merged": False}
+                ],
+            }
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        pr = row["coord"]["linked_prs"][0]
+        assert pr["state"] == "unmerged"
+        assert pr["merged"] is False
+
+
+class TestCoordErrorBodiesDoNotEgress:
+    """``unavailable_reason`` is a breadcrumb, not a pipe for coord's internals.
+
+    The reason built from a coord error becomes ``_CoordProbe.reason`` on a
+    circuit trip, and is then repeated on every remaining row of the page — so
+    anything echoed there leaves this API stickily. coord's generic
+    ``pg_error.to_body()`` carries the anyhow chain and structured Postgres
+    fields, and ``pg.detail`` routinely names ROW VALUES, constraints and
+    tables. Only the identifying fields may ride out.
+    """
+
+    #: A ``pg_error.to_body()``-shaped body: the parts that identify the
+    #: failure, and the parts that must never leave this service.
+    PG_ERROR_BODY = {
+        "error": "db_error",
+        "context": "listing citations for work unit",
+        "chain": "query failed: connection pool: relation lookup",
+        "pg": {
+            "code": "23503",
+            "message": "insert or update violates foreign key constraint",
+            "detail": "Key (tenant_id)=(9f1c2d3e-0000-4444-8888-abcdefabcdef) "
+            "is not present in table tenants.",
+            "constraint": "work_unit_citations_tenant_id_fkey",
+            "table": "work_unit_citations",
+        },
+    }
+
+    async def test_a_pg_error_body_echoes_only_its_identifiers(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("pgleak"),
+            work_unit_slug=_slug("wu-pgleak"),
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=500, detail=json.dumps(self.PG_ERROR_BODY))
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False, "a 500 is still an outage"
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        # Useful: the operator can tell a constraint violation from a missing
+        # relation without opening coord's logs.
+        assert "500" in reason
+        assert "db_error" in reason
+        assert "23503" in reason
+        # Never: row values, constraint/table names, the anyhow chain, or the
+        # free-text ``context``/``message`` — free text is exactly where
+        # Postgres puts the parts that are not safe to forward.
+        for leaked in (
+            "9f1c2d3e",
+            "tenant_id",
+            "work_unit_citations",
+            "connection pool",
+            "foreign key constraint",
+            "listing citations",
+        ):
+            assert leaked not in reason, f"coord internals egressed: {leaked!r}"
+
+    async def test_a_top_level_pg_code_is_read_too(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """coord puts the SQLSTATE in two different places.
+
+        The hand-rolled ``citation_surface_unavailable`` body carries
+        ``pg_code`` at the top level; ``pg_error.to_body()`` nests it at
+        ``pg.code``. Reading only one would drop the field that decides between
+        "wait for the migration" and "page someone".
+        """
+        wu = _slug("wu-topcode")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("topcode"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail=json.dumps(
+                        {
+                            "error": "citation_surface_unavailable",
+                            "pg_code": "42P01",
+                            "message": "retry once the alembic migration applied.",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        reason = row["coord"]["unavailable_reason"]
+        assert "citation_surface_unavailable" in reason
+        assert "42P01" in reason
+        assert "alembic" not in reason, (
+            "coord's free-text `message` was forwarded — the whitelist is "
+            "the structured identifiers only"
+        )
+
+    async def test_a_503_that_merely_QUOTES_the_marker_still_trips(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The carve-out matches coord's declared error, not any mention of it.
+
+        A substring test over the raw body is satisfied by a body that only
+        NAMES the code — coord's Postgres error text quoting the failing query,
+        for instance. That is a genuine coord failure wearing the marker's
+        words, and reading it as "coord answered" would leave
+        ``coord_available`` true through it.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("quoted"),
+                work_unit_slug=_slug("wu-quoted"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail=json.dumps(
+                        {
+                            "error": "db_error",
+                            "pg": {
+                                "code": "42601",
+                                "message": "syntax error at or near "
+                                "citation_surface_unavailable",
+                            },
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        assert resp.json()["coord_available"] is False, (
+            "a 503 that merely QUOTED coord's marker was read as coord "
+            "answering — the carve-out must match the declared `error` field"
+        )
+
+    async def test_an_unparseable_body_is_described_never_echoed(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The whitelist has no fallback that forwards free text.
+
+        A body with no structured identifiers has nothing to lift, and capping
+        it would not make it safe — whatever a body carries, it carries in its
+        first characters. So it is described by its size, not excerpted. The
+        status code beside it already says what an operator needs.
+        """
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("alb"),
+            work_unit_slug=_slug("wu-alb"),
+        )
+
+        blob = "<html><body>502 Bad Gateway - no healthy upstream. " + "x" * 500
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=HTTPException(status_code=502, detail=blob)),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        body = resp.json()
+        assert body["coord_available"] is False
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert "502" in reason
+        assert "no healthy upstream" not in reason, "the raw body was echoed"
+        assert "<html>" not in reason
+        assert "bytes" in reason, "the size breadcrumb is gone too"
+
+    async def test_an_inline_citations_error_echoes_only_its_identifiers(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The same discipline on the INLINE error, which the device path takes.
+
+        ``citations_error`` is coord's own error object embedded in a 200, so
+        it never passes through the status-code branch — and an object whose
+        fields this read does not recognise must be DESCRIBED, not dumped.
+        ``pg_error.to_body()`` with structured detail and no ``message`` is
+        exactly that object.
+        """
+        wu = _slug("wu-inline-pg")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("inline-pg"), work_unit_slug=wu
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            return {
+                "work_unit": {"slug": wu, "status": "vetted"},
+                "citations": [],
+                "citations_error": {
+                    "pg": {
+                        "code": "23503",
+                        "detail": "Key (tenant_id)=(9f1c2d3e-0000-4444-8888-"
+                        "abcdefabcdef) is not present in table tenants.",
+                        "constraint": "work_unit_citations_tenant_id_fkey",
+                        "table": "work_unit_citations",
+                    }
+                },
+            }
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        reason = link["unavailable_reason"]
+        assert "23503" in reason
+        for leaked in ("9f1c2d3e", "work_unit_citations", "not present in table"):
+            assert leaked not in reason, f"coord internals egressed: {leaked!r}"
