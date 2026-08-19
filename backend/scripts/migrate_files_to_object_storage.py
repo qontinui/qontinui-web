@@ -24,13 +24,14 @@ import structlog
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.project_assets import ProjectScreenshot
 from app.models.user import User
 from app.services.object_storage import object_storage
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
 
@@ -265,9 +266,9 @@ class FileMigrator:
                         project_id=str(screenshot.project_id),
                     )
 
-                    # Build the new S3 key following the pattern: screenshots/{user_id}/{project_id}/{uuid}.{ext}
-                    new_s3_key = f"screenshots/{screenshot.user_id}/{screenshot.project_id}/{screenshot.id}{ext}"
-
+                    # `prefix` + generate_unique_name=False yields the key
+                    # pattern screenshots/{user_id}/{project_id}/{uuid}.{ext};
+                    # the resulting key comes back as `storage_key` below.
                     storage_key, new_url = object_storage.upload_from_path(
                         file_path=file_path,
                         prefix=f"screenshots/{screenshot.user_id}/{screenshot.project_id}",
