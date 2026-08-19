@@ -14,12 +14,16 @@ to change these constants too, deliberately.
 
 from __future__ import annotations
 
+import ast
 import json
 import math
+from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
 from tests.memory_recall import fixtures as fx
+from tests.memory_recall import holdout as ho
 from tests.memory_recall.scorer import (
     CREDIT_Z_THRESHOLD,
     LOWER_IS_BETTER_METRICS,
@@ -34,6 +38,13 @@ from tests.memory_recall.scorer import (
     reciprocal_rank,
     score_case,
     token_cost,
+)
+from tests.memory_recall.wiring import (
+    MARKER_SEMANTICS,
+    MEMORY_RECALL_COMPONENTS,
+    NOT_WIRED,
+    WIRED,
+    WiringLedger,
 )
 
 # The 5-case toy set the plan names. Rankings are hand-built so every
@@ -748,3 +759,431 @@ class TestResolveKeys:
         # Dropping them would let a ranker return arbitrary junk for free.
         out = fx.resolve_keys(["id-1", "stranger"], {"id-1": "alpha"})
         assert out == ["alpha", "unseeded:stranger"]
+
+
+# ---------------------------------------------------------------------------
+# Plan 2026-08-11-coord-ambient-recall-and-efficacy-statistical-rigor, Phase 2
+# ---------------------------------------------------------------------------
+
+#: The DB harness, read as TEXT rather than imported. These tests assert a
+#: property of that module's SOURCE — that no holdout number is wired into
+#: the tuning path — and importing it would drag in the app, FastAPI and a
+#: database URL to check something the parser can see for itself.
+_DRIVER = Path(__file__).resolve().parent / "test_memory_recall_eval_db.py"
+
+#: The workflow that renders the PR comment. The last link in the chain: a
+#: number that never enters the report still cannot be shown if the comment
+#: step has no way to read it.
+_WORKFLOW = (
+    Path(__file__).resolve().parents[2]
+    / ".github"
+    / "workflows"
+    / "memory-recall-eval.yml"
+)
+
+
+def _driver_source() -> str:
+    return _DRIVER.read_text(encoding="utf-8")
+
+
+def _leaves(value: object) -> list[object]:
+    """Every scalar in a nested report block, for leaf-TYPE assertions."""
+    if isinstance(value, dict):
+        return [leaf for item in value.values() for leaf in _leaves(item)]
+    if isinstance(value, (list, tuple)):
+        return [leaf for item in value for leaf in _leaves(item)]
+    return [value]
+
+
+class TestHoldoutSplit:
+    """The split must be a partition, stratified, and identical everywhere."""
+
+    def test_train_and_holdout_partition_the_input(self) -> None:
+        cases = [(f"case-{i:02d}", "only") for i in range(1, 11)]
+        split = ho.split_cases(cases)
+        assert split.train_set | split.holdout_set == {cid for cid, _ in cases}
+        assert not (split.train_set & split.holdout_set)
+        assert split.train_count + split.holdout_count == len(cases)
+
+    def test_the_draw_is_pinned_not_merely_reproducible(self) -> None:
+        """A golden vector, so a silent change to the algorithm is loud.
+
+        ``split_cases`` being self-consistent within one process proves
+        nothing — ``hash()`` is self-consistent too and still differs
+        between processes. This pins the ACTUAL draw for a fixed input, so
+        reordering the sort key, dropping the ``SPLIT_VERSION`` salt, or
+        switching hash function fails here rather than silently redrawing a
+        train/test boundary that recorded numbers depend on.
+        """
+        cases = [(f"case-{i:02d}", "only") for i in range(1, 11)]
+        assert ho.split_cases(cases).holdout == ("case-07", "case-09")
+
+    def test_repeated_calls_agree(self) -> None:
+        cases = [(f"case-{i:02d}", "only") for i in range(1, 11)]
+        assert ho.split_cases(cases) == ho.split_cases(cases)
+
+    def test_input_order_does_not_move_a_case_across_the_boundary(self) -> None:
+        """The draw is keyed on the case id, never on its position."""
+        cases = [(f"case-{i:02d}", "only") for i in range(1, 11)]
+        forward = ho.split_cases(cases)
+        backward = ho.split_cases(list(reversed(cases)))
+        assert forward.holdout_set == backward.holdout_set
+
+    def test_stratification_keeps_every_class_on_the_train_side(self) -> None:
+        cases = [(f"a-{i}", "alpha") for i in range(6)] + [
+            (f"b-{i}", "beta") for i in range(6)
+        ]
+        split = ho.split_cases(cases)
+        train_classes = {
+            case_class for cid, case_class in cases if cid in split.train_set
+        }
+        assert train_classes == {"alpha", "beta"}
+
+    def test_a_class_smaller_than_the_stride_is_never_sealed(self) -> None:
+        """The conservative direction: a tiny class stays fully measurable."""
+        cases = [(f"a-{i}", "alpha") for i in range(ho.HOLDOUT_EVERY - 1)]
+        assert ho.split_cases(cases).holdout == ()
+
+    def test_a_duplicate_case_id_is_a_hard_error(self) -> None:
+        with pytest.raises(ValueError, match="more than once"):
+            ho.split_cases([("dup", "alpha"), ("dup", "beta")])
+
+    def test_the_committed_golden_set_splits_usefully(self) -> None:
+        """On the real fixture: a non-empty holdout, no class emptied."""
+        gs = fx.load_golden_set()
+        split = ho.split_cases([(c.case_id, c.case_class) for c in gs.cases])
+        assert split.holdout_count > 0, "nothing sealed — the holdout is vacuous"
+        assert split.train_count > split.holdout_count
+        train_classes = {c.case_class for c in gs.cases if c.case_id in split.train_set}
+        assert train_classes == {c.case_class for c in gs.cases}
+        # Correction pairs are the harness's highest-value assertion, and the
+        # DB suite asserts they are exercised — which needs some on train.
+        assert any(
+            c.correction is not None for c in gs.cases if c.case_id in split.train_set
+        )
+
+
+class TestSealedHoldoutIsUnreachableByConstruction:
+    """Verification item 7 — the tuning path CANNOT read holdout scores.
+
+    Not "does not": every assertion here is about a structural property
+    that would have to be deleted to wire a holdout number through, so a
+    later change that tries fails one of these rather than passing quietly
+    because nobody remembered the convention.
+
+    What is deliberately NOT claimed: that the holdout scores are secret.
+    The cases are committed and the split algorithm is published, so anyone
+    can recompute them. The property is that no code path in this harness
+    carries one to a gate, a verdict, the report, or the PR comment.
+    """
+
+    @staticmethod
+    def _observation(case_id: str = "c1") -> ho.HoldoutObservation:
+        return ho.HoldoutObservation(
+            case_id=case_id,
+            case_class="general",
+            ranked=("alpha", "beta"),
+            relevant=("alpha",),
+            correction=None,
+        )
+
+    def _score(self, directory: Path, case_count: int = 1) -> None:
+        ho.SealedHoldoutRunner(directory).score(
+            arm="fts_only",
+            vector_arm="skipped_no_embedding",
+            observations=[self._observation()],
+            content_bytes={"alpha": 10, "beta": 20},
+            case_count=case_count,
+        )
+
+    def test_score_returns_none(self, tmp_path: Path) -> None:
+        runner = ho.SealedHoldoutRunner(tmp_path)
+        result = runner.score(
+            arm="fts_only",
+            vector_arm="skipped_no_embedding",
+            observations=[self._observation()],
+            content_bytes={"alpha": 10},
+            case_count=1,
+        )
+        assert result is None
+
+    def test_score_is_annotated_as_returning_none(self) -> None:
+        """The annotation, so a return value cannot be added quietly.
+
+        A future ``-> SuiteScore`` is the exact edit this design exists to
+        stop; it fails here as well as at the call site.
+        """
+        hints = get_type_hints(ho.SealedHoldoutRunner.score)
+        assert hints["return"] is type(None)
+
+    def test_the_runner_has_exactly_one_public_member(self) -> None:
+        runner = ho.SealedHoldoutRunner(Path("."))
+        public = {name for name in dir(runner) if not name.startswith("_")}
+        assert public == {"score"}, (
+            f"the sealed runner grew a public member: {sorted(public)}. "
+            "Anything besides `score` is a candidate reader."
+        )
+
+    def test_the_runner_cannot_stash_a_result(self, tmp_path: Path) -> None:
+        """``__slots__`` is the mechanism: there is nowhere to put one."""
+        runner = ho.SealedHoldoutRunner(tmp_path)
+        with pytest.raises(AttributeError):
+            runner.last_suite = "anything"  # type: ignore[attr-defined]
+
+    def test_the_module_exposes_no_reader(self) -> None:
+        defined = {
+            name
+            for name, value in vars(ho).items()
+            if not name.startswith("_")
+            and (isinstance(value, type) or callable(value))
+            and getattr(value, "__module__", None) == ho.__name__
+        }
+        assert defined == ho.PUBLIC_CALLABLES, (
+            "the holdout module's callable surface changed: "
+            f"{sorted(defined ^ ho.PUBLIC_CALLABLES)}. A new function here is "
+            "the natural place to accidentally add a way to read the scores "
+            "back — if it really is write-only, add it to PUBLIC_CALLABLES "
+            "deliberately."
+        )
+
+    def test_the_sealed_write_actually_happens(self, tmp_path: Path) -> None:
+        """Positive control: the seal must not be vacuously satisfied.
+
+        A runner that computed nothing would pass every assertion above.
+        Reading the artifact HERE is legitimate — this test emits no report
+        and gates nothing; it is the audit path the sealed file exists for.
+        """
+        self._score(tmp_path)
+        written = list(tmp_path.glob("holdout-*.json"))
+        assert len(written) == 1
+        payload = json.loads(written[0].read_text(encoding="utf-8"))
+        assert payload["arm"] == "fts_only"
+        assert payload["case_count"] == 1
+        assert payload["recall_at_10"] == 1.0
+        assert [c["case_id"] for c in payload["cases"]] == ["c1"]
+        assert "SEALED" in payload["_warning"]
+
+    def test_the_holdout_keeps_its_own_denominator(self, tmp_path: Path) -> None:
+        """Phase 1's explicit-denominator discipline, applied to the seal.
+
+        One scored case out of a declared three must report a third of the
+        score, not a full one over a shrunken divisor.
+        """
+        self._score(tmp_path, case_count=3)
+        payload = json.loads(
+            (tmp_path / "holdout-fts_only.json").read_text(encoding="utf-8")
+        )
+        assert payload["case_count"] == 3
+        assert payload["missing_cases"] == 2
+        assert payload["recall_at_10"] == pytest.approx(1 / 3)
+
+    def test_the_split_report_carries_no_score(self) -> None:
+        """The only holdout-derived block in the report is number-free.
+
+        Every metric this harness produces is a float, so "no float
+        anywhere in this block" is a mechanical statement of "no score
+        leaked into the report" — and one a leak cannot satisfy.
+        """
+        split = ho.split_cases([(f"case-{i:02d}", "only") for i in range(1, 11)])
+        report = ho.split_report(split)
+        assert not [leaf for leaf in _leaves(report) if isinstance(leaf, float)]
+        assert report["holdout_cases"] == split.holdout_count
+        assert report["holdout_case_ids"] == list(split.holdout)
+
+    def test_the_driver_discards_the_sealed_call(self) -> None:
+        """The call's value is thrown away SYNTACTICALLY, in the parse tree.
+
+        This is the assertion that catches the change the plan warns about:
+        someone adds a return value to ``score()`` and binds it.
+        ``sealed_runner().score(...)`` must remain a bare expression
+        statement — the moment it becomes ``x = ...``, ``return ...`` or an
+        argument to anything, this fails.
+        """
+        source = _driver_source()
+        tree = ast.parse(source)
+        bare_statements = {
+            id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Expr)
+        }
+        sealed_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and "sealed_runner()" in (ast.get_source_segment(source, node.func) or "")
+        ]
+        assert sealed_calls, (
+            "the driver no longer calls the sealed holdout runner at all — "
+            "the holdout is not being scored, which is a silent hole rather "
+            "than a seal"
+        )
+        for call in sealed_calls:
+            assert id(call) in bare_statements, (
+                "a sealed-holdout call is no longer a bare expression "
+                "statement — its return value is being used. `score()` "
+                "returns None by construction; binding it is the leak this "
+                "design exists to prevent."
+            )
+
+    def test_the_driver_never_reads_the_sealed_output(self) -> None:
+        """No read primitive in the driver touches anything holdout-shaped."""
+        source = _driver_source()
+        tree = ast.parse(source)
+        read_primitives = {
+            "open",
+            "read",
+            "read_bytes",
+            "read_text",
+            "readlines",
+            "load",
+            "loads",
+            "iterdir",
+            "glob",
+            "rglob",
+            "listdir",
+            "scandir",
+            "walk",
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute):
+                name = node.func.attr
+            elif isinstance(node.func, ast.Name):
+                name = node.func.id
+            else:
+                continue
+            if name not in read_primitives:
+                continue
+            segment = (ast.get_source_segment(source, node) or "").lower()
+            assert "holdout" not in segment and "sealed" not in segment, (
+                f"the driver reads from the sealed side: {segment!r}. The "
+                "sealed directory is not on any read path it uses, and that "
+                "is the whole property."
+            )
+
+    def test_the_driver_imports_no_reader(self) -> None:
+        """Allowlist the holdout symbols the tuning path may even name."""
+        tree = ast.parse(_driver_source())
+        imported: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").endswith(
+                "memory_recall.holdout"
+            ):
+                imported |= {alias.name for alias in node.names}
+        assert imported, "the driver stopped importing the holdout module"
+        assert imported <= {
+            "CaseSplit",
+            "HoldoutObservation",
+            "SEALED_DIR_ENV",
+            "sealed_runner",
+            "split_cases",
+            "split_report",
+        }, f"the driver imported an unexpected holdout symbol: {sorted(imported)}"
+
+    def test_the_comment_step_reads_only_the_report(self) -> None:
+        """The last link: the PR comment has no path to the sealed file."""
+        workflow = _WORKFLOW.read_text(encoding="utf-8")
+        parts = workflow.split("script: |", 1)
+        assert len(parts) == 2, "the workflow no longer has a github-script body"
+        body = parts[1]
+        assert body.count("readFileSync") == 1, (
+            "the comment step reads more than one file; the only file it may "
+            "read is the eval report"
+        )
+        assert ho.SEALED_DIR_ENV not in body
+        assert "recall-holdout" not in body
+
+
+class TestPerComponentWiringMarker:
+    """Verification item 9 — wiring is per component, and never a zero."""
+
+    def test_every_component_starts_not_wired(self) -> None:
+        ledger = WiringLedger(MEMORY_RECALL_COMPONENTS)
+        assert ledger.not_wired == MEMORY_RECALL_COMPONENTS
+        assert ledger.wired == ()
+
+    def test_only_the_code_that_ran_promotes_a_component(self) -> None:
+        ledger = WiringLedger(("alpha", "beta"))
+        ledger.mark_wired("alpha", "ran")
+        assert ledger.status("alpha") == WIRED
+        assert ledger.status("beta") == NOT_WIRED
+        assert ledger.is_wired("alpha") and not ledger.is_wired("beta")
+
+    def test_a_mixed_run_reports_per_component_not_one_verdict(self) -> None:
+        """The residual §3.3 item 5 asks for, stated as an assertion.
+
+        One arm wired and one not must be readable AS such — the report
+        carries a status per component and no whole-run verdict field that
+        could flatten them back into one colour.
+        """
+        ledger = WiringLedger(MEMORY_RECALL_COMPONENTS)
+        ledger.mark_wired("fts_only", "ran")
+        ledger.mark_wired("paired", "ran")
+        report = ledger.as_report()
+
+        assert report["components"]["fts_only"]["status"] == WIRED
+        assert report["components"]["hybrid"]["status"] == NOT_WIRED
+        assert report["components"]["sealed_holdout"]["status"] == NOT_WIRED
+        assert set(report["wired"]) == {"fts_only", "paired"}
+        assert set(report["not_wired"]) == {"hybrid", "hybrid_link", "sealed_holdout"}
+        # No whole-run verdict key: the block is exactly these four fields,
+        # so nothing can collapse five components back into one colour.
+        assert set(report) == {"components", "wired", "not_wired", "marker_semantics"}
+        assert report["marker_semantics"] == MARKER_SEMANTICS
+
+    def test_a_marker_can_never_be_read_as_a_zero(self) -> None:
+        """The block contains no number at all — the whole point.
+
+        ``not_wired`` means UNKNOWN; a measured zero is a float in an arm's
+        row. Keeping the marker block string-only means the two cannot be
+        confused by a renderer, a jq filter, or a reader skimming the JSON.
+        Booleans are excluded too: ``False`` is one ``+`` away from ``0``.
+        """
+        ledger = WiringLedger(MEMORY_RECALL_COMPONENTS)
+        ledger.mark_wired("hybrid", "ran over 41 train case(s)")
+        found = _leaves(ledger.as_report())
+        assert found, "the wiring block is empty"
+        assert all(isinstance(leaf, str) for leaf in found), (
+            "the wiring block grew a non-string leaf: "
+            f"{[leaf for leaf in found if not isinstance(leaf, str)]}. A number "
+            "here can be read as a measurement, which is exactly what a "
+            "not_wired component does NOT have."
+        )
+
+    def test_an_undeclared_component_is_a_hard_error(self) -> None:
+        """A typo must not invent a lookalike that claims to be wired."""
+        ledger = WiringLedger(("alpha",))
+        with pytest.raises(KeyError, match="undeclared component"):
+            ledger.mark_wired("alhpa")
+        assert ledger.status("alpha") == NOT_WIRED
+
+    def test_duplicate_and_empty_declarations_are_rejected(self) -> None:
+        with pytest.raises(ValueError, match="duplicate"):
+            WiringLedger(("alpha", "alpha"))
+        with pytest.raises(ValueError, match="marks nothing"):
+            WiringLedger(())
+
+    def test_the_driver_marks_every_declared_component(self) -> None:
+        """All five the plan names are promoted somewhere in the harness."""
+        assert set(MEMORY_RECALL_COMPONENTS) == {
+            "fts_only",
+            "hybrid",
+            "hybrid_link",
+            "paired",
+            "sealed_holdout",
+        }
+        tree = ast.parse(_driver_source())
+        marked: set[str] = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "mark_wired"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+            ):
+                marked.add(str(node.args[0].value))
+        # The three arms are marked through the `arm` variable rather than
+        # a literal, so only the two component-specific literals appear.
+        assert {"paired", "sealed_holdout"} <= marked, (
+            f"the driver stopped marking a component explicitly: {sorted(marked)}"
+        )
