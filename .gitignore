@@ -21,7 +21,23 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 poetry.lock
-backend/scripts
+# Keep ad-hoc/local backend scripts out, but NOT the tracked ones.
+# A bare `backend/scripts` ignored the whole directory while 11 scripts in
+# it were tracked, and `git add` on a tracked-but-ignored path exits 1 --
+# which the pre-commit hook's unguarded `git add` turned into "no commit
+# touching backend/scripts/*.py can ever be made". Same shape as the
+# frontend/scripts block below.
+backend/scripts/*
+!backend/scripts/backfill_github_identities.py
+!backend/scripts/dev_local_idp.py
+!backend/scripts/export_openapi.py
+!backend/scripts/export_test_coverage.py
+!backend/scripts/generate_secrets.py
+!backend/scripts/migrate_files_to_object_storage.py
+!backend/scripts/migrate_to_structlog.py
+!backend/scripts/migrate_users_to_uuid.py
+!backend/scripts/setup-elasticache.sh
+!backend/scripts/spec_ci_local_idp.py
 
 # Frontend (Next.js)
 node_modules/
