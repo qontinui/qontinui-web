@@ -86,6 +86,18 @@ Invariants this module is responsible for
    constrains it. The runner does not call it (it logs the route as operator
    guidance on the ambiguous-kind path and leaves it alone), so the narrower
    dependency costs nothing and keeps the correction a human assertion.
+
+8. **Which credential authenticated is load-bearing for the coord hop.** The
+   two routes that read coord (``/candidates`` and ``GET /{id}``) forward the
+   caller's captured bearer VERBATIM, and coord's two door tiers reject each
+   other's credential: its ``/coord/work-units/...`` reads resolve a tenant
+   from a Cognito ``OperatorContext`` (403 ``tenant_not_resolved`` for a device
+   JWT), while its ``/coord/agent-work-units/...`` twins lift the tenant from a
+   verified device JWT (and reject a Cognito bearer). Those two routes
+   therefore depend on :func:`~app.api.deps.get_audit_actor_principal`, which
+   carries WHICH arm authenticated alongside the ``User``, and pass that kind
+   to ``_CoordProbe``. Every other route needs only the ``User`` and keeps
+   :func:`~app.api.deps.get_audit_actor_user`.
 """
 
 import asyncio
@@ -110,7 +122,14 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_active_user, get_async_db, get_audit_actor_user
+from app.api.deps import (
+    ActorKind,
+    ActorPrincipal,
+    current_active_user,
+    get_async_db,
+    get_audit_actor_principal,
+    get_audit_actor_user,
+)
 from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
 from app.crud import work_artifact as crud
 from app.models.user import User
@@ -414,7 +433,38 @@ def _citation_rows(payload: object) -> list[object]:
     return []
 
 
-def _is_transport_failure(http_status: int) -> bool:
+#: Cap on how much of coord's citation-error body is echoed into
+#: ``unavailable_reason``. The field is a human-readable breadcrumb on a list
+#: read, not a log line; coord's messages are prose paragraphs.
+_REASON_MAX_CHARS = 300
+
+
+def _citation_error_text(raw: object) -> str:
+    """Render coord's ``citations_error`` object as one reason line.
+
+    coord emits a structured body — ``{"error": "citation_surface_unavailable",
+    "pg_code": "42P01", "message": …}`` for the pre-migration window, or a
+    ``pg_error`` context object — and this read must survive either without
+    500ing, so the shape is probed rather than assumed.
+    """
+    text: str
+    if isinstance(raw, dict):
+        parts = [
+            str(raw[key])
+            for key in ("error", "message")
+            if isinstance(raw.get(key), str) and raw.get(key)
+        ]
+        text = ": ".join(parts) if parts else str(raw)
+    else:
+        text = str(raw)
+    if len(text) > _REASON_MAX_CHARS:
+        text = text[: _REASON_MAX_CHARS - 1] + "…"
+    return f"coord could not read citations: {text}"
+
+
+def _is_transport_failure(
+    http_status: int, *, service_unavailable_is_an_answer: bool = False
+) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
     Only 5xx qualifies, and that covers both sources: the proxy's own
@@ -428,7 +478,27 @@ def _is_transport_failure(http_status: int) -> bool:
     *answering about one route*, and none of them predicts anything about the
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
+
+    ``service_unavailable_is_an_answer`` — the ONE typed exception, and it is
+    hop-scoped rather than global. coord's citation read answers ``503`` for
+    ``SurfaceUnavailable``: *this unit is yours, and the relation backing the
+    citation join is absent* (``42P01``, a pre-migration window). That is coord
+    ANSWERING about one sub-resource — the same class as the 401/403/405 above,
+    one status band up — so it must land as a per-slug ``unavailable`` and must
+    NOT trip the page-wide circuit, or a schema-migration window would report
+    the whole of coord as down and blank the work-unit half of every remaining
+    row (which reads fine).
+
+    Why it is safe to make that exception on the citations hop specifically:
+    that hop is only ever reached after the PRESENCE hop on the same slug
+    SUCCEEDED, which is direct evidence coord is up. A 503 from a load balancer
+    with no healthy target cannot reach this branch — it fails the presence hop
+    first, where 503 keeps its transport-class reading and trips the circuit as
+    before. So the exception is granted exactly where a 503 is provably coord's
+    own answer, and nowhere else.
     """
+    if http_status == 503 and service_unavailable_is_an_answer:
+        return False
     return http_status >= 500
 
 
@@ -448,10 +518,42 @@ class _CoordProbe:
 
     ``degraded`` is sticky and is what the response's ``coord_available: false``
     reports.
+
+    ``actor_kind`` picks WHICH of coord's two door tiers the reads go to, and
+    it is not a preference — each tier rejects the other's credential. This
+    probe forwards the caller's captured bearer verbatim
+    (``_proxy_coord_get(..., forward_bearer=True)``), and that bearer is a
+    Cognito user JWT for the operator page but the runner's coord DEVICE JWT
+    for a request that arrived through ``mcp/plan_library.rs``. coord's
+    ``/coord/work-units/...`` reads resolve their tenant from an
+    ``OperatorContext`` and answer a device JWT with 403 ``tenant_not_resolved``;
+    its ``/coord/agent-work-units/...`` twins lift the tenant from the verified
+    device JWT and reject a Cognito bearer. Sending every caller to one tier is
+    exactly why a runner-originated ``/candidates`` read reported
+    ``unavailable`` for every linked row.
+
+    The kind comes from the DEPENDENCY that authenticated the request
+    (:class:`~app.api.deps.ActorPrincipal`), never from inspecting the token
+    here: the dependency has already decided which arm answered, and a second
+    guess in the probe could only drift from the first. Nor is it discovered by
+    trying the operator door and falling back on 403 — a 403 is also what a
+    genuine cross-tenant read returns, so that fallback would paper over a
+    tenant-boundary error, and it doubles the round-trips on the hot path.
     """
 
-    def __init__(self, tenant_id: UUID | None) -> None:
+    def __init__(
+        self, tenant_id: UUID | None, *, actor_kind: ActorKind = "operator"
+    ) -> None:
         self.tenant_id = tenant_id
+        self.actor_kind: ActorKind = actor_kind
+        #: The coord door tier this probe's reads go to. Both hops use it —
+        #: the presence read is on the same operator/agent split as the
+        #: citations read, so routing only the citations hop would leave a
+        #: device caller reading ``work_unit_state: "unavailable"`` on every
+        #: row: the same bug, one level up.
+        self._coord_base = (
+            "/coord/agent-work-units" if actor_kind == "device" else "/coord/work-units"
+        )
         self.degraded = False
         self.reason: str | None = None
         self._gate = asyncio.Semaphore(_COORD_FANOUT)
@@ -461,7 +563,9 @@ class _CoordProbe:
         if self.reason is None:
             self.reason = reason
 
-    async def _get(self, path: str) -> tuple[object | None, int | None, str | None]:
+    async def _get(
+        self, path: str, *, service_unavailable_is_an_answer: bool = False
+    ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
         ``http_status`` is coord's status when it answered with one (404 is a
@@ -472,13 +576,19 @@ class _CoordProbe:
         :func:`_is_transport_failure`. A 4xx is coord answering *about this
         route*, which says nothing about whether the next slug's read will
         work, and tripping on one made ``coord_available`` permanently false:
-        the citations hop is registered on coord as ``post``/``delete`` behind
-        a ``require_jwt`` layer, so a GET there NEVER 404s — it 401/403s (the
-        layer rejects) or 405s (method mismatch). That is the same reasoning
-        :meth:`link_for` already applies to the citations hop itself ("absence
-        of a route is not evidence of an absence of PRs"); the circuit obeys
-        it too, or the one flag whose job is signalling a real coord outage
-        can never do so.
+        against a coord that has not yet shipped the citation GET, a read
+        there NEVER 404s — it 401/403s (the ``require_jwt`` layer in front of
+        the ``post``/``delete`` registration rejects the forwarded bearer) or
+        405s (method mismatch). That is the same reasoning :meth:`link_for`
+        already applies to the citations hop itself ("absence of a route is
+        not evidence of an absence of PRs"); the circuit obeys it too, or the
+        one flag whose job is signalling a real coord outage can never do so.
+
+        ``service_unavailable_is_an_answer`` forwards to
+        :func:`_is_transport_failure` and extends that same reading to coord's
+        typed ``503 SurfaceUnavailable`` on the citations sub-resource. It is
+        passed by the citations hop ONLY — see that function for why the hop
+        ordering is what makes the exception safe.
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -499,7 +609,10 @@ class _CoordProbe:
                 )
             except HTTPException as exc:
                 detail = f"coord returned {exc.status_code}"
-                if _is_transport_failure(exc.status_code):
+                if _is_transport_failure(
+                    exc.status_code,
+                    service_unavailable_is_an_answer=service_unavailable_is_an_answer,
+                ):
                     self._trip(detail)
                 return None, exc.status_code, detail
             except Exception as exc:  # noqa: BLE001 — degrade, never 500
@@ -508,42 +621,72 @@ class _CoordProbe:
                 return None, None, detail
         return payload, 200, None
 
+    @staticmethod
+    def _inline_citations(payload: object) -> tuple[list[object], str | None] | None:
+        """Citations coord already attached to the PRESENCE payload, if any.
+
+        coord's AGENT by-slug read returns ``citations`` (and, when the read
+        did not happen, ``citations_error``) inline; its operator twin
+        deliberately does not, keeping the dashboard payload lean. So this is
+        an opportunistic short-circuit, not a contract: ``None`` means the
+        payload carried no citation key at all and the caller must make the
+        second hop.
+
+        Otherwise ``(rows, error)``. A non-``None`` ``error`` means coord told
+        us the read did not happen — ``citations_error`` sits beside an EMPTY
+        list precisely so that list cannot be mistaken for an observation of
+        zero, and flattening the two would destroy the one property this whole
+        block exists to protect.
+        """
+        if not isinstance(payload, dict) or "citations" not in payload:
+            return None
+        raw = payload.get("citations")
+        rows = list(raw) if isinstance(raw, list) else []
+        error = payload.get("citations_error")
+        return rows, None if error is None else _citation_error_text(error)
+
     async def link_for(self, slug: str) -> CandidateCoordLink:
         """Resolve one work-unit slug into its coord block.
 
-        Two hops, both over coord's HTTP API:
+        Two hops, both over coord's HTTP API, and both on the door tier the
+        CALLER's credential can actually open (``self._coord_base`` —
+        ``/coord/work-units`` for an operator, ``/coord/agent-work-units`` for
+        a device; see the class docstring for why that is not a preference):
 
-        1. ``GET /coord/work-units/{slug}`` — presence. A 404 here is the
-           NORMAL dangling case (the link is FK-less by design), and it also
-           settles the PR question: citations hang off the work unit by a hard
-           FK, so no unit really does mean no citations.
-        2. ``GET /coord/work-units/{slug}/citations`` — the PR citations, with
-           the live merged state coord's own ``shipped`` predicate reduces
-           (coord projects each row to
+        1. ``{base}/{slug}`` — presence. A 404 here is the NORMAL dangling
+           case (the link is FK-less by design), and it also settles the PR
+           question: citations hang off the work unit by a hard FK, so no unit
+           really does mean no citations.
+        2. ``{base}/{slug}/citations`` — the PR citations, with the live
+           merged state coord's own ``shipped`` predicate reduces (coord
+           projects each row to
            ``{repo, pr_number, merged, branch, cited_at, sources}``).
 
-        ⚠️ **Known gap, verified 2026-08-15.** Coord registers only ``post``
-        and ``delete`` on that second path; the read half exists today ONLY as
-        the ``coord_work_unit_list_citations`` MCP tool, with no REST twin. So
-        against the currently-deployed coord this hop never succeeds — the
-        ``require_jwt`` layer in front of the path rejects a forwarded Cognito
-        bearer with 401/403, and a credential that clears the layer gets a 405
-        for the method — and ``linked_prs_state`` reads
-        ``"unavailable"``. (It is specifically NOT a 404, which is why the
-        page-wide circuit must not treat "not 404" as "coord is down".)
-        That is the correct
-        honest answer — the alternative (reporting an empty PR list) would
-        assert a fact this read has not established, and the plan is explicit
-        that an unavailable coord must not read as "no PRs". Adding the GET is
-        a coord-side follow-up; nothing here changes when it lands, the field
-        simply starts reading ``"available"``.
+        Hop 2 is SKIPPED when hop 1 already answered it: the agent by-slug read
+        carries its citations inline (:meth:`_inline_citations`), so a
+        device-principal page pays one round-trip per slug instead of two —
+        and works against a coord that has not yet shipped the dedicated
+        sub-resource.
+
+        coord's three-state answer on the citations sub-resource maps straight
+        onto this block. ``200`` → ``available``, and an empty list there IS an
+        observation of zero. ``404`` → the unit is not ours, or not there.
+        ``503`` ``SurfaceUnavailable`` (the citation relation is unreadable) →
+        ``unavailable`` for THIS slug and, deliberately, nothing at all about
+        coord's health: it does not trip the page-wide circuit, because coord
+        answering about one sub-resource is coord answering (see
+        :func:`_is_transport_failure`).
+
+        Absence of a route, of permission, or of a readable relation is never
+        evidence of an absence of PRs. Reporting an empty PR list in any of
+        those cases would assert a fact this read has not established.
 
         Reading the citations out of coord's Postgres instead is NOT the
         workaround: the web→coord read boundary is closed and
         ``tests/test_coord_schema_boundary_guard.py`` enforces it.
         """
         encoded = quote(slug, safe="")
-        payload, http_status, error = await self._get(f"/coord/work-units/{encoded}")
+        payload, http_status, error = await self._get(f"{self._coord_base}/{encoded}")
 
         if http_status == 404:
             return CandidateCoordLink(
@@ -573,18 +716,42 @@ class _CoordProbe:
             ),
         )
 
+        inline = self._inline_citations(payload)
+        if inline is not None:
+            rows, inline_error = inline
+            if inline_error is not None:
+                link.linked_prs_state = "unavailable"
+                link.unavailable_reason = inline_error
+                return link
+            link.linked_prs_state = "available"
+            link.linked_prs = [_coord_pr(row) for row in rows]
+            return link
+
         cites, cite_status, cite_error = await self._get(
-            f"/coord/work-units/{encoded}/citations"
+            f"{self._coord_base}/{encoded}/citations",
+            # coord's typed 503 on THIS sub-resource is an answer about the
+            # citation relation, not a verdict on coord's reachability — and
+            # this hop only runs because the presence hop above succeeded.
+            service_unavailable_is_an_answer=True,
         )
         if cites is None:
-            # Includes 401/403/404/405 on the route itself — absence of a
-            # route (or of permission to call it) is not evidence of an
-            # absence of PRs. None of those trips the page-wide circuit
-            # either; see ``_is_transport_failure``.
+            # Includes 401/403/404/405 and coord's 503 ``SurfaceUnavailable``
+            # — absence of a route, of permission to call it, or of a readable
+            # citation relation is not evidence of an absence of PRs. None of
+            # those trips the page-wide circuit; see ``_is_transport_failure``.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = (
                 cite_error or f"coord returned {cite_status} for citations"
             )
+            return link
+
+        sub = self._inline_citations(cites)
+        if sub is not None and sub[1] is not None:
+            # The sub-resource can carry the same honesty flag its inline twin
+            # does. A 200 whose body says the read did not happen is still
+            # "did not happen".
+            link.linked_prs_state = "unavailable"
+            link.unavailable_reason = sub[1]
             return link
 
         link.linked_prs_state = "available"
@@ -932,7 +1099,7 @@ async def list_plan_candidates(
         "Set false for a purely local, coord-free read.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_audit_actor_user),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> PlanCandidateResponse:
     """Candidate selection for agents — signals, never a verdict.
 
@@ -964,7 +1131,14 @@ async def list_plan_candidates(
     list rather than extra ``items`` because a follow-up nobody has written is
     not an artifact and has no id to be a candidate with; folding it into
     ``items`` would mean inventing one. ``items`` is unchanged.
+
+    Two principals reach this route (module docstring, invariant 7) and the
+    coord half is fetched with whichever bearer they presented, so the coord
+    reads follow the credential to the door tier that accepts it — the
+    operator routes for a Cognito user, the ``agent-`` twins for the runner's
+    device JWT. Nothing else about the response differs between them.
     """
+    current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_plan_candidates(
         db, org_id=org_id, offset=offset, limit=limit
@@ -978,7 +1152,7 @@ async def list_plan_candidates(
     coord_available = True
     if include_coord:
         tenant_id = await _soft_tenant_id(request)
-        probe = _CoordProbe(tenant_id)
+        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
         slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
         links = await _coord_links(slugs, probe)
         coord_available = not probe.degraded
@@ -1137,7 +1311,7 @@ async def get_work_artifact(
         "look' is not the same answer as 'there is nothing there'.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_audit_actor_user),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> WorkArtifactDetail:
     """One artifact, with everything the operator page's detail view renders.
 
@@ -1151,11 +1325,17 @@ async def get_work_artifact(
     * coord unreachable → ``unavailable`` on both halves. UNKNOWN, not empty.
 
     ``linked_prs_state`` is tracked separately from ``work_unit_state`` for a
-    concrete reason: today's deployed coord registers no HTTP route for the
-    citation LIST (it exists only as an MCP tool), so that half reads
-    ``unavailable`` even when the work unit resolves fine. Rendering an empty
-    PR list there would assert something this read has not established.
+    concrete reason: the two halves fail independently. The work unit can
+    resolve while coord reports the citation relation unreadable (a ``503``
+    ``SurfaceUnavailable``), or while a coord that has not yet shipped the
+    citation read refuses the hop outright. Rendering an empty PR list in
+    either case would assert something this read has not established.
+
+    The coord reads go to the door tier the CALLING credential can open —
+    coord's operator routes for a Cognito user, their ``agent-`` twins for the
+    runner's device JWT — because each tier rejects the other's bearer.
     """
+    current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
     row = await crud.get_artifact(db, artifact_id, org_id=org_id)
     if row is None:
@@ -1189,7 +1369,9 @@ async def get_work_artifact(
     coord_block = CandidateCoordLink()
     if row.work_unit_slug:
         if include_coord:
-            probe = _CoordProbe(await _soft_tenant_id(request))
+            probe = _CoordProbe(
+                await _soft_tenant_id(request), actor_kind=principal.kind
+            )
             coord_block = await probe.link_for(row.work_unit_slug)
         else:
             coord_block = CandidateCoordLink(
