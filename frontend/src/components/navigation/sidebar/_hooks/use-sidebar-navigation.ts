@@ -4,6 +4,7 @@ import { setProductMode, setShowHiddenItems } from "@qontinui/navigation";
 import type { NavItem } from "../types";
 import { getWebNavItems } from "../shared-nav-adapter";
 import { devNavItems } from "../nav-items";
+import { cloudNavItems } from "@cloud/nav-items";
 import { useAuth } from "@/contexts/auth-context";
 import { useProductMode } from "@/contexts/product-mode-context";
 import { useAdvancedAutomation } from "@/contexts/advanced-automation-context";
@@ -96,11 +97,19 @@ export function useSidebarNavigation() {
     setProductMode(productMode);
     setShowHiddenItems(showAdvancedAutomation);
     const shared = getWebNavItems();
-    // Insert devNavItems before SYSTEM so mode-specific items appear above
+    // Cloud-deployment entries (Organizations, Billing). `@cloud/nav-items`
+    // is resolved at BUILD time — the real module in a composed cloud build,
+    // an empty array in an OSS one (next.config.mjs's `@cloud` alias) — so
+    // there is no runtime feature check here and nothing to keep in sync.
+    // They join `devNavItems` rather than the shared registry because
+    // @qontinui/navigation is published to npm and shared with the runner,
+    // which has no cloud surface at all.
+    const local = [...devNavItems, ...cloudNavItems];
+    // Insert them before SYSTEM so mode-specific items appear above
     // Settings/Help. Admin goes after SYSTEM (always last).
     const systemIdx = shared.findIndex((item) => item.group === "SYSTEM");
-    const mainItems = devNavItems.filter((item) => !item.adminOnly);
-    const adminItems = devNavItems.filter((item) => item.adminOnly);
+    const mainItems = local.filter((item) => !item.adminOnly);
+    const adminItems = local.filter((item) => item.adminOnly);
     if (systemIdx >= 0) {
       return [
         ...shared.slice(0, systemIdx),
@@ -109,7 +118,7 @@ export function useSidebarNavigation() {
         ...adminItems,
       ];
     }
-    return [...shared, ...devNavItems];
+    return [...shared, ...local];
   }, [productMode, showAdvancedAutomation]);
 
   const visibleNavItems = useMemo(() => {

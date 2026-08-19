@@ -4,8 +4,9 @@
  * The docstring this replaced claimed "the cloud-control bundle owns
  * `/organizations/[id]/...` and overrides this path when loaded". That was
  * false in every deployment: the App Router is file-system routed and
- * resolved at build time, so a `RouteSlot` pushed into a module-scoped array
- * at runtime could not shadow, replace or add a route, and the unconditional
+ * resolved at build time, so a route descriptor pushed into a module-scoped
+ * array at runtime could not shadow, replace or add a route (that array has
+ * since been deleted outright), and the unconditional
  * `redirect("/settings/account")` that lived here ran in the cloud
  * deployment too.
  *

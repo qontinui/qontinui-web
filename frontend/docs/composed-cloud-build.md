@@ -114,18 +114,20 @@ covers both build shapes so it is never vacuously green.
 
 ## Mounting cloud routes (`@cloud/*`)
 
-cloud-control registers eleven `appRoutes`. Every one of them was a 404 (or,
-for `/organizations`, a redirect away) in every deployment, because the App
-Router is **file-system routed and resolved at build time** and nothing read
-the registry. A `RouteSlot` pushed into a module-scoped array at runtime
-cannot shadow, replace or add a route.
+cloud-control used to register eleven routes into a runtime `appRoutes`
+array. Every one of them was a 404 (or, for `/organizations`, a redirect away)
+in every deployment, because the App Router is **file-system routed and
+resolved at build time** and nothing read the registry. A route descriptor
+pushed into a module-scoped array at runtime cannot shadow, replace or add a
+route. That array — along with `marketingRoutes`, `navItems` and
+`profilePanels` — has since been deleted outright.
 
 So the routes are mounted the way the App Router actually works: one
 `page.tsx` per path, re-exporting through a build-time alias.
 
 ```ts
 // src/app/(app)/pricing/page.tsx
-export { default } from "@cloud/routes/pricing";
+export { default } from "@cloud/routes/pricing/page";
 ```
 
 | | Composed cloud | OSS-only |
@@ -134,26 +136,39 @@ export { default } from "@cloud/routes/pricing";
 | `/pricing` renders | cloud-control's pricing page | `notFound()` → 404 |
 
 No client boundary, no registry read, no loader race, and — the reason this
-shape was chosen over a `getSlots()`-driven catch-all or pane — SSR, per-route
+shape was chosen over a registry-driven catch-all or pane — SSR, per-route
 `metadata` and server components all stay available to cloud routes. A
 registry lookup forfeits all three by construction: the registry only ever
 exists behind a client boundary.
 
-The eleven paths, all under `(app)`:
+The twelve paths, all under `(app)`:
 
 ```
-/billing/success   /billing/canceled   /pricing
+/billing           /billing/success    /billing/canceled
+/pricing
 /admin             /admin/mobile
 /organizations     /organizations/new  /organizations/[id]
 /organizations/[id]/members            /organizations/[id]/settings
 /invitations/accept
 ```
 
+`/billing` is new: `navItems` advertised it and no route ever existed, so the
+link 404'd in every deployment. It is now cloud-control's account-side billing
+landing page (plan, limits, Stripe portal).
+
+One route cloud-control ships is deliberately **not** mounted: `/privacy`.
+qontinui-web serves a 92-line privacy policy at that path to every deployment,
+cloud-control's is a different 326-line document about the hosted service, and
+which one binds hosted users is a legal call rather than an engineering one.
+It is recorded in `UNMOUNTED` in `cloud-route-shims.test.ts`, which is the
+only place that choice is visible.
+
 ### The `cloud-absent/` mirror
 
 `src/cloud-absent/` mirrors `qontinui-cloud-control/frontend/src/` path for
 path — `@cloud/routes/organizations/[id]/page` is
-`src/cloud-absent/routes/organizations/[id]/page.tsx`. Each mirrored route
+`src/cloud-absent/routes/organizations/[id]/page.tsx`, and `@cloud/nav-items`
+is `src/cloud-absent/nav-items.ts`. Each mirrored route
 module default-exports a component that calls `notFound()`, with two
 deliberate exceptions where OSS already served the path and 404ing it would
 be a pure regression:
@@ -186,8 +201,8 @@ which extends `tsconfig.json` and which Next never reads.
 `npm run type-check` points at it. Its two candidates are ordered
 composed-first (`node_modules/@qontinui/cloud-control/frontend/src/*`, then
 `src/cloud-absent/*`); TypeScript takes the first that exists on disk, which
-is the same switch webpack performs. **A bare `npx tsc --noEmit` fails on all
-eleven shims** — `frontend-ci.yml` runs `npm run type-check` for that reason.
+is the same switch webpack performs. **A bare `npx tsc --noEmit` fails on
+every shim** — `frontend-ci.yml` runs `npm run type-check` for that reason.
 
 The cost, stated rather than hidden: editors read `tsconfig.json`, so an IDE
 flags `@cloud/*` as unresolved in the shims. They are two-line re-exports and
@@ -195,16 +210,34 @@ CI covers them in both shapes.
 
 ### Adding a route
 
-1. Add it to cloud-control's `appRoutes`.
-2. Add `src/app/(app)/<path>/page.tsx` re-exporting `@cloud/<module>`.
-3. Add `src/cloud-absent/<module>.tsx`.
+1. Add the page to cloud-control as **`frontend/src/routes/<path>/page.tsx`**.
+   The filename is load-bearing — see below.
+2. Add `src/app/(app)/<path>/page.tsx` re-exporting
+   `@cloud/routes/<path>/page`.
+3. Add `src/cloud-absent/routes/<path>/page.tsx`.
 4. Add the entry to `SHIMS` in `src/cloud-absent/cloud-route-shims.test.ts`.
 
-Skip 2-4 and the composed CI job fails: that test diffs `SHIMS` against
-cloud-control's `appRoutes` array, parsed from its source. Skip 3 and the OSS
-build fails to resolve the specifier. Both are build-time facts, which is the
-point — a mis-mounted route is a red build, not a 404 discovered in
-production.
+Skip 2 or 4 and the composed CI job fails; skip 3 and the OSS build fails to
+resolve the specifier. Both are build-time facts, which is the point — a
+mis-mounted route is a red build, not a 404 discovered in production.
+
+**The inventory both sides are diffed against is cloud-control's filesystem**,
+not a list: `cloud-route-shims.test.ts` walks its `routes/` tree and treats
+every `page.tsx` outside a `_`-prefixed folder as a route. That is what
+replaced the regex over the deleted `appRoutes` array, and it is why step 1's
+filename matters — a page added as `routes/foo.tsx` is invisible to the guard.
+A route that should exist but not be mounted goes in `UNMOUNTED`, with a
+reason.
+
+### Adding a sidebar entry
+
+Same alias, plain data: append to `cloudNavItems` in cloud-control's
+`frontend/src/nav-items.ts`. `_hooks/use-sidebar-navigation.ts` spreads
+`@cloud/nav-items` into its local items, so the OSS stub's empty array means a
+self-hosted build needs no runtime feature check. Entries use qontinui-web's
+own `NavItem` shape, including `adminOnly` (which is what cloud-control's old
+`superuserOnly` meant). Do not re-add `/admin`: qontinui-web's `devNavItems`
+already has it, and a second entry renders the item twice.
 
 ### On "server-rendered"
 

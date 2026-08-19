@@ -8,22 +8,46 @@
  * its routes, components, services, and contexts at module-load time by
  * calling `registerCloudExtensions(...)` from its `src/index.ts`.
  *
- * **The registry is observable.** That registration arrives asynchronously —
- * `app/layout.tsx` loads the package with a fire-and-forget
- * `import(CLOUD_CONTROL_PKG).catch(() => {})` — so it routinely lands *after*
- * a consumer has already rendered. `registerCloudExtensions` therefore
- * notifies every listener registered through `subscribeToSlots` once all its
- * mutations are applied.
+ * **How the package gets loaded.** `components/cloud-extensions-boot.tsx` is
+ * a `"use client"` module with a *static* `import "@qontinui/cloud-control"`,
+ * rendered as the first child of `<body>` in `app/layout.tsx`. It is static
+ * on purpose: a static import is hoisted and evaluated before the importing
+ * module's body runs, so registration completes before any consumer of this
+ * registry renders. It replaced a fire-and-forget dynamic import in the root
+ * layout — a `webpackIgnore`-annotated `import(CLOUD_CONTROL_PKG)` with a
+ * `.catch(() => {})` — which never loaded the package at all: `webpackIgnore`
+ * left the bare specifier in the emitted bundle for the *browser* to resolve,
+ * and browsers do not resolve bare specifiers, so every deployment silently
+ * took the `.catch()`.
  *
- * **React consumers must use `useSlotComponent`, never `getComponent`.**
- * A bare `getComponent(name)` read during render returns `undefined` until
- * the dynamic import resolves and nothing re-renders the consumer afterwards,
- * so the slot renders nothing *forever* — a silent failure indistinguishable
- * from a correct OSS-only deploy. `useSlotComponent` subscribes, so a slot
- * filled after first render re-renders its consumer. `getComponent` /
- * `getService` / `getSlots` remain the right API for non-React callers
- * (e.g. `services/service-factory.ts`'s Proxy, which re-reads on every
- * property access and so has no staleness problem).
+ * **The registry is still observable, and consumers must still treat it as
+ * such.** The static import removes the ordering hazard for the composed
+ * build, but `subscribeToSlots` is not vestigial: the boot component sits
+ * inside the client graph, so a Server Component rendered before hydration
+ * still sees empty slots, and tests import the boot module explicitly and
+ * later than the module under test. `registerCloudExtensions` notifies every
+ * `subscribeToSlots` listener once all its mutations are applied.
+ *
+ * **React consumers must therefore use `useSlotComponent`, never
+ * `getComponent`.** A bare `getComponent(name)` read during render returns
+ * whatever is in the map at that instant and nothing re-renders the consumer
+ * afterwards, so a slot filled later renders nothing *forever* — a silent
+ * failure indistinguishable from a correct OSS-only deploy. `useSlotComponent`
+ * subscribes. `getComponent` / `getService` remain the right API for
+ * non-React callers (e.g. `services/service-factory.ts`'s Proxy, which
+ * re-reads on every property access and so has no staleness problem).
+ *
+ * **Only two slot kinds exist, and routes are not one of them.** This
+ * registry also carried `appRoutes`, `marketingRoutes`, `navItems` and
+ * `profilePanels` until 2026-08-19. None of them could ever have worked:
+ * Next resolves the App Router from the filesystem at build time, and the
+ * sidebar builds its item list from static modules, so a runtime array of
+ * either was unreadable by construction — `profilePanels` was additionally
+ * empty on both sides. Cloud routes are mounted by one-line re-export shims
+ * under `app/(app)/` and nav entries come from `@cloud/nav-items`, both
+ * resolved through the build-time `@cloud` alias; see
+ * `docs/composed-cloud-build.md`. Services and components stay because they
+ * are genuine runtime *values* with no build-time contract to satisfy.
  *
  * This module imports React hooks, which are absent from React's
  * `react-server` build. Verified 2026-08-18 by walking the app-router server
@@ -36,39 +60,9 @@
  */
 
 import { useCallback, useSyncExternalStore } from "react";
-import type { ComponentType, LazyExoticComponent } from "react";
-
-export interface NavItem {
-  href: string;
-  label: string;
-  icon?: ComponentType;
-  superuserOnly?: boolean;
-}
-
-export interface RouteSlot {
-  /** App-router path, e.g. "/billing/success". */
-  path: string;
-  /**
-   * Lazy-loaded component. Critical that this is a `lazy(() => import(...))`
-   * so the OSS bundle never imports cloud-control code statically — the
-   * bundler must be free to treeshake the dynamic import when the
-   * cloud-control package is not linked.
-   */
-  Component: LazyExoticComponent<ComponentType<unknown>>;
-}
-
-export interface ProfilePanel {
-  /** Stable id, e.g. "billing". Used for tab routing and active state. */
-  id: string;
-  label: string;
-  Component: LazyExoticComponent<ComponentType<unknown>>;
-}
+import type { ComponentType } from "react";
 
 export interface ExtensionSlots {
-  appRoutes: RouteSlot[];
-  marketingRoutes: RouteSlot[];
-  navItems: NavItem[];
-  profilePanels: ProfilePanel[];
   /**
    * Service overrides keyed by name (e.g. "billingService",
    * "organizationService"). OSS calls `getService<T>(name)`; returns
@@ -91,10 +85,6 @@ export interface ExtensionSlots {
 }
 
 const slots: ExtensionSlots = {
-  appRoutes: [],
-  marketingRoutes: [],
-  navItems: [],
-  profilePanels: [],
   services: new Map(),
   components: new Map(),
 };
@@ -112,8 +102,7 @@ const slotListeners = new Set<() => void>();
  *
  * This is exactly the `useSyncExternalStore` subscribe contract, and
  * `useSlotComponent` below is built on it. Exported in its own right so
- * non-component code (and future hooks over `appRoutes` / `navItems` /
- * `profilePanels`) can react to a late registration too.
+ * non-component code can react to a late registration too.
  */
 export function subscribeToSlots(listener: () => void): () => void {
   slotListeners.add(listener);
@@ -126,15 +115,10 @@ export function subscribeToSlots(listener: () => void): () => void {
  * Cloud-control's `index.ts` calls this at module-load time with the
  * subset of slots it wants to attach.
  *
- * Semantics:
- *
- * - `appRoutes` / `marketingRoutes` / `navItems` / `profilePanels`:
- *   **additive** (push). Calling twice with overlapping paths produces
- *   duplicate routes — let the router complain.
- * - `services`: **last-write-wins** (Map.set overwrites). Lets hot-reload
- *   swap a `BillingService` cleanly without a stale instance hanging
- *   around. Production: do not call multiple times. Hot-reload:
- *   explicitly supported.
+ * Semantics: both slot kinds are **last-write-wins** (Map.set overwrites).
+ * That lets hot-reload swap a `BillingService` cleanly without a stale
+ * instance hanging around. Production: do not call multiple times.
+ * Hot-reload: explicitly supported.
  *
  * Every `subscribeToSlots` listener is notified once, after all mutations
  * above have been applied — never per-slot, so subscribers never observe a
@@ -142,19 +126,10 @@ export function subscribeToSlots(listener: () => void): () => void {
  */
 export function registerCloudExtensions(
   partial: Partial<{
-    appRoutes: RouteSlot[];
-    marketingRoutes: RouteSlot[];
-    navItems: NavItem[];
-    profilePanels: ProfilePanel[];
     services: Record<string, unknown>;
     components: Record<string, ComponentType<unknown>>;
   }>
 ): void {
-  if (partial.appRoutes) slots.appRoutes.push(...partial.appRoutes);
-  if (partial.marketingRoutes)
-    slots.marketingRoutes.push(...partial.marketingRoutes);
-  if (partial.navItems) slots.navItems.push(...partial.navItems);
-  if (partial.profilePanels) slots.profilePanels.push(...partial.profilePanels);
   if (partial.services) {
     for (const [k, v] of Object.entries(partial.services)) {
       slots.services.set(k, v);
@@ -175,11 +150,6 @@ export function registerCloudExtensions(
   }
 }
 
-/** Read-only snapshot of all registered slots. */
-export function getSlots(): Readonly<ExtensionSlots> {
-  return slots;
-}
-
 /**
  * Look up a service slot by name. Returns `undefined` when no
  * cloud-control override has been registered (the OSS-only case).
@@ -197,10 +167,9 @@ export function getService<T>(name: string): T | undefined {
  *
  * **Not for React consumers — use `useSlotComponent` instead.** This is a
  * one-shot read with no subscription: called during render before the
- * cloud-control bundle's dynamic `import()` resolves, it returns `undefined`
- * and nothing ever re-renders the consumer, so the slot stays empty for the
- * lifetime of the page. Kept exported for non-React callers that re-read on
- * demand (and for tests).
+ * registry is filled, it returns `undefined` and nothing ever re-renders the
+ * consumer, so the slot stays empty for the lifetime of the page. Kept
+ * exported for non-React callers that re-read on demand (and for tests).
  *
  * The generic parameter `P` carries the props contract; the slot's
  * stored component is typed `ComponentType<unknown>` (registered by
