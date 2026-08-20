@@ -23,8 +23,16 @@ coord's own source has always said this script does it — see
     from `.claude/agents/*.md`
 
 and the served policy ``verification-and-evidence``
-(``registry-readability-is-probed-not-assumed``) says the same. **Neither was
-true: the file did not exist.** So every tenant reads an effective registry with
+(``registry-readability-is-probed-not-assumed``) says the same. **Both named a
+path that held nothing.** A seeder did exist — at ``backend/scripts/`` — but
+``.gitignore`` ignored that whole directory while the scripts inside it were
+tracked, so it was invisible to ordinary search, and neither the policy nor
+coord's source pointed at it. That copy is deleted here in favour of this one:
+it wrote ``coord.agent_registry`` with direct SQL, which bypasses coord's RBAC
+and its validation entirely. Two seeders with disagreeing consent defaults is
+strictly worse than one.
+
+So every tenant reads an effective registry with
 no role rows at all, and a session hitting a policy-required review gate cannot
 tell "deselected with disposition degrade" from "never seeded" — the two look
 identical from ``coord_agent_registry_effective``, and only the second is the
@@ -43,8 +51,10 @@ One row per ``.claude/agents/<name>.md``, via
  ``model``             frontmatter ``model`` when present, else null (inherit)
  ``spawn_path``        always ``in_session_subagent`` — these are Agent-tool
                        roles, not coord-initiated standing spawns
- ``default_enabled``   ``True`` for a NEW row; an existing row's value is
-                       PRESERVED, so a re-run never re-enables a deselected agent
+ ``default_enabled``   for a NEW row, ``False`` when the agent is
+                       ``policy_required`` and ``True`` otherwise; an existing
+                       row's value is PRESERVED either way, so a re-run never
+                       re-enables a deselected agent
  ``policy_required``   ``True`` only for the agents named by
                        ``--policy-required`` (default: ``code-reviewer``,
                        because ``verification-and-evidence`` →
@@ -266,12 +276,32 @@ def existing_rows(coord_url: str, token: str | None) -> dict[str, dict]:
 def build_body(
     agent: AgentDef, policy_required: set[str], existing: dict | None
 ) -> dict:
-    # `default_enabled` PRESERVES an existing False. An operator who deselected
+    # `default_enabled` PRESERVES an existing value. An operator who deselected
     # an agent did so deliberately, and a re-run of a seeder is not consent to
     # undo it: re-enabling a disabled agent would silently restore spawns (and
-    # the quota they spend) that someone turned off on purpose. Only a row that
-    # does not exist yet gets the True default.
-    enabled = True if existing is None else bool(existing.get("default_enabled", True))
+    # the quota they spend) that someone turned off on purpose.
+    #
+    # For a row that does not exist yet, a POLICY-REQUIRED agent seeds OFF and
+    # everything else seeds ON. A policy-required agent is spawned BY POLICY,
+    # with no per-use decision by the user, and the spawn runs on the user's
+    # own AI account — so it is the one class that has to be opted INTO rather
+    # than arriving enabled. Ordinary agents keep the True default: they only
+    # spawn because a session deliberately invoked them for work the user
+    # asked for, so defaulting those off would break delegation rather than
+    # protect anyone.
+    #
+    # This is NOT a weakening of the review gate. A disabled policy-required
+    # agent resolves through its `disposition`, which defaults to `degrade` —
+    # the calling session performs the review inline. No spawn, no cost, gate
+    # kept.
+    #
+    # Derived from `policy_required` rather than a second hand-kept list, so a
+    # future policy-required agent cannot ship silently spawning on the user's
+    # account because someone updated one list and not the other.
+    if existing is not None:
+        enabled = bool(existing.get("default_enabled", True))
+    else:
+        enabled = agent.agent_name not in policy_required
     return {
         "purpose": agent.purpose,
         "spawn_path": SPAWN_PATH,
