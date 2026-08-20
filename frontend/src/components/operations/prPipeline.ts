@@ -275,7 +275,8 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
  * coord's named `failing_contexts` (new optional field); falls back to the
  * aggregate `ci_conclusion` when the arrays are absent (older coord
  * deploys omit them entirely). Shared by prPipeline, PrsTable, and
- * MergeTrain so "failed" vs "still running" never drifts between surfaces.
+ * MergePipeline so "failed" vs "still running" never drifts between
+ * surfaces.
  */
 export function unstableHasFailure(
   pr: Pick<PrRow, "failing_contexts" | "ci_conclusion">
