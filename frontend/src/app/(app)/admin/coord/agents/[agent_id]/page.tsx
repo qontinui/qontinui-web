@@ -83,6 +83,11 @@ export default function CoordAgentLogPage() {
   const [data, setData] = useState<ByAgentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // `undefined` = the operator has not chosen yet, so the newest row is open
+  // (the behaviour `defaultExpanded` used to give). `null` = they closed it.
+  const [logOpenKey, setLogOpenKey] = useState<string | null | undefined>(
+    undefined
+  );
   const [selectedLevels, setSelectedLevels] = useState<Set<LevelKey>>(
     () => new Set(),
   );
@@ -305,14 +310,31 @@ export default function CoordAgentLogPage() {
               data-testid="coord-agent-log-list"
               className="space-y-1.5 max-h-[70vh] overflow-y-auto"
             >
-              {filtered.map((row, i) => (
-                <LogRow
-                  key={row.log_id ?? `${row.occurred_at ?? row.ts ?? i}-${i}`}
-                  log={row}
-                  hideAgentId
-                  defaultExpanded={i === filtered.length - 1}
-                />
-              ))}
+              {/* `<LogRow>` became a controlled `<RecordRow>` in Phase 3
+                  Wave 2 (one open at a time, keyboard-reachable), so its
+                  expansion is hoisted here. `newestKey` reproduces the old
+                  `defaultExpanded={i === filtered.length - 1}`: the newest row
+                  opens by itself, and stays the operator's to close — a
+                  `useState` initialiser rather than an effect, so a poll that
+                  appends a row does NOT re-open it under them. */}
+              {filtered.map((row, i) => {
+                const key = String(
+                  row.log_id ?? `${row.occurred_at ?? row.ts ?? i}-${i}`
+                );
+                const open =
+                  logOpenKey === undefined
+                    ? i === filtered.length - 1
+                    : logOpenKey === key;
+                return (
+                  <LogRow
+                    key={key}
+                    log={row}
+                    hideAgentId
+                    expanded={open}
+                    onToggle={() => setLogOpenKey(open ? null : key)}
+                  />
+                );
+              })}
               <div ref={listEndRef} />
             </div>
           ) : (

@@ -15,17 +15,44 @@
  *   - the row identified by what a human recognises — repo, branch, worktree
  *     name, drive — never by `alert_key`, which is a dedup identity;
  *   - timestamps through the `RowTime` idiom, never a raw ISO string;
- *   - why / what to do / links behind the click, in a `CollapsiblePanel` whose
- *     content UNMOUNTS when collapsed (Radix `Presence`; do not add
- *     `forceMount`), so a routine visit costs one status, not a field dump.
+ *   - why / what to do / links behind the click, in a panel that UNMOUNTS when
+ *     collapsed, so a routine visit costs one status, not a field dump.
  *
  * The device UUID appears in exactly one place: the expanded panel, labelled,
  * because it is the value an operator pastes into a coord tool. That is the
  * "only where it is genuinely actionable" carve-out, not a loophole.
+ *
+ * ## Folded onto the console primitives (Phase 3 Wave 2)
+ *
+ * This component predates `<RecordRow>` / `<RecordDetail>` — it shipped in
+ * qontinui-web#986, and Phase 1 generalised those primitives *out of* the
+ * conventions it established. It therefore hand-rolled its own row over
+ * `CollapsiblePanel` + the `statusRow` atoms, and by the end of Wave 1 the
+ * designated **reference implementation was less conformant than the routes
+ * reviewed against it**: it carried no `<RecordDetail>` slot order (R5's fixed
+ * why → problems → actions → history → raw), and its `titleAs="div"` trick
+ * existed only to stop a section primitive from minting 100 `<h2>`s.
+ *
+ * Wave 2 folds it onto `<RecordRow>` + `<RecordDetail>`. What that buys:
+ *
+ * - **R2/R4 for free** — the fixed slot order and the accent now come from the
+ *   primitive rather than from this file agreeing with it by hand.
+ * - **R5's section order** — "why / what to do" were two sibling `<div>`s in
+ *   authored order; they are now the `why` and `actions` slots, and the raw
+ *   detail dump and the device id are the `raw` slot, LAST, muted mono.
+ * - **The `titleAs`/`normal-case` workarounds are gone.** They were
+ *   compensating for a section header's uppercase tracking; a record row has
+ *   no header to fight.
+ *
+ * What did NOT change: every authored `data-testid` (`coord-alert-row`,
+ * `-subject`, `-reason`, `-why`, `-guidance`, `-detail`, `-device-id`), the
+ * derivation, the palette, and the unmount-on-collapse property — `RecordRow`
+ * renders `{expanded && children}`, so a collapsed detail is absent from the
+ * DOM exactly as the Radix `Presence` it replaces was.
  */
 
 import { Badge } from "@/components/ui/badge";
-import { CollapsiblePanel } from "@/components/console/CollapsiblePanel";
+import { RecordDetail, RecordRow } from "@/components/console";
 import {
   AUTHOR_RED,
   INERT,
@@ -86,6 +113,17 @@ export const ALERT_STATUS_PALETTE: StatusPalette<AlertKind> = {
   doneGlyphKinds: new Set<AlertKind>(["resolved"]),
 };
 
+/**
+ * The one kind whose real attention is computed PER ROW rather than read off
+ * `ATTENTION_BY_KIND` — its static entry is a floor, and `alertPaletteFor`
+ * resolves what actually renders. Declared here (rather than inline in the
+ * test) because it is a property of this palette, and `paletteDisagreements`
+ * takes it as its single narrow exemption.
+ */
+export const ALERT_PER_ROW_KINDS: ReadonlySet<AlertKind> = new Set<AlertKind>([
+  "unknown",
+]);
+
 /** The colour family an attention earns, whatever kind carries it. */
 const FAMILY_BY_ATTENTION: Record<Attention, string> = {
   author: AUTHOR_RED,
@@ -131,7 +169,30 @@ function repoHref(repo: string | undefined): string | null {
   return `https://github.com/${repo}`;
 }
 
-export function AlertRow({ alert }: { alert: CoordAlertRow }) {
+/**
+ * The mono identity chip.
+ *
+ * Coord's `severity` is the one short, stable, already-plain-English token
+ * that classifies an alert row — and, unlike `alert_key`, it carries no UUID
+ * and is not a dedup identity. The SUBJECT (repo · branch, worktree name,
+ * drive letter) stays the row's label, which is what the row is *about*;
+ * severity is what class of thing it is. An alert with no severity says so
+ * rather than borrowing one.
+ */
+function severityChip(severity: string | null | undefined): string {
+  const s = (severity ?? "").trim().toLowerCase();
+  return s || "unrated";
+}
+
+export function AlertRow({
+  alert,
+  expanded,
+  onToggle,
+}: {
+  alert: CoordAlertRow;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const status = deriveAlertStatus(alert);
   const subject = alertSubject(alert);
   const repo =
@@ -145,42 +206,25 @@ export function AlertRow({ alert }: { alert: CoordAlertRow }) {
   const entries = detailEntries(alert);
 
   return (
-    <CollapsiblePanel
+    <RecordRow
       data-testid="coord-alert-row"
-      defaultOpen={false}
-      // A ROW, not a section: up to 100 of these render under the page's own
-      // "Alerts" heading, and 100 sibling <h2>s wreck the document outline.
-      titleAs="div"
-      className={[
-        "p-2.5",
-        rowAccentClass(status),
-        alert.resolved_at ? "opacity-60" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      // `title` sits inside an uppercase heading; `normal-case` restores the
-      // real spelling of a repo / branch / worktree name.
-      title={
+      rowKey={String(alert.id ?? alert.alert_key ?? subject)}
+      expanded={expanded}
+      onToggle={onToggle}
+      className={alert.resolved_at ? "opacity-60" : undefined}
+      accent={rowAccentClass(status)}
+      identity={severityChip(alert.severity)}
+      label={
         <span
-          className="inline-block align-bottom normal-case tracking-normal font-medium text-foreground/90 truncate max-w-[28ch] sm:max-w-[44ch]"
           data-testid="coord-alert-subject"
           title={subject || status.label}
         >
           {subject || status.label}
         </span>
       }
-      summary={
-        <span className="flex items-center gap-2 min-w-0">
+      status={
+        <>
           <StatusBadge status={status} palette={alertPaletteFor(status)} />
-          {status.reason && (
-            <span
-              className="hidden sm:inline text-xs text-muted-foreground normal-case tracking-normal truncate max-w-[24ch] lg:max-w-[48ch]"
-              title={status.reason}
-              data-testid="coord-alert-reason"
-            >
-              {status.reason}
-            </span>
-          )}
           {alert.occurrences != null && alert.occurrences > 1 && (
             <Badge
               variant="outline"
@@ -190,85 +234,109 @@ export function AlertRow({ alert }: { alert: CoordAlertRow }) {
               ×{alert.occurrences}
             </Badge>
           )}
-        </span>
+        </>
       }
-      headerActions={
-        <RowTime at={alert.last_seen_at ?? null} verb="Last seen" />
-      }
-      contentClassName="space-y-2 text-xs"
+      reason={status.reason || undefined}
+      reasonTestId="coord-alert-reason"
+      time={<RowTime at={alert.last_seen_at ?? null} verb="Last seen" />}
     >
-      <div>
-        <span className="text-muted-foreground">Why: </span>
-        {/* `status.reason` already falls back to coord's own (UUID-stripped)
-            summary, so an empty one means the payload genuinely carried
-            nothing — say so rather than rendering a blank. */}
-        <span className="text-foreground/90" data-testid="coord-alert-why">
-          {status.reason || "coord reported no detail beyond the status."}
-        </span>
-      </div>
-
-      <div>
-        <span className="text-muted-foreground">What to do: </span>
-        <span className="text-foreground/90" data-testid="coord-alert-guidance">
-          {alertGuidance(status.kind)}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
-        <span>
-          first seen <RowTime at={alert.first_seen_at ?? null} verb="First seen" />
-        </span>
-        {alert.resolved_at && (
-          <span>
-            resolved <RowTime at={alert.resolved_at} verb="Resolved" />
-          </span>
-        )}
-        {prHref && (
-          <a
-            href={prHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-1"
-          >
-            PR #{prNumber} <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
-        {href && prHref === null && (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-1"
-          >
-            {repo} <ExternalLink className="h-3 w-3" />
-          </a>
-        )}
-      </div>
-
-      {entries.length > 0 && (
-        <dl
-          className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5"
-          data-testid="coord-alert-detail"
-        >
-          {entries.map((e) => (
-            <div key={e.key} className="contents">
-              <dt className="text-muted-foreground">{e.key}</dt>
-              <dd className="text-foreground/90 break-all">{e.value}</dd>
+      <RecordDetail
+        className="text-xs"
+        why={
+          <div>
+            <span className="text-muted-foreground">Why: </span>
+            {/* `status.reason` already falls back to coord's own (UUID-stripped)
+                summary, so an empty one means the payload genuinely carried
+                nothing — say so rather than rendering a blank. */}
+            <span className="text-foreground/90" data-testid="coord-alert-why">
+              {status.reason || "coord reported no detail beyond the status."}
+            </span>
+          </div>
+        }
+        actions={
+          <div className="space-y-2">
+            <div>
+              <span className="text-muted-foreground">What to do: </span>
+              <span
+                className="text-foreground/90"
+                data-testid="coord-alert-guidance"
+              >
+                {alertGuidance(status.kind)}
+              </span>
             </div>
-          ))}
-        </dl>
-      )}
-
-      {alert.device_id && (
-        // The one admissible UUID: expanded only, labelled, and here because
-        // it is what an operator pastes into a coord device query.
-        <div className="text-muted-foreground">
-          device id (for coord lookups):{" "}
-          <span className="font-mono break-all" data-testid="coord-alert-device-id">
-            {alert.device_id}
-          </span>
-        </div>
-      )}
-    </CollapsiblePanel>
+            {(prHref || href) && (
+              <div className="flex flex-wrap items-center gap-3">
+                {prHref && (
+                  <a
+                    href={prHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    PR #{prNumber} <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+                {href && prHref === null && (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    {repo} <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        }
+        history={
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <span>
+              first seen{" "}
+              <RowTime at={alert.first_seen_at ?? null} verb="First seen" />
+            </span>
+            {alert.resolved_at && (
+              <span>
+                resolved <RowTime at={alert.resolved_at} verb="Resolved" />
+              </span>
+            )}
+          </div>
+        }
+        raw={
+          (entries.length > 0 || alert.device_id) && (
+            <div className="space-y-1.5 text-[10px] text-muted-foreground/60">
+              {entries.length > 0 && (
+                <dl
+                  className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5"
+                  data-testid="coord-alert-detail"
+                >
+                  {entries.map((e) => (
+                    <div key={e.key} className="contents">
+                      <dt>{e.key}</dt>
+                      <dd className="font-mono break-all">{e.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {alert.device_id && (
+                // The one admissible UUID: expanded only, labelled, and here
+                // because it is what an operator pastes into a coord device
+                // query.
+                <div>
+                  device id (for coord lookups):{" "}
+                  <span
+                    className="font-mono break-all"
+                    data-testid="coord-alert-device-id"
+                  >
+                    {alert.device_id}
+                  </span>
+                </div>
+              )}
+            </div>
+          )
+        }
+      />
+    </RecordRow>
   );
 }

@@ -36,7 +36,7 @@ import type {
   PredictedConflict,
   PredictedLandEffect,
   SiblingCascade,
-} from "./LandCard";
+} from "./landTypes";
 
 export interface RiskVerdict {
   risky?: boolean | null;
