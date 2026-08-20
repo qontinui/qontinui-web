@@ -1139,9 +1139,22 @@ export function MergePipeline() {
                 block={b}
               />
             ))}
+            {/* What this list IS, said once rather than left to be inferred.
+                Coord's Phase 2 (plan 2026-08-20-predicate-eval-surface-counts-
+                evals-not-decisions) returns the newest row per PR, so the
+                population became "PRs the gate has held inside coord's
+                retention window" — a PR unblocked weeks ago still appears,
+                carrying its own last-seen timestamp. A row is an audit record
+                of a decision, NOT an assertion that the PR is held right now,
+                and that was already true of the pre-Phase-2 raw-row list. So
+                this is stated unconditionally: unlike the header counts, it
+                does not depend on which coord is answering. */}
             <p className="text-[11px] text-muted-foreground pt-1">
               Coverage labels reflect how complete the code graph was when the
-              gate ran — a degraded decision is never authoritative.
+              gate ran — a degraded decision is never authoritative. Each row is
+              the most recent time the gate reached that decision, within
+              coord&apos;s retention window; a PR listed here is not necessarily
+              still held.
             </p>
           </div>
         </div>

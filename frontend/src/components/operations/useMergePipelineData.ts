@@ -9,9 +9,20 @@
 // proposal queue and the PR outer state, so a single hook fetches BOTH plus
 // the two actionable side-channels (suggestions, blast-radius gate blocks).
 // Transport: WS push on `events.merge.>` with a debounced co-refetch of
-// every surface, plus a slow poll fallback. Having ONE owner (instead of
-// MergePipeline + MergeTrain each polling) keeps the dashboard at the same
-// request budget as before the redesign.
+// every surface, plus a slow poll fallback. Having ONE owner (instead of the
+// pre-redesign MergeTrain panel polling the same four endpoints on its own)
+// keeps the dashboard at the same request budget as before the redesign.
+//
+// This is the hero's ONLY fetch site, and must stay so. A full duplicate of
+// all four fetches plus a second WebSocket client survived inside
+// `MergeTrain` for five weeks after that component stopped being rendered
+// (2026-07-15, `946e06c7`) — unreachable, and still under maintenance: PR
+// #1032 edited both copies of `fetchGateBlocks`, only one of which could run.
+// `mergeDataOwner.test.ts` pins the property at the source level, because a
+// render test cannot see a component that never mounts. Note the guard's own
+// scope: `/merge/queue` and `/pr-merge/prs` are legitimately read by other
+// SURFACES too (LandedFeaturesPanel, StuckPrRecoveryPanel, usePrCheckDetails)
+// — what may not happen again is the hero fetching them a second time.
 //
 // Load discipline (2026-07-21 prod incident): every request in a batch pins
 // a backend DB connection for its WHOLE lifetime — the operations proxy
