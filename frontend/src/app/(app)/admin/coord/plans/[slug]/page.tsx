@@ -21,12 +21,37 @@
  *
  * Work-units have no markdown body / current_phase / shipped_at, so those
  * plan-only surfaces are dropped.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * The ROUTE survives (D1 — this page is a workspace: it owns the transition
+ * lever and the status history, and it is the target of the "Open full page"
+ * action `<PlanRow>` gained in Wave 1). What changed, per
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — three `<Card><CardHeader><CardTitle>` section wrappers are gone;
+ *   each cost ~72px of header to label a section a heading labels as well.
+ * - **R3/R4/R8** — the work-unit's status is now the SAME `<StatusBadge>`
+ *   `/plans` renders (`derivePlanStatus`), with the matching left-edge accent.
+ *   It was a bare `<Badge variant="outline">{plan.status}</Badge>` printing the
+ *   raw coord enum — R8's "no internal vocabulary on a primary surface", and
+ *   it also meant a `blocked` work unit read exactly like a `draft` one here
+ *   while reading red one click away.
+ * - **R2** — `updated_at` and each history row's `transitioned_at` were RAW
+ *   ISO strings. They render through `<RowTime>` now: relative in the row,
+ *   absolute in the title.
+ * - **R5** — the status history is a list, so it gets the list primitives: one
+ *   transition is one line, and the full reason / prior status / actor expand
+ *   in place instead of being truncated into the line.
+ * - **R7** — the history collapses (open by default; the choice persists), and
+ *   its count stays visible in the collapsed header.
+ *
+ * Every authored `data-testid` is carried across unchanged (D4a).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +63,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, FileText, GitCommit, History } from "lucide-react";
+import { ArrowLeft, ArrowRight, GitCommit, History } from "lucide-react";
+import {
+  CollapsiblePanel,
+  RecordDetail,
+  RecordList,
+  RecordRow,
+  RowTime,
+  StatusBadge,
+  rowAccentClass,
+} from "@/components/console";
+import {
+  PLAN_STATUS_PALETTE,
+  derivePlanStatus,
+  describePlanStatus,
+} from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import {
   CoordAdminOnly,
@@ -181,56 +220,64 @@ export default function CoordPlanDetailPage() {
       </div>
 
       {error && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
       {loading && !plan ? (
         <Skeleton className="h-32 w-full" />
       ) : plan ? (
         <>
-          <Card data-testid="coord-plan-meta">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileText className="h-4 w-4" />
+          {/* R9/R3/R4 — one bordered strip carrying the same status badge and
+              left-edge accent `/plans` renders, not a Card with a header. */}
+          <div
+            data-testid="coord-plan-meta"
+            className={[
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-1.5",
+              rowAccentClass(derivePlanStatus(plan)),
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="font-mono text-xs shrink-0">
+                work unit
+              </Badge>
+              <span className="text-base font-medium min-w-0 break-words">
                 {plan.title || plan.slug}
-                {plan.status && (
-                  <Badge variant="outline" className="ml-2">
-                    {plan.status}
-                  </Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            {plan.updated_at && (
-              <CardContent className="pt-0">
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  updated {plan.updated_at}
-                </p>
-              </CardContent>
-            )}
-          </Card>
+              </span>
+              <StatusBadge
+                status={derivePlanStatus(plan)}
+                palette={PLAN_STATUS_PALETTE}
+              />
+              {plan.updated_at && (
+                <RowTime at={plan.updated_at} verb="Updated" />
+              )}
+            </div>
+            <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
+              work_unit slug: {plan.slug}
+              {plan.status ? ` · coord status: ${plan.status}` : ""}
+            </div>
+          </div>
 
           <CoordAdminOnly
             fallback={
-              <Card data-testid="coord-plan-transition-readonly">
-                <CardContent className="p-4">
-                  <ReadOnlyNotice label="Plan status transitions are administrator only." />
-                </CardContent>
-              </Card>
+              <div
+                data-testid="coord-plan-transition-readonly"
+                className="rounded-lg border border-border bg-card/30 px-4 py-3"
+              >
+                <ReadOnlyNotice label="Plan status transitions are administrator only." />
+              </div>
             }
           >
-          <Card data-testid="coord-plan-transition">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <GitCommit className="h-4 w-4" />
-                Transition status
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap items-end gap-2">
+          <section
+            data-testid="coord-plan-transition"
+            className="space-y-3 rounded-lg border border-border bg-card/30 px-4 py-3"
+          >
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              <GitCommit className="h-4 w-4" />
+              Transition status
+            </h2>
+            <div className="flex flex-wrap items-end gap-2">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-muted-foreground">
                     new status
@@ -267,56 +314,122 @@ export default function CoordPlanDetailPage() {
                   disabled={transitioning || !newStatus}
                   data-testid="coord-plan-transition-submit"
                 >
-                  {transitioning ? "Transitioning..." : "Apply"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                {transitioning ? "Transitioning..." : "Apply"}
+              </Button>
+            </div>
+          </section>
           </CoordAdminOnly>
 
-          <Card data-testid="coord-plan-history">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <History className="h-4 w-4" />
-                Status history
-                <Badge variant="outline" className="ml-2">
-                  {history.length}
-                </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {history.length === 0 ? (
+          {/* R7 — the transition log is supporting material, so it folds; its
+              count stays visible in the collapsed header so an empty history
+              is never something you have to open the panel to learn. */}
+          <CollapsiblePanel
+            titleAs="h2"
+            className="p-3"
+            defaultOpen
+            storageKey="coord-plan-history"
+            icon={<History className="h-3.5 w-3.5" />}
+            title="Status history"
+            summary={
+              <Badge variant="outline" className="font-mono text-[11px]">
+                {history.length}
+              </Badge>
+            }
+            data-testid="coord-plan-history"
+          >
+            {/* R2/R5 — one transition is one line. The prior status, the full
+                reason and the actor expand in place rather than being
+                truncated into it. */}
+            <RecordList
+              items={history}
+              // A history row carries no id, and two rows CAN share a
+              // timestamp (a bulk transition), so the index is the tie-break —
+              // appended, never used alone (see `RecordList`'s itemKey doc).
+              itemKey={(h, i) => `${h.transitioned_at}-${h.to_status}-${i}`}
+              empty={
                 <p className="text-sm text-muted-foreground italic">
                   No status history yet.
                 </p>
-              ) : (
-                <ul className="space-y-1">
-                  {history.map((h, i) => (
-                    <li
-                      key={i}
-                      data-testid="coord-plan-history-row"
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {h.transitioned_at}
+              }
+              renderRow={(h, ctx) => {
+                const status = derivePlanStatus({ status: h.to_status });
+                const from = describePlanStatus(h.from_status);
+                return (
+                  <RecordRow
+                    data-testid="coord-plan-history-row"
+                    expanded={ctx.expanded}
+                    onToggle={ctx.onToggle}
+                    accent={rowAccentClass(status)}
+                    identity={h.by_actor ? "by" : "→"}
+                    label={
+                      <span className="inline-flex items-center gap-1.5">
+                        {h.from_status && (
+                          <>
+                            <span className="text-muted-foreground">
+                              {from.label}
+                            </span>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+                          </>
+                        )}
+                        <span>{h.by_actor ?? "actor not recorded"}</span>
                       </span>
-                      <Badge variant="outline">{h.to_status}</Badge>
-                      {h.by_actor && (
-                        <span className="text-xs text-muted-foreground">
-                          by {h.by_actor}
-                        </span>
-                      )}
-                      {h.reason && (
-                        <span className="text-xs text-muted-foreground italic">
-                          “{h.reason}”
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                    }
+                    status={
+                      <StatusBadge
+                        status={status}
+                        palette={PLAN_STATUS_PALETTE}
+                      />
+                    }
+                    reason={h.reason ?? undefined}
+                    time={<RowTime at={h.transitioned_at} verb="Transitioned" />}
+                  >
+                    <RecordDetail
+                      why={
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">
+                            Transitioned to{" "}
+                          </span>
+                          <span className="text-foreground/90">
+                            {status.label}
+                          </span>
+                          {h.from_status && (
+                            <>
+                              <span className="text-muted-foreground">
+                                {" "}
+                                from{" "}
+                              </span>
+                              <span className="text-foreground/90">
+                                {from.label}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      }
+                      problems={
+                        h.reason ? (
+                          <p className="text-sm text-foreground whitespace-pre-wrap">
+                            &ldquo;{h.reason}&rdquo;
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">
+                            No reason recorded for this transition.
+                          </p>
+                        )
+                      }
+                      raw={
+                        <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
+                          {h.from_status ? `${h.from_status} → ` : ""}
+                          {h.to_status}
+                          {h.by_actor ? ` · actor: ${h.by_actor}` : ""}
+                          {` · at: ${h.transitioned_at}`}
+                        </div>
+                      }
+                    />
+                  </RecordRow>
+                );
+              }}
+            />
+          </CollapsiblePanel>
 
         </>
       ) : (
