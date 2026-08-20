@@ -15,15 +15,18 @@
  * 2. {@link TREE_ATTENTION_BY_KIND} — the audited verdict → attention table
  *    (R3), TOTAL over {@link TreeStatusKind}.
  * 3. {@link deriveTreeStatus} — the row status the console renders, including
- *    the ONE escalation this surface has: a dirty tree whose WIP has sat for
- *    72h is somebody's problem regardless of what the pull ladder says.
+ *    the ONE escalation this surface has: a dirty tree whose WIP has sat
+ *    untouched for **24h or more** is somebody's problem regardless of what
+ *    the pull ladder says. (It was 72h until the Wave-1 review's Ruling 1
+ *    moved the 24-72h band from `waiting` to `author` — see
+ *    {@link STALE_ATTENTION}.)
  *
  * ## Why the badge hue and the row accent can disagree here
  *
  * The verdict badge is keyed on the PULL VERDICT: it answers "what would coord
  * do with this tree?". The left-edge accent is keyed on the row's escalated
  * attention: it answers "must a human act?". Those are genuinely different
- * questions on this surface — an `up_to_date` tree with three days of
+ * questions on this surface — an `up_to_date` tree with a day-old pile of
  * uncommitted work needs a human and needs no pull. Painting the verdict badge
  * red would be a lie about the verdict; leaving the row unaccented would be a
  * lie about the operator's inbox. So the badge reports the verdict, the accent
@@ -314,19 +317,31 @@ export function deriveTreesHealth(trees: PrimaryTreeRow[]): TreesHealth {
     const k = pullSafetyClass(t).kind;
     if (k === "hold" || k === "diverged") held += 1;
   }
-  // `stale > 0` is NOT a second disjunct here: `staleBand` returns "none" for
-  // a clean tree, so every stale tree is already a dirty one and the amber arm
-  // would be unreachable through it.
+  // THE STRIP AGREES WITH THE ROWS. After Ruling 1 every band `staleBand`
+  // reports is `author`, so ANY stale tree makes this a red page — `stale`, not
+  // `critical`, is the red disjunct. Leaving it at `critical` would have put an
+  // amber strip headlined "Every tree is safe to pull" directly above a row
+  // with a red accent and a red `stale 24h+` badge, which is the contradiction
+  // R3 exists to prevent, one layer up from where it usually bites.
+  //
+  // `dirty` is the only amber, and it is amber in the R3 sense: uncommitted
+  // work under 24h needs nobody yet, and the clock is what will decide. The
+  // green headline is therefore reserved for a page where it is literally
+  // true.
   const level: "green" | "amber" | "red" =
-    critical > 0 || held > 0 ? "red" : dirty > 0 ? "amber" : "green";
+    stale > 0 || held > 0 ? "red" : dirty > 0 ? "amber" : "green";
   const headline =
     critical > 0
       ? `${critical} tree${critical === 1 ? "" : "s"} holding WIP for 72h+`
-      : held > 0
-        ? `${held} tree${held === 1 ? "" : "s"} coord will not touch`
-        : trees.length === 0
-          ? "No primary trees for this device"
-          : "Every tree is safe to pull";
+      : stale > 0
+        ? `${stale} tree${stale === 1 ? "" : "s"} holding WIP for 24h+`
+        : held > 0
+          ? `${held} tree${held === 1 ? "" : "s"} coord will not touch`
+          : dirty > 0
+            ? `${dirty} tree${dirty === 1 ? "" : "s"} carrying fresh uncommitted work`
+            : trees.length === 0
+              ? "No primary trees for this device"
+              : "Every tree is safe to pull";
   return {
     level,
     headline,

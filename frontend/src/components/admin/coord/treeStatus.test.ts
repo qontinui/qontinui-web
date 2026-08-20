@@ -365,6 +365,40 @@ describe("deriveTreesHealth", () => {
     expect(h.level).toBe("red");
   });
 
+  it("goes RED on a 24h stale tree, not amber — the strip agrees with the row", () => {
+    // S-A of the Wave-1 review pass 2. Before this, a page whose only signal
+    // was a 30h stale tree rendered an amber strip headlined "Every tree is
+    // safe to pull" directly above a red-accented row with a red badge.
+    const h = deriveTreesHealth([
+      {
+        repo: "a",
+        primary_path: "pa",
+        behind_count: 0,
+        dirty: true,
+        wip_last_modified: new Date(Date.now() - 30 * 3_600_000).toISOString(),
+      },
+    ]);
+    expect(h.stale).toBe(1);
+    expect(h.level).toBe("red");
+    expect(h.headline).toBe("1 tree holding WIP for 24h+");
+  });
+
+  it("reserves the all-clear headline for a page where it is literally true", () => {
+    // A dirty-but-fresh tree is amber and must NOT claim everything is fine.
+    const h = deriveTreesHealth([
+      {
+        repo: "a",
+        primary_path: "pa",
+        behind_count: 0,
+        dirty: true,
+        wip_last_modified: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      },
+    ]);
+    expect(h.level).toBe("amber");
+    expect(h.headline).not.toBe("Every tree is safe to pull");
+    expect(h.headline).toMatch(/fresh uncommitted work/);
+  });
+
   it("is green with no trees held and none dirty", () => {
     expect(
       deriveTreesHealth([
