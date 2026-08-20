@@ -9,9 +9,13 @@ other 29 console routes can be moved onto it and the next operator surface can b
 built on it instead of inventing a third shape.
 
 Every code citation below was verified against `origin/main` at
-`859d8286fe611408b929c89b5e95ebf5a39e9c50`. Line numbers move; the symbol names
-do not. When a citation drifts, fix the citation — do not fix the rule to match
-whatever the code drifted into.
+`859d8286fe611408b929c89b5e95ebf5a39e9c50` — **with one declared exception:
+[§3.1](#31-the-base-this-is-built-on--operationsstatusrowtsx) cites
+`operations/statusRow.tsx`, which is NOT on `main`. It lands with qontinui-web#986
+(open at the time of writing), and its line numbers are as of the `pr986` ref.
+Every such citation is marked at its use site.** Line numbers move; the symbol
+names do not. When a citation drifts, fix the citation — do not fix the rule to
+match whatever the code drifted into.
 
 ## Table of Contents
 
@@ -30,7 +34,10 @@ This guide governs **operator and monitoring surfaces in `qontinui-web`** — th
 pages whose job is to let one person watch a fleet of machines and act on what
 they see.
 
-**In scope today:** every route under `src/app/(app)/admin/coord/` — 30 routes.
+**In scope today:** every route under `src/app/(app)/admin/coord/` — **30
+top-level routes plus 5 dynamic detail routes** (`[agent_id]`, `[slug]`, `[id]`,
+`[name]`, `[version]`), i.e. 35 `page.tsx` files. "30 routes" below always means
+the top-level set.
 
 **In scope next, by construction:** `/admin/agent-claims`, `/admin/agent-sessions`,
 and any operator surface added after them. The guide is named
@@ -61,8 +68,13 @@ express.
 
 Nine rules, R1–R9. Each is stated, then shown as a ✅/❌ pair from code that is on
 `main` today. The ✅ side is always `src/components/operations/MergePipeline.tsx`
-(the Pipeline tab). The ❌ side is always a real console file, because the
-anti-pattern is not hypothetical — it is what 29 of 30 routes do right now.
+(the Pipeline tab). The ❌ side is always **a real console file on `main`** — the
+anti-patterns are not hypothetical. Most are near-universal (the fat-card record
+shape and the duplicated page title are on all 18 Family-B routes), but the count
+varies per rule, and each ❌ below names the file it came from. Where a rule has
+**no** live violator at a given scale, the guide says so rather than
+manufacturing one — see
+[R7](#r7--secondary-material-collapses-but-its-signal-does-not).
 
 ### R1 — Health strip first
 
@@ -248,7 +260,7 @@ function rowAccentClass(row: PipelineRow): string {
 }
 ```
 
-The badge (`STATUS_BADGE_CLASS`, `MergePipeline.tsx:101-131`) carries the
+The badge (`STATUS_BADGE_CLASS`, `MergePipeline.tsx:101-130`) carries the
 `bg-*/15` tint; the *row* carries only the edge.
 
 ❌ `src/components/admin/coord/PlanCard.tsx:44` — the card's only state affordance
@@ -411,10 +423,33 @@ collapse (`fleet/page.tsx:289-310`: `{unhealthy} unhealthy`,
 (`useFleetHealth`, `fleet/page.tsx:86`, called at `:222`) precisely so the collapse
 cannot take the signal with it.
 
-❌ A page that renders a secondary panel always-mounted pays its poll on every
-visit whether or not anyone looks. `LandCard.tsx` (601 lines) embeds an
-always-mounted preview panel per record — the anti-pattern at record scale rather
-than page scale.
+❌ `src/app/(app)/admin/coord/lands/page.tsx:337` — `<LandPrecisionPanel>` is
+rendered **unconditionally**, and its own fetch polls every 30s
+(`lands/page.tsx:184-189`; `POLL_INTERVAL_MS` at `:51`) for the whole life of the
+page. It is section 3 of a three-section page — per-dimension predictor
+precision/recall calibration
+(`components/admin/coord/LandPrecisionPanel.tsx:3-15`) — i.e. exactly the
+infrastructural material R7 says belongs behind a click. Every visitor to `/lands`
+pays that poll whether or not they came to read a calibration table:
+
+```tsx
+// lands/page.tsx:331-337
+{/* ---- 3. Calibration ---- */}
+{precisionError && (
+  <p className="text-sm text-destructive">
+    Failed to load calibration: {precisionError}
+  </p>
+)}
+<LandPrecisionPanel data={precision} loading={precisionLoading} />
+```
+
+**At RECORD scale, R7 has no live violator — and one near-miss worth recording so
+nobody "fixes" it.** `LandCard.tsx`'s `<CrossRepoVerdictPanel>` looks like an
+embedded per-record panel and is not one: it is gated on `crossRepoOpen`
+(`LandCard.tsx:594-597`), toggled at `:485-491`, and its own comment at `:335-336`
+records that it fetches **once on mount** and that *"the panel only mounts when the
+operator expands it"*. That is R7 already satisfied, by a file that wrote down the
+same rationale this rule gives. Leave it alone.
 
 ### R8 — No internal vocabulary on a primary surface
 
@@ -529,15 +564,24 @@ This exact shape is repeated across 18 Family-B routes.
 
 ### 3.1 The base this is built on — `operations/statusRow.tsx`
 
-Phase 1 does **not** start from a blank file. `qontinui-web#986` (plan
-`2026-08-05-coord-alerts-surface-and-fleet-style-ui`) already extracts the row
+> **This module is NOT on `main`.** `src/components/operations/statusRow.tsx`
+> lands with **qontinui-web#986**, which was still **open** (`mergedAt: null`) when
+> this section was written. Everything in §3.1 is therefore a forward reference: it
+> describes the shape Phase 1 builds on **once #986 merges**, and until then this
+> section is dead — do not import from it, and do not read its citations as `main`.
+> Line numbers below are as of the `pr986` ref. If #986 is abandoned or lands with
+> a different shape, Phase 1 re-derives its base from `MergePipeline.tsx` and this
+> section is rewritten before any primitive is built.
+
+Phase 1 will **not** start from a blank file. `qontinui-web#986` (plan
+`2026-08-05-coord-alerts-surface-and-fleet-style-ui`) **extracts** the row
 primitives out of `MergePipeline.tsx` and generalises them over a surface-agnostic
 `RowStatus` interface plus a per-surface `StatusPalette`. That module —
-`src/components/operations/statusRow.tsx`, 287 lines — is the foundation the
-console primitives are built on. Anything below that overlaps it **wraps or moves**
-it; it is never re-extracted a second time.
+`statusRow.tsx`, 287 lines — **will be** the foundation the console primitives are
+built on. Anything below that overlaps it **wraps or moves** it; it is never
+re-extracted a second time.
 
-What `statusRow.tsx` already provides (line numbers as of the `pr986` ref):
+What `statusRow.tsx` provides once it lands (line numbers as of the `pr986` ref):
 
 | Export | What it is |
 |---|---|
@@ -561,10 +605,10 @@ derivation. Keep that property.
 | `RecordRow` | R2, R4 | `PipelineRowDisplay` `MergePipeline.tsx:812-878`, over `statusRow`'s `rowAccentClass` + `StatusBadge` + `RowTime` | `{ identity, label, status, reason?, time, accent, expanded, onToggle }` | planned |
 | `RecordDetail` | R5 | `RowDetail` `MergePipeline.tsx:647-777` | `{ why, problems, actions, history, raw }` — five slots in that order | planned |
 | `RecordList` | R2, R5 | the `expandedKey` state + skeleton + empty-state block, `MergePipeline.tsx:925`, `:1064-1095` | `{ items, renderRow, renderDetail, loading, empty }`, one-open-at-a-time | planned |
-| `StatusBadge` | R3 | **re-export** of `statusRow.tsx:185` — not a new implementation | `{ status, palette, className? }` | exists (`operations/`) |
+| `StatusBadge` | R3 | **re-export** of `statusRow.tsx:185` — not a new implementation | `{ status, palette, className? }` | **exists on qontinui-web#986 (unlanded)** |
 | `FilterTabs` | R6 | `MergePipeline.tsx:1004-1048`, including the `–`-not-`0` unfetched-count rule | `{ tabs, active, onChange, counts, query, onQuery }` | planned |
 | `StatCluster` | R1 | `SummaryCards`/`StatCard` `gates/_components/SummaryCards.tsx:20-44`, retuned from `text-2xl` cards to an inline mono badge row | `{ stats[] }` | planned |
-| `CollapsiblePanel` | R7 | **moved** from `operations/CollapsiblePanel.tsx`, unchanged; a re-export stays in `operations/index.ts` so no import breaks | unchanged | exists (`operations/`) |
+| `CollapsiblePanel` | R7 | **moved** from `operations/CollapsiblePanel.tsx`, unchanged; a re-export stays in `operations/index.ts` so no import breaks | unchanged | exists on `main` (`operations/index.ts:2`) |
 | `attention.ts` | R3 | `ATTENTION_BY_KIND` (`prPipeline.ts:128`) generalised: `attentionOf(kind) → "author" \| "waiting" \| "none"` over a per-page kind map | — | planned |
 
 Rules for the extraction, restated so they are reviewable against this file:
@@ -600,8 +644,11 @@ looks reasonable on its own.
 | **amber** | waiting on something else; it will clear itself | `bg-amber-500/15 text-amber-200 border-amber-500/30` | a kind whose attention is `"waiting"` — and every one of them |
 | everything else | in flight or terminal; nobody is blocked | yellow / purple / blue / green / muted / dashed | a kind whose attention is `"none"` |
 
-Defined once at `MergePipeline.tsx:96-99`, and exported for cross-surface reuse at
-`statusRow.tsx:70-76`. Nothing else may mint a red or an amber.
+Defined once at `MergePipeline.tsx:96-99`. **On `main` those four constants are
+module-private — they are not exported, so grepping for an import of them finds
+nothing.** qontinui-web#986 moves them to `statusRow.tsx:70-76` and exports them
+for cross-surface reuse (unlanded — see the §3.1 caveat). Either way the rule is
+the same: nothing else may mint a red or an amber.
 
 Two glyph rules ride along, both for colourblind readers, both total rather than
 hand-picked:
@@ -646,7 +693,7 @@ it("keys the badge palette off attention — red only for author-action", () => 
 ```
 
 ```ts
-// prPipeline.test.ts:1664-1671 — every constructed row's attention matches the table
+// prPipeline.test.ts:1668-1673 — every constructed row's attention matches the table
 expect(row.status.attention).toBe(ATTENTION_BY_KIND[row.status.kind]);
 ```
 
@@ -718,7 +765,7 @@ so each has one home, and this table says plainly which ones actually gate a PR.
 | **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`) | Human review; cited from every console component's module doc | **No** — review only |
 | **Executable** — the primitives every console page composes from | `frontend/src/components/console/` (+ `index.ts` barrel), built on `operations/statusRow.tsx` | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't | **Yes** — `tsc` + `vitest` |
 | **Declarative atoms** — density and palette as CSS-property rules | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`) | **Nothing. There is no evaluator for this file anywhere in the fleet.** | **No** |
-| **CI-enforced atoms** — what actually bites | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock` | **Yes** — see the shadow/enforce caveat below |
+| **CI-enforced atoms** — what actually bites | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock` | **Yes, but indirectly** — the workflow is *not* a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
 
 ### 6.1 The declarative layer has no evaluator — say so, do not imply otherwise
 
@@ -753,6 +800,18 @@ not block on gate findings or on a capture being unavailable. It **does** block 
 > `INFRA-ERROR`: analyzer exit 1 on a PRESENT snapshot/frame, **or a missing spec**
 > (a broken/unrunnable gate; fails in BOTH modes).
 > — `style-gate.yml:621` (legend), `:627` (outcome)
+
+**How a red gate actually holds a PR — not by branch protection.** The workflow's
+own header says it plainly: *"It is NOT in the required-checks set, so it can never
+block a merge"* (`style-gate.yml:32-34`). A reader who stops there concludes the
+gate is decorative. It is not, because merges here go through coord's merge train,
+not through a human clicking Merge: a non-required red check leaves the PR at
+`mergeStateStatus: UNSTABLE`, and coord's **`ci-not-green` predicate** holds it
+there. GitHub would accept a manual merge; coord will not propose one. So the gate
+binds through the merge train, and promoting it to a required GitHub check is a
+separate, deliberate decision this guide does not make. (Mechanism and a worked
+example:
+`qontinui-claude-config/knowledge-base/qontinui-specific/coord-merge-train.md:256-265`.)
 
 **The trap:** `routes.json` is a deliberate three-route seed set whose own
 `$comment` says it expands *"after burn-in once the capture+baseline loop is proven
