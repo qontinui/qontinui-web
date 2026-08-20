@@ -245,17 +245,17 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/prs(\?|$)/,
     body: [],
-    note: "MergeTrain fetchPrs tolerates bare array — coord proxy",
+    note: "useMergePipelineData fetchPrs tolerates bare array — coord proxy",
   },
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/escalations(\?|$)/,
     body: [],
-    note: "MergeTrain fetchEscalations tolerates bare array (MergeTrain.tsx:526) — coord proxy",
+    note: "Escalations list; tolerates bare array. No frontend caller today — the last one went with the unrendered MergeTrain panel — coord proxy",
   },
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/suggestions(\?|$)/,
     body: [],
-    note: "MergeTrain fetchSuggestions tolerates bare array (MergeTrain.tsx:596) — coord proxy",
+    note: "useMergePipelineData fetchSuggestions tolerates bare array — coord proxy",
   },
   {
     pattern: /\/api\/v1\/strategy\/mentions\/unread(\?|$)/,
