@@ -29,6 +29,13 @@ so this revision imposes NO migration-before-deploy ordering gate — unlike a
 new *column* read by coord, which would (``coord_reads_new_column_without_web_migration``).
 Landing it first is still preferred, simply so the query is never slow in prod.
 
+Not ``CONCURRENTLY``: alembic runs the revision inside a transaction, where
+``CREATE INDEX CONCURRENTLY`` is not permitted. The plain build therefore takes
+a ``SHARE`` lock that blocks writes to the table for its duration — at the
+current ~40-75k history rows that is sub-second, which is why the trade is
+taken rather than restructuring the revision. It is a brief write stall, not
+zero cost, and the sentence above is about DEPLOY ORDER, not about locking.
+
 alembic is the sole author of ``coord.*`` schema: coord's Rust side only DMLs
 against these tables (``crates/coord/tests/coord_schema_authorship.rs`` enforces
 that it authors no DDL), which is why an index needed by a Rust query lives in
@@ -67,6 +74,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the index. The older ``(work_unit_id)`` index is left alone —
-    it predates this revision and other reads still use it."""
+    """Drop the index this revision created.
+
+    The older ``idx_work_unit_status_history_unit`` is deliberately left alone,
+    though not for the reason it might appear: it is not still *needed*. Any
+    read that index serves is served equally by the leading column of this
+    revision's ``(work_unit_id, to_status, transitioned_at)``, so it is strictly
+    redundant, and on an append-heavy table its write amplification is real.
+
+    It stays because dropping it in the SAME revision that coord's query starts
+    depending on the composite would couple the two deploys — a coord rolled
+    back to the pre-LATERAL query after this migration applied would find
+    neither index. Dropping it is a follow-up, once the composite has been live
+    for a release.
+    """
     op.execute("DROP INDEX IF EXISTS coord.idx_wush_unit_status_time")

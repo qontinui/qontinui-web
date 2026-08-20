@@ -61,10 +61,18 @@ _INDEX_NAME = "idx_wush_unit_status_time"
 #: reads still use it — so a plan naming it is the "before" state, not a failure.
 _OLD_INDEX_NAME = "idx_work_unit_status_history_unit"
 
-#: ``work_unit_registry::list_work_units``, verbatim. Quoted in full rather than
-#: paraphrased for the reason the sibling ``pagedidx`` test gives: a simplified
-#: statement could ride the index while the real one did not. If coord's SQL and
-#: this literal ever diverge, assertion 1 stops measuring anything.
+#: A MIRROR of the statement `work_unit_registry::list_work_units` issues in
+#: qontinui-coord (`feat(work-units): derive first-in-progress/first-shipped`).
+#: Quoted in full rather than paraphrased for the reason the sibling
+#: ``pagedidx`` test gives: a simplified statement could ride the index while
+#: the real one did not.
+#:
+#: **This mirror is NOT machine-checked, and nothing in this repo can check
+#: it.** coord's SQL lives in another repository, so if it is reformulated —
+#: `to_status = ANY($n)`, a `DISTINCT ON`, a different bind order — the
+#: assertions below stay green while measuring a statement no process
+#: executes. The drift detector that WOULD work has to live coord-side, next
+#: to the SQL; treat a coord change to this query as obliging an update here.
 _LIST_SQL = """
     SELECT w.id, w.slug, w.tenant_id, w.status, w.title, w.metadata,
            w.created_at, w.updated_at,
@@ -89,7 +97,7 @@ _LIST_SQL = """
        AND ($2::text IS NULL OR w.slug LIKE $2 || '%')
        AND ($6::text IS NULL OR w.slug NOT LIKE $6 || '%')
        AND w.tenant_id = $5
-     ORDER BY w.updated_at DESC
+     ORDER BY w.updated_at DESC, w.id DESC
      LIMIT $3 OFFSET $4
 """
 
@@ -205,9 +213,14 @@ def _generic_plan(engine: Engine) -> str:
                 f"PREPARE wu_list(text, text, bigint, bigint, uuid, text) AS {_LIST_SQL}"
             )
         )
-        # Five executions first: PostgreSQL only considers a generic plan from
-        # the sixth, so explaining before that still yields a custom plan even
-        # with force_generic_plan set.
+        # Five warmup executions. NOT because force_generic_plan needs them —
+        # `choose_custom_plan()` returns false on FORCE_GENERIC_PLAN before it
+        # ever reaches the "fewer than 5 custom plans so far" branch, so the
+        # very first EXPLAIN is already generic. They are retained only so this
+        # helper still measures a generic plan under the DEFAULT `auto` mode,
+        # where the five-plan rule does apply — i.e. if the GUC above is ever
+        # dropped, the assertions degrade to "still generic", not to silently
+        # measuring a custom plan.
         for _ in range(5):
             conn.execute(
                 text("EXECUTE wu_list(NULL, NULL, 500, 0, :tid, NULL)"),
@@ -218,6 +231,10 @@ def _generic_plan(engine: Engine) -> str:
             {"tid": _TENANT},
         ).fetchall()
         conn.execute(text("DEALLOCATE wu_list"))
+        # Leave the pooled connection as we found it — `plan_cache_mode` is
+        # session state, and a later checkout of this connection inheriting
+        # force_generic_plan would make the pool order-dependent.
+        conn.execute(text("RESET plan_cache_mode"))
     return "\n".join(r[0] for r in rows)
 
 

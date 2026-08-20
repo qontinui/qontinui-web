@@ -134,6 +134,11 @@ class TestListCoordPlans:
             ("?exclude_slug_prefix=shepherd-", "exclude_slug_prefix", "shepherd-"),
             ("?limit=500", "limit", 500),
             ("?offset=500", "offset", 500),
+            # offset=0 is the one that survives only because the proxy tests
+            # `is not None` rather than truthiness. A tidy-up to `if offset:`
+            # would drop it silently and every OTHER case here stays green, so
+            # this row is what pins the idiom.
+            ("?offset=0", "offset", 0),
         ],
     )
     def test_each_filter_is_forwarded(
@@ -149,17 +154,43 @@ class TestListCoordPlans:
         assert params.get(key) == expected
 
     def test_all_filters_ride_together(self, auth_client: TestClient):
-        """The combination the shepherd tab actually issues."""
+        """Every filter at once, asserted as an EXACT dict.
+
+        Equality rather than per-key membership: this is the case that would
+        catch the proxy inventing a parameter nobody asked for.
+        """
         _, _, params = _call(
             auth_client,
-            "?status=in_progress&exclude_slug_prefix=shepherd-&limit=500&offset=1000",
+            "?status=in_progress&slug_prefix=2026-"
+            "&exclude_slug_prefix=shepherd-&limit=500&offset=1000",
         )
         assert params == {
             "status": "in_progress",
+            "slug_prefix": "2026-",
             "exclude_slug_prefix": "shepherd-",
             "limit": 500,
             "offset": 1000,
         }
+
+    @pytest.mark.parametrize("param", ["slug_prefix", "exclude_slug_prefix"])
+    def test_empty_prefix_is_rejected_not_forwarded(
+        self, auth_client: TestClient, param: str
+    ):
+        """An EMPTY prefix must never reach coord.
+
+        `exclude_slug_prefix=` would become `slug NOT LIKE '' || '%'` there —
+        `NOT LIKE '%'` — which excludes every row. A console forwarding an
+        empty input box would render a blank Plans list, and this endpoint's
+        own docstring tells the operator to read an unexpected page as "coord
+        has not caught up yet". `min_length=1` makes it a loud 422 instead.
+        """
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=_EMPTY)
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/plans?{param}=")
+        assert resp.status_code == 422
+        instance.get.assert_not_called()
 
     def test_offset_rejects_negative(self, auth_client: TestClient):
         """``ge=0`` is enforced here rather than deferred to coord."""
