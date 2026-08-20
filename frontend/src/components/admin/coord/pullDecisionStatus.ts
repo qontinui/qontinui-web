@@ -15,7 +15,14 @@
  */
 
 import type { Attention } from "@/components/console/attention";
-import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  INERT,
+  UNKNOWN_AMBER,
+  WAITING_AMBER,
+  type RowStatus,
+  type StatusPalette,
+} from "@/components/console/statusRow";
 
 export interface PullDecisionOutcome {
   chosen_option?: string | null;
@@ -76,16 +83,16 @@ export const PULL_VERDICT_CLASS: Record<PullVerdictKind, string> = {
   // Calm in-flight / terminal hues — nobody is blocked on any of these.
   pull: "bg-green-500/15 text-green-200 border-green-500/30",
   default_ref_sync: "bg-blue-500/10 text-blue-200 border-blue-500/30",
-  up_to_date: "bg-muted text-muted-foreground border-border",
+  up_to_date: INERT,
   // Waiting on something else, and it clears itself.
-  hold: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  hold: WAITING_AMBER,
   // Someone must act now.
-  diverged: "bg-red-500/15 text-red-200 border-red-500/35",
+  diverged: AUTHOR_RED,
   // The same divergence, with an outcome reported against it. Calm, and the
   // detail says what was done.
-  diverged_handled: "bg-muted text-muted-foreground border-border",
+  diverged_handled: INERT,
   // R3's ignorance floor.
-  unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
+  unknown: UNKNOWN_AMBER,
 };
 
 /**

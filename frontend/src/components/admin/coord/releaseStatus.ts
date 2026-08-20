@@ -28,7 +28,13 @@
  */
 
 import type { Attention } from "@/components/console/attention";
-import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  UNKNOWN_AMBER,
+  WAITING_AMBER,
+  type RowStatus,
+  type StatusPalette,
+} from "@/components/console/statusRow";
 import type { ReleaseHistoryEntry } from "@/services/runner-releases-service";
 
 /** The surface's operational state, normalized from the drift descriptor. */
@@ -87,12 +93,12 @@ export function releaseDriftLabel(entry: ReleaseHistoryEntry): string {
 export const RELEASE_STATE_CLASS: Record<ReleaseState, string> = {
   in_sync: "bg-green-500/15 text-green-200 border-green-500/30",
   // Amber: the build IS the thing that clears it (see the table below).
-  in_flight: "bg-amber-500/15 text-amber-200 border-amber-500/30",
-  stale: "bg-red-500/15 text-red-200 border-red-500/35",
-  failed_deploy: "bg-red-500/15 text-red-200 border-red-500/35",
-  rolled_back: "bg-red-500/15 text-red-200 border-red-500/35",
+  in_flight: WAITING_AMBER,
+  stale: AUTHOR_RED,
+  failed_deploy: AUTHOR_RED,
+  rolled_back: AUTHOR_RED,
   // R3's ignorance floor — was `secondary` grey; see the module doc.
-  unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
+  unknown: UNKNOWN_AMBER,
 };
 
 /**

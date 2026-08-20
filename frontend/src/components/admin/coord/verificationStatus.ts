@@ -45,7 +45,13 @@
  */
 
 import type { Attention } from "@/components/console/attention";
-import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  UNKNOWN_AMBER,
+  WAITING_AMBER,
+  type RowStatus,
+  type StatusPalette,
+} from "@/components/console/statusRow";
 
 /** The verification states a row can be in, composed outcome plus "not yet". */
 export type VerificationKind =
@@ -77,15 +83,15 @@ export const VERIFICATION_CLASS: Record<VerificationKind, string> = {
   // Calm, and DISTINCT from partial so the two are tellable apart at a glance
   // without either borrowing amber. See the module doc for why not amber.
   surprise: "bg-violet-500/12 text-violet-200 border-violet-500/30",
-  failure: "bg-red-500/15 text-red-200 border-red-500/35",
-  contradiction: "bg-red-500/15 text-red-200 border-red-500/35",
+  failure: AUTHOR_RED,
+  contradiction: AUTHOR_RED,
   // Waiting on the verifier — the one thing here that genuinely clears itself.
-  unverified: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  unverified: WAITING_AMBER,
   // Same wait, one step further along: the verification row exists and the
   // composer has not written an outcome onto it yet.
-  pending: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  pending: WAITING_AMBER,
   // R3's ignorance floor.
-  unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
+  unknown: UNKNOWN_AMBER,
 };
 
 /**

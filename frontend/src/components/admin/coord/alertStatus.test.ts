@@ -111,10 +111,17 @@ describe("ATTENTION_BY_KIND totality", () => {
     // This surface's inline version predated `paletteDisagreements` — it IS
     // what the shared helper was generalised from — and it was the only
     // console palette still auditing itself, so the exemplar was drifting
-    // behind the pattern it set. `perRowKinds` carries the same single
-    // carve-out the inline check made: `unknown` is amber-by-floor but neutral
-    // in the badge, because its attention is per-row (severity-derived) and
-    // `alertPaletteFor` resolves what actually renders — asserted below.
+    // behind the pattern it set.
+    //
+    // `perRowKinds` exempts `unknown` because its attention is per-row
+    // (severity-derived) and `alertPaletteFor` resolves what actually renders
+    // — asserted below. Note the exemption is the same SET as the inline
+    // check's, but not the same SHAPE: the inline
+    // `attention === "waiting" && kind !== "unknown"` positively asserted that
+    // `unknown`'s badge is NOT amber, whereas `perRowKinds` skips clause (3)
+    // for it entirely. That one bit is no longer pinned. It is deliberate
+    // rather than overlooked: amber there would be MORE R3-compliant, not
+    // less, so the lost assertion guarded against an improvement.
     expect(
       paletteDisagreements(
         ATTENTION_BY_KIND,
@@ -157,12 +164,16 @@ describe("ATTENTION_BY_KIND totality", () => {
   });
 
   // The `✕`-on-exactly-the-author-kinds loop that stood here is now clause (4)
-  // of `paletteDisagreements`, asserted by the test above. The shared clause is
-  // strictly STRONGER: it checks both directions (an author kind carries `✕`,
-  // AND a `✕` kind is an author kind) plus the set size, where the loop here
-  // only ever checked the forward direction and the size. Keeping it would be a
-  // weaker private copy of an assertion the shared audit now makes — which is
-  // the exact drift this adoption removes.
+  // of `paletteDisagreements`, asserted by the test above.
+  //
+  // It is worth being exact about WHY it went, because the tempting reason is
+  // wrong: the shared clause is NOT strictly stronger. Forward containment
+  // plus set-size equality already implies set equality, so the loop and the
+  // clause pin the same property. The real reason is duplication that was
+  // already shipped — Wave 1's `console/attention.test.ts` runs
+  // `paletteDisagreements` over THIS palette, with this same `perRowKinds`,
+  // as its worked example. The loop was a third copy of an assertion two
+  // other places already make.
 });
 
 // ----------------------------------------------------------------------------
