@@ -1,7 +1,7 @@
 """coord prompt_documents — allow kind='session_briefing'
 
 Revision ID: coord_prompt_docs_03_session_briefing_kind
-Revises: coord_sessions_tool_activity
+Revises: coord_workunits_05_status_history_lookup
 Create Date: 2026-08-20
 
 Phase 1 of the runner-session-briefing plan
@@ -52,7 +52,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_prompt_docs_03_session_briefing_kind"
-down_revision: str = "coord_sessions_tool_activity"
+down_revision: str = "coord_workunits_05_status_history_lookup"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
