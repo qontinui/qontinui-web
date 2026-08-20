@@ -378,6 +378,37 @@ jobs:
                   return (x >= 0 ? '+' : '') + v;
                 };
                 const flag = (b) => (b === true ? '**yes**' : b === false ? 'no' : '_n/a_');
+                // `promoted` is literally `candidate_mean > control_mean`. On a
+                // lower-is-better metric that means "scored HIGHER", which is
+                // worse — and a bare '**yes**' in a column headed `promoted`
+                // reads as good news. The metric name carries a `↓better`
+                // marker, but a marker three columns away is not what a reader
+                // acts on. Say it in the cell that carries the verdict.
+                const promotedCell = (p) => {
+                  if (p.lower_is_better !== true) return flag(p.promoted);
+                  if (p.promoted === true) return '**yes** — _higher = worse_';
+                  if (p.promoted === false) return 'no — _lower = better_';
+                  return '_n/a_';
+                };
+                // The threshold comes from the REPORT, not from a literal
+                // here. `CREDIT_Z_THRESHOLD` lives in `scorer.py` and is
+                // emitted on every paired row precisely so this prose cannot
+                // drift away from the number the flag was actually computed
+                // against.
+                const zThresholds = Object.keys(pmetrics)
+                  .map((k) => (pmetrics[k] || {}).credit_z_threshold)
+                  .filter((t) => typeof t === 'number' && isFinite(t));
+                const oneThreshold =
+                  zThresholds.length > 0 && zThresholds.every((t) => t === zThresholds[0])
+                    ? zThresholds[0]
+                    : null;
+                const creditRule =
+                  oneThreshold === null
+                    ? // Absent (an older harness) or disagreeing across rows.
+                      // Naming no number is the honest rendering; inventing
+                      // `2.0` here is exactly the drift this reads to avoid.
+                      'the threshold the report does not state'
+                    : '`z >= ' + oneThreshold.toFixed(1) + '`';
 
                 lines.push(
                   `**Paired comparison** — candidate \`${paired.candidate || 'hybrid'}\` ` +
@@ -395,16 +426,21 @@ jobs:
                   const lowerBetter = p.lower_is_better === true ? ' ↓better' : '';
                   lines.push(
                     `| ${name}${lowerBetter} | ${n} | ${signed(p.mean_lift, 4)} | ${zCell} ` +
-                      `| ${flag(p.promoted)} | ${flag(p.credited_2sigma)} |`,
+                      `| ${promotedCell(p)} | ${flag(p.credited_2sigma)} |`,
                   );
                 }
                 lines.push(
                   '',
                   '> `promoted` and `credited_2sigma` are **separate on purpose and are never',
                   '> collapsed**. `promoted` = `candidate_mean > control_mean` — that is what banks.',
-                  '> `credited_2sigma` = `z >= 2.0` — a reported label, not a gate. A candidate that',
-                  '> banks a real lift at z=1.71 is `promoted` **and not** `credited_2sigma`: an',
+                  '> `credited_2sigma` = ' + creditRule + ' — a reported label, not a gate. A candidate',
+                  '> that banks a real lift at z=1.71 is `promoted` **and not** `credited_2sigma`: an',
                   '> expected outcome, not an error. Permissive bank, honest label.',
+                  '>',
+                  '> Rows marked `↓better` are metrics where a higher number is WORSE — the price',
+                  '> of recall, not its reward. There `promoted` still means "scored higher", so it',
+                  '> reads as a regression — while `credited_2sigma` is direction-aware and credits',
+                  '> the improvement. The two columns deliberately point opposite ways on these rows.',
                   '',
                 );
               } else {
