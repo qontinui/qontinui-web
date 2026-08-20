@@ -70,11 +70,18 @@ function AssetChip({
       variant="outline"
       className={[
         "inline-flex items-center gap-1 text-[10px] shrink-0",
+        // NOT the attention palette. §4 reserves red for the one thing on a
+        // row that says who must act, and that is the status badge — which
+        // reads coord's own drift verdict. A red chip here could sit on a row
+        // whose verdict is `in_sync` (that state short-circuits on
+        // `entry.in_sync` regardless of assets), leaving R4's left edge and the
+        // chip contradicting each other. A missing hard-gate asset says so in
+        // WORDS, and `deriveReleaseStatus` already puts it in the row's reason.
         unknown
           ? "border-dashed text-muted-foreground/70"
           : present
             ? "bg-green-500/15 text-green-200 border-green-500/30"
-            : "bg-red-500/15 text-red-200 border-red-500/35",
+            : "bg-muted text-muted-foreground border-border font-semibold",
       ].join(" ")}
       title={
         unknown
@@ -198,7 +205,12 @@ export function ReleaseRow({
         actions={
           <div className="space-y-1" data-testid="coord-release-drilldown">
             <p className="text-xs text-muted-foreground">
-              {assets.length} published asset{assets.length === 1 ? "" : "s"}
+              {/* A dark row has `assets: null` — "0 published assets" would be
+                  a measurement we did not take, and the line below already
+                  says so in words. */}
+              {entry.assets == null
+                ? "published assets: not observed"
+                : assets.length + " published asset" + (assets.length === 1 ? "" : "s")}
             </p>
             {assets.length > 0 ? (
               <ul className="space-y-0.5">

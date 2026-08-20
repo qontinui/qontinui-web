@@ -30,7 +30,7 @@
 import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Database, ShieldQuestion, Undo2 } from "lucide-react";
+import { Database, Undo2 } from "lucide-react";
 import {
   RecordDetail,
   RecordRow,
@@ -185,18 +185,15 @@ export function DeployRow({
               </Badge>
             </>
           ) : (
+            // The palette entry, not a hand-copied literal of it (§4):
+            // `status` is already `unverified` on this branch, so
+            // `VERIFICATION_PALETTE` is the amber's single source.
             <span
               className="inline-flex shrink-0"
               data-testid="coord-deploy-unverified-badge"
+              title="the deploy declared itself; the verifier has not answered yet"
             >
-              <Badge
-                variant="outline"
-                className="inline-flex items-center gap-1 text-[11px] bg-amber-500/15 text-amber-200 border-amber-500/30"
-                title="the deploy declared itself; the verifier has not answered yet"
-              >
-                <ShieldQuestion className="h-3 w-3" />
-                not yet verified
-              </Badge>
+              <StatusBadge status={status} palette={VERIFICATION_PALETTE} />
             </span>
           )}
         </>
@@ -262,13 +259,25 @@ export function DeployRow({
               {proposal && (
                 <div className="rounded border border-border p-2 text-xs space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {/* THREE states: coord says yes, coord says no, and coord
+                        did not say. `auto_eligible` is `boolean | null`, and a
+                        plain truthy test reported an uncomputed null as a
+                        measured "operator-gated". */}
                     <Badge
-                      variant={proposal.auto_eligible ? "warning" : "outline"}
-                      className="text-[10px]"
+                      variant={
+                        proposal.auto_eligible === true ? "warning" : "outline"
+                      }
+                      className={
+                        proposal.auto_eligible == null
+                          ? "text-[10px] border-dashed"
+                          : "text-[10px]"
+                      }
                     >
-                      {proposal.auto_eligible
+                      {proposal.auto_eligible === true
                         ? "auto-eligible (armed-only)"
-                        : "operator-gated"}
+                        : proposal.auto_eligible === false
+                          ? "operator-gated"
+                          : "eligibility not stated"}
                     </Badge>
                     {proposal.declare?.source_image_or_commit && (
                       <span className="font-mono">

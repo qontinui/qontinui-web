@@ -19,7 +19,7 @@ import {
   type MemoryStatusTone,
 } from "./memoryStatus";
 
-const ALL_TONES: MemoryStatusTone[] = ["known", "unknown"];
+const ALL_TONES: MemoryStatusTone[] = ["known", "untyped", "unknown"];
 
 describe("MEMORY_ATTENTION_BY_TONE — the R3 audit table", () => {
   it("is total over the tone union, with no extra entries", () => {
@@ -79,13 +79,23 @@ describe("deriveMemoryStatus", () => {
     expect(MEMORY_TONE_CLASS[s.kind]).toMatch(/bg-amber-/);
   });
 
-  it("treats an absent kind as unknown, not as a default kind", () => {
+  it("treats an absent kind as UNTYPED — calm — not as the ignorance floor", () => {
+    // R3's amber exception is two-part: amber is wrong when you cannot name a
+    // clearer AND you know the row's state. For "coord sent no type" we DO
+    // know the state, and `type` is optional metadata on this table rather
+    // than a lifecycle field that failed to load. So it is calm, drawn dashed
+    // to stay visibly distinct — and it must never be reported as "a kind this
+    // build has no meaning for", which is what folding it into `unknown` made
+    // the health strip say.
     for (const type of [undefined, null, "", "   "]) {
       const s = deriveMemoryStatus({ type });
-      expect(s.kind, JSON.stringify(type)).toBe("unknown");
+      expect(s.kind, JSON.stringify(type)).toBe("untyped");
       expect(s.label).toBe("no type");
-      expect(s.attention).toBe("waiting");
+      expect(s.attention).toBe("none");
     }
+    expect(MEMORY_TONE_CLASS.untyped).not.toMatch(/bg-amber-/);
+    // ...while a kind we cannot READ keeps the floor.
+    expect(deriveMemoryStatus({ type: "brand_new" }).attention).toBe("waiting");
   });
 
   it("matches a known kind case-insensitively but still displays its case", () => {

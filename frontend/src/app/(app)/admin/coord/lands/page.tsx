@@ -55,7 +55,18 @@
  * what R7's *"a closed panel costs zero polling"* means and what the plan's
  * Wave-2 amendment asked for. The cadence is untouched (30s) and no endpoint
  * changed; what changed is whether the request fires at all while the panel is
- * shut. The panel's summary keeps showing the LAST value it saw, labelled as
+ * shut.
+ *
+ * **Stated precisely, because the obvious reading is one request too generous:
+ * this holds in the steady state, not on the first paint.**
+ * `<CollapsiblePanel>` renders `defaultOpen` and reconciles to its
+ * `storageKey` in a post-mount effect, and a child's effects run before its
+ * parent's — so a panel the operator left CLOSED still mounts this section
+ * once and fires one fetch before folding shut. One request per page load, not
+ * one every 30s. Closing that last gap belongs in the primitive (a `hydrated`
+ * gate before rendering children), which is a change across every
+ * `CollapsiblePanel` caller and is recorded as a follow-up rather than folded
+ * in here. The panel's summary keeps showing the LAST value it saw, labelled as
  * such — it is not refreshed while collapsed, and saying otherwise would be
  * the same lie R6's dash rule forbids about a count.
  *
@@ -163,7 +174,10 @@ function previewErrorMessage(e: unknown, repo: string, pr: string): string {
  *
  * This is the whole point of the `/lands` R7 fix. `<CollapsiblePanel>` unmounts
  * its children when closed, so putting the poll here (rather than in the page,
- * where it lived) is what makes a closed panel cost zero requests. It reports
+ * where it lived) is what stops the polling while the panel is shut. Note the
+ * one-request caveat in the module doc above: the panel hydrates its persisted
+ * state after mount, so a closed-by-preference panel still costs a single
+ * fetch on first paint. It reports
  * every answer UP to the page via `onData`, so the collapsed panel's summary
  * badge can keep showing the last value it saw — that value is a snapshot, not
  * a live reading, and the badge's title says so.
@@ -171,12 +185,13 @@ function previewErrorMessage(e: unknown, repo: string, pr: string): string {
 function LandPrecisionSection({
   data,
   error,
-  loadedAt,
+  settled,
   onData,
 }: {
   data: PrecisionResponse | null;
   error: string | null;
-  loadedAt: string | null;
+  /** True once a request has come back, success OR failure. */
+  settled: boolean;
   onData: (data: PrecisionResponse | null, error: string | null) => void;
 }) {
   useEffect(() => {
@@ -208,7 +223,10 @@ function LandPrecisionSection({
           Failed to load calibration: {error}
         </p>
       )}
-      <LandPrecisionPanel data={data} loading={loadedAt === null} />
+      {/* `settled`, not "we have data": a first fetch that FAILED has
+          finished loading, and reporting it as still-loading would be a second
+          untrue thing on a row that already has an error above it. */}
+      <LandPrecisionPanel data={data} loading={!settled} />
     </>
   );
 }
@@ -312,7 +330,6 @@ export default function CoordLandsPage() {
   // ---- Recent lands state ----
   const [landsRepoFilter, setLandsRepoFilter] = useState("");
   const [lands, setLands] = useState<LandRowData[]>([]);
-  const [landsLoading, setLandsLoading] = useState(true);
   const [landsLoaded, setLandsLoaded] = useState(false);
   const [landsError, setLandsError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
@@ -325,14 +342,23 @@ export default function CoordLandsPage() {
   const [precision, setPrecision] = useState<PrecisionResponse | null>(null);
   const [precisionError, setPrecisionError] = useState<string | null>(null);
   const [precisionAt, setPrecisionAt] = useState<string | null>(null);
+  const [precisionSettled, setPrecisionSettled] = useState(false);
 
   // Stable identity: `<LandPrecisionSection>`'s effect depends on it, and a
   // new function each render would restart its poll on every page render.
   const handlePrecision = useCallback(
     (body: PrecisionResponse | null, err: string | null) => {
-      if (body) setPrecision(body);
       setPrecisionError(err);
-      setPrecisionAt(new Date().toLocaleTimeString());
+      // `precisionAt` stamps the freshness of the DATA, so a failed poll must
+      // not advance it — the summary badge would then claim the previous
+      // answer is newer than it is. `precisionSettled` is the separate
+      // question ("has anything come back at all?"), which a failure does
+      // answer, and it is what drives the table's loading shape.
+      setPrecisionSettled(true);
+      if (body) {
+        setPrecision(body);
+        setPrecisionAt(new Date().toLocaleTimeString());
+      }
     },
     []
   );
@@ -376,13 +402,10 @@ export default function CoordLandsPage() {
       setLandsLoaded(true);
     } catch (e) {
       setLandsError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLandsLoading(false);
     }
   }, [landsRepoFilter]);
 
   useEffect(() => {
-    setLandsLoading(true);
     fetchLands();
     const id = setInterval(fetchLands, POLL_INTERVAL_MS);
     return () => clearInterval(id);
@@ -582,12 +605,16 @@ export default function CoordLandsPage() {
       <RecordList
         items={shown}
         itemKey={(row) => row.signature.id}
-        loaded={!(landsLoading && lands.length === 0)}
+        // `landsLoaded` (set only on a SUCCESSFUL read), not "we stopped
+        // loading": the `finally` clears `landsLoading` on failure too, so the
+        // old predicate handed a failed first load straight to `empty`.
+        loaded={landsLoaded || lands.length > 0}
         skeletonRows={6}
         renderRow={(row, ctx) => (
           <LandRow row={row} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
         empty={
+          landsError ? null : (
           <p className="text-sm text-muted-foreground italic">
             {tab !== "all" ? (
               <>
@@ -604,6 +631,7 @@ export default function CoordLandsPage() {
               </>
             )}
           </p>
+          )
         }
       />
 
@@ -634,7 +662,7 @@ export default function CoordLandsPage() {
         <LandPrecisionSection
           data={precision}
           error={precisionError}
-          loadedAt={precisionAt}
+          settled={precisionSettled}
           onData={handlePrecision}
         />
       </CollapsiblePanel>

@@ -313,12 +313,17 @@ export default function CoordAgentsRecentPage() {
             />
           )}
           empty={
-            <p
-              data-testid="coord-agents-empty"
-              className="text-sm text-muted-foreground italic"
-            >
-              No recent agent log entries match the current filters.
-            </p>
+            // Gated on `error`: a failed fetch leaves the list empty, and
+            // asserting "nothing matched" about a request that never answered
+            // is the `silent-empty-is-unknown` mistake.
+            error ? null : (
+              <p
+                data-testid="coord-agents-empty"
+                className="text-sm text-muted-foreground italic"
+              >
+                No recent agent log entries match the current filters.
+              </p>
+            )
           }
         />
       </div>

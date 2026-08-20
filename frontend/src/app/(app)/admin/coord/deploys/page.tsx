@@ -151,7 +151,6 @@ function deriveDeploysHealth(
 export default function CoordDeploysPage() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [deploys, setDeploys] = useState<DeployRowData[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
@@ -169,13 +168,10 @@ export default function CoordDeploysPage() {
       setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
     }
   }, [serviceFilter]);
 
   useEffect(() => {
-    setLoading(true);
     fetchDeploys();
     const id = setInterval(fetchDeploys, POLL_INTERVAL_MS);
     return () => clearInterval(id);
@@ -265,12 +261,15 @@ export default function CoordDeploysPage() {
       <RecordList
         items={shown}
         itemKey={(r) => r.signature.id}
-        loaded={!(loading && deploys.length === 0)}
+        // `loaded` (set only on a SUCCESSFUL read), not "we stopped loading":
+        // the `finally` clears `loading` on failure too.
+        loaded={loaded || deploys.length > 0}
         skeletonRows={6}
         renderRow={(r, ctx) => (
           <DeployRow row={r} expanded={ctx.expanded} onToggle={ctx.onToggle} />
         )}
         empty={
+          error ? null : (
           <p className="text-sm text-muted-foreground italic">
             {tab !== "all" ? (
               <>
@@ -286,6 +285,7 @@ export default function CoordDeploysPage() {
               </>
             )}
           </p>
+          )
         }
       />
     </div>
