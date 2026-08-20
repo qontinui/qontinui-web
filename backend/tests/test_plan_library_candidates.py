@@ -1019,6 +1019,48 @@ class TestCoordDoorTierFollowsThePrincipal:
             (p["repo"], p["pr_number"], p["state"]) for p in link["linked_prs"]
         ] == [("qontinui-web", 994, "merged")]
 
+    async def test_both_agent_hops_are_routed_when_a_coord_omits_the_inline_key(
+        self,
+    ) -> None:
+        """Restores the guard the single-hop assertion above cannot carry.
+
+        ``_coord_base`` is applied to BOTH hops on purpose, and the test above
+        can no longer prove the citations half of that: against current coord
+        the device path makes one call, so pinning the citations hop to the
+        OPERATOR door is invisible to it.
+
+        The hop is not dead code, though — :meth:`_CoordProbe.link_for`
+        documents the inline read as an opportunistic short-circuit and not a
+        contract, precisely so this read works against a coord that has not yet
+        shipped the inline key (the same older-coord compatibility
+        ``test_citations_route_absent_reads_as_unavailable`` assumes). This
+        drives ``_CoordProbe`` directly with exactly that payload — no
+        ``citations``, no ``citations_error`` — so the second hop really runs,
+        and asserts BOTH hops stay on the agent tier. It claims nothing about
+        what CURRENT coord emits: the fixture is labelled as the older shape,
+        and the shape current coord emits is asserted in the test above.
+        """
+        slug = _slug("wu-both-hops")
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                return {"citations": []}
+            # An older coord's agent by-slug body: no inline citation key at
+            # all, so `_inline_citations` returns None and hop 2 is required.
+            return {"work_unit": {"slug": slug, "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_fake)
+        probe = _CoordProbe(None, actor_kind="device")
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            link = await probe.link_for(slug)
+
+        called = [c.args[0] for c in fake.await_args_list]
+        assert called == [
+            f"/coord/agent-work-units/{slug}",
+            f"/coord/agent-work-units/{slug}/citations",
+        ], "a device caller's SECOND hop left the agent tier — coord 403s it"
+        assert link.linked_prs_state == "available"
+
     async def test_the_detail_read_routes_by_principal_too(
         self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
@@ -1128,10 +1170,17 @@ class TestCoordDoorTierFollowsThePrincipal:
         assert "citation_surface_unavailable" in link["unavailable_reason"]
 
     async def test_a_successful_empty_citation_list_is_available_and_empty(
-        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
         """The other side of the same coin: a read that SUCCEEDED and found
-        nothing is an observation, and must be reported as one."""
+        nothing is an observation, and must be reported as one.
+
+        Deliberately the OPERATOR client: this is the SUB-RESOURCE's empty
+        list, and only the operator path reaches it. On the device path the
+        same assertion would be about the inline empty list instead — a
+        different code path, already covered by
+        ``test_the_detail_read_routes_by_principal_too``.
+        """
         wu = _slug("wu-empty")
         plan = await _plan(
             async_db_session, org_id=None, slug=_slug("empty"), work_unit_slug=wu
@@ -1141,7 +1190,7 @@ class TestCoordDoorTierFollowsThePrincipal:
             "app.api.v1.endpoints.plan_library._proxy_coord_get",
             new=_coord_ok({"slug": wu, "status": "vetted"}, []),
         ):
-            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+            resp = await client.get(CANDIDATES, params={"limit": 100})
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         link = row["coord"]
@@ -1354,8 +1403,10 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             for _ in range(4)
         ]
 
-        # ``pg_error::to_body()`` with structured detail — the shape coord
-        # renders a caught PG failure into, identifiers and internals both.
+        # coord's ``pg_error::to_body()`` with structured detail (``error`` +
+        # ``context`` + ``pg``), plus a ``chain`` key it does not emit — extra
+        # fields only make the leak assertion below stricter, and this mirrors
+        # the ``PG_ERROR_BODY`` fixture in ``TestCoordErrorBodiesDoNotEgress``.
         pg_body = {
             "error": "db_error",
             "context": "listing citations for work unit",
@@ -1401,7 +1452,13 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             assert "500" in reason
             assert "db_error" in reason
             assert "23503" in reason
-            for leaked in ("9f1c2d3e", "work_unit_citations", "connection pool"):
+            for leaked in (
+                "9f1c2d3e",
+                "tenant_id",
+                "work_unit_citations",
+                "connection pool",
+                "listing citations",
+            ):
                 assert leaked not in reason, f"coord internals egressed: {leaked!r}"
 
     async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(

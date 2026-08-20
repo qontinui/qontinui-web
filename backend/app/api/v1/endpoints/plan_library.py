@@ -712,8 +712,8 @@ def _is_transport_failure(
 
     **How "coord answered 500" is told apart from "something between us
     returned 500", and where that distinction is imperfect.** There is no
-    header or hop counter that proves provenance, so this rests on two
-    independent pieces of evidence, and neither alone would be enough:
+    header or hop counter that proves provenance, so this rests on two pieces
+    of evidence — and they are NOT of equal strength:
 
     1. *The body is one coord itself emits.* ``body_error`` is the ``error``
        field lifted out of a PARSED JSON object (:func:`_coord_error_field`),
@@ -726,30 +726,53 @@ def _is_transport_failure(
        proxy emits a plain-text line, and ``_proxy_coord_get``'s own transport
        mapping raises a bare string at 502/504. None parse to an object with an
        ``error`` field, so none can match.
-    2. *The presence hop is an unguarded canary.* ``answered_codes`` is passed
-       only on the citations hop, which runs only after ``{base}/{slug}``
-       returned 200 — so coord's database has just served a query for this same
-       request. A coord-wide PG outage therefore fails hop 1, where there is no
-       carve-out, and still trips. What reaches this arm is a fault specific to
-       the citation SELECT, or coord going down in the gap between two
-       sequential requests — and that gap is precisely why the carve-out is
-       keyed on coord's declared code rather than on "hop 1 passed, so coord is
-       provably up". That argument is FALSE across the gap (a deploy, an ECS
-       rotation, an ALB target drain), and an untyped 5xx from any of them
-       declares no error, yields ``None``, and still trips.
+    2. *An unguarded presence PHASE runs first* — the WEAKER item, and it is a
+       phase, not a concurrent canary. ``answered_codes`` is passed only on the
+       citations hop, which is never reached until this slug's
+       ``{base}/{slug}`` returned 200. The fan-out serialises the two harder
+       than that: :meth:`_CoordProbe._get` acquires ``self._gate`` once per
+       hop, and asyncio's semaphore wakes waiters FIFO, so every hop-2 acquire
+       queues behind every remaining hop-1 acquire — EVERY presence hop of a
+       page precedes EVERY citations hop. A coord-wide fault already underway
+       when the page starts therefore fails in the unguarded phase and trips
+       there.
 
-    What this cannot rule out: a coord-internal 500 that IS fleet-wide yet
-    still renders as ``db_error`` — a pool exhausted between the two hops, say.
-    Read here as per-slug, it costs one round-trip per remaining slug instead
-    of tripping after the first (bounded by the fan-out semaphore and the
-    per-request timeout) and leaves ``coord_available`` true. That is the
-    deliberate trade: the alternative — today's behaviour — is that ONE
-    transient per-slug PG error blanks a whole page of otherwise-good rows and
-    repeats one row's reason across all of them, which is both more likely and
-    strictly less honest. The per-row ``unavailable_reason`` still carries
-    ``db_error`` plus the SQLSTATE on every affected row, so a genuinely
-    fleet-wide fault is still legible — it reads as every row unavailable for
-    the same declared reason rather than as a single flag.
+       Where that stops holding, stated plainly: the guarded hops are a
+       contiguous window at the END of a page's coord traffic, up to
+       ``ceil(N / _COORD_FANOUT) × RTT`` after the last unguarded read. A
+       coord-wide fault that BEGINS inside that window lands only on guarded
+       hops, each answers a typed ``500 db_error``, none trips, and
+       ``coord_available`` reports ``true`` through a real outage until the
+       next request. So "coord's database just served a query for this request"
+       is true but temporally weak, and item (1) plus the device-parity
+       argument above — not this one — is what the carve-out rests on. What
+       this item does still buy: an untyped 5xx from a deploy, an ECS rotation
+       or an ALB target drain declares no error, yields ``None``, and trips
+       wherever it lands, guarded window included.
+
+    What this cannot rule out, and it is more than a corner case: ``db_error``
+    is coord's GENERIC renderer for every failed query (``pg_error::opaque()``
+    included), so the code itself does not separate per-slug from fleet-wide.
+    Two known occupants of that bucket. A pool exhausted mid-page — transient,
+    and it lands in the window described above. And a MISSING COLUMN
+    (``42703``) on the citation relations: coord maps only ``42P01`` to
+    ``SurfaceUnavailable``, so a 42703 falls through to ``500 db_error`` for
+    EVERY slug, for the whole length of a deploy-ordering window. Read
+    per-slug, that costs ``2N`` coord round-trips per request instead of
+    ``N+1`` and a trip, and leaves ``coord_available`` true throughout.
+
+    That is the deliberate trade, and it is a trade rather than a clean win.
+    The alternative is today's behaviour: ONE transient per-slug PG error
+    blanks a whole page of otherwise-good rows and repeats one row's reason
+    across all of them. That is both more likely and strictly less honest, and
+    a fleet-wide fault stays legible either way — every row reads
+    ``unavailable`` carrying ``db_error`` plus its own SQLSTATE, which is more
+    diagnostic than a single flag, just less conspicuous.
+
+    Scope worth knowing: against current coord this arm only ever changes
+    OPERATOR pages. A device caller short-circuits on the inline citations
+    (:meth:`_CoordProbe._inline_citations`) and never reaches the citations
+    hop, so ``answered_codes`` is unreachable there.
     """
     if answered_codes is not None and body_error is not None:
         declared = answered_codes.get(http_status)
