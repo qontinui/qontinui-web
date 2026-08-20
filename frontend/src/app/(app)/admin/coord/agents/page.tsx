@@ -51,6 +51,7 @@ import {
   type HealthStripLevel,
 } from "@/components/console";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
+import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 
@@ -64,8 +65,17 @@ interface RecentResponse {
   logs?: AgentLogRow[];
 }
 
+/**
+ * The row's level, through the SAME normaliser the badge renders with.
+ *
+ * A bare `toLowerCase()` (what this page did before Wave 2) disagreed with
+ * `<LevelBadge>` on coord's synonyms: a row stamped `"warning"` showed a WARN
+ * badge but was invisible to the `warn` filter chip, and now would also have
+ * been missed by the health strip's warning count. One field must have one
+ * vocabulary, so both read it through `normalizeLevel`.
+ */
 function levelOf(row: AgentLogRow): LevelKey {
-  return (row.level ?? "info").toLowerCase() as LevelKey;
+  return normalizeLevel(row.level) as LevelKey;
 }
 
 /**

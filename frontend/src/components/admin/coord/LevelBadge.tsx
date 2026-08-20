@@ -31,7 +31,16 @@ interface LevelBadgeProps {
   inline?: boolean;
 }
 
-function normalize(level: LogLevel | undefined | null): string {
+/**
+ * The canonical level for a raw `coord.agent_logs.level` value.
+ *
+ * EXPORTED in Phase 3 Wave 2 because `/admin/coord/agents` was applying its own
+ * un-normalised `toLowerCase()` to the same field, so a row coord stamped
+ * `"warning"` rendered a WARN badge (through this function) while the page's
+ * `warn` filter chip did not match it and its health strip did not count it —
+ * one field, two vocabularies. There is only one now.
+ */
+export function normalizeLevel(level: LogLevel | undefined | null): string {
   if (!level) return "info";
   const lower = String(level).toLowerCase();
   // Tolerate common synonyms emitted by structured loggers.
@@ -39,6 +48,8 @@ function normalize(level: LogLevel | undefined | null): string {
   if (lower === "err") return "error";
   return lower;
 }
+
+const normalize = normalizeLevel;
 
 function styleFor(level: string): string {
   switch (level) {
