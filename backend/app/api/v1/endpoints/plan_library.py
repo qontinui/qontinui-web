@@ -794,7 +794,7 @@ def _is_transport_failure(
     Scope worth knowing: this arm only ever fires on a hop no caller already
     short-circuited. A device caller never reaches the citations hop at all —
     the agent by-slug read inlines them — and once coord ships the operator
-    opt-in (``?with_citations=1``, ``_CoordProbe._presence_params``) an
+    opt-in (``?with_citations=true``, ``_CoordProbe._presence_params``) an
     operator page reaching it means coord IGNORED the parameter. So the
     carve-out is deploy-order insurance rather than steady-state behaviour.
     That is not a reason to delete it: the window it covers is exactly the one
@@ -879,8 +879,22 @@ class _CoordProbe:
         #: as it does today. That test is EXACT (a key is present or it is
         #: not), not a heuristic, which is what makes either deploy order of
         #: the two services safe and why the sub-resource fallback stays.
+        #:
+        #: **The VALUE is load-bearing — send ``true``, never ``1``.** coord
+        #: has two query-parse conventions and they behave oppositely. The
+        #: permissive one (``gate_routes.rs``'s ``exclude_orphans``) takes
+        #: ``Option<String>`` and matches ``"1" | "true" | "yes" | "on"``. The
+        #: strict one takes ``Option<bool>``, which axum deserializes through
+        #: serde_urlencoded, whose ``bool`` is ``FromStr`` and accepts ONLY
+        #: ``true``/``false`` — under it ``?with_citations=1`` fails the whole
+        #: ``Query`` extractor with a **400**, and a 400 on the PRESENCE hop
+        #: carries no ``answered_codes`` carve-out, so every row on the page
+        #: would read ``unavailable``: a blank page. ``true`` is truthy under
+        #: BOTH, so this side stays correct whichever way coord's half is
+        #: written. That matters because this service ships FIRST: the value
+        #: is the one part of the contract web can pick unilaterally.
         self._presence_params: dict[str, str] | None = (
-            None if actor_kind == "device" else {"with_citations": "1"}
+            None if actor_kind == "device" else {"with_citations": "true"}
         )
         self.degraded = False
         self.reason: str | None = None
@@ -989,21 +1003,33 @@ class _CoordProbe:
         """Citations coord already attached to the PRESENCE payload, if any.
 
         coord's AGENT by-slug read returns ``citations`` (and, when the read
-        did not happen, ``citations_error``) inline unconditionally; its
-        operator twin keeps the dashboard payload lean by default and inlines
-        them only when asked — which is what ``?with_citations=1`` asks
-        (``_presence_params``). So this is an opportunistic short-circuit, not
-        a contract: ``None`` means the payload carried no citation key at all,
-        which is exactly what a coord that does not know the parameter
-        answers, and the caller must make the second hop.
+        did not happen, ``citations_error``) inline unconditionally. Its
+        operator twin keeps the dashboard payload lean by default; once coord
+        ships the opt-in arm it will inline them when asked, which is what
+        ``?with_citations=true`` asks (``_presence_params``) — and until then
+        it answers the lean body regardless. So this is an opportunistic
+        short-circuit, not a contract: ``None`` means the payload carried no
+        citation key at all, which is exactly what a coord that does not know
+        the parameter answers, and the caller must make the second hop.
 
-        **Do not narrow the detection to ``citations`` alone.** Both principals
-        now take this arm, so this function is the ONLY thing standing between
-        a ``42P01`` window and a page asserting "no PRs" for every candidate —
-        the sub-resource's typed 503, which no caller could reach past by
-        ignoring a field, is not in that path any more. See D4 of
-        ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``
-        and ``TestInlineCitationErrorIsNeverAnEmptyList``.
+        **Two clauses below are load-bearing, and both are pinned by
+        ``TestInlineCitationErrorIsNeverAnEmptyList``.** Both principals take
+        this arm once coord ships its half, so this function is then the ONLY
+        thing standing between a ``42P01`` window and a page asserting "no
+        PRs" for every candidate — the sub-resource's typed 503, which no
+        caller could reach past by ignoring a field, is not in that path any
+        more. The two:
+
+        * The DETECTION must keep testing ``citations_error`` as well as
+          ``citations``. Narrowed to ``citations`` alone it returns ``None``
+          for a body that omits the value key, the caller makes a second hop,
+          and a successful sub-resource read there overwrites a known failure
+          with an observation of zero.
+        * The ``citations_error`` READ must stay AHEAD of the list. Deleted,
+          the empty list beside it is reported as an observation of zero.
+
+        See D4 of
+        ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``.
 
         Otherwise ``(rows, error)``. A non-``None`` ``error`` means coord told
         us the read did not happen — ``citations_error`` sits beside an EMPTY
@@ -1048,12 +1074,14 @@ class _CoordProbe:
         ``/coord/work-units`` for an operator, ``/coord/agent-work-units`` for
         a device; see the class docstring for why that is not a preference):
 
-        1. ``{base}/{slug}`` — presence, carrying ``?with_citations=1`` on
-           the operator tier (``_presence_params``) so coord embeds the
-           citations and hop 2 never runs. A 404 here is the NORMAL dangling
-           case (the link is FK-less by design), and it also settles the PR
-           question: citations hang off the work unit by a hard FK, so no unit
-           really does mean no citations.
+        1. ``{base}/{slug}`` — presence, carrying ``?with_citations=true`` on
+           the operator tier (``_presence_params``). A coord that has the
+           opt-in arm answers it by embedding the citations, and hop 2 never
+           runs; one that does not — every coord deployed as this shipped —
+           ignores the key and hop 2 runs as it always has. A 404 here is the
+           NORMAL dangling case (the link is FK-less by design), and it also
+           settles the PR question: citations hang off the work unit by a hard
+           FK, so no unit really does mean no citations.
         2. ``{base}/{slug}/citations`` — the PR citations, with the live
            merged state coord's own ``shipped`` predicate reduces (coord
            projects each row to
@@ -1061,8 +1089,9 @@ class _CoordProbe:
 
         Hop 2 is SKIPPED when hop 1 already answered it
         (:meth:`_inline_citations`). The agent by-slug read carries its
-        citations inline unconditionally; the operator twin does so when ASKED,
-        which is what ``?with_citations=1`` asks for. So a page of EITHER
+        citations inline unconditionally; the operator twin will do so when
+        ASKED, which is what ``?with_citations=true`` asks for. So a page of
+        EITHER
         principal pays one round-trip per slug instead of two against a coord
         that has the opt-in arm — and two against one that does not, because a
         coord ignoring the parameter answers a body with no ``citations`` key
