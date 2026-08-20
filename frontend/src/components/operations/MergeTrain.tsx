@@ -417,6 +417,35 @@ function honestyLabel(b: BlastRadiusBlock): HonestyLabel {
   return { text: "coverage not reported", tone: "unknown" };
 }
 
+/**
+ * How many evaluations a gate-decision row stands for.
+ *
+ * Coord coalesces byte-identical repeat evaluations onto the newest row and
+ * reports the run length as `repeat_count`; a coord that has not shipped that
+ * yet omits the field, in which case the row is exactly one evaluation.
+ * Clamped to >= 1 on purpose — rendering `×0` would claim the decision never
+ * happened, which is the opposite of what the row proves.
+ */
+export function gateRepeatCount(b: BlastRadiusBlock): number {
+  const n = b.repeat_count;
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
+/**
+ * `YYYY-MM-DD` (UTC) for the repeat badge's "since" clause. Returns null when
+ * coord sent no `first_seen_at` — the badge then states the count alone rather
+ * than substituting `at`, which would falsely claim a zero-length run.
+ */
+export function gateFirstSeenDay(
+  iso: string | null | undefined
+): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
 function honestyBadgeClass(tone: HonestyTone): string {
   switch (tone) {
     case "ok":
@@ -434,6 +463,13 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
   const repoShort = block.repo.includes("/")
     ? block.repo.split("/").slice(1).join("/")
     : block.repo;
+  // Repetition, stated rather than enumerated: coord returns the newest row
+  // per PR, so a run of identical evaluations collapses to one row carrying
+  // its own length. `1` (or an older coord's absent field) renders no chip —
+  // "blocked once" and "blocked 547 times" are different operational facts,
+  // and only the second one is worth an operator's attention.
+  const repeats = gateRepeatCount(block);
+  const firstSeenDay = gateFirstSeenDay(block.first_seen_at);
   return (
     <div
       className="border rounded-md p-3 border-border bg-muted/10"
@@ -480,6 +516,22 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
             >
               {honesty.text}
             </Badge>
+            {repeats > 1 && (
+              <Badge
+                variant="outline"
+                className="font-mono text-[10px] normal-case bg-amber-500/15 text-amber-200 border-amber-500/30"
+                data-repeat-count={repeats}
+                data-first-seen-at={block.first_seen_at ?? ""}
+                title={
+                  firstSeenDay
+                    ? `Coord re-evaluated this PR and reached the identical decision ${repeats} times since ${firstSeenDay}; this row is the most recent occurrence.`
+                    : `Coord re-evaluated this PR and reached the identical decision ${repeats} times; this row is the most recent occurrence. First occurrence not reported by coord.`
+                }
+              >
+                ×{repeats}
+                {firstSeenDay ? ` since ${firstSeenDay}` : ""}
+              </Badge>
+            )}
             <span className="text-xs text-muted-foreground tabular-nums">
               {relativeTime(block.at)}
             </span>
@@ -529,6 +581,10 @@ export function MergeTrain() {
   // Coordination-transparency T2 -- blast-radius gate decisions (held PRs).
   const [gateBlocks, setGateBlocks] = useState<BlastRadiusBlock[] | null>(null);
   const [gateTotalBlocks, setGateTotalBlocks] = useState<number | null>(null);
+  // Raw evaluation-row count behind those decisions. `null` = coord did not
+  // report it (pre-Phase-2 deploy) — rendered as SILENCE, never as a repeat of
+  // the decision count.
+  const [gateTotalEvals, setGateTotalEvals] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -632,6 +688,7 @@ export function MergeTrain() {
           if (!cleanedUpRef.current) {
             setGateBlocks([]);
             setGateTotalBlocks(0);
+            setGateTotalEvals(null);
           }
           return;
         }
@@ -644,15 +701,24 @@ export function MergeTrain() {
       const total = Array.isArray(body)
         ? body.length
         : (body.total_blocks ?? list.length);
+      // `total_evals` is optional: absent means an older coord that never
+      // separated evaluations from decisions, and the surface then stays
+      // silent about evaluation volume rather than inventing a number.
+      const evals =
+        !Array.isArray(body) && typeof body.total_evals === "number"
+          ? body.total_evals
+          : null;
       if (!cleanedUpRef.current) {
         setGateBlocks(list);
         setGateTotalBlocks(total);
+        setGateTotalEvals(evals);
       }
     } catch (err) {
       log.warn("fetchGateBlocks failed", err);
       if (!cleanedUpRef.current) {
         setGateBlocks([]);
         setGateTotalBlocks(0);
+        setGateTotalEvals(null);
       }
     }
   }, []);
@@ -854,10 +920,25 @@ export function MergeTrain() {
               <Badge
                 variant="outline"
                 className="ml-2 font-mono text-[10px] normal-case"
+                data-gate-total-blocks={gateTotalBlocks}
+                title="Distinct PRs the blast-radius gate is holding — decisions, not audit rows."
               >
-                {gateTotalBlocks}
+                {gateTotalBlocks}{" "}
+                {gateTotalBlocks === 1 ? "decision" : "decisions"}
               </Badge>
             )}
+            {gateTotalEvals !== null &&
+              gateTotalBlocks !== null &&
+              gateTotalEvals > gateTotalBlocks && (
+                <Badge
+                  variant="outline"
+                  className="ml-1 font-mono text-[10px] normal-case text-muted-foreground"
+                  data-gate-total-evals={gateTotalEvals}
+                  title="Raw evaluation rows behind those decisions — coord re-evaluates every held PR on each scheduler tick, so this is far larger than the decision count."
+                >
+                  {gateTotalEvals} evals
+                </Badge>
+              )}
           </h4>
           {gateBlocks.length === 0 ? (
             <p className="text-xs text-muted-foreground">
