@@ -127,6 +127,15 @@ export function PromptDocumentEditorDialog({
                     — referenced by the meta-answer template as{" "}
                     <code>{`{{policy:${document.name}}}`}</code>.
                   </>
+                ) : null}
+                {document.kind === "session_briefing" ? (
+                  <>
+                    {" "}
+                    — appended to the system prompt of every session the runner
+                    hosts. Edits reach sessions spawned after the next runner
+                    poll (up to 45 seconds); sessions already running keep the
+                    prompt they started with.
+                  </>
                 ) : null}{" "}
                 Format: {document.format}. Tenant-scoped; served to the fleet by
                 coord.
