@@ -25,7 +25,17 @@
  *   npx tsx tools/spec-ci-flake/analyze.ts --gh 40
  *   npx tsx tools/spec-ci-flake/analyze.ts --dir ./.flake-cache
  *
- * See plan `2026-05-30-spec-ci-flake-stabilization.md`, Phase 0.
+ * It ALSO reports, in its own section and never averaged into the flake
+ * statistics, the runs that produced no `spec-ci-report` artifact at all —
+ * runs in which nothing under test ever executed (typically a stall in an
+ * apt-dependent setup step). Those used to be dropped silently, which made
+ * this harness structurally blind to that entire failure class. On `--dir`
+ * the section reports UNKNOWN rather than zero, because a directory of files
+ * carries no run-level information.
+ *
+ * See plan `2026-05-30-spec-ci-flake-stabilization.md`, Phase 0, and
+ * `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`,
+ * Phase 5.
  */
 
 import { execFileSync } from "node:child_process";
@@ -245,7 +255,140 @@ function loadFromDir(dir: string): FeatureRow[] {
   return rows;
 }
 
-function loadFromGh(n: number, cache: string): FeatureRow[] {
+// --- Run-level accounting: the runs this harness used to drop silently ---
+
+/**
+ * A Spec CI run that produced NO `spec-ci-report` artifact.
+ *
+ * Such a run is invisible to every feature table below, because the whole
+ * dataset is built from downloaded reports — a run that never writes one is
+ * simply absent. That is not a rare corner. A run that stalls in
+ * `Install Playwright Chromium` never reaches `Run Spec CI`, so
+ * `frontend/spec-ci-report.json` is never written; `Upload Spec CI report` is
+ * `if: always()` and DOES still run and report success, but with no file on
+ * disk and `if-no-files-found: warn` it creates no artifact, so
+ * `gh run download -n spec-ci-report` fails and the run is skipped. Six such
+ * runs happened on 2026-08-19 alone.
+ *
+ * These are counted as their OWN category and reported in their own section.
+ * They are never merged into the spec-flake statistics: a stalled apt install
+ * and a flaky spec are different defects with different owners, and averaging
+ * them together hides both.
+ *
+ * See plan `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`,
+ * Phase 5.
+ */
+interface NoArtifactRun {
+  databaseId: number;
+  conclusion: string;
+  headSha: string;
+  createdAt: string;
+  event: string;
+  /** Job the run died in, when resolvable. */
+  job?: string;
+  /**
+   * The step that was still running when the run ended — the fact that makes
+   * this category actionable. `undefined` means the jobs API could not be
+   * reached or its shape was unexpected: UNKNOWN, never "there wasn't one".
+   */
+  deadStep?: string;
+  /** `cancelled` (interrupted mid-step) or `failure`. */
+  deadStepConclusion?: string;
+  /** How long that step had been running, in seconds. */
+  deadStepSeconds?: number;
+}
+
+interface RunLevelTally {
+  /** Runs `gh run list` returned. */
+  listed: number;
+  /** Runs whose `spec-ci-report` artifact downloaded successfully. */
+  withArtifact: number;
+  /** Completed runs with no artifact at all. */
+  noArtifact: NoArtifactRun[];
+  /**
+   * Runs still in progress when we listed them. They have no artifact YET,
+   * which is not the same as having lost one, so they are excluded from
+   * `noArtifact` entirely — counting a live run as a loss would be the same
+   * cry-wolf defect this section exists to avoid. Counted so the numbers add
+   * up to `listed`.
+   */
+  inProgress: number;
+  /**
+   * How many artifact-less runs we could not resolve a dead step for. Non-zero
+   * means those rows say UNKNOWN, not "nothing was running".
+   */
+  stepLookupFailures: number;
+}
+
+interface GhStep {
+  name?: string;
+  number?: number;
+  status?: string;
+  conclusion?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+/**
+ * Find the step a run died in, via the jobs API.
+ *
+ * NOTE on the predicate. It is tempting to look for `status !== "completed"`,
+ * but that only holds while the run is still live. Once a cancelled run
+ * finishes, GitHub marks the interrupted step `status: "completed"` with
+ * `conclusion: "cancelled"`, and every step after it `skipped` — verified
+ * against runs 32216356070 and 32294962345, where step #14
+ * `Install Playwright Chromium` reads exactly that after a 32m43s / 33m00s
+ * stall. So the real signal is the conclusion, not the status.
+ *
+ * Issued only for runs that actually missed the artifact, so the cost is bound
+ * by the failure count rather than by `--gh N`.
+ */
+function resolveDeadStep(databaseId: number): Pick<
+  NoArtifactRun,
+  "job" | "deadStep" | "deadStepConclusion" | "deadStepSeconds"
+> | undefined {
+  let raw: string;
+  try {
+    raw = execFileSync(
+      "gh",
+      ["api", `/repos/{owner}/{repo}/actions/runs/${databaseId}/jobs?per_page=100`],
+      { encoding: "utf-8", timeout: 60_000, stdio: ["ignore", "pipe", "ignore"] },
+    );
+  } catch {
+    return undefined; // API unreachable / not authorized — UNKNOWN.
+  }
+  let jobs: Array<{ name?: string; steps?: GhStep[] }>;
+  try {
+    jobs = (JSON.parse(raw) as { jobs?: Array<{ name?: string; steps?: GhStep[] }> }).jobs ?? [];
+  } catch {
+    return undefined;
+  }
+  for (const job of jobs) {
+    const steps = job.steps ?? [];
+    // Still-live run first, then the finished-run shape described above.
+    const dead =
+      steps.find((s) => s.status !== undefined && s.status !== "completed") ??
+      steps.find((s) => s.conclusion === "cancelled" || s.conclusion === "failure");
+    if (!dead?.name) continue;
+    let seconds: number | undefined;
+    if (dead.started_at) {
+      const start = Date.parse(dead.started_at);
+      const end = dead.completed_at ? Date.parse(dead.completed_at) : Date.now();
+      if (Number.isFinite(start) && Number.isFinite(end)) {
+        seconds = Math.round((end - start) / 1000);
+      }
+    }
+    return {
+      job: job.name,
+      deadStep: dead.name,
+      deadStepConclusion: dead.conclusion ?? dead.status ?? undefined,
+      deadStepSeconds: seconds,
+    };
+  }
+  return undefined;
+}
+
+function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: RunLevelTally } {
   if (existsSync(cache)) rmSync(cache, { recursive: true, force: true });
   mkdirSync(cache, { recursive: true });
   const listOut = execFileSync(
@@ -256,7 +399,9 @@ function loadFromGh(n: number, cache: string): FeatureRow[] {
       "--workflow",
       "Spec CI",
       "--json",
-      "databaseId,conclusion,headSha,createdAt,event",
+      // `status` is load-bearing: without it an in-progress run is
+      // indistinguishable from one that lost its artifact.
+      "databaseId,conclusion,status,headSha,createdAt,event",
       "--limit",
       String(n),
     ],
@@ -265,12 +410,23 @@ function loadFromGh(n: number, cache: string): FeatureRow[] {
   const runs = JSON.parse(listOut) as Array<{
     databaseId: number;
     conclusion: string;
+    status: string;
     headSha: string;
     createdAt: string;
     event: string;
   }>;
   process.stderr.write(`[flake] ${runs.length} Spec CI runs listed\n`);
+  const noArtifact: NoArtifactRun[] = [];
+  let inProgress = 0;
+  let stepLookupFailures = 0;
   for (const run of runs) {
+    if (run.status !== "completed") {
+      // Still running. It has no artifact yet, which is not a loss — skip it
+      // rather than reporting a live run as a failure.
+      inProgress++;
+      process.stderr.write(`[flake] run ${run.databaseId}: still ${run.status} — skipped\n`);
+      continue;
+    }
     const dest = join(cache, `run-${run.databaseId}`);
     try {
       execFileSync(
@@ -279,13 +435,28 @@ function loadFromGh(n: number, cache: string): FeatureRow[] {
         { encoding: "utf-8", timeout: 60_000, stdio: ["ignore", "ignore", "ignore"] },
       );
     } catch {
-      // No spec-ci-report artifact on this run (e.g. it failed before upload,
-      // or predates the artifact). Skip — a missing artifact is itself a weak
-      // signal but not analyzable here.
-      process.stderr.write(`[flake] run ${run.databaseId}: no spec-ci-report artifact\n`);
+      // No spec-ci-report artifact on this run. This is NOT nothing: it is its
+      // own failure category, so record it and go find out what was running.
+      const dead = resolveDeadStep(run.databaseId);
+      if (!dead) stepLookupFailures++;
+      noArtifact.push({ ...run, ...(dead ?? {}) });
+      process.stderr.write(
+        `[flake] run ${run.databaseId}: no spec-ci-report artifact` +
+          (dead?.deadStep ? ` (died in "${dead.deadStep}")\n` : ` (dead step UNKNOWN)\n`),
+      );
     }
   }
-  return loadFromDir(cache);
+  const rows = loadFromDir(cache);
+  return {
+    rows,
+    runLevel: {
+      listed: runs.length,
+      withArtifact: runs.length - noArtifact.length - inProgress,
+      noArtifact,
+      inProgress,
+      stepLookupFailures,
+    },
+  };
 }
 
 // --- Analysis ---
@@ -304,6 +475,19 @@ interface Analysis {
   total: number;
   passes: number;
   fails: number;
+  /**
+   * Run-level accounting, reported SEPARATELY from everything else in this
+   * object. Every other field describes runs that produced a report;
+   * `runLevel.noArtifact` describes runs that produced none, which is a
+   * different defect class (CI infrastructure, not spec flake) and must not be
+   * averaged into the flake statistics.
+   *
+   * `undefined` on the `--dir` path, which legitimately has no run-level data:
+   * it sees files on disk, not runs. Reporting `0` there would assert "no
+   * artifact-less runs" from a source that cannot know — the same
+   * silent-empty-is-unknown defect this section exists to remove.
+   */
+  runLevel?: RunLevelTally;
   /** Raw fail fraction (fails/total) — NOT the flake rate. See `trueFlakeShas`. */
   failRate: number;
   /** Runs whose report carried no `diagnostics.run.githubSha` (can't group). */
@@ -349,7 +533,7 @@ interface Analysis {
   }>;
 }
 
-function analyze(rows: FeatureRow[]): Analysis {
+function analyze(rows: FeatureRow[], runLevel?: RunLevelTally): Analysis {
   const passes = rows.filter((r) => r.passed);
   const fails = rows.filter((r) => !r.passed);
   const rate = (xs: FeatureRow[], pred: (r: FeatureRow) => boolean) =>
@@ -462,6 +646,7 @@ function analyze(rows: FeatureRow[]): Analysis {
     total: rows.length,
     passes: passes.length,
     fails: fails.length,
+    runLevel,
     failRate: rows.length === 0 ? 0 : fails.length / rows.length,
     rowsWithoutSha,
     trueFlakeShas,
@@ -473,12 +658,68 @@ function analyze(rows: FeatureRow[]): Analysis {
   };
 }
 
+function fmtDur(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m < 60 ? `${m}m${String(s).padStart(2, "0")}s` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
+}
+
 function printText(a: Analysis): void {
   const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
-  const short = (sha: string) => sha.slice(0, 8);
+  const short = (sha: string) => (sha ? sha.slice(0, 8) : "(no sha)");
   const lines: string[] = [];
   lines.push(`Spec CI flake analysis — ${a.total} runs, ${a.passes} pass / ${a.fails} fail (raw fail rate ${pct(a.failRate)})`);
   lines.push("");
+
+  // Run-level accounting FIRST, and kept apart from every flake number below.
+  // A run with no report is not a flaky spec; it is a run in which nothing
+  // under test ever executed. Merging the two would understate both.
+  if (a.runLevel === undefined) {
+    lines.push("RUNS WITHOUT A REPORT — unknown (source is --dir: files on disk, not runs).");
+    lines.push("  Re-run with --gh <N> to measure this. This is UNKNOWN, not zero.");
+  } else {
+    const rl = a.runLevel;
+    const completed = rl.listed - rl.inProgress;
+    lines.push(
+      `RUNS WITHOUT A REPORT — ${rl.noArtifact.length} of ${completed} completed run(s) produced no spec-ci-report artifact.`,
+    );
+    if (rl.inProgress > 0) {
+      lines.push(
+        `  (${rl.inProgress} of the ${rl.listed} listed run(s) were still in progress — excluded, not counted as losses)`,
+      );
+    }
+    if (rl.noArtifact.length === 0) {
+      lines.push("  → every completed run reported. No CI-infrastructure losses in this window.");
+    } else {
+      lines.push(
+        "  These are NOT spec flakes and are excluded from every number below: nothing",
+      );
+      lines.push(
+        "  under test ran. A run that stalls in an apt-dependent step (e.g. `Install",
+      );
+      lines.push(
+        "  Playwright Chromium`) never reaches `Run Spec CI`, so no report is written.",
+      );
+      for (const r of rl.noArtifact) {
+        const where = r.deadStep
+          ? `died in "${r.deadStep}"` +
+            (r.deadStepSeconds !== undefined ? ` after ${fmtDur(r.deadStepSeconds)}` : "") +
+            (r.deadStepConclusion ? ` [${r.deadStepConclusion}]` : "")
+          : "dead step UNKNOWN (jobs API unavailable)";
+        lines.push(
+          `    run ${r.databaseId} ${short(r.headSha)} ${r.conclusion.padEnd(9)} ${r.createdAt}  ${where}`,
+        );
+      }
+      if (rl.stepLookupFailures > 0) {
+        lines.push(
+          `  (${rl.stepLookupFailures} run(s) above could not be resolved to a step — UNKNOWN, not "none")`,
+        );
+      }
+    }
+  }
+  lines.push("");
+
   // The headline verdict: true flakes vs legitimate failures.
   lines.push(`VERDICT — true same-SHA flakes: ${a.trueFlakeShas.length} SHA(s) that both passed AND failed.`);
   if (a.trueFlakeShas.length > 0) {
@@ -543,13 +784,17 @@ function printText(a: Analysis): void {
 function main(): number {
   const args = parseArgs();
   let rows: FeatureRow[];
+  let runLevel: RunLevelTally | undefined;
   if (args.gh !== undefined) {
     if (!Number.isFinite(args.gh) || args.gh <= 0) {
       process.stderr.write("[flake] --gh requires a positive integer\n");
       return 2;
     }
-    rows = loadFromGh(args.gh, args.cache);
+    ({ rows, runLevel } = loadFromGh(args.gh, args.cache));
   } else if (args.dir) {
+    // --dir sees files on disk, not runs, so it has no run-level data at all.
+    // `runLevel` stays undefined rather than becoming an empty tally: absence
+    // of the measurement must not read as a measurement of zero.
     rows = loadFromDir(args.dir);
   } else {
     process.stderr.write(
@@ -559,11 +804,21 @@ function main(): number {
   }
 
   if (rows.length === 0) {
-    process.stderr.write("[flake] no Spec CI reports found to analyze\n");
-    return 2;
+    // Zero reports used to be an unconditional error. But if runs were listed
+    // and every one of them lost its artifact, that is not "nothing to
+    // analyze" — it is the single most important thing this tool can report,
+    // and bailing here is exactly how the failure mode stayed invisible.
+    if (runLevel !== undefined && runLevel.noArtifact.length > 0) {
+      process.stderr.write(
+        `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${runLevel.listed} runs produced no artifact — reporting that\n`,
+      );
+    } else {
+      process.stderr.write("[flake] no Spec CI reports found to analyze\n");
+      return 2;
+    }
   }
 
-  const result = analyze(rows);
+  const result = analyze(rows, runLevel);
   if (args.json) {
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   } else {
