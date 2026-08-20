@@ -12,7 +12,6 @@ export { MergeDependencyGraph } from "./MergeDependencyGraph";
 export { MigrationQueueTile } from "./MigrationQueueTile";
 export { MergeOrchestrationOnboarding } from "./MergeOrchestrationOnboarding";
 export { MergePipeline } from "./MergePipeline";
-export { MergeTrain } from "./MergeTrain";
 export { MergeTrainActivity } from "./MergeTrainActivity";
 export { StuckPrRecoveryPanel } from "./StuckPrRecoveryPanel";
 export { TaskRunCard } from "./TaskRunCard";
