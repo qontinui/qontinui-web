@@ -791,10 +791,15 @@ def _is_transport_failure(
     ``unavailable`` carrying ``db_error`` plus its own SQLSTATE, which is more
     diagnostic than a single flag, just less conspicuous.
 
-    Scope worth knowing: against current coord this arm only ever changes
-    OPERATOR pages. A device caller short-circuits on the inline citations
-    (:meth:`_CoordProbe._inline_citations`) and never reaches the citations
-    hop, so ``answered_codes`` is unreachable there.
+    Scope worth knowing: this arm only ever fires on a hop no caller already
+    short-circuited. A device caller never reaches the citations hop at all —
+    the agent by-slug read inlines them — and once coord ships the operator
+    opt-in (``?with_citations=1``, ``_CoordProbe._presence_params``) an
+    operator page reaching it means coord IGNORED the parameter. So the
+    carve-out is deploy-order insurance rather than steady-state behaviour.
+    That is not a reason to delete it: the window it covers is exactly the one
+    where this service is ahead of coord, which is the shipping order this
+    change was written for.
     """
     if answered_codes is not None and body_error is not None:
         declared = answered_codes.get(http_status)
@@ -857,6 +862,26 @@ class _CoordProbe:
         self._coord_base = (
             "/coord/agent-work-units" if actor_kind == "device" else "/coord/work-units"
         )
+        #: Query parameters for the PRESENCE hop. ``?with_citations=1`` asks
+        #: coord's OPERATOR by-slug door to embed the citations it otherwise
+        #: omits, collapsing an operator page to ONE coord round-trip per slug
+        #: instead of two — across up to 100 candidates a page.
+        #:
+        #: Operator only, and not an oversight: the agent door already passes
+        #: ``with_citations = true`` unconditionally, so the parameter would be
+        #: pure noise there and the device request stays byte-identical to what
+        #: it sends today.
+        #:
+        #: OPT-IN, never a contract. A coord that predates the parameter
+        #: ignores an unknown query key and answers the same lean body — one
+        #: carrying no ``citations`` key at all — so :meth:`_inline_citations`
+        #: returns ``None`` and :meth:`link_for` makes the second hop exactly
+        #: as it does today. That test is EXACT (a key is present or it is
+        #: not), not a heuristic, which is what makes either deploy order of
+        #: the two services safe and why the sub-resource fallback stays.
+        self._presence_params: dict[str, str] | None = (
+            None if actor_kind == "device" else {"with_citations": "1"}
+        )
         self.degraded = False
         self.reason: str | None = None
         self._gate = asyncio.Semaphore(_COORD_FANOUT)
@@ -867,7 +892,11 @@ class _CoordProbe:
             self.reason = reason
 
     async def _get(
-        self, path: str, *, answered_codes: Mapping[int, frozenset[str]] | None = None
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        answered_codes: Mapping[int, frozenset[str]] | None = None,
     ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
@@ -886,6 +915,11 @@ class _CoordProbe:
         already applies to the citations hop itself ("absence of a route is
         not evidence of an absence of PRs"); the circuit obeys it too, or the
         one flag whose job is signalling a real coord outage can never do so.
+
+        ``params`` rides the query string — ``_proxy_coord_get`` hands it to
+        httpx, which does the encoding. It is how the presence hop opts in to
+        coord's inline citations (see ``_presence_params``); the citations hop
+        takes none.
 
         ``answered_codes`` forwards to :func:`_is_transport_failure` and
         extends that same reading to the typed 5xx coord answers ON the
@@ -911,6 +945,7 @@ class _CoordProbe:
             try:
                 payload = await _proxy_coord_get(
                     path,
+                    params=params,
                     tenant_id=self.tenant_id,
                     forward_bearer=True,
                 )
@@ -954,11 +989,21 @@ class _CoordProbe:
         """Citations coord already attached to the PRESENCE payload, if any.
 
         coord's AGENT by-slug read returns ``citations`` (and, when the read
-        did not happen, ``citations_error``) inline; its operator twin
-        deliberately does not, keeping the dashboard payload lean. So this is
-        an opportunistic short-circuit, not a contract: ``None`` means the
-        payload carried no citation key at all and the caller must make the
-        second hop.
+        did not happen, ``citations_error``) inline unconditionally; its
+        operator twin keeps the dashboard payload lean by default and inlines
+        them only when asked — which is what ``?with_citations=1`` asks
+        (``_presence_params``). So this is an opportunistic short-circuit, not
+        a contract: ``None`` means the payload carried no citation key at all,
+        which is exactly what a coord that does not know the parameter
+        answers, and the caller must make the second hop.
+
+        **Do not narrow the detection to ``citations`` alone.** Both principals
+        now take this arm, so this function is the ONLY thing standing between
+        a ``42P01`` window and a page asserting "no PRs" for every candidate —
+        the sub-resource's typed 503, which no caller could reach past by
+        ignoring a field, is not in that path any more. See D4 of
+        ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``
+        and ``TestInlineCitationErrorIsNeverAnEmptyList``.
 
         Otherwise ``(rows, error)``. A non-``None`` ``error`` means coord told
         us the read did not happen — ``citations_error`` sits beside an EMPTY
@@ -1003,7 +1048,9 @@ class _CoordProbe:
         ``/coord/work-units`` for an operator, ``/coord/agent-work-units`` for
         a device; see the class docstring for why that is not a preference):
 
-        1. ``{base}/{slug}`` — presence. A 404 here is the NORMAL dangling
+        1. ``{base}/{slug}`` — presence, carrying ``?with_citations=1`` on
+           the operator tier (``_presence_params``) so coord embeds the
+           citations and hop 2 never runs. A 404 here is the NORMAL dangling
            case (the link is FK-less by design), and it also settles the PR
            question: citations hang off the work unit by a hard FK, so no unit
            really does mean no citations.
@@ -1012,18 +1059,37 @@ class _CoordProbe:
            projects each row to
            ``{repo, pr_number, merged, branch, cited_at, sources}``).
 
-        Hop 2 is SKIPPED when hop 1 already answered it: the agent by-slug read
-        carries its citations inline (:meth:`_inline_citations`), so a
-        device-principal page pays one round-trip per slug instead of two —
-        and works against a coord that has not yet shipped the dedicated
-        sub-resource. One consequence worth knowing: a device caller therefore
-        never reaches the 5xx branch below, because BOTH conditions it covers
-        — the citation relation unreadable, and this slug's citation SELECT
-        failing — reach it as an inline ``citations_error`` on a ``200``
-        instead (coord's agent by-slug ``Err`` arm). Both land on
-        ``unavailable`` for that one slug, with ``coord_available`` untouched,
-        and the 5xx branch exists to give the operator path the SAME reading of
-        the SAME coord fault.
+        Hop 2 is SKIPPED when hop 1 already answered it
+        (:meth:`_inline_citations`). The agent by-slug read carries its
+        citations inline unconditionally; the operator twin does so when ASKED,
+        which is what ``?with_citations=1`` asks for. So a page of EITHER
+        principal pays one round-trip per slug instead of two against a coord
+        that has the opt-in arm — and two against one that does not, because a
+        coord ignoring the parameter answers a body with no ``citations`` key
+        and the sub-resource hop below runs as it always has. That fallback is
+        not vestigial: it is what this read runs on until coord ships the arm,
+        and it is why the two services may deploy in either order.
+
+        One consequence worth knowing: a caller that SHORT-CIRCUITS never
+        reaches the 5xx branch below, because BOTH conditions it covers — the
+        citation relation unreadable, and this slug's citation SELECT failing —
+        reach it as an inline ``citations_error`` on a ``200`` instead (coord's
+        ``Err`` arm on the inline path). Both land on ``unavailable`` for that
+        one slug, with ``coord_available`` untouched, and the 5xx branch exists
+        to give the FALLBACK path the SAME reading of the SAME coord fault.
+
+        The short-circuit is a deliberate trade, recorded as D4 of
+        ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``:
+        the inline arm is a FLAG ON A 200 where the sub-resource is a typed
+        STATUS CODE, so the operator path's honesty now rests on
+        :meth:`_inline_citations` remembering to check ``citations_error``
+        rather than on a status line no caller can ignore. Keying that method
+        on ``citations`` alone would render every candidate ``available`` with
+        an empty list right through a ``42P01`` window — the exact collapse
+        this read exists to prevent. A test is a weaker guarantee than a status
+        code; the one buying the difference back is
+        ``TestInlineCitationErrorIsNeverAnEmptyList``, pinned on BOTH
+        principals.
 
         coord's answers on the citations sub-resource map straight onto this
         block. ``200`` → ``available``, and an empty list there IS an
@@ -1054,7 +1120,9 @@ class _CoordProbe:
         ``tests/test_coord_schema_boundary_guard.py`` enforces it.
         """
         encoded = quote(slug, safe="")
-        payload, http_status, error = await self._get(f"{self._coord_base}/{encoded}")
+        payload, http_status, error = await self._get(
+            f"{self._coord_base}/{encoded}", params=self._presence_params
+        )
 
         if http_status == 404:
             return CandidateCoordLink(
