@@ -253,26 +253,180 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Install Playwright Chromium
-        id: apt_playwright
-        # `--with-deps` shells out to `apt-get` at job time and has been observed
-        # to stall for 30+ minutes against the apt/CDN mirror (plan
-        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
-        # Sized from 10 green runs: p50 23s, p90 88s, max 240s. The tail here
-        # is far heavier than Spec CI's, so 5 min would be only ~1.25x the
-        # observed max.
-        #
-        # 7, not 10: this job's own cap is `timeout-minutes: 15` and 3-5 min of
-        # preamble (checkout, npm ci, the deployment lookups) runs before this
-        # step starts. At 10 the job cap fires FIRST in every case, which makes
-        # the step bound inert — and an inert step bound is worse than none,
-        # because the job then concludes `cancelled` with no failing step, the
-        # exact rendering this plan exists to remove. 7 min leaves the step
-        # bound strictly inside the job cap while still being ~1.75x the worst
-        # install ever observed.
-        timeout-minutes: 7
+      # `npx playwright install --with-deps <engines>` was THREE things fused
+      # into one step: npx resolution, a browser-bundle download from
+      # cdn.playwright.dev, and `apt-get`. Only the apt part has ever hung, so
+      # the fusion made the infrastructure marker's headline ("CI
+      # infrastructure timeout - NOT your diff") false for the other two: an
+      # author who bumped `@playwright/test` to a version whose bundle 404s on
+      # the CDN would have been told the Ubuntu mirror did it. Split, exactly
+      # as the postgresql-client sites were (plan
+      # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure,
+      # Phase 3):
+      #
+      #   * `install-deps` = the APT half. Measured on healthy run 32264215960:
+      #     all 26 Playwright system libraries report `is already the newest
+      #     version`, and apt's own verdict is `0 upgraded, 9 newly installed`
+      #     -- 9 FONT packages, `Need to get 21.1 MB of archives`. That 21.1 MB
+      #     is the entire exposure; hung run 32289431023 crawled through it at
+      #     ~0.7 kB/s for 38 minutes against azure.archive.ubuntu.com.
+      #   * `install` = the CDN half. cdn.playwright.dev, a different host,
+      #     EXONERATED by the logs: neither hung run ever reached it.
+      #
+      # Only the apt half carries `id: apt_playwright`, so only the apt half is
+      # in APT_STEP_OUTCOMES and only it can ever be named as infrastructure.
+      #
+      # The order is preserved from `--with-deps`, not chosen: playwright-core's
+      # `installBrowsers()` calls `registry.installDeps()` BEFORE
+      # `registry.install()`, and `install-deps <engines>` feeds the same
+      # `registry.resolveBrowsers()` result to the same `registry.installDeps()`
+      # -- so the apt package list is identical to what `--with-deps` computed.
+
+      # Phase 3's remedy: keep the 21.1 MB of font .debs across runs so a
+      # healthy run does not re-fetch them from the mirror at all.
+      #
+      # WHAT IS CACHED: the .deb archives apt downloads, and nothing else. The
+      # package SET is untouched -- `install-deps` still resolves and installs
+      # exactly the same packages; apt simply finds their .debs already in
+      # /var/cache/apt/archives and skips the download. Behaviour-preserving is
+      # the whole point of choosing a cache over narrowing the font list: this
+      # is a visual/OCR crawl, and dropping CJK/Unicode coverage would change
+      # rendered text (tofu boxes) in a way nothing here would catch.
+      #
+      # WHAT IS *NOT* REMOVED: `install-deps` still runs `apt-get update`
+      # first, unconditionally, so the index refresh remains an exposure -- and
+      # hung run 32294962345 stalled in exactly that phase. The cache removes
+      # the 21.1 MB download half; `timeout-minutes` on the apt step below is
+      # what bounds the other half. Caching the package INDEX as well was
+      # rejected: a stale index against a rotated pool turns a slow run into a
+      # hard 404, i.e. it trades a bounded delay for a break.
+      #
+      # NOT CACHED HERE: the browser bundles under ~/.cache/ms-playwright.
+      # Different host, different failure mode, not implicated in any observed
+      # hang. If that is ever worth caching it gets its OWN cache entry --
+      # sharing this one would couple a CDN problem back onto the apt key this
+      # split exists to isolate.
+
+      # The cache key must move whenever the package set can, and must NOT move
+      # otherwise. Two inputs are in it:
+      #   * `ImageOS` (e.g. `ubuntu24`) -- the Ubuntu release, which fixes both
+      #     the package names and the pool the .debs come from;
+      #   * the @playwright/test version -- it selects the dependency list, so
+      #     a bump can add or drop packages.
+      # `ImageVersion` (the weekly image build) is deliberately NOT in the key.
+      # A newer image can only ever have MORE of these packages preinstalled,
+      # which makes a cached set a harmless superset, so keying on it would
+      # force a full re-download every week for no correctness gain. Staleness
+      # is bounded by apt itself: it validates every cached .deb against the
+      # live index and re-downloads any that no longer match.
+      - name: Resolve Playwright apt cache key
+        id: pw_cache_key
         working-directory: ./frontend
-        run: npx playwright install --with-deps chromium
+        run: |
+          set -uo pipefail
+          pw="$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version" 2>/dev/null || true)"
+          if [ -z "$pw" ]; then
+            # The lockfile shape changed. Fall back to a digest of the whole
+            # lock: over-keyed (any dependency bump misses) but never STALE,
+            # which is the property that matters. Never fail the job over a
+            # cache key -- this step is not in APT_STEP_OUTCOMES, so a red here
+            # would be reported to the author as their own diff.
+            pw="lock$(sha256sum package-lock.json | cut -c1-12)"
+            echo "::notice::Could not read @playwright/test from package-lock.json; keying the Playwright apt cache on the whole lockfile digest instead."
+          fi
+          img="${ImageOS:-unknown}"
+          echo "key=apt-playwright-${RUNNER_OS:-Linux}-${img}-pw${pw}${KEY_SUFFIX:-}" >> "$GITHUB_OUTPUT"
+          echo "restore_prefix=apt-playwright-${RUNNER_OS:-Linux}-${img}-" >> "$GITHUB_OUTPUT"
+          echo "Playwright $pw on image $img${KEY_SUFFIX:-}"
+
+      - name: Restore Playwright apt font cache
+        id: apt_playwright_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/qontinui-apt-playwright
+          key: ${{ steps.pw_cache_key.outputs.key }}
+          # A prefix hit restores an older .deb set. That is safe by
+          # construction: apt validates every cached .deb against the index and
+          # downloads the ones that no longer match, so a partial hit is a
+          # partial saving, never a wrong install.
+          #
+          # The step output is `restore_prefix`, not `restore-prefix`: GitHub's
+          # expression parser reads `-` as subtraction, so a hyphenated output
+          # name cannot be dereferenced with dot syntax at all.
+          restore-keys: |
+            ${{ steps.pw_cache_key.outputs.restore_prefix }}
+
+      # /var/cache/apt/archives is root-owned and actions/cache runs as the
+      # unprivileged `runner` user, so it can neither read nor write that dir
+      # directly. `sudo cp` is what moves .debs across the privilege boundary.
+      # This step touches local disk only -- no network, nothing to stall - so
+      # it is deliberately unbounded and deliberately has no `id:`.
+      - name: Seed apt archives from cache
+        run: |
+          set -uo pipefail
+          cache_dir="$HOME/.cache/qontinui-apt-playwright"
+          n=0
+          if [ -d "$cache_dir" ]; then
+            n=$(find "$cache_dir" -maxdepth 1 -name '*.deb' | wc -l)
+          fi
+          if [ "$n" -gt 0 ]; then
+            # `-n` never clobbers a .deb the image already had, which could be
+            # newer than the cached one.
+            sudo cp -n "$cache_dir"/*.deb /var/cache/apt/archives/ || true
+            echo "Seeded $n cached .deb(s) into /var/cache/apt/archives."
+          else
+            echo "No cached .deb archives - this run fetches them from the mirror. A MISS is slower, never broken."
+          fi
+
+      - name: Install Playwright Chromium system deps (apt)
+        id: apt_playwright
+        # Sized from a per-half measurement, not from the fused step: each green
+        # run's log was cut at the boundary between apt's last output line and the
+        # first `Downloading ` CDN banner, and the parsed halves were cross-checked
+        # against the jobs API step times to +/-1s.
+        #
+        # The apt half over 14 green runs (2026-08-08 -> 08-20): p50 13.0s,
+        # p90 71.9s, max 228.2s (run 32252290821, `Fetched 21.1 MB in 3min 26s
+        # (102 kB/s)`). The heaviest tail of the five chromium sites, and the
+        # split shows it is entirely apt's.
+        #
+        # 6, and it cannot be more generous. This job's own cap is
+        # `timeout-minutes: 15` with 3-5 min of preamble (checkout, npm ci, the
+        # deployment lookups) before this step starts, so 6 + the CDN half's 2
+        # still leaves the step bounds firing strictly BEFORE the job cap. An
+        # inert step bound - one the job cap always beats - is worse than none,
+        # because the job then concludes `cancelled` with no failing step, the
+        # exact rendering this plan exists to remove. 6 min is 1.6x the worst
+        # observed apt success and p90 + ~4.8 min.
+        #
+        # These are PRE-cache numbers. With the font .debs restored, a healthy run
+        # should collapse toward the `apt-get update`-only floor, so the bound is
+        # conservative by construction - it is sized for the MISS.
+        timeout-minutes: 6
+        working-directory: ./frontend
+        run: npx playwright install-deps chromium
+
+      # Hand whatever apt downloaded back across the privilege boundary so the
+      # actions/cache post-step (unprivileged) can save it. Local disk only, so
+      # unbounded and without an `id:`, same as the seed step. Every command is
+      # `|| true`: a cache-staging problem must never red a job, and must never
+      # be mistaken for the apt failure this plan exists to report accurately.
+      - name: Stage apt archives for cache
+        run: |
+          set -uo pipefail
+          cache_dir="$HOME/.cache/qontinui-apt-playwright"
+          mkdir -p "$cache_dir"
+          sudo cp -f /var/cache/apt/archives/*.deb "$cache_dir"/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" "$cache_dir" || true
+          echo "$(find "$cache_dir" -maxdepth 1 -name '*.deb' | wc -l) .deb(s) staged for the cache."
+
+      - name: Install Playwright Chromium (CDN)
+        # The CDN half over the same 14 runs: p50 9.4s, p90 10.6s, max 18.9s.
+        # 2 min is ~6x the observed max and leaves the larger share of the job
+        # cap to the apt half, which is the half that actually stalls.
+        timeout-minutes: 2
+        working-directory: ./frontend
+        run: npx playwright install chromium
 
       # The behavioral smoke runs the committed
       # frontend/tests/spec-ci/verify-deploy-smoke.ts — it imports the SAME
@@ -544,8 +698,19 @@ jobs:
       # `continue-on-error` rewrites it), never on `.outcome` alone: a step
       # that concluded `success` is not what red this job, and naming it as the
       # cause would misattribute a real regression to infrastructure -- the
-      # exact cry-wolf this step exists to prevent. The soft failure is still
-      # reported, as context only.
+      # exact cry-wolf this step exists to prevent.
+      #
+      # A soft-failed apt step is NOT thereby harmless, and the marker must not
+      # say it is. `continue-on-error: true` stops it reding the job DIRECTLY;
+      # it does nothing about the cascade. style-gate.yml is the live example:
+      # six of its provisioning steps are deliberate SHADOW soft-fails, so a
+      # stalled `Install postgresql-client` leaves no psql, the schema and
+      # migration steps soft-fail in turn, no snapshots are captured, and with
+      # STYLE_GATE_ENFORCE=1 the assert step exits 1. That job is red BECAUSE
+      # of the apt stall, with no apt step concluding `failure` anywhere. So
+      # every arm that would otherwise assert "this failure is a real one" or
+      # "no apt-dependent step failed" is guarded on `soft_failed` being empty,
+      # and warns instead of ruling when it is not.
       - name: Explain infrastructure timeout vs external cancellation
         if: cancelled() || failure()
         env:
@@ -561,12 +726,17 @@ jobs:
           #     so a soft-failed step still reports the truth here;
           #   * `.conclusion` is what actually reached the job, and ONLY a step
           #     that concluded `failure` can be what red it.
-          # Every step named below runs `apt-get` and nothing else -- the
-          # psql/DDL work that used to share these steps now lives in an
-          # unbounded successor step, so a `failure` here cannot be the
-          # author's schema breaking.
+          # Every step named below runs `apt-get` and nothing else. Two splits
+          # buy that invariant across all 8 workflows: the psql/DDL work that
+          # used to share the postgresql-client steps now lives in an unbounded
+          # successor step, and `npx playwright install --with-deps` -- npx
+          # resolution PLUS a CDN browser download PLUS apt, fused into one
+          # step -- is split so that only its apt-only `install-deps` half is
+          # ever named here. So a `failure` on any step below is the apt
+          # mirror: never the author's schema breaking, and never a Playwright
+          # bundle that 404s on cdn.playwright.dev.
           APT_STEP_OUTCOMES: |
-            Install Playwright Chromium|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
+            Install Playwright Chromium system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
         run: |
           set -uo pipefail
 
@@ -575,8 +745,10 @@ jobs:
           # either way it is infrastructure. One whose outcome is `cancelled`
           # was still mid-flight when the job ended; that is only decisive once
           # we also know the job budget had actually expired. One that failed
-          # but concluded `success` is `continue-on-error: true`: it did NOT
-          # red this job, so it is context, never the cause.
+          # but concluded `success` is `continue-on-error: true`: it did not red
+          # this job DIRECTLY, but it can still have red it through the cascade
+          # of steps that needed what it installs, so it is tracked separately
+          # and never dismissed.
           #
           # Every matching step is named, not just the last one: two apt steps
           # can die in the same job, and reporting only one understates it.
@@ -602,10 +774,9 @@ jobs:
           why="$why for 30+ minutes (and, unbounded, for 5h59m). Nothing under test ran."
           ref="See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
-          # Context line, emitted before any verdict: a soft-failed apt step is
-          # worth knowing about, but it cannot be why this job is red.
+          # Context line, emitted before any verdict.
           if [ -n "$soft_failed" ]; then
-            echo "::notice title=Soft-failed apt step - context, NOT the cause::Step(s) '$soft_failed' failed but are marked 'continue-on-error: true', so they concluded 'success' and did not red this job. Reported only in case something downstream depended on them."
+            echo "::notice title=Soft-failed apt step - possible upstream cause::Step(s) '$soft_failed' failed but are marked 'continue-on-error: true', so they concluded 'success' and did not DIRECTLY red this job. A later step that needed what they install can still have failed as a consequence, which would make this job's red an apt cascade rather than a verdict on the diff."
           fi
 
           # --- Arm 1: an apt step failed AND that failure red the job.
@@ -613,6 +784,16 @@ jobs:
           # can make a step conclude `failure`.
           if [ -n "$apt_failed" ]; then
             echo "::error title=CI infrastructure timeout - NOT your diff::Step(s) '$apt_failed' exceeded a step-level timeout-minutes or failed outright. $why This is a CI infrastructure failure, not a verdict on the code in this change. Re-run the job. $ref"
+            exit 0
+          fi
+
+          # --- Arm 1b: no apt step concluded `failure` and none is mid-flight,
+          # but one SOFT-failed. The cascade described in the step header is
+          # live here, so "this job's failure is a real one" is an assertion
+          # this step cannot support. Warn rather than rule -- an UNKNOWN
+          # stated as UNKNOWN, not laundered into a negative.
+          if [ "$JOB_STATUS" != "cancelled" ] && [ -z "$apt_running" ] && [ -n "$soft_failed" ]; then
+            echo "::warning title=A soft-failed apt step may have red this job downstream::No apt-dependent step concluded 'failure', but step(s) '$soft_failed' soft-failed ('continue-on-error: true'). $why Steps that needed what they install can have failed as a consequence, so this job's red may be that cascade and NOT a verdict on the diff. Check the cascade before concluding either way. $ref"
             exit 0
           fi
 
@@ -646,8 +827,13 @@ jobs:
           budget_floor=$(( JOB_TIMEOUT_MINUTES - 2 ))
 
           # --- Arm 2: the job budget expired while an apt step was still
-          # running. Requires BOTH facts; either one alone is not evidence.
-          if [ -n "$apt_running" ] && [ -n "$elapsed_min" ] && [ "$elapsed_min" -ge "$budget_floor" ]; then
+          # running. Requires THREE facts. The `cancelled` guard is the one
+          # arm 3 already carried and this arm was missing: a JOB_STATUS of
+          # `failure` with an apt step mid-flight past the budget floor is NOT
+          # a job timeout, and this text ("GitHub concludes a job timeout as
+          # 'cancelled'") would be describing a mechanism that did not fire.
+          # That state belongs to arm 2b, which names the real conclusion.
+          if [ "$JOB_STATUS" = "cancelled" ] && [ -n "$apt_running" ] && [ -n "$elapsed_min" ] && [ "$elapsed_min" -ge "$budget_floor" ]; then
             echo "::error title=CI infrastructure timeout - NOT your diff::The ${JOB_TIMEOUT_MINUTES}-minute job budget expired after ${elapsed_min} min while step(s) '$apt_running' were STILL RUNNING. $why GitHub concludes a job timeout as 'cancelled', which 'gh pr checks' renders as 'fail' with zero failing steps - that rendering is what makes this look like your test failure. It is not. Re-run the job. $ref"
             exit 0
           fi
@@ -678,10 +864,19 @@ jobs:
             exit 0
           fi
 
-          # --- Arm 3: cancelled, no apt step red the job and none was
-          # mid-flight. The stall is ruled out BY THE STEP OUTCOMES - a
-          # positive fact - not by the elapsed time, which may be UNKNOWN.
-          # Explicitly decline to judge the diff either way.
+          # --- Arm 3a: cancelled, nothing mid-flight, but an apt step
+          # SOFT-failed. Arm 3's "No apt-dependent step failed" would be
+          # flatly false here - one demonstrably did - so arm 3 does not get
+          # to speak for this state.
+          if [ "$JOB_STATUS" = "cancelled" ] && [ -n "$soft_failed" ]; then
+            echo "::warning title=Cancelled, and a soft-failed apt step may have red this job downstream::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget. No apt-dependent step was mid-flight, but step(s) '$soft_failed' soft-failed ('continue-on-error: true'), so the apt-mirror stall can NOT be ruled out here, and steps that needed what they install may have failed as a consequence. A cancelled run also reports no test results at all, so nothing here is a verdict on the code under test either way. $ref"
+            exit 0
+          fi
+
+          # --- Arm 3: cancelled, no apt step red the job, none was
+          # mid-flight and none soft-failed. The stall is ruled out BY THE
+          # STEP OUTCOMES - a positive fact - not by the elapsed time, which
+          # may be UNKNOWN. Explicitly decline to judge the diff either way.
           if [ "$JOB_STATUS" = "cancelled" ]; then
             echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget. No apt-dependent step failed and none was mid-flight, so this was NOT the known apt-mirror stall. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
             exit 0
