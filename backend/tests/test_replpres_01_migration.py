@@ -38,23 +38,31 @@ What is asserted, and why each one is unsafe-if-wrong
    database, never skips) and once by falsification against a real Postgres.
 
 2. **``heartbeat_at`` / ``boot_at`` are ``timestamptz``.** Staleness is decided
-   by comparing ``heartbeat_at`` against the lease TTL. A naive
-   ``timestamp`` would apply cleanly, accept every write, and then be wrong by
-   the session's UTC offset — a live follower reading as hours stale, i.e.
-   DEPARTED, i.e. the exact false verdict this table exists to prevent. Proven
-   behaviourally as well as from the catalog: the same row read back under a
-   different session ``TIME ZONE`` must be the same instant.
+   by comparing ``heartbeat_at`` against the lease TTL. A naive ``timestamp``
+   would apply cleanly, accept every write, and then be wrong by the session's
+   UTC offset — a live follower reading as hours stale, i.e. DEPARTED, i.e.
+   the exact false verdict this table exists to prevent. Proven behaviourally
+   as well as from the catalog, but the behavioural proof has to be the
+   SUBTRACTION, not a read-back: PostgreSQL converts nothing when it returns a
+   naive column, so reading the same row under two session timezones yields
+   the same literal either way. It is ``now() - heartbeat_at`` — coord's own
+   expression — that forces the naive value to be interpreted as local time
+   and comes back off by the whole offset.
 
 3. **``replica_id`` is the primary key.** It is the conflict target of coord's
-   upsert (``ON CONFLICT (replica_id)``); without it every election tick on
-   every replica appends a row instead of updating one, and the table grows at
-   the cadence rather than at the redeploy rate.
+   upsert (``ON CONFLICT (replica_id)``). With no unique constraint matching
+   it PostgreSQL does not append — it raises ``InvalidColumnReference`` — and
+   coord *swallows* that (``write_presence`` logs at debug and returns), so
+   the table stays permanently EMPTY. Every replica then reads as
+   no-evidence → UNKNOWN, the fifth conjunct goes inert, and the gate silently
+   reverts to the four-conjunct behaviour this table was added to fix.
 
 4. **Coord's landed statements actually run against this table.** All three —
-   the presence upsert, the retention DELETE the index exists for, and the
-   loader whose age the roll gate grades — are transcribed below from
+   the presence upsert (``write_presence``), the retention DELETE the index
+   exists for (``prune_presence``) and the loader whose age the roll gate
+   grades (``load_replica_presence``) — are transcribed below from
    ``qontinui-coord`` (``crates/coord/src/replica_presence.rs`` and
-   ``worker_ledger.rs``) and executed here. That is the
+   ``crates/coord/src/worker_ledger.rs``) and executed here. That is the
    ``coord_tenant_warm_bytes_01`` precedent — the migration that publishes SQL
    for a coord-side consumer asserts that what it publishes runs — applied to
    a consumer that has since landed, so the transcription is of shipped code
@@ -77,10 +85,11 @@ What is asserted, and why each one is unsafe-if-wrong
 
 Substrate comes from ``_alembic_harness``: an ephemeral database inside the
 test Postgres, skipped when none is reachable. ⚠️ A skip proves nothing — point
-it at a live instance with ``QONTINUI_TEST_PG=host:port`` (or
-``DATABASE_URL``) if 5432 is not the one accepting the test credentials. The
-two source guards at the end of this file need no database and therefore never
-skip.
+it at a live instance with ``QONTINUI_TEST_PG=host:port`` if 5432 is not the
+one accepting the test credentials. That variable, and *only* that one:
+``conftest.py`` overwrites ``DATABASE_URL`` unconditionally at import, so
+exporting it here has no effect. The source guards at the end of this file
+need no database and therefore never skip.
 """
 
 from __future__ import annotations
@@ -128,9 +137,11 @@ _EXPECTED_COLUMNS: dict[str, tuple[str, bool, bool]] = {
 # Coord's shipped statements, transcribed.
 #
 # Sources, all on qontinui-coord `origin/main`:
-# `crates/coord/src/replica_presence.rs` — `write_presence`,
-# `prune_replica_presence`; `crates/coord/src/worker_ledger.rs` —
-# `load_replica_presence`. The ONLY edit is the bind style: tokio-postgres'
+# `crates/coord/src/replica_presence.rs` — `write_presence`, `prune_presence`;
+# `crates/coord/src/worker_ledger.rs` — `load_replica_presence`. Spelled
+# exactly as coord spells them: this block exists so the copies can be
+# re-verified by grepping coord, and a symbol that greps to nothing defeats
+# that. The ONLY edit is the bind style: tokio-postgres'
 # `$1`/`$2` become SQLAlchemy named binds, because the two drivers spell
 # parameters differently and nothing else about the statements is allowed to
 # drift.
@@ -298,8 +309,9 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
 
         assert _primary_key_columns(engine) == ["replica_id"], (
             "replica_id must be the sole primary key — it is the conflict "
-            "target of coord's ON CONFLICT (replica_id) upsert. Without it "
-            "every election tick appends a row instead of updating one."
+            "target of coord's ON CONFLICT (replica_id) upsert. With nothing "
+            "unique to match, that statement raises InvalidColumnReference, "
+            "coord swallows it, and the table stays empty forever."
         )
 
         assert index_exists(engine, _INDEX)
@@ -315,7 +327,7 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         #    which pool it used must FAIL, never inherit an optimistic
         #    answer that the consumer would read as "alive and trustworthy".
         # ----------------------------------------------------------------
-        with pytest.raises(IntegrityError):
+        with pytest.raises(IntegrityError, match="dedicated_pool"):
             with engine.begin() as conn:
                 conn.execute(
                     text(
@@ -355,8 +367,10 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         # ----------------------------------------------------------------
         _upsert(engine, replica, False)
         assert _row_count(engine) == 1, (
-            "ON CONFLICT (replica_id) must UPDATE; a second row means the "
-            "primary key is not the conflict target coord names"
+            "ON CONFLICT (replica_id) must UPDATE this replica's row in "
+            "place; a second row means the conflict target is not the key "
+            "that identifies a replica, and the table would then grow at the "
+            "election cadence rather than at the redeploy rate"
         )
         second_hb, second_boot, dedicated = _read_row(engine, replica)
         assert second_hb > first_hb, "heartbeat_at must advance on every tick"
@@ -369,35 +383,17 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         )
 
         # ----------------------------------------------------------------
-        # 6. timestamptz, behaviourally. Read the same row under a session
-        #    timezone far from UTC: an instant is an instant. A naive column
-        #    would hand back a value shifted by the offset, which is how a
-        #    live follower reads as hours-stale — i.e. DEPARTED.
-        # ----------------------------------------------------------------
-        with engine.connect() as conn:
-            conn.execute(text("SET TIME ZONE 'Pacific/Kiritimati'"))
-            shifted = conn.execute(
-                text(
-                    """
-                    SELECT heartbeat_at FROM coord.replica_presence
-                     WHERE replica_id = :r
-                    """
-                ),
-                {"r": replica},
-            ).scalar_one()
-        assert shifted == second_hb, (
-            "the same row read under another session timezone must be the "
-            f"same instant; got {shifted!r} vs {second_hb!r}"
-        )
-
-        # ----------------------------------------------------------------
-        # 6b. Coord's reader, run verbatim under that same far-from-UTC
-        #     session timezone. This is the number the fifth conjunct grades
-        #     against the lease TTL (15s by default). With `timestamptz` the
-        #     age is the handful of milliseconds since the upsert; with a
-        #     naive `timestamp` the same expression would be off by the
-        #     14-hour offset — 50400s, i.e. thousands of TTLs — and every
-        #     live replica would read as departed.
+        # 6. timestamptz, behaviourally — coord's reader run verbatim under a
+        #    session timezone far from UTC. This is the number the fifth
+        #    conjunct grades against the lease TTL (15s by default).
+        #
+        #    The SUBTRACTION is the proof, and simply reading the column back
+        #    under two timezones is NOT: PostgreSQL converts nothing when it
+        #    returns a `timestamp without time zone`, so both reads hand back
+        #    the same literal whichever type the column has. It is
+        #    `now() - heartbeat_at` that forces a naive value to be read as
+        #    LOCAL time — under +14 that is 50400s of fabricated age, thousands
+        #    of TTLs, and every live replica reads as departed.
         # ----------------------------------------------------------------
         with engine.connect() as conn:
             conn.execute(text("SET TIME ZONE 'Pacific/Kiritimati'"))
@@ -433,6 +429,8 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         assert _row_count(engine) == 2
 
         with engine.begin() as conn:
+            # coord binds `PRESENCE_RETENTION_SECS` here — 2h
+            # (`replica_presence.rs`: `2.0 * 60.0 * 60.0`).
             deleted = conn.execute(_COORD_PRUNE, {"secs": 7200.0}).rowcount
         assert deleted == 1, (
             "coord's retention DELETE must reap exactly the row older than "
@@ -478,7 +476,11 @@ def test_replpres_01_chains_onto_memseq_01() -> None:
         source,
         re.MULTILINE,
     ), f"replpres_01 must declare down_revision = {_PARENT_REVISION_ID!r}"
-    assert re.search(rf'^revision[^=]*=\s*"{_REVISION_ID}"', source, re.MULTILINE)
+    assert re.search(rf'^revision[^=]*=\s*"{_REVISION_ID}"', source, re.MULTILINE), (
+        f"the file this test reads must be revision {_REVISION_ID!r}; if it "
+        "was renamed, _revision_source() is pointing at the wrong file and "
+        "every source guard below is grading something else"
+    )
 
 
 def test_replpres_01_gives_no_column_a_server_default() -> None:
@@ -493,7 +495,10 @@ def test_replpres_01_gives_no_column_a_server_default() -> None:
 
     ``heartbeat_at`` / ``boot_at`` are held to the same rule in a milder
     form: a ``server_default=now()`` would let a tick that failed to supply a
-    timestamp look like a fresh one.
+    timestamp look like a fresh one. NOT NULL is checked here too, by keyword
+    VALUE rather than presence — it is the property the database test's
+    falsification actually rides on, and this is the only guard on it when
+    Postgres is absent.
 
     Read through the AST rather than by substring, because the revision's own
     comment contains the words "No server_default" — a grep-shaped guard
@@ -506,7 +511,7 @@ def test_replpres_01_gives_no_column_a_server_default() -> None:
         if isinstance(node, ast.FunctionDef) and node.name == "upgrade"
     )
 
-    columns: list[tuple[str, set[str]]] = []
+    columns: list[tuple[str, dict[str, ast.expr]]] = []
     for node in ast.walk(upgrade):
         if not isinstance(node, ast.Call):
             continue
@@ -515,7 +520,9 @@ def test_replpres_01_gives_no_column_a_server_default() -> None:
             continue
         name = node.args[0]
         assert isinstance(name, ast.Constant), "column names must be literals"
-        columns.append((str(name.value), {kw.arg for kw in node.keywords if kw.arg}))
+        columns.append(
+            (str(name.value), {kw.arg: kw.value for kw in node.keywords if kw.arg})
+        )
 
     assert [name for name, _ in columns] == list(_EXPECTED_COLUMNS), (
         "the revision must declare exactly the four columns coord consumes, "
@@ -529,12 +536,20 @@ def test_replpres_01_gives_no_column_a_server_default() -> None:
         f"inherit an optimistic one. Offenders: {with_default}"
     )
 
+    # By VALUE, not by presence: `"nullable" in kwargs` is satisfied by
+    # `nullable=True`, which is the opposite of the property. NOT NULL is what
+    # makes the database test's falsification fire at all, and on a DB-less
+    # run this guard is the only thing holding it.
+    def _is(expr: ast.expr | None, want: bool) -> bool:
+        return isinstance(expr, ast.Constant) and expr.value is want
+
     not_null = {
         name
         for name, kwargs in columns
-        if "nullable" in kwargs or "primary_key" in kwargs
+        if _is(kwargs.get("nullable"), False) or _is(kwargs.get("primary_key"), True)
     }
     assert not_null == set(_EXPECTED_COLUMNS), (
-        "every column must state its nullability explicitly (the primary key "
-        f"via primary_key=True); unstated: {set(_EXPECTED_COLUMNS) - not_null}"
+        "every column must be NOT NULL — the three non-key ones via "
+        "nullable=False, replica_id via primary_key=True. Unstated or "
+        f"nullable: {sorted(set(_EXPECTED_COLUMNS) - not_null)}"
     )
