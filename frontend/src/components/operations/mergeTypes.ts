@@ -63,11 +63,11 @@ export interface QueueResponse {
 //
 // Mirrors coord's `GET /pr-merge/prs` response (see
 // `qontinui-coord/src/pr_merge.rs::PrRow` / `PrListResponse`). Joined to
-// per-(repo, head_sha) lifecycle from `coord.pr_check_runs`. The MergeTrain
-// dashboard renders this alongside the existing `coord.merge_proposals`
-// stream so an operator sees BOTH the outer PR state (mergeable,
-// mergeStateStatus, reviewDecision) AND the inner proposal lifecycle
-// (queued -> dry-rebasing -> ... -> merged) in one card.
+// per-(repo, head_sha) lifecycle from `coord.pr_check_runs`. The
+// MergePipeline hero joins this with the `coord.merge_proposals` stream so
+// an operator sees BOTH the outer PR state (mergeable, mergeStateStatus,
+// reviewDecision) AND the inner proposal lifecycle (queued ->
+// dry-rebasing -> ... -> merged) as ONE row per PR.
 // ============================================================================
 
 /** GitHub's PR-level merge state status -- values per the GraphQL enum. */
@@ -593,9 +593,10 @@ export interface SuggestionListResponse {
 // `GET /pr-merge/blast-radius-blocks` response (see
 // `qontinui-coord/src/pr_merge/blast_radius_monitor.rs::BlocksResponse` /
 // `BlastRadiusBlock`), proxied by the web backend's
-// `/operations/pr-merge/blast-radius-blocks`. The MergeTrain "Gate decisions"
-// section renders one row per held PR with the reason, the removed-export
-// evidence (`referenced_by [{file,line}]`), and an honesty label.
+// `/operations/pr-merge/blast-radius-blocks`. The MergePipeline "Gate
+// decisions" section renders one row per held PR with the reason, the
+// removed-export evidence (`referenced_by [{file,line}]`), and an honesty
+// label.
 //
 // Counting note (plan 2026-08-20-predicate-eval-surface-counts-evals-not-
 // decisions, Phase 2): coord's engine appends one `predicate_eval` audit row
