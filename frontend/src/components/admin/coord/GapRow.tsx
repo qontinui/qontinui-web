@@ -215,8 +215,18 @@ export function GapRow({
                 data-testid="coord-gap-review-owed"
               >
                 Not blocking: coord already applied the category default
-                inline. A review is still owed — accept the clause below, or
-                dismiss it.
+                inline. A review is still owed —{" "}
+                {/* The second clause names BUTTONS, so it may only name the
+                    ones that work. `Accept` is disabled without a
+                    `clause_id` (see its own `disabled` below), and
+                    `hasClause` is satisfied by `trigger`/`action`/`bounds`/
+                    `escalate_if` alone — so keying this off `hasClause`
+                    would still point at a dead button. Ruling 2 moved the
+                    ask out of the hue and into the words, which is exactly
+                    what makes the words load-bearing enough to gate. */}
+                {proposed.clause_id
+                  ? "accept the clause below, or dismiss it."
+                  : "there is no clause here that can be accepted, so dismiss it or author one in the prompt-documents editor."}
               </p>
             )}
           </>

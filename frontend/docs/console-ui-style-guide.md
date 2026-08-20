@@ -234,20 +234,53 @@ one question — *whose move is it?*
 
 | family | whose move | the promise it makes |
 |---|---|---|
-| **red** | the operator's, now | nothing else will resolve this |
-| **amber** | something else's | **it will clear itself**; you are watching, not acting |
-| **calm** | nobody's, or a process's | there is nothing to wait for |
+| **red** | the operator's, **now** | nothing else will resolve this |
+| **amber** | something else's — *or* nobody's, because we do not know | **it will clear itself**; you are watching, not acting |
+| **calm** | nobody's **right now** | **nothing is waiting on you**; any ask is stated **in words**, not in the hue |
+
+Read the calm row precisely: it is *not* "there is nothing to do". A calm row
+may still owe somebody a decision — see [the third case](#the-third-case-a-real-decision-that-is-not-blocking-anyone)
+below. What calm promises is only that nothing is blocked and nothing decays
+while it waits, so the ask belongs in the detail where it can be *read*.
 
 So before painting a row amber, name the thing that clears it. If you cannot,
-it is not amber. This has already been got wrong once, and it was caught in
-review rather than by the palette test — because that test only checks the hue
-matches the *declared* attention, never that the declared attention is right:
+**and you do know what the row's state is**, it is not amber. This has already
+been got wrong once, and it was caught in review rather than by the palette
+test — because that test only checks the hue matches the *declared* attention,
+never that the declared attention is right:
 
 - **Idle uncommitted work** (`treeStatus.ts`, the 24-72h stale-WIP band) was
   `waiting`. Nothing times out and no process commits your WIP for you — only a
   human does. It is **red**, which is also what `alertStatus.ts` had already
   concluded for the same condition, and where the failure mode is lost work the
   tie breaks toward the louder signal.
+
+#### The one exception: amber also covers **we do not know**
+
+The clause above has a deliberate exception, and it is shipped in three places,
+so do not "fix" it:
+
+| site | value |
+|---|---|
+| `console/attention.ts` — `attentionOf(map, kind, floor = "waiting")` | an unrecognised kind floors at **amber**, never calm |
+| `planStatus.ts` — `unknown: "waiting"`, painted `bg-amber-500/10` | a work-unit status this build has no label for |
+| `alertStatus.ts` — `unknown: "waiting"` | an alert kind this build has never seen |
+
+Nothing clears an unrecognised status except a human extending the vocabulary,
+so read literally the name-the-clearer rule would condemn all three. It does
+not, because **an amber painted on ignorance is a statement about our
+knowledge, not a promise about the row.** It says *we cannot tell you whose
+move this is* — and the alternative, painting it calm, is the
+`silent-empty-is-unknown` mistake with a badge attached: exactly the same
+discipline that makes an unfetched count render `–` and never `0` (R6). Calm on
+an unknown row asserts "nothing is wrong here", which is precisely what we do
+not know.
+
+The test is therefore two-part, and both halves must hold before amber is
+wrong: **you cannot name what clears the row, *and* you actually know what the
+row's state is.** `attention.ts` states the floor and its reasoning; a new
+surface inherits it by passing its kind map through `attentionOf` rather than
+indexing the map directly.
 
 The second mis-fit is subtler, and the families genuinely do not cover it.
 
@@ -264,9 +297,11 @@ is still a real call somebody has to make. It is not red, because no one must
 act *now* and nothing is lost if they do not. It is not amber, because nothing
 clears it.
 
-**Rule: it is CALM, and the ask goes in the row detail, in words.** The hue
-answers "must a human act now?" and the honest answer is no; the detail answers
-"is anything owed?" and says so explicitly — see `<GapRow>`'s
+**Rule: it is CALM, and the ask goes in the row detail, in words.** That is
+what the calm row of the table above means by "nobody's move *right now*" — the
+move is genuinely the operator's, it is simply not owed today. The hue answers
+"must a human act now?" and the honest answer is no; the detail answers "is
+anything owed?" and says so explicitly — see `<GapRow>`'s
 `coord-gap-review-owed` line. Putting the ask in the hue would spend amber's
 credibility on something that is not waiting on anything, and amber only works
 for as long as it means what it says.
@@ -805,8 +840,22 @@ looks reasonable on its own.
 | Family | Means | Class (today) | May be used by |
 |---|---|---|---|
 | **red** | someone must act **now** | `bg-red-500/15 text-red-200 border-red-500/35` | a kind whose attention is `"author"` — and every one of them |
-| **amber** | waiting on something else; it will clear itself | `bg-amber-500/15 text-amber-200 border-amber-500/30` | a kind whose attention is `"waiting"` — and every one of them |
-| everything else | in flight or terminal; nobody is blocked | yellow / purple / blue / green / muted / dashed | a kind whose attention is `"none"` |
+| **amber** | waiting on something else and it will clear itself — **or** we do not know what this is | `bg-amber-500/15 text-amber-200 border-amber-500/30` | a kind whose attention is `"waiting"` — and every one of them |
+| everything else | nobody is blocked **right now**: in flight, terminal, or owed-but-not-blocking | yellow / purple / blue / green / muted / dashed | a kind whose attention is `"none"` |
+
+Three clauses in that table are load-bearing and each is spelled out in
+[§2 R3](#r3--colour-encodes-who-must-act):
+
+- **amber's "or we do not know"** — the ignorance floor (`attentionOf`'s
+  `"waiting"` default, `planStatus`/`alertStatus`'s `unknown`). Amber on an
+  unknown row is a statement about our knowledge, not a promise about the row.
+- **"right now"** in the calm row — calm does **not** mean nothing is owed. A
+  state that wants a real human decision while blocking nobody and decaying
+  nothing is calm; `questionStatus`'s `gap-handled` is the worked example.
+- **"owed-but-not-blocking"** — and when a calm kind *is* owed something, the
+  ask is rendered **in words in the row detail**, never by borrowing amber.
+  Borrowing amber for it spends the credibility of the one hue whose whole
+  value is that it means what it says.
 
 Defined once at `MergePipeline.tsx:96-99`. **On `main` those four constants are
 module-private — they are not exported, so grepping for an import of them finds
@@ -834,7 +883,7 @@ off a parallel judgement. Its own doc comment carries a one-line-per-kind audit 
 *why* each kind lands where it does (`prPipeline.ts:95-127`), which is what makes a
 review of a new kind possible at all.
 
-The contract a new surface must honour, in three parts:
+The contract a new surface must honour, in four parts:
 
 1. **The kind→attention table is authored and audited.** One row per kind, with a
    stated reason. Not derived, not inferred from the label.
@@ -842,6 +891,14 @@ The contract a new surface must honour, in three parts:
    its attention, never by re-reading the kind name.
 3. **A unit test asserts the two agree.** Not a convention — an assertion, so the
    next kind added cannot silently pick the wrong colour.
+4. **A calm kind that is nonetheless OWED something says so in words.** The
+   audit table records that it is `"none"` and *why*; the row detail carries
+   the ask. `questionStatus.ts`'s `gap-handled` is the worked example and
+   `<GapRow>`'s `coord-gap-review-owed` line is where it is rendered. This part
+   exists because (1)–(3) are all satisfiable by a kind that is silently
+   under-served: `paletteDisagreements` proves the hue matches the declared
+   attention, and can never prove the declared attention was the right one.
+   That is the gap both Wave-1 mis-filings fell through.
 
 Both halves of (3) are already enforced on `main`:
 
