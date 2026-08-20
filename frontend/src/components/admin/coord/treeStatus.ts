@@ -172,7 +172,7 @@ export function verdictTestId(kind: TreeStatusKind): string {
 }
 
 /** Plain-language verdict label — unchanged from `TreeCard`'s badge text. */
-export function verdictLabel(cls: PullSafetyClass): string {
+function verdictLabel(cls: PullSafetyClass): string {
   switch (cls.kind) {
     case "pull":
       return "pull";
@@ -206,7 +206,7 @@ export function verdictReason(cls: PullSafetyClass): string {
 }
 
 /** Hours since an ISO timestamp; `null` when absent or unparseable. */
-export function hoursAgo(iso?: string | null): number | null {
+function hoursAgo(iso?: string | null): number | null {
   if (!iso) return null;
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return null;
@@ -231,10 +231,28 @@ export function staleBand(tree: PrimaryTreeRow): StaleBand {
   return "none";
 }
 
-/** A stale band's own attention — the escalation input, not a verdict. */
+/**
+ * A stale band's own attention — the escalation input, not a verdict.
+ *
+ * **Both dirty bands are `author`, and the 24h one deliberately is NOT amber.**
+ * R3's amber means *waiting on something else, it will clear itself*, and
+ * nothing clears untouched uncommitted work except a human — there is no
+ * timeout, no retry and no other process that resolves it. Rating it `waiting`
+ * was a promise the surface cannot keep.
+ *
+ * It also has to agree with `alertStatus.ts`, which rates the SAME condition
+ * (`stale-wip`) `author` and shipped reviewed in qontinui-web#986. Two console
+ * surfaces answering "who must act on idle WIP?" differently is exactly the
+ * drift R3 exists to prevent, and where the failure mode is LOST WORK the tie
+ * breaks toward the louder signal.
+ *
+ * The 24h/72h gradation survives in the badge TEXT (`stale 24h+` /
+ * `stale 72h+`) and in `TreesHealth.headline`, which is where a gradation
+ * belongs — the hue answers "must a human act?", which is `yes` for both.
+ */
 const STALE_ATTENTION: Record<StaleBand, Attention> = {
   critical: "author",
-  warning: "waiting",
+  warning: "author",
   none: "none",
 };
 
@@ -286,16 +304,21 @@ export interface TreesHealth {
 export function deriveTreesHealth(trees: PrimaryTreeRow[]): TreesHealth {
   let dirty = 0;
   let stale = 0;
+  let critical = 0;
   let held = 0;
   for (const t of trees) {
     if (t.dirty) dirty += 1;
-    if (staleBand(t) !== "none") stale += 1;
+    const band = staleBand(t);
+    if (band !== "none") stale += 1;
+    if (band === "critical") critical += 1;
     const k = pullSafetyClass(t).kind;
     if (k === "hold" || k === "diverged") held += 1;
   }
-  const critical = trees.filter((t) => staleBand(t) === "critical").length;
+  // `stale > 0` is NOT a second disjunct here: `staleBand` returns "none" for
+  // a clean tree, so every stale tree is already a dirty one and the amber arm
+  // would be unreachable through it.
   const level: "green" | "amber" | "red" =
-    critical > 0 || held > 0 ? "red" : stale > 0 || dirty > 0 ? "amber" : "green";
+    critical > 0 || held > 0 ? "red" : dirty > 0 ? "amber" : "green";
   const headline =
     critical > 0
       ? `${critical} tree${critical === 1 ? "" : "s"} holding WIP for 72h+`

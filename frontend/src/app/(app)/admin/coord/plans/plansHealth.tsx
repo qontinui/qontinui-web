@@ -29,15 +29,22 @@ export interface PlansHealth {
  * The page's health, derived from the rows already on it (R1) — never a second
  * fetch.
  *
- * `loaded=false` is NOT "zero of everything": every count is `null`, which the
- * badge renders as `–`. A page that has not heard from coord yet must not
- * claim there are no blocked plans.
+ * **`loaded=false` returns EARLY with a separate badge set whose labels spell
+ * the dash literally.** That is worth stating precisely, because the obvious
+ * reading is wrong in a way that would ship blank counts: `<HealthStrip>`
+ * renders `badge.label` verbatim (`HealthStrip.tsx`), so a `null` label
+ * renders NOTHING, not `–`. The `–`-not-`0` rule (R6) is therefore held here
+ * by the early return and by the literal `–` in these labels — not by any
+ * null-coalescing further down. Delete the early return and the counts go
+ * blank, not dashed.
+ *
+ * The reason the rule matters at all: a page that has not heard from coord yet
+ * must not claim there are no blocked plans.
  */
 export function derivePlansHealth(
   plans: CoordPlanRow[],
   loaded: boolean
 ): PlansHealth {
-  const n = (v: number) => (loaded ? v : null);
   if (!loaded) {
     return {
       level: "amber",
@@ -80,20 +87,20 @@ export function derivePlansHealth(
     headline,
     detail,
     badges: [
-      { key: "total", label: <>plans {n(plans.length)}</>, tone: "muted" },
+      { key: "total", label: <>plans {plans.length}</>, tone: "muted" },
       {
         key: "blocked",
-        label: <>blocked {n(blocked)}</>,
+        label: <>blocked {blocked}</>,
         tone: blocked > 0 ? "attention" : "muted",
         title: "work units whose status is blocked — nothing downstream clears these",
       },
-      { key: "active", label: <>in progress {n(active)}</>, tone: "default" },
-      { key: "shipped", label: <>shipped {n(shipped)}</>, tone: "muted" },
+      { key: "active", label: <>in progress {active}</>, tone: "default" },
+      { key: "shipped", label: <>shipped {shipped}</>, tone: "muted" },
       ...(unrecognised > 0
         ? [
             {
               key: "unrecognised",
-              label: <>unlabelled {n(unrecognised)}</>,
+              label: <>unlabelled {unrecognised}</>,
               tone: "default" as const,
               title:
                 "work-unit status is opaque text in coord; these values are not in this build's display vocabulary",

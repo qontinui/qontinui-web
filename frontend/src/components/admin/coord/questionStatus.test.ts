@@ -87,12 +87,21 @@ describe("deriveGapStatus", () => {
     expect(s.reason).toContain("escalation-bar");
   });
 
-  it("is WAITING once pre-answered — reviewed, not resolved", () => {
-    // A non-blocking gap arrives pre-answered because coord applied the
-    // category default. Nobody is stopped, but the clause still wants a human.
+  it("is CALM once pre-answered — and specifically NOT amber", () => {
+    // Ruling 2 of the Wave-1 review, and the worked example behind the style
+    // guide's R3 "third case". A non-blocking gap arrives pre-answered because
+    // coord applied the category default: nobody is stopped and nothing is
+    // lost, so it is not red — but nothing CLEARS an unreviewed clause either,
+    // and amber's contract is that the row clears itself. Calm, with the ask
+    // stated in `<GapRow>`'s detail instead of in the hue.
     const s = deriveGapStatus({ responded_at: "2026-08-20T10:00:00Z" });
     expect(s.kind).toBe("gap-handled");
-    expect(s.attention).toBe("waiting");
+    expect(s.attention).toBe("none");
+    // The ask must survive somewhere the operator can read it.
+    expect(s.reason).toMatch(/owed a review/);
+    // Guard the specific mistake: never the amber family.
+    expect(QUESTION_BADGE_CLASS["gap-handled"]).not.toMatch(/bg-amber-/);
+    expect(QUESTION_BADGE_CLASS["gap-handled"]).not.toMatch(/bg-red-/);
   });
 });
 
