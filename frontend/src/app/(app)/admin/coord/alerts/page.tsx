@@ -459,11 +459,15 @@ export default function CoordAlertsPage() {
             identity, NEVER its array position: a row resolving out of page 1
             would otherwise re-key every row after it and collapse whichever
             panel the operator had opened. `id` (the PK) first, `alert_key`
-            (the dedup identity) when coord omits it, and the subject only if
-            a payload carries neither. */}
+            (the dedup identity) when coord omits it, and — only when a payload
+            carries neither — the subject WITH the index appended, because a
+            subject alone is not unique and `<RecordList>` expands on key
+            equality, so two rows sharing one would open together. */}
         <RecordList
           items={alerts}
-          itemKey={(a) => String(a.id ?? a.alert_key ?? alertSubject(a))}
+          itemKey={(a, i) =>
+            String(a.id ?? a.alert_key ?? `${alertSubject(a)}#${i}`)
+          }
           loaded={!(loading && pages.length === 0)}
           skeletonRows={6}
           className="space-y-1.5"

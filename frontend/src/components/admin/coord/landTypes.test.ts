@@ -1,80 +1,26 @@
 import { describe, it, expect } from "vitest";
 
-import {
-  composedOutcomeVariant,
-  dimensionOutcomeVariant,
-  driftClassVariant,
-  type BadgeVariant,
-} from "./landTypes";
-
-/**
- * Anti-drift guard for the land composed-outcome → badge-variant color
- * contract. Per the plan's binding spec:
- *   confirmed     → green   (success)
- *   surprise      → amber   (warning)
- *   partial       → gray/blue (info)
- *   failure       → red     (destructive)
- *   contradiction → red     (destructive)
- *   unknown/null  → neutral (outline)
- * If this matrix drifts, the operator dashboard's land-outcome colors stop
- * matching the documented taxonomy.
- */
-describe("composedOutcomeVariant — composed-outcome color ladder", () => {
-  it("confirmed → success (green)", () => {
-    expect(composedOutcomeVariant("confirmed")).toBe<BadgeVariant>("success");
-  });
-  it("surprise → warning (amber)", () => {
-    expect(composedOutcomeVariant("surprise")).toBe<BadgeVariant>("warning");
-  });
-  it("partial → info (gray/blue)", () => {
-    expect(composedOutcomeVariant("partial")).toBe<BadgeVariant>("info");
-  });
-  it("failure → destructive (red)", () => {
-    expect(composedOutcomeVariant("failure")).toBe<BadgeVariant>(
-      "destructive"
-    );
-  });
-  it("contradiction → destructive (red)", () => {
-    expect(composedOutcomeVariant("contradiction")).toBe<BadgeVariant>(
-      "destructive"
-    );
-  });
-  it("null/undefined → outline (no fabricated color)", () => {
-    expect(composedOutcomeVariant(null)).toBe<BadgeVariant>("outline");
-    expect(composedOutcomeVariant(undefined)).toBe<BadgeVariant>("outline");
-    expect(composedOutcomeVariant("")).toBe<BadgeVariant>("outline");
-  });
-  it("unknown future token → outline (defensive fallback)", () => {
-    expect(composedOutcomeVariant("some_new_outcome")).toBe<BadgeVariant>(
-      "outline"
-    );
-  });
-});
-
-describe("dimensionOutcomeVariant — per-dimension verdict color ladder", () => {
-  it("maps the four canonical tokens (case-insensitive)", () => {
-    expect(dimensionOutcomeVariant("confirmed")).toBe<BadgeVariant>("success");
-    expect(dimensionOutcomeVariant("Surprise")).toBe<BadgeVariant>("warning");
-    expect(dimensionOutcomeVariant("PARTIAL")).toBe<BadgeVariant>("info");
-    expect(dimensionOutcomeVariant("failure")).toBe<BadgeVariant>(
-      "destructive"
-    );
-    expect(dimensionOutcomeVariant("contradiction")).toBe<BadgeVariant>(
-      "destructive"
-    );
-  });
-  it("null/unknown → outline", () => {
-    expect(dimensionOutcomeVariant(null)).toBe<BadgeVariant>("outline");
-    expect(dimensionOutcomeVariant("weird")).toBe<BadgeVariant>("outline");
-  });
-});
+import { driftClassVariant, type BadgeVariant } from "./landTypes";
 
 /**
  * Anti-drift guard for the cross-repo `worst_drift_class` → badge-variant
- * color contract. Coord tokens: none|benign_add|pending|in_place|
- * active_negation|divergent|unknown. If this matrix drifts, the cross-repo
- * restack-verdict colors stop matching coord's taxonomy.
+ * colour contract.
+ *
+ * RENAMED from `LandCard.test.ts` in Phase 3 Wave 2, when the ladders moved
+ * out of the card into `landTypes.ts`. It also SHRANK: see the note below.
  */
+/*
+ * The `composedOutcomeVariant` and `dimensionOutcomeVariant` describe blocks
+ * that stood here were DELETED in Phase 3 Wave 2, with the functions they
+ * covered. They pinned `surprise -> warning (amber)` as "the plan's binding
+ * spec" — the exact filing `verificationStatus.ts` deliberately reverses to
+ * calm (nothing clears a settled surprise, so amber was a promise it could not
+ * keep; R3's third case). Leaving a green test asserting the opposite of the
+ * shipped decision is worse than having no test: the next reader cannot tell
+ * which one is the contract. The composed-D3 ladder is now audited in
+ * `verificationStatus.test.ts` against an attention table.
+ */
+
 describe("driftClassVariant — worst_drift_class color ladder", () => {
   it("none → success (verified clean)", () => {
     expect(driftClassVariant("none")).toBe<BadgeVariant>("success");

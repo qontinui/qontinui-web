@@ -33,6 +33,7 @@ const ALL_KINDS: VerificationKind[] = [
   "failure",
   "contradiction",
   "unverified",
+  "pending",
   "unknown",
 ];
 
@@ -82,7 +83,14 @@ describe("VERIFICATION_ATTENTION_BY_KIND — the R3 audit table", () => {
     // sentence; a kind that owes nothing must not invent one.
     expect(OWED_REVIEW.surprise).toBeTruthy();
     expect(OWED_REVIEW.partial).toBeTruthy();
-    for (const k of ["confirmed", "failure", "contradiction", "unverified", "unknown"] as const) {
+    for (const k of [
+      "confirmed",
+      "failure",
+      "contradiction",
+      "unverified",
+      "pending",
+      "unknown",
+    ] as const) {
       expect(OWED_REVIEW[k], `${k} claims something is owed`).toBeNull();
     }
     // And the ask has to be an ASK, not a restatement of the status.
@@ -105,10 +113,18 @@ describe("classifyComposedOutcome", () => {
     expect(classifyComposedOutcome(" partial ")).toBe("partial");
   });
 
-  it("degrades an unseen or absent outcome to unknown rather than throwing", () => {
+  it("degrades an UNSEEN outcome to unknown rather than throwing", () => {
     expect(classifyComposedOutcome("brand_new_outcome_2027")).toBe("unknown");
-    expect(classifyComposedOutcome(null)).toBe("unknown");
-    expect(classifyComposedOutcome("")).toBe("unknown");
+  });
+
+  it("calls an ABSENT outcome pending, never unreadable", () => {
+    // The bug this pins: an unsettled verification row carries no composed
+    // outcome for most of its life, and folding that into `unknown` labelled
+    // the commonest state on the surface "verdict unreadable" — a claim that
+    // we read something and failed. `LandCard` rendered it "pending".
+    expect(classifyComposedOutcome(null)).toBe("pending");
+    expect(classifyComposedOutcome("")).toBe("pending");
+    expect(classifyComposedOutcome("   ")).toBe("pending");
   });
 
   it("does not classify a prototype key as a known outcome", () => {
@@ -129,6 +145,15 @@ describe("deriveVerificationStatus", () => {
     expect(unreadable.kind).toBe("unknown");
     // Verbatim, never guessed at.
     expect(unreadable.label).toBe("??");
+
+    // ...and the third: a row that exists but has not been composed yet.
+    const pending = deriveVerificationStatus({
+      composed_outcome: null,
+      settled: false,
+    });
+    expect(pending.kind).toBe("pending");
+    expect(pending.label).toBe("verdict pending");
+    expect(pending.attention).toBe("waiting");
   });
 
   it("summarises coverage and dimension counts as the row's why", () => {

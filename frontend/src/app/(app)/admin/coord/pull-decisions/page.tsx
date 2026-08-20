@@ -54,7 +54,8 @@ import {
 } from "@/components/console";
 import { PullDecisionRow } from "@/components/admin/coord/PullDecisionRow";
 import {
-  classifyVerdict,
+  PULL_ATTENTION_BY_VERDICT,
+  derivePullDecisionStatus,
   type PullDecisionRow as PullDecisionRowData,
 } from "@/components/admin/coord/pullDecisionStatus";
 import { httpClient } from "@/services/service-factory";
@@ -98,8 +99,12 @@ function derivePullHealth(
   let holding = 0;
   let noOutcome = 0;
   for (const r of rows) {
-    const kind = classifyVerdict(r.verdict);
-    if (kind === "diverged") diverged += 1;
+    // Through the ROW's own derivation, not a second classification of the
+    // raw verdict: a divergence with a recorded outcome is `diverged_handled`
+    // and calm, and a strip that counted it as red would turn the page red
+    // over finished work while every row on it read calm.
+    const kind = derivePullDecisionStatus(r).kind;
+    if (PULL_ATTENTION_BY_VERDICT[kind] === "author") diverged += 1;
     else if (kind === "hold") holding += 1;
     if (!r.outcome?.chosen_option) noOutcome += 1;
   }
@@ -110,7 +115,7 @@ function derivePullHealth(
     level,
     headline:
       diverged > 0
-        ? `${diverged} repo${diverged === 1 ? "" : "s"} diverged — a human picks the winning side`
+        ? `${diverged} unresolved divergence${diverged === 1 ? "" : "s"} — a human picks the winning side`
         : rows.length === 0
           ? "No pull decisions in this window"
           : holding > 0
@@ -126,7 +131,8 @@ function derivePullHealth(
         key: "diverged",
         label: <>diverged {diverged}</>,
         tone: diverged > 0 ? "attention" : "muted",
-        title: "nothing downstream reconciles a diverged checkout",
+        title:
+          "diverged with no outcome reported — nothing downstream reconciles a diverged checkout",
       },
       {
         key: "holding",

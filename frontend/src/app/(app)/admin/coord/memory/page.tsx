@@ -104,36 +104,51 @@ function deriveMemoryHealth(
       // literal here — a null label renders nothing, not `–`.
       badges: [
         { key: "total", label: <>memories –</>, tone: "muted" },
-        { key: "unlabelled", label: <>unlabelled –</>, tone: "muted" },
+        { key: "unrecognised", label: <>unrecognised –</>, tone: "muted" },
       ],
     };
   }
 
-  let unlabelled = 0;
+  let unrecognised = 0;
+  let untyped = 0;
   for (const r of rows) {
-    if (deriveMemoryStatus(r).kind === "unknown") unlabelled += 1;
+    const kind = deriveMemoryStatus(r).kind;
+    // Two DIFFERENT statements, and the strip used to make the first about
+    // both: "carries a kind this build has no meaning for" is false of a row
+    // that carries no kind at all.
+    if (kind === "unknown") unrecognised += 1;
+    else if (kind === "untyped") untyped += 1;
   }
   const types = countByType(rows).size;
 
   return {
-    level: unlabelled > 0 ? "amber" : "green",
+    // Only an UNRECOGNISED kind moves the light: it is the one thing here this
+    // build cannot explain. A row with no type at all is a complete, ordinary
+    // row (see `memoryStatus.ts`).
+    level: unrecognised > 0 ? "amber" : "green",
     headline:
       rows.length === 0
         ? "coord holds no memories in this window"
-        : unlabelled > 0
-          ? `${unlabelled} of ${rows.length} carry a kind this build has no meaning for`
-          : `${rows.length} memories, all of a known kind`,
+        : unrecognised > 0
+          ? `${unrecognised} of ${rows.length} carry a kind this build has no meaning for`
+          : `${rows.length} memories, ${types} kind${types === 1 ? "" : "s"}`,
     detail:
-      unlabelled > 0
+      unrecognised > 0
         ? "shown verbatim rather than guessed at — extend the vocabulary in memoryStatus.ts"
-        : `${types} distinct kind${types === 1 ? "" : "s"}`,
+        : `${untyped} carry no kind at all`,
     badges: [
       { key: "total", label: <>memories {rows.length}</>, tone: "muted" },
       { key: "kinds", label: <>kinds {types}</>, tone: "muted" },
       {
-        key: "unlabelled",
-        label: <>unlabelled {unlabelled}</>,
-        tone: unlabelled > 0 ? "default" : "muted",
+        key: "untyped",
+        label: <>untyped {untyped}</>,
+        tone: "muted",
+        title: "coord recorded no type for these — kind is optional on a memory",
+      },
+      {
+        key: "unrecognised",
+        label: <>unrecognised {unrecognised}</>,
+        tone: unrecognised > 0 ? "default" : "muted",
         title:
           "memory kind is an open vocabulary in coord; these values are not in this build's",
       },

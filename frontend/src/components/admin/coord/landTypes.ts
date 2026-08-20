@@ -158,16 +158,29 @@ export interface SiblingCascade {
   cascade: PredictedLandEffect["cascade"] | null;
 }
 
-// ---- Outcome → badge variant (the testable source of truth) ---------------
+// ---- Badge variants -------------------------------------------------------
 //
-// Color tokens per the plan's binding spec:
-//   confirmed    → green   (success)
-//   surprise     → amber   (warning)
-//   partial      → gray/blue (info — distinct neutral-informational)
-//   failure      → red     (destructive)
-//   contradiction→ red     (destructive)
-// Unknown / unsettled-null falls back to the neutral `outline`.
+// `composedOutcomeVariant` and `dimensionOutcomeVariant` used to live here.
+// They were DELETED in Phase 3 Wave 2, with their tests, once the composed-D3
+// ladder moved into `verificationStatus.ts` and grew an audited attention
+// table behind it. Keeping them would have left two sources of truth for one
+// decision that DISAGREED: their contract pinned `surprise → warning (amber)`,
+// which the new table reverses to calm on purpose (nothing clears a settled
+// surprise, so amber was a promise it could not keep — see R3's third case).
+// A dead ladder with a green test asserting the opposite of the shipped one is
+// worse than no ladder.
+//
+// `driftClassVariant` below is the survivor: it maps a different vocabulary
+// (coord's cross-repo `worst_drift_class`) and `<LandRow>`'s cross-repo panel
+// still renders through it.
 
+/**
+ * The shadcn `<Badge variant>` union, as this surface's modules use it.
+ *
+ * Declared here rather than imported from `ui/badge` because two of the
+ * variants (`success` / `warning` / `info` / `brand-*`) are local additions
+ * and the ladders below are unit-tested WITHOUT rendering a badge.
+ */
 export type BadgeVariant =
   | "default"
   | "secondary"
@@ -179,43 +192,6 @@ export type BadgeVariant =
   | "brand-primary"
   | "brand-secondary"
   | "brand-success";
-
-const OUTCOME_VARIANT: Record<ComposedOutcome, BadgeVariant> = {
-  confirmed: "success",
-  surprise: "warning",
-  partial: "info",
-  failure: "destructive",
-  contradiction: "destructive",
-};
-
-/**
- * Map a composed-outcome token to its badge variant. Null/unknown → outline.
- * Exported (and unit-tested) so the color contract can't silently drift.
- */
-export function composedOutcomeVariant(
-  outcome?: string | null
-): BadgeVariant {
-  if (!outcome) return "outline";
-  return OUTCOME_VARIANT[outcome as ComposedOutcome] ?? "outline";
-}
-
-/**
- * Map a per-dimension verdict `outcome` to a badge variant. Uses the same
- * green/amber/red ladder as the composed outcome, but a single-dimension
- * verdict only ever carries confirmed/surprise/failure/contradiction-style
- * tokens — anything unrecognized falls back to a neutral outline.
- */
-export function dimensionOutcomeVariant(
-  outcome?: string | null
-): BadgeVariant {
-  if (!outcome) return "outline";
-  const o = outcome.toLowerCase();
-  if (o === "confirmed") return "success";
-  if (o === "surprise") return "warning";
-  if (o === "partial") return "info";
-  if (o === "failure" || o === "contradiction") return "destructive";
-  return "outline";
-}
 
 // ---- Drift-class → badge variant (cross-repo restack verdicts) ------------
 //

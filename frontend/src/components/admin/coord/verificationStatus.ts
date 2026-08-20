@@ -55,6 +55,7 @@ export type VerificationKind =
   | "failure"
   | "contradiction"
   | "unverified"
+  | "pending"
   | "unknown";
 
 /** Operator-facing label. Never the raw coord token. */
@@ -65,6 +66,7 @@ export const VERIFICATION_LABEL: Record<VerificationKind, string> = {
   failure: "failure",
   contradiction: "contradiction",
   unverified: "not yet verified",
+  pending: "verdict pending",
   unknown: "verdict unreadable",
 };
 
@@ -79,6 +81,9 @@ export const VERIFICATION_CLASS: Record<VerificationKind, string> = {
   contradiction: "bg-red-500/15 text-red-200 border-red-500/35",
   // Waiting on the verifier — the one thing here that genuinely clears itself.
   unverified: "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  // Same wait, one step further along: the verification row exists and the
+  // composer has not written an outcome onto it yet.
+  pending: "bg-amber-500/15 text-amber-200 border-amber-500/30",
   // R3's ignorance floor.
   unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
 };
@@ -100,6 +105,11 @@ export const VERIFICATION_CLASS: Record<VerificationKind, string> = {
  *   process reconciles that; it is the loudest thing this surface can say.
  * - `unverified` — **`waiting`**. Amber's contract satisfied literally: the
  *   verifier is the named thing that clears it, on its own, shortly.
+ * - `pending` — **`waiting`**, for the same reason one step later: a
+ *   verification row exists but carries no composed outcome yet. This is the
+ *   COMMON state of an unsettled row, and it is deliberately NOT `unknown` —
+ *   see the derivation's note. `LandCard` rendered it as the word "pending",
+ *   which is what this kind preserves.
  * - `unknown` — **`waiting`**, the ignorance floor. A composed-outcome token
  *   this build has no meaning for. Only a human extending the vocabulary
  *   clears it, so R3's name-the-clearer test would read literally as "not
@@ -116,6 +126,7 @@ export const VERIFICATION_ATTENTION_BY_KIND: Record<
   failure: "author",
   contradiction: "author",
   unverified: "waiting",
+  pending: "waiting",
   unknown: "waiting",
 };
 
@@ -151,6 +162,7 @@ export const OWED_REVIEW: Record<VerificationKind, string | null> = {
   failure: null,
   contradiction: null,
   unverified: null,
+  pending: null,
   unknown: null,
 };
 
@@ -173,7 +185,12 @@ export function classifyComposedOutcome(
   outcome?: string | null
 ): VerificationKind {
   const o = (outcome ?? "").trim().toLowerCase();
-  if (!o) return "unknown";
+  // An ABSENT outcome is `pending`, never `unknown`. The two are different
+  // claims — "the composer has not written a verdict yet" versus "it wrote one
+  // and we cannot read it" — and collapsing them puts the words "verdict
+  // unreadable" on the single most common state this surface has (an unsettled
+  // row). `LandCard` rendered this case as "pending"; that is preserved.
+  if (!o) return "pending";
   return WIRE_OUTCOMES.has(o) ? (o as VerificationKind) : "unknown";
 }
 
@@ -190,10 +207,17 @@ export interface VerificationLike {
 /**
  * The row status a land or a deploy renders.
  *
- * A NULL verification is `unverified` — the action declared itself and the
- * verifier has not answered. That is distinct from `unknown`, which is a
- * verifier answer we could not read, and the two must not collapse: one is
- * "not yet", the other is "we cannot tell".
+ * THREE different "we have no verdict" states, kept apart on purpose:
+ *
+ * - `unverified` — no verification row at all. The action declared itself and
+ *   the verifier has not answered.
+ * - `pending` — a verification row exists with no composed outcome on it yet.
+ *   This is what an unsettled row looks like for most of its life.
+ * - `unknown` — the composer wrote an outcome and this build cannot read it.
+ *
+ * Collapsing any two of them is a lie about which one we are in, and the
+ * expensive collapse is the last: labelling the common `pending` case "verdict
+ * unreadable" would put a parse-failure claim on almost every in-flight row.
  */
 export function deriveVerificationStatus(
   ver: VerificationLike | null | undefined
