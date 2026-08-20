@@ -105,6 +105,7 @@ import io
 import json
 import re
 import zipfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import get_args
 from urllib.parse import quote
@@ -526,6 +527,28 @@ def _citation_error_text(raw: object) -> str:
 #: is coord ANSWERING rather than coord being unreachable.
 _CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
 
+#: coord's error code for a Postgres failure it CAUGHT and rendered itself.
+#: ``pg_error::PgErrorContext::to_body()`` emits ``{"error": "db_error",
+#: "context": …, "pg"|"message": …}`` from every route whose query failed, and
+#: on the citation sub-resource that is a transient fault on ONE slug's SELECT.
+#: coord declaring it is coord ANSWERING, exactly as the 503 above is.
+_COORD_DB_ERROR = "db_error"
+
+#: The ``(status, coord error code)`` pairs that mean *coord answered about the
+#: citations sub-resource*, rather than *coord is unreachable*. Passed ONLY on
+#: the citations hop (:meth:`_CoordProbe.link_for`), so the presence hop keeps
+#: its unguarded reading — see :func:`_is_transport_failure` for why that
+#: asymmetry is what makes the carve-out safe.
+#:
+#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
+#: code with 503 and ``db_error`` with 500, and pinning each code to the status
+#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
+#: tripping behaviour rather than inheriting the carve-out.
+_CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
+    503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
+    500: frozenset({_COORD_DB_ERROR}),
+}
+
 
 def _detail_text(detail: object) -> str:
     """coord's response body as text, however ``_proxy_coord_get`` wrapped it.
@@ -649,7 +672,7 @@ def _is_transport_failure(
     http_status: int,
     *,
     body_error: str | None = None,
-    answered_marker: str | None = None,
+    answered_codes: Mapping[int, frozenset[str]] | None = None,
 ) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
@@ -665,39 +688,73 @@ def _is_transport_failure(
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
 
-    ``answered_marker`` — the ONE exception, and it is granted on the BODY, not
-    on the status. coord's citation read answers ``503`` with
-    ``{"error": "citation_surface_unavailable", …}``, which is coord ANSWERING
-    about one sub-resource — the same class as the 401/403/405 above, one
-    status band up. It must land as a per-slug ``unavailable`` and must NOT
-    trip the page-wide circuit, or a schema-migration window would report the
-    whole of coord as down and blank the work-unit half of every remaining row
-    (which reads fine).
+    ``answered_codes`` — the ONE exception, and it is granted on the BODY, not
+    on the status. It maps a status to the coord error codes that, AT that
+    status, mean coord answered about the sub-resource being read:
 
-    ``body_error`` is the ``error`` field lifted out of a PARSED body
-    (:func:`_coord_error_field`), and the carve-out needs it to EQUAL the
-    marker. Not to contain it: a substring test over the raw body also passes
-    for a body that merely QUOTES the code — coord's own Postgres error text
-    naming the failing query is enough — and "the body mentions this string"
-    is not the same claim as "coord declared this error". A body with no
-    ``error`` field at all, which is every infrastructure 503, yields ``None``
-    and therefore never matches.
+    * ``503`` + ``citation_surface_unavailable`` — the unit is yours and the
+      relation backing the citation join is absent (a pre-migration window).
+    * ``500`` + ``db_error`` — coord caught a Postgres failure on THIS slug's
+      citation SELECT and rendered it through ``pg_error::to_body()``.
 
-    Keying it on the marker rather than on "the citations hop passed a flag" is
-    what keeps the carve-out as narrow as it claims to be. The tempting
-    argument — *the citations hop only runs after the presence hop succeeded,
-    so coord is provably up* — is FALSE across the gap between two sequential
-    requests: coord can go down between them (a deploy, an ECS rotation, an ALB
-    target drain), and then an infrastructure 503 would be read as "coord
-    answered" and leave ``coord_available`` reporting true through a total
-    outage. An ALB's untyped 503 declares no error, so it still trips.
+    Both are the same class as the 401/403/405 above, one status band up: coord
+    answering *about one sub-resource*. Each must land as a per-slug
+    ``unavailable`` and must NOT trip the page-wide circuit, or one bad slug
+    blanks the work-unit half of every remaining row — rows whose own presence
+    hop already succeeded — and reports the whole of coord as down.
+
+    The 500 arm is also what makes the two principals agree. The SAME coord
+    fault reaches a DEVICE caller as ``200`` + ``citations_error`` (coord's
+    agent by-slug ``Err`` arm inlines it), i.e. already per-slug with
+    ``coord_available`` untouched. Without this arm the operator page collapses
+    where the device page degrades one row — one coord fault, two materially
+    different pages.
+
+    **How "coord answered 500" is told apart from "something between us
+    returned 500", and where that distinction is imperfect.** There is no
+    header or hop counter that proves provenance, so this rests on two
+    independent pieces of evidence, and neither alone would be enough:
+
+    1. *The body is one coord itself emits.* ``body_error`` is the ``error``
+       field lifted out of a PARSED JSON object (:func:`_coord_error_field`),
+       and it must EQUAL a code in the set for that status. Not contain it: a
+       substring test over the raw body also passes for a body that merely
+       QUOTES the code — coord's own Postgres error text naming the failing
+       query is enough — and "the body mentions this string" is not the claim
+       "coord declared this error". Everything that sits between this service
+       and coord fails that test by construction: an ALB emits an HTML page, a
+       proxy emits a plain-text line, and ``_proxy_coord_get``'s own transport
+       mapping raises a bare string at 502/504. None parse to an object with an
+       ``error`` field, so none can match.
+    2. *The presence hop is an unguarded canary.* ``answered_codes`` is passed
+       only on the citations hop, which runs only after ``{base}/{slug}``
+       returned 200 — so coord's database has just served a query for this same
+       request. A coord-wide PG outage therefore fails hop 1, where there is no
+       carve-out, and still trips. What reaches this arm is a fault specific to
+       the citation SELECT, or coord going down in the gap between two
+       sequential requests — and that gap is precisely why the carve-out is
+       keyed on coord's declared code rather than on "hop 1 passed, so coord is
+       provably up". That argument is FALSE across the gap (a deploy, an ECS
+       rotation, an ALB target drain), and an untyped 5xx from any of them
+       declares no error, yields ``None``, and still trips.
+
+    What this cannot rule out: a coord-internal 500 that IS fleet-wide yet
+    still renders as ``db_error`` — a pool exhausted between the two hops, say.
+    Read here as per-slug, it costs one round-trip per remaining slug instead
+    of tripping after the first (bounded by the fan-out semaphore and the
+    per-request timeout) and leaves ``coord_available`` true. That is the
+    deliberate trade: the alternative — today's behaviour — is that ONE
+    transient per-slug PG error blanks a whole page of otherwise-good rows and
+    repeats one row's reason across all of them, which is both more likely and
+    strictly less honest. The per-row ``unavailable_reason`` still carries
+    ``db_error`` plus the SQLSTATE on every affected row, so a genuinely
+    fleet-wide fault is still legible — it reads as every row unavailable for
+    the same declared reason rather than as a single flag.
     """
-    if (
-        http_status == 503
-        and answered_marker is not None
-        and body_error == answered_marker
-    ):
-        return False
+    if answered_codes is not None and body_error is not None:
+        declared = answered_codes.get(http_status)
+        if declared is not None and body_error in declared:
+            return False
     return http_status >= 500
 
 
@@ -765,7 +822,7 @@ class _CoordProbe:
             self.reason = reason
 
     async def _get(
-        self, path: str, *, answered_marker: str | None = None
+        self, path: str, *, answered_codes: Mapping[int, frozenset[str]] | None = None
     ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
@@ -785,10 +842,15 @@ class _CoordProbe:
         not evidence of an absence of PRs"); the circuit obeys it too, or the
         one flag whose job is signalling a real coord outage can never do so.
 
-        ``answered_marker`` forwards to :func:`_is_transport_failure` and
-        extends that same reading to coord's typed ``503`` on the citations
-        sub-resource — but only when coord's own error code is in the body, so
-        an untyped 503 from a load balancer still trips.
+        ``answered_codes`` forwards to :func:`_is_transport_failure` and
+        extends that same reading to the typed 5xx coord answers ON the
+        citations sub-resource — ``503 citation_surface_unavailable`` when the
+        relation is unreadable, ``500 db_error`` when that one slug's SELECT
+        failed — but only when coord's own declared error code is in the body,
+        so an untyped 5xx from a load balancer still trips. It is passed on the
+        citations hop ONLY: the presence hop stays unguarded on purpose, which
+        is what keeps a coord-wide failure tripping (see
+        :func:`_is_transport_failure`).
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -832,7 +894,7 @@ class _CoordProbe:
                 if _is_transport_failure(
                     exc.status_code,
                     body_error=_coord_error_field(parsed),
-                    answered_marker=answered_marker,
+                    answered_codes=answered_codes,
                 ):
                     self._trip(detail)
                 return None, exc.status_code, detail
@@ -910,19 +972,26 @@ class _CoordProbe:
         device-principal page pays one round-trip per slug instead of two —
         and works against a coord that has not yet shipped the dedicated
         sub-resource. One consequence worth knowing: a device caller therefore
-        never reaches the 503 branch below, because the same
-        surface-unavailable condition reaches it as an inline
-        ``citations_error`` instead. Both land on ``unavailable``.
+        never reaches the 5xx branch below, because BOTH conditions it covers
+        — the citation relation unreadable, and this slug's citation SELECT
+        failing — reach it as an inline ``citations_error`` on a ``200``
+        instead (coord's agent by-slug ``Err`` arm). Both land on
+        ``unavailable`` for that one slug, with ``coord_available`` untouched,
+        and the 5xx branch exists to give the operator path the SAME reading of
+        the SAME coord fault.
 
-        coord's three-state answer on the citations sub-resource maps straight
-        onto this block. ``200`` → ``available``, and an empty list there IS an
+        coord's answers on the citations sub-resource map straight onto this
+        block. ``200`` → ``available``, and an empty list there IS an
         observation of zero. ``404`` → the unit is not ours, or not there.
-        ``503`` carrying coord's ``citation_surface_unavailable`` code (the
-        citation relation is unreadable) → ``unavailable`` for THIS slug and,
-        deliberately, nothing at all about coord's health: coord answering about
-        one sub-resource is coord answering. An UNTYPED 503 keeps its ordinary
-        transport reading and still trips the circuit (see
-        :func:`_is_transport_failure`).
+        A 5xx carrying one of coord's OWN declared error codes — ``503
+        citation_surface_unavailable`` (the citation relation is unreadable) or
+        ``500 db_error`` (this slug's SELECT failed and coord rendered the PG
+        error itself) → ``unavailable`` for THIS slug and, deliberately,
+        nothing at all about coord's health: coord answering about one
+        sub-resource is coord answering, whichever 5xx it picks. An UNTYPED 5xx
+        keeps its ordinary transport reading and still trips the circuit (see
+        :func:`_is_transport_failure`, which also records what that carve-out
+        can and cannot establish).
 
         A successful read can still carry a caveat: ``merged_degraded_reason``
         says coord's ``merged`` predicate is running degraded, so a
@@ -1001,16 +1070,18 @@ class _CoordProbe:
 
         cites, cite_status, cite_error = await self._get(
             f"{self._coord_base}/{encoded}/citations",
-            # A 503 whose body carries coord's own code is an answer about the
-            # citation relation, not a verdict on coord's reachability. An
-            # untyped 503 is still an outage and still trips.
-            answered_marker=_CITATION_SURFACE_UNAVAILABLE,
+            # A 5xx whose body carries coord's OWN declared error code is an
+            # answer about the citation relation — 503 when it is unreadable,
+            # 500 when this slug's SELECT failed — not a verdict on coord's
+            # reachability. An untyped 5xx is still an outage and still trips.
+            answered_codes=_CITATION_ANSWERED,
         )
         if cites is None:
-            # Includes 401/403/404/405 and coord's typed 503 — absence of a
-            # route, of permission to call it, or of a readable citation
-            # relation is not evidence of an absence of PRs. None of those
-            # trips the page-wide circuit; see ``_is_transport_failure``.
+            # Includes 401/403/404/405 and coord's typed 503/500 — absence of
+            # a route, of permission to call it, of a readable citation
+            # relation, or of a citation SELECT that survived is not evidence
+            # of an absence of PRs. None of those trips the page-wide circuit;
+            # see ``_is_transport_failure``.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = (
                 cite_error or f"coord returned {cite_status} for citations"
@@ -1020,7 +1091,7 @@ class _CoordProbe:
         sub = self._inline_citations(cites)
         if sub is not None and sub[1] is not None:
             # A forward guard, not a shape coord emits today: the sub-resource
-            # answers 503 rather than flagging a 200. But a body that says the
+            # answers 5xx rather than flagging a 200. But a body that says the
             # read did not happen still means it did not happen, whatever the
             # status line says — and the inline twin already uses this shape.
             link.linked_prs_state = "unavailable"
