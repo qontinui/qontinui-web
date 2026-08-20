@@ -128,7 +128,19 @@ export interface MergePipelineData {
   economicsByRepo: Record<string, MergeEconomics>;
   suggestions: SuggestionRow[] | null;
   gateBlocks: BlastRadiusBlock[] | null;
+  /**
+   * Distinct PRs the blast-radius gate is holding — DECISIONS. Coord's
+   * `total_blocks` was a raw `pr_events` row count until plan
+   * 2026-08-20-predicate-eval-surface-counts-evals-not-decisions Phase 2.
+   */
   gateTotalBlocks: number | null;
+  /**
+   * Raw evaluation-row count behind those decisions (coord's `total_evals`).
+   * `null` when coord did not report it — an older deploy that never
+   * separated the two. Consumers must render that as silence, not as a
+   * duplicate of `gateTotalBlocks`.
+   */
+  gateTotalEvals: number | null;
   /** Error from the primary (queue) fetch — the actionable surface. */
   error: string | null;
   suggestionBusy: number | null;
@@ -161,6 +173,7 @@ export function useMergePipelineData(
   const [suggestionBusy, setSuggestionBusy] = useState<number | null>(null);
   const [gateBlocks, setGateBlocks] = useState<BlastRadiusBlock[] | null>(null);
   const [gateTotalBlocks, setGateTotalBlocks] = useState<number | null>(null);
+  const [gateTotalEvals, setGateTotalEvals] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -375,6 +388,7 @@ export function useMergePipelineData(
           if (!cleanedUpRef.current) {
             setGateBlocks([]);
             setGateTotalBlocks(0);
+            setGateTotalEvals(null);
           }
           return;
         }
@@ -387,15 +401,24 @@ export function useMergePipelineData(
       const total = Array.isArray(body)
         ? body.length
         : (body.total_blocks ?? list.length);
+      // Optional by contract — absent means an older coord that never split
+      // evaluations from decisions. Keep it null so the surface says nothing
+      // about evaluation volume rather than echoing the decision count.
+      const evals =
+        !Array.isArray(body) && typeof body.total_evals === "number"
+          ? body.total_evals
+          : null;
       if (!cleanedUpRef.current) {
         setGateBlocks(list);
         setGateTotalBlocks(total);
+        setGateTotalEvals(evals);
       }
     } catch (err) {
       log.warn("fetchGateBlocks failed", err);
       if (!cleanedUpRef.current) {
         setGateBlocks([]);
         setGateTotalBlocks(0);
+        setGateTotalEvals(null);
       }
     }
   }, []);
@@ -674,6 +697,7 @@ export function useMergePipelineData(
     suggestions,
     gateBlocks,
     gateTotalBlocks,
+    gateTotalEvals,
     error,
     suggestionBusy,
     onSuggestionAction,

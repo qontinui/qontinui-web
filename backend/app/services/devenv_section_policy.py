@@ -133,8 +133,45 @@ _DERIVED_KEYS: dict[str, frozenset[str]] = {
 
 # Per-dependency keys are built as ``format!("node_dep_{dep}")`` by the
 # collector, so the whole prefix is repo-derived.
+#
+# ``python_dep_`` is the Python twin, built as ``format!("python_dep_{dep}")``
+# by the same collector from the dependency manifest it resolves for the
+# capturing binary. Like ``node_dep_``, the stored value is the DECLARED
+# CONSTRAINT out of that manifest, not an installed version — so it is derived
+# for exactly the reason ``node_dep_`` is: it measures WHICH SOURCE TREE the
+# binary was built from, not the box, and it converges by pulling the repo
+# rather than by an apply. It therefore gets the
+# same treatment as ``node_dep_``: reported with ``derived=True`` at ``info``
+# severity and excluded from ``in_sync``, never actionable drift.
+#
+# WHAT THIS PREFIX DOES **NOT** DO, so nobody mistakes it for parity proof:
+# because the value is a declared constraint out of a COMMITTED manifest, two
+# boxes at the same commit agree here no matter what is actually installed in
+# their environments. So ``python_dep_*`` can never answer "do these two boxes
+# have the same packages installed" — and being derived, it is excluded from
+# ``in_sync``, so it cannot make a divergent box look drifted either. An
+# INSTALLED-inventory signal is a separate, BOX-level fact and must NOT be
+# registered here: registering it would classify it ``info`` and drop it out of
+# ``in_sync``, re-creating the exact "reports clean while measuring nothing"
+# failure that motivated capturing Python at all. That signal
+# (``python_installed_*``) is handled in the ORACLE instead — see
+# ``devenv_drift._attests_unmeasured_inventory``, which makes a probe that did
+# not read the environment BLOCK ``in_sync`` rather than be excluded from it.
+# So this prefix table must keep exactly ``node_dep_`` and ``python_dep_``.
+#
+# ORDERING CONSTRAINT — do not delete this registration, and do not let a
+# runner emit ``python_dep_*`` before it is live. This policy is
+# server-authoritative (see the module docstring): it is delivered to every box
+# alongside the pulled config, and ``is_derived_key`` conservatively answers
+# False for a prefix it does not recognise. So a runner that emits
+# ``python_dep_*`` against a server without this entry does not fail loudly —
+# every Python dependency on every machine silently reclassifies as actionable
+# drift in the ``applyable`` ``versions`` section, and each box advertises an
+# "apply" for package versions it has no apply path for. That is the same trap
+# ``repos_scope_kind`` documents above, and the reason this classifier change
+# must land BEFORE the collector change that emits the keys.
 _DERIVED_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
-    "versions": ("node_dep_",),
+    "versions": ("node_dep_", "python_dep_"),
 }
 
 
@@ -147,6 +184,76 @@ def is_derived_key(section: str, key: str) -> bool:
     if key in _DERIVED_KEYS.get(section, frozenset()):
         return True
     return key.startswith(_DERIVED_KEY_PREFIXES.get(section, ()))
+
+
+# ---------------------------------------------------------------------------
+# Per-key refinement: observation-only keys
+# ---------------------------------------------------------------------------
+#
+# A SECOND per-key refinement, and deliberately not a reuse of the first. A
+# repo-derived key is not the box's state, so it is both un-appliable and not
+# drift. An observation-only key IS the box's state — a difference here is real
+# drift and must count against ``in_sync`` at full severity — but no apply
+# action can SET it, because it is a measurement of something else.
+#
+# ``python_installed_*`` is the case that forced the distinction. The runner's
+# installed-inventory capture emits six keys into ``versions``, which the
+# section table classifies ``applyable``:
+#
+#   python_installed_probe        WHY/HOW the environment was (not) measured
+#   python_installed_scope_kind   which probe scope it was measured in
+#   python_installed_env_kind     venv | not_venv | unknown (comparability)
+#   python_installed_interpreter  the interpreter's MAJOR.MINOR (comparability)
+#   python_installed_count        how many distributions were installed
+#   python_installed_digest       sha256 over the sorted `name==version` list
+#
+# The prefix rule is what keeps this list from having to be maintained: the
+# sixth key (``python_installed_interpreter``, added by a later runner round)
+# was classified correctly the moment it appeared, with no server change. That
+# is the intended property — an enumerated allow-list here would have handed
+# every box an apply for a key nobody had registered yet.
+#
+# The ORACLE cannot use a prefix, because it needs to know what each key MEANS
+# (attestation / comparability marker / measurement), so it declares the family
+# explicitly in ``devenv_drift._INVENTORY_KEY_ROLES``. That asymmetry is a trap
+# with a history: when the interpreter key arrived, this prefix absorbed it
+# silently while the oracle's list did not, and the oracle reported "canonical
+# has an interpreter, this box does not" against boxes that had never looked. A
+# consistency test now asserts every key in that table is covered by this
+# prefix, so the two cannot drift apart again without a red test.
+#
+# None of them is settable. "Set python_installed_digest to sha256:abc…" is not
+# an instruction a human or an agent can carry out; the box converges by
+# INSTALLING PACKAGES and the digest follows. Left unclassified they sail
+# straight into web's remediation plan (``buildRemediation`` in
+# ``frontend/.../copy-canonical.ts`` allow-lists ``changed``/``removed`` and
+# skips only ``derived``), and the box is handed an apply it cannot perform —
+# the key-level twin of the ``repos``-section trap documented above.
+#
+# The runner's own ``apply_versions.rs`` is not exposed to this: its
+# ``APPLIABLE_TOOLS`` is an exact-match allow-list of three tools, so an
+# unclassified key cannot become an apply action there. That asymmetry is
+# exactly why the classification has to be server-side — the web surface has no
+# such allow-list, and this policy is the one place both consumers read.
+#
+# Do NOT solve this by adding these keys to ``_DERIVED_KEYS`` /
+# ``_DERIVED_KEY_PREFIXES``: derived keys are dropped from ``in_sync``, which
+# would let two unmeasured boxes report clean — the precise failure the
+# inventory capture exists to remove.
+_OBSERVATION_ONLY_KEY_PREFIXES: dict[str, tuple[str, ...]] = {
+    "versions": ("python_installed_",),
+}
+
+
+def is_observation_only_key(section: str, key: str) -> bool:
+    """Return whether ``key`` in ``section`` is measured but never settable.
+
+    Conservative default (like :func:`is_derived_key`): an unrecognized key is
+    NOT observation-only, so nothing is silently removed from a remediation
+    plan. The failure mode of this default is a bogus apply line, which is
+    visible; the opposite default's failure mode is a missing one, which is not.
+    """
+    return key.startswith(_OBSERVATION_ONLY_KEY_PREFIXES.get(section, ()))
 
 
 def derived_keys_map(sections: dict[str, dict[str, str]]) -> dict[str, list[str]]:

@@ -19,6 +19,42 @@ const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL |
 // rewrites don't proxy ws:// upgrades.
 const COORD_URL = process.env.COORD_URL || 'http://localhost:9870';
 
+// Composed cloud build. `@qontinui/cloud-control` is an OPTIONAL sibling
+// package that side-effect-registers the cloud services/components into
+// `src/lib/extension-slots.ts`. It is linked into node_modules by
+// `npm run cloud:install` (scripts/cloud-control-overlay.mjs), and the
+// presence of that one path is the single switch between the OSS-only build
+// shape and the composed cloud one. Full contract:
+// docs/composed-cloud-build.md.
+const CLOUD_CONTROL_PKG = '@qontinui/cloud-control';
+const cloudControlPresent = fs.existsSync(
+  path.resolve(__dirname, 'node_modules/@qontinui/cloud-control/package.json')
+);
+
+// `@cloud/*` — the build-time route alias. Every mounted cloud route is a
+// two-line `page.tsx` under `src/app/` that re-exports through this prefix,
+// so which module a cloud path renders is decided by webpack resolution at
+// build time rather than by a runtime registry lookup. That is what keeps
+// SSR, per-route `metadata` and server components available to cloud routes;
+// a registry read forfeits all three because the registry only ever exists
+// behind a client boundary. See docs/composed-cloud-build.md.
+//
+// Deliberately NOT in tsconfig.json `paths`. Next feeds those into webpack as
+// `JsConfigPathsPlugin`, which taps `described-resolve`; webpack's own
+// `resolve.alias` is an `AliasPlugin` on `raw-resolve`, and enhanced-resolve
+// runs `described-resolve` strictly BEFORE `raw-resolve`. So a `@cloud/*`
+// entry in tsconfig.json wins over the mapping below on pipeline ordering —
+// not on plugin registration order — and silently resolves every composed
+// build back to the OSS stubs. `tsc` gets its own mapping from
+// `tsconfig.typecheck.json`, which Next never reads, and
+// `cloud-route-shims.test.ts` asserts the entry never reappears.
+const CLOUD_ALIAS_TARGET = path.resolve(
+  __dirname,
+  cloudControlPresent
+    ? 'node_modules/@qontinui/cloud-control/frontend/src'
+    : 'src/cloud-absent'
+);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -55,7 +91,47 @@ const nextConfig = {
   // Note: @qontinui/ui-bridge uses file: reference (junction on Windows).
   // Do NOT add to transpilePackages — SWC cannot follow Windows junctions.
   // The package dist is pre-compiled so transpilation is unnecessary.
+  //
+  // @qontinui/cloud-control is the opposite case and DOES belong here: it
+  // ships raw .ts/.tsx with no build step, no emitted JavaScript and no
+  // tsconfig of its own, because it is designed to compile INSIDE this app.
+  // Compiling it in the host graph is also what makes its own `@/...`
+  // imports (`@/lib/extension-slots`, `@/services/service-factory`) resolve —
+  // that alias belongs to this app, not to the package. node_modules is
+  // excluded from the SWC loader by default, so without this its sources
+  // reach webpack untranspiled and the build dies on the first type
+  // annotation. The junction caveat above does not bite: webpack's resolver
+  // and Next's transpilePackages lookup both canonicalise the link to the
+  // same real path, so the package's files land inside the loader's
+  // `include` (verified by a composed `next build` on Windows).
+  //
+  // Empty in OSS-only builds, where the alias in `webpack()` below stands the
+  // package down to a no-op instead.
+  transpilePackages: cloudControlPresent ? [CLOUD_CONTROL_PKG] : [],
   webpack: (config, { dev }) => {
+    // OSS-only build: no cloud-control overlay installed, so resolve the
+    // package specifier to a local module that registers nothing. This is
+    // what lets `src/components/cloud-extensions-boot.tsx` carry a plain
+    // static `import "@qontinui/cloud-control"` in BOTH build shapes. The
+    // loader it replaced used `import(/* webpackIgnore: true */ …)` to dodge
+    // exactly this resolution — which is why it could never load the package
+    // at all, and why its `.catch(() => {})` kept that silent.
+    if (!cloudControlPresent) {
+      config.resolve.alias[CLOUD_CONTROL_PKG] = path.resolve(
+        __dirname,
+        'src/cloud-absent/index.ts'
+      );
+    }
+
+    // The route alias, on BOTH arms — present, it points into the linked
+    // package's sources; absent, at the `cloud-absent/` mirror whose modules
+    // call `notFound()` (or, for the two paths OSS already served, keep the
+    // redirect they had). One entry, no runtime branch, and a cloud route
+    // that gains no host `page.tsx` is caught by
+    // `src/cloud-absent/cloud-route-shims.test.ts` rather than 404ing in
+    // production.
+    config.resolve.alias['@cloud'] = CLOUD_ALIAS_TARGET;
+
     // Only alias @qontinui/schemas when the local package exists (dev environment).
     // In CI/Vercel builds, the parent directory is not available. All schemas
     // imports are type-only (erased by SWC) so the alias is not needed in production.
@@ -131,11 +207,15 @@ const nextConfig = {
         destination: '/operations',
         permanent: true,
       },
-      {
-        source: '/admin',
-        destination: '/admin/architecture',
-        permanent: false,
-      },
+      // NOTE: `/admin` -> `/admin/architecture` used to live here. A
+      // `redirects()` entry is matched before the filesystem, so it shadowed
+      // any page mounted at `/admin` — including cloud-control's admin
+      // dashboard, which the extension surface had been registering (into a
+      // registry nothing read) since it existed. The redirect moved into
+      // `src/cloud-absent/routes/admin/page.tsx`, so OSS-only builds still
+      // land on `/admin/architecture` (same destination, same 307) while the
+      // composed build renders the cloud page. See
+      // docs/composed-cloud-build.md.
     ]
   },
   eslint: {

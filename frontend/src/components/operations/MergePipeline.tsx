@@ -49,7 +49,12 @@ import { toast } from "sonner";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { CollapsiblePanel } from "./CollapsiblePanel";
-import { GateDecisionRow, MergeTrainRow, SuggestionCard } from "./MergeTrain";
+import {
+  GateDecisionCounts,
+  GateDecisionRow,
+  MergeTrainRow,
+  SuggestionCard,
+} from "./MergeTrain";
 import { MergeTrainActivity } from "./MergeTrainActivity";
 import { prDraftStateUrl, relativeTime } from "./utils";
 import {
@@ -915,6 +920,7 @@ export function MergePipeline() {
     suggestions,
     gateBlocks,
     gateTotalBlocks,
+    gateTotalEvals,
     error,
     suggestionBusy,
     onSuggestionAction,
@@ -1121,11 +1127,10 @@ export function MergePipeline() {
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
             <ShieldQuestion className="h-3 w-3" />
             Gate decisions
-            {gateTotalBlocks !== null && (
-              <Badge variant="outline" className="ml-1 font-mono text-[10px]">
-                {gateTotalBlocks}
-              </Badge>
-            )}
+            <GateDecisionCounts
+              totalBlocks={gateTotalBlocks}
+              totalEvals={gateTotalEvals}
+            />
           </h4>
           <div className="space-y-2">
             {gateBlocks.map((b) => (

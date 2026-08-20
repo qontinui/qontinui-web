@@ -26,7 +26,14 @@ repos:
 
       - id: tsc-typecheck
         name: TypeScript type check (frontend)
-        entry: bash -c 'cd frontend && npx tsc --noEmit'
+        # `npm run type-check`, NOT a bare `npx tsc --noEmit`: the script
+        # points tsc at tsconfig.typecheck.json, which is the only config
+        # carrying the `@cloud/*` paths mapping. Next reads tsconfig.json and
+        # feeds its paths to webpack, so `@cloud/*` deliberately cannot live
+        # there (see tsconfig.typecheck.json's header). A bare tsc therefore
+        # fails to resolve every route shim. Keep this in step with
+        # frontend-ci.yml, which runs the same script in both build shapes.
+        entry: bash -c 'cd frontend && npm run type-check'
         language: system
         pass_filenames: false
         files: ^frontend/.*\.(ts|tsx)$
@@ -61,13 +68,19 @@ repos:
 
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint
-        entry: .pre-commit-hooks/check_web_boundary.sh
-        language: script
+        entry: python scripts/ci/check_web_boundary.py --files
+        language: system
         files: ^backend/app/.*\.py$
-        # Mirrors .github/workflows/web-boundary-lint.yml — catches the
-        # boundary violation before push. `qontinui-schemas` is exempt
-        # (shared Pydantic types). `backend/app/api/embeddings.py` is
-        # allowlisted defensively pending Phase 8 (embeddings runner-bridge).
+        # SAME SCRIPT as .github/workflows/web-boundary-lint.yml and
+        # .qontinui/ci.toml's `web-boundary-lint` step — catches the boundary
+        # violation before push. It used to be a third copy of the logic
+        # (.pre-commit-hooks/check_web_boundary.sh, deleted by Phase 5 of plan
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity);
+        # `--files` is the same scan restricted to the changed-file list
+        # pre-commit appends. `qontinui-schemas` is exempt (shared Pydantic
+        # types). `backend/app/api/embeddings.py` is allowlisted defensively
+        # pending Phase 8 (embeddings runner-bridge). See the script's module
+        # docstring for the rule itself.
 
 ci:
   autofix_prs: true

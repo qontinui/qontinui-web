@@ -17,7 +17,7 @@ import {
   within,
 } from "@testing-library/react";
 import type { MergePipelineData } from "./useMergePipelineData";
-import type { PrRow, ProposalDetail } from "./mergeTypes";
+import type { BlastRadiusBlock, PrRow, ProposalDetail } from "./mergeTypes";
 
 const hookData: { current: MergePipelineData } = {
   current: {
@@ -28,6 +28,7 @@ const hookData: { current: MergePipelineData } = {
     suggestions: [],
     gateBlocks: [],
     gateTotalBlocks: 0,
+    gateTotalEvals: null,
     error: null,
     suggestionBusy: null,
     onSuggestionAction: () => {},
@@ -130,6 +131,9 @@ describe("MergePipeline", () => {
       prs: [],
       mergedPrs: null,
       mergedCount: null,
+      gateBlocks: [],
+      gateTotalBlocks: 0,
+      gateTotalEvals: null,
       error: null,
     };
   });
@@ -926,5 +930,143 @@ describe("MergePipeline", () => {
       expect(init.method).toBe("POST");
       expect(JSON.parse(init.body)).toEqual({ draft: false });
     });
+  });
+});
+
+/**
+ * Gate decisions header — decisions vs evaluations (plan
+ * 2026-08-20-predicate-eval-surface-counts-evals-not-decisions Phase 2).
+ *
+ * Coord's engine appends one `predicate_eval` audit row per scheduler tick, so
+ * the raw row count is an EVALUATION count. The badge used to render it as the
+ * decision count (measured 2026-08-20: it read 1899 where the true answer was
+ * 8). `total_blocks` is now distinct PRs; `total_evals` carries the raw volume
+ * and must stay VISIBLE rather than being silently dropped.
+ */
+function gateBlock(
+  overrides: Partial<BlastRadiusBlock> = {}
+): BlastRadiusBlock {
+  return {
+    repo: "qontinui/qontinui-coord",
+    pr_number: 1516,
+    tenant_id: "t-1",
+    removed_export_name: "SUBCLASS_ORPHAN",
+    file: "crates/coord/src/worktree_observer.rs",
+    referenced_by: [{ file: "crates/coord/src/worktree_metrics.rs", line: 68 }],
+    evaluation_latency_secs: 0.2,
+    at: new Date().toISOString(),
+    block_reason_code: "removes-referenced-export",
+    ...overrides,
+  };
+}
+
+describe("MergePipeline gate-decisions counting", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchMock.mockReset();
+    hookData.current = {
+      ...hookData.current,
+      proposals: [],
+      prs: [],
+      mergedPrs: null,
+      mergedCount: null,
+      gateBlocks: [gateBlock()],
+      gateTotalBlocks: 8,
+      gateTotalEvals: 1899,
+      error: null,
+    };
+  });
+
+  it("labels the total as DECISIONS and shows the eval count alongside it", () => {
+    render(<MergePipeline />);
+    const section = screen.getByTestId("gate-decisions");
+    const decisions = section.querySelector("[data-gate-total-blocks]");
+    expect(decisions).not.toBeNull();
+    expect(decisions?.getAttribute("data-gate-total-blocks")).toBe("8");
+    expect(decisions?.textContent).toContain("8");
+    expect(decisions?.textContent).toContain("decisions");
+
+    // The raw audit volume is NOT dropped — it rides as its own chip.
+    const evals = section.querySelector("[data-gate-total-evals]");
+    expect(evals).not.toBeNull();
+    expect(evals?.getAttribute("data-gate-total-evals")).toBe("1899");
+    expect(evals?.textContent).toContain("1899 evals");
+    // …and it is never mistaken for the decision count.
+    expect(evals).not.toBe(decisions);
+  });
+
+  it("singularises a lone decision", () => {
+    hookData.current.gateTotalBlocks = 1;
+    hookData.current.gateTotalEvals = 547;
+    render(<MergePipeline />);
+    const decisions = screen
+      .getByTestId("gate-decisions")
+      .querySelector("[data-gate-total-blocks]");
+    expect(decisions?.textContent).toContain("1 decision");
+    expect(decisions?.textContent).not.toContain("decisions");
+  });
+
+  it("claims NOTHING about provenance when coord did not report total_evals", () => {
+    // The degraded arm the optional-tolerant types exist to survive: coord's
+    // pre-Phase-2 handler computes `total_blocks` as a raw COUNT(*) over
+    // `coord.pr_events`, so the number IS the 1899 audit-row count. Calling it
+    // "1899 decisions" would be an asserted falsehood — strictly worse than
+    // the bare, ambiguous number this replaced.
+    hookData.current.gateTotalEvals = null;
+    render(<MergePipeline />);
+    const section = screen.getByTestId("gate-decisions");
+    expect(section.querySelector("[data-gate-total-evals]")).toBeNull();
+
+    // The count still renders — silence about provenance is not silence about
+    // the number.
+    const decisions = section.querySelector("[data-gate-total-blocks]");
+    expect(decisions).not.toBeNull();
+    expect(decisions?.textContent?.trim()).toBe("8");
+    // …but WITHOUT the noun that would assert what it counts.
+    expect(decisions?.textContent).not.toContain("decision");
+    // …and the tooltip says the provenance is unknown rather than asserting it.
+    expect(decisions?.getAttribute("data-gate-count-provenance")).toBe(
+      "unknown"
+    );
+    const title = decisions?.getAttribute("title") ?? "";
+    expect(title).toContain("has not reported whether");
+    expect(title).not.toContain("Distinct PRs");
+  });
+
+  it("asserts the decisions provenance ONLY once coord reports total_evals", () => {
+    render(<MergePipeline />);
+    const decisions = screen
+      .getByTestId("gate-decisions")
+      .querySelector("[data-gate-total-blocks]");
+    expect(decisions?.getAttribute("data-gate-count-provenance")).toBe(
+      "decisions"
+    );
+    expect(decisions?.getAttribute("title")).toContain("Distinct PRs");
+  });
+
+  it("never derives the total from the (limit-capped) blocks array", () => {
+    // A distinct-PR count taken from `blocks` would present a lower bound as a
+    // total — the same defect class, inverted. The badge must show coord's
+    // number, not the page's row count.
+    hookData.current.gateBlocks = [gateBlock()];
+    hookData.current.gateTotalBlocks = 8;
+    hookData.current.gateTotalEvals = 1899;
+    render(<MergePipeline />);
+    const decisions = screen
+      .getByTestId("gate-decisions")
+      .querySelector("[data-gate-total-blocks]");
+    expect(decisions?.getAttribute("data-gate-total-blocks")).toBe("8");
+    expect(decisions?.textContent).not.toContain("1 decision");
+  });
+
+  it("omits the evals chip when it adds nothing (evals === decisions)", () => {
+    hookData.current.gateTotalBlocks = 8;
+    hookData.current.gateTotalEvals = 8;
+    render(<MergePipeline />);
+    expect(
+      screen
+        .getByTestId("gate-decisions")
+        .querySelector("[data-gate-total-evals]")
+    ).toBeNull();
   });
 });

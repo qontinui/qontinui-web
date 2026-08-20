@@ -1,6 +1,29 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import fs from "fs";
 import path from "path";
+
+// Mirror of the switch in `next.config.mjs`: the optional
+// `@qontinui/cloud-control` overlay is present (composed cloud build) or it is
+// not (OSS-only), and the absent case resolves the specifier to a local no-op
+// so the boot module's static import works in both shapes. Vitest has its own
+// resolver, so the fallback has to be declared here too or every OSS run dies
+// on an unresolved import. See docs/composed-cloud-build.md.
+const cloudControlPresent = fs.existsSync(
+  path.resolve(__dirname, "node_modules/@qontinui/cloud-control/package.json")
+);
+
+// Mirror of `next.config.mjs`'s `@cloud` build-time route alias. Vitest has
+// its own resolver, so the mapping has to be declared here too — without it
+// `src/cloud-absent/cloud-route-shims.test.ts` (and any test that imports a
+// mounted route) dies on an unresolved specifier. Present -> the linked
+// package's sources; absent -> the `cloud-absent/` mirror.
+const cloudAliasTarget = path.resolve(
+  __dirname,
+  cloudControlPresent
+    ? "./node_modules/@qontinui/cloud-control/frontend/src"
+    : "./src/cloud-absent"
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -35,6 +58,19 @@ export default defineConfig({
     // under `playwright test`, not vitest) but NOT the `*.test.ts` unit tests
     // included above.
     exclude: ["node_modules", "tests/e2e/**/*.spec.ts"],
+    server: {
+      deps: {
+        // `@qontinui/cloud-control` is the optional composed-cloud-build
+        // overlay (docs/composed-cloud-build.md). It lives under
+        // node_modules, so vitest would externalize it and hand its raw
+        // `.ts` entry point to Node, which cannot load TypeScript. Inlining
+        // routes it through vite's transform instead — the same "compile the
+        // package inside the host graph" treatment `transpilePackages` gives
+        // it under webpack. No effect on OSS-only runs, where the package is
+        // absent and the tests that touch it skip themselves.
+        inline: [/@qontinui[\\/]cloud-control/],
+      },
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
@@ -49,8 +85,27 @@ export default defineConfig({
     },
   },
   resolve: {
+    // The cloud-control overlay is a link into node_modules pointing at a
+    // sibling checkout. Without this, vite canonicalises it to a real path
+    // OUTSIDE this project and every bare import inside the package
+    // ("lucide-react", "react-hook-form", …) fails to resolve, because there
+    // is no node_modules above the sibling repo. Keeping the linked path
+    // makes the normal upward node_modules lookup land in this app's tree —
+    // the same thing `config.resolve.modules` does for webpack in
+    // next.config.mjs. Harmless when no overlay is installed: `npm ci`
+    // creates no symlinks, so nothing else here is affected.
+    preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@cloud": cloudAliasTarget,
+      ...(cloudControlPresent
+        ? {}
+        : {
+            "@qontinui/cloud-control": path.resolve(
+              __dirname,
+              "./src/cloud-absent/index.ts"
+            ),
+          }),
     },
   },
   css: {
