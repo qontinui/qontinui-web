@@ -36,7 +36,11 @@
  * `coord-land-card`, `-crossrepo-badge`, `-outcome-badge`, `-settled-badge`
  * and `-verdicts` in a STATIC state — that spec declares no transitions, so
  * every criterion is evaluated on page load with nothing expanded. All five
- * therefore render on the collapsed row. They are rendered COMPACTLY rather
+ * therefore render on the collapsed row **for a land that has them**: the
+ * outcome and settled badges sit behind `ver`, and `<VerdictChips>` renders
+ * nothing for an empty verdict list. That is a property of the DATA, not of
+ * this component — which is exactly why `lands/page.specSelectors.test.tsx`
+ * runs against the spec's OWN stub rather than a fixture of its own. They are rendered COMPACTLY rather
  * than moved (see `VerdictChips` for how the four-dimension cluster is kept
  * to ~80px), because the derived specs are frozen (D4b) and Spec-CI is not
  * runnable in this session, so re-derivation is not an available answer.
@@ -46,7 +50,7 @@
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Network, ShieldQuestion } from "lucide-react";
+import { Loader2, Network } from "lucide-react";
 import {
   RecordDetail,
   RecordRow,
@@ -172,7 +176,10 @@ function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
               {composed?.worst_drift_class ?? "unknown"}
             </Badge>
             <span className="text-muted-foreground tabular-nums">
-              {composed?.verified_count ?? 0}/{composed?.repo_count ?? 0} verified
+              {/* `0/0 verified` would be a measurement; an absent `composed`
+                  block is coord declining to answer. Dashes, per R6. */}
+              {composed?.verified_count ?? "–"}/{composed?.repo_count ?? "–"}{" "}
+              verified
             </span>
           </div>
           {repos.length > 0 ? (
@@ -220,7 +227,7 @@ function CrossRepoVerdictPanel({ correlationId }: { correlationId: string }) {
 
 // ---- Row ------------------------------------------------------------------
 
-/** `repo#123` when there is a PR, else the target sha — never the row UUID. */
+/** `#123` when there is a PR, else the target sha — never the row UUID. */
 function landIdentity(row: LandRowData): string {
   const sig = row.signature;
   if (typeof sig.pr_number === "number") return `#${sig.pr_number}`;
@@ -315,18 +322,15 @@ export function LandRow({
               </Badge>
             </>
           ) : (
+            // The palette entry, not a hand-copied literal of it (§4):
+            // `status` is already `unverified` on this branch, so
+            // `VERIFICATION_PALETTE` is the amber's single source.
             <span
               className="inline-flex shrink-0"
               data-testid="coord-land-unverified-badge"
+              title="the land declared itself; the verifier has not answered yet"
             >
-              <Badge
-                variant="outline"
-                className="inline-flex items-center gap-1 text-[11px] bg-amber-500/15 text-amber-200 border-amber-500/30"
-                title="the land declared itself; the verifier has not answered yet"
-              >
-                <ShieldQuestion className="h-3 w-3" />
-                not yet verified
-              </Badge>
+              <StatusBadge status={status} palette={VERIFICATION_PALETTE} />
             </span>
           )}
         </>

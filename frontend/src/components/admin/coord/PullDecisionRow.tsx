@@ -115,7 +115,13 @@ export function PullDecisionRow({
               ) : (
                 <Hand className="h-3 w-3" />
               )}
-              {row.autonomy}
+              {/* R8 — plain language on the row; the raw token is in the
+                  detail's `raw` slot, which is where wire vocabulary lives. */}
+              {row.autonomy === "auto_decide"
+                ? "auto"
+                : row.autonomy === "guidance_only"
+                  ? "guidance"
+                  : row.autonomy}
             </Badge>
           )}
           {outcome ? (
@@ -220,6 +226,7 @@ export function PullDecisionRow({
         raw={
           <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
             resolution id: {row.resolution_id}
+            {row.autonomy ? ` · autonomy: ${row.autonomy}` : ""}
             {row.repo ? ` · repo: ${row.repo}` : ""}
             {/* The one place a device UUID belongs (R8): expanded, labelled,
                 and here because it is what an operator pastes into the

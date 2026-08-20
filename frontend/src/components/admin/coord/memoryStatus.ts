@@ -80,7 +80,7 @@ export type CoordMemoryRow = MemorySummary & {
  * a total palette over a vocabulary coord grows without telling us — which is
  * the rot `planStatus.ts` records for work-unit status, in the same words.
  */
-export type MemoryStatusTone = "known" | "unknown";
+export type MemoryStatusTone = "known" | "untyped" | "unknown";
 
 /**
  * The memory kinds this build has a meaning for. Two generations of the
@@ -110,6 +110,8 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
 export const MEMORY_TONE_CLASS: Record<MemoryStatusTone, string> = {
   // Calm: nothing is owed on a memory, and nothing decays.
   known: "bg-muted text-muted-foreground border-border",
+  // Also calm, and NOT the ignorance floor — see the table below.
+  untyped: "bg-transparent text-muted-foreground border-border border-dashed",
   // R3's ignorance floor — amber says "we cannot tell you what this is".
   unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
 };
@@ -120,15 +122,28 @@ export const MEMORY_TONE_CLASS: Record<MemoryStatusTone, string> = {
  *
  * - `known` — **`none`**. A memory of a kind this build understands asks
  *   nothing of anybody. Nothing clears, nothing decays, nothing is blocked.
- * - `unknown` — **`waiting`**. Not a claim that something is wrong: it is
- *   `attentionOf`'s ignorance floor, the same one `planStatus.unknown` and
- *   `alertStatus.unknown` carry. Only a human extending the vocabulary
- *   resolves it, so read literally R3's name-the-clearer test would forbid
- *   amber here — and R3 states the exception explicitly, because rendering
- *   ignorance as calm is `silent-empty-is-unknown` with a badge attached.
+ * - `untyped` — **`none`**, and this is the case worth reading carefully.
+ *   R3's amber exception is TWO-part: amber is wrong when you cannot name a
+ *   clearer *and you actually know the row's state*. For a memory coord sent
+ *   with no `type` we DO know the state — there is no type, and `type` is
+ *   optional metadata on this table rather than a lifecycle field that failed
+ *   to load. So by the stated test this is calm, not the floor. It is drawn
+ *   with the dashed "provisional" border `draft` already uses, so it stays
+ *   visibly distinct from a typed row without spending amber on it.
+ *   (`planStatus`'s absent-status case is deliberately NOT the same: a work
+ *   unit's status is a lifecycle field, and its absence means we failed to
+ *   learn something that should be there.)
+ * - `unknown` — **`waiting`**. Reserved for a type this build does not
+ *   recognise. That IS ignorance: `attentionOf`'s floor, the same one
+ *   `planStatus.unknown` and `alertStatus.unknown` carry. Only a human
+ *   extending the vocabulary resolves it, so read literally R3's
+ *   name-the-clearer test would forbid amber — and R3 states the exception,
+ *   because rendering ignorance as calm is `silent-empty-is-unknown` with a
+ *   badge attached.
  */
 export const MEMORY_ATTENTION_BY_TONE: Record<MemoryStatusTone, Attention> = {
   known: "none",
+  untyped: "none",
   unknown: "waiting",
 };
 
@@ -160,10 +175,9 @@ export function deriveMemoryStatus(
   const raw = (memory.type ?? "").trim();
   if (!raw) {
     return {
-      kind: "unknown",
+      kind: "untyped",
       label: "no type",
-      reason: "coord recorded no type for this memory",
-      attention: MEMORY_ATTENTION_BY_TONE.unknown,
+      attention: MEMORY_ATTENTION_BY_TONE.untyped,
     };
   }
   if (!KNOWN_TYPES.has(raw.toLowerCase())) {

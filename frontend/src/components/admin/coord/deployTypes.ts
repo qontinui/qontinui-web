@@ -13,11 +13,7 @@
  * `landTypes` (same {dimension, drift_class, outcome, detail} shape).
  */
 
-import {
-  dimensionOutcomeVariant,
-  type BadgeVariant,
-  type DimensionVerdict,
-} from "@/components/admin/coord/landTypes";
+import type { DimensionVerdict } from "@/components/admin/coord/landTypes";
 
 export interface DeployVerification {
   id: string;
@@ -130,16 +126,13 @@ export function isManagedPredictedHeadFork(
   return v?.drift_subclass === MANAGED_HEAD_FORK_SUBCLASS;
 }
 
-/**
- * Badge variant for a single dimension verdict chip. Identical to
- * `dimensionOutcomeVariant(outcome)` EXCEPT a managed predicted-head-fork is
- * forced amber (`warning`) — coord auto-resolves it so it is neither a red
- * failure nor a green pass.
- */
-export function verdictChipVariant(v?: DimensionVerdict | null): BadgeVariant {
-  if (isManagedPredictedHeadFork(v)) return "warning";
-  return dimensionOutcomeVariant(v?.outcome);
-}
+// `verdictChipVariant` used to sit here. DELETED in Phase 3 Wave 2 with its
+// test: `<DeployRow>` renders the per-dimension verdicts through
+// `<VerdictChips>`, which encodes the outcome as a colourblind-safe GLYPH
+// rather than a `BadgeVariant`, so nothing called it any more — and its test
+// still described the managed head-fork as "forced amber", which is no longer
+// what the surface does (it gets the calm `~`). `isManagedPredictedHeadFork`
+// and `verdictChipLabel` below are both still live.
 
 /**
  * Friendly chip label. A managed predicted-head-fork reads "auto-managed"

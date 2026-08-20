@@ -27,6 +27,7 @@ const ALL_VERDICTS: PullVerdictKind[] = [
   "hold",
   "up_to_date",
   "diverged",
+  "diverged_handled",
   "unknown",
 ];
 
@@ -61,7 +62,40 @@ describe("PULL_ATTENTION_BY_VERDICT — the R3 audit table", () => {
     ).toEqual([]);
   });
 
-  it("reserves red for `diverged` — the one verdict nothing else clears", () => {
+  it("de-escalates a divergence that something reported back on", () => {
+    // This surface is an append-only AUDIT feed: rows carry a `resolved_at`
+    // and the fetch has no time bound. Without this, a divergence sorted out
+    // three weeks ago stays red forever and drags the page's health strip red
+    // with it — exactly how red stops meaning "act now".
+    const handled = derivePullDecisionStatus(
+      row({
+        verdict: "diverged",
+        outcome: { chosen_option: "rebased", recorded_at: null },
+      })
+    );
+    expect(handled.kind).toBe("diverged_handled");
+    expect(handled.attention).toBe("none");
+    expect(handled.reason).toBe("resolved as rebased");
+    expect(PULL_VERDICT_CLASS[handled.kind]).not.toMatch(/bg-red-/);
+  });
+
+  it("keeps a divergence LOUD when nothing has reported back", () => {
+    // Absence of an outcome is UNKNOWN, not "handled" — the executor writes
+    // one only when it runs. Where the failure mode is lost local work, R3's
+    // tie-break takes the louder reading.
+    for (const outcome of [
+      null,
+      undefined,
+      { chosen_option: null },
+      { chosen_option: "  " },
+    ]) {
+      const s = derivePullDecisionStatus(row({ verdict: "diverged", outcome }));
+      expect(s.kind, JSON.stringify(outcome)).toBe("diverged");
+      expect(s.attention).toBe("author");
+    }
+  });
+
+  it("reserves red for an unresolved `diverged` — nothing else clears it", () => {
     // Pinned, not left to the palette test: `paletteDisagreements` proves the
     // hue matches the DECLARED attention and can never prove the declared
     // attention was right (§4.2 clause 4). These three are the calls a future

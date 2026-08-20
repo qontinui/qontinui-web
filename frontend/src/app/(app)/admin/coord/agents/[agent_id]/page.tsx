@@ -43,6 +43,7 @@ import {
   LogRow,
   type AgentLogRow,
 } from "@/components/admin/coord/LogRow";
+import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 
@@ -83,11 +84,15 @@ export default function CoordAgentLogPage() {
   const [data, setData] = useState<ByAgentResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // `undefined` = the operator has not chosen yet, so the newest row is open
-  // (the behaviour `defaultExpanded` used to give). `null` = they closed it.
-  const [logOpenKey, setLogOpenKey] = useState<string | null | undefined>(
-    undefined
-  );
+  // The open log row. `null` = none.
+  //
+  // It reproduces `defaultExpanded={i === filtered.length - 1}` — the newest
+  // row opens by itself — but SEEDS ONCE, on the first load, rather than being
+  // recomputed each render. Recomputing is what the first cut did, and it is
+  // wrong on a 5s poll: every appended row would yank the open panel off
+  // whatever the operator was reading, and so would changing a filter.
+  const [logOpenKey, setLogOpenKey] = useState<string | null>(null);
+  const logSeededRef = useRef(false);
   const [selectedLevels, setSelectedLevels] = useState<Set<LevelKey>>(
     () => new Set(),
   );
@@ -146,7 +151,10 @@ export default function CoordAgentLogPage() {
     const evt = eventFilter.trim().toLowerCase();
     return raw.filter((row) => {
       if (selectedLevels.size > 0) {
-        const lvl = (row.level ?? "info").toLowerCase() as LevelKey;
+        // Through the SAME normaliser the badge renders with — a bare
+        // `toLowerCase()` made a `warning` row show a WARN badge that the
+        // `warn` chip could not select.
+        const lvl = normalizeLevel(row.level) as LevelKey;
         if (!selectedLevels.has(lvl)) return false;
       }
       if (evt && !(row.event ?? "").toLowerCase().includes(evt)) {
@@ -155,6 +163,20 @@ export default function CoordAgentLogPage() {
       return true;
     });
   }, [data, selectedLevels, eventFilter]);
+
+  // Seed the open log row ONCE, with the newest entry the first load brought —
+  // the behaviour `<LogRow defaultExpanded>` used to give. It deliberately does
+  // not re-run: after this, the open row is the operator's, and a 5s poll that
+  // appends entries must not move it under them.
+  useEffect(() => {
+    const i = filtered.length - 1;
+    const last = filtered[i];
+    if (logSeededRef.current || !last) return;
+    logSeededRef.current = true;
+    setLogOpenKey(
+      String(last.log_id ?? `${last.occurred_at ?? last.ts ?? i}-${i}`)
+    );
+  }, [filtered]);
 
   // Auto-scroll to bottom when row count grows (new entries arrived).
   useEffect(() => {
@@ -312,19 +334,13 @@ export default function CoordAgentLogPage() {
             >
               {/* `<LogRow>` became a controlled `<RecordRow>` in Phase 3
                   Wave 2 (one open at a time, keyboard-reachable), so its
-                  expansion is hoisted here. `newestKey` reproduces the old
-                  `defaultExpanded={i === filtered.length - 1}`: the newest row
-                  opens by itself, and stays the operator's to close — a
-                  `useState` initialiser rather than an effect, so a poll that
-                  appends a row does NOT re-open it under them. */}
+                  expansion is hoisted to `logOpenKey`, which is seeded once by
+                  the effect above. */}
               {filtered.map((row, i) => {
                 const key = String(
                   row.log_id ?? `${row.occurred_at ?? row.ts ?? i}-${i}`
                 );
-                const open =
-                  logOpenKey === undefined
-                    ? i === filtered.length - 1
-                    : logOpenKey === key;
+                const open = logOpenKey === key;
                 return (
                   <LogRow
                     key={key}

@@ -84,10 +84,13 @@ function deriveReleasesHealth(
   detail: string;
   badges: HealthBadge[];
 } {
-  // A failed read leaves the counts UNKNOWN, and "0 stuck releases" read off a
-  // request that never answered is the `silent-empty-is-unknown` mistake with
-  // a badge attached — the same reading the dash rule refuses for a tab count.
-  if (!loaded || error) {
+  // A failed read with NOTHING on screen leaves the counts unknown, and "0
+  // stuck releases" read off a request that never answered is the
+  // `silent-empty-is-unknown` mistake with a badge attached. But an error
+  // arriving on top of a list that already loaded is different: those rows are
+  // real, just possibly stale, and dashing their counts while the list below
+  // shows them would make the strip contradict the page.
+  if (!loaded || (error && rows.length === 0)) {
     return {
       level: error ? "red" : "amber",
       headline: error
@@ -114,7 +117,7 @@ function deriveReleasesHealth(
   }
 
   const level: HealthStripLevel =
-    stuck > 0 ? "red" : inFlight > 0 || unknown > 0 ? "amber" : "green";
+    stuck > 0 ? "red" : error || inFlight > 0 || unknown > 0 ? "amber" : "green";
   return {
     level,
     headline:
@@ -126,6 +129,9 @@ function deriveReleasesHealth(
             ? `${inFlight} in flight; nothing stuck`
             : "Every observed release is in sync",
     detail: [
+      // Said first when present: every count below it is from the last
+      // successful read, not from now.
+      error ? "counts are from the last successful read" : null,
       `${inSync} in sync`,
       unknown > 0 ? `${unknown} descriptor${unknown === 1 ? "" : "s"} coord could not read` : null,
       target ? `target ${target}` : null,
@@ -318,6 +324,7 @@ export default function CoordReleasesPage() {
           />
         )}
         empty={
+          error ? null : (
           <p className="text-sm text-muted-foreground italic">
             {tab !== "all" ? (
               <>No observed releases in this window are {tab === "attention" ? "stuck" : "in flight"}.</>
@@ -331,6 +338,7 @@ export default function CoordReleasesPage() {
               </>
             )}
           </p>
+          )
         }
       />
     </div>

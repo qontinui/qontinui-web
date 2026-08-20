@@ -38,8 +38,18 @@ export interface RecordListRenderContext {
 
 export interface RecordListBaseProps<T> {
   items: T[];
-  /** Stable identity per item — the expansion key and the React key. */
-  itemKey: (item: T) => string;
+  /**
+   * Stable identity per item — the expansion key AND the React key.
+   *
+   * The INDEX is passed too, and it is not decoration: several console
+   * surfaces key off a wire id that coord may omit, and the fallback has to
+   * stay unique or two records collide. A collision here is not cosmetic —
+   * expansion is `openKey === key`, so two rows sharing a key open together.
+   * Prefer the record's own identity; append the index only in the fallback,
+   * never as the whole key (a positional key re-keys every row below a
+   * deletion and collapses whatever the operator had open).
+   */
+  itemKey: (item: T, index: number) => string;
   /** Render one row. Normally a `<RecordRow>` given `expanded` / `onToggle`. */
   renderRow: (item: T, ctx: RecordListRenderContext) => ReactNode;
   /** False while the data has not arrived — renders skeletons, not "empty". */
@@ -102,8 +112,8 @@ export function RecordList<T>({
 
   return (
     <div className={className ?? "space-y-1.5"}>
-      {items.map((item) => {
-        const key = itemKey(item);
+      {items.map((item, index) => {
+        const key = itemKey(item, index);
         return (
           // A Fragment, not a wrapper element: `space-y-*` is a `> * + *`
           // margin rule, so an extra (even `display:contents`) wrapper would

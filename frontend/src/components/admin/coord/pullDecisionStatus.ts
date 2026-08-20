@@ -58,6 +58,7 @@ export type PullVerdictKind =
   | "hold"
   | "up_to_date"
   | "diverged"
+  | "diverged_handled"
   | "unknown";
 
 /** Operator-facing label per verdict. Never the raw snake_case token. */
@@ -67,6 +68,7 @@ const VERDICT_LABEL: Record<PullVerdictKind, string> = {
   hold: "Hold",
   up_to_date: "Up to date",
   diverged: "Diverged",
+  diverged_handled: "Diverged — handled",
   unknown: "Unknown verdict",
 };
 
@@ -79,6 +81,9 @@ export const PULL_VERDICT_CLASS: Record<PullVerdictKind, string> = {
   hold: "bg-amber-500/15 text-amber-200 border-amber-500/30",
   // Someone must act now.
   diverged: "bg-red-500/15 text-red-200 border-red-500/35",
+  // The same divergence, with an outcome reported against it. Calm, and the
+  // detail says what was done.
+  diverged_handled: "bg-muted text-muted-foreground border-border",
   // R3's ignorance floor.
   unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
 };
@@ -96,12 +101,21 @@ export const PULL_VERDICT_CLASS: Record<PullVerdictKind, string> = {
  *   (`hold_reason`): coord re-evaluates the pull decision on the next request,
  *   and a hold lapses when its premise does. That is amber's self-clearing
  *   contract, satisfied literally.
- * - `diverged` — **`author`**. A diverged checkout does not reconcile itself;
- *   no watcher, no retry and no timeout resolves it, and the failure mode is
- *   lost local work. Only a human decides which side wins. This is the same
- *   call `alertStatus.ts` and `treeStatus.ts` make for idle uncommitted work,
- *   and R3 records the tie-break: where the failure mode is lost work, it
- *   breaks toward the louder signal.
+ * - `diverged` — **`author`**, but only while NOTHING has reported back. A
+ *   diverged checkout does not reconcile itself; no watcher, no retry and no
+ *   timeout resolves it, and the failure mode is lost local work. Only a human
+ *   decides which side wins. Same call `alertStatus.ts` and `treeStatus.ts`
+ *   make for idle uncommitted work, and R3 records the tie-break: where the
+ *   failure mode is lost work, it breaks toward the louder signal.
+ * - `diverged_handled` — **`none`**. THIS SURFACE IS AN AUDIT FEED, not a live
+ *   checkout list: rows are append-only, carry a `resolved_at`, and the fetch
+ *   has no time bound. Without this kind, a divergence somebody sorted out
+ *   three weeks ago stays red forever and drags the whole page's health strip
+ *   red with it — which is precisely how red stops meaning "act now". The
+ *   evidence that separates the two is on the row already: coord records an
+ *   `outcome.chosen_option` when something acted on the decision. Absence of
+ *   an outcome is UNKNOWN, not "unhandled" — so absence keeps the loud
+ *   reading, and only a positively-recorded outcome earns the calm one.
  * - `unknown` — **`waiting`**, the ignorance floor. A verdict token this build
  *   has never seen is a statement about our vocabulary, not about the row;
  *   nothing but a human extending it clears that, and painting it calm would
@@ -113,6 +127,7 @@ export const PULL_ATTENTION_BY_VERDICT: Record<PullVerdictKind, Attention> = {
   up_to_date: "none",
   hold: "waiting",
   diverged: "author",
+  diverged_handled: "none",
   unknown: "waiting",
 };
 
@@ -166,7 +181,25 @@ export function timingLabel(row: PullDecisionRow): string | null {
 export function derivePullDecisionStatus(
   row: PullDecisionRow
 ): RowStatus<PullVerdictKind> {
-  const kind = classifyVerdict(row.verdict);
+  const verdict = classifyVerdict(row.verdict);
+  // The one place a per-row signal changes the KIND rather than escalating an
+  // attention. It is done here, in the classification, precisely BECAUSE
+  // `escalateAttention` is escalate-only by contract: a row may be raised
+  // above its kind's floor by evidence and never lowered below it. So the
+  // evidence has to pick a different kind, and that kind carries its own
+  // audited row in the table above.
+  const kind: PullVerdictKind =
+    verdict === "diverged" && (row.outcome?.chosen_option ?? "").trim() !== ""
+      ? "diverged_handled"
+      : verdict;
+  // ASYMMETRIC on purpose, and the two halves answer different questions.
+  // `behind` is the reason this decision exists, so a measured `0 behind`
+  // ("we looked, you are level") is real information and must survive — a
+  // truthy check would swallow it. `ahead` only ever qualifies the verdict:
+  // `0 ahead` is the ordinary case and adds nothing, so it is omitted rather
+  // than printed. An UNMEASURED `ahead` is likewise omitted; the two are not
+  // distinguished here because neither is worth a row-level word, and the raw
+  // counts are in the expanded detail either way.
   const distance: string[] = [];
   if ((row.behind ?? null) !== null) distance.push(`${row.behind} behind`);
   if ((row.ahead ?? 0) > 0) distance.push(`${row.ahead} ahead`);
@@ -184,7 +217,10 @@ export function derivePullDecisionStatus(
         ? // Verbatim, never guessed at — the raw token IS the honest label.
           String(row.verdict)
         : VERDICT_LABEL[kind],
-    reason: reason || undefined,
+    reason:
+      kind === "diverged_handled"
+        ? `resolved as ${row.outcome?.chosen_option}`
+        : reason || undefined,
     attention: PULL_ATTENTION_BY_VERDICT[kind],
   };
 }

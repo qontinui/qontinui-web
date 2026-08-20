@@ -211,6 +211,11 @@ export default function CoordHistoryPage() {
       )}
 
       <RecordList
+        // Keyed on the active tab so switching REMOUNTS the list. Without it
+        // the internal `expandedKey` survives the switch, and a slug present
+        // in both windows (a plan can be shipped AND later archived) would
+        // appear already-expanded in a tab the operator has not touched.
+        key={active}
         items={current.plans}
         itemKey={(p) => p.slug}
         // Settled, not "counted": a failed fetch must stop the skeletons even
