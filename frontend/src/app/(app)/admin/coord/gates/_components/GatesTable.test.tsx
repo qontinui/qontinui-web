@@ -101,6 +101,18 @@ describe("GatesTable search + gate-id", () => {
       .map((r) => r.querySelector(".font-medium")?.textContent ?? "");
   }
 
+  /**
+   * Phase 3 Wave 4 (D2/R5): the clearance-provenance sub-line, the work
+   * anchor, the shadow-reap evidence and the progress-freshness line all moved
+   * OFF the collapsed row and into the `<tr><td colSpan={9}>` `<RecordDetail>`
+   * that a click expands. Their testids are unchanged (D4a) — what changed is
+   * that reaching them costs the same click an operator now makes. Clicking
+   * the row is the affordance under test everywhere below.
+   */
+  async function expandFirstRow(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getAllByTestId("gates-table-row")[0]);
+  }
+
   it("renders every gate with no search", () => {
     render(<GatesTable gates={GATES} onActed={() => {}} />);
     expect(screen.getAllByTestId("gates-table-row")).toHaveLength(3);
@@ -139,13 +151,19 @@ describe("GatesTable search + gate-id", () => {
     expect(rowTitles()).toEqual(["Unrelated devenv phase-2"]);
   });
 
-  it("renders NO gate-class chip and NO provenance line when the clearance-authority fields are absent (pre-deploy coord — identical to today)", () => {
+  it("renders NO gate-class chip and NO provenance line when the clearance-authority fields are absent (pre-deploy coord — identical to today)", async () => {
     // GATES rows deliberately omit gate_class / cleared_* /
     // registered_by_agent_id entirely (plan
     // `2026-07-27-configurable-gate-clearance-authority` Phase 6: coord may
     // not send them yet; the UI must not break — or change — on absence).
+    const user = userEvent.setup();
     render(<GatesTable gates={GATES} onActed={() => {}} />);
     expect(screen.queryByTestId("gates-gate-class")).toBeNull();
+    // Assert the absence WHERE THE LINE NOW LIVES. Checking a collapsed table
+    // for it would pass whether or not the code is right, which is the
+    // vacuous-green shape a moved element invites.
+    await expandFirstRow(user);
+    expect(screen.getByTestId("gates-row-detail")).toBeTruthy();
     expect(screen.queryByTestId("gates-clearance-provenance")).toBeNull();
   });
 
@@ -161,18 +179,29 @@ describe("GatesTable search + gate-id", () => {
     ).toBe("security-surface");
   });
 
-  it("renders a withdrawn verdict with its own label and the failed (destructive) tone", () => {
+  it("renders a withdrawn verdict with its own label and NO red", () => {
     render(
       <GatesTable gates={[gate({ verdict: "withdrawn" })]} onActed={() => {}} />,
     );
     // Scope to the row — the verdict filter <option> also says "withdrawn".
     const row = screen.getByTestId("gates-table-row");
     const badge = within(row).getByText("withdrawn");
-    // Same destructive tone as `failed`, but the label stays `withdrawn`.
-    expect(badge.className).toContain("destructive");
+    // Phase 3 Wave 4 (R3): this used to carry `failed`'s destructive tone on
+    // the stated reasoning that it "tones like failed". A registrant
+    // cancelling its own request costs nobody anything, so it is CALM and
+    // keeps its own label. `gateStatus.test.ts` owns the palette assertion;
+    // this one pins that the ROW renders it.
+    // `bg-destructive` is the variant's own fill. Matching bare "destructive"
+    // would be a false positive: shadcn's Badge BASE class carries
+    // `aria-invalid:border-destructive`, so every badge on the page contains
+    // the substring.
+    expect(badge.className).not.toContain("bg-destructive");
+    expect(/\bbg-red-/.test(badge.className)).toBe(false);
+    expect(badge.getAttribute("data-status-kind")).toBe("withdrawn");
   });
 
-  it("renders the clearance-provenance sub-line when coord stamps the columns", () => {
+  it("renders the clearance-provenance sub-line when coord stamps the columns", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[
@@ -187,6 +216,7 @@ describe("GatesTable search + gate-id", () => {
         onActed={() => {}}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("attested by agent 6f2a91c3 on 1b2c3d4e under rule 9e8d7c6b");
@@ -236,7 +266,8 @@ describe("GatesTable search + gate-id", () => {
     };
   }
 
-  it("names the band from the supplied rule set — tenant when the rule is the workspace's", () => {
+  it("names the band from the supplied rule set — tenant when the rule is the workspace's", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[clearedUnderRule()]}
@@ -244,12 +275,14 @@ describe("GatesTable search + gate-id", () => {
         clearanceRules={[clearanceRule(false)]}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("attested under tenant rule 9e8d7c6b");
   });
 
-  it("…and system when the SAME rule id is a built-in in that set", () => {
+  it("…and system when the SAME rule id is a built-in in that set", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[clearedUnderRule()]}
@@ -257,12 +290,14 @@ describe("GatesTable search + gate-id", () => {
         clearanceRules={[clearanceRule(true)]}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("attested under system default rule 9e8d7c6b");
   });
 
-  it("says 'band unknown' when the loaded rule set no longer has the rule", () => {
+  it("says 'band unknown' when the loaded rule set no longer has the rule", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[clearedUnderRule()]}
@@ -270,12 +305,14 @@ describe("GatesTable search + gate-id", () => {
         clearanceRules={[]}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("attested under rule 9e8d7c6b (band unknown)");
   });
 
-  it("says no clearance rule matched when an agent door cleared with no rule", () => {
+  it("says no clearance rule matched when an agent door cleared with no rule", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[
@@ -289,6 +326,7 @@ describe("GatesTable search + gate-id", () => {
         clearanceRules={[]}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe(
@@ -296,7 +334,8 @@ describe("GatesTable search + gate-id", () => {
     );
   });
 
-  it("makes no audience-default claim for an operator door", () => {
+  it("makes no audience-default claim for an operator door", async () => {
+    const user = userEvent.setup();
     render(
       <GatesTable
         gates={[gate({ verdict: "cleared", cleared_via: "operator_route" })]}
@@ -304,6 +343,7 @@ describe("GatesTable search + gate-id", () => {
         clearanceRules={[]}
       />,
     );
+    await expandFirstRow(user);
     expect(
       screen.getByTestId("gates-clearance-provenance").textContent,
     ).toBe("cleared by operator");
