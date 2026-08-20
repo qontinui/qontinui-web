@@ -5,6 +5,18 @@
 // status" console surface shares.
 // ============================================================================
 //
+// ENFORCES R2 (one record = one line), R3 (colour encodes who must act) and
+// R4 (left-edge accent, not a coloured row) — see
+// `frontend/docs/console-ui-style-guide.md` §2 and §3.1.
+//
+// MOVED from `components/operations/` into `components/console/` by plan
+// `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1 (D3):
+// these are presentation-only primitives, not merge-train feature code, and
+// they are the base the composition primitives beside this file are built on.
+// The module is otherwise UNCHANGED — Phase 1 adopts this extraction rather
+// than re-doing it, because a second `StatusBadge`/accent/time implementation
+// in the same repo is precisely the defect that plan exists to remove.
+//
 // Extracted from MergePipeline.tsx by plan
 // `2026-08-05-coord-alerts-surface-and-fleet-style-ui.md`. Its SHARED UI
 // CONVENTIONS section told the next surface (the Alerts tab) to "reuse
@@ -30,15 +42,15 @@
 
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
-import { relativeTime } from "./utils";
+import { absoluteTime, relativeTime } from "./time";
+import type { Attention } from "./attention";
 // TYPE-ONLY. `statusRow` must stay free of a runtime dependency on
 // `prPipeline` (1576 lines of merge-train derivation): the Alerts tab imports
 // these primitives and has no business bundling the PR pipeline.
 import type {
-  Attention,
   DwellEvidence,
   UnifiedStatusKind,
-} from "./prPipeline";
+} from "@/components/operations/prPipeline";
 
 /**
  * The MINIMUM a row's status must carry to render through these primitives.
@@ -220,12 +232,13 @@ export function StatusBadge<K extends string>({
   );
 }
 
-/** Absolute local timestamp for a `title` — "unknown" reads better than "". */
-export function absoluteTime(iso: string | null | undefined): string {
-  if (!iso) return "time unknown";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "time unknown" : d.toLocaleString();
-}
+/**
+ * Re-export: `absoluteTime` lives in `./time` beside `relativeTime`, so the
+ * two formatters this file renders through sit together and neither drags a
+ * dependency into the base layer. Kept exported here because callers address
+ * it by this module.
+ */
+export { absoluteTime };
 
 export interface RowTimeProps {
   /** The timestamp this row reports (ISO-8601), or null when absent. */

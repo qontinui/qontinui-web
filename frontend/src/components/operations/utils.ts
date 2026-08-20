@@ -426,28 +426,15 @@ export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
 /**
  * Convert an ISO timestamp to a human-friendly relative string.
  * e.g. "3s ago", "2m ago", "1h ago", "3d ago"
+ *
+ * MOVED to `@/components/console/time` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1, and
+ * re-exported here so all 33 existing importers are untouched. It moved
+ * because the console primitives need it and this module is the merge-train
+ * route catalogue — a `console/` → `operations/` runtime edge for one pure
+ * 28-line formatter. NEW code imports it from `@/components/console`.
  */
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "never";
-
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-
-  if (Number.isNaN(diffMs) || diffMs < 0) return "just now";
-
-  const seconds = Math.floor(diffMs / 1_000);
-  if (seconds < 60) return `${seconds}s ago`;
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+export { relativeTime } from "@/components/console/time";
 
 /**
  * Format a stall age (seconds) as a compact human label, e.g. "45s", "12m",
