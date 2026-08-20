@@ -32,6 +32,23 @@ while still producing a full set of plausible numbers. ``link_arm`` gets the
 same treatment for the same reason — an expansion that never ran and an
 expansion that found nothing produce identical scores, and only the response
 discriminator tells them apart.
+
+**Train/holdout (plan ``2026-08-11-...-statistical-rigor`` §3.3 item 4).**
+Every number this module REPORTS is over the TRAIN subset
+(:func:`tests.memory_recall.holdout.split_cases`, 41 of the 50 cases at the
+time of writing). The remaining cases are queried under each arm exactly as
+the train cases are, but their scores are computed inside
+:class:`~tests.memory_recall.holdout.SealedHoldoutRunner`, written to a
+directory of its own, and never returned — so no holdout number can reach
+the emitted report, the PR comment, or any assertion here. The holdout CASES
+are committed fixture data and perfectly visible; it is the SCORES that have
+no path back. See ``holdout.py`` for what that claim does and does not mean.
+
+**Per-component wiring (§3.3 item 5 residual).** The emitted report carries
+a :class:`~tests.memory_recall.wiring.WiringLedger` block marking each of
+the three arms, the paired comparison and the sealed holdout ``wired`` or
+``not_wired`` independently. A component that never ran is UNKNOWN, and the
+ledger emits strings only so it can never be rendered as a measured zero.
 """
 
 from __future__ import annotations
@@ -39,7 +56,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,7 +80,28 @@ from app.services.memory_store import ARM_LIMIT as _ARM_LIMIT
 from app.services.memory_vectors import EMBEDDING_MODEL_TAG
 from tests.conftest import TEST_DATABASE_URL
 from tests.memory_recall import fixtures as fx
-from tests.memory_recall.scorer import CaseScore, SuiteScore, aggregate, score_case
+from tests.memory_recall.holdout import (
+    CaseSplit,
+    HoldoutObservation,
+    sealed_runner,
+    split_cases,
+    split_report,
+    split_report_violations,
+)
+from tests.memory_recall.scorer import (
+    CREDIT_Z_THRESHOLD,
+    LOWER_IS_BETTER_METRICS,
+    CaseScore,
+    PairedResult,
+    SuiteScore,
+    aggregate,
+    paired_delta,
+    score_case,
+)
+from tests.memory_recall.wiring import (
+    MEMORY_RECALL_COMPONENTS,
+    WiringLedger,
+)
 
 # The seeded-corpus substrate is REUSED from the API suite rather than
 # re-derived: there is no ORM model for coord.memory_records (raw-SQL
@@ -96,7 +134,57 @@ LINK_ONLY_MEASURED_RATIO = 3.0
 LINK_ONLY_IMPOSSIBLE_RATIO = 1.8
 
 #: Where a CI run drops the machine-readable report for the PR comment.
+#: **The only file this module writes that anything downstream reads.** The
+#: holdout's destination (``MEMORY_RECALL_HOLDOUT_DIR``) is deliberately a
+#: different place, and nothing here opens it.
 REPORT_PATH_ENV = "MEMORY_RECALL_EVAL_REPORT"
+
+
+def golden_split(golden: fx.GoldenSet) -> CaseSplit:
+    """The deterministic, stratified train/holdout partition of the fixture."""
+    return split_cases([(c.case_id, c.case_class) for c in golden.cases])
+
+
+def train_cases(golden: fx.GoldenSet, split: CaseSplit) -> list[fx.GoldenCase]:
+    """The cases whose scores are REPORTED — everything the holdout is not.
+
+    Use this, never ``golden.cases``, anywhere a score is computed in this
+    module. Scoring the full set here is exactly the leak the split exists
+    to prevent: the holdout's numbers would arrive in the report inside an
+    aggregate mean, which is no less a leak for being averaged.
+    """
+    return [c for c in golden.cases if not split.is_holdout(c.case_id)]
+
+
+def _seeded_correction(
+    case: fx.GoldenCase, record_by_key: Mapping[str, fx.GoldenRecord]
+) -> tuple[str, str] | None:
+    """``case.correction``, having CHECKED both halves were actually seeded.
+
+    The single door both legs of :func:`_run_arm` go through, and that is
+    the point rather than tidiness. A correction pair whose corrector key
+    does not exist in the corpus scores a silent ``correction_precedence``
+    fail — the record it should have outranked was never there to outrank.
+    On the train side that lands in the report, where a human reads it. On
+    the SEALED side it lands in ``holdout-*.json``, which nothing reads,
+    so it would sit there wrong forever.
+
+    Two of the twelve correction cases are sealed by the current draw, and
+    the sealed leg used to pass ``case.correction`` straight through with
+    no check at all while its comment claimed "same integrity checks".
+    Routing both legs through one function is what makes that comment
+    true; ``test_the_holdout_leg_guards_correction_seeding`` in
+    ``test_memory_recall_scorer.py`` is what keeps it true.
+    """
+    correction = case.correction
+    if correction is None:
+        return None
+    assert correction[0] in record_by_key and correction[1] in record_by_key, (
+        f"case {case.case_id} names a correction pair "
+        f"{correction!r} that was never seeded — it would score a silent "
+        "precedence fail rather than a loud fixture error"
+    )
+    return correction
 
 
 def _exec(engine: AsyncEngine, statements: Sequence[str]) -> None:
@@ -286,6 +374,24 @@ def seeded(
     return _seed_corpus(eval_engine, golden)
 
 
+@pytest.fixture(scope="module")
+def split(golden: fx.GoldenSet) -> CaseSplit:
+    return golden_split(golden)
+
+
+@pytest.fixture(scope="module")
+def wiring() -> WiringLedger:
+    """The per-component wiring ledger for THIS run.
+
+    Module-scoped and shared by the three arm fixtures. Because pytest
+    instantiates a fixture only when something asks for it, a component
+    whose fixture never ran is never promoted and reports ``not_wired`` —
+    the marker is a consequence of execution rather than a line someone
+    remembered to write.
+    """
+    return WiringLedger(MEMORY_RECALL_COMPONENTS)
+
+
 @dataclass(frozen=True)
 class ArmRun:
     """One arm's full result — aggregate, per-case, and the raw rankings.
@@ -310,6 +416,11 @@ class ArmRun:
     #: Structurally impossible while the corpus is no larger than
     #: ``ARM_LIMIT``; see :class:`TestLinkArmIntegrity`.
     link_only: dict[str, list[str]]
+    #: The case ids ``suite`` and ``scores`` cover — the TRAIN subset. The
+    #: holdout ids are deliberately absent: this object is what every
+    #: assertion and the emitted report read from, so a holdout score has
+    #: nowhere here to arrive.
+    train_case_ids: tuple[str, ...]
 
 
 def _run_arm(
@@ -318,8 +429,23 @@ def _run_arm(
     golden: fx.GoldenSet,
     *,
     arm: str,
+    wiring: WiringLedger | None = None,
 ) -> ArmRun:
-    """Score every case under one arm."""
+    """Score the TRAIN cases under one arm; seal the holdout's scores away.
+
+    ``wiring`` marks this a REPORTED run: the arm is promoted to ``wired``
+    in the ledger and the holdout leg runs (its cases are queried, scored
+    inside the sealed runner, and written out — never returned). Left at
+    ``None`` — the control/determinism/edgeless call sites, which compare
+    runs against each other rather than reporting them — the holdout leg
+    is skipped entirely, so those calls neither touch the sealed output
+    nor pay for queries nothing will read.
+
+    Fail-loud is unchanged: there is still no per-case error handling, so
+    a failing case raises and kills the arm rather than being tolerated
+    into a smaller denominator.
+    """
+    split = golden_split(golden)
     record_by_key = {r.key: r for r in golden.records}
     content_bytes = golden.content_bytes_by_key()
     scores: list[CaseScore] = []
@@ -328,8 +454,12 @@ def _run_arm(
     rankings: dict[str, list[str]] = {}
     link_ranked: dict[str, list[str]] = {}
     link_only: dict[str, list[str]] = {}
+    # Rankings, not scores. The only thing that turns one of these into a
+    # number is `SealedHoldoutRunner.score`, and it hands the number to a
+    # file rather than to this function.
+    holdout_observations: list[HoldoutObservation] = []
 
-    for case in golden.cases:
+    for case in train_cases(golden, split):
         embedding = None
         if arm in ("hybrid", "hybrid_link"):
             embedding = (
@@ -362,11 +492,7 @@ def _run_arm(
         ]
         if reached_by_edge:
             link_only[case.case_id] = reached_by_edge
-        correction = case.correction
-        if correction is not None:
-            # Guard against a fixture whose pair references a record that
-            # was never seeded — that would score a silent precedence fail.
-            assert correction[0] in record_by_key and correction[1] in record_by_key
+        correction = _seeded_correction(case, record_by_key)
         scores.append(
             score_case(
                 case_id=case.case_id,
@@ -378,6 +504,44 @@ def _run_arm(
             )
         )
 
+    if wiring is not None:
+        # The sealed leg. These cases are queried exactly like the train
+        # cases — same arm, same client, and the SAME correction-seeding
+        # guard, via `_seeded_correction`; the arm/link_arm discriminators
+        # below cover both legs' responses together. What differs is where
+        # their SCORE goes: into the sealed runner, which writes it out and
+        # returns nothing. No `CaseScore` for a holdout case is ever
+        # constructed in this function's frame.
+        for case in golden.cases:
+            if not split.is_holdout(case.case_id):
+                continue
+            holdout_embedding = None
+            if arm in ("hybrid", "hybrid_link"):
+                holdout_embedding = (
+                    case.query_embedding
+                    if case.query_embedding is not None
+                    else HashingStubEmbedder._vec(case.query_text)
+                )
+            holdout_body = client.query(
+                case.query_text, holdout_embedding, link_expansion=arm == "hybrid_link"
+            )
+            arms_seen.add(holdout_body["vector_arm"])
+            link_arms_seen.add(holdout_body["link_arm"])
+            holdout_observations.append(
+                HoldoutObservation(
+                    case_id=case.case_id,
+                    case_class=case.case_class,
+                    ranked=tuple(
+                        fx.resolve_keys(
+                            [hit["memory_id"] for hit in holdout_body["hits"]],
+                            key_by_memory_id,
+                        )
+                    ),
+                    relevant=tuple(case.relevant),
+                    correction=_seeded_correction(case, record_by_key),
+                )
+            )
+
     assert len(arms_seen) == 1, (
         f"the {arm} arm reported more than one vector_arm across cases: "
         f"{sorted(arms_seen)} — the corpus changed mid-run"
@@ -388,33 +552,60 @@ def _run_arm(
         "so the run's scores mix two different retrieval strategies"
     )
     vector_arm = arms_seen.pop()
+
+    if wiring is not None and holdout_observations:
+        # A BARE expression statement, and it must stay one. `score()`
+        # returns `None` by construction; the structural test in
+        # `test_memory_recall_scorer.py` parses this file and fails loudly
+        # if this call ever moves onto the right-hand side of an
+        # assignment, into a `return`, or into an argument — i.e. if
+        # anyone starts wiring a holdout number back into the tuning path.
+        sealed_runner().score(
+            arm=arm,
+            vector_arm=vector_arm,
+            observations=holdout_observations,
+            content_bytes=content_bytes,
+            case_count=split.holdout_count,
+        )
+        wiring.mark_wired(
+            "sealed_holdout",
+            f"{split.holdout_count} holdout case(s) scored and written out",
+        )
+    if wiring is not None:
+        wiring.mark_wired(arm, f"ran over {split.train_count} train case(s)")
+
     return ArmRun(
-        suite=aggregate(arm, vector_arm, scores),
+        # The denominator is the TRAIN case count, never `len(golden.cases)`:
+        # dividing train scores by the full set would understate every mean
+        # by the holdout's share, and dividing by `len(scores)` is the
+        # fair-subset trap Phase 1 closed.
+        suite=aggregate(arm, vector_arm, scores, case_count=split.train_count),
         scores=scores,
         vector_arm=vector_arm,
         rankings=rankings,
         link_arm=link_arms_seen.pop(),
         link_ranked=link_ranked,
         link_only=link_only,
+        train_case_ids=split.train,
     )
 
 
 @pytest.fixture(scope="module")
-def fts_only(seeded, golden) -> ArmRun:
+def fts_only(seeded, golden, wiring: WiringLedger) -> ArmRun:
     client, mapping = seeded
-    return _run_arm(client, mapping, golden, arm="fts_only")
+    return _run_arm(client, mapping, golden, arm="fts_only", wiring=wiring)
 
 
 @pytest.fixture(scope="module")
-def hybrid(seeded, golden) -> ArmRun:
+def hybrid(seeded, golden, wiring: WiringLedger) -> ArmRun:
     client, mapping = seeded
-    return _run_arm(client, mapping, golden, arm="hybrid")
+    return _run_arm(client, mapping, golden, arm="hybrid", wiring=wiring)
 
 
 @pytest.fixture(scope="module")
-def hybrid_link(seeded, golden) -> ArmRun:
+def hybrid_link(seeded, golden, wiring: WiringLedger) -> ArmRun:
     client, mapping = seeded
-    return _run_arm(client, mapping, golden, arm="hybrid_link")
+    return _run_arm(client, mapping, golden, arm="hybrid_link", wiring=wiring)
 
 
 class TestArmIntegrity:
@@ -445,11 +636,43 @@ class TestArmIntegrity:
         assert suite.arm == "hybrid"
 
     def test_every_case_was_actually_scored(
-        self, fts_only: ArmRun, golden: fx.GoldenSet
+        self, fts_only: ArmRun, golden: fx.GoldenSet, split: CaseSplit
     ) -> None:
-        assert fts_only.suite.case_count == len(golden.cases)
-        assert len(fts_only.scores) == len(golden.cases)
+        assert fts_only.suite.case_count == split.train_count
+        assert len(fts_only.scores) == split.train_count
         assert fts_only.suite.case_count > 0
+        # `case_count` is now the DECLARED denominator handed to
+        # `aggregate()`, so on its own it can no longer witness coverage —
+        # `missing_cases` is what does. Zero here means every case in the
+        # set produced a real score rather than contributing a 0.0 to the
+        # means. Assert both, so a future per-case tolerance shows up as a
+        # failure here instead of as a quietly lower headline.
+        assert fts_only.suite.missing_cases == 0
+        assert fts_only.suite.scored_cases == split.train_count
+
+    def test_no_holdout_case_reached_the_reported_scores(
+        self, fts_only: ArmRun, hybrid: ArmRun, hybrid_link: ArmRun, split: CaseSplit
+    ) -> None:
+        """The seal, asserted end to end on the objects the report reads.
+
+        ``ArmRun`` is what every assertion and the emitted report consult.
+        If a holdout case ever appears in ``scores`` or ``rankings`` here,
+        its number is one aggregate away from the PR comment — so this is
+        checked on the data, not merely on the code path that produced it.
+        """
+        assert split.holdout_count > 0, (
+            "the split sealed no cases at all, so 'the holdout is "
+            "unreachable' is vacuously true and measures nothing"
+        )
+        for run in (fts_only, hybrid, hybrid_link):
+            scored = {s.case_id for s in run.scores}
+            assert scored.isdisjoint(split.holdout_set), (
+                f"{run.suite.arm}: holdout case(s) "
+                f"{sorted(scored & split.holdout_set)} were scored into the "
+                "reported aggregate"
+            )
+            assert set(run.rankings).isdisjoint(split.holdout_set)
+            assert scored == split.train_set
 
     def test_a_mismatched_model_tag_degrades_the_arm_and_is_caught(
         self, eval_engine: AsyncEngine, golden: fx.GoldenSet
@@ -731,6 +954,11 @@ class TestHarnessDetectsRegressions:
 
     @staticmethod
     def _rescore(run: ArmRun, golden: fx.GoldenSet, transform) -> SuiteScore:
+        # Train cases only, matching what `run.suite` was aggregated over —
+        # the control and the arm must share a denominator or the
+        # comparison below is between two different case sets. The holdout
+        # rankings are not in `run.rankings` to re-score in the first place.
+        cases = train_cases(golden, golden_split(golden))
         content_bytes = golden.content_bytes_by_key()
         return aggregate(
             f"{run.suite.arm}-control",
@@ -744,8 +972,9 @@ class TestHarnessDetectsRegressions:
                     content_bytes=content_bytes,
                     correction=c.correction,
                 )
-                for c in golden.cases
+                for c in cases
             ],
+            case_count=len(cases),
         )
 
     def test_reversing_the_returned_order_degrades_the_ranking(
@@ -806,6 +1035,14 @@ class TestFtsOnlyBaselineIsSparse:
     work lands and this starts failing, that failure is the good news and
     the baseline in the plan needs re-recording — which is exactly the
     signal a benchmark exists to produce.
+
+    Since the train/holdout split these means are over the TRAIN subset
+    (41 of 50 cases), so the numbers can move slightly against the
+    originally recorded baseline without the underlying finding changing.
+    The tolerance was NOT widened for it: the sparsity is a per-case
+    property, so a stratified subset shows the same thing, and widening a
+    tolerance to absorb a denominator change is how a baseline stops
+    meaning anything.
     """
 
     def test_widening_k_adds_almost_nothing(self, fts_only: ArmRun) -> None:
@@ -880,10 +1117,19 @@ class TestCorrectionPrecedence:
     """The plan's highest-value assertion, end to end."""
 
     def test_correction_pairs_are_actually_exercised(
-        self, fts_only: ArmRun, golden: fx.GoldenSet
+        self, fts_only: ArmRun, golden: fx.GoldenSet, split: CaseSplit
     ) -> None:
-        expected = sum(1 for c in golden.cases if c.correction is not None)
-        assert expected > 0, "the golden set has no correction pairs to score"
+        # Counted over the TRAIN cases: the holdout's correction pairs are
+        # scored inside the sealed runner and are not in `suite` to count.
+        # The split is stratified by class precisely so this stays non-zero
+        # — an unstratified draw could seal every correction case.
+        expected = sum(
+            1 for c in train_cases(golden, split) if c.correction is not None
+        )
+        assert expected > 0, (
+            "no correction pair survived on the train side — the "
+            "stratified split is meant to make that impossible"
+        )
         assert fts_only.suite.correction_pairs == expected
 
     def test_a_failing_pair_is_visible_per_case(self, fts_only: ArmRun) -> None:
@@ -913,6 +1159,45 @@ class TestBaselineReport:
             "correction_pairs": suite.correction_pairs,
             "correction_precedence_passes": suite.correction_precedence_passes,
             "correction_precedence_rate": round(suite.correction_precedence_rate, 4),
+            # The denominator, made legible. `cases` above is the divisor;
+            # this says how many of those actually produced a score. A
+            # non-zero value means every mean above is a floor.
+            "missing_cases": suite.missing_cases,
+            "scored_cases": suite.scored_cases,
+        }
+
+    @staticmethod
+    def _paired_rows(result: PairedResult) -> dict[str, Any]:
+        """One paired comparison, rendered JSON-safe.
+
+        ``z`` can legitimately be infinite (a perfectly uniform non-zero
+        lift), and ``json.dumps`` would emit a bare ``Infinity`` that no
+        conforming parser accepts — including the ``JSON.parse`` in the CI
+        comment step. So the numeric field goes ``null`` in exactly that
+        case and ``z_display`` carries the honest string. ``null`` here
+        means "not finite", never "not significant": read ``z_infinite``
+        and ``insufficient_n`` alongside it.
+        """
+        finite_z = None if result.z_is_infinite or result.insufficient_n else result.z
+        return {
+            "metric": result.metric,
+            "n": result.n,
+            "control_mean": round(result.control_mean, 6),
+            "candidate_mean": round(result.candidate_mean, 6),
+            "mean_lift": round(result.mean_lift, 6),
+            "sd": round(result.sd, 6),
+            "se": round(result.se, 6),
+            "z": None if finite_z is None else round(finite_z, 4),
+            "z_display": result.z_display,
+            "z_infinite": result.z_is_infinite,
+            "insufficient_n": result.insufficient_n,
+            # Two fields, never one conflated boolean. `promoted` banks;
+            # `credited_2sigma` is a reported label. promoted=True with
+            # credited_2sigma=False is an expected outcome, not an error.
+            "promoted": result.promoted,
+            "credited_2sigma": result.credited_2sigma,
+            "credit_z_threshold": CREDIT_Z_THRESHOLD,
+            "lower_is_better": result.metric in LOWER_IS_BETTER_METRICS,
         }
 
     @staticmethod
@@ -936,9 +1221,25 @@ class TestBaselineReport:
         hybrid: ArmRun,
         hybrid_link: ArmRun,
         golden: fx.GoldenSet,
+        split: CaseSplit,
+        wiring: WiringLedger,
     ) -> None:
         fts_suite, fts_scores = fts_only.suite, fts_only.scores
         hybrid_suite, hybrid_scores = hybrid.suite, hybrid.scores
+
+        # Computed before the report literal so the wiring ledger can be
+        # promoted by the code that actually ran the comparison — the
+        # marker has to be a consequence of the work, not a claim made
+        # alongside it.
+        paired_by_metric = {
+            metric: self._paired_rows(
+                paired_delta(fts_scores, hybrid_scores, metric=metric)
+            )
+            for metric in ("recall_at_10", "mrr", "ndcg_at_10")
+        }
+        wiring.mark_wired(
+            "paired", f"{hybrid_suite.arm} vs {fts_suite.arm}, matched case-by-case"
+        )
 
         report = {
             "plan": "2026-07-29-memory-recall-efficacy-benchmark",
@@ -986,9 +1287,32 @@ class TestBaselineReport:
                 "hybrid": self._by_class(hybrid_scores),
                 "hybrid_link": self._by_class(hybrid_link.scores),
             },
+            # Paired comparison — the per-case data the arms already
+            # retained, finally used. `fts_only` is the control because it
+            # is what production runs today; `hybrid` is the candidate.
+            # Between-case difficulty cancels because both arms ran exactly
+            # the same case set (which `paired_delta` enforces rather than
+            # assumes).
+            "paired": {
+                "control": fts_suite.arm,
+                "candidate": hybrid_suite.arm,
+                "metrics": paired_by_metric,
+            },
+            # Train/holdout split (§3.3 item 4). Counts, ids and the
+            # algorithm — no holdout SCORE, and `split_report` carries no
+            # float at all so a leak would be visible as a type change.
+            "split": split_report(split),
+            # Per-component wiring (§3.3 item 5 residual). Strings only:
+            # `not_wired` is UNKNOWN and can never render as a zero.
+            "wiring": wiring.as_report(),
         }
 
-        rendered = json.dumps(report, indent=2, sort_keys=True)
+        # `allow_nan=False` deliberately: Python's default emits bare
+        # `Infinity`/`NaN` literals, which are NOT valid JSON and blow up
+        # the `JSON.parse` in the CI comment step — the paired block's `z`
+        # can legitimately be infinite. Fail loudly here rather than
+        # shipping a report that silently breaks the only reader.
+        rendered = json.dumps(report, indent=2, sort_keys=True, allow_nan=False)
         print("\n=== MEMORY RECALL EVAL ===\n" + rendered)
 
         destination = os.environ.get(REPORT_PATH_ENV)
@@ -1001,6 +1325,50 @@ class TestBaselineReport:
         assert report["arms"][0]["cases"] > 0
         assert report["arms"][1]["cases"] > 0
         assert report["arms"][2]["cases"] > 0
+        # The paired block compared the WHOLE case set, not a subset that
+        # happened to survive both arms. `paired_delta` already raises on a
+        # mismatched set; this pins the denominator to the golden set too,
+        # so a shrunken run cannot report a clean-looking comparison.
+        paired_metrics = report["paired"]["metrics"]
+        assert set(paired_metrics) == {"recall_at_10", "mrr", "ndcg_at_10"}
+        for row in paired_metrics.values():
+            assert row["n"] == split.train_count, (
+                f"paired comparison on {row['metric']} covered {row['n']} of "
+                f"{split.train_count} train cases"
+            )
+            assert row["insufficient_n"] is False
+
+        # Every component that ran reports `wired`; in a full run that is
+        # all of them. A report where one is missing entirely would be the
+        # bug — `not_wired` is the honest marker, absence is not.
+        assert set(report["wiring"]["components"]) == set(MEMORY_RECALL_COMPONENTS)
+        assert report["wiring"]["not_wired"] == [], (
+            "a component of a complete run reported not_wired: "
+            f"{report['wiring']['not_wired']}"
+        )
+
+        # The seal, asserted on the artifact that actually leaves this
+        # process. No holdout score may appear in the report by any route,
+        # so the whole `split` block is required to be number-free apart
+        # from its two counts.
+        assert report["split"]["holdout_cases"] == split.holdout_count
+        assert set(report["split"]["holdout_case_ids"]) == split.holdout_set
+        # RECURSIVE, and by the same total rule the pure suite applies: a
+        # leaf is a string, or an int under one of the two pinned count
+        # keys. The check here used to be a shallow `isinstance(v, float)`
+        # over `.values()`, which a nested `{"holdout_means": {...}}` walked
+        # straight past, and which three int-valued metrics
+        # (total_token_cost_at_10, correction_pairs,
+        # correction_precedence_passes) were never covered by at all.
+        assert split_report_violations(report["split"]) == [], (
+            "the split block grew a leaf that is not a string or a pinned "
+            f"count: {split_report_violations(report['split'])}"
+        )
+        for arm_row in report["arms"]:
+            assert arm_row["cases"] == split.train_count, (
+                f"{arm_row['arm']} reported a denominator of {arm_row['cases']}, "
+                f"not the {split.train_count}-case train subset"
+            )
 
 
 class TestLinkArmUnderAProductionLikeCutoff:
@@ -1059,9 +1427,18 @@ class TestLinkArmUnderAProductionLikeCutoff:
 
         client, mapping = seeded
 
+        # Train cases only. This count is link PLUMBING, not a score — but
+        # the sibling test at the bottom of this class restricts itself to
+        # train with the rationale "the holdout exists so that no verdict is
+        # read off its cases", and a verdict IS read off this count (`> 0` /
+        # `== 0`). Two tests in one file disagreeing about where the line
+        # falls is worse than the marginal coverage the extra nine cases buy,
+        # so both now sit on the same side of it.
+        cases = train_cases(golden, golden_split(golden))
+
         def link_only_count() -> int:
             total = 0
-            for case in golden.cases:
+            for case in cases:
                 body = client.query(
                     case.query_text, case.query_embedding, link_expansion=True
                 )
@@ -1102,6 +1479,10 @@ class TestLinkArmUnderAProductionLikeCutoff:
         """
         content_bytes = golden.content_bytes_by_key()
         client, mapping = seeded
+        # Train cases only. This test asserts a DIRECTION rather than a
+        # digit, but it is still a verdict read off scores, and the holdout
+        # exists so that no verdict is read off its cases.
+        cases = train_cases(golden, golden_split(golden))
 
         def run(link_expansion: bool) -> SuiteScore:
             scores = [
@@ -1121,9 +1502,14 @@ class TestLinkArmUnderAProductionLikeCutoff:
                     content_bytes=content_bytes,
                     correction=case.correction,
                 )
-                for case in golden.cases
+                for case in cases
             ]
-            return aggregate("fts_only", "skipped_no_embedding", scores)
+            return aggregate(
+                "fts_only",
+                "skipped_no_embedding",
+                scores,
+                case_count=len(cases),
+            )
 
         baseline, expanded = run(False), run(True)
 
