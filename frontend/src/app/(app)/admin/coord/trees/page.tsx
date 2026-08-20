@@ -327,7 +327,16 @@ function ContentionPanel({ onCount }: { onCount: (n: number | null) => void }) {
                         </span>
                       </li>
                     ))}
-                    {/* Fallback for the older `primary_paths` shape */}
+                    {/* Fallback for the older `primary_paths` shape.
+                        DISCLOSED BEHAVIOUR CHANGE (not a silent one — it is
+                        called out in the PR body): the guard was `!o.devices`,
+                        i.e. undefined ONLY. A response carrying
+                        `devices: []` alongside a populated `primary_paths`
+                        therefore rendered an empty list — a contention row
+                        with no paths on it at all. Widened to "no devices, by
+                        either spelling". Presentation-only: same request, same
+                        cadence, same permissions; only what is painted from an
+                        already-fetched response changes. */}
                     {devices.length === 0 &&
                       paths.map((p) => (
                         <li key={p} className="font-mono break-all">

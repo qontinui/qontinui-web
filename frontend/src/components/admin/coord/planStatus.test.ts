@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { paletteDisagreements } from "@/components/console/attention";
+import { STATUS_BADGE_CLASS } from "@/components/console/statusRow";
 import {
   derivePlanStatus,
   describePlanStatus,
@@ -28,11 +29,10 @@ describe("describePlanStatus", () => {
   });
 
   it("uses the same green as the merge pipeline's merged tag", () => {
-    // Kept in lockstep with MergePipeline.tsx's `merged:` entry on purpose —
-    // a shipped plan should read exactly like a merged PR.
-    expect(PLAN_TONE_CLASS.shipped).toBe(
-      "bg-green-500/15 text-green-200 border-green-500/30"
-    );
+    // Asserted against the IMPORTED constant, not a copy of its value: a
+    // hard-coded string here would stay green while the pipeline's green
+    // moved, which is the one drift this test exists to catch.
+    expect(PLAN_TONE_CLASS.shipped).toBe(STATUS_BADGE_CLASS.merged);
   });
 
   it("never renders a raw enum for a status it knows", () => {

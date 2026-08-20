@@ -23,10 +23,7 @@
 
 import type { Attention } from "@/components/console/attention";
 import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
-import {
-  AUTHOR_RED,
-  WAITING_AMBER,
-} from "@/components/console/statusRow";
+import { AUTHOR_RED, INERT } from "@/components/console/statusRow";
 
 export interface AgentQuestionOption {
   value?: string;
@@ -67,18 +64,51 @@ export type QuestionKind =
   | "gap-blocking"
   | "gap-handled";
 
-/** The audited kind → attention table. TOTAL over {@link QuestionKind}. */
+/**
+ * The audited kind → attention table. TOTAL over {@link QuestionKind}, one
+ * documented line per kind — this is the table a reviewer of a NEW kind has to
+ * audit, and an undefended row is how a kind ends up mis-coloured.
+ *
+ * | kind | attention | why |
+ * |---|---|---|
+ * | `pending` | `author` | An agent has STOPPED on this. No retry, no timeout, no other process resolves it — only the operator reading this page. |
+ * | `gap-blocking` | `author` | Same, narrower: the agent hit a decision no policy clause covers and is waiting on a clause or a dismissal. |
+ * | `gap-handled` | `none` | See below — calm, with the ask in the detail. |
+ * | `answered` | `none` | The operator already answered; the row is kept visible as a record, not as a task. Nobody is waiting on it and nothing about it can rot. |
+ *
+ * ## Why `gap-handled` is CALM and specifically not amber
+ *
+ * A pre-answered gap still wants a human eye: coord applied the category
+ * default inline, and accepting or dismissing the proposed clause is a real
+ * decision. The instinct is to paint that amber. **It is not amber**, because
+ * R3's amber carries a promise — *waiting on something else, it WILL CLEAR
+ * ITSELF* — and nothing clears an unreviewed clause. Amber here would be the
+ * same false promise the trees surface's 24h stale band used to make.
+ *
+ * Nor is it red: unlike idle WIP, **nothing is lost if it goes unreviewed**.
+ * The category default is already applied and the agent is not blocked, so no
+ * operator must act *now*.
+ *
+ * So it is calm, and the review-owed state is carried by the row's `reason`
+ * and by an explicit line in `<GapRow>`'s detail rather than by the hue. That
+ * third case — *a real decision that is not blocking anyone* — is written into
+ * `frontend/docs/console-ui-style-guide.md` §2 R3, because a vocabulary hole
+ * that is only patched in one file gets rediscovered as amber by the next
+ * surface.
+ */
 export const QUESTION_ATTENTION_BY_KIND: Record<QuestionKind, Attention> = {
   pending: "author",
   "gap-blocking": "author",
-  "gap-handled": "waiting",
+  "gap-handled": "none",
   answered: "none",
 };
 
 export const QUESTION_BADGE_CLASS: Record<QuestionKind, string> = {
   pending: AUTHOR_RED,
   "gap-blocking": AUTHOR_RED,
-  "gap-handled": WAITING_AMBER,
+  // Calm, and visibly distinct from the green `answered` finish: this row is
+  // not finished, it is simply not urgent.
+  "gap-handled": INERT,
   answered: "bg-green-500/5 text-green-300 border-green-500/25",
 };
 
@@ -134,7 +164,7 @@ export function deriveGapStatus(
     reason:
       kind === "gap-blocking"
         ? `no policy clause covers this${category ? ` in ${category}` : ""}`
-        : "coord applied the category default; the clause still wants a review",
+        : "not blocking — coord applied the category default; the clause is still owed a review",
     attention: QUESTION_ATTENTION_BY_KIND[kind],
   };
 }
@@ -143,8 +173,10 @@ export function deriveGapStatus(
  * Format a timestamp as a short relative span (e.g. "3m", "2h", "5d").
  * Falls back to the raw ISO if parsing fails — never throws.
  *
- * Lives here rather than in a card component (its previous home) so the four
- * modules that import it do not depend on a rendering.
+ * Lives here rather than in a card component (its previous home) so the two
+ * modules that still import it — `PlanCard` and the question detail route —
+ * do not depend on a rendering. (`GapRow` and `QuestionRow` render times
+ * through `RowTime` instead and import nothing from here for it.)
  */
 export function formatRelative(iso?: string | null): string {
   if (!iso) return "";
@@ -161,7 +193,6 @@ export function formatRelative(iso?: string | null): string {
 }
 
 export function truncate(s: string, n: number): string {
-  if (!s) return "";
   if (s.length <= n) return s;
   return s.slice(0, n - 1).trimEnd() + "…";
 }

@@ -288,6 +288,39 @@ describe("deriveTreeStatus escalation", () => {
     expect(s.attention).toBe("author");
   });
 
+  it("escalates the 24-72h WARNING band to author, matching alertStatus", () => {
+    // Ruling 1 of the Wave-1 review. This band used to be `waiting`, which
+    // promised the row would clear itself; nothing clears untouched WIP but a
+    // human. `alertStatus.ts` rates the same condition `author`, and two
+    // console surfaces must not answer this differently.
+    const s = deriveTreeStatus({
+      repo: "r",
+      primary_path: "p",
+      behind_count: 0, // up_to_date → `none` by verdict, so ONLY the band can
+      dirty: true, //     be what raises this row.
+      wip_last_modified: hoursBack(30),
+    });
+    expect(staleBand({
+      repo: "r",
+      primary_path: "p",
+      dirty: true,
+      wip_last_modified: hoursBack(30),
+    })).toBe("warning");
+    expect(s.kind).toBe("up_to_date");
+    expect(s.attention).toBe("author");
+  });
+
+  it("leaves a dirty tree under 24h calm — the clock is the whole signal", () => {
+    const s = deriveTreeStatus({
+      repo: "r",
+      primary_path: "p",
+      behind_count: 0,
+      dirty: true,
+      wip_last_modified: hoursBack(2),
+    });
+    expect(s.attention).toBe("none");
+  });
+
   it("never DE-escalates a held verdict on a fresh clock", () => {
     const s = deriveTreeStatus({
       repo: "r",

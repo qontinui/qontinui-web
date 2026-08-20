@@ -227,6 +227,54 @@ A single audited table is the source of truth for which kind gets which family,
 and a unit test asserts the palette map agrees with it — so severity and colour
 can never drift apart. Full contract in [§4](#4-the-attention-palette).
 
+#### Amber's contract is **self-clearing**, and that is the whole test
+
+The families are not a severity ladder with three rungs. Read them as answers to
+one question — *whose move is it?*
+
+| family | whose move | the promise it makes |
+|---|---|---|
+| **red** | the operator's, now | nothing else will resolve this |
+| **amber** | something else's | **it will clear itself**; you are watching, not acting |
+| **calm** | nobody's, or a process's | there is nothing to wait for |
+
+So before painting a row amber, name the thing that clears it. If you cannot,
+it is not amber. This has already been got wrong once, and it was caught in
+review rather than by the palette test — because that test only checks the hue
+matches the *declared* attention, never that the declared attention is right:
+
+- **Idle uncommitted work** (`treeStatus.ts`, the 24-72h stale-WIP band) was
+  `waiting`. Nothing times out and no process commits your WIP for you — only a
+  human does. It is **red**, which is also what `alertStatus.ts` had already
+  concluded for the same condition, and where the failure mode is lost work the
+  tie breaks toward the louder signal.
+
+The second mis-fit is subtler, and the families genuinely do not cover it.
+
+#### The third case: a real decision that is not blocking anyone
+
+There is a state the three families do not obviously fit, and the instinct is to
+reach for amber. **Do not.** It looks like this: something genuinely wants a
+human decision, but nothing is stopped and nothing degrades while it waits.
+
+The worked example is a **pre-answered policy gap** (`questionStatus.ts`,
+`gap-handled`): coord applied the category default inline, so no agent is
+blocked and no work is at risk — but accepting or dismissing the proposed clause
+is still a real call somebody has to make. It is not red, because no one must
+act *now* and nothing is lost if they do not. It is not amber, because nothing
+clears it.
+
+**Rule: it is CALM, and the ask goes in the row detail, in words.** The hue
+answers "must a human act now?" and the honest answer is no; the detail answers
+"is anything owed?" and says so explicitly — see `<GapRow>`'s
+`coord-gap-review-owed` line. Putting the ask in the hue would spend amber's
+credibility on something that is not waiting on anything, and amber only works
+for as long as it means what it says.
+
+This case is written down here rather than solved once in `questionStatus.ts`
+because R3 governs 30+ routes: a vocabulary hole patched in one file gets
+rediscovered — and refiled under amber — by the next surface that meets it.
+
 ✅ `src/components/operations/MergePipeline.tsx:96-99` — the families, named, once:
 
 ```ts

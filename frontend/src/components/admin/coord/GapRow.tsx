@@ -200,9 +200,26 @@ export function GapRow({
     >
       <RecordDetail
         why={
-          <p className="text-sm text-foreground whitespace-pre-wrap">
-            {question.question}
-          </p>
+          <>
+            <p className="text-sm text-foreground whitespace-pre-wrap">
+              {question.question}
+            </p>
+            {answered && (
+              // Ruling 2 of the Wave-1 review: a pre-answered gap is CALM in
+              // the badge (nothing is blocked, nothing is lost) but a review
+              // is genuinely owed, so the ask is stated HERE in words rather
+              // than smuggled into the hue. Amber would have promised the row
+              // clears itself, and nothing clears an unreviewed clause.
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-gap-review-owed"
+              >
+                Not blocking: coord already applied the category default
+                inline. A review is still owed — accept the clause below, or
+                dismiss it.
+              </p>
+            )}
+          </>
         }
         problems={
           hasClause ? (

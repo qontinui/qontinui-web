@@ -112,18 +112,22 @@ export function TreeRow({
               variant="destructive"
               className="gap-1 text-[10px]"
               data-testid="coord-tree-stale-critical"
-              title="uncommitted work untouched for 72h or more"
+              title="uncommitted work untouched for 72h or more — only a human clears this"
             >
               <AlertTriangle className="h-3 w-3" />
               stale 72h+
             </Badge>
           )}
           {band === "warning" && (
+            // Red, not the neutral `secondary` this started as: after the
+            // Wave-1 review's Ruling 1 BOTH dirty bands are `author`, and a
+            // grey badge on a row whose accent is red is the same R3 drift
+            // one level down. The 24h/72h gradation lives in the TEXT.
             <Badge
-              variant="secondary"
+              variant="destructive"
               className="gap-1 text-[10px]"
               data-testid="coord-tree-stale-warning"
-              title="uncommitted work untouched for 24h or more"
+              title="uncommitted work untouched for 24h or more — only a human clears this"
             >
               <AlertTriangle className="h-3 w-3" />
               stale 24h+
