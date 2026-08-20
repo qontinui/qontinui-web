@@ -474,11 +474,28 @@ def _citation_rows(payload: object) -> list[object]:
     return []
 
 
-#: Backstop cap on the rendered citation-error line. Nothing that reaches it
-#: is free text any more (:func:`_citation_error_text` echoes only structured
-#: identifiers), so this is belt-and-braces against a pathological error code,
-#: not the privacy control — that is the whitelist itself.
+#: Cap on every rendered coord-error line, applied through :func:`_cap_reason`.
+#: The whitelist is the PRIVACY control; this is the LENGTH one, and it is
+#: load-bearing rather than belt-and-braces. The whitelisted ``error`` field is
+#: not a closed set of short codes: coord builds it as free text at many call
+#: sites (``json!({"error": format!("PG: {e}")})``, ``format!("query failed:
+#: {e}")``, …), so a whitelisted field can arrive carrying a whole Postgres
+#: error chain. None of those sites is on the two routes this read calls today,
+#: which makes it latent rather than live — but "latent" rests on a property of
+#: OTHER coord handlers that nothing on this side enforces, so BOTH renderers
+#: (:func:`_citation_error_text` and :func:`_safe_body_excerpt`) cap.
 _REASON_MAX_CHARS = 300
+
+
+def _cap_reason(text: str) -> str:
+    """Bound one rendered reason line at :data:`_REASON_MAX_CHARS`.
+
+    Shared by both renderers so the cap cannot drift between the inline
+    (``citations_error``) path and the status-code path.
+    """
+    if len(text) > _REASON_MAX_CHARS:
+        return text[: _REASON_MAX_CHARS - 1] + "…"
+    return text
 
 
 def _citation_error_text(raw: object) -> str:
@@ -515,9 +532,7 @@ def _citation_error_text(raw: object) -> str:
             text = f"unrecognised coord error body (keys: {keys})"
     else:
         text = f"unrecognised coord error body ({type(raw).__name__})"
-    if len(text) > _REASON_MAX_CHARS:
-        text = text[: _REASON_MAX_CHARS - 1] + "…"
-    return f"coord could not read citations: {text}"
+    return f"coord could not read citations: {_cap_reason(text)}"
 
 
 #: coord's error code for ``CitationListing::SurfaceUnavailable`` — *the unit
@@ -644,6 +659,13 @@ def _safe_body_excerpt(body: str, parsed: object) -> str:
     it has no identifiers to lift — so it is DESCRIBED (its size) rather than
     echoed. An ALB's HTML page carries nothing an operator needs that the 502
     or 503 beside it does not already say.
+
+    The whitelist is still not a LENGTH bound, and it must not be mistaken for
+    one: ``error`` is a coord-authored string, not a closed set of short codes
+    (see :data:`_REASON_MAX_CHARS`), so what the whitelist admits is capped by
+    :func:`_cap_reason` as well as filtered. Capping is not what makes the line
+    safe — naming the fields is — but an unbounded whitelisted field would
+    still let a whole Postgres chain ride out stickily on every row.
     """
     if parsed is not None:
         identifiers = [
@@ -652,14 +674,14 @@ def _safe_body_excerpt(body: str, parsed: object) -> str:
             if part
         ]
         if identifiers:
-            return ": ".join(identifiers)
+            return _cap_reason(": ".join(identifiers))
         # JSON, but with nothing this read recognises as an identifier. Naming
         # the FIELDS beats both silence (which loses the only breadcrumb) and
         # dumping a body whose fields are unknown to this read — unknown fields
         # are exactly the ones that might carry values. Names are schema.
         if isinstance(parsed, dict):
             keys = ", ".join(sorted(str(key) for key in parsed)[:6]) or "none"
-            return f"unrecognised coord error body (keys: {keys})"
+            return _cap_reason(f"unrecognised coord error body (keys: {keys})")
         return f"unrecognised coord error body ({type(parsed).__name__})"
 
     stripped = body.strip()
