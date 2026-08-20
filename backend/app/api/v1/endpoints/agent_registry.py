@@ -9,8 +9,11 @@ bearer so coord authorizes the operator and resolves the tenant from it
 Routes:
 
 - ``GET  /api/v1/agent-registry`` — the CURRENT USER's effective agent
-  list: coord's registry rows overlaid with the caller's own prefs
-  (``source: "user_pref"`` when a pref row exists, else ``"default"``).
+  list. Proxies coord ``GET /coord/agent-registry/effective-for?user_id=…``
+  and renders its ``EffectiveAgent`` rows VERBATIM. The fold
+  (``pref.enabled ?? default_enabled``, ``pref.disposition ?? degrade``,
+  and the ``source`` stamp) happens in coord and nowhere else — see
+  :func:`get_agent_registry` for why re-deriving it here was a live bug.
 - ``PUT  /api/v1/agent-registry/prefs/{agent_name}`` — upsert the caller's
   pref. ``user_id`` is taken from the AUTHENTICATED user server-side and
   is never accepted from the client body. Coord's 422 validation errors
@@ -197,73 +200,141 @@ class AgentPrefUpdateRequest(BaseModel):
     )
 
 
-def _split_registry_payload(
-    payload: Any,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split coord's ``GET /coord/agent-registry`` body into (rows, prefs).
+#: Fields of coord's ``EffectiveAgent`` that ASSERT SOMETHING ABOUT
+#: AUTHORIZATION, as opposed to describing the agent. Read strictly (absent or
+#: null → 502); see :func:`_render_effective`.
+_AUTHZ_FIELDS = ("enabled", "disposition", "source", "policy_required")
 
-    Contract: a dict with registry rows + prefs. Tolerates a bare array
-    (registry rows only, no prefs) defensively.
+
+def _effective_rows(payload: Any, expected_user_id: str) -> list[dict[str, Any]]:
+    """Pull the agent list out of coord's ``.../effective-for`` body.
+
+    Contract: ``{"agents": [EffectiveAgent, ...], "folded_for": <uuid|null>}``.
+
+    ``folded_for`` is **verified, not ignored**. Coord echoes the user its fold
+    actually resolved against precisely so a caller can assert it, because a
+    defaults-only body is a legitimate answer (a user with no prefs) and is
+    otherwise indistinguishable from one where ``user_id`` never arrived.
+    Coord's ``deny_unknown_fields`` rejects a MISSPELLED parameter with a 400,
+    but a DROPPED one (an ingress rewriting the query, a ``COORD_URL`` carrying
+    its own query string, a future refactor that assumes ``path`` is
+    query-free, a renamed parameter) still yields a confident 200 with every
+    row at ``source: "default"`` — telling a user who has recorded preferences
+    that every agent sits at its registry default.
+
+    That is the same confident-and-wrong shape as the bug this module was
+    rewritten to remove, so it is a 502 rather than a render.
     """
     if isinstance(payload, dict):
-        rows_raw = payload.get("agents") or payload.get("registry") or []
-        prefs_raw = payload.get("prefs") or []
-    elif isinstance(payload, list):
-        rows_raw, prefs_raw = payload, []
+        folded_for = payload.get("folded_for")
+        if folded_for is None or str(folded_for) != expected_user_id:
+            logger.error(
+                "agent_registry_effective_folded_for_mismatch",
+                expected=expected_user_id,
+                got=folded_for,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord folded the agent registry for "
+                    f"{folded_for!r}, not the authenticated user; refusing to "
+                    "render another user's (or nobody's) preferences"
+                ),
+            )
+        if "agents" not in payload:
+            logger.error("agent_registry_effective_payload_missing_agents")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="coord returned no `agents` key on the effective registry",
+            )
+        rows_raw = payload.get("agents") or []
     else:
-        logger.warning(
+        # A bare array carries no `folded_for`, so it cannot be verified and
+        # must not be rendered — an unverifiable authorization view is the
+        # thing this module now refuses to produce.
+        logger.error(
             "agent_registry_unexpected_payload", payload_type=type(payload).__name__
         )
-        rows_raw, prefs_raw = [], []
-    rows = [r for r in rows_raw if isinstance(r, dict)]
-    prefs = [p for p in prefs_raw if isinstance(p, dict)]
-    return rows, prefs
-
-
-def _merge_effective(
-    rows: list[dict[str, Any]],
-    prefs: list[dict[str, Any]],
-    user_id: str,
-) -> list[AgentRegistryEntry]:
-    """Overlay the CALLER's prefs onto the registry defaults.
-
-    A pref row applies ONLY when its ``user_id`` exactly matches the
-    caller. The fixed contract has web supplying ``user_id`` on every PUT,
-    so every pref row must carry one — a row without it is off-contract
-    and is dropped (logged), never attributed to the caller: rendering
-    someone else's pref as the caller's "recorded preference" would defeat
-    the honesty line on an authz-adjacent surface.
-    """
-    prefs_by_agent: dict[str, dict[str, Any]] = {}
-    for pref_row in prefs:
-        raw_uid = pref_row.get("user_id")
-        if raw_uid is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="coord returned an unrecognized effective-registry payload",
+        )
+    rows: list[dict[str, Any]] = []
+    for r in rows_raw:
+        if isinstance(r, dict):
+            rows.append(r)
+        else:
             logger.warning(
-                "agent_registry_pref_missing_user_id",
-                agent_name=pref_row.get("agent_name"),
+                "agent_registry_effective_row_not_an_object",
+                row_type=type(r).__name__,
             )
-            continue
-        if str(raw_uid) != user_id:
-            continue
-        pref_name = pref_row.get("agent_name")
-        if isinstance(pref_name, str) and pref_name:
-            prefs_by_agent[pref_name] = pref_row
+    return rows
 
+
+def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
+    """Render coord's ``EffectiveAgent`` rows verbatim.
+
+    This function deliberately performs **no fold**. Coord's
+    ``resolve_effective`` has already applied
+    ``enabled = pref.enabled ?? default_enabled`` and
+    ``disposition = pref.disposition ?? degrade``, and stamped ``source``.
+    Re-deriving any of that here is what this module used to do and what
+    broke it — see :func:`get_agent_registry`.
+
+    Every field maps 1:1, so the response shape the settings page consumes is
+    unchanged.
+
+    ## The strict / permissive split
+
+    :data:`_AUTHZ_FIELDS` — the four fields that ASSERT SOMETHING ABOUT
+    AUTHORIZATION — are read with **no fallback**, and absent *or null* is a
+    502. Everything else (purpose, model, effort, …) is cosmetic and stays
+    permissive, so a coord that adds or drops a descriptive field never takes
+    the settings page down.
+
+    ``policy_required`` is in the strict set even though the write path fails
+    closed independently (coord answers 422 ``disposition_required`` and the
+    page opens the forced-disposition picker on that code). Nobody bypasses
+    the choice — but the BADGE is still a claim about policy, and quietly
+    defaulting it to ``False`` misreports one.
+
+    Null counts as missing, not as a value: ``bool(None)`` is ``False`` and
+    ``str(None)`` is ``"None"`` — a ``source`` of ``"None"`` renders through
+    the page's *default* branch, misattributing coord's unknown state as
+    "registry default". Coord's ``EffectiveAgent`` fields are non-``Option``
+    today, so this cannot fire; the guard exists for the day that changes,
+    and when it does it will be null-shaped rather than absent.
+
+    That strictness is the whole lesson of the bug this replaced: the old
+    code read ``row.get("enabled", True)`` off a route that never emitted
+    ``enabled``, so it silently rendered every disabled agent as enabled for
+    months. A missing authorization field must be LOUD.
+    """
     entries: list[AgentRegistryEntry] = []
     for row in rows:
         name = row.get("agent_name")
         if not isinstance(name, str) or not name:
+            logger.warning(
+                "agent_registry_effective_row_missing_agent_name",
+                agent_name_type=type(name).__name__,
+            )
             continue
-        pref = prefs_by_agent.get(name)
-        enabled = bool(row.get("enabled", True))
-        disposition = str(row.get("disposition") or "block")
-        source = "default"
-        if pref is not None:
-            source = "user_pref"
-            if pref.get("enabled") is not None:
-                enabled = bool(pref["enabled"])
-            if pref.get("disposition"):
-                disposition = str(pref["disposition"])
+        unusable = [k for k in _AUTHZ_FIELDS if row.get(k) is None]
+        if unusable:
+            logger.error(
+                "agent_registry_effective_row_missing_authz_fields",
+                agent_name=name,
+                missing=unusable,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned an off-contract effective agent row "
+                    f"(agent {name!r} missing or null: {unusable}); refusing "
+                    "to render an authorization state that is not the "
+                    "system's"
+                ),
+            )
         entries.append(
             AgentRegistryEntry(
                 agent_name=name,
@@ -271,11 +342,11 @@ def _merge_effective(
                 spawn_path=str(row.get("spawn_path") or ""),
                 model=row.get("model"),
                 effort=row.get("effort"),
-                policy_required=bool(row.get("policy_required", False)),
+                policy_required=bool(row["policy_required"]),
                 fanout_bound=row.get("fanout_bound"),
-                enabled=enabled,
-                disposition=disposition,
-                source=source,
+                enabled=bool(row["enabled"]),
+                disposition=str(row["disposition"]),
+                source=str(row["source"]),
             )
         )
     return entries
@@ -285,16 +356,72 @@ def _merge_effective(
 async def get_agent_registry(
     user: User = Depends(get_registry_user),
 ) -> AgentRegistryResponse:
-    """The current user's effective agent list.
+    """The current user's effective agent list, as folded by coord.
 
-    Proxies coord ``GET /coord/agent-registry`` (registry rows + prefs;
-    operator bearer forwarded, tenant resolved coord-side from it) and
-    overlays the caller's own prefs into the effective shape the settings
-    page renders.
+    Proxies ``GET /coord/agent-registry/effective-for`` and returns its
+    ``EffectiveAgent`` rows unchanged — ``enabled``, ``disposition`` and
+    ``source`` are coord's, not re-derived here. The operator bearer is
+    forwarded and the tenant resolved coord-side from it; the folded user is
+    always the authenticated caller, never a client-supplied id.
     """
-    payload = await _coord_request("GET", "/coord/agent-registry")
-    rows, prefs = _split_registry_payload(payload)
-    return AgentRegistryResponse(agents=_merge_effective(rows, prefs, str(user.id)))
+    # ── Why this does NOT re-derive the fold ────────────────────────────────
+    # Deliberately a comment, not docstring prose: this text would otherwise
+    # ship verbatim as the route `description` in the committed OpenAPI
+    # snapshot, which coord's route-serving observer reads as the declared
+    # external surface. An API description should describe the API, not carry
+    # a post-mortem.
+    #
+    # This route used to call `GET /coord/agent-registry` — the RAW rows door,
+    # which serializes AgentRegistryRow (`default_enabled`,
+    # `allowed_dispositions`) — and then read `row.get("enabled", True)` and
+    # `row.get("disposition") or "block"`. NEITHER KEY EXISTS ON THAT ROUTE, so
+    # both reads always took their fallback: every agent the operator had
+    # disabled rendered as ENABLED, and every disposition rendered `block`,
+    # regardless of configuration. A settings page asserting an authorization
+    # state that is not the system's is the same failure shape as the
+    # 2026-08-03 spawn outage, where the UI showed `enabled: true` for
+    # continuations the runner was refusing.
+    #
+    # The fix deletes the fold rather than repairing it. `resolve_effective` is
+    # ONE decision (`pref.enabled ?? default_enabled`,
+    # `pref.disposition ?? degrade`) and it lives in coord; the web-side copy
+    # was a THIRD independent implementation of it, beside coord's
+    # `fold_strictest` and the runner's `lookup_row` — one more place to drift,
+    # which is precisely what this work exists to remove.
+    #
+    # The fallback VALUE was wrong too: coord defaults an unset disposition to
+    # `degrade`, per served policy `production-and-cost`
+    # `agent-spawn-authorization` ("a disable arriving with NO recorded
+    # disposition falls back to degrade — the only option that both honours the
+    # cost decision and keeps the gate"). Web defaulted to `block`,
+    # misreporting the gate as hard-stopping work.
+    user_id = str(user.id)
+    try:
+        payload = await _coord_request(
+            "GET",
+            f"/coord/agent-registry/effective-for?user_id={quote(user_id, safe='')}",
+        )
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        # DEPLOY ORDER, made self-diagnosing. `/effective-for` is newer than
+        # this caller, so a coord that has not yet deployed it answers 404 —
+        # and coord registers no axum fallback, so the body is EMPTY. Passed
+        # through unchanged that surfaces as web's own 404 with a blank
+        # reason, which reads as "this web route is missing" rather than
+        # "coord is behind". Re-shape it into the 502 it actually is.
+        logger.error("agent_registry_effective_for_route_absent_on_coord")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "coord does not serve GET /coord/agent-registry/effective-for "
+                "yet — deploy qontinui-coord first; this endpoint will not "
+                "fall back to re-deriving the effective view web-side"
+            ),
+        ) from exc
+    return AgentRegistryResponse(
+        agents=_render_effective(_effective_rows(payload, user_id))
+    )
 
 
 @router.put("/prefs/{agent_name}")

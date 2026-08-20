@@ -5,11 +5,28 @@
 // mapping lives in webpack's `resolve.alias`, and it must NOT be declared in
 // `tsconfig.json` `paths`: Next hands tsconfig paths to webpack through
 // `JsConfigPathsPlugin`, which taps enhanced-resolve's `described-resolve`
-// hook ahead of the built-in alias plugin (user resolve plugins are applied
-// first, and the hook bails on the first tap that resolves). A `@cloud/*`
-// entry in tsconfig.json would therefore OVERRIDE the alias and silently
-// resolve every composed cloud build back to the OSS `cloud-absent/` stubs —
-// a build that succeeds and serves the wrong thing.
+// hook. Webpack's own `resolve.alias` is an `AliasPlugin` registered on
+// `raw-resolve`, and the pipeline runs `described-resolve` -> `raw-resolve`,
+// so the tsconfig entry is consulted FIRST and wins. It wins on pipeline
+// ordering, which is architectural; NOT on plugin registration order, which
+// would be incidental and could change. A `@cloud/*` entry in tsconfig.json
+// would therefore OVERRIDE the alias and silently resolve every composed
+// cloud build back to the OSS `cloud-absent/` stubs — a build that succeeds
+// and serves the wrong thing.
+//
+// `cloud-route-shims.test.ts` asserts no such entry exists, because every
+// other gate is blind to it: tsc reads THIS file, whose `paths` REPLACES the
+// base's wholesale (tsc merges `compilerOptions` key by key); vitest declares
+// its own `@cloud` alias; and `next build` succeeds either way, with
+// `typescript.ignoreBuildErrors` on besides.
+//
+// Narrower than it first looks, and worth knowing which mistake is the fatal
+// one: `JsConfigPathsPlugin` tries its candidates with `forEachBail` and falls
+// through when NONE of them exist on disk. So the break needs an entry whose
+// first EXISTING candidate is the wrong one — precisely what copying the
+// webpack alias (`@cloud/* -> ./src/cloud-absent/*`) produces. Copying the
+// composed-first pair below would accidentally behave correctly. Do not rely
+// on that.
 //
 // `tsc` still needs a mapping, so it gets one here, in a file no bundler
 // reads. The two candidates are ordered composed-first: TypeScript tries each

@@ -49,6 +49,10 @@ interface PromptDocumentEditorDialogProps {
  * the dialog states the version the save will produce and links the history.
  * Restore-to-default is offered when the document carries a `default_source`,
  * and is itself a versioned edit — reversible from the history view.
+ *
+ * One kind tightens this: a `session_briefing` PATCH is refused by coord without
+ * a non-empty change note, so for that kind the note is a required field and
+ * Save stays disabled until it is filled in.
  */
 export function PromptDocumentEditorDialog({
   open,
@@ -74,7 +78,30 @@ export function PromptDocumentEditorDialog({
   const dirty =
     document !== null &&
     (description !== (document.description ?? "") || body !== document.body);
-  const canSubmit = !saving && !loadingBody && dirty && body.trim().length > 0;
+
+  /**
+   * `session_briefing` is the one kind whose PATCH coord REJECTS without a
+   * change note (400, `change_description` must be non-empty).
+   *
+   * The rule is coord's, not this dialog's: this text becomes the system prompt
+   * of every session the tenant's runners host, and the version log with
+   * `edited_by` is the whole mitigation for that — an unattributed edit leaves
+   * it unable to answer "why did every session change behaviour on Tuesday".
+   * Mirrored here so the operator learns the requirement from a disabled button
+   * and a labelled field BEFORE submitting, rather than from a rejected save.
+   *
+   * Deliberately NOT global: every other kind keeps the optional note.
+   */
+  const changeNoteRequired = document?.kind === "session_briefing";
+  const changeNoteMissing =
+    changeNoteRequired && changeNote.trim().length === 0;
+
+  const canSubmit =
+    !saving &&
+    !loadingBody &&
+    dirty &&
+    body.trim().length > 0 &&
+    !changeNoteMissing;
 
   const handleSubmit = async () => {
     if (!document || !canSubmit) return;
@@ -83,11 +110,21 @@ export function PromptDocumentEditorDialog({
       patch.description = description;
     }
     if (body !== document.body) patch.body = body;
+    // Safe as an unconditional guard: `canSubmit` already blocks submit while a
+    // REQUIRED note is blank, so the only path that reaches here with an empty
+    // note is a kind where coord treats it as optional.
     if (changeNote.trim().length > 0) patch.change_description = changeNote.trim();
     const ok = await onUpdate(document.kind, document.name, patch);
     if (ok) onOpenChange(false);
   };
 
+  /**
+   * Restore-to-default needs no change note even for `session_briefing`: it is a
+   * POST to coord's `restore-default` route, not a PATCH, and coord stamps the
+   * snapshot's note itself. Same for the history view's version restore
+   * ("Restored from version N"). Only the PATCH door takes the note from the
+   * operator, so only the PATCH door gates on it here.
+   */
   const handleRestore = async () => {
     if (!document) return;
     if (
@@ -126,6 +163,15 @@ export function PromptDocumentEditorDialog({
                     {" "}
                     — referenced by the meta-answer template as{" "}
                     <code>{`{{policy:${document.name}}}`}</code>.
+                  </>
+                ) : null}
+                {document.kind === "session_briefing" ? (
+                  <>
+                    {" "}
+                    — appended to the system prompt of every session the runner
+                    hosts. Edits reach sessions spawned after the next runner
+                    poll (up to 45 seconds); sessions already running keep the
+                    prompt they started with.
                   </>
                 ) : null}{" "}
                 Format: {document.format}. Tenant-scoped; served to the fleet by
@@ -173,14 +219,27 @@ export function PromptDocumentEditorDialog({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="doc-change-note">Change note (optional)</Label>
+                <Label htmlFor="doc-change-note">
+                  Change note {changeNoteRequired ? "(required)" : "(optional)"}
+                </Label>
                 <Input
                   id="doc-change-note"
                   data-testid="doc-change-note"
                   value={changeNote}
                   onChange={(e) => setChangeNote(e.target.value)}
                   placeholder="Why this edit — recorded on the version"
+                  aria-required={changeNoteRequired}
                 />
+                {changeNoteRequired ? (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="doc-change-note-required"
+                  >
+                    Required for this document: the edit changes the system
+                    prompt of every session spawned from now on, and the note is
+                    what makes it attributable in the version history.
+                  </p>
+                ) : null}
               </div>
 
               <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">

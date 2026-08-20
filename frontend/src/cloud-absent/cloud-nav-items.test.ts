@@ -17,6 +17,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { cloudNavItems } from "@cloud/nav-items";
+import type { NavItem } from "@/components/navigation/sidebar/types";
+
+/** The two fields this file compares on; keeps the recursion readable. */
+type NavItemLike = Pick<NavItem, "id" | "route"> & {
+  children?: NavItemLike[];
+};
 
 const FRONTEND = process.cwd();
 const OVERLAY = path.resolve(FRONTEND, "node_modules/@qontinui/cloud-control");
@@ -86,20 +92,45 @@ describe("cloud nav items", () => {
     }
   });
 
-  it("does not duplicate a nav id the host already defines", async () => {
+  it("does not duplicate a nav id or route the host already defines", async () => {
     // The host's own `/admin` entry is why cloud-control stopped contributing
-    // one; a collision would render the item twice rather than fail.
+    // one; a collision renders the item twice rather than failing anywhere.
+    //
+    // BOTH host sources, not just `devNavItems`. `use-sidebar-navigation.ts`
+    // merges `getWebNavItems()` (from `@qontinui/navigation`) with
+    // `devNavItems` before appending the cloud entries — and the shared
+    // registry is the half that can grow an `/organizations` or `/billing`
+    // entry with NO qontinui-web change at all, since it is published to npm
+    // and shared with the runner. Checking only the local half would miss
+    // exactly the drift a build-time guard is for.
     const { devNavItems } = await import(
       "@/components/navigation/sidebar/nav-items"
     );
-    const hostIds = new Set(devNavItems.map((i) => i.id));
-    const hostRoutes = new Set(devNavItems.map((i) => i.route));
+    const { getWebNavItems } = await import(
+      "@/components/navigation/sidebar/shared-nav-adapter"
+    );
+
+    // Nav items nest, and a child route collides just as visibly as a
+    // top-level one.
+    const flatten = (items: NavItemLike[]): NavItemLike[] =>
+      items.flatMap((i) => [i, ...flatten(i.children ?? [])]);
+
+    const host = flatten([...getWebNavItems(), ...devNavItems]);
+    const hostIds = new Set(host.map((i) => i.id));
+    const hostRoutes = new Set(host.map((i) => i.route));
+
     for (const item of cloudNavItems) {
       expect(hostIds.has(item.id), `duplicate nav id: ${item.id}`).toBe(false);
       expect(
         hostRoutes.has(item.route),
-        `nav route ${item.route} is already a host entry (${item.id})`
+        `cloud nav route ${item.route} (${item.id}) is already a host entry`
       ).toBe(false);
     }
+
+    // And the cloud entries must not collide with each other.
+    const cloudIds = cloudNavItems.map((i) => i.id);
+    expect(new Set(cloudIds).size, `duplicate ids within cloudNavItems`).toBe(
+      cloudIds.length
+    );
   });
 });

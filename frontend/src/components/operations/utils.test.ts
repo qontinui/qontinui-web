@@ -159,6 +159,77 @@ describe("summarizeClearanceProvenance", () => {
       "cleared under rule 9e8d7c6b"
     );
   });
+
+  // -- band annotation (plan 2026-08-10-agent-gate-management P3) -----------
+  //
+  // The band is NOT on the gates wire; the caller derives it from the rule
+  // set. These pin that the sentence reports exactly what it was TOLD, and
+  // that "could not establish a band" reads as unknown rather than as either
+  // band.
+
+  it("names the band of the deciding rule when the caller supplies one", () => {
+    const p = { cleared_via: "agent_attest", cleared_under_rule: RULE };
+    expect(summarizeClearanceProvenance(p, { ruleBand: "tenant" })).toBe(
+      "attested under tenant rule 9e8d7c6b"
+    );
+    expect(summarizeClearanceProvenance(p, { ruleBand: "system" })).toBe(
+      "attested under system default rule 9e8d7c6b"
+    );
+  });
+
+  it("says 'band unknown' rather than guessing when the band could not be established", () => {
+    expect(
+      summarizeClearanceProvenance(
+        { cleared_via: "agent_attest", cleared_under_rule: RULE },
+        { ruleBand: "unknown" }
+      )
+    ).toBe("attested under rule 9e8d7c6b (band unknown)");
+  });
+
+  it("is byte-identical to the un-annotated sentence when no band is given", () => {
+    const p = { cleared_via: "agent_attest", cleared_under_rule: RULE };
+    expect(summarizeClearanceProvenance(p, {})).toBe(
+      summarizeClearanceProvenance(p)
+    );
+    expect(summarizeClearanceProvenance(p, { ruleBand: null })).toBe(
+      summarizeClearanceProvenance(p)
+    );
+  });
+
+  it("reports the audience default only for an AGENT door with no rule", () => {
+    // Agent doors run a clearance-authority resolution, so a null rule id
+    // means the built-in default decided — a real answer.
+    expect(
+      summarizeClearanceProvenance(
+        { cleared_via: "agent_attest", cleared_by_device_id: DEVICE },
+        { noteAudienceDefault: true }
+      )
+    ).toBe(
+      "attested by 1b2c3d4e — no clearance rule matched (audience default)"
+    );
+    expect(
+      summarizeClearanceProvenance(
+        { cleared_via: "agent_reject" },
+        { noteAudienceDefault: true }
+      )
+    ).toBe("rejected — no clearance rule matched (audience default)");
+    // Operator/withdraw/sweep doors never resolve an authority, so claiming a
+    // default decided them would be a fabrication.
+    for (const via of ["operator_route", "withdraw", "force_clear", "sweep"]) {
+      expect(
+        summarizeClearanceProvenance(
+          { cleared_via: via },
+          { noteAudienceDefault: true }
+        )
+      ).toBe(summarizeClearanceProvenance({ cleared_via: via }));
+    }
+  });
+
+  it("does not note the audience default unless the caller opts in", () => {
+    expect(summarizeClearanceProvenance({ cleared_via: "agent_attest" })).toBe(
+      "attested"
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

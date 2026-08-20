@@ -14,7 +14,16 @@ import { redirect } from "next/navigation";
  * provided is worth keeping, and 404ing `/admin` for self-hosters would have
  * been a pure regression with nothing gained. So it lives here instead: same
  * destination, same non-permanent redirect, now conditional on the build
- * shape rather than unconditional. See `frontend/docs/composed-cloud-build.md`.
+ * shape rather than unconditional.
+ *
+ * Two differences the move does introduce, neither worth reverting for:
+ * `redirects()` forwards unmatched query params, so `/admin?tab=x` used to
+ * land on `/admin/architecture?tab=x` and now loses the query; and the
+ * redirect is answered by a page render inside the `(app)` tree rather than
+ * before the filesystem is consulted, so it costs that segment's render. Only
+ * the exact path `/admin` is affected either way — `redirects()` `source:
+ * '/admin'` never matched `/admin/coord` and friends. See
+ * `frontend/docs/composed-cloud-build.md`.
  */
 export default function AdminAbsent(): never {
   redirect("/admin/architecture");
