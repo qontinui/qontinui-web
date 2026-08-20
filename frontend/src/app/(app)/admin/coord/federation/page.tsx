@@ -10,21 +10,45 @@
  * and a sortable, expandable table of per-session federation reports.
  *
  * Auto-refreshes every 30s.
+ *
+ * ## Console style (Phase 3 Wave 4) — D2, on a NATIVE `<table>`
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` files this
+ * route as Family C and keeps the table: eight columns of per-session counts
+ * are a legitimate dense form and the column comparison is the job the page
+ * exists for. What it gains:
+ *
+ * - **R1** — the four `<Card>` stat tiles (~96px of chrome to carry four
+ *   integers) become one `<StatCluster>` line of mono badges.
+ * - **R5** — the expanding row already existed here; what it lacked was the
+ *   shared host. Its ad-hoc `RowDetail` becomes the same `<RecordDetail>` the
+ *   row lists use, with the fixed slot order. This is the route that proves
+ *   the `colSpan` host works under a **native `<table>`** as well as under
+ *   `/gate-clearance`'s shadcn `<Table>` — `<RecordDetail>` is a plain `<div>`
+ *   inside a `<td colSpan>`, so neither table implementation constrains it.
+ * - **R3** — the row's severity comes out of `federationStatus.ts`'s audited
+ *   table instead of an inline `text-destructive` on the Fail cell.
+ * - **R9** — the page-level `<Card><CardHeader><CardTitle>` wrapper around the
+ *   table is gone; the console shell already supplies the title bar.
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowDownUp,
-  ChevronDown,
-  ChevronRight,
-  GitMerge,
-  RefreshCw,
-} from "lucide-react";
+import { ArrowDownUp, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
+import {
+  RecordDetail,
+  StatCluster,
+  StatusBadge,
+  rowAccentClass,
+  type Stat,
+} from "@/components/console";
+import {
+  deriveFederationStatus,
+  FEDERATION_STATUS_PALETTE,
+} from "./federationStatus";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 30_000;
@@ -103,74 +127,98 @@ function SummaryTiles({ reports }: SummaryProps) {
   const pulled = reports.reduce((s, r) => s + (r.pulled ?? 0), 0);
   const failed = reports.reduce((s, r) => s + (r.failed ?? 0), 0);
 
-  const tiles = [
-    { label: "Sessions", value: sessions, destructive: false },
-    { label: "Pushed", value: pushed, destructive: false },
-    { label: "Pulled", value: pulled, destructive: false },
-    { label: "Failed", value: failed, destructive: failed > 0 },
+  // R1's count-cluster opening. `attention` is the only tone that borrows the
+  // R3 red and it means what it means everywhere else: a human must act on
+  // what this counts. A zero fail total is NOT attention-toned — a red 0 is
+  // the same bug as a red badge nobody must act on.
+  const stats: Stat[] = [
+    {
+      key: "sessions",
+      label: "sessions ",
+      value: sessions,
+      "data-testid": "federation-tile-sessions",
+    },
+    {
+      key: "pushed",
+      label: "pushed ",
+      value: pushed,
+      "data-testid": "federation-tile-pushed",
+    },
+    {
+      key: "pulled",
+      label: "pulled ",
+      value: pulled,
+      "data-testid": "federation-tile-pulled",
+    },
+    {
+      key: "failed",
+      label: "failed ",
+      value: failed,
+      "data-testid": "federation-tile-failed",
+      tone: failed > 0 ? "attention" : "muted",
+      title:
+        failed > 0
+          ? "Memories that did not federate. The runs are over — nothing retries these."
+          : "No memory failed to federate in this window.",
+    },
   ];
 
   return (
-    <div
-      className="grid grid-cols-2 sm:grid-cols-4 gap-3"
-      data-testid="federation-summary"
-    >
-      {tiles.map((t) => (
-        <Card key={t.label} data-testid={`federation-tile-${t.label.toLowerCase()}`}>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">{t.label}</p>
-            <p
-              className={`text-2xl font-bold tabular-nums ${
-                t.destructive ? "text-destructive" : ""
-              }`}
-            >
-              {t.value}
-            </p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+    <StatCluster stats={stats} data-testid="federation-summary" />
   );
 }
 
 // ---- Expanded row detail --------------------------------------------------
 
-function RowDetail({ report }: { report: FederationReport }) {
+/**
+ * R5's detail, in the shared host and the fixed slot order. `raw` is last and
+ * carries the ids (R8): a session id and a device id are support material, not
+ * something a primary surface should spend a column on.
+ */
+function ReportDetail({ report }: { report: FederationReport }) {
+  const status = deriveFederationStatus(report);
+  const failedNames = report.failed_names ?? [];
   return (
-    <div className="px-4 py-3 bg-muted/50 border-t border-border text-sm space-y-2">
-      <div className="flex flex-wrap gap-x-6 gap-y-1">
-        <span>
-          <span className="text-muted-foreground">Session:</span>{" "}
-          <span className="font-mono text-xs">
-            {report.session_id ?? "n/a"}
-          </span>
-        </span>
-        <span>
-          <span className="text-muted-foreground">Device:</span>{" "}
-          <span className="font-mono text-xs">{report.device_id}</span>
-        </span>
-      </div>
-
-      {report.failed_names && report.failed_names.length > 0 && (
-        <div>
-          <p className="text-muted-foreground mb-1">Failed memories:</p>
-          <ul className="list-disc list-inside text-destructive text-xs space-y-0.5">
-            {report.failed_names.map((n) => (
-              <li key={n}>{n}</li>
-            ))}
-          </ul>
+    <RecordDetail
+      className="rounded-none border-x-0 border-b-0"
+      data-testid="federation-row-detail"
+      why={
+        <p className="text-xs text-muted-foreground">
+          {status.reason ??
+            `This run pushed ${report.pushed} and pulled ${report.pulled} memories with no failures.`}
+        </p>
+      }
+      problems={
+        failedNames.length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">
+              Did not federate — still local to this machine:
+            </p>
+            <ul className="list-inside list-disc space-y-0.5 text-xs text-red-200">
+              {failedNames.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          </div>
+        ) : undefined
+      }
+      history={
+        report.metadata && Object.keys(report.metadata).length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">Run metadata:</p>
+            <pre className="max-h-48 overflow-x-auto rounded bg-muted p-2 text-xs">
+              {JSON.stringify(report.metadata, null, 2)}
+            </pre>
+          </div>
+        ) : undefined
+      }
+      raw={
+        <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+          session: {report.session_id ?? "n/a"} · device: {report.device_id} ·
+          report: {report.id}
         </div>
-      )}
-
-      {report.metadata && Object.keys(report.metadata).length > 0 && (
-        <div>
-          <p className="text-muted-foreground mb-1">Metadata:</p>
-          <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-48">
-            {JSON.stringify(report.metadata, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
+      }
+    />
   );
 }
 
@@ -249,11 +297,16 @@ export default function CoordFederationPage() {
             {tr.label}
           </Button>
         ))}
+        {/* The record count the retired CardTitle carried, kept on the one
+            chrome line R9 allows rather than in a 72px header of its own. */}
+        <Badge variant="outline" className="ml-auto font-mono text-[11px]">
+          <span className="font-normal text-muted-foreground">reports&nbsp;</span>
+          {reports.length}
+        </Badge>
         <Button
           variant="ghost"
           size="sm"
           onClick={fetchData}
-          className="ml-auto"
           data-testid="federation-refresh"
         >
           <RefreshCw className="h-3 w-3" />
@@ -267,124 +320,121 @@ export default function CoordFederationPage() {
 
       {/* Summary tiles */}
       {loading && reports.length === 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
-        </div>
+        <Skeleton className="h-7 w-full max-w-md" />
       ) : (
         <SummaryTiles reports={reports} />
       )}
 
-      {/* Reports table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <GitMerge className="h-4 w-4" />
-            Federation reports
-            <Badge variant="outline" className="ml-2">
-              {reports.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading && reports.length === 0 ? (
-            <div className="p-4">
-              <Skeleton className="h-32 w-full" />
-            </div>
-          ) : reports.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic p-4">
-              No federation reports in the selected time range.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="federation-table">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="px-4 py-2 w-8" />
-                    <th className="px-4 py-2">
-                      <button
-                        onClick={toggleSort}
-                        className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
-                      >
-                        Time
-                        <ArrowDownUp className="h-3 w-3" />
-                      </button>
-                    </th>
-                    <th className="px-4 py-2">Machine</th>
-                    <th className="px-4 py-2">Account</th>
-                    <th className="px-4 py-2 text-right">Push</th>
-                    <th className="px-4 py-2 text-right">Pull</th>
-                    <th className="px-4 py-2 text-right">Fail</th>
-                    <th className="px-4 py-2 text-right">Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((r) => {
-                    const isExpanded = expandedId === r.id;
-                    const durationMs =
-                      r.metadata &&
-                      typeof r.metadata.duration_ms === "number"
-                        ? r.metadata.duration_ms
-                        : null;
-                    return (
-                      <Fragment key={r.id}>
-                        <tr
-                          data-testid="federation-row"
-                          className="border-b border-border hover:bg-muted/30 cursor-pointer transition-colors"
-                          onClick={() => toggleExpand(r.id)}
-                        >
-                          <td className="px-4 py-2 text-muted-foreground">
-                            {isExpanded ? (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            )}
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap">
-                            {formatTime(r.created_at)}
-                          </td>
-                          <td className="px-4 py-2 font-mono text-xs">
-                            {truncateId(r.device_id)}
-                          </td>
-                          <td className="px-4 py-2">
-                            {r.account ?? <span className="text-muted-foreground">--</span>}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums">
-                            {r.pushed}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums">
-                            {r.pulled}
-                          </td>
-                          <td
-                            className={`px-4 py-2 text-right tabular-nums ${
-                              r.failed > 0 ? "text-destructive font-medium" : ""
-                            }`}
-                          >
-                            {r.failed}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                            {durationMs != null
-                              ? `${(durationMs / 1000).toFixed(1)}s`
-                              : "--"}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="border-b border-border last:border-b-0">
-                            <td colSpan={8} className="p-0">
-                              <RowDetail report={r} />
-                            </td>
-                          </tr>
+      {/* Reports table — R9: no page-level Card/CardHeader/CardTitle. The
+          console shell owns the title bar; the count that used to justify the
+          header rides on the one remaining chrome line above. */}
+      {loading && reports.length === 0 ? (
+        <Skeleton className="h-32 w-full" />
+      ) : reports.length === 0 ? (
+        <p className="rounded-md border border-border p-4 text-sm italic text-muted-foreground">
+          No federation reports in the selected time range.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-sm" data-testid="federation-table">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="px-4 py-2">
+                  <button
+                    onClick={toggleSort}
+                    className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+                  >
+                    Time
+                    <ArrowDownUp className="h-3 w-3" />
+                  </button>
+                </th>
+                <th className="px-4 py-2">Machine</th>
+                <th className="px-4 py-2">Account</th>
+                <th className="px-4 py-2">Run</th>
+                <th className="px-4 py-2 text-right">Push</th>
+                <th className="px-4 py-2 text-right">Pull</th>
+                <th className="px-4 py-2 text-right">Fail</th>
+                <th className="px-4 py-2 text-right">Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r) => {
+                const isExpanded = expandedId === r.id;
+                const status = deriveFederationStatus(r);
+                const durationMs =
+                  r.metadata && typeof r.metadata.duration_ms === "number"
+                    ? r.metadata.duration_ms
+                    : null;
+                return (
+                  <Fragment key={r.id}>
+                    <tr
+                      data-testid="federation-row"
+                      data-expanded={isExpanded ? "true" : "false"}
+                      // R4 — the accent is a left border on the row; the row
+                      // body stays neutral so 40 rows read when 6 are red.
+                      className={`cursor-pointer border-b border-border transition-colors hover:bg-muted/30 ${rowAccentClass(status)}`}
+                      onClick={() => toggleExpand(r.id)}
+                    >
+                      <td className="whitespace-nowrap px-4 py-2">
+                        <span className="inline-flex items-center gap-1.5">
+                          {isExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                          {formatTime(r.created_at)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 font-mono text-xs">
+                        {truncateId(r.device_id)}
+                      </td>
+                      <td className="px-4 py-2">
+                        {r.account ?? (
+                          <span className="text-muted-foreground">--</span>
                         )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                      </td>
+                      <td className="px-4 py-2">
+                        <StatusBadge
+                          status={status}
+                          palette={FEDERATION_STATUS_PALETTE}
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {r.pushed}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {r.pulled}
+                      </td>
+                      {/* No inline `text-destructive` here any more: R3's rule
+                          is that one audited table decides the hue, and the
+                          badge + accent beside this number already carry it. */}
+                      <td className="px-4 py-2 text-right tabular-nums">
+                        {r.failed}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                        {durationMs != null
+                          ? `${(durationMs / 1000).toFixed(1)}s`
+                          : "--"}
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      // D2 — a full-width cell beneath the row it belongs to.
+                      // `<RecordDetail>` is a plain `<div>` in a `<td
+                      // colSpan>`, which is why the same host works here on a
+                      // NATIVE `<table>` and on `/gate-clearance`'s shadcn one.
+                      <tr className="border-b border-border last:border-b-0">
+                        <td colSpan={8} className="p-0">
+                          <ReportDetail report={r} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

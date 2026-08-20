@@ -66,7 +66,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Archive,
-  Gauge,
   Pause,
   Play,
   RefreshCw,
@@ -208,34 +207,33 @@ export default function CoordGatesPage() {
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-gates-page">
-      {/* ---- Sub-header (layout owns the top console header) ---- */}
+      {/* ---- R9: page chrome is ONE line. The console shell
+           (`coord/layout.tsx`) already supplies the title bar and nav crumb,
+           so the `<h2>Gates & rollout</h2>` + blurb that used to sit here was
+           a duplicated title costing ~52px above the fold. The counts it was
+           introducing are on the stat cluster immediately below. ---- */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <Gauge className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            {/* data-content-role + data-content-id anchor this heading in the
-                UI-Bridge content registry with a stable, text-independent id.
-                Ported verbatim from the deleted `GatesPanel`, which is where
-                Spec-CI's operations spec asserted `heading-gates`; the anchor
-                had to land wherever the surviving gates surface is. */}
-            <h2
-              className="text-base font-semibold"
-              data-content-role="heading"
-              data-content-id="heading-gates"
-            >
-              Gates &amp; rollout
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Gate progress, verdicts, continuation state, and the auto-merge /
-              feature-enablement rollout tiers.
-            </p>
-          </div>
-        </div>
+        {/* R9 deletes the DUPLICATED VISIBLE title — the ~52px of chrome the
+            console shell (`coord/layout.tsx`) already renders — but NOT the
+            content-registry anchor the deleted `GatesPanel` owned. Spec-CI's
+            operations spec and `page.consolidation.test.tsx` both assert
+            `heading-gates`, and the shell's `<h1>` carries no anchor, so there
+            is nowhere else for it to live. `sr-only` keeps both the anchor and
+            the a11y heading at zero vertical cost, which is the entirety of
+            what R9 was buying. */}
+        <h2
+          className="sr-only"
+          data-content-role="heading"
+          data-content-id="heading-gates"
+        >
+          Gates &amp; rollout
+        </h2>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           {/* Exactly where the deleted panel's "Show orphaned gates" checkbox
               sat, in the filter-control row. A capability that goes away is
               stated, not quietly dropped — see the docblock for why it cannot
-              be ported.
+              be ported. `page.consolidation.test.tsx` pins it as a SIBLING of
+              the Archived toggle, so it stays inside this row.
 
               Never `hidden` at any breakpoint: it wraps to its own line on a
               narrow viewport instead. A statement of what this list now
