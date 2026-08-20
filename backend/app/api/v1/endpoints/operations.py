@@ -6698,6 +6698,9 @@ async def delete_priority_set(
 
 @router.get("/coord/policies")
 async def list_coord_policies(
+    kind: str | None = Query(default=None),
+    repo: str | None = Query(default=None),
+    enabled: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List the tenant's automation policies (rules).
@@ -6707,8 +6710,36 @@ async def list_coord_policies(
     tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,
     and scopes the list to the caller's tenant — so the console's read view is
     visible to developers. Writes below stay admin-gated.
+
+    ``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``
+    filters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when
+    PRESENT — including as an empty string, which is a real filter to coord and
+    not a synonym for "unfiltered" (``?repo=`` selects the degenerate
+    empty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is
+    a better answer than silently listing everything). Until this route
+    accepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and
+    a tenant's DISABLED rules were **not listable from the console** — the
+    ``/admin/coord/automation-rules`` enable/disable switch could therefore
+    write a row it could never read back, and the row was unrecoverable through
+    the product.
+
+    ``enabled`` is an EQUALITY filter server-side, not a "show everything"
+    switch: coord's resolver binds it as ``AND enabled = $2`` against the
+    tenant's own rules. ``enabled=false`` therefore lists the DISABLED rules
+    only. A caller wanting both states issues both requests and unions them by
+    ``policy_id`` — coord's system built-ins come back on BOTH arms (its
+    system-band query hardcodes ``enabled = true``), so the union must dedupe.
     """
-    return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
+    params: dict[str, Any] = {}
+    if kind is not None:
+        params["kind"] = kind
+    if repo is not None:
+        params["repo"] = repo
+    if enabled is not None:
+        params["enabled"] = enabled
+    return await _proxy_coord_get(
+        "/coord/policies", tenant_id=tenant_id, params=params or None
+    )
 
 
 @router.post("/coord/policies")
