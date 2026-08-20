@@ -59,7 +59,11 @@ One row per ``.claude/agents/<name>.md``, via
                        ``--policy-required`` (default: ``code-reviewer``,
                        because ``verification-and-evidence`` →
                        ``pre-pr-review`` names it as the required step)
- ``allowed_dispositions`` all three: ``block``, ``degrade``, ``warn_proceed``
+ ``allowed_dispositions`` all three on a NEW row (``block``, ``degrade``,
+                       ``warn_proceed``); an existing row's value is
+                       PRESERVED, for the same reason ``default_enabled``
+                       is — a narrowed set is a recorded operator choice,
+                       and coord REPLACES this column rather than merging it
  ``fanout_bound``      1
  ``definition_body``   the markdown body, so the registry carries the
                        definition and not just a name
@@ -97,11 +101,20 @@ should not try.
     python scripts/seed_agent_registry.py --apply
 
 Idempotent: ``PUT`` is an upsert keyed on ``(tenant_id, agent_name)``, and the
-plan output diffs against what the registry already holds, so a re-run on an
-unchanged tree writes the same values and reports ``unchanged``.
+plan output diffs against what the registry already holds — EVERY field the
+write sends, derived from the payload itself — so a re-run on an unchanged tree
+writes the same values and reports ``unchanged``, and a re-run after an agent's
+markdown changed says so instead of hiding it.
 
-Exit codes: ``0`` success (or a clean dry run), ``1`` one or more writes failed,
-``2`` bad input (no agents directory, missing token with ``--apply``).
+That diff is also a precondition, not just a report. ``default_enabled`` is the
+one REQUIRED field of coord's upsert body, so a write built from rows this
+script could not read would reset each one to the new-row default. ``--apply``
+therefore REFUSES when the pre-read failed: an unreadable registry is UNKNOWN,
+never empty.
+
+Exit codes: ``0`` success (or a clean dry run), ``1`` a write failed or coord
+was unreachable, ``2`` bad input (no agents directory, missing token with
+``--apply``, unreadable registry with ``--apply``).
 """
 
 from __future__ import annotations
@@ -115,6 +128,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 DEFAULT_COORD_URL = "https://coord.qontinui.io"
 SPAWN_PATH = "in_session_subagent"
@@ -125,6 +139,25 @@ FANOUT_BOUND = 1
 # the policy-required step before opening a PR. Nothing else in the served
 # policy set names an agent as required, so nothing else defaults to True.
 DEFAULT_POLICY_REQUIRED = ("code-reviewer",)
+
+# coord's `upsert_registry_row` COALESCEs these text columns to `''` rather
+# than storing NULL, so a seeder-side `None` and a stored `''` are the SAME
+# value and must not read as drift in the plan. Mirrors coord's column list,
+# which is why `trigger_condition` is here even though this seeder does not
+# send it yet — adding it later should not re-introduce the phantom drift.
+COALESCED_TO_EMPTY = ("purpose", "trigger_condition", "definition_body")
+
+
+def die(message: str) -> NoReturn:
+    """Exit 2 — bad input.
+
+    `sys.exit("...")` exits 1, not 2, so the docstring's exit-code contract was
+    never actually produced by any of the usage errors that claimed it. A caller
+    scripting this (a runbook step, a wrapper) cannot tell "you invoked it wrong"
+    from "a write failed" unless the two differ.
+    """
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
 
 
 @dataclass
@@ -208,7 +241,7 @@ def discover_agents_dir(explicit: str | None) -> Path:
     if explicit:
         p = Path(explicit).expanduser().resolve()
         if not p.is_dir():
-            sys.exit(f"--agents-dir {p} is not a directory")
+            die(f"--agents-dir {p} is not a directory")
         return p
 
     here = Path.cwd().resolve()
@@ -220,7 +253,7 @@ def discover_agents_dir(explicit: str | None) -> Path:
         if sibling.is_dir():
             return sibling
 
-    sys.exit(
+    die(
         "could not find a `.claude/agents` directory walking up from "
         f"{here}. Pass --agents-dir explicitly."
     )
@@ -247,15 +280,34 @@ def http_json(
         except json.JSONDecodeError:
             return e.code, raw
     except urllib.error.URLError as e:
-        sys.exit(f"cannot reach coord at {url}: {e.reason}")
+        # Not exit 2: reaching coord is not something the invocation got wrong.
+        print(f"cannot reach coord at {url}: {e.reason}", file=sys.stderr)
+        raise SystemExit(1) from e
 
 
-def existing_rows(coord_url: str, token: str | None) -> dict[str, dict]:
-    """Current registry rows, by agent_name. `{}` when the read is not permitted.
+@dataclass
+class RegistryRead:
+    """What `GET /coord/agent-registry` returned — and WHETHER it returned.
 
-    The read is tenant-scoped (any tenant member), so it usually succeeds even
-    when the write will not — which is what makes the dry-run plan useful
-    without an admin token.
+    `ok=False` means the current rows are UNKNOWN, not that there are none. The
+    two are not interchangeable here, because `default_enabled` is the one
+    REQUIRED field of coord's upsert body: a write built from an
+    unknown-read-as-empty would send the NEW-ROW default for every agent and
+    silently reset the recorded choices this seeder exists to preserve. So the
+    flag is carried rather than collapsed, and `--apply` refuses on `ok=False`.
+    """
+
+    rows: dict[str, dict]
+    ok: bool
+
+
+def existing_rows(coord_url: str, token: str | None) -> RegistryRead:
+    """Current registry rows, by agent_name.
+
+    The read is the operator (tenant) door, so it can fail while the write would
+    have succeeded — and vice versa. A failed read still leaves a useful dry-run
+    plan (every row reads `new`, which overstates the change), so it is reported
+    and carried rather than raised.
     """
     status, payload = http_json(f"{coord_url}/coord/agent-registry", token)
     if status != 200 or not isinstance(payload, dict):
@@ -264,13 +316,18 @@ def existing_rows(coord_url: str, token: str | None) -> dict[str, dict]:
             f"below shows every row as `new`, which may overstate the change.",
             file=sys.stderr,
         )
-        return {}
+        return RegistryRead(rows={}, ok=False)
     # Confirmed shape: `{"agents": [...], "prefs": [...]}`
     # (coord `agent_registry::get_registry_handler`).
     rows = payload.get("agents") or []
-    return {
-        r["agent_name"]: r for r in rows if isinstance(r, dict) and "agent_name" in r
-    }
+    return RegistryRead(
+        rows={
+            r["agent_name"]: r
+            for r in rows
+            if isinstance(r, dict) and "agent_name" in r
+        },
+        ok=True,
+    )
 
 
 def build_body(
@@ -298,36 +355,56 @@ def build_body(
     # Derived from `policy_required` rather than a second hand-kept list, so a
     # future policy-required agent cannot ship silently spawning on the user's
     # account because someone updated one list and not the other.
+    #
+    # `allowed_dispositions` is preserved for exactly the same reason, and it
+    # needs saying separately because coord REPLACES that column rather than
+    # merging it: re-sending the full set would widen an operator's narrowed
+    # one back to all three without anyone deciding to.
     if existing is not None:
         enabled = bool(existing.get("default_enabled", True))
+        dispositions = list(
+            existing.get("allowed_dispositions") or ALLOWED_DISPOSITIONS
+        )
     else:
         enabled = agent.agent_name not in policy_required
+        dispositions = list(ALLOWED_DISPOSITIONS)
     return {
         "purpose": agent.purpose,
         "spawn_path": SPAWN_PATH,
         "model": agent.model,
         "default_enabled": enabled,
         "policy_required": agent.agent_name in policy_required,
-        "allowed_dispositions": ALLOWED_DISPOSITIONS,
+        "allowed_dispositions": dispositions,
         "fanout_bound": FANOUT_BOUND,
         "definition_body": agent.body,
     }
 
 
+def stored_form(name: str, value: object) -> object:
+    """The value as coord would STORE it, so the plan compares like with like."""
+    if name in COALESCED_TO_EMPTY and value is None:
+        return ""
+    return value
+
+
 def describe_change(existing: dict | None, want: dict) -> str:
+    """Name every field this write would change.
+
+    Derived from the payload itself, not a hand-kept list of field names — the
+    same anti-drift argument `build_body` makes for deriving its default from
+    `policy_required`. The hand-kept list omitted `definition_body` and
+    `allowed_dispositions`, the two fields most likely to move on a re-run:
+    editing an agent's markdown produced a plan that said `unchanged` for the
+    row it was about to rewrite. The dry run is this script's DEFAULT mode and
+    its only safety surface, so a plan that understates the write is worse than
+    no plan at all.
+    """
     if existing is None:
         return "new"
     drift = [
-        k
-        for k in (
-            "purpose",
-            "spawn_path",
-            "model",
-            "policy_required",
-            "fanout_bound",
-            "default_enabled",
-        )
-        if existing.get(k) != want.get(k)
+        name
+        for name in want
+        if stored_form(name, existing.get(name)) != stored_form(name, want.get(name))
     ]
     return "unchanged" if not drift else "update: " + ", ".join(drift)
 
@@ -365,12 +442,12 @@ def main() -> int:
     agents_dir = discover_agents_dir(args.agents_dir)
     agents = load_agents(agents_dir)
     if not agents:
-        sys.exit(f"no *.md agent definitions found in {agents_dir}")
+        die(f"no *.md agent definitions found in {agents_dir}")
 
     policy_required = {n.strip() for n in args.policy_required.split(",") if n.strip()}
     unknown = policy_required - {a.agent_name for a in agents}
     if unknown:
-        sys.exit(
+        die(
             f"--policy-required names agents with no definition in {agents_dir}: "
             + ", ".join(sorted(unknown))
         )
@@ -383,7 +460,8 @@ def main() -> int:
     )
     print()
 
-    current = existing_rows(coord_url, args.token)
+    read = existing_rows(coord_url, args.token)
+    current = read.rows
 
     plan: list[tuple[AgentDef, dict, str]] = []
     for agent in agents:
@@ -410,14 +488,32 @@ def main() -> int:
         return 0
 
     if not args.token:
-        sys.exit(
+        die(
             "--apply needs an admin Cognito operator bearer via --token or "
             "$COORD_OPERATOR_JWT. See this script's docstring: machine-mintable "
             "clients are denied on mutating methods by design."
         )
 
+    # An unreadable registry is UNKNOWN, not empty. `default_enabled` is
+    # REQUIRED on every write, so applying against rows this run could not read
+    # would send the NEW-ROW default for each agent - re-enabling one an
+    # operator had deselected, or disabling `code-reviewer` after they had
+    # deliberately turned it on. Preserving a value requires having read it, so
+    # the guarantee this seeder advertises does not hold here at all.
+    if not read.ok:
+        die(
+            "the current registry could not be read (see the error above), so "
+            "the recorded per-agent choices are UNKNOWN. `default_enabled` is "
+            "required on every write, so applying now would reset each row to "
+            "the new-row default rather than preserve what is stored. Fix the "
+            "read - normally by passing the same admin bearer you intend to "
+            "write with - and re-run."
+        )
+
     failures = 0
+    attempted = 0
     for agent, want, _ in plan:
+        attempted += 1
         url = f"{coord_url}/coord/agent-registry/{urllib.parse.quote(agent.agent_name, safe='')}"
         status, payload = http_json(url, args.token, method="PUT", body=want)
         if 200 <= status < 300:
@@ -462,7 +558,18 @@ def main() -> int:
             break
 
     if failures:
-        print(f"\n{failures} of {len(plan)} rows failed.", file=sys.stderr)
+        # `len(plan)` would have read as "the rest succeeded". Each of the
+        # three branches above breaks out of the loop, because a credential
+        # the whole run shares cannot be wrong for one row and right for the
+        # next - so the untried rows are untried, not fine.
+        skipped = len(plan) - attempted
+        summary = f"\n{failures} of {attempted} attempted rows failed."
+        if skipped:
+            summary += (
+                f" {skipped} further row(s) were never attempted: the error "
+                f"above is fatal for every row, not just this one."
+            )
+        print(summary, file=sys.stderr)
         return 1
 
     print(f"\nseeded {len(plan)} agent role rows.")
