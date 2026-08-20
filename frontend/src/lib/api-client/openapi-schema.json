@@ -83126,7 +83126,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.",
+        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Deserialize, Default)]`` with ``#[serde(default)]`` on every\nfield, so a coord that does not know the parameter **ignores** it and\nreturns the unfiltered page rather than erroring. Callers must therefore\ntreat the exclusion as best-effort until coord's half deploys \u2014 a page\nthat renders shepherd rows is a coord that has not caught up, not a bug\nhere.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -83148,6 +83148,42 @@
             }
           },
           {
+            "description": "LIKE-prefix filter on the work-unit slug.",
+            "in": "query",
+            "name": "slug_prefix",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "LIKE-prefix filter on the work-unit slug.",
+              "title": "Slug Prefix"
+            }
+          },
+          {
+            "description": "Drop work-units whose slug starts with this prefix. Ignored by a coord that predates it (see the note below) \u2014 an optimisation, never a contract.",
+            "in": "query",
+            "name": "exclude_slug_prefix",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Drop work-units whose slug starts with this prefix. Ignored by a coord that predates it (see the note below) \u2014 an optimisation, never a contract.",
+              "title": "Exclude Slug Prefix"
+            }
+          },
+          {
             "in": "query",
             "name": "limit",
             "required": false,
@@ -83163,6 +83199,23 @@
                 }
               ],
               "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
             }
           }
         ],
