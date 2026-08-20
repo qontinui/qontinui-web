@@ -151,6 +151,7 @@ jobs:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
       - name: Create test schemas and extensions
+        id: apt_psql
         # `apt-get` here reaches an external mirror at job time and is the same
         # unbounded-stall exposure as the Playwright step (plan
         # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
@@ -208,3 +209,115 @@ jobs:
           python scripts/export_test_coverage.py \
             --coverage-db .coverage \
             --junit-xml junit-results.xml
+
+      # ----------------------------------------------------------------------
+      # CI-infrastructure timeout marker (plan
+      # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure,
+      # Phase 5).
+      #
+      # A job-level timeout concludes the job as `cancelled`, and `gh pr checks`
+      # renders `cancelled` as **fail** -- with ZERO failing steps, because no
+      # step failed. An author triaging their own PR sees "fail" against their
+      # diff with nothing to point at, and reads it as their own regression. On
+      # 2026-08-19 that misattribution cost real time on PR #1015. This step
+      # exists so the log says what actually happened.
+      #
+      # `cancelled` has THREE causes and only the first is this plan's defect:
+      #   1. an apt-dependent step stalled against the external mirror (ours)
+      #   2. coord's merge train reaping a `merge-candidate/*` ref (benign)
+      #   3. a manual / external / superseding cancel (benign)
+      # 2 and 3 resolved in MINUTES in every observed case. A marker that
+      # shouted "infrastructure timed out" on all three would be wrong on the
+      # benign ones, and a diagnostic that is wrong a quarter of the time is
+      # worse than none -- it teaches readers to discard the other three
+      # quarters. So the ::error:: arms demand POSITIVE evidence that an
+      # apt-dependent step is what died, and every other path declines to judge
+      # the diff at all.
+      #
+      # An apt step marked `continue-on-error: true` cannot red the check on its
+      # own, so a soft-fail there does not trigger this step at all -- there is
+      # no misattribution to correct. It is still named here if something
+      # downstream fails as a consequence.
+      - name: Explain infrastructure timeout vs external cancellation
+        if: cancelled() || failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+          # declared at this job's `timeout-minutes`.
+          JOB_TIMEOUT_MINUTES: '45'
+          EXTERNAL_CANCEL_NOTE: >-
+            this workflow declares `concurrency: cancel-in-progress: true`, so a newer push to the same ref supersedes the run - that or a manual cancel are the external causes
+          # `<step name>=<outcome>` per apt-dependent step in this job.
+          # `.outcome` (not `.conclusion`) on purpose: it is the value BEFORE
+          # `continue-on-error` rewrites it, so a soft-failed step still reports
+          # the truth here.
+          APT_STEP_OUTCOMES: |
+            Create test schemas and extensions=${{ steps.apt_psql.outcome }}
+        run: |
+          set -uo pipefail
+
+          # An apt step whose outcome is `failure` hit its own step-level
+          # `timeout-minutes` (or apt errored outright) -- either way it is
+          # infrastructure. One whose outcome is `cancelled` was still
+          # mid-flight when the job ended; that is only decisive once we also
+          # know the job budget had actually expired.
+          apt_failed=""
+          apt_running=""
+          while IFS= read -r line; do
+            [ -z "${line// }" ] && continue
+            step_name="${line%=*}"
+            outcome="${line##*=}"
+            case "$outcome" in
+              failure)   apt_failed="$step_name" ;;
+              cancelled) apt_running="$step_name" ;;
+            esac
+          done <<< "$APT_STEP_OUTCOMES"
+
+          why="It shells out to apt-get against an external mirror at job time."
+          why="$why That call is normally seconds, but has been observed to stall"
+          why="$why for 30+ minutes (and, unbounded, for 5h59m). Nothing under test ran."
+          ref="See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+
+          # --- Arm 1: an apt step failed. Airtight: neither a merge-train reap
+          # nor any other external cancel can make a step conclude `failure`.
+          if [ -n "$apt_failed" ]; then
+            echo "::error title=CI infrastructure timeout - NOT your diff::Step '$apt_failed' exceeded its step-level timeout-minutes or failed outright. $why This is a CI infrastructure failure, not a verdict on the code in this change. Re-run the job. $ref"
+            exit 0
+          fi
+
+          # --- Neither cancelled nor an apt failure => a genuine red. Say
+          # nothing: this step explains infrastructure timeouts, it does not
+          # editorialise real test failures.
+          if [ "$JOB_STATUS" != "cancelled" ] && [ -z "$apt_running" ]; then
+            echo "No apt-dependent step failed and the job was not cancelled."
+            echo "This job's failure is a real one - emitting no marker."
+            exit 0
+          fi
+
+          # --- The job was cancelled. Did it actually reach its budget? A job
+          # timeout fires at elapsed >= budget; a reap or a manual cancel lands
+          # at an arbitrary, typically far earlier, elapsed (the two observed
+          # benign cancellations were at 2m02s and 7m29s). That gap is the
+          # discriminator, so resolve it from the API rather than assuming.
+          elapsed_min=""
+          started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
+          if [ -n "$started" ]; then
+            start_epoch="$(date -u -d "$started" +%s 2>/dev/null || true)"
+            if [ -n "$start_epoch" ]; then
+              elapsed_min=$(( ( $(date -u +%s) - start_epoch ) / 60 ))
+            fi
+          fi
+
+          # 2 minutes of slack absorbs the gap between run start and job start.
+          budget_floor=$(( JOB_TIMEOUT_MINUTES - 2 ))
+
+          # --- Arm 2: the job budget expired while an apt step was still
+          # running. Requires BOTH facts; either one alone is not evidence.
+          if [ -n "$apt_running" ] && [ -n "$elapsed_min" ] && [ "$elapsed_min" -ge "$budget_floor" ]; then
+            echo "::error title=CI infrastructure timeout - NOT your diff::The ${JOB_TIMEOUT_MINUTES}-minute job budget expired after ${elapsed_min} min while step '$apt_running' was STILL RUNNING. $why GitHub concludes a job timeout as 'cancelled', which 'gh pr checks' renders as 'fail' with zero failing steps - that rendering is what makes this look like your test failure. It is not. Re-run the job. $ref"
+            exit 0
+          fi
+
+          # --- Arm 3: cancelled, but with no positive evidence for arm 1 or 2.
+          # Explicitly decline to judge the diff either way.
+          echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget, and no apt-dependent step failed or was mid-flight at that budget - so this was NOT the known apt-mirror stall. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
