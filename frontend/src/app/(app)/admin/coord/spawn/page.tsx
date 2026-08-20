@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
-import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 

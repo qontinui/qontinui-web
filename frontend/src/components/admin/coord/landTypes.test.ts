@@ -5,7 +5,7 @@ import {
   dimensionOutcomeVariant,
   driftClassVariant,
   type BadgeVariant,
-} from "./LandCard";
+} from "./landTypes";
 
 /**
  * Anti-drift guard for the land composed-outcome → badge-variant color

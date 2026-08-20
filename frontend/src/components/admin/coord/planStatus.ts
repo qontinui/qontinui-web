@@ -50,8 +50,10 @@ import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
  * One coord work-unit as the web proxy serves it.
  *
  * Declared HERE rather than beside a card component: it is the surface's data
- * shape, and it outlives any one rendering of it. `PlanCard` re-exports it so
- * its existing importers (`planSort`, `/spawn`, `/history`) are untouched.
+ * shape, and it outlives any one rendering of it. `PlanCard` — which used to
+ * re-export it — was DELETED in Phase 3 Wave 2 once `/history`, its last
+ * renderer, moved onto `<PlanRow>`; `planSort`, `/spawn` and both list routes
+ * now import the type from here directly.
  */
 export interface CoordPlanRow {
   slug: string;
