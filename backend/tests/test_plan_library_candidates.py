@@ -942,7 +942,7 @@ class TestCoordDoorTierFollowsThePrincipal:
         today — which is why the path itself is asserted, in both directions.
 
         The two hops here are the FALLBACK sequence: ``_coord_ok`` models a
-        coord that ignores ``?with_citations=1`` (as every coord does until
+        coord that ignores ``?with_citations=true`` (as every coord does until
         the opt-in arm ships), so its operator by-slug body carries no
         ``citations`` key and the sub-resource hop genuinely runs. Its agent
         twin always carries one, so the device path short-circuits and a
@@ -1180,11 +1180,15 @@ class TestCoordDoorTierFollowsThePrincipal:
         """The other side of the same coin: a read that SUCCEEDED and found
         nothing is an observation, and must be reported as one.
 
-        Deliberately the OPERATOR client: this is the SUB-RESOURCE's empty
-        list, and only the operator path reaches it. On the device path the
-        same assertion would be about the inline empty list instead — a
-        different code path, already covered by
-        ``test_the_detail_read_routes_by_principal_too``.
+        Deliberately the OPERATOR client against ``_coord_ok``, which models
+        a coord WITHOUT the opt-in arm: that is the only way to reach the
+        SUB-RESOURCE's empty list, since an operator page against a coord that
+        has the arm short-circuits on the inline one. The inline arm's own
+        successful-empty case is a different code path and is pinned
+        separately —
+        ``TestInlineCitationErrorIsNeverAnEmptyList.test_an_empty_list_with_NO_error_is_an_observation_of_zero``
+        for the operator side, ``test_the_detail_read_routes_by_principal_too``
+        for the device side.
         """
         wu = _slug("wu-empty")
         plan = await _plan(
@@ -1209,9 +1213,12 @@ class TestCoordDoorTierFollowsThePrincipal:
 # ===========================================================================
 #
 # Plan ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``
-# D1/D4, Phase 3. coord's operator by-slug door takes ``?with_citations=1`` and
-# embeds the citations it otherwise omits, so an operator page collapses from
-# 2N coord round-trips to N — up to 100 candidates a page.
+# D1/D4, Phase 3. coord's operator by-slug door will take
+# ``?with_citations=true`` and embed the citations it otherwise omits, so an
+# operator page collapses from 2N coord round-trips to N — up to 100 candidates
+# a page. ``true``, not ``1``: the value is truthy under BOTH of coord's query
+# parse conventions, and only one of them accepts ``1`` (see
+# ``_CoordProbe._presence_params``).
 #
 # Two properties are pinned below, and the SECOND is the load-bearing one:
 #
@@ -1228,7 +1235,7 @@ def _coord_honouring_with_citations(
     *,
     citations_error: dict[str, Any] | None = None,
 ):
-    """A coord that HAS the opt-in arm: ``?with_citations=1`` inlines them.
+    """A coord that HAS the opt-in arm: ``?with_citations=true`` inlines them.
 
     Both doors are modelled the way coord answers them once Phase 1 lands: the
     agent by-slug body always embeds ``citations``, and the operator twin does
@@ -1247,7 +1254,7 @@ def _coord_honouring_with_citations(
         if path.endswith("/citations"):
             return {"citations": citations}
         body: dict[str, Any] = {"work_unit": work_unit, "recent_history": []}
-        asked = (params or {}).get("with_citations") == "1"
+        asked = (params or {}).get("with_citations") == "true"
         if path.startswith("/coord/agent-work-units/") or asked:
             if citations_error is not None:
                 body["citations"] = []
@@ -1295,10 +1302,10 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
 
         assert resp.status_code == 200, resp.text
         assert [(c.args[0], c.kwargs.get("params")) for c in fake.await_args_list] == [
-            (f"/coord/work-units/{wu}", {"with_citations": "1"})
+            (f"/coord/work-units/{wu}", {"with_citations": "true"})
         ], (
-            "the operator presence hop must carry ?with_citations=1 and be the "
-            "ONLY coord call for this slug"
+            "the operator presence hop must carry ?with_citations=true and be "
+            "the ONLY coord call for this slug"
         )
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
@@ -1378,7 +1385,7 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert seen[0] == {"with_citations": "1"}, (
+        assert seen[0] == {"with_citations": "true"}, (
             "the stub must actually be ignoring the parameter this phase adds "
             "— otherwise it models nothing"
         )
@@ -1411,9 +1418,14 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
 
     That is a strictly weaker guarantee, and the plan takes it deliberately
     (scalability over robustness on the hop count) on condition that the debt
-    is discharged HERE. Simplify ``_inline_citations`` to key on ``citations``
-    alone and both tests below go red; without them, that edit renders every
-    candidate ``available`` with an empty list and nothing notices.
+    is discharged HERE. Two edits to ``_inline_citations`` would each reinstate
+    the collapse, and there is a test below for each: deleting the
+    ``citations_error`` READ (caught by the two principal tests), and narrowing
+    the DETECTION to ``citations`` alone (caught by
+    ``test_an_inline_error_with_NO_citations_key_is_still_unavailable``, since
+    the principal tests send a ``citations`` key and stay green under it). The
+    fourth test guards the opposite dishonesty — a guard that answered
+    ``unavailable`` for every empty list would pass all three.
 
     Both principals, because after Phase 3 both take the inline arm and the
     two coord doors build this body in different handlers.
@@ -1463,6 +1475,94 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
         assert "citation_surface_unavailable" in link["unavailable_reason"]
         assert "42P01" in link["unavailable_reason"]
 
+    async def test_an_inline_error_with_NO_citations_key_is_still_unavailable(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Pins the DETECTION clause, which the two tests above do not.
+
+        They both send ``citations: []`` beside ``citations_error``, so
+        narrowing ``_inline_citations``'s detection to ``citations`` alone
+        leaves them green — the key is still there. This one omits the value
+        key entirely, which is the shape coord's sibling ``delivery`` /
+        ``delivery_error`` pair already uses and the one the detection's
+        second clause exists for.
+
+        Narrowed, this read returns ``None``, falls through to a second hop,
+        and the sub-resource's successful answer OVERWRITES a known failure
+        with an observation of zero — which is why the stub serves the
+        sub-resource a non-empty list: the wrong reading is ``available`` with
+        a PR in it, and it is visibly wrong rather than merely absent.
+        """
+        wu = _slug("wu-err-no-key")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("err-no-key"),
+            work_unit_slug=wu,
+        )
+
+        async def _fake(
+            path: str, *, params: dict[str, str] | None = None, **_: Any
+        ) -> Any:
+            if path.endswith("/citations"):
+                return {"citations": [_A_CITATION]}
+            return {
+                "work_unit": {"slug": wu, "status": "vetted"},
+                "recent_history": [],
+                # No ``citations`` key at all — only the error.
+                "citations_error": self._ERR,
+            }
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [c.args[0] for c in fake.await_args_list] == [
+            f"/coord/work-units/{wu}"
+        ], "a body declaring the read did not happen must not be re-asked"
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "citation_surface_unavailable" in link["unavailable_reason"]
+
+    async def test_an_empty_list_with_NO_error_is_an_observation_of_zero(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The other half of the contract, on the arm this phase moved.
+
+        A guard that answered ``unavailable`` for every empty list would
+        satisfy every assertion above and be just as dishonest in the other
+        direction: a work unit really can have no citations, and a read that
+        SUCCEEDED and found none must say so. Pinned on the OPERATOR inline
+        arm specifically — the sub-resource's version of this is
+        ``test_a_successful_empty_citation_list_is_available_and_empty``, and
+        after coord ships the opt-in arm an operator page no longer reaches
+        that one.
+        """
+        wu = _slug("wu-op-inline-empty")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("op-inline-empty"),
+            work_unit_slug=wu,
+        )
+
+        fake = _coord_honouring_with_citations({"slug": wu, "status": "vetted"}, [])
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [c.args[0] for c in fake.await_args_list] == [f"/coord/work-units/{wu}"]
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "available"
+        assert link["linked_prs"] == []
+        assert link["unavailable_reason"] is None
+
     async def test_the_DEVICE_inline_arm_reports_unavailable_not_empty(
         self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
@@ -1474,6 +1574,15 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
             work_unit_slug=wu,
         )
 
+        # Deliberately kept alongside the older
+        # ``test_an_inline_citations_error_is_unavailable_not_empty``, which
+        # asserts the same verdict on the same principal. D4's debt is
+        # discharged by ONE class covering BOTH principals, and splitting its
+        # evidence across two places is how a future reader concludes the
+        # operator half is the whole of it. What this adds: the single-hop
+        # assertion (the verdict provably came off the inline arm) and the
+        # SQLSTATE, which is what tells an operator to wait for a migration
+        # rather than page someone.
         fake = _coord_honouring_with_citations(
             {"slug": wu, "status": "vetted"}, [], citations_error=self._ERR
         )
