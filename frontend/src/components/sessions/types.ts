@@ -32,10 +32,42 @@ export interface SessionIntent {
 }
 
 /**
+ * Tool-grain activity fields on `coord.sessions` — plan
+ * `2026-08-11-coord-hook-sourced-agent-status` (alembic
+ * `coord_sessions_tool_activity`, Phase 1).
+ *
+ * Every field is optional AND nullable, and that is the contract, not
+ * laziness: the columns are inert until the Phase 3 hook writes them, and a
+ * coord build that predates the migration omits the keys entirely. A consumer
+ * must therefore render `undefined` and `null` identically (as "unknown"), and
+ * must never treat an absent field as "no activity".
+ *
+ * Mixed into every session-shaped wire type rather than re-declared per
+ * surface, so the fleet board, the sessions panel and any future consumer
+ * cannot drift on the shape.
+ */
+export interface SessionToolActivity {
+  /** The tool the harness is running right now (`Bash`, `Edit`, `Task`, …).
+   *  Free text — the harness's tool vocabulary is not coord's to freeze. */
+  tool_name?: string | null;
+  /** A DIGEST of the tool input, never the input itself (plan §3.2). Useful
+   *  only for "is this the same call repeating?" — it is not human-readable
+   *  and must never be presented as if it described the work. */
+  tool_input_digest?: string | null;
+  /** Which model is driving the session. Free text; model ids churn. */
+  model?: string | null;
+  /** RFC 3339. When the session entered its CURRENT status — deliberately
+   *  distinct from the progress clock, so a tool ping refreshes liveness
+   *  WITHOUT resetting how long the session has been in this state. This is
+   *  what makes "stuck for 40 minutes" expressible. */
+  state_started_at?: string | null;
+}
+
+/**
  * Common row shape returned by `POST`, `PATCH`, `GET /sessions`.
  * Matches `qontinui-coord/src/sessions.rs::SessionRow`.
  */
-export interface SessionRow {
+export interface SessionRow extends SessionToolActivity {
   id: string;
   tenant_id: string;
   device_id: string;

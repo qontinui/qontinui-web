@@ -47,6 +47,7 @@ import {
 } from "@/services/admin-dev-service";
 import { SummaryCards } from "./_components/SummaryCards";
 import { GatesTable } from "./_components/GatesTable";
+import { useClearanceRuleSet } from "../_shared/useClearanceRuleSet";
 import { RolloutPanel } from "./_components/RolloutPanel";
 import { ShadowReapGroups } from "./_components/ShadowReap";
 import { RunSweepDialog } from "./_components/RunSweepDialog";
@@ -113,6 +114,12 @@ export default function CoordGatesPage() {
   // "updated Xs ago" label without re-fetching.
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
+
+  // The workspace's gate_clearance rules, read once so a cleared gate's
+  // provenance line can name the BAND of the rule that admitted it (coord
+  // returns only the rule id). `null` = the read did not land, and the line
+  // then makes no band claim at all rather than guessing one.
+  const clearanceRules = useClearanceRuleSet();
 
   // Guards against overlapping fetches (a slow request + a fired interval).
   const inFlight = useRef(false);
@@ -333,7 +340,11 @@ export default function CoordGatesPage() {
               No gates registered.
             </div>
           ) : (
-            <GatesTable gates={overview.gates} onActed={() => load(true)} />
+            <GatesTable
+              gates={overview.gates}
+              onActed={() => load(true)}
+              clearanceRules={clearanceRules}
+            />
           )}
 
           <RolloutPanel rollouts={overview.rollouts} />

@@ -257,6 +257,16 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-automation-rules",
       },
       {
+        // Sits with the other coord policy-authoring surfaces (it authors
+        // `coord.policy_rules` rows like Policies and Automation Rules do),
+        // and the Gates page links across to it from the gate context — the
+        // direct row is already at its five-tab cap, see the header note.
+        href: "/admin/coord/gate-clearance",
+        label: "Gate Clearance",
+        icon: ShieldCheck,
+        testId: "coord-nav-gate-clearance",
+      },
+      {
         href: "/admin/coord/prompt-documents",
         label: "Prompt Documents",
         icon: NotebookText,

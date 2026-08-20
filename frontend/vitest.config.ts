@@ -13,6 +13,18 @@ const cloudControlPresent = fs.existsSync(
   path.resolve(__dirname, "node_modules/@qontinui/cloud-control/package.json")
 );
 
+// Mirror of `next.config.mjs`'s `@cloud` build-time route alias. Vitest has
+// its own resolver, so the mapping has to be declared here too — without it
+// `src/cloud-absent/cloud-route-shims.test.ts` (and any test that imports a
+// mounted route) dies on an unresolved specifier. Present -> the linked
+// package's sources; absent -> the `cloud-absent/` mirror.
+const cloudAliasTarget = path.resolve(
+  __dirname,
+  cloudControlPresent
+    ? "./node_modules/@qontinui/cloud-control/frontend/src"
+    : "./src/cloud-absent"
+);
+
 export default defineConfig({
   plugins: [react()],
   // Vitest 4.x bundles rolldown-vite internally; its transformer is oxc, not esbuild.
@@ -85,6 +97,7 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@cloud": cloudAliasTarget,
       ...(cloudControlPresent
         ? {}
         : {

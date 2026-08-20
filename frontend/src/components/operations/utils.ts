@@ -629,6 +629,43 @@ const CLEARED_VIA_VERBS: Record<string, string> = {
   sweep: "cleared by sweep",
 };
 
+/** The agent-facing doors — the only ones that run a clearance-authority
+ *  resolution, so the only ones for which "no rule" means "the audience
+ *  default decided" rather than "no resolution happened". */
+const AGENT_CLEARANCE_DOORS: ReadonlySet<string> = new Set([
+  "agent_attest",
+  "agent_reject",
+]);
+
+/**
+ * Optional band annotation for the deciding `gate_clearance` rule. NOT on the
+ * wire — the caller derives it by looking `cleared_under_rule` up in the
+ * tenant's current rule set (see `admin/coord/_shared/clearanceRuleBand.ts`).
+ * Omit it and the sentence renders exactly as it did before this option
+ * existed.
+ */
+export interface ClearanceProvenanceOptions {
+  /** `"tenant"` / `"system"` when the deciding rule was found in the current
+   *  rule set; `"unknown"` when the set WAS read and no longer carries the id.
+   *  `null`/omitted — including "the set was never read" — renders the
+   *  un-annotated "under rule <id>", which claims nothing either way. */
+  ruleBand?: "tenant" | "system" | "unknown" | null;
+  /** When true AND the door is an agent door that carries no rule, say so:
+   *  the built-in audience default decided, which is a real answer rather than
+   *  a missing one. Opt-in so existing callers render byte-identically. */
+  noteAudienceDefault?: boolean;
+}
+
+/** How each band is spelled in the sentence. */
+const RULE_BAND_PHRASES: Record<"tenant" | "system" | "unknown", string> = {
+  tenant: "under tenant rule",
+  system: "under system default rule",
+  // Deliberately not a band — the caller could not establish one, and
+  // guessing "tenant" here is exactly the mis-diagnosis this cell exists to
+  // prevent.
+  unknown: "under rule",
+};
+
 /** UUID → 8-char short form for display (full value belongs in a title). */
 function shortId(id: string): string {
   return id.slice(0, 8);
@@ -643,9 +680,15 @@ function shortId(id: string): string {
  * Returns `null` when NO provenance field is set, so callers can render
  * nothing — the panel must look identical to today against a coord that does
  * not emit the columns yet.
+ *
+ * `opts` adds the band of the deciding rule ("tenant rule" / "system default
+ * rule" / an explicit "band unknown") and, on an agent door with no rule, the
+ * "no rule matched — audience default" statement. Both are opt-in: called with
+ * one argument this function is byte-identical to its pre-`opts` behaviour.
  */
 export function summarizeClearanceProvenance(
-  p: ClearanceProvenance
+  p: ClearanceProvenance,
+  opts?: ClearanceProvenanceOptions
 ): string | null {
   const via = p.cleared_via ?? null;
   const agent = p.cleared_by_agent_id ?? null;
@@ -665,6 +708,23 @@ export function summarizeClearanceProvenance(
     const actorNamed = agent !== null || verb.includes(" by ");
     parts.push(actorNamed ? `on ${shortId(device)}` : `by ${shortId(device)}`);
   }
-  if (rule) parts.push(`under rule ${shortId(rule)}`);
+  if (rule) {
+    // No band supplied → the un-annotated phrase, identical to today. An
+    // explicit "unknown" is a different statement (the set was read and the
+    // rule is gone) and is called out.
+    // `?? "unknown"` picks the LOOKUP KEY for the un-annotated phrase ("under
+    // rule <id>"); it is not a claim that the band is unknown. The explicit
+    // "(band unknown)" suffix below fires only when the caller actually said
+    // so — i.e. it read the rule set and the rule was not in it.
+    const band = opts?.ruleBand ?? "unknown";
+    parts.push(`${RULE_BAND_PHRASES[band]} ${shortId(rule)}`);
+    if (opts?.ruleBand === "unknown") parts.push("(band unknown)");
+  } else if (
+    opts?.noteAudienceDefault &&
+    via &&
+    AGENT_CLEARANCE_DOORS.has(via)
+  ) {
+    parts.push("— no clearance rule matched (audience default)");
+  }
   return parts.join(" ");
 }

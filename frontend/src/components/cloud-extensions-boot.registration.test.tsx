@@ -25,6 +25,24 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+/**
+ * Every slot cloud-control fills, by kind. Listed in full so the OSS case can
+ * assert the absence of each one by name: `getSlots()` used to expose the
+ * backing Maps and let that case check `.size === 0`, but phase 5 deleted it
+ * along with the four slot kinds nothing could read. Enumerating is the
+ * honest replacement — a slot added to cloud-control's `index.ts` and not
+ * added here is covered by neither case, so keep the two in step.
+ */
+const CLOUD_SERVICES = ["billingService", "organizationService"] as const;
+const CLOUD_COMPONENTS = [
+  "organizationSwitcher",
+  "createOrganizationDialog",
+  "teamMemberList",
+  "inviteMemberDialog",
+  "betaBanner",
+  "subscriptionBadge",
+] as const;
+
 const OVERLAY_MANIFEST = path.resolve(
   process.cwd(),
   "node_modules/@qontinui/cloud-control/package.json"
@@ -46,12 +64,12 @@ describe("cloud-control extension registration", () => {
 
       await import("@/components/cloud-extensions-boot");
 
-      expect(slots.getService("billingService")).toBeDefined();
-      expect(slots.getService("organizationService")).toBeDefined();
-      expect(slots.getComponent("organizationSwitcher")).toBeDefined();
-      expect(slots.getComponent("createOrganizationDialog")).toBeDefined();
-      expect(slots.getComponent("teamMemberList")).toBeDefined();
-      expect(slots.getComponent("inviteMemberDialog")).toBeDefined();
+      for (const name of CLOUD_SERVICES) {
+        expect(slots.getService(name), `service slot ${name}`).toBeDefined();
+      }
+      for (const name of CLOUD_COMPONENTS) {
+        expect(slots.getComponent(name), `component slot ${name}`).toBeDefined();
+      }
     },
     // This import pulls cloud-control's whole module graph (~45 raw .ts/.tsx
     // files) through vite's transform on demand. That is ~20s on a warm run
@@ -90,10 +108,15 @@ describe("cloud-control extension registration", () => {
       const slots = await import("@/lib/extension-slots");
       await import("@/components/cloud-extensions-boot");
 
-      expect(slots.getService("billingService")).toBeUndefined();
-      expect(slots.getComponent("organizationSwitcher")).toBeUndefined();
-      expect(slots.getSlots().services.size).toBe(0);
-      expect(slots.getSlots().components.size).toBe(0);
+      for (const name of CLOUD_SERVICES) {
+        expect(slots.getService(name), `service slot ${name}`).toBeUndefined();
+      }
+      for (const name of CLOUD_COMPONENTS) {
+        expect(
+          slots.getComponent(name),
+          `component slot ${name}`
+        ).toBeUndefined();
+      }
     }
   );
 });

@@ -87,26 +87,26 @@ describe("extension-slots — registration is observable", () => {
   });
 
   it("notifies subscribers once per registerCloudExtensions call, after all mutations", async () => {
-    const {
-      registerCloudExtensions,
-      subscribeToSlots,
-      getComponent,
-      getSlots,
-    } = await freshSlots();
+    const { registerCloudExtensions, subscribeToSlots, getComponent, getService } =
+      await freshSlots();
 
     let calls = 0;
     let sawBothComponents = false;
-    let sawNavItem = false;
+    let sawService = false;
     const unsubscribe = subscribeToSlots(() => {
       calls += 1;
       sawBothComponents =
         getComponent("betaBanner") !== undefined &&
         getComponent("organizationSwitcher") !== undefined;
-      sawNavItem = getSlots().navItems.length === 1;
+      // The other slot kind, mutated in the same call: the point of the
+      // notify-after-all-mutations rule is that a subscriber never observes
+      // one half of a registration. (This read used to be `navItems`, which
+      // phase 5 deleted along with the rest of the unreadable slots.)
+      sawService = getService("billingService") !== undefined;
     });
 
     registerCloudExtensions({
-      navItems: [{ href: "/billing", label: "Billing" }],
+      services: { billingService: { getSubscription: () => undefined } },
       components: {
         betaBanner: CloudBanner as ComponentType<unknown>,
         organizationSwitcher: CloudBanner as ComponentType<unknown>,
@@ -115,7 +115,7 @@ describe("extension-slots — registration is observable", () => {
 
     expect(calls).toBe(1);
     expect(sawBothComponents).toBe(true);
-    expect(sawNavItem).toBe(true);
+    expect(sawService).toBe(true);
 
     unsubscribe();
     registerCloudExtensions({ components: {} });

@@ -15,6 +15,7 @@
 
 import { ApiConfig } from "@/services/api-config";
 import { httpClient } from "@/services/service-factory";
+import type { SessionToolActivity } from "@/components/sessions/types";
 
 /** Base URL for the admin agent-sessions surface. */
 export const AGENT_SESSIONS_API = `${ApiConfig.API_BASE_URL}/api/v1/admin/agent-sessions`;
@@ -30,8 +31,21 @@ export type AgentSessionStatus = "live" | "stale" | "closed";
  * One row from `GET /api/v1/admin/agent-sessions`. The identity-registry
  * fields (`name` / `derived_name` / `summary` / `status`) are nullable /
  * optional so the UI degrades cleanly against a pre-#894 coord.
+ *
+ * `extends SessionToolActivity` adds the tool-grain fields from plan
+ * `2026-08-11-coord-hook-sourced-agent-status`. This is the CANONICAL exported
+ * type for this endpoint, so it carries the mixin for the same anti-drift
+ * reason the mixin exists at all — `AgentSessionsDashboard` keeps a private
+ * row interface of its own, and two declarations of one wire row that disagree
+ * on their fields is precisely the drift being prevented.
+ *
+ * The fields are inert until coord's `GET /coord/agent-sessions` joins
+ * `coord.sessions` in and emits them (that handler builds its response from a
+ * hand-written key set, so pass-through alone does not carry them). Declaring
+ * them here is honest only because every field is optional AND nullable and
+ * every consumer treats absent, null and unknown identically.
  */
-export interface AgentSessionRow {
+export interface AgentSessionRow extends SessionToolActivity {
   id: string;
   user_id: string | null;
   device_id: string | null;

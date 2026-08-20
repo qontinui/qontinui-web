@@ -76,6 +76,16 @@ describe("CoordNav", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers Gate Clearance in the Merge group and links it", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-merge"));
+    const item = await screen.findByTestId("coord-nav-gate-clearance");
+    expect(item).toBeVisible();
+    expect(item).toHaveAttribute("href", "/admin/coord/gate-clearance");
+  });
+
   it("shows the Infra group with its items for operators", async () => {
     isSuperuser = true;
     const user = userEvent.setup();

@@ -73212,7 +73212,7 @@
     },
     "/api/v1/memory/records": {
       "get": {
-        "description": "Keyset-paginated list of the tenant's LIVE records, newest first.\n\nThe runner's sync-pull surface (``POST /query`` requires query_text,\ncaps at 50, and relevance-ranks \u2014 unusable for a full mirror).\n``kinds`` is repeatable and/or CSV; ``since`` filters on the\nfreshest of updated/created; ``cursor`` is the opaque\n``(created_at, memory_id)`` keyset token from the previous page.\nEach record carries its outbound ``links``. Ordering is\n``created_at DESC, memory_id DESC`` \u2014 stable under concurrent\nwrites (new rows only ever prepend).",
+        "description": "Keyset-paginated list of the tenant's LIVE records, newest first.\n\nThe runner's sync-pull surface (``POST /query`` requires query_text,\ncaps at 50, and relevance-ranks \u2014 unusable for a full mirror).\n``kinds`` is repeatable and/or CSV; ``since`` filters on the\nfreshest of updated/created; ``cursor`` is the opaque\n``(created_at, seq)`` keyset token from the previous page.\nEach record carries its outbound ``links``. Ordering is\n``created_at DESC, seq DESC`` \u2014 newest first in WRITE order (``seq``\nis the monotone write-order key; a batch write shares one\n``created_at``, so the old ``memory_id`` UUID tiebreak paginated a\nbatch in random order) and stable under concurrent writes (new rows\nonly ever prepend).",
         "operationId": "api_v1_memory_records_get",
         "parameters": [
           {
