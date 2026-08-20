@@ -136,3 +136,49 @@ def test_mixed_insert_and_create_index_flags_only_index():
     assert len(violations) == 1
     assert "INDEX ON" in violations[0][1]
     assert "tenants" in violations[0][1]
+
+
+# ---------------------------------------------------------------------------
+# `ALTER TABLE IF EXISTS` — the second false-positive class, same shape as the
+# `INSERT … ON CONFLICT` one above.
+#
+# ``IF EXISTS`` is part of PostgreSQL's ALTER TABLE grammar. Before the pattern
+# consumed it, the audit captured the literal ``IF`` as the table identifier and
+# flagged correctly schema-qualified DDL as unqualified — it fired on both
+# coord_prompt_docs_02 and _03's CHECK widenings, and 02 only ever escaped
+# because the hook re-runs on CHANGED files alone.
+#
+# The pair that matters is the false-positive test AND its true-positive twin:
+# the fix must not be re-achievable by making the pattern stop matching
+# ``ALTER TABLE`` at all.
+# ---------------------------------------------------------------------------
+
+
+def test_alter_table_if_exists_schema_qualified_passes():
+    sql = "ALTER TABLE IF EXISTS coord.prompt_documents ADD CONSTRAINT ck_x CHECK (kind IN ('policy'))"
+    assert _audit(sql) == []
+
+
+def test_alter_table_if_exists_bare_table_still_flags():
+    sql = "ALTER TABLE IF EXISTS prompt_documents ADD CONSTRAINT ck_x CHECK (kind IN ('policy'))"
+    violations = _audit(sql)
+    assert len(violations) == 1
+    assert "ALTER TABLE" in violations[0][1]
+    assert "prompt_documents" in violations[0][1]
+
+
+def test_alter_table_bare_table_still_flags():
+    sql = "ALTER TABLE prompt_documents ADD COLUMN x INTEGER"
+    violations = _audit(sql)
+    assert len(violations) == 1
+    assert "ALTER TABLE" in violations[0][1]
+
+
+def test_alter_table_if_exists_only_schema_qualified_passes():
+    sql = "ALTER TABLE IF EXISTS ONLY coord.prompt_documents ADD COLUMN x INTEGER"
+    assert _audit(sql) == []
+
+
+def test_alter_table_if_exists_quoted_qualified_passes():
+    sql = 'ALTER TABLE IF EXISTS "coord"."prompt_documents" ADD COLUMN x INTEGER'
+    assert _audit(sql) == []

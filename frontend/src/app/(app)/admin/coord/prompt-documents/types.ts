@@ -11,16 +11,17 @@
  *
  * A prompt document is any prompt-shaped content coord serves the fleet,
  * addressed by `(kind, name)`. This generalizes the former `policy_documents`
- * store (whose rows migrated in as `kind: "policy"`) to five kinds — one editor
- * for all of them, rather than five unrelated homes.
+ * store (whose rows migrated in as `kind: "policy"`) to six kinds — one editor
+ * for all of them, rather than six unrelated homes.
  *
  * Versioning is the core contract: coord snapshots an immutable version on EVERY
  * edit and bumps `current_version` in the same transaction. Nothing is
  * overwritten in place, so every prior wording stays readable and restorable.
  */
 
-/** The five content families (coord `KINDS`, mirroring the DB CHECK). */
+/** The six content families (coord `KINDS`, mirroring the DB CHECK). */
 export type PromptDocumentKind =
+  | "session_briefing"
   | "policy"
   | "response_prompt"
   | "continuation_rules"
@@ -29,6 +30,9 @@ export type PromptDocumentKind =
 
 /** Every kind, in the order the page renders its groups. */
 export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
+  // First on purpose: this is the most consequential document in the store —
+  // it is appended to the system prompt of every session the runner hosts.
+  "session_briefing",
   "policy",
   "response_prompt",
   "continuation_rules",
@@ -41,6 +45,11 @@ export const KIND_META: Record<
   PromptDocumentKind,
   { label: string; description: string }
 > = {
+  session_briefing: {
+    label: "Session Briefing",
+    description:
+      "Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — runner-session, plan-capture-clause and ai-session-rules; any other document under this kind is stored and versioned but inert.",
+  },
   policy: {
     label: "Policy",
     description:
