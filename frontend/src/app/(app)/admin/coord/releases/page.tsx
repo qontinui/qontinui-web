@@ -169,7 +169,16 @@ export default function CoordReleasesPage() {
   const [reloadNonce, setReloadNonce] = useState(0);
   const [releases, setReleases] = useState<ReleaseHistoryEntry[]>([]);
   const [target, setTarget] = useState<string | null>(null);
+  // TWO flags, because two different questions are being asked and one answer
+  // cannot serve both (`/history` established this split):
+  //   `loaded`  — has a read SUCCEEDED? Drives the counts, because R6 says an
+  //               unfetched count renders `–` and never `0`.
+  //   `settled` — has a read come BACK at all, success or failure? Drives the
+  //               list, because skeletons after a failed read claim we are
+  //               still loading, which is a second untrue thing on a row that
+  //               already carries an error.
   const [loaded, setLoaded] = useState(false);
+  const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
 
@@ -203,14 +212,24 @@ export default function CoordReleasesPage() {
         setReleases(body.history ?? []);
         setTarget(body.target ?? null);
         setError(body.coord_error ?? null);
+        // Inside the `try`, on SUCCESS only — never in a `finally`. `loaded`
+        // is what the filter tabs render their counts off, and R6's rule is
+        // that an unfetched count renders `–`, never `0`. Setting it in a
+        // `finally` marked a FAILED first read as loaded, so the tabs printed
+        // "All 0 · Needs a human 0 · In flight 0" next to "Failed to load: …"
+        // — three counts asserting an empty corpus on a request that never
+        // answered. `/deploys` and `/lands` set their flag here for exactly
+        // this reason.
+        setLoaded(true);
       } catch (e) {
         if (ignore) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!ignore) setLoaded(true);
+        if (!ignore) setSettled(true);
       }
     };
     setLoaded(false);
+    setSettled(false);
     load();
     const id = setInterval(load, POLL_INTERVAL_MS);
     return () => {
@@ -314,7 +333,7 @@ export default function CoordReleasesPage() {
         itemKey={(e) =>
           `${e.tag ?? e.version ?? "rel"}-${e.observed_at ?? ""}`
         }
-        loaded={loaded || releases.length > 0}
+        loaded={settled || releases.length > 0}
         skeletonRows={6}
         renderRow={(entry, ctx) => (
           <ReleaseRow
