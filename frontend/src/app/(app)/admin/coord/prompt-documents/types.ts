@@ -358,3 +358,66 @@ export interface ListVersionsResponse {
   versions: PromptDocumentVersionMeta[];
   total: number;
 }
+
+// ────────────────────── policy-write autonomy dial ──────────────────────
+
+/**
+ * The `fleet_runtime_policy` domain governing how much of the agent
+ * policy-write surface this tenant permits.
+ *
+ * Plan `2026-08-06-agent-policy-replace-and-write-autonomy-dial` §4. Mirrors
+ * coord's `fleet_policy::POLICY_WRITE_DOMAIN`.
+ */
+export const POLICY_WRITE_DOMAIN = "policy_write";
+
+/**
+ * The levels, most restrictive first. A total order — each strictly contains
+ * the previous. Mirrors coord's `PolicyWriteLevel::ALL`.
+ */
+export const POLICY_WRITE_LEVELS = [
+  "off",
+  "propose_only",
+  "tightening_only",
+  "full",
+] as const;
+export type PolicyWriteLevel = (typeof POLICY_WRITE_LEVELS)[number];
+
+/**
+ * What coord applies when NO row matches — deliberately NOT the resolver's bare
+ * `"off"`.
+ *
+ * `resolve_effective` answers `off` for both "nobody wrote a row" and "an
+ * operator turned it off". Taking the first literally would disable, fleet-wide
+ * and on deploy, a capability that works today. `tightening_only` is exactly
+ * coord's shipped behaviour, so a tenant that never touches the dial sees no
+ * change. Mirrors coord's `POLICY_WRITE_DEFAULT`.
+ */
+export const POLICY_WRITE_DEFAULT_LEVEL: PolicyWriteLevel = "tightening_only";
+
+/**
+ * Levels an operator may currently select.
+ *
+ * `full` is absent, and that is a shipping decision rather than an oversight:
+ * its entire safety story is that the operator is notified after a loosening
+ * lands, and nothing emits that notification yet (the notification substrate
+ * landed; the policy-change emitter did not). Coord clamps `full` to
+ * `tightening_only` server-side regardless of what this list says —
+ * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` — so hiding it here is the honest
+ * presentation of a restriction that is really enforced, not the enforcement
+ * itself.
+ */
+export const POLICY_WRITE_SELECTABLE_LEVELS: readonly PolicyWriteLevel[] = [
+  "off",
+  "propose_only",
+  "tightening_only",
+];
+
+/** One-line description per level, for the control's help text. */
+export const POLICY_WRITE_LEVEL_HELP: Record<PolicyWriteLevel, string> = {
+  off: "No agent policy writes at all — every operation is refused, including appending a new clause.",
+  propose_only:
+    "Agents write nothing directly; every operation becomes a pending proposal for you to approve.",
+  tightening_only:
+    "Agents may land a provable tightening or no-op; anything else becomes a pending proposal. This is coord's built-in default.",
+  full: "Agents may also land a classified loosening, with a notification instead of a proposal. Not selectable until policy-change notifications ship.",
+};
