@@ -17,6 +17,21 @@
  *
  * Filter bar: source dropdown (All + the 6 values) + session-name search +
  * a live-poll toggle. Full list refreshes every 10s when polling is on.
+ *
+ * ## Console style (Phase 3 Wave 5)
+ *
+ * `/admin/coord/prompt-injections` landed after the console plan was authored
+ * and was missing from its census (§4 correction). It takes **R9 only**: the
+ * table already does what D2 asks of Family C — a clickable row plus a
+ * full-width `colSpan` detail row — so R5 was satisfied before this plan
+ * touched it, and a read-only audit log of events that already happened has no
+ * severity to encode (R3's palette answers "who must act", and the answer here
+ * is nobody on every row).
+ *
+ * What R9 removed: the two `<Card><CardHeader><CardTitle>` wrappers. One
+ * restated "Prompt Injections" — the page heading, one line above it — and the
+ * other put a ~72px card header on the word "Filters". Between them they cost
+ * ~144px above the table on the page whose entire purpose is the table.
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -30,7 +45,6 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -140,7 +154,9 @@ function DetailPanel({ eventId }: { eventId: string }) {
   }, [eventId]);
 
   if (loading && !data) {
-    return <Skeleton className="h-24 w-full" data-testid="pinj-detail-loading" />;
+    return (
+      <Skeleton className="h-24 w-full" data-testid="pinj-detail-loading" />
+    );
   }
   if (error) {
     return (
@@ -228,107 +244,109 @@ function InjectionsTable({
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
-    <Card data-testid="prompt-injections-table-section">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ScrollText className="h-4 w-4" />
+    <section
+      data-testid="prompt-injections-table-section"
+      className="space-y-2"
+    >
+      <div className="flex items-center gap-2">
+        <ScrollText className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Prompt Injections
-          <Badge variant="outline" className="ml-2">
-            {rows.length}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={onRefresh}
-            data-testid="prompt-injections-refresh"
-          >
-            <RefreshCw className="h-3 w-3" />
-          </Button>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <p
-            className="text-sm text-destructive"
-            data-testid="prompt-injections-error"
-          >
-            Failed to load: {error}
-          </p>
-        )}
-        {loading && rows.length === 0 ? (
-          <Skeleton className="h-32 w-full" />
-        ) : rows.length === 0 ? (
-          <p
-            className="text-sm text-muted-foreground italic"
-            data-testid="prompt-injections-empty"
-          >
-            No prompt injections matching the current filters.
-          </p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[30px]"></TableHead>
-                <TableHead>session</TableHead>
-                <TableHead className="w-[180px]">source</TableHead>
-                <TableHead>trigger</TableHead>
-                <TableHead className="w-[120px]">when</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => {
-                const isExpanded = expanded === row.event_id;
-                return (
-                  <Fragment key={row.event_id}>
-                    <TableRow
-                      data-testid="prompt-injections-row"
-                      className="cursor-pointer hover:bg-muted/40"
-                      onClick={() =>
-                        setExpanded((cur) =>
-                          cur === row.event_id ? null : row.event_id
-                        )
-                      }
-                    >
-                      <TableCell>
-                        {isExpanded ? (
-                          <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3" />
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs font-medium">
-                        {sessionLabel(row)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="font-mono text-[10px]">
-                          {row.source}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[420px] truncate text-xs text-muted-foreground">
-                        {row.trigger_preview ?? (
-                          <span className="italic">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {relativeTime(row.created_at)}
+        </h2>
+        <Badge variant="outline" className="font-mono text-[11px]">
+          {rows.length}
+        </Badge>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          onClick={onRefresh}
+          data-testid="prompt-injections-refresh"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      </div>
+      {error && (
+        <p
+          className="text-sm text-destructive"
+          data-testid="prompt-injections-error"
+        >
+          Failed to load: {error}
+        </p>
+      )}
+      {loading && rows.length === 0 ? (
+        <Skeleton className="h-32 w-full" />
+      ) : rows.length === 0 ? (
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="prompt-injections-empty"
+        >
+          No prompt injections matching the current filters.
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[30px]"></TableHead>
+              <TableHead>session</TableHead>
+              <TableHead className="w-[180px]">source</TableHead>
+              <TableHead>trigger</TableHead>
+              <TableHead className="w-[120px]">when</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const isExpanded = expanded === row.event_id;
+              return (
+                <Fragment key={row.event_id}>
+                  <TableRow
+                    data-testid="prompt-injections-row"
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() =>
+                      setExpanded((cur) =>
+                        cur === row.event_id ? null : row.event_id
+                      )
+                    }
+                  >
+                    <TableCell>
+                      {isExpanded ? (
+                        <ChevronDown className="h-3 w-3" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3" />
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs font-medium">
+                      {sessionLabel(row)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="secondary"
+                        className="font-mono text-[10px]"
+                      >
+                        {row.source}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[420px] truncate text-xs text-muted-foreground">
+                      {row.trigger_preview ?? <span className="italic">—</span>}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {relativeTime(row.created_at)}
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded && (
+                    <TableRow data-testid="prompt-injections-detail-row">
+                      <TableCell colSpan={5} className="bg-muted/10 p-4">
+                        <DetailPanel eventId={row.event_id} />
                       </TableCell>
                     </TableRow>
-                    {isExpanded && (
-                      <TableRow data-testid="prompt-injections-detail-row">
-                        <TableCell colSpan={5} className="bg-muted/10 p-4">
-                          <DetailPanel eventId={row.event_id} />
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
+                  )}
+                </Fragment>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   );
 }
 
@@ -356,8 +374,7 @@ export default function PromptInjectionsDashboard() {
     try {
       const body = await listPromptInjections({
         limit: 200,
-        source:
-          filters.source === ALL_SOURCES ? undefined : filters.source,
+        source: filters.source === ALL_SOURCES ? undefined : filters.source,
         session_name: filters.session_name.trim() || undefined,
       });
       setRows(body.events);
@@ -386,59 +403,51 @@ export default function PromptInjectionsDashboard() {
   const sourceOptions = useMemo(() => SOURCE_VALUES, []);
 
   return (
-    <div className="space-y-6">
-      <Card data-testid="prompt-injections-filters">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Filter className="h-4 w-4" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center gap-4">
-            <Select
-              value={filters.source}
-              onValueChange={(v) =>
-                setFilters((f) => ({ ...f, source: v }))
-              }
-            >
-              <SelectTrigger
-                className="w-[240px]"
-                data-testid="prompt-injections-source-select"
-              >
-                <SelectValue placeholder="All sources" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_SOURCES}>All sources</SelectItem>
-                {sourceOptions.map((s) => (
-                  <SelectItem key={s} value={s} className="font-mono text-xs">
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="session name"
-              value={filters.session_name}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, session_name: e.target.value }))
-              }
-              className="max-w-xs text-xs"
-              data-testid="prompt-injections-session-input"
-            />
-            <label className="flex items-center gap-2 text-sm">
-              <Switch
-                checked={filters.polling}
-                onCheckedChange={(v) =>
-                  setFilters((f) => ({ ...f, polling: Boolean(v) }))
-                }
-                data-testid="prompt-injections-poll-toggle"
-              />
-              Live poll (10s)
-            </label>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-4">
+      <div
+        data-testid="prompt-injections-filters"
+        className="flex flex-wrap items-center gap-4"
+      >
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <Select
+          value={filters.source}
+          onValueChange={(v) => setFilters((f) => ({ ...f, source: v }))}
+        >
+          <SelectTrigger
+            className="w-[240px]"
+            data-testid="prompt-injections-source-select"
+          >
+            <SelectValue placeholder="All sources" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_SOURCES}>All sources</SelectItem>
+            {sourceOptions.map((s) => (
+              <SelectItem key={s} value={s} className="font-mono text-xs">
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          placeholder="session name"
+          value={filters.session_name}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, session_name: e.target.value }))
+          }
+          className="max-w-xs text-xs"
+          data-testid="prompt-injections-session-input"
+        />
+        <label className="flex items-center gap-2 text-sm">
+          <Switch
+            checked={filters.polling}
+            onCheckedChange={(v) =>
+              setFilters((f) => ({ ...f, polling: Boolean(v) }))
+            }
+            data-testid="prompt-injections-poll-toggle"
+          />
+          Live poll (10s)
+        </label>
+      </div>
 
       <InjectionsTable
         rows={rows}

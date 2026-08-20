@@ -86,30 +86,28 @@ export default function GateClearancePage() {
   };
 
   return (
-    <div className="space-y-6 p-6" data-testid="gate-clearance-page">
-      <div className="flex items-start gap-3">
+    <div className="p-3 sm:p-6 space-y-4" data-testid="gate-clearance-page">
+      <div className="flex flex-wrap items-baseline gap-2">
         <ShieldCheck
-          className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+          className="size-4 shrink-0 self-center text-muted-foreground"
           aria-hidden
         />
-        <div>
-          <h1 className="text-lg font-semibold">Gate Clearance</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Who may clear a coord gate, per gate class. A gate carries a class;
-            the first matching rule decides whether an operator, a non-authoring
-            agent, or any agent may clear it. Rules in this workspace outrank
-            the system defaults; where nothing matches, coord falls back to a
-            default that depends on the gate&apos;s audience.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Applies to your current workspace. See a gate&apos;s actual decision
-            on the{" "}
-            <Link href="/admin/coord/gates" className="underline">
-              Gates
-            </Link>{" "}
-            page — each cleared gate names the rule and band that admitted it.
-          </p>
-        </div>
+        {/* `<h2>`, not `<h1>` — `admin/coord/layout.tsx` already renders the
+            console's one `<h1>` ("Coord operator console"), which 13 Playwright
+            assertions match by role and exact name. A second `<h1>` was always
+            a document-outline defect; R9 restyling this one to `text-sm` made
+            it a VISUAL duplicate of the shell title as well, which is what
+            turned a latent nit into a real one. All seven Wave 3 routes render
+            no page heading at all; this stays because it names a surface the
+            nav crumb abbreviates. Pixel-identical either way. */}
+        <h2 className="text-sm font-semibold">Gate Clearance</h2>
+        <p className="max-w-4xl text-xs text-muted-foreground">
+          Who may clear a coord gate, per gate class, in this workspace. A gate
+          carries a class; the first matching rule decides whether an operator,
+          a non-authoring agent, or any agent may clear it. Workspace rules
+          outrank the system defaults; where nothing matches, coord falls back
+          to a default that depends on the gate&apos;s audience.
+        </p>
       </div>
 
       {loading ? (
@@ -170,8 +168,13 @@ export default function GateClearancePage() {
         onReplace={replaceRule}
       />
 
+      {/* The pointer the deleted second header paragraph carried, folded into
+          the link that was already here: each cleared gate on /gates names the
+          rule and band that admitted it. */}
       <Button asChild variant="link" className="px-0 text-xs">
-        <Link href="/admin/coord/gates">Go to Gates →</Link>
+        <Link href="/admin/coord/gates">
+          See a gate&apos;s actual decision on Gates →
+        </Link>
       </Button>
     </div>
   );

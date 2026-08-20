@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { RecordDetail } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,8 +85,8 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
           className="text-xs text-muted-foreground"
           data-testid="coord-dangling"
         >
-          Coord has no work unit with this slug. The link carries no foreign
-          key and is allowed to dangle — this is a normal result, not an error.
+          Coord has no work unit with this slug. The link carries no foreign key
+          and is allowed to dangle — this is a normal result, not an error.
         </p>
       )}
 
@@ -122,9 +116,7 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
                 <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
                   {pr.repo ?? "?"}#{pr.pr_number ?? "?"}
                 </code>
-                <Badge
-                  variant={pr.state === "merged" ? "default" : "outline"}
-                >
+                <Badge variant={pr.state === "merged" ? "default" : "outline"}>
                   {pr.state}
                 </Badge>
                 {pr.branch && (
@@ -136,7 +128,10 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-muted-foreground" data-testid="coord-prs-none">
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="coord-prs-none"
+          >
             Coord answered: this work unit has no PR citations.
           </p>
         )
@@ -232,14 +227,25 @@ function EdgeList({
   );
 }
 
-interface ArtifactDetailDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+interface ArtifactDetailPanelProps {
+  /**
+   * The artifact to show, or `null` for "nothing open".
+   *
+   * This replaced an `open: boolean` when the dialog became an expand-in-place
+   * panel (D2/R5). The boolean used to do double duty as the RESET trigger —
+   * its `false` branch nulled the state — and that job now belongs to
+   * `artifactId` going `null`, which is the same event with one fewer way to
+   * disagree with itself.
+   */
   artifactId: string | null;
   fetchDetail: (id: string) => Promise<WorkArtifactDetail | null>;
   correctKind: (id: string, kind: WorkArtifactKind) => Promise<boolean>;
   /** Follow a provenance edge to the artifact at the other end. */
   onOpenArtifact: (id: string) => void;
+  /** Collapse the panel. The row's chevron does this too. */
+  onClose: () => void;
+  /** Extra classes for the panel container (e.g. re-rounding when pinned). */
+  className?: string;
 }
 
 /**
@@ -253,14 +259,14 @@ interface ArtifactDetailDialogProps {
  * rather than re-label it — which is the exact failure the "Kind forks"
  * section of the divergence panel reports.
  */
-export function ArtifactDetailDialog({
-  open,
-  onOpenChange,
+export function ArtifactDetailPanel({
   artifactId,
   fetchDetail,
   correctKind,
   onOpenArtifact,
-}: ArtifactDetailDialogProps) {
+  onClose,
+  className,
+}: ArtifactDetailPanelProps) {
   const [detail, setDetail] = useState<WorkArtifactDetail | null>(null);
   const [loading, setLoading] = useState(false);
   /** The fetch came back empty. Distinct from `loading` — see the render. */
@@ -303,8 +309,8 @@ export function ArtifactDetailDialog({
   );
 
   useEffect(() => {
-    if (!open || !artifactId) {
-      // Invalidate anything in flight so it cannot paint into a closed dialog.
+    if (!artifactId) {
+      // Invalidate anything in flight so it cannot paint into a closed panel.
       requestIdRef.current += 1;
       setDetail(null);
       setFailed(false);
@@ -317,7 +323,7 @@ export function ArtifactDetailDialog({
       // Param changed or unmounted — the in-flight request is now stale.
       requestIdRef.current += 1;
     };
-  }, [open, artifactId, load]);
+  }, [artifactId, load]);
 
   /**
    * Apply an operator's kind correction, then re-read the artifact.
@@ -354,32 +360,32 @@ export function ArtifactDetailDialog({
     setSavingKind(false);
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="max-h-[85vh] max-w-3xl overflow-y-auto"
-        data-testid="artifact-detail-dialog"
-      >
-        <DialogHeader>
-          <DialogTitle className="truncate">
-            {detail?.title || detail?.slug || "Artifact"}
-          </DialogTitle>
-          <DialogDescription>
-            {detail
-              ? `${detail.slug} · v${detail.current_version} · captured by ${detail.captured_by}`
-              : failed
-                ? "Could not be loaded"
-                : "Loading…"}
-          </DialogDescription>
-        </DialogHeader>
+  const header = (
+    <div className="space-y-0.5">
+      <h3 className="truncate text-sm font-semibold">
+        {detail?.title || detail?.slug || "Artifact"}
+      </h3>
+      <p className="text-xs text-muted-foreground">
+        {detail
+          ? `${detail.slug} · v${detail.current_version} · captured by ${detail.captured_by}`
+          : failed
+            ? "Could not be loaded"
+            : "Loading…"}
+      </p>
+    </div>
+  );
 
-        {/*
-          `failed` is checked BEFORE the skeleton. A failed fetch leaves
-          `detail` null and `loading` false, so a `loading || !detail` guard
-          would render the skeleton forever and describe a dead dialog as one
-          that is still working.
-        */}
-        {failed ? (
+  return (
+    <RecordDetail
+      // FROZEN authored testid (D4a). The name says "dialog" and this is no
+      // longer one — kept anyway, because a testid is a contract with whoever
+      // is querying it, and renaming it to read better would break them to fix
+      // nothing. The component and its file say what it actually is.
+      data-testid="artifact-detail-dialog"
+      className={className}
+      why={header}
+      problems={
+        failed ? (
           <div
             className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5"
             data-testid="artifact-detail-error"
@@ -401,6 +407,21 @@ export function ArtifactDetailDialog({
         ) : loading || !detail ? (
           <Skeleton className="h-64 w-full" />
         ) : (
+          /*
+           * The one real design judgement in this conversion, recorded rather
+           * than left implicit.
+           *
+           * `<RecordDetail>`'s slots are named for a STATUS record — why is
+           * this row like this, what failed, what to do. A library artifact is
+           * not a status record; it is a document, and its substance (kind,
+           * provenance, coord link, body) is neither a "why" nor a "problem".
+           * Rather than stretch the slot vocabulary for one surface, the
+           * read-only document rides in `problems` — the slot the failure
+           * branch already owns, so the panel has exactly one "what is in this
+           * artifact" position whether the read succeeded or not — while
+           * `actions`, `history` and `raw` take the three parts that DO fit
+           * the vocabulary exactly.
+           */
           <div className="space-y-5">
             {/* ── identity + inline kind correction ── */}
             <div className="flex flex-wrap items-center gap-2">
@@ -490,60 +511,94 @@ export function ArtifactDetailDialog({
                 {detail.body || "(empty)"}
               </pre>
             </div>
-
-            {/* ── version history ── */}
-            <div>
-              <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Version history · {detail.versions.length}
-              </h4>
-              {detail.versions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No version snapshots recorded.
-                </p>
-              ) : (
-                <ul className="space-y-1" data-testid="artifact-versions">
-                  {detail.versions.map((v) => (
-                    <li
-                      key={v.id}
-                      className="flex flex-wrap items-center gap-2 text-xs"
-                    >
-                      <Badge variant="outline" className="shrink-0">
-                        v{v.version_number}
-                      </Badge>
-                      <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px]">
-                        {v.content_sha256.slice(0, 10)}
-                      </code>
-                      <span className="text-muted-foreground">
-                        {formatWhen(v.created_at)}
-                      </span>
-                      {v.created_by && (
-                        <span className="truncate text-muted-foreground">
-                          by {v.created_by}
-                        </span>
-                      )}
-                      {v.change_description && (
-                        <span className="truncate text-muted-foreground">
-                          — {v.change_description}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-              >
-                Close
-              </Button>
-            </div>
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        )
+      }
+      actions={
+        /*
+         * Gated on `artifactId`, NOT on a successful load.
+         *
+         * This slot holds the only Close on the panel, and `<RecordDetail>`
+         * supplies none of its own — five slots, not one of them a dismiss.
+         * Under a row that is survivable, because the row's chevron collapses
+         * it. The PINNED anchor has no row and therefore no chevron, so gating
+         * this on `detail && !failed && !loading` left the operator with
+         * exactly one control — `artifact-detail-retry` — and no way out.
+         *
+         * That state is reachable by precisely the two paths the pinned anchor
+         * exists for: `DivergencePanel`'s "Open", and any `edge-peer-*` click
+         * resolving to an artifact the backend cannot return. There is an
+         * indirect escape (clicking any row flips `openIsOnPage`), but it is
+         * non-obvious and unavailable when the list is empty or errored.
+         *
+         * An open panel can always be closed. That is the invariant, and it
+         * does not depend on whether the fetch worked.
+         */
+        artifactId !== null ? (
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : undefined
+      }
+      history={
+        detail && !failed && !loading ? (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Version history · {detail.versions.length}
+            </h4>
+            {detail.versions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No version snapshots recorded.
+              </p>
+            ) : (
+              <ul className="space-y-1" data-testid="artifact-versions">
+                {detail.versions.map((v) => (
+                  <li
+                    key={v.id}
+                    className="flex flex-wrap items-center gap-2 text-xs"
+                  >
+                    <Badge variant="outline" className="shrink-0">
+                      v{v.version_number}
+                    </Badge>
+                    <code className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                      {v.content_sha256.slice(0, 10)}
+                    </code>
+                    <span className="text-muted-foreground">
+                      {formatWhen(v.created_at)}
+                    </span>
+                    {v.created_by && (
+                      <span className="truncate text-muted-foreground">
+                        by {v.created_by}
+                      </span>
+                    )}
+                    {v.change_description && (
+                      <span className="truncate text-muted-foreground">
+                        — {v.change_description}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : undefined
+      }
+      raw={
+        /* R8 — the ids live here and nowhere else. The artifact id is what you
+           paste into a `/plan-library/{id}/export` call or a bug report, and
+           the head digest is what an export is verified against
+           (`X-Content-Sha256`). Neither was on this surface at all before. */
+        detail ? (
+          <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+            artifact_id: {detail.id} · kind: {detail.kind}
+            {detail.versions[0]
+              ? ` · head sha256: ${detail.versions[0].content_sha256}`
+              : ""}
+          </div>
+        ) : undefined
+      }
+    />
   );
 }

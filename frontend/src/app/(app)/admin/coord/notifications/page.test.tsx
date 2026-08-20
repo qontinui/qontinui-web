@@ -200,12 +200,19 @@ describe("CoordNotificationsPage", () => {
     expect(Object.keys(httpPost.mock.calls[0][1] as object)).toEqual([
       "notification_ids",
     ]);
-    // The row flips to read locally and the unread badge clears from the
-    // server's scalar, not from a local recount.
+    // The row flips to read locally and the unread count follows the SERVER's
+    // scalar, not a local recount.
+    //
+    // It used to assert the badge DISAPPEARED. Since Phase 3 Wave 5 the count
+    // lives in the page's `<HealthStrip>` and is always rendered, so the
+    // assertion is now on its value — which is the stronger claim anyway, and
+    // the one R6 asks for: `0` means *we looked and there is nothing*, where a
+    // missing element says neither. `–` remains reserved for "coord has not
+    // answered".
     await waitFor(() =>
       expect(
-        screen.queryByTestId("coord-notifications-unread-count")
-      ).not.toBeInTheDocument()
+        screen.getByTestId("coord-notifications-unread-count")
+      ).toHaveTextContent("0 unread")
     );
   });
 
