@@ -33,6 +33,16 @@
  * the section reports UNKNOWN rather than zero, because a directory of files
  * carries no run-level information.
  *
+ * Exit codes:
+ *   0  Analysis produced, with at least one report to analyze.
+ *   2  Usage error, or no reports found AND no run-level evidence that any
+ *      run lost its artifact — i.e. "nothing to analyze", cause unknown.
+ *   3  Runs WERE listed and every single one lost its artifact. The analysis
+ *      is still printed (that total loss is the most important thing this
+ *      tool can say), but it is NOT a success: zero reports means zero flake
+ *      signal, and exiting 0 would let a caller treat the most catastrophic
+ *      window this tool can observe as a clean run.
+ *
  * See plan `2026-05-30-spec-ci-flake-stabilization.md`, Phase 0, and
  * `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`,
  * Phase 5.
@@ -288,15 +298,41 @@ interface NoArtifactRun {
   job?: string;
   /**
    * The step that was still running when the run ended — the fact that makes
-   * this category actionable. `undefined` means the jobs API could not be
-   * reached or its shape was unexpected: UNKNOWN, never "there wasn't one".
+   * this category actionable. `undefined` is NOT self-explaining: see
+   * `deadStepUnknown` for WHY it is absent. Two very different causes hide
+   * behind an absent value, and reporting both as "jobs API unavailable"
+   * asserted a cause the tool did not know.
    */
   deadStep?: string;
+  /**
+   * Present exactly when `deadStep` is absent, and it says which of the two
+   * causes applies:
+   *   `lookup-failed`       — we learned nothing (API down/unauthorized/
+   *                           unparseable). UNKNOWN.
+   *   `no-interrupted-step` — we DID read the jobs, and none of them shows a
+   *                           step that was cut off. A positive finding: the
+   *                           artifact was lost some other way.
+   */
+  deadStepUnknown?: "lookup-failed" | "no-interrupted-step";
+  /** Human-readable detail for `deadStepUnknown: "lookup-failed"`. */
+  deadStepUnknownReason?: string;
   /** `cancelled` (interrupted mid-step) or `failure`. */
   deadStepConclusion?: string;
   /** How long that step had been running, in seconds. */
   deadStepSeconds?: number;
 }
+
+/** Discriminated result of {@link resolveDeadStep}. */
+type DeadStepLookup =
+  | {
+      kind: "resolved";
+      job?: string;
+      deadStep: string;
+      deadStepConclusion?: string;
+      deadStepSeconds?: number;
+    }
+  | { kind: "lookup-failed"; reason: string }
+  | { kind: "no-interrupted-step" };
 
 interface RunLevelTally {
   /** Runs `gh run list` returned. */
@@ -314,10 +350,31 @@ interface RunLevelTally {
    */
   inProgress: number;
   /**
-   * How many artifact-less runs we could not resolve a dead step for. Non-zero
-   * means those rows say UNKNOWN, not "nothing was running".
+   * How many artifact-less runs the jobs-API LOOKUP failed for (unreachable,
+   * unauthorized, or an unparseable response). Non-zero means those rows say
+   * UNKNOWN, not "nothing was running".
    */
   stepLookupFailures: number;
+  /**
+   * How many artifact-less runs the jobs API answered for, but in which no
+   * step looked interrupted. A DIFFERENT fact from `stepLookupFailures`: here
+   * we have the data and it does not name a dead step, so the artifact was
+   * lost some other way (upload failure, retention, an early `exit 1`).
+   * Collapsing the two into one "jobs API unavailable" line asserted a cause
+   * the tool did not know.
+   */
+  noInterruptedStep: number;
+}
+
+/**
+ * The `--dir` stand-in for `RunLevelTally`. A directory of report files
+ * carries no run-level information at all, so every tally field would be a
+ * fabrication. Emitted as an explicit marker so a `--json` consumer sees
+ * UNKNOWN instead of an absent key it will coerce to zero.
+ */
+interface RunLevelUnknown {
+  unknown: true;
+  reason: string;
 }
 
 interface GhStep {
@@ -343,10 +400,7 @@ interface GhStep {
  * Issued only for runs that actually missed the artifact, so the cost is bound
  * by the failure count rather than by `--gh N`.
  */
-function resolveDeadStep(databaseId: number): Pick<
-  NoArtifactRun,
-  "job" | "deadStep" | "deadStepConclusion" | "deadStepSeconds"
-> | undefined {
+function resolveDeadStep(databaseId: number): DeadStepLookup {
   let raw: string;
   try {
     raw = execFileSync(
@@ -355,13 +409,14 @@ function resolveDeadStep(databaseId: number): Pick<
       { encoding: "utf-8", timeout: 60_000, stdio: ["ignore", "pipe", "ignore"] },
     );
   } catch {
-    return undefined; // API unreachable / not authorized — UNKNOWN.
+    // API unreachable / not authorized / timed out — we learned NOTHING.
+    return { kind: "lookup-failed", reason: "jobs API call failed (unreachable, unauthorized, or timed out)" };
   }
   let jobs: Array<{ name?: string; steps?: GhStep[] }>;
   try {
     jobs = (JSON.parse(raw) as { jobs?: Array<{ name?: string; steps?: GhStep[] }> }).jobs ?? [];
   } catch {
-    return undefined;
+    return { kind: "lookup-failed", reason: "jobs API returned a response that did not parse as JSON" };
   }
   for (const job of jobs) {
     const steps = job.steps ?? [];
@@ -379,13 +434,18 @@ function resolveDeadStep(databaseId: number): Pick<
       }
     }
     return {
+      kind: "resolved",
       job: job.name,
       deadStep: dead.name,
       deadStepConclusion: dead.conclusion ?? dead.status ?? undefined,
       deadStepSeconds: seconds,
     };
   }
-  return undefined;
+  // The API answered and we read its job data; none of it names a step that
+  // was cut off. That is a POSITIVE finding, not a failed lookup: the artifact
+  // was lost some other way. Reporting it as "jobs API unavailable" would
+  // assert a cause we just disproved.
+  return { kind: "no-interrupted-step" };
 }
 
 function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: RunLevelTally } {
@@ -419,6 +479,7 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
   const noArtifact: NoArtifactRun[] = [];
   let inProgress = 0;
   let stepLookupFailures = 0;
+  let noInterruptedStep = 0;
   for (const run of runs) {
     if (run.status !== "completed") {
       // Still running. It has no artifact yet, which is not a loss — skip it
@@ -438,11 +499,26 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
       // No spec-ci-report artifact on this run. This is NOT nothing: it is its
       // own failure category, so record it and go find out what was running.
       const dead = resolveDeadStep(run.databaseId);
-      if (!dead) stepLookupFailures++;
-      noArtifact.push({ ...run, ...(dead ?? {}) });
+      let note: string;
+      if (dead.kind === "resolved") {
+        const { kind: _kind, ...fields } = dead;
+        noArtifact.push({ ...run, ...fields });
+        note = `died in "${dead.deadStep}"`;
+      } else if (dead.kind === "lookup-failed") {
+        stepLookupFailures++;
+        noArtifact.push({
+          ...run,
+          deadStepUnknown: "lookup-failed",
+          deadStepUnknownReason: dead.reason,
+        });
+        note = `dead step UNKNOWN — ${dead.reason}`;
+      } else {
+        noInterruptedStep++;
+        noArtifact.push({ ...run, deadStepUnknown: "no-interrupted-step" });
+        note = "no interrupted step in the jobs API — artifact lost some other way";
+      }
       process.stderr.write(
-        `[flake] run ${run.databaseId}: no spec-ci-report artifact` +
-          (dead?.deadStep ? ` (died in "${dead.deadStep}")\n` : ` (dead step UNKNOWN)\n`),
+        `[flake] run ${run.databaseId}: no spec-ci-report artifact (${note})\n`,
       );
     }
   }
@@ -455,6 +531,7 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
       noArtifact,
       inProgress,
       stepLookupFailures,
+      noInterruptedStep,
     },
   };
 }
@@ -482,12 +559,14 @@ interface Analysis {
    * different defect class (CI infrastructure, not spec flake) and must not be
    * averaged into the flake statistics.
    *
-   * `undefined` on the `--dir` path, which legitimately has no run-level data:
-   * it sees files on disk, not runs. Reporting `0` there would assert "no
-   * artifact-less runs" from a source that cannot know — the same
-   * silent-empty-is-unknown defect this section exists to remove.
+   * ALWAYS present, and on the `--dir` path it is the explicit
+   * `{ unknown: true, reason }` marker rather than being omitted. Omitting the
+   * key made `--json` consumers doing `result.runLevel?.noArtifact.length ?? 0`
+   * read UNKNOWN as 0 — the same silent-empty-is-unknown defect this section
+   * exists to remove, reintroduced on the machine-readable surface. Narrow it
+   * with `"unknown" in result.runLevel` before touching any tally field.
    */
-  runLevel?: RunLevelTally;
+  runLevel: RunLevelTally | RunLevelUnknown;
   /** Raw fail fraction (fails/total) — NOT the flake rate. See `trueFlakeShas`. */
   failRate: number;
   /** Runs whose report carried no `diagnostics.run.githubSha` (can't group). */
@@ -646,7 +725,14 @@ function analyze(rows: FeatureRow[], runLevel?: RunLevelTally): Analysis {
     total: rows.length,
     passes: passes.length,
     fails: fails.length,
-    runLevel,
+    // Never omitted. `--dir` gets the explicit UNKNOWN marker instead, so a
+    // `--json` consumer cannot silently coerce "not measured" into 0.
+    runLevel: runLevel ?? {
+      unknown: true,
+      reason:
+        "--dir: a directory of report files carries no run-level information. " +
+        "Re-run with --gh <N> to measure runs that produced no artifact. UNKNOWN, not zero.",
+    },
     failRate: rows.length === 0 ? 0 : fails.length / rows.length,
     rowsWithoutSha,
     trueFlakeShas,
@@ -675,7 +761,7 @@ function printText(a: Analysis): void {
   // Run-level accounting FIRST, and kept apart from every flake number below.
   // A run with no report is not a flaky spec; it is a run in which nothing
   // under test ever executed. Merging the two would understate both.
-  if (a.runLevel === undefined) {
+  if ("unknown" in a.runLevel) {
     lines.push("RUNS WITHOUT A REPORT — unknown (source is --dir: files on disk, not runs).");
     lines.push("  Re-run with --gh <N> to measure this. This is UNKNOWN, not zero.");
   } else {
@@ -702,18 +788,39 @@ function printText(a: Analysis): void {
         "  Playwright Chromium`) never reaches `Run Spec CI`, so no report is written.",
       );
       for (const r of rl.noArtifact) {
-        const where = r.deadStep
-          ? `died in "${r.deadStep}"` +
+        // Three distinct states, rendered as three distinct sentences. The
+        // last two used to collapse into "jobs API unavailable", which
+        // asserted an API failure even when the API had answered fine and
+        // simply showed no interrupted step.
+        let where: string;
+        if (r.deadStep) {
+          where =
+            `died in "${r.deadStep}"` +
             (r.deadStepSeconds !== undefined ? ` after ${fmtDur(r.deadStepSeconds)}` : "") +
-            (r.deadStepConclusion ? ` [${r.deadStepConclusion}]` : "")
-          : "dead step UNKNOWN (jobs API unavailable)";
+            (r.deadStepConclusion ? ` [${r.deadStepConclusion}]` : "");
+        } else if (r.deadStepUnknown === "no-interrupted-step") {
+          where = "no interrupted step (jobs API answered; artifact lost some other way)";
+        } else {
+          where = `dead step UNKNOWN (${r.deadStepUnknownReason ?? "jobs API lookup failed"})`;
+        }
         lines.push(
           `    run ${r.databaseId} ${short(r.headSha)} ${r.conclusion.padEnd(9)} ${r.createdAt}  ${where}`,
         );
       }
       if (rl.stepLookupFailures > 0) {
         lines.push(
-          `  (${rl.stepLookupFailures} run(s) above could not be resolved to a step — UNKNOWN, not "none")`,
+          `  (${rl.stepLookupFailures} run(s) above: the jobs API lookup FAILED — UNKNOWN, not "none")`,
+        );
+      }
+      if (rl.noInterruptedStep > 0) {
+        lines.push(
+          `  (${rl.noInterruptedStep} run(s) above: the jobs API answered and showed NO interrupted step —`,
+        );
+        lines.push(
+          `   a different fact from a failed lookup. Those artifacts were lost some other way`,
+        );
+        lines.push(
+          `   (upload failure, retention, an early exit), not to a stalled setup step.)`,
         );
       }
     }
@@ -803,14 +910,20 @@ function main(): number {
     return 2;
   }
 
+  // Zero reports used to be an unconditional `return 2`. But if runs were
+  // listed and every one of them lost its artifact, that is not "nothing to
+  // analyze" — it is the single most important thing this tool can report,
+  // and bailing before printing is exactly how the failure mode stayed
+  // invisible. It is still not a SUCCESS, though: zero reports means zero
+  // flake signal, so it gets its own non-zero code (3) rather than 0. An
+  // earlier revision returned 0 here, which made the most catastrophic window
+  // this tool can see the only one it called clean.
+  let totalArtifactLoss = false;
   if (rows.length === 0) {
-    // Zero reports used to be an unconditional error. But if runs were listed
-    // and every one of them lost its artifact, that is not "nothing to
-    // analyze" — it is the single most important thing this tool can report,
-    // and bailing here is exactly how the failure mode stayed invisible.
     if (runLevel !== undefined && runLevel.noArtifact.length > 0) {
+      totalArtifactLoss = true;
       process.stderr.write(
-        `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${runLevel.listed} runs produced no artifact — reporting that\n`,
+        `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${runLevel.listed} runs produced no artifact — reporting that (exit 3)\n`,
       );
     } else {
       process.stderr.write("[flake] no Spec CI reports found to analyze\n");
@@ -824,7 +937,7 @@ function main(): number {
   } else {
     printText(result);
   }
-  return 0;
+  return totalArtifactLoss ? 3 : 0;
 }
 
 process.exit(main());

@@ -179,18 +179,36 @@ jobs:
       # Some alembic migrations reference the `runner` schema, created in dev
       # by init-scripts/ which service containers don't run. Same carve-out
       # as e2e-tests.yml.
-      - name: Create runner schema
+      - name: Install postgresql-client
         id: apt_psql
-        # `apt-get` here reaches an external mirror at job time and is the same
-        # unbounded-stall exposure as the Playwright step (plan
+        # ONLY the apt-get call lives in this step, and it is the entire reason
+        # for the bound: it reaches an external mirror at job time and is the
+        # same unbounded-stall exposure as the Playwright step (plan
         # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
-        # Measured across green runs of all 7 sites: p50 0-16s, p90 <=91s,
-        # max 106s (migration-reversal). 5 min = p90 + ~3.5 min headroom.
+        # The psql/DDL that used to share this step now runs UNBOUNDED below.
+        # It HAD to move: under `bash -e` a psql failure set this step's
+        # `.outcome` to `failure` exactly like an apt timeout, so the
+        # infrastructure marker could not tell a mirror stall from the author's
+        # own schema breaking -- and told them their breakage was infrastructure.
+        # The `command -v psql` guard means apt normally never runs at all on
+        # `ubuntu-latest`, which ships psql. That is exactly why the DDL could
+        # not stay here: an arm keyed on this step's failure would have been
+        # describing a call that did not happen.
+        # Measured apt+psql across green runs of all 7 sites: p50 0-16s, p90
+        # <=91s, max 106s (migration-reversal). The bound now covers apt ALONE,
+        # so 5 min is p90 + ~3.5 min of headroom over a strictly smaller job.
         timeout-minutes: 5
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+
+      - name: Create runner schema
+        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
+        # psql/DDL against this job's own postgres service, not the external
+        # mirror, so a failure here IS a verdict on the change -- it must never
+        # reach the infrastructure marker's APT_STEP_OUTCOMES.
         env:
           PGPASSWORD: test_password
         run: |
-          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
           psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
 
       # LOAD-BEARING BACKSTOP — do NOT add a `paths:` filter or a job-level `if:`
@@ -427,10 +445,15 @@ jobs:
       # apt-dependent step is what died, and every other path declines to judge
       # the diff at all.
       #
-      # An apt step marked `continue-on-error: true` cannot red the check on its
-      # own, so a soft-fail there does not trigger this step at all -- there is
-      # no misattribution to correct. It is still named here if something
-      # downstream fails as a consequence.
+      # An apt step marked `continue-on-error: true` CAN be present when this
+      # step fires. Its own soft failure cannot red the check -- but a LATER,
+      # genuine failure can, and this step then runs with that soft-failed
+      # outcome still in hand. So arm 1 keys on `.conclusion` (the value AFTER
+      # `continue-on-error` rewrites it), never on `.outcome` alone: a step
+      # that concluded `success` is not what red this job, and naming it as the
+      # cause would misattribute a real regression to infrastructure -- the
+      # exact cry-wolf this step exists to prevent. The soft failure is still
+      # reported, as context only.
       - name: Explain infrastructure timeout vs external cancellation
         if: cancelled() || failure()
         env:
@@ -440,30 +463,46 @@ jobs:
           JOB_TIMEOUT_MINUTES: '35'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
-          # `<step name>=<outcome>` per apt-dependent step in this job.
-          # `.outcome` (not `.conclusion`) on purpose: it is the value BEFORE
-          # `continue-on-error` rewrites it, so a soft-failed step still reports
-          # the truth here.
+          # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
+          # job. BOTH values are carried on purpose:
+          #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
+          #     so a soft-failed step still reports the truth here;
+          #   * `.conclusion` is what actually reached the job, and ONLY a step
+          #     that concluded `failure` can be what red it.
+          # Every step named below runs `apt-get` and nothing else -- the
+          # psql/DDL work that used to share these steps now lives in an
+          # unbounded successor step, so a `failure` here cannot be the
+          # author's schema breaking.
           APT_STEP_OUTCOMES: |
-            Install Playwright Chromium=${{ steps.apt_playwright.outcome }}
-            Create runner schema=${{ steps.apt_psql.outcome }}
+            Install Playwright Chromium|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
+            Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
         run: |
           set -uo pipefail
 
-          # An apt step whose outcome is `failure` hit its own step-level
-          # `timeout-minutes` (or apt errored outright) -- either way it is
-          # infrastructure. One whose outcome is `cancelled` was still
-          # mid-flight when the job ended; that is only decisive once we also
-          # know the job budget had actually expired.
+          # An apt step whose CONCLUSION is `failure` hit its own step-level
+          # `timeout-minutes` (or apt errored outright) and red this job --
+          # either way it is infrastructure. One whose outcome is `cancelled`
+          # was still mid-flight when the job ended; that is only decisive once
+          # we also know the job budget had actually expired. One that failed
+          # but concluded `success` is `continue-on-error: true`: it did NOT
+          # red this job, so it is context, never the cause.
+          #
+          # Every matching step is named, not just the last one: two apt steps
+          # can die in the same job, and reporting only one understates it.
           apt_failed=""
           apt_running=""
-          while IFS= read -r line; do
-            [ -z "${line// }" ] && continue
-            step_name="${line%=*}"
-            outcome="${line##*=}"
+          soft_failed=""
+          while IFS='|' read -r step_name outcome conclusion; do
+            [ -z "${step_name// }" ] && continue
             case "$outcome" in
-              failure)   apt_failed="$step_name" ;;
-              cancelled) apt_running="$step_name" ;;
+              failure)
+                if [ "$conclusion" = "failure" ]; then
+                  apt_failed="${apt_failed:+$apt_failed, }$step_name"
+                else
+                  soft_failed="${soft_failed:+$soft_failed, }$step_name"
+                fi
+                ;;
+              cancelled) apt_running="${apt_running:+$apt_running, }$step_name" ;;
             esac
           done <<< "$APT_STEP_OUTCOMES"
 
@@ -472,10 +511,17 @@ jobs:
           why="$why for 30+ minutes (and, unbounded, for 5h59m). Nothing under test ran."
           ref="See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
-          # --- Arm 1: an apt step failed. Airtight: neither a merge-train reap
-          # nor any other external cancel can make a step conclude `failure`.
+          # Context line, emitted before any verdict: a soft-failed apt step is
+          # worth knowing about, but it cannot be why this job is red.
+          if [ -n "$soft_failed" ]; then
+            echo "::notice title=Soft-failed apt step - context, NOT the cause::Step(s) '$soft_failed' failed but are marked 'continue-on-error: true', so they concluded 'success' and did not red this job. Reported only in case something downstream depended on them."
+          fi
+
+          # --- Arm 1: an apt step failed AND that failure red the job.
+          # Airtight: neither a merge-train reap nor any other external cancel
+          # can make a step conclude `failure`.
           if [ -n "$apt_failed" ]; then
-            echo "::error title=CI infrastructure timeout - NOT your diff::Step '$apt_failed' exceeded its step-level timeout-minutes or failed outright. $why This is a CI infrastructure failure, not a verdict on the code in this change. Re-run the job. $ref"
+            echo "::error title=CI infrastructure timeout - NOT your diff::Step(s) '$apt_failed' exceeded a step-level timeout-minutes or failed outright. $why This is a CI infrastructure failure, not a verdict on the code in this change. Re-run the job. $ref"
             exit 0
           fi
 
@@ -483,16 +529,19 @@ jobs:
           # nothing: this step explains infrastructure timeouts, it does not
           # editorialise real test failures.
           if [ "$JOB_STATUS" != "cancelled" ] && [ -z "$apt_running" ]; then
-            echo "No apt-dependent step failed and the job was not cancelled."
+            echo "No apt-dependent step red the job, none was mid-flight, and the job was not cancelled."
             echo "This job's failure is a real one - emitting no marker."
             exit 0
           fi
 
-          # --- The job was cancelled. Did it actually reach its budget? A job
-          # timeout fires at elapsed >= budget; a reap or a manual cancel lands
-          # at an arbitrary, typically far earlier, elapsed (the two observed
-          # benign cancellations were at 2m02s and 7m29s). That gap is the
+          # --- Did the run actually reach its budget? A job timeout fires at
+          # elapsed >= budget; a reap or a manual cancel lands at an arbitrary,
+          # typically far earlier, elapsed (the two observed benign
+          # cancellations were at 2m02s and 7m29s). That gap is the
           # discriminator, so resolve it from the API rather than assuming.
+          # This lookup CAN fail (403, rate limit, network blip, a timestamp
+          # `date -u -d` cannot parse); every failure leaves `elapsed_min`
+          # empty, and empty is UNKNOWN. It is never evidence for a negative.
           elapsed_min=""
           started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
           if [ -n "$started" ]; then
@@ -508,10 +557,46 @@ jobs:
           # --- Arm 2: the job budget expired while an apt step was still
           # running. Requires BOTH facts; either one alone is not evidence.
           if [ -n "$apt_running" ] && [ -n "$elapsed_min" ] && [ "$elapsed_min" -ge "$budget_floor" ]; then
-            echo "::error title=CI infrastructure timeout - NOT your diff::The ${JOB_TIMEOUT_MINUTES}-minute job budget expired after ${elapsed_min} min while step '$apt_running' was STILL RUNNING. $why GitHub concludes a job timeout as 'cancelled', which 'gh pr checks' renders as 'fail' with zero failing steps - that rendering is what makes this look like your test failure. It is not. Re-run the job. $ref"
+            echo "::error title=CI infrastructure timeout - NOT your diff::The ${JOB_TIMEOUT_MINUTES}-minute job budget expired after ${elapsed_min} min while step(s) '$apt_running' were STILL RUNNING. $why GitHub concludes a job timeout as 'cancelled', which 'gh pr checks' renders as 'fail' with zero failing steps - that rendering is what makes this look like your test failure. It is not. Re-run the job. $ref"
             exit 0
           fi
 
-          # --- Arm 3: cancelled, but with no positive evidence for arm 1 or 2.
+          # --- Arm 2b: the job did NOT conclude `cancelled`, yet an apt step
+          # was left mid-flight. A step-level `timeout-minutes` expiry is the
+          # primary mechanism this change introduces, and which of the two job
+          # conclusions GitHub surfaces for it is NOT something this change
+          # established. So handle both: under `cancelled` semantics arms 1/2
+          # cover it, and under `failure` semantics this arm does. Betting on
+          # one and printing "cancelled from outside" under the other would be
+          # flatly false about the mechanism we just added.
+          if [ "$JOB_STATUS" != "cancelled" ] && [ -n "$apt_running" ]; then
+            echo "::error title=CI infrastructure timeout - NOT your diff::Step(s) '$apt_running' were interrupted mid-flight (step outcome 'cancelled') and this job concluded '$JOB_STATUS'. $why Nothing here is a verdict on the code in this change. Re-run the job. $ref"
+            exit 0
+          fi
+
+          # --- Arm 2c: cancelled with an apt step mid-flight, but arm 2's
+          # budget test did not fire. Two sub-cases, and NEITHER licenses
+          # ruling the stall out: an apt step really was running when this job
+          # died.
+          if [ -n "$apt_running" ]; then
+            if [ -z "$elapsed_min" ]; then
+              echo "::warning title=Cannot rule the apt stall in or out::Step(s) '$apt_running' were still mid-flight when this job was cancelled, but this run's elapsed time could NOT be read - the 'gh api' run lookup failed, was rate-limited, or returned a timestamp 'date -u -d' could not parse. Without it the ${JOB_TIMEOUT_MINUTES}-minute budget test cannot be performed, so the known apt-mirror stall can be NEITHER confirmed NOR ruled out here. Nothing here is a verdict on the code in this change. $ref"
+            else
+              echo "::warning title=Cancelled with an apt step mid-flight::Step(s) '$apt_running' were still mid-flight when this job was cancelled after ${elapsed_min} min - well short of its ${JOB_TIMEOUT_MINUTES}-minute budget, which points at an external cancel ($EXTERNAL_CANCEL_NOTE) rather than the apt-mirror stall. But an apt step was genuinely running, so this does not rule the stall out either. Nothing here is a verdict on the code in this change. $ref"
+            fi
+            exit 0
+          fi
+
+          # --- Arm 3: cancelled, no apt step red the job and none was
+          # mid-flight. The stall is ruled out BY THE STEP OUTCOMES - a
+          # positive fact - not by the elapsed time, which may be UNKNOWN.
           # Explicitly decline to judge the diff either way.
-          echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget, and no apt-dependent step failed or was mid-flight at that budget - so this was NOT the known apt-mirror stall. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
+          if [ "$JOB_STATUS" = "cancelled" ]; then
+            echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget. No apt-dependent step failed and none was mid-flight, so this was NOT the known apt-mirror stall. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
+            exit 0
+          fi
+
+          # --- Unreachable under `if: cancelled() || failure()`: every
+          # non-cancelled path above has already returned. Kept so an unforeseen
+          # state says what it knows instead of falling through silently.
+          echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
