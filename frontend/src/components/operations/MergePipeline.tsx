@@ -915,6 +915,7 @@ export function MergePipeline() {
     suggestions,
     gateBlocks,
     gateTotalBlocks,
+    gateTotalEvals,
     error,
     suggestionBusy,
     onSuggestionAction,
@@ -1122,10 +1123,34 @@ export function MergePipeline() {
             <ShieldQuestion className="h-3 w-3" />
             Gate decisions
             {gateTotalBlocks !== null && (
-              <Badge variant="outline" className="ml-1 font-mono text-[10px]">
-                {gateTotalBlocks}
+              <Badge
+                variant="outline"
+                className="ml-1 font-mono text-[10px] normal-case"
+                data-gate-total-blocks={gateTotalBlocks}
+                title="Distinct PRs the blast-radius gate is holding — decisions, not audit rows."
+              >
+                {gateTotalBlocks}{" "}
+                {gateTotalBlocks === 1 ? "decision" : "decisions"}
               </Badge>
             )}
+            {/* The raw audit volume behind those decisions. Coord appends one
+                `predicate_eval` row per scheduler tick, so this is normally
+                orders of magnitude larger (measured 2026-08-20: 1899 evals for
+                8 decisions). Shown as a distinct secondary chip — dropping it
+                would hide the write amplification the decision count now
+                correctly excludes. */}
+            {gateTotalEvals !== null &&
+              gateTotalBlocks !== null &&
+              gateTotalEvals > gateTotalBlocks && (
+                <Badge
+                  variant="outline"
+                  className="ml-1 font-mono text-[10px] normal-case text-muted-foreground"
+                  data-gate-total-evals={gateTotalEvals}
+                  title="Raw evaluation rows behind those decisions — coord re-evaluates every held PR on each scheduler tick, so this is far larger than the decision count."
+                >
+                  {gateTotalEvals} evals
+                </Badge>
+              )}
           </h4>
           <div className="space-y-2">
             {gateBlocks.map((b) => (

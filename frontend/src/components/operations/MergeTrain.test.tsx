@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { MergeTrainRow, PrRowDisplay } from "./MergeTrain";
-import type { PrRow, ProposalDetail } from "./mergeTypes";
+import { GateDecisionRow, MergeTrainRow, PrRowDisplay } from "./MergeTrain";
+import type { BlastRadiusBlock, PrRow, ProposalDetail } from "./mergeTypes";
 
 /**
  * MergeTrainRow — requeue_count starvation badge.
@@ -121,5 +121,103 @@ describe("PrRowDisplay UNSTABLE tint split", () => {
     const row = renderedRow();
     expect(row.className).not.toContain("bg-red-500/15");
     expect(row.className).toContain("bg-yellow-500/10");
+  });
+});
+
+/**
+ * GateDecisionRow — repetition, STATED not enumerated (plan
+ * 2026-08-20-predicate-eval-surface-counts-evals-not-decisions Phase 2).
+ *
+ * Coord now returns the newest row per PR with `repeat_count` / `first_seen_at`
+ * instead of one row per scheduler tick (measured 2026-08-20: all 50 rows in
+ * the default window were the SAME PR, `qontinui-coord#1516`, 547 identical
+ * evaluations over 82.7h). The row must say "×547 since <day>" rather than
+ * appear 547 times — and must not claim a repeat that coord never reported.
+ */
+function gateBlock(
+  overrides: Partial<BlastRadiusBlock> = {}
+): BlastRadiusBlock {
+  return {
+    repo: "qontinui/qontinui-coord",
+    pr_number: 1516,
+    tenant_id: "t-1",
+    removed_export_name: "SUBCLASS_ORPHAN",
+    file: "crates/coord/src/worktree_observer.rs",
+    referenced_by: [{ file: "crates/coord/src/worktree_metrics.rs", line: 68 }],
+    evaluation_latency_secs: 0.2,
+    at: new Date().toISOString(),
+    block_reason_code: "removes-referenced-export",
+    coverage: 1,
+    graph_available: true,
+    ...overrides,
+  };
+}
+
+function renderGateBlock(overrides: Partial<BlastRadiusBlock> = {}) {
+  const { container } = render(
+    <GateDecisionRow block={gateBlock(overrides)} />
+  );
+  return container;
+}
+
+describe("GateDecisionRow repeat badge", () => {
+  it("states the repetition with its first-seen day", () => {
+    const container = renderGateBlock({
+      repeat_count: 547,
+      first_seen_at: "2026-08-15T04:31:00Z",
+    });
+    const badge = container.querySelector("[data-repeat-count]");
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute("data-repeat-count")).toBe("547");
+    expect(badge?.textContent).toContain("×547");
+    expect(badge?.textContent).toContain("since 2026-08-15");
+    // The count is explained, not just displayed (honesty).
+    expect(badge?.getAttribute("title")).toContain("547");
+    expect(badge?.getAttribute("title")).toContain("most recent occurrence");
+  });
+
+  it("states the count alone when coord sent no first_seen_at", () => {
+    const container = renderGateBlock({
+      repeat_count: 12,
+      first_seen_at: null,
+    });
+    const badge = container.querySelector("[data-repeat-count]");
+    expect(badge?.textContent).toContain("×12");
+    expect(badge?.textContent).not.toContain("since");
+    expect(badge?.getAttribute("title")).toContain("not reported");
+  });
+
+  it("renders no chip for a single, un-repeated decision", () => {
+    const container = renderGateBlock({ repeat_count: 1 });
+    expect(container.querySelector("[data-repeat-count]")).toBeNull();
+  });
+
+  it("renders no chip when repeat_count is absent (pre-Phase-2 coord)", () => {
+    const container = renderGateBlock({ repeat_count: undefined });
+    expect(container.querySelector("[data-repeat-count]")).toBeNull();
+  });
+
+  it("never renders ×0 — a nonsense count degrades to one evaluation", () => {
+    const container = renderGateBlock({ repeat_count: 0 });
+    expect(container.querySelector("[data-repeat-count]")).toBeNull();
+    expect(container.textContent).not.toContain("×0");
+  });
+
+  it("still renders the removed-export evidence when coord populates it", () => {
+    // The `{block.removed_export_name && (…)}` guard stays — coord's Phase 1
+    // fix makes it populate, and a null must keep the block hidden rather than
+    // rendering an empty "Removed export:" label.
+    const withEvidence = renderGateBlock({ repeat_count: 547 });
+    expect(withEvidence.textContent).toContain("SUBCLASS_ORPHAN");
+    expect(withEvidence.textContent).toContain(
+      "crates/coord/src/worktree_observer.rs"
+    );
+
+    const withoutEvidence = renderGateBlock({
+      removed_export_name: null,
+      file: null,
+      referenced_by: [],
+    });
+    expect(withoutEvidence.textContent).not.toContain("Removed export:");
   });
 });
