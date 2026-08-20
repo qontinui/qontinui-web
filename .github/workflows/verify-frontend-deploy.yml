@@ -247,6 +247,13 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
+        # `--with-deps` shells out to `apt-get` at job time and has been observed
+        # to stall for 30+ minutes against the apt/CDN mirror (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Sized from 10 green runs: p50 23s, p90 88s, max 240s. The tail here
+        # is far heavier than Spec CI's, so 5 min would be only ~1.25x the
+        # observed max. 10 min = p90 + ~8.5 min headroom (~2.5x that max).
+        timeout-minutes: 10
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
 

@@ -151,6 +151,12 @@ jobs:
       #   asyncpg.exceptions.InvalidSchemaNameError: schema "project"
       #   does not exist
       - name: Create test schemas and extensions
+        # `apt-get` here reaches an external mirror at job time and is the same
+        # unbounded-stall exposure as the Playwright step (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Measured across green runs of all 7 sites: p50 0-16s, p90 <=91s,
+        # max 106s (migration-reversal). 5 min = p90 + ~3.5 min headroom.
+        timeout-minutes: 5
         env:
           PGPASSWORD: qontinui_dev_password
         run: |
