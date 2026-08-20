@@ -73,12 +73,28 @@ _OLD_INDEX_NAME = "idx_work_unit_status_history_unit"
 #: assertions below stay green while measuring a statement no process
 #: executes. The drift detector that WOULD work has to live coord-side, next
 #: to the SQL; treat a coord change to this query as obliging an update here.
+#: The nesting is load-bearing and must be preserved when mirroring: the
+#: filter/sort/limit run in an inner subquery so the LATERALs join the PAGE, not
+#: every matching row. Flat, coord measured 1105x2 lateral loops / 69,536
+#: buffers / 40.7 ms against this exact fixture shape versus 100x2 / 416 /
+#: 0.48 ms nested. A mirror that "tidied" the subquery away would still ride the
+#: index and still pass every assertion below while measuring the slow shape.
 _LIST_SQL = """
     SELECT w.id, w.slug, w.tenant_id, w.status, w.title, w.metadata,
            w.created_at, w.updated_at,
            ip.transitioned_at AS first_in_progress_at,
            sh.transitioned_at AS first_shipped_at
-      FROM coord.work_units w
+      FROM (
+           SELECT id, slug, tenant_id, status, title, metadata,
+                  created_at, updated_at
+             FROM coord.work_units
+            WHERE ($1::text IS NULL OR status = $1)
+              AND ($2::text IS NULL OR slug LIKE $2 || '%')
+              AND ($6::text IS NULL OR slug NOT LIKE $6 || '%')
+              AND tenant_id = $5
+            ORDER BY updated_at DESC, id DESC
+            LIMIT $3 OFFSET $4
+      ) w
       LEFT JOIN LATERAL (
            SELECT h.transitioned_at
              FROM coord.work_unit_status_history h
@@ -93,12 +109,7 @@ _LIST_SQL = """
             ORDER BY h.transitioned_at ASC
             LIMIT 1
       ) sh ON TRUE
-     WHERE ($1::text IS NULL OR w.status = $1)
-       AND ($2::text IS NULL OR w.slug LIKE $2 || '%')
-       AND ($6::text IS NULL OR w.slug NOT LIKE $6 || '%')
-       AND w.tenant_id = $5
      ORDER BY w.updated_at DESC, w.id DESC
-     LIMIT $3 OFFSET $4
 """
 
 _TENANT = uuid.UUID("c231d9da-0ca8-4fe4-bd81-0e3d6c20339a")
