@@ -433,17 +433,20 @@ export function gateRepeatCount(b: BlastRadiusBlock): number {
 }
 
 /**
- * `YYYY-MM-DD` (UTC) for the repeat badge's "since" clause. Returns null when
- * coord sent no `first_seen_at` — the badge then states the count alone rather
- * than substituting `at`, which would falsely claim a zero-length run.
+ * `YYYY-MM-DD` (UTC) for the repeat badge's "since" clause. Returns null both
+ * when coord sent no `first_seen_at` AND when what it sent will not parse —
+ * the badge then states the count alone rather than substituting `at`, which
+ * would falsely claim a zero-length run. The two null causes are deliberately
+ * NOT distinguished by the caller's copy: "unknown" is true of both, whereas
+ * "not reported" would be a lie about the malformed case.
  */
 export function gateFirstSeenDay(
   iso: string | null | undefined
 ): string | null {
   if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toISOString().slice(0, 10);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 function honestyBadgeClass(tone: HonestyTone): string {
@@ -456,6 +459,81 @@ function honestyBadgeClass(tone: HonestyTone): string {
     default:
       return "bg-muted text-muted-foreground border-border";
   }
+}
+
+/**
+ * The "Gate decisions" header counts, shared verbatim by the MergeTrain panel
+ * and the MergePipeline hero — one component rather than two copies, which had
+ * already drifted (`ml-1` vs `ml-2`, and only one copy under test).
+ *
+ * HONESTY, and the whole reason this is not just `{totalBlocks}`:
+ *
+ * `total_evals` is the discriminator for which coord is on the other end.
+ * Coord's pre-Phase-2 handler computes `total_blocks` as a raw `COUNT(*)` over
+ * `coord.pr_events` — an EVALUATION count (measured 2026-08-20: 1899 rows for
+ * 8 distinct PRs) — and reports no `total_evals` at all. Only a coord that
+ * reports `total_evals` has split the two, and only then is `total_blocks`
+ * known to be a decision count.
+ *
+ * So the "decision(s)" noun and the provenance tooltip are rendered ONLY when
+ * `totalEvals !== null`. Against an older coord the badge shows the bare
+ * number and says outright that its provenance is unknown. Labelling 1899 as
+ * "1899 decisions" would be strictly worse than the ambiguous bare number this
+ * replaced — an asserted falsehood instead of an unstated ambiguity.
+ *
+ * Note what is NOT done here: no distinct-PR count is derived from the
+ * `blocks` array as a stand-in. That array is capped at coord's `limit`, so
+ * counting it would present a lower bound as a total — the same defect class,
+ * inverted.
+ */
+export function GateDecisionCounts({
+  totalBlocks,
+  totalEvals,
+}: {
+  totalBlocks: number | null;
+  totalEvals: number | null;
+}) {
+  if (totalBlocks === null) return null;
+  // Coord split evaluations from decisions iff it reported `total_evals`.
+  const provenanceKnown = totalEvals !== null;
+  return (
+    <>
+      <Badge
+        variant="outline"
+        className="ml-2 font-mono text-[10px] normal-case"
+        data-gate-total-blocks={totalBlocks}
+        data-gate-count-provenance={provenanceKnown ? "decisions" : "unknown"}
+        title={
+          provenanceKnown
+            ? "Distinct PRs the blast-radius gate is holding — decisions, not audit rows."
+            : "Coord has not reported whether this counts decisions or audit rows. Older deploys returned a raw audit-row count here, which runs far higher than the number of PRs actually held."
+        }
+      >
+        {totalBlocks}
+        {provenanceKnown
+          ? totalBlocks === 1
+            ? " decision"
+            : " decisions"
+          : ""}
+      </Badge>
+      {/* The raw audit volume behind those decisions. Coord appends one
+          `predicate_eval` row per scheduler tick, so this is normally orders of
+          magnitude larger (measured 2026-08-20: 1899 evals for 8 decisions).
+          Its own chip — dropping it would hide the write amplification the
+          decision count now correctly excludes. Suppressed when it would add
+          nothing (equal counts) or when coord never reported it. */}
+      {totalEvals !== null && totalEvals > totalBlocks && (
+        <Badge
+          variant="outline"
+          className="ml-1 font-mono text-[10px] normal-case text-muted-foreground"
+          data-gate-total-evals={totalEvals}
+          title="Raw evaluation rows behind those decisions — coord re-evaluates every held PR on each scheduler tick, so this is far larger than the decision count."
+        >
+          {totalEvals} evals
+        </Badge>
+      )}
+    </>
+  );
 }
 
 export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
@@ -525,7 +603,7 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
                 title={
                   firstSeenDay
                     ? `Coord re-evaluated this PR and reached the identical decision ${repeats} times since ${firstSeenDay}; this row is the most recent occurrence.`
-                    : `Coord re-evaluated this PR and reached the identical decision ${repeats} times; this row is the most recent occurrence. First occurrence not reported by coord.`
+                    : `Coord re-evaluated this PR and reached the identical decision ${repeats} times; this row is the most recent occurrence. First occurrence unknown.`
                 }
               >
                 ×{repeats}
@@ -916,29 +994,10 @@ export function MergeTrain() {
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
             <ShieldQuestion className="h-3 w-3" />
             Gate decisions
-            {gateTotalBlocks !== null && (
-              <Badge
-                variant="outline"
-                className="ml-2 font-mono text-[10px] normal-case"
-                data-gate-total-blocks={gateTotalBlocks}
-                title="Distinct PRs the blast-radius gate is holding — decisions, not audit rows."
-              >
-                {gateTotalBlocks}{" "}
-                {gateTotalBlocks === 1 ? "decision" : "decisions"}
-              </Badge>
-            )}
-            {gateTotalEvals !== null &&
-              gateTotalBlocks !== null &&
-              gateTotalEvals > gateTotalBlocks && (
-                <Badge
-                  variant="outline"
-                  className="ml-1 font-mono text-[10px] normal-case text-muted-foreground"
-                  data-gate-total-evals={gateTotalEvals}
-                  title="Raw evaluation rows behind those decisions — coord re-evaluates every held PR on each scheduler tick, so this is far larger than the decision count."
-                >
-                  {gateTotalEvals} evals
-                </Badge>
-              )}
+            <GateDecisionCounts
+              totalBlocks={gateTotalBlocks}
+              totalEvals={gateTotalEvals}
+            />
           </h4>
           {gateBlocks.length === 0 ? (
             <p className="text-xs text-muted-foreground">

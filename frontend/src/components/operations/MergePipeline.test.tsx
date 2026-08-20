@@ -855,11 +855,7 @@ describe("MergePipeline", () => {
 
   it("still renders the train view when the health read is unavailable", async () => {
     // coord deploy predating /pr-merge/health, or a transient outage.
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    });
+    fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
     hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
 
     render(<MergePipeline />);
@@ -1010,14 +1006,57 @@ describe("MergePipeline gate-decisions counting", () => {
     expect(decisions?.textContent).not.toContain("decisions");
   });
 
-  it("omits the evals chip when coord did not report it (older deploy)", () => {
+  it("claims NOTHING about provenance when coord did not report total_evals", () => {
+    // The degraded arm the optional-tolerant types exist to survive: coord's
+    // pre-Phase-2 handler computes `total_blocks` as a raw COUNT(*) over
+    // `coord.pr_events`, so the number IS the 1899 audit-row count. Calling it
+    // "1899 decisions" would be an asserted falsehood — strictly worse than
+    // the bare, ambiguous number this replaced.
     hookData.current.gateTotalEvals = null;
     render(<MergePipeline />);
     const section = screen.getByTestId("gate-decisions");
     expect(section.querySelector("[data-gate-total-evals]")).toBeNull();
-    // The decision count still renders — silence about evals is not silence
-    // about decisions.
-    expect(section.querySelector("[data-gate-total-blocks]")).not.toBeNull();
+
+    // The count still renders — silence about provenance is not silence about
+    // the number.
+    const decisions = section.querySelector("[data-gate-total-blocks]");
+    expect(decisions).not.toBeNull();
+    expect(decisions?.textContent?.trim()).toBe("8");
+    // …but WITHOUT the noun that would assert what it counts.
+    expect(decisions?.textContent).not.toContain("decision");
+    // …and the tooltip says the provenance is unknown rather than asserting it.
+    expect(decisions?.getAttribute("data-gate-count-provenance")).toBe(
+      "unknown"
+    );
+    const title = decisions?.getAttribute("title") ?? "";
+    expect(title).toContain("has not reported whether");
+    expect(title).not.toContain("Distinct PRs");
+  });
+
+  it("asserts the decisions provenance ONLY once coord reports total_evals", () => {
+    render(<MergePipeline />);
+    const decisions = screen
+      .getByTestId("gate-decisions")
+      .querySelector("[data-gate-total-blocks]");
+    expect(decisions?.getAttribute("data-gate-count-provenance")).toBe(
+      "decisions"
+    );
+    expect(decisions?.getAttribute("title")).toContain("Distinct PRs");
+  });
+
+  it("never derives the total from the (limit-capped) blocks array", () => {
+    // A distinct-PR count taken from `blocks` would present a lower bound as a
+    // total — the same defect class, inverted. The badge must show coord's
+    // number, not the page's row count.
+    hookData.current.gateBlocks = [gateBlock()];
+    hookData.current.gateTotalBlocks = 8;
+    hookData.current.gateTotalEvals = 1899;
+    render(<MergePipeline />);
+    const decisions = screen
+      .getByTestId("gate-decisions")
+      .querySelector("[data-gate-total-blocks]");
+    expect(decisions?.getAttribute("data-gate-total-blocks")).toBe("8");
+    expect(decisions?.textContent).not.toContain("1 decision");
   });
 
   it("omits the evals chip when it adds nothing (evals === decisions)", () => {

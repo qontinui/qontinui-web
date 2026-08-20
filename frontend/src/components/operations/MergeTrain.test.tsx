@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { GateDecisionRow, MergeTrainRow, PrRowDisplay } from "./MergeTrain";
+import {
+  GateDecisionCounts,
+  GateDecisionRow,
+  MergeTrainRow,
+  PrRowDisplay,
+} from "./MergeTrain";
 import type { BlastRadiusBlock, PrRow, ProposalDetail } from "./mergeTypes";
 
 /**
@@ -184,7 +189,25 @@ describe("GateDecisionRow repeat badge", () => {
     const badge = container.querySelector("[data-repeat-count]");
     expect(badge?.textContent).toContain("×12");
     expect(badge?.textContent).not.toContain("since");
-    expect(badge?.getAttribute("title")).toContain("not reported");
+    // "unknown", not "not reported" — the same null also covers a value coord
+    // DID report but that will not parse, and only the weaker claim is true of
+    // both causes.
+    expect(badge?.getAttribute("title")).toContain("First occurrence unknown");
+  });
+
+  it("says 'unknown' — not 'not reported' — for a malformed first_seen_at", () => {
+    const container = renderGateBlock({
+      repeat_count: 12,
+      first_seen_at: "not-a-timestamp",
+    });
+    const badge = container.querySelector("[data-repeat-count]");
+    expect(badge?.textContent).toContain("×12");
+    expect(badge?.textContent).not.toContain("since");
+    expect(badge?.getAttribute("title")).toContain("First occurrence unknown");
+    // Coord DID report it, so the copy must not claim otherwise.
+    expect(badge?.getAttribute("title")).not.toContain("not reported");
+    // …and no "Invalid Date" leaks into the chip.
+    expect(container.textContent).not.toContain("Invalid");
   });
 
   it("renders no chip for a single, un-repeated decision", () => {
@@ -219,5 +242,70 @@ describe("GateDecisionRow repeat badge", () => {
       referenced_by: [],
     });
     expect(withoutEvidence.textContent).not.toContain("Removed export:");
+  });
+});
+
+/**
+ * GateDecisionCounts — the shared "Gate decisions" header counts, used by BOTH
+ * the MergeTrain panel and the MergePipeline hero.
+ *
+ * The honesty rule under test: `total_evals` is the ONLY signal that coord has
+ * split evaluations from decisions. Without it, `total_blocks` is still coord's
+ * raw `COUNT(*)` over `coord.pr_events` (1899 rows for 8 PRs, measured
+ * 2026-08-20), so the surface must not call it a decision count.
+ */
+describe("GateDecisionCounts provenance honesty", () => {
+  it("names the number a decision count only when total_evals is reported", () => {
+    const { container } = render(
+      <GateDecisionCounts totalBlocks={8} totalEvals={1899} />
+    );
+    const badge = container.querySelector("[data-gate-total-blocks]");
+    expect(badge?.getAttribute("data-gate-count-provenance")).toBe("decisions");
+    expect(badge?.textContent).toBe("8 decisions");
+    expect(badge?.getAttribute("title")).toContain("Distinct PRs");
+    const evals = container.querySelector("[data-gate-total-evals]");
+    expect(evals?.textContent).toBe("1899 evals");
+  });
+
+  it("shows the bare number and says so when total_evals is absent", () => {
+    const { container } = render(
+      <GateDecisionCounts totalBlocks={1899} totalEvals={null} />
+    );
+    const badge = container.querySelector("[data-gate-total-blocks]");
+    expect(badge?.getAttribute("data-gate-count-provenance")).toBe("unknown");
+    // No noun — the 1899 is very possibly an audit-row count.
+    expect(badge?.textContent).toBe("1899");
+    expect(badge?.getAttribute("title")).toContain("has not reported whether");
+    expect(badge?.getAttribute("title")).not.toContain("Distinct PRs");
+    expect(container.querySelector("[data-gate-total-evals]")).toBeNull();
+  });
+
+  it("singularises a lone decision", () => {
+    const { container } = render(
+      <GateDecisionCounts totalBlocks={1} totalEvals={547} />
+    );
+    expect(
+      container.querySelector("[data-gate-total-blocks]")?.textContent
+    ).toBe("1 decision");
+  });
+
+  it("suppresses the evals chip when it would add nothing", () => {
+    const { container } = render(
+      <GateDecisionCounts totalBlocks={8} totalEvals={8} />
+    );
+    expect(container.querySelector("[data-gate-total-evals]")).toBeNull();
+    // The decisions noun still holds — coord DID split the counts.
+    expect(
+      container
+        .querySelector("[data-gate-total-blocks]")
+        ?.getAttribute("data-gate-count-provenance")
+    ).toBe("decisions");
+  });
+
+  it("renders nothing at all before the count has loaded", () => {
+    const { container } = render(
+      <GateDecisionCounts totalBlocks={null} totalEvals={null} />
+    );
+    expect(container.querySelector("[data-gate-total-blocks]")).toBeNull();
   });
 });
