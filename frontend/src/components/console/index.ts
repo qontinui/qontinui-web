@@ -74,6 +74,7 @@ export {
   RowTime,
   STATUS_BADGE_CLASS,
   StatusBadge,
+  UNKNOWN_AMBER,
   WAITING_AMBER,
   rowAccentClass,
 } from "./statusRow";

@@ -151,7 +151,16 @@ function deriveDeploysHealth(
 export default function CoordDeploysPage() {
   const [serviceFilter, setServiceFilter] = useState("");
   const [deploys, setDeploys] = useState<DeployRowData[]>([]);
+  // TWO flags, because two different questions are being asked and one answer
+  // cannot serve both (`/history` established this split):
+  //   `loaded`  — has a read SUCCEEDED? Drives the counts, because R6 says an
+  //               unfetched count renders `–` and never `0`.
+  //   `settled` — has a read come BACK at all, success or failure? Drives the
+  //               list, because skeletons after a failed read claim we are
+  //               still loading, which is a second untrue thing on a row that
+  //               already carries an error.
   const [loaded, setLoaded] = useState(false);
+  const [settled, setSettled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
 
@@ -168,6 +177,8 @@ export default function CoordDeploysPage() {
       setLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSettled(true);
     }
   }, [serviceFilter]);
 
@@ -261,9 +272,7 @@ export default function CoordDeploysPage() {
       <RecordList
         items={shown}
         itemKey={(r) => r.signature.id}
-        // `loaded` (set only on a SUCCESSFUL read), not "we stopped loading":
-        // the `finally` clears `loading` on failure too.
-        loaded={loaded || deploys.length > 0}
+        loaded={settled || deploys.length > 0}
         skeletonRows={6}
         renderRow={(r, ctx) => (
           <DeployRow row={r} expanded={ctx.expanded} onToggle={ctx.onToggle} />

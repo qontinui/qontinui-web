@@ -330,7 +330,16 @@ export default function CoordLandsPage() {
   // ---- Recent lands state ----
   const [landsRepoFilter, setLandsRepoFilter] = useState("");
   const [lands, setLands] = useState<LandRowData[]>([]);
+  // TWO flags, because two different questions are being asked and one answer
+  // cannot serve both (`/history` established this split):
+  //   `loaded`  — has a read SUCCEEDED? Drives the counts, because R6 says an
+  //               unfetched count renders `–` and never `0`.
+  //   `settled` — has a read come BACK at all, success or failure? Drives the
+  //               list, because skeletons after a failed read claim we are
+  //               still loading, which is a second untrue thing on a row that
+  //               already carries an error.
   const [landsLoaded, setLandsLoaded] = useState(false);
+  const [landsSettled, setLandsSettled] = useState(false);
   const [landsError, setLandsError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
 
@@ -402,6 +411,8 @@ export default function CoordLandsPage() {
       setLandsLoaded(true);
     } catch (e) {
       setLandsError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLandsSettled(true);
     }
   }, [landsRepoFilter]);
 
@@ -605,10 +616,7 @@ export default function CoordLandsPage() {
       <RecordList
         items={shown}
         itemKey={(row) => row.signature.id}
-        // `landsLoaded` (set only on a SUCCESSFUL read), not "we stopped
-        // loading": the `finally` clears `landsLoading` on failure too, so the
-        // old predicate handed a failed first load straight to `empty`.
-        loaded={landsLoaded || lands.length > 0}
+        loaded={landsSettled || lands.length > 0}
         skeletonRows={6}
         renderRow={(row, ctx) => (
           <LandRow row={row} expanded={ctx.expanded} onToggle={ctx.onToggle} />

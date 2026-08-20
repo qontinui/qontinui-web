@@ -36,7 +36,12 @@
  */
 
 import type { Attention } from "@/components/console/attention";
-import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+import {
+  INERT,
+  UNKNOWN_AMBER,
+  type RowStatus,
+  type StatusPalette,
+} from "@/components/console/statusRow";
 
 /**
  * One `coord.memories` row as the web proxy's list projection serves it.
@@ -109,11 +114,11 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
 
 export const MEMORY_TONE_CLASS: Record<MemoryStatusTone, string> = {
   // Calm: nothing is owed on a memory, and nothing decays.
-  known: "bg-muted text-muted-foreground border-border",
+  known: INERT,
   // Also calm, and NOT the ignorance floor — see the table below.
   untyped: "bg-transparent text-muted-foreground border-border border-dashed",
   // R3's ignorance floor — amber says "we cannot tell you what this is".
-  unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
+  unknown: UNKNOWN_AMBER,
 };
 
 /**

@@ -86,6 +86,29 @@ export const WAITING_AMBER = "bg-amber-500/15 text-amber-200 border-amber-500/30
 export const CI_YELLOW = "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
 /** Nothing is happening and nothing is wrong. */
 export const INERT = "bg-muted text-muted-foreground border-border";
+/**
+ * R3's IGNORANCE FLOOR — amber's lighter sibling, for "we cannot tell you
+ * whose move this is".
+ *
+ * Deliberately a step lighter than {@link WAITING_AMBER}, because the two say
+ * different things and an operator should be able to tell them apart: amber
+ * proper is a promise that something else will clear the row, while this is a
+ * statement about OUR knowledge, not about the row (style guide R3, "the one
+ * exception: amber also covers we do not know"). It is still amber and never
+ * calm, for the reason R3 gives — painting ignorance calm is
+ * `silent-empty-is-unknown` with a badge attached.
+ *
+ * Named here in Phase 3 Wave 2 because five surfaces had hand-spelled the same
+ * literal (`planStatus`, `memoryStatus`, `pullDecisionStatus`,
+ * `releaseStatus`, `verificationStatus`) and §4.1 is explicit: nothing outside
+ * this file may mint a red or an amber. That rule had already been broken
+ * quietly — `planStatus.blocked` spelled `border-red-500/30` where
+ * `AUTHOR_RED` is `/35`, and `paletteDisagreements` cannot catch it, because
+ * it tests only for the `bg-red-`/`bg-amber-` PREFIX. Tint and border drift
+ * passes that audit silently, which is exactly why the constants have to be
+ * imported rather than re-typed.
+ */
+export const UNKNOWN_AMBER = "bg-amber-500/10 text-amber-200 border-amber-500/30";
 
 /**
  * The merge pipeline's kind→class table. Lives here (rather than in
