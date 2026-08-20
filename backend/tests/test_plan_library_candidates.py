@@ -941,11 +941,15 @@ class TestCoordDoorTierFollowsThePrincipal:
         breaks the operator page in exactly the way the device caller is broken
         today — which is why the path itself is asserted, in both directions.
 
-        This is also the ONLY place the two-hop sequence is pinned, and the
-        only place it can honestly be: coord's operator by-slug body carries no
-        ``citations`` key, so the sub-resource hop genuinely runs. Its agent
+        The two hops here are the FALLBACK sequence: ``_coord_ok`` models a
+        coord that ignores ``?with_citations=1`` (as every coord does until
+        the opt-in arm ships), so its operator by-slug body carries no
+        ``citations`` key and the sub-resource hop genuinely runs. Its agent
         twin always carries one, so the device path short-circuits and a
         two-hop assertion there would describe a coord that does not exist.
+        What the fallback GUARANTEES — that this page keeps working against
+        such a coord — is asserted head-on in
+        :class:`TestOperatorPresenceHopAsksForTheCitationsInline`.
         """
         wu = _slug("wu-op")
         await _plan(async_db_session, org_id=None, slug=_slug("op"), work_unit_slug=wu)
@@ -1198,6 +1202,298 @@ class TestCoordDoorTierFollowsThePrincipal:
         assert link["linked_prs_state"] == "available"
         assert link["linked_prs"] == []
         assert link["unavailable_reason"] is None
+
+
+# ===========================================================================
+# Layer 4 — the operator presence hop asks for the citations INLINE
+# ===========================================================================
+#
+# Plan ``2026-08-20-coord-work-unit-read-door-inline-citations-and-safe-error-bodies``
+# D1/D4, Phase 3. coord's operator by-slug door takes ``?with_citations=1`` and
+# embeds the citations it otherwise omits, so an operator page collapses from
+# 2N coord round-trips to N — up to 100 candidates a page.
+#
+# Two properties are pinned below, and the SECOND is the load-bearing one:
+#
+# 1. Against a coord that HONOURS the parameter, one hop per slug.
+# 2. Against a coord that IGNORES it — every coord, until the arm ships —
+#    the sub-resource fallback still resolves the citations and still reports
+#    ``available``. The parameter is an optimisation, never a contract, and
+#    this service is deliberately shipping AHEAD of coord's half.
+
+
+def _coord_honouring_with_citations(
+    work_unit: dict[str, Any],
+    citations: list[dict[str, Any]],
+    *,
+    citations_error: dict[str, Any] | None = None,
+):
+    """A coord that HAS the opt-in arm: ``?with_citations=1`` inlines them.
+
+    Both doors are modelled the way coord answers them once Phase 1 lands: the
+    agent by-slug body always embeds ``citations``, and the operator twin does
+    so exactly when the query parameter asked. The sub-resource is still
+    served — it must be, or these tests would discriminate on an exception
+    rather than on the call sequence, and "one hop" would be indistinguishable
+    from "the second hop blew up".
+
+    ``citations_error`` swaps the payload for coord's ``Err`` arm: an EMPTY
+    list beside the typed error, which is the shape D4's regression test pins.
+    """
+
+    async def _fake(
+        path: str, *, params: dict[str, str] | None = None, **_: Any
+    ) -> Any:
+        if path.endswith("/citations"):
+            return {"citations": citations}
+        body: dict[str, Any] = {"work_unit": work_unit, "recent_history": []}
+        asked = (params or {}).get("with_citations") == "1"
+        if path.startswith("/coord/agent-work-units/") or asked:
+            if citations_error is not None:
+                body["citations"] = []
+                body["citations_error"] = citations_error
+            else:
+                body["citations"] = citations
+        return body
+
+    return AsyncMock(side_effect=_fake)
+
+
+_A_CITATION = {
+    "repo": "qontinui-coord",
+    "pr_number": 1559,
+    "merged": False,
+    "branch": "feat/safe-body",
+    "cited_at": "2026-08-16T00:00:00+00:00",
+    "sources": ["manual_backfill"],
+}
+
+
+class TestOperatorPresenceHopAsksForTheCitationsInline:
+    async def test_an_operator_page_makes_ONE_coord_call_per_slug(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Gate (a). The whole point of the phase, asserted as a SEQUENCE.
+
+        A bare call COUNT would also pass for a page that made one hop to the
+        wrong door, or one hop with no parameter against a stub that inlined
+        unconditionally. What is pinned is the path AND the query parameter
+        that rode with it — the parameter is the entire mechanism, so a change
+        that dropped it while keeping the count would be the regression this
+        test exists to catch.
+        """
+        wu = _slug("wu-one-hop")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("one-hop"), work_unit_slug=wu
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted", "title": "The unit"}, [_A_CITATION]
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [(c.args[0], c.kwargs.get("params")) for c in fake.await_args_list] == [
+            (f"/coord/work-units/{wu}", {"with_citations": "1"})
+        ], (
+            "the operator presence hop must carry ?with_citations=1 and be the "
+            "ONLY coord call for this slug"
+        )
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["linked_prs_state"] == "available"
+        assert [p["pr_number"] for p in link["linked_prs"]] == [1559]
+
+    async def test_the_device_presence_hop_does_NOT_carry_the_parameter(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The device request stays byte-identical to what it sends today.
+
+        coord's agent by-slug door passes ``with_citations = true``
+        unconditionally, so the parameter buys nothing there — and a probe
+        that sent it everywhere would make the operator-only opt-in look like
+        a global default, which is precisely what D1 declined to make it.
+        """
+        wu = _slug("wu-dev-noparam")
+        await _plan(
+            async_db_session, org_id=None, slug=_slug("dev-noparam"), work_unit_slug=wu
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"}, [_A_CITATION]
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [(c.args[0], c.kwargs.get("params")) for c in fake.await_args_list] == [
+            (f"/coord/agent-work-units/{wu}", None)
+        ]
+
+    async def test_a_coord_that_IGNORES_the_parameter_still_reports_available(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Gate (b) — the fallback EXERCISED, not merely asserted to exist.
+
+        This is the coord that is actually deployed while this change ships:
+        coord's half of the plan (Phases 1–2) is unlanded, so the operator
+        by-slug door drops the unknown query key on the floor and answers its
+        ordinary lean body. That body carries no ``citations`` key,
+        ``_inline_citations`` returns ``None``, and hop 2 runs — which is the
+        EXACT test that makes either deploy order safe.
+
+        The stub asserts it RECEIVED the parameter before ignoring it, so this
+        test cannot quietly degrade into "the probe never sent one".
+
+        The failure this guards against is not a crash. It is a page that
+        reports ``linked_prs: []`` — an assertion of zero PRs — for every
+        candidate, everywhere, until coord catches up.
+        """
+        wu = _slug("wu-ignored-param")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("ignored-param"),
+            work_unit_slug=wu,
+        )
+        seen: list[dict[str, str] | None] = []
+
+        async def _coord_without_the_arm(
+            path: str, *, params: dict[str, str] | None = None, **_: Any
+        ) -> Any:
+            seen.append(params)
+            if path.endswith("/citations"):
+                return {"citations": [_A_CITATION]}
+            # Today's coord: the query key is unknown to the handler, so the
+            # body is byte-identical to one requested without it. No
+            # ``citations``, no ``citations_error`` — nothing to short-circuit
+            # on.
+            return {"work_unit": {"slug": wu, "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_coord_without_the_arm)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert seen[0] == {"with_citations": "1"}, (
+            "the stub must actually be ignoring the parameter this phase adds "
+            "— otherwise it models nothing"
+        )
+        assert [c.args[0] for c in fake.await_args_list] == [
+            f"/coord/work-units/{wu}",
+            f"/coord/work-units/{wu}/citations",
+        ], "the sub-resource fallback must still run against a coord without the arm"
+
+        body = resp.json()
+        assert body["coord_available"] is True
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["linked_prs_state"] == "available"
+        assert [p["pr_number"] for p in link["linked_prs"]] == [1559]
+        assert link["unavailable_reason"] is None
+
+
+class TestInlineCitationErrorIsNeverAnEmptyList:
+    """D4's regression test — the honesty contract's enforcement, bought back.
+
+    The sub-resource answers an unreadable citation relation with a typed
+    ``503``: a STATUS CODE, which a caller cannot reach past by ignoring a
+    field. The inline arm answers the same fault with ``200`` + ``citations:
+    []`` + ``citations_error``: a FLAG ON A 200. Phase 3 moves the operator
+    path onto the second, so what stops a page reporting "this plan has no
+    PRs" during a ``42P01`` window is no longer a status line — it is
+    ``_CoordProbe._inline_citations`` remembering to check ``citations_error``
+    before it trusts the list beside it.
+
+    That is a strictly weaker guarantee, and the plan takes it deliberately
+    (scalability over robustness on the hop count) on condition that the debt
+    is discharged HERE. Simplify ``_inline_citations`` to key on ``citations``
+    alone and both tests below go red; without them, that edit renders every
+    candidate ``available`` with an empty list and nothing notices.
+
+    Both principals, because after Phase 3 both take the inline arm and the
+    two coord doors build this body in different handlers.
+    """
+
+    _ERR = {
+        "error": "citation_surface_unavailable",
+        "pg_code": "42P01",
+        "message": "citation surface unavailable: a relation backing the "
+        "citation join is absent.",
+    }
+
+    async def test_the_OPERATOR_inline_arm_reports_unavailable_not_empty(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        wu = _slug("wu-op-inline-err")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("op-inline-err"),
+            work_unit_slug=wu,
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"}, [], citations_error=self._ERR
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        # ONE call: the verdict came off the flag on the 200, not off a status
+        # code from a second hop. Pinning that is the point — it is the arm
+        # whose enforcement weakened.
+        assert [c.args[0] for c in fake.await_args_list] == [f"/coord/work-units/{wu}"]
+
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "coord ANSWERED — a typed citation error is not an outage"
+        )
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["linked_prs_state"] == "unavailable", (
+            "an EMPTY list beside citations_error is UNKNOWN, never zero"
+        )
+        assert link["linked_prs"] == []
+        assert "citation_surface_unavailable" in link["unavailable_reason"]
+        assert "42P01" in link["unavailable_reason"]
+
+    async def test_the_DEVICE_inline_arm_reports_unavailable_not_empty(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        wu = _slug("wu-dev-inline-err")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("dev-inline-err"),
+            work_unit_slug=wu,
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"}, [], citations_error=self._ERR
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [c.args[0] for c in fake.await_args_list] == [
+            f"/coord/agent-work-units/{wu}"
+        ]
+
+        body = resp.json()
+        assert body["coord_available"] is True
+        row = next(i for i in body["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["work_unit_state"] == "linked"
+        assert link["linked_prs_state"] == "unavailable"
+        assert link["linked_prs"] == []
+        assert "citation_surface_unavailable" in link["unavailable_reason"]
+        assert "42P01" in link["unavailable_reason"]
 
 
 class TestCoordServiceUnavailableOnTheCitationRead:
