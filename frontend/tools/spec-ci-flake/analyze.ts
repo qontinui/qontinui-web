@@ -47,8 +47,19 @@
  *      tool can say), but it is NOT a success: zero reports means zero flake
  *      signal, and exiting 0 would let a caller treat the most catastrophic
  *      window this tool can observe as a clean run. The stderr line names the
- *      exact `<noArtifact> of <listed>` split, so the caller can see whether
- *      the loss was total or partial.
+ *      exact `<noArtifact> of <completed>` split, so the caller can see
+ *      whether the loss was total or partial. The denominator is COMPLETED
+ *      runs, not listed runs: `noArtifact` excludes in-progress runs by
+ *      construction, so dividing by `listed` would make a total loss print as
+ *      "39 of 40" the moment one run is still running -- indistinguishable
+ *      from a partial loss, which is the one distinction this line exists to
+ *      draw. It matches `printText`'s denominator exactly.
+ *   1  Any unexpected error. Not a contract: it is Node's default exit for an
+ *      uncaught throw, and several are reachable -- `--dir <missing>` and an
+ *      unreadable entry inside it, and on the `--gh` path the cache
+ *      rmSync/mkdirSync, the `gh run list` subprocess, and JSON.parse of its
+ *      output. Callers must treat 1 as "the harness itself failed", distinct
+ *      from every measurement verdict above.
  *
  * See plan `2026-05-30-spec-ci-flake-stabilization.md`, Phase 0, and
  * `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`,
@@ -940,14 +951,19 @@ function main(): number {
   // demanding total loss would route "0 reports, artifact loss measured on
   // some runs" to exit 2 — whose contract is "cause UNKNOWN" — while the cause
   // is right there in `runLevel`. The stderr line below prints the exact
-  // `<noArtifact> of <listed>` split so total and partial loss stay
-  // distinguishable to the caller.
+  // `<noArtifact> of <completed>` split so total and partial loss stay
+  // distinguishable to the caller -- over COMPLETED runs, matching
+  // `printText`. `listed` would be the wrong denominator: `noArtifact` never
+  // contains an in-progress run (they are `continue`d above), so `x of listed`
+  // understates the ratio by exactly the in-progress count and prints a TOTAL
+  // loss as a partial one ("39 of 40") whenever a single run is still going.
   let zeroReportsFromArtifactLoss = false;
   if (rows.length === 0) {
     if (runLevel !== undefined && runLevel.noArtifact.length > 0) {
       zeroReportsFromArtifactLoss = true;
+      const completedRuns = runLevel.listed - runLevel.inProgress;
       process.stderr.write(
-        `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${runLevel.listed} runs produced no artifact — reporting that (exit 3)\n`,
+        `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${completedRuns} completed runs produced no artifact — reporting that (exit 3)\n`,
       );
     } else {
       process.stderr.write("[flake] no Spec CI reports found to analyze\n");
