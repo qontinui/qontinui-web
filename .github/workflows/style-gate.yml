@@ -283,6 +283,12 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
+        # `--with-deps` shells out to `apt-get` at job time and has been observed
+        # to stall for 30+ minutes against the apt/CDN mirror (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Sized from 10 green style-gate runs: p50 25s, p90 28s, max 33s.
+        # 5 min = p90 + ~4.5 min headroom (~9x the observed max).
+        timeout-minutes: 5
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
 
@@ -360,6 +366,12 @@ jobs:
       # init-scripts/01-create-runner-schema.sql. CI service containers don't run
       # those init scripts, so create it explicitly (same as e2e-tests.yml).
       - name: Create runner schema
+        # `apt-get` here reaches an external mirror at job time and is the same
+        # unbounded-stall exposure as the Playwright step (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Measured across green runs of all 7 sites: p50 0-16s, p90 <=91s,
+        # max 106s (migration-reversal). 5 min = p90 + ~3.5 min headroom.
+        timeout-minutes: 5
         # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
         continue-on-error: true
         env:

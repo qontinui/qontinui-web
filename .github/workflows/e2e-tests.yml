@@ -37,6 +37,14 @@ jobs:
   backend-tests:
     name: Backend E2E Tests
     runs-on: ubuntu-latest
+    # Job cap. This workflow carried NO `timeout-minutes` at any level, so a
+    # hung step fell through to GitHub's DEFAULT 360-minute ceiling — that is
+    # how run 32207280679 burned 2h28m and 32216356137 burned 5h59m in
+    # `Install Playwright browsers`. Sized from 7 green runs on `main`
+    # (2026-08-18/19): this job ran 1m54s-2m26s, max 2m26s. 20 min is ~8x the
+    # observed max — deliberately loose, because its purpose is to catch a
+    # hang, not to police normal variance.
+    timeout-minutes: 20
 
     strategy:
       matrix:
@@ -158,6 +166,15 @@ jobs:
       github.event_name != 'pull_request' &&
       !startsWith(github.ref, 'refs/heads/merge-candidate')
     runs-on: ubuntu-latest
+    # Job cap — see `backend-tests` above for why this workflow needed one.
+    # Sized from 28 green shard runs on `main` (2026-08-18/19): p50 ~12m,
+    # p90 ~18m, max 41m39s (run 32264216432 shard 2/4, which went green after
+    # a 30m24s `Install Playwright browsers` — the apt stall partially
+    # self-resolving). 60 min = p90 + 42 min headroom and still covers that
+    # worst observed GREEN run with ~44% to spare, so it cannot red a run that
+    # would otherwise have passed. The per-step bound below is what catches
+    # the apt hang fast; this is the backstop for everything else.
+    timeout-minutes: 60
 
     services:
       postgres:
@@ -247,6 +264,14 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browsers
+        # `--with-deps` shells out to `apt-get` at job time and has been observed
+        # to stall for 30+ minutes against the apt/CDN mirror (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Sized from 40 green shard samples on `main`: p50 28s, p90 4m34s,
+        # p95 6m40s, then 7m18s — and one 30m24s outlier that still went
+        # green. 10 min sits in the gap after 7m18s: p90 + ~5.5 min headroom,
+        # covering every healthy sample while cutting the stalled one.
+        timeout-minutes: 10
         working-directory: ./frontend
         run: npx playwright install --with-deps chromium
 
@@ -256,6 +281,12 @@ jobs:
       # docker-entrypoint-initdb.d. CI service containers don't run
       # those init scripts, so create the schema explicitly.
       - name: Create runner schema
+        # `apt-get` here reaches an external mirror at job time and is the same
+        # unbounded-stall exposure as the Playwright step (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # Measured across green runs of all 7 sites: p50 0-16s, p90 <=91s,
+        # max 106s (migration-reversal). 5 min = p90 + ~3.5 min headroom.
+        timeout-minutes: 5
         env:
           PGPASSWORD: test_password
         run: |
@@ -388,6 +419,11 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
+    # Job cap — see `backend-tests` above. This job only downloads artifacts
+    # and tallies results: 3-9s across the same 7 green runs. 10 min is ~65x
+    # the observed max and exists purely so a wedged download cannot inherit
+    # the 360-minute default.
+    timeout-minutes: 10
     needs: [backend-tests, frontend-tests]
     if: always()
 
