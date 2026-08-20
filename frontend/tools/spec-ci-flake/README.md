@@ -29,6 +29,31 @@ npx tsx tools/spec-ci-flake/analyze.ts --gh 40 --json
 Options: `--cache <path>` (where `--gh` stores downloads, default
 `./.flake-cache`), `--json` (emit JSON instead of the text table).
 
+## Exit-code contract
+
+There are exactly three, and **2 and 3 mean different things** — a caller that
+treats "non-zero" as one bucket loses the distinction this harness exists to
+draw.
+
+| Code | Meaning |
+|---|---|
+| `0` | Analysis produced, with **at least one** report to analyze. |
+| `2` | Usage error (bad/missing source flag), **or** no reports found **and** no run-level evidence that any run lost its artifact. This is "nothing to analyze, **cause unknown**". |
+| `3` | **Zero reports, and artifact loss is measurably why** — at least one listed run produced no `spec-ci-report`. The analysis is still printed, because that loss is the most important thing this tool can say, but it is not a success: zero reports means zero flake signal. |
+
+Two properties of `3` are deliberate and easy to get wrong:
+
+- It fires on **`noArtifact > 0`, not on `noArtifact === listed`.** A run can
+  produce an artifact that still yields no parseable report, so demanding
+  *total* loss would route "0 reports, artifact loss measured" into `2`, whose
+  contract is *cause unknown* — while the cause is right there in the run-level
+  tally. The stderr line prints the exact `<noArtifact> of <listed>` split, so
+  total and partial loss stay distinguishable.
+- It is **unreachable on `--dir`.** A directory of files carries no run-level
+  information, so `--dir` with no reports is `2` (cause unknown), never `3`.
+  Reporting `0` artifact-less runs there would be a measurement claim the
+  source cannot support.
+
 ## What it reports
 
 - **VERDICT — true same-SHA flakes (read this FIRST).** Runs are grouped by the
@@ -53,6 +78,15 @@ Options: `--cache <path>` (where `--gh` stores downloads, default
 - **Notable-response concentration across fail runs** — whether the 5xx land
   on **one** route template (→ a specific endpoint/upstream regression) or
   **spread across many** (→ blanket backend pressure).
+- **Runs that produced NO `spec-ci-report` artifact**, in their own section and
+  never averaged into the flake statistics. These are runs in which nothing
+  under test ever executed — typically a stall in an apt-dependent setup step
+  (plan `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`).
+  They used to be dropped silently, which made this harness structurally blind
+  to that whole failure class: the runs it would have to count are exactly the
+  ones it discarded. On `--dir` the section reports **UNKNOWN**, not zero — a
+  directory of files carries no run-level data, and reporting `0` there would
+  be the same silent-empty-is-unknown defect.
 
 ## Reading the output → hypothesis
 

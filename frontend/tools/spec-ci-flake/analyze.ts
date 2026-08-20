@@ -37,11 +37,18 @@
  *   0  Analysis produced, with at least one report to analyze.
  *   2  Usage error, or no reports found AND no run-level evidence that any
  *      run lost its artifact — i.e. "nothing to analyze", cause unknown.
- *   3  Runs WERE listed and every single one lost its artifact. The analysis
- *      is still printed (that total loss is the most important thing this
+ *   3  Zero reports to analyze, WITH run-level evidence that artifact loss is
+ *      why: at least one listed run produced no `spec-ci-report`. Deliberately
+ *      NOT "every listed run lost its artifact" — a run can produce an
+ *      artifact that still yields no parseable report, so requiring
+ *      `noArtifact.length === listed` would push that state into exit 2
+ *      ("cause unknown") when the cause is in fact known and measured. The
+ *      analysis is still printed (that loss is the most important thing this
  *      tool can say), but it is NOT a success: zero reports means zero flake
  *      signal, and exiting 0 would let a caller treat the most catastrophic
- *      window this tool can observe as a clean run.
+ *      window this tool can observe as a clean run. The stderr line names the
+ *      exact `<noArtifact> of <listed>` split, so the caller can see whether
+ *      the loss was total or partial.
  *
  * See plan `2026-05-30-spec-ci-flake-stabilization.md`, Phase 0, and
  * `2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure`,
@@ -272,8 +279,11 @@ function loadFromDir(dir: string): FeatureRow[] {
  *
  * Such a run is invisible to every feature table below, because the whole
  * dataset is built from downloaded reports — a run that never writes one is
- * simply absent. That is not a rare corner. A run that stalls in
- * `Install Playwright Chromium` never reaches `Run Spec CI`, so
+ * simply absent. That is not a rare corner. A run that stalls in the
+ * apt-dependent setup step (`Install Playwright Chromium system deps (apt)`
+ * since plan 2026-08-19-…'s Phase 3 split it out of `--with-deps`; it was
+ * `Install Playwright Chromium` when the 2026-08-19 runs below stalled) never
+ * reaches `Run Spec CI`, so
  * `frontend/spec-ci-report.json` is never written; `Upload Spec CI report` is
  * `if: always()` and DOES still run and report success, but with no file on
  * disk and `if-no-files-found: warn` it creates no artifact, so
@@ -782,10 +792,16 @@ function printText(a: Analysis): void {
         "  These are NOT spec flakes and are excluded from every number below: nothing",
       );
       lines.push(
-        "  under test ran. A run that stalls in an apt-dependent step (e.g. `Install",
+        "  under test ran. A run that stalls in an apt-dependent setup step (e.g.",
       );
       lines.push(
-        "  Playwright Chromium`) never reaches `Run Spec CI`, so no report is written.",
+        "  `Install Playwright Chromium system deps (apt)`) never reaches `Run Spec CI`,",
+      );
+      lines.push(
+        "  so no report is written. The step named per run below is read live from the",
+      );
+      lines.push(
+        "  jobs API, so it stays correct across step renames.",
       );
       for (const r of rl.noArtifact) {
         // Three distinct states, rendered as three distinct sentences. The
@@ -911,17 +927,25 @@ function main(): number {
   }
 
   // Zero reports used to be an unconditional `return 2`. But if runs were
-  // listed and every one of them lost its artifact, that is not "nothing to
+  // listed and at least one of them lost its artifact, that is not "nothing to
   // analyze" — it is the single most important thing this tool can report,
   // and bailing before printing is exactly how the failure mode stayed
   // invisible. It is still not a SUCCESS, though: zero reports means zero
   // flake signal, so it gets its own non-zero code (3) rather than 0. An
   // earlier revision returned 0 here, which made the most catastrophic window
   // this tool can see the only one it called clean.
-  let totalArtifactLoss = false;
+  //
+  // The test is `noArtifact.length > 0`, NOT `noArtifact.length === listed`:
+  // a run can produce an artifact that still yields no parseable report, so
+  // demanding total loss would route "0 reports, artifact loss measured on
+  // some runs" to exit 2 — whose contract is "cause UNKNOWN" — while the cause
+  // is right there in `runLevel`. The stderr line below prints the exact
+  // `<noArtifact> of <listed>` split so total and partial loss stay
+  // distinguishable to the caller.
+  let zeroReportsFromArtifactLoss = false;
   if (rows.length === 0) {
     if (runLevel !== undefined && runLevel.noArtifact.length > 0) {
-      totalArtifactLoss = true;
+      zeroReportsFromArtifactLoss = true;
       process.stderr.write(
         `[flake] 0 reports, but ${runLevel.noArtifact.length} of ${runLevel.listed} runs produced no artifact — reporting that (exit 3)\n`,
       );
@@ -937,7 +961,7 @@ function main(): number {
   } else {
     printText(result);
   }
-  return totalArtifactLoss ? 3 : 0;
+  return zeroReportsFromArtifactLoss ? 3 : 0;
 }
 
 process.exit(main());
