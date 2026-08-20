@@ -6772,10 +6772,20 @@ async def restore_coord_policy_default(
 # former ``coord.policy_documents`` (this proxy set replaces the
 # ``/coord/policy-documents`` surface it superseded; those rows migrated in as
 # ``kind='policy'``). ONE versioned store for every prompt-shaped document coord
-# serves, addressed by ``(kind, name)`` over four kinds: ``policy`` (the
+# serves, addressed by ``(kind, name)`` over six kinds: ``policy`` (the
 # meta-answer's ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A
 # meta-answer template), ``continuation_rules`` (the Stop-hook continuation
-# umbrella prompt), and ``agent_playbook`` (e.g. the merge-shepherd playbook).
+# umbrella prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
+# ``prompt_template`` (the runner terminal ``/prompt`` library), and
+# ``session_briefing`` (the briefing the runner appends to the system prompt of
+# every session it hosts).
+#
+# The forwarders below are deliberately kind-GENERIC — every one takes
+# ``kind: str`` with no enum or allowlist, so coord's own ``unknown kind`` 400 is
+# the single authority on which kinds exist. Adding a kind therefore needs the
+# alembic CHECK widening and coord's ``KINDS``, and nothing here; keep it that
+# way rather than mirroring the list into a validator that would have to be
+# re-deployed in lockstep.
 #
 # Every PATCH creates an immutable version snapshot coord-side and bumps
 # ``current_version`` — edits never silently overwrite, and the versions routes
