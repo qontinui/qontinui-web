@@ -360,12 +360,32 @@ def _no_live_tenant_resolution():
 
 
 def _coord_ok(work_unit: dict[str, Any], citations: list[dict[str, Any]]):
-    """A coord that answers both hops."""
+    """A coord that answers — on each door tier the way coord ACTUALLY does.
+
+    The two by-slug doors do not return the same body, and a fixture that
+    pretends they do lets a test pin a call sequence coord cannot produce:
+
+    * ``/coord/agent-work-units/{slug}`` ALWAYS embeds ``citations`` — rows, or
+      ``[]`` beside ``citations_error``. So a device caller short-circuits on
+      the inline list (:meth:`_CoordProbe._inline_citations`) and the citations
+      sub-resource is NEVER reached on that path.
+    * ``/coord/work-units/{slug}`` — the operator twin — deliberately omits the
+      key to keep the dashboard payload lean, so an operator caller really does
+      make two hops.
+
+    Modelling both doors without ``citations`` (which this helper used to do)
+    made a device-path two-hop assertion pass against a shape production never
+    emits. The two-hop sequence is pinned on the operator path, where it
+    genuinely occurs.
+    """
 
     async def _fake(path: str, **_: Any) -> Any:
         if path.endswith("/citations"):
             return {"citations": citations}
-        return {"work_unit": work_unit, "recent_history": []}
+        body: dict[str, Any] = {"work_unit": work_unit, "recent_history": []}
+        if path.startswith("/coord/agent-work-units/"):
+            body["citations"] = citations
+        return body
 
     return AsyncMock(side_effect=_fake)
 
@@ -919,6 +939,12 @@ class TestCoordDoorTierFollowsThePrincipal:
         The agent tier rejects a Cognito bearer, so getting this backwards
         breaks the operator page in exactly the way the device caller is broken
         today — which is why the path itself is asserted, in both directions.
+
+        This is also the ONLY place the two-hop sequence is pinned, and the
+        only place it can honestly be: coord's operator by-slug body carries no
+        ``citations`` key, so the sub-resource hop genuinely runs. Its agent
+        twin always carries one, so the device path short-circuits and a
+        two-hop assertion there would describe a coord that does not exist.
         """
         wu = _slug("wu-op")
         await _plan(async_db_session, org_id=None, slug=_slug("op"), work_unit_slug=wu)
@@ -932,7 +958,8 @@ class TestCoordDoorTierFollowsThePrincipal:
         assert called == [
             f"/coord/work-units/{wu}",
             f"/coord/work-units/{wu}/citations",
-        ]
+        ], "the operator path is where two hops genuinely happen"
+        assert fake.await_count == 2
         assert not any("agent-work-units" in path for path in called)
 
     async def test_a_device_principal_reads_the_agent_doors(
@@ -941,9 +968,17 @@ class TestCoordDoorTierFollowsThePrincipal:
         """The strand this plan exists to cut.
 
         The runner forwards its coord DEVICE JWT, which coord's operator tier
-        403s. Both hops have an ``agent-`` twin and both must use it — routing
-        only the citations hop would leave every row reading
-        ``work_unit_state: "unavailable"``, the same bug one level up.
+        403s. The BASE PATH is what this test discriminates, and it is the half
+        that matters: routing the by-slug read to the operator tier leaves
+        every row reading ``work_unit_state: "unavailable"`` — the same bug one
+        level up — while routing it to the agent tier resolves the unit AND its
+        citations in one hop.
+
+        Only ONE call is expected, and that is coord's own shape rather than an
+        optimisation this test tolerates: the agent by-slug door ALWAYS embeds
+        ``citations``, so the sub-resource hop is unreachable on this path. The
+        two-hop sequence is asserted on the operator path above, where the
+        by-slug body carries no ``citations`` key and both hops really run.
         """
         wu = _slug("wu-dev")
         plan = await _plan(
@@ -968,10 +1003,11 @@ class TestCoordDoorTierFollowsThePrincipal:
 
         assert resp.status_code == 200, resp.text
         called = [c.args[0] for c in fake.await_args_list]
-        assert called == [
-            f"/coord/agent-work-units/{wu}",
-            f"/coord/agent-work-units/{wu}/citations",
-        ]
+        assert called == [f"/coord/agent-work-units/{wu}"], (
+            "the device path must read the AGENT by-slug door — and only it: "
+            "that door embeds the citations, so a second hop is a shape coord "
+            "never produces"
+        )
         assert not any(path.startswith("/coord/work-units") for path in called)
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
@@ -1122,12 +1158,21 @@ class TestCoordServiceUnavailableOnTheCitationRead:
     whole of coord as down and blank the work-unit half of every remaining row,
     which reads fine.
 
+    Its ``500 db_error`` — a transient PG failure on THIS slug's citation
+    SELECT, rendered by ``pg_error::to_body()`` — is the same class one status
+    band down, and reads the same way. The device path already behaves so: the
+    identical coord fault reaches an agent caller as ``200`` +
+    ``citations_error``, so without the 500 arm one coord fault produced a
+    per-slug degradation for a device caller and a blanked page for an
+    operator.
+
     The carve-out is keyed on coord's error CODE in the body, not on which hop
     asked. The tempting argument — the citations hop runs only after the
     presence hop succeeded, so coord is provably up — does not survive the gap
     between two sequential requests: coord can go down between them (a deploy,
-    an ECS rotation, an ALB target drain). The tests below pin both halves: a
-    typed 503 does not trip, an UNTYPED 503 on the same hop does.
+    an ECS rotation, an ALB target drain). The tests below pin both halves at
+    both statuses: a typed 503/500 does not trip, an UNTYPED one on the same
+    hop does, and a status/code pairing coord does not use fails closed.
     """
 
     async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
@@ -1282,6 +1327,160 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             "returns — was read as coord ANSWERING, so a total outage would "
             "report coord_available: true"
         )
+
+    async def test_a_typed_500_on_the_citations_hop_is_per_slug_not_a_trip(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """coord's ``500 db_error`` on ONE slug's citation SELECT.
+
+        A transient PG failure on the citation read is coord ANSWERING about
+        one sub-resource, exactly as its 503 is — one status band down and one
+        error code over. Read as a transport failure it trips the page-wide
+        circuit, and every REMAINING row's ``work_unit_state`` collapses to
+        ``unavailable`` even though its own presence hop had already succeeded,
+        with the first row's reason repeated stickily across the page.
+
+        It is also the parity half: the SAME coord fault reaches a DEVICE
+        caller as ``200`` + ``citations_error``, i.e. already per-slug. Two
+        principals must not get materially different pages out of one fault.
+        """
+        plans = [
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("pg-per-slug"),
+                work_unit_slug=_slug("wu-pg-per-slug"),
+            )
+            for _ in range(4)
+        ]
+
+        # ``pg_error::to_body()`` with structured detail — the shape coord
+        # renders a caught PG failure into, identifiers and internals both.
+        pg_body = {
+            "error": "db_error",
+            "context": "listing citations for work unit",
+            "chain": "query failed: connection pool: relation lookup",
+            "pg": {
+                "code": "23503",
+                "detail": "Key (tenant_id)=(9f1c2d3e-0000-4444-8888-abcdefabcdef) "
+                "is not present in table tenants.",
+                "constraint": "work_unit_citations_tenant_id_fkey",
+                "table": "work_unit_citations",
+            },
+        }
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(status_code=500, detail=json.dumps(pg_body))
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "a typed 500 about ONE slug's citation SELECT tripped the "
+            "page-wide circuit — coord answered, and its presence hop had just "
+            "served a query for this same request"
+        )
+        assert fake.await_count == 2 * len(plans), (
+            "the circuit short-circuited the remaining slugs, so rows whose "
+            "own presence hop would have succeeded were never read"
+        )
+        by_id = {r["id"]: r for r in body["items"]}
+        for plan in plans:
+            link = by_id[str(plan.id)]["coord"]
+            assert link["work_unit_state"] == "linked", (
+                "the presence hop succeeded; only the citation half is unknown"
+            )
+            assert link["linked_prs_state"] == "unavailable"
+            assert link["linked_prs"] == []
+            reason = link["unavailable_reason"]
+            assert "500" in reason
+            assert "db_error" in reason
+            assert "23503" in reason
+            for leaked in ("9f1c2d3e", "work_unit_citations", "connection pool"):
+                assert leaked not in reason, f"coord internals egressed: {leaked!r}"
+
+    async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The half that keeps the 500 carve-out as narrow as the 503's.
+
+        Nothing between this service and coord can produce coord's declared
+        error field: a load balancer answers HTML, a proxy answers a plain-text
+        line, and ``_proxy_coord_get``'s own transport mapping raises a bare
+        string. None parse to an object with an ``error`` field, so none match
+        — and a 500 from one of them is an outage, not an answer.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("untyped-500"),
+                work_unit_slug=_slug("wu-untyped-500"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail="<html><body>500 Internal Server Error</body></html>",
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        assert resp.json()["coord_available"] is False, (
+            "an untyped 500 was read as coord ANSWERING, so an infrastructure "
+            "failure between the two hops would report coord_available: true"
+        )
+
+    async def test_an_unexpected_status_code_pairing_fails_CLOSED(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The carve-out pins each coord error code to the status coord uses.
+
+        coord answers ``citation_surface_unavailable`` with 503 and
+        ``db_error`` with 500. A pairing this read has not observed is not
+        granted the carve-out — it keeps the ordinary transport reading, which
+        is the conservative direction: an unexpected pairing degrades to
+        today's behaviour rather than silently widening what counts as "coord
+        answered".
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("pairing"),
+                work_unit_slug=_slug("wu-pairing"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps(
+                        {"error": "citation_surface_unavailable", "pg_code": "42P01"}
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200
+        assert resp.json()["coord_available"] is False
 
     async def test_the_reason_carries_coords_own_words(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -1566,6 +1765,17 @@ class TestCoordErrorBodiesDoNotEgress:
     async def test_a_pg_error_body_echoes_only_its_identifiers(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
+        """The whitelist, on a ``pg_error::to_body()`` 500.
+
+        The fake fails EVERY path, so the 500 lands on the PRESENCE hop — the
+        first read of the first slug, before anything of coord's has answered.
+        That hop carries no ``answered_codes`` and never will: it is the
+        unguarded canary that keeps a coord-wide fault tripping the circuit, so
+        ``coord_available`` is false here for a reason that survives the
+        per-slug carve-out on the citations hop. The citations hop's own typed
+        500 does NOT trip, and is pinned in
+        ``TestCoordServiceUnavailableOnTheCitationRead``.
+        """
         await _plan(
             async_db_session,
             org_id=None,
@@ -1584,7 +1794,11 @@ class TestCoordErrorBodiesDoNotEgress:
 
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["coord_available"] is False, "a 500 is still an outage"
+        assert body["coord_available"] is False, (
+            "a 500 on the PRESENCE hop is still an outage — nothing of coord's "
+            "has answered at that point, so there is no per-slug reading to "
+            "prefer, and the citations-hop carve-out must not reach here"
+        )
         reason = next(
             r["coord"]["unavailable_reason"]
             for r in body["items"]
