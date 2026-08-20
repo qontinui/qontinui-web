@@ -41,7 +41,7 @@ import {
   formatRelative,
   type AgentQuestionOption,
   type AgentQuestionRow,
-} from "@/components/admin/coord/QuestionCard";
+} from "@/components/admin/coord/questionStatus";
 
 const API = "/api/v1/operations";
 

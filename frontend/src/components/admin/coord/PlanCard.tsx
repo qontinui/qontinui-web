@@ -21,22 +21,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Rocket } from "lucide-react";
-import { formatRelative } from "@/components/admin/coord/QuestionCard";
+import { formatRelative } from "@/components/admin/coord/questionStatus";
 import {
   describePlanStatus,
   PLAN_TONE_CLASS,
+  type CoordPlanRow,
 } from "@/components/admin/coord/planStatus";
 
-export interface CoordPlanRow {
-  slug: string;
-  title?: string;
-  status?: string;
-  current_phase?: string | null;
-  /** coord `work_units.created_at` — the sort key operators asked for. */
-  created_at?: string | null;
-  updated_at?: string | null;
-  shipped_at?: string | null;
-}
+// The row shape moved to `planStatus.ts` (Phase 3 Wave 1) so it outlives this
+// card, which `/plans` no longer uses — `/history` is its last consumer and
+// migrates in Wave 2. Re-exported so `planSort`, `/spawn` and `/history` are
+// untouched by the move.
+export type { CoordPlanRow };
 
 export function PlanCard({ plan }: { plan: CoordPlanRow }) {
   const router = useRouter();

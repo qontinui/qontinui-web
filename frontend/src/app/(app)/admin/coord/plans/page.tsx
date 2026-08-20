@@ -12,11 +12,34 @@
  * — this is a data-source repoint, not a rename. The web proxy still serves
  * `/api/v1/operations/plans*`; only the coord upstream moved to
  * `/coord/work-units*`, whose list envelope is `{work_units: [...]}`.
+ *
+ * ## Console style (Phase 3 Wave 1)
+ *
+ * Migrated onto `components/console` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md`, against
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — the page-level `<Card><CardHeader><CardTitle>Plans` wrapper is
+ *   gone. `coord/layout.tsx` already renders the console `<h1>` and the nav
+ *   crumb, so that header was a second title costing ~72px above the fold.
+ * - **R1** — a `<HealthStrip>` derived from the rows ALREADY FETCHED opens the
+ *   page. No second request: the counts come from the same list the rows do.
+ * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
+ *   (`<RecordList>` keeps one open at a time).
+ * - **R7** — the fetch-window caveats (truncation, missing creation dates)
+ *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
+ *   the warning cannot hide behind the click.
+ *
+ * **The status `<Select>` deliberately stays a Select, not `<FilterTabs>`.**
+ * It is a SERVER-side filter — the value goes to coord as `?status=` and
+ * changes what is fetched — so tab counts would be `–` for all nine options on
+ * every render but one. R6's dash rule permits that; it would still be a
+ * strictly worse control than the Select, and `coord-plans-status-select` is a
+ * frozen authored testid (D4a). The counts operators actually want are in the
+ * health strip, derived from the window that WAS fetched.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -25,11 +48,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { ArrowDownUp, FileText, Filter, RefreshCw } from "lucide-react";
-import { PlanCard, type CoordPlanRow } from "@/components/admin/coord/PlanCard";
+import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
+import { CollapsiblePanel, HealthStrip, RecordList } from "@/components/console";
+import { PlanRow } from "@/components/admin/coord/PlanRow";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
+import { derivePlansHealth } from "./plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
@@ -103,75 +128,98 @@ export default function CoordPlansListPage() {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const plans = data?.work_units ?? data?.plans ?? [];
-  const sorted = sortPlans(plans, sort);
+  const plans = useMemo(
+    () => data?.work_units ?? data?.plans ?? [],
+    [data]
+  );
+  const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest created" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
   const missingCreated = plans.filter((p) => !p.created_at).length;
+  const loaded = data !== null;
+  const health = useMemo(
+    () => derivePlansHealth(plans, loaded),
+    [plans, loaded]
+  );
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-plans-page">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FileText className="h-4 w-4" />
-            Plans
-            {data && (
-              <Badge variant="outline" className="ml-2">
-                {plans.length}
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger
-                className="w-[180px]"
-                data-testid="coord-plans-status-select"
-              >
-                <SelectValue placeholder="status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_FILTERS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
-            <Select
-              value={sort}
-              onValueChange={(v) => setSort(v as SortKey)}
-            >
-              <SelectTrigger
-                className="w-[200px]"
-                data-testid="coord-plans-sort-select"
-              >
-                <SelectValue placeholder="sort" />
-              </SelectTrigger>
-              <SelectContent>
-                {SORTS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchData}
-              data-testid="coord-plans-refresh"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          </div>
+      <HealthStrip
+        level={health.level}
+        headline={health.headline}
+        detail={health.detail}
+        badges={health.badges}
+        data-testid="coord-plans-health"
+      />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-plans-status-select"
+          >
+            <SelectValue placeholder="status" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ArrowDownUp className="h-4 w-4 text-muted-foreground ml-1" />
+        <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+          <SelectTrigger
+            className="w-[200px]"
+            data-testid="coord-plans-sort-select"
+          >
+            <SelectValue placeholder="sort" />
+          </SelectTrigger>
+          <SelectContent>
+            {SORTS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchData}
+          data-testid="coord-plans-refresh"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+      </div>
+
+      {/* R7 — the window caveats are infrastructural, so they collapse; the
+          summary badge keeps the signal visible while they are closed. */}
+      {(truncated || missingCreated > 0) && (
+        <CollapsiblePanel
+          titleAs="h2"
+          className="p-2.5"
+          defaultOpen={false}
+          storageKey="coord-plans-window-caveats"
+          icon={<TriangleAlert className="h-3.5 w-3.5 text-amber-400" />}
+          title="Fetch-window caveats"
+          summary={
+            <span className="text-xs text-amber-300/90 normal-case tracking-normal">
+              {[
+                truncated ? `capped at ${FETCH_LIMIT}` : null,
+                missingCreated > 0 ? `${missingCreated} undated` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          }
+          contentClassName="space-y-1"
+          data-testid="coord-plans-window-caveats"
+        >
           {truncated && (
             <p
               className="text-xs text-amber-300/90"
@@ -192,26 +240,31 @@ export default function CoordPlansListPage() {
               they sort last rather than being treated as oldest.
             </p>
           )}
+        </CollapsiblePanel>
+      )}
 
-          {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          )}
+      {error && (
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
+      )}
 
-          {loading && !data ? (
-            <Skeleton className="h-24 w-full" />
-          ) : sorted.length > 0 ? (
-            <div className="space-y-2">
-              {sorted.map((p) => (
-                <PlanCard key={p.slug} plan={p} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground italic">
-              No plans matching status={status === "any" ? "any" : status}.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <RecordList
+        items={sorted}
+        itemKey={(p) => p.slug}
+        loaded={!(loading && !data)}
+        skeletonRows={6}
+        empty={
+          <p className="text-sm text-muted-foreground italic">
+            No plans matching status={status === "any" ? "any" : status}.
+          </p>
+        }
+        renderRow={(p, ctx) => (
+          <PlanRow
+            plan={p}
+            expanded={ctx.expanded}
+            onToggle={ctx.onToggle}
+          />
+        )}
+      />
     </div>
   );
 }
