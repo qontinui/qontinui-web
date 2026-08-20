@@ -86,6 +86,18 @@ Invariants this module is responsible for
    constrains it. The runner does not call it (it logs the route as operator
    guidance on the ambiguous-kind path and leaves it alone), so the narrower
    dependency costs nothing and keeps the correction a human assertion.
+
+8. **Which credential authenticated is load-bearing for the coord hop.** The
+   two routes that read coord (``/candidates`` and ``GET /{id}``) forward the
+   caller's captured bearer VERBATIM, and coord's two door tiers reject each
+   other's credential: its ``/coord/work-units/...`` reads resolve a tenant
+   from a Cognito ``OperatorContext`` (403 ``tenant_not_resolved`` for a device
+   JWT), while its ``/coord/agent-work-units/...`` twins lift the tenant from a
+   verified device JWT (and reject a Cognito bearer). Those two routes
+   therefore depend on :func:`~app.api.deps.get_audit_actor_principal`, which
+   carries WHICH arm authenticated alongside the ``User``, and pass that kind
+   to ``_CoordProbe``. Every other route needs only the ``User`` and keeps
+   :func:`~app.api.deps.get_audit_actor_user`.
 """
 
 import asyncio
@@ -93,6 +105,7 @@ import io
 import json
 import re
 import zipfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import get_args
 from urllib.parse import quote
@@ -110,7 +123,14 @@ from fastapi import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import current_active_user, get_async_db, get_audit_actor_user
+from app.api.deps import (
+    ActorKind,
+    ActorPrincipal,
+    current_active_user,
+    get_async_db,
+    get_audit_actor_principal,
+    get_audit_actor_user,
+)
 from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
 from app.crud import work_artifact as crud
 from app.models.user import User
@@ -373,18 +393,34 @@ async def _soft_tenant_id(request: Request) -> UUID | None:
         return None
 
 
-def _coord_pr(raw: object) -> CandidateLinkedPr:
+def _coord_pr(raw: object, *, merged_is_degraded: bool = False) -> CandidateLinkedPr:
     """Project one coord citation onto :class:`CandidateLinkedPr`.
 
     Defensive about shape: coord's citation projection is
     ``{repo, pr_number, merged, branch, cited_at, sources}`` today, but this
     read must not 500 on a coord that grew or lost a field.
+
+    ``merged_is_degraded`` — coord answered with ``merged_degraded_reason``,
+    meaning its ``merged`` predicate is running in its DEGRADED form: the
+    durable ``merge_commit_sha`` arm is dropped (a column it needs has not
+    been migrated yet) and **every PR coord ff-landed reads ``merged: false``**.
+    A ``false`` under that flag is UNKNOWN, not an observation, and coord
+    ff-lands PRs routinely — so it is projected as ``state: "unknown"`` with
+    ``merged: None`` rather than rendered as the fact "unmerged". A ``true`` is
+    unaffected: the degraded arm narrows the disjunction, so it can only
+    produce false NEGATIVES.
+
+    This is the same "absence is UNKNOWN, not zero" discipline the enclosing
+    block applies to the citation list, one level down — on the individual
+    row's merged state.
     """
     if not isinstance(raw, dict):
         return CandidateLinkedPr()
 
     merged = raw.get("merged")
     merged_bool = merged if isinstance(merged, bool) else None
+    if merged_is_degraded and merged_bool is False:
+        merged_bool = None
     pr_number = raw.get("pr_number")
     sources = raw.get("sources")
     return CandidateLinkedPr(
@@ -402,6 +438,30 @@ def _coord_pr(raw: object) -> CandidateLinkedPr:
     )
 
 
+def _merged_is_degraded(payload: object) -> bool:
+    """Did coord flag its ``merged`` predicate as running DEGRADED?
+
+    ``merged_degraded_reason`` is coord's own admission that the durable
+    ``merge_commit_sha`` arm of the predicate is dropped (a column it needs is
+    unmigrated), so every PR coord ff-landed reads ``merged: false``. Its
+    presence is the whole signal; the body is prose.
+
+    It rides on BOTH of coord's citation-bearing payloads on the same terms —
+    the citations sub-resource and the by-slug response behind
+    ``/coord/work-units/:slug`` and ``/coord/agent-work-units/:slug`` — which
+    is why one probe serves both branches of :meth:`_CoordProbe.link_for`.
+
+    One field name, one predicate, one place. Degradation is deliberately NOT
+    re-derived here from ``delivery.evidence_complete`` (it goes false for
+    evidence gaps that have nothing to do with the merged arm) nor by
+    string-matching ``evidence_gaps`` prose (a brittle coupling to coord's
+    wording). A second implementation in web would drift from coord's own.
+    """
+    return (
+        isinstance(payload, dict) and payload.get("merged_degraded_reason") is not None
+    )
+
+
 def _citation_rows(payload: object) -> list[object]:
     """Pull the citation list out of whatever envelope coord returned."""
     if isinstance(payload, list):
@@ -414,7 +474,228 @@ def _citation_rows(payload: object) -> list[object]:
     return []
 
 
-def _is_transport_failure(http_status: int) -> bool:
+#: Cap on every rendered coord-error line, applied through :func:`_cap_reason`.
+#: The whitelist is the PRIVACY control; this is the LENGTH one, and it is
+#: load-bearing rather than belt-and-braces. The whitelisted ``error`` field is
+#: not a closed set of short codes: coord builds it as free text at many call
+#: sites (``json!({"error": format!("PG: {e}")})``, ``format!("query failed:
+#: {e}")``, …), so a whitelisted field can arrive carrying a whole Postgres
+#: error chain. None of those sites is on the two routes this read calls today,
+#: which makes it latent rather than live — but "latent" rests on a property of
+#: OTHER coord handlers that nothing on this side enforces, so BOTH renderers
+#: (:func:`_citation_error_text` and :func:`_safe_body_excerpt`) cap.
+_REASON_MAX_CHARS = 300
+
+
+def _cap_reason(text: str) -> str:
+    """Bound one rendered reason line at :data:`_REASON_MAX_CHARS`.
+
+    Shared by both renderers so the cap cannot drift between the inline
+    (``citations_error``) path and the status-code path.
+    """
+    if len(text) > _REASON_MAX_CHARS:
+        return text[: _REASON_MAX_CHARS - 1] + "…"
+    return text
+
+
+def _citation_error_text(raw: object) -> str:
+    """Render coord's ``citations_error`` object as one reason line.
+
+    coord emits a structured body — ``{"error": "citation_surface_unavailable",
+    "pg_code": "42P01", "message": …}`` for the pre-migration window, or a
+    ``pg_error`` context object — and this read must survive either without
+    500ing, so the shape is probed rather than assumed.
+
+    Only the STRUCTURED identifiers cross the boundary: the ``error`` code and
+    the SQLSTATE (:func:`_coord_error_code`, which finds it at ``pg_code`` or
+    at ``pg.code``). The free-text fields are deliberately NOT echoed —
+    ``message``, ``context`` and everything under ``pg`` are where coord's
+    Postgres internals live, and ``pg.detail`` routinely carries ROW VALUES
+    (``Key (tenant_id)=(…) is not present in table …``), constraint names and
+    table names. This string is returned to this API's caller, so free text
+    from another service's database is not something it may forward; the full
+    body stays in coord's own logs, where it belongs.
+
+    An object carrying neither identifier is DESCRIBED by its field names
+    rather than dumped — names are schema, not data, and they are what says
+    which of coord's error paths answered.
+    """
+    text: str
+    if isinstance(raw, dict):
+        parts = [
+            part for part in (_coord_error_field(raw), _coord_error_code(raw)) if part
+        ]
+        if parts:
+            text = ": ".join(parts)
+        else:
+            keys = ", ".join(sorted(str(key) for key in raw)[:6]) or "none"
+            text = f"unrecognised coord error body (keys: {keys})"
+    else:
+        text = f"unrecognised coord error body ({type(raw).__name__})"
+    return f"coord could not read citations: {_cap_reason(text)}"
+
+
+#: coord's error code for ``CitationListing::SurfaceUnavailable`` — *the unit
+#: is yours, and the relation backing the citation join is absent* (``42P01``,
+#: a pre-migration window). It is the value of the ``error`` field of the 503
+#: body, and it is what tells this read that a 503 on the citation sub-resource
+#: is coord ANSWERING rather than coord being unreachable.
+_CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
+
+#: coord's error code for a Postgres failure it CAUGHT and rendered itself.
+#: ``pg_error::PgErrorContext::to_body()`` emits ``{"error": "db_error",
+#: "context": …, "pg"|"message": …}`` from every route whose query failed, and
+#: on the citation sub-resource that is a transient fault on ONE slug's SELECT.
+#: coord declaring it is coord ANSWERING, exactly as the 503 above is.
+_COORD_DB_ERROR = "db_error"
+
+#: The ``(status, coord error code)`` pairs that mean *coord answered about the
+#: citations sub-resource*, rather than *coord is unreachable*. Passed ONLY on
+#: the citations hop (:meth:`_CoordProbe.link_for`), so the presence hop keeps
+#: its unguarded reading — see :func:`_is_transport_failure` for why that
+#: asymmetry is what makes the carve-out safe.
+#:
+#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
+#: code with 503 and ``db_error`` with 500, and pinning each code to the status
+#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
+#: tripping behaviour rather than inheriting the carve-out.
+_CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
+    503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
+    500: frozenset({_COORD_DB_ERROR}),
+}
+
+
+def _detail_text(detail: object) -> str:
+    """coord's response body as text, however ``_proxy_coord_get`` wrapped it.
+
+    That helper raises ``HTTPException(status_code=resp.status_code,
+    detail=resp.text)``, so the body is already in hand — but its own transport
+    mapping raises a plain string instead, and a caller must not have to know
+    which.
+    """
+    if isinstance(detail, str):
+        return detail
+    return str(detail)
+
+
+def _parse_error_body(body: str) -> object | None:
+    """coord's error body as JSON, or ``None`` when it is not JSON at all.
+
+    An infrastructure 503 is an HTML page from a load balancer or a plain-text
+    line from the proxy's own transport mapping; coord's own errors are JSON
+    objects. Which of the two this is decides BOTH how the status is classified
+    (:func:`_is_transport_failure`) and how much of the body may be echoed
+    (:func:`_safe_body_excerpt`), so it is parsed ONCE here and the result
+    handed to both — two parses could disagree.
+    """
+    try:
+        parsed: object = json.loads(body)
+    except (ValueError, TypeError):
+        return None
+    return parsed
+
+
+def _coord_error_field(parsed: object) -> str | None:
+    """coord's own error CODE — the ``error`` field of a JSON error body.
+
+    It is matched by EQUALITY wherever it decides control flow. A substring
+    test against the whole body would also fire on a body that merely QUOTES
+    the code — a coord 500 whose Postgres error text names the failing query,
+    say — and the one thing the 503 carve-out must never do is read an
+    infrastructure failure as coord answering.
+    """
+    if isinstance(parsed, dict):
+        error = parsed.get("error")
+        if isinstance(error, str) and error:
+            return error
+    return None
+
+
+def _coord_error_code(parsed: object) -> str | None:
+    """The Postgres SQLSTATE coord attached, from either place it puts it.
+
+    coord's hand-rolled ``citation_surface_unavailable`` body carries
+    ``pg_code`` at the TOP level; its generic ``pg_error.to_body()`` nests the
+    same thing at ``pg.code``. Both are read, because which one arrives depends
+    on which of coord's error paths answered, and the SQLSTATE is the field
+    that tells an operator whether to wait for a migration (``42P01``) or to
+    page someone.
+    """
+    if not isinstance(parsed, dict):
+        return None
+    code = parsed.get("pg_code")
+    if isinstance(code, str) and code:
+        return code
+    pg = parsed.get("pg")
+    if isinstance(pg, dict):
+        nested = pg.get("code")
+        if isinstance(nested, str) and nested:
+            return nested
+    return None
+
+
+def _safe_body_excerpt(body: str, parsed: object) -> str:
+    """What of coord's error body may ride out in ``unavailable_reason``.
+
+    A WHITELIST, not a redaction: the ``error`` code and the SQLSTATE, and
+    nothing else. Never the body, never an excerpt of it.
+
+    ``unavailable_reason`` is returned to THIS api's caller, and — because the
+    page-wide circuit stores the first tripping reason and repeats it on every
+    remaining row (:meth:`_CoordProbe._trip`) — it is returned STICKILY, on
+    rows that never talked to coord at all. coord's ``pg_error.to_body()``
+    carries the full anyhow chain plus structured Postgres fields, and
+    ``pg.detail`` routinely contains ROW VALUES (``Key (tenant_id)=(…) is not
+    present in table …``), constraint names and table names. Capping such a
+    body at N characters does not make it safe — the row value is in the first
+    N — so the fix is to name the fields that may cross rather than to trim the
+    ones that may not.
+
+    Those two identifiers are enough to act on: they separate "wait for the
+    migration" (``42P01``) from "page someone", which is the whole decision an
+    operator makes here. The rest of the body is in coord's own logs.
+
+    A body that does not parse as JSON is not a coord error object at all, and
+    it has no identifiers to lift — so it is DESCRIBED (its size) rather than
+    echoed. An ALB's HTML page carries nothing an operator needs that the 502
+    or 503 beside it does not already say.
+
+    The whitelist is still not a LENGTH bound, and it must not be mistaken for
+    one: ``error`` is a coord-authored string, not a closed set of short codes
+    (see :data:`_REASON_MAX_CHARS`), so what the whitelist admits is capped by
+    :func:`_cap_reason` as well as filtered. Capping is not what makes the line
+    safe — naming the fields is — but an unbounded whitelisted field would
+    still let a whole Postgres chain ride out stickily on every row.
+    """
+    if parsed is not None:
+        identifiers = [
+            part
+            for part in (_coord_error_field(parsed), _coord_error_code(parsed))
+            if part
+        ]
+        if identifiers:
+            return _cap_reason(": ".join(identifiers))
+        # JSON, but with nothing this read recognises as an identifier. Naming
+        # the FIELDS beats both silence (which loses the only breadcrumb) and
+        # dumping a body whose fields are unknown to this read — unknown fields
+        # are exactly the ones that might carry values. Names are schema.
+        if isinstance(parsed, dict):
+            keys = ", ".join(sorted(str(key) for key in parsed)[:6]) or "none"
+            return _cap_reason(f"unrecognised coord error body (keys: {keys})")
+        return f"unrecognised coord error body ({type(parsed).__name__})"
+
+    stripped = body.strip()
+    if not stripped:
+        return ""
+    return f"non-JSON body ({len(stripped)} bytes)"
+
+
+def _is_transport_failure(
+    http_status: int,
+    *,
+    body_error: str | None = None,
+    answered_codes: Mapping[int, frozenset[str]] | None = None,
+) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
     Only 5xx qualifies, and that covers both sources: the proxy's own
@@ -428,7 +709,97 @@ def _is_transport_failure(http_status: int) -> bool:
     *answering about one route*, and none of them predicts anything about the
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
+
+    ``answered_codes`` — the ONE exception, and it is granted on the BODY, not
+    on the status. It maps a status to the coord error codes that, AT that
+    status, mean coord answered about the sub-resource being read:
+
+    * ``503`` + ``citation_surface_unavailable`` — the unit is yours and the
+      relation backing the citation join is absent (a pre-migration window).
+    * ``500`` + ``db_error`` — coord caught a Postgres failure on THIS slug's
+      citation SELECT and rendered it through ``pg_error::to_body()``.
+
+    Both are the same class as the 401/403/405 above, one status band up: coord
+    answering *about one sub-resource*. Each must land as a per-slug
+    ``unavailable`` and must NOT trip the page-wide circuit, or one bad slug
+    blanks the work-unit half of every remaining row — rows whose own presence
+    hop already succeeded — and reports the whole of coord as down.
+
+    The 500 arm is also what makes the two principals agree. The SAME coord
+    fault reaches a DEVICE caller as ``200`` + ``citations_error`` (coord's
+    agent by-slug ``Err`` arm inlines it), i.e. already per-slug with
+    ``coord_available`` untouched. Without this arm the operator page collapses
+    where the device page degrades one row — one coord fault, two materially
+    different pages.
+
+    **How "coord answered 500" is told apart from "something between us
+    returned 500", and where that distinction is imperfect.** There is no
+    header or hop counter that proves provenance, so this rests on two pieces
+    of evidence — and they are NOT of equal strength:
+
+    1. *The body is one coord itself emits.* ``body_error`` is the ``error``
+       field lifted out of a PARSED JSON object (:func:`_coord_error_field`),
+       and it must EQUAL a code in the set for that status. Not contain it: a
+       substring test over the raw body also passes for a body that merely
+       QUOTES the code — coord's own Postgres error text naming the failing
+       query is enough — and "the body mentions this string" is not the claim
+       "coord declared this error". Everything that sits between this service
+       and coord fails that test by construction: an ALB emits an HTML page, a
+       proxy emits a plain-text line, and ``_proxy_coord_get``'s own transport
+       mapping raises a bare string at 502/504. None parse to an object with an
+       ``error`` field, so none can match.
+    2. *An unguarded presence PHASE runs first* — the WEAKER item, and it is a
+       phase, not a concurrent canary. ``answered_codes`` is passed only on the
+       citations hop, which is never reached until this slug's
+       ``{base}/{slug}`` returned 200. The fan-out serialises the two harder
+       than that: :meth:`_CoordProbe._get` acquires ``self._gate`` once per
+       hop, and asyncio's semaphore wakes waiters FIFO, so every hop-2 acquire
+       queues behind every remaining hop-1 acquire — EVERY presence hop of a
+       page precedes EVERY citations hop. A coord-wide fault already underway
+       when the page starts therefore fails in the unguarded phase and trips
+       there.
+
+       Where that stops holding, stated plainly: the guarded hops are a
+       contiguous window at the END of a page's coord traffic, up to
+       ``ceil(N / _COORD_FANOUT) × RTT`` after the last unguarded read. A
+       coord-wide fault that BEGINS inside that window lands only on guarded
+       hops, each answers a typed ``500 db_error``, none trips, and
+       ``coord_available`` reports ``true`` through a real outage until the
+       next request. So "coord's database just served a query for this request"
+       is true but temporally weak, and item (1) plus the device-parity
+       argument above — not this one — is what the carve-out rests on. What
+       this item does still buy: an untyped 5xx from a deploy, an ECS rotation
+       or an ALB target drain declares no error, yields ``None``, and trips
+       wherever it lands, guarded window included.
+
+    What this cannot rule out, and it is more than a corner case: ``db_error``
+    is coord's GENERIC renderer for every failed query (``pg_error::opaque()``
+    included), so the code itself does not separate per-slug from fleet-wide.
+    Two known occupants of that bucket. A pool exhausted mid-page — transient,
+    and it lands in the window described above. And a MISSING COLUMN
+    (``42703``) on the citation relations: coord maps only ``42P01`` to
+    ``SurfaceUnavailable``, so a 42703 falls through to ``500 db_error`` for
+    EVERY slug, for the whole length of a deploy-ordering window. Read
+    per-slug, that costs ``2N`` coord round-trips per request instead of
+    ``N+1`` and a trip, and leaves ``coord_available`` true throughout.
+
+    That is the deliberate trade, and it is a trade rather than a clean win.
+    The alternative is today's behaviour: ONE transient per-slug PG error
+    blanks a whole page of otherwise-good rows and repeats one row's reason
+    across all of them. That is both more likely and strictly less honest, and
+    a fleet-wide fault stays legible either way — every row reads
+    ``unavailable`` carrying ``db_error`` plus its own SQLSTATE, which is more
+    diagnostic than a single flag, just less conspicuous.
+
+    Scope worth knowing: against current coord this arm only ever changes
+    OPERATOR pages. A device caller short-circuits on the inline citations
+    (:meth:`_CoordProbe._inline_citations`) and never reaches the citations
+    hop, so ``answered_codes`` is unreachable there.
     """
+    if answered_codes is not None and body_error is not None:
+        declared = answered_codes.get(http_status)
+        if declared is not None and body_error in declared:
+            return False
     return http_status >= 500
 
 
@@ -448,10 +819,44 @@ class _CoordProbe:
 
     ``degraded`` is sticky and is what the response's ``coord_available: false``
     reports.
+
+    ``actor_kind`` picks WHICH of coord's two door tiers the reads go to, and
+    it is not a preference — each tier rejects the other's credential. This
+    probe forwards the caller's captured bearer verbatim
+    (``_proxy_coord_get(..., forward_bearer=True)``), and that bearer is a
+    Cognito user JWT for the operator page but the runner's coord DEVICE JWT
+    for a request that arrived through ``mcp/plan_library.rs``. coord's
+    ``/coord/work-units/...`` reads resolve their tenant from an
+    ``OperatorContext`` and answer a device JWT with 403 ``tenant_not_resolved``;
+    its ``/coord/agent-work-units/...`` twins lift the tenant from the verified
+    device JWT and reject a Cognito bearer. Sending every caller to one tier is
+    exactly why a runner-originated ``/candidates`` read reported
+    ``unavailable`` for every linked row.
+
+    The kind comes from the DEPENDENCY that authenticated the request
+    (:class:`~app.api.deps.ActorPrincipal`), never from inspecting the token
+    here: the dependency has already decided which arm answered, and a second
+    guess in the probe could only drift from the first. Nor is it discovered by
+    trying the operator door and falling back on 403 — a 403 is also what a
+    genuine cross-tenant read returns, so that fallback would paper over a
+    tenant-boundary error, and it doubles the round-trips on the hot path.
+
+    It is REQUIRED rather than defaulted: a default would silently reinstate
+    exactly this bug at the next call site that forgets the argument, and the
+    failure mode is a quiet ``unavailable`` rather than an exception.
     """
 
-    def __init__(self, tenant_id: UUID | None) -> None:
+    def __init__(self, tenant_id: UUID | None, *, actor_kind: ActorKind) -> None:
         self.tenant_id = tenant_id
+        self.actor_kind: ActorKind = actor_kind
+        #: The coord door tier this probe's reads go to. Both hops use it —
+        #: the presence read is on the same operator/agent split as the
+        #: citations read, so routing only the citations hop would leave a
+        #: device caller reading ``work_unit_state: "unavailable"`` on every
+        #: row: the same bug, one level up.
+        self._coord_base = (
+            "/coord/agent-work-units" if actor_kind == "device" else "/coord/work-units"
+        )
         self.degraded = False
         self.reason: str | None = None
         self._gate = asyncio.Semaphore(_COORD_FANOUT)
@@ -461,7 +866,9 @@ class _CoordProbe:
         if self.reason is None:
             self.reason = reason
 
-    async def _get(self, path: str) -> tuple[object | None, int | None, str | None]:
+    async def _get(
+        self, path: str, *, answered_codes: Mapping[int, frozenset[str]] | None = None
+    ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
         ``http_status`` is coord's status when it answered with one (404 is a
@@ -472,13 +879,23 @@ class _CoordProbe:
         :func:`_is_transport_failure`. A 4xx is coord answering *about this
         route*, which says nothing about whether the next slug's read will
         work, and tripping on one made ``coord_available`` permanently false:
-        the citations hop is registered on coord as ``post``/``delete`` behind
-        a ``require_jwt`` layer, so a GET there NEVER 404s — it 401/403s (the
-        layer rejects) or 405s (method mismatch). That is the same reasoning
-        :meth:`link_for` already applies to the citations hop itself ("absence
-        of a route is not evidence of an absence of PRs"); the circuit obeys
-        it too, or the one flag whose job is signalling a real coord outage
-        can never do so.
+        against a coord that has not yet shipped the citation GET, a read
+        there NEVER 404s — it 401/403s (the ``require_jwt`` layer in front of
+        the ``post``/``delete`` registration rejects the forwarded bearer) or
+        405s (method mismatch). That is the same reasoning :meth:`link_for`
+        already applies to the citations hop itself ("absence of a route is
+        not evidence of an absence of PRs"); the circuit obeys it too, or the
+        one flag whose job is signalling a real coord outage can never do so.
+
+        ``answered_codes`` forwards to :func:`_is_transport_failure` and
+        extends that same reading to the typed 5xx coord answers ON the
+        citations sub-resource — ``503 citation_surface_unavailable`` when the
+        relation is unreadable, ``500 db_error`` when that one slug's SELECT
+        failed — but only when coord's own declared error code is in the body,
+        so an untyped 5xx from a load balancer still trips. It is passed on the
+        citations hop ONLY: the presence hop stays unguarded on purpose, which
+        is what keeps a coord-wide failure tripping (see
+        :func:`_is_transport_failure`).
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -498,8 +915,32 @@ class _CoordProbe:
                     forward_bearer=True,
                 )
             except HTTPException as exc:
+                # coord's body is already in hand (``_proxy_coord_get`` puts
+                # ``resp.text`` in ``detail``), and it is what separates a typed
+                # answer from an infrastructure failure — so it decides the
+                # classification AND supplies the reason, rather than the
+                # status being discarded into a bare "coord returned 503".
+                #
+                # It is parsed once. Reading it and ECHOING it are separate
+                # concerns and only the echo is dangerous: ``detail`` becomes
+                # ``self.reason`` on a trip and is then repeated on every
+                # remaining row of the page, so an excerpt of coord's error body
+                # would egress another service's Postgres internals — row values
+                # included — stickily, into this API's response. So the body
+                # decides the classification in full, while only its whitelisted
+                # identifiers cross into the reason
+                # (:func:`_safe_body_excerpt`).
+                body = _detail_text(exc.detail)
+                parsed = _parse_error_body(body)
                 detail = f"coord returned {exc.status_code}"
-                if _is_transport_failure(exc.status_code):
+                excerpt = _safe_body_excerpt(body, parsed)
+                if excerpt:
+                    detail = f"{detail}: {excerpt}"
+                if _is_transport_failure(
+                    exc.status_code,
+                    body_error=_coord_error_field(parsed),
+                    answered_codes=answered_codes,
+                ):
                     self._trip(detail)
                 return None, exc.status_code, detail
             except Exception as exc:  # noqa: BLE001 — degrade, never 500
@@ -508,42 +949,112 @@ class _CoordProbe:
                 return None, None, detail
         return payload, 200, None
 
+    @staticmethod
+    def _inline_citations(payload: object) -> tuple[list[object], str | None] | None:
+        """Citations coord already attached to the PRESENCE payload, if any.
+
+        coord's AGENT by-slug read returns ``citations`` (and, when the read
+        did not happen, ``citations_error``) inline; its operator twin
+        deliberately does not, keeping the dashboard payload lean. So this is
+        an opportunistic short-circuit, not a contract: ``None`` means the
+        payload carried no citation key at all and the caller must make the
+        second hop.
+
+        Otherwise ``(rows, error)``. A non-``None`` ``error`` means coord told
+        us the read did not happen — ``citations_error`` sits beside an EMPTY
+        list precisely so that list cannot be mistaken for an observation of
+        zero, and flattening the two would destroy the one property this whole
+        block exists to protect. The error field alone is enough to detect the
+        block: coord's sibling ``delivery``/``delivery_error`` pair OMITS the
+        value key entirely when the read failed, so keying only on ``citations``
+        would miss the shape its own neighbour already uses.
+
+        A ``citations`` that is present but is NOT a list is likewise an error,
+        not an empty list. This method shape-sniffs by design, so the one thing
+        it must never do with an unrecognised shape is report it as an
+        observation of zero.
+        """
+        if not isinstance(payload, dict):
+            return None
+        if "citations" not in payload and "citations_error" not in payload:
+            return None
+
+        error = payload.get("citations_error")
+        if error is not None:
+            return [], _citation_error_text(error)
+
+        raw = payload.get("citations")
+        if not isinstance(raw, list):
+            # Built here rather than routed through :func:`_citation_error_text`:
+            # this sentence is OURS, not coord's body, so the whitelist that
+            # function applies to another service's error object does not apply
+            # — and the observed type is the whole diagnostic.
+            return [], (
+                "coord could not read citations: unrecognised_citations_shape: "
+                f"coord returned `citations` as {type(raw).__name__}, not a list"
+            )
+        return list(raw), None
+
     async def link_for(self, slug: str) -> CandidateCoordLink:
         """Resolve one work-unit slug into its coord block.
 
-        Two hops, both over coord's HTTP API:
+        Two hops, both over coord's HTTP API, and both on the door tier the
+        CALLER's credential can actually open (``self._coord_base`` —
+        ``/coord/work-units`` for an operator, ``/coord/agent-work-units`` for
+        a device; see the class docstring for why that is not a preference):
 
-        1. ``GET /coord/work-units/{slug}`` — presence. A 404 here is the
-           NORMAL dangling case (the link is FK-less by design), and it also
-           settles the PR question: citations hang off the work unit by a hard
-           FK, so no unit really does mean no citations.
-        2. ``GET /coord/work-units/{slug}/citations`` — the PR citations, with
-           the live merged state coord's own ``shipped`` predicate reduces
-           (coord projects each row to
+        1. ``{base}/{slug}`` — presence. A 404 here is the NORMAL dangling
+           case (the link is FK-less by design), and it also settles the PR
+           question: citations hang off the work unit by a hard FK, so no unit
+           really does mean no citations.
+        2. ``{base}/{slug}/citations`` — the PR citations, with the live
+           merged state coord's own ``shipped`` predicate reduces (coord
+           projects each row to
            ``{repo, pr_number, merged, branch, cited_at, sources}``).
 
-        ⚠️ **Known gap, verified 2026-08-15.** Coord registers only ``post``
-        and ``delete`` on that second path; the read half exists today ONLY as
-        the ``coord_work_unit_list_citations`` MCP tool, with no REST twin. So
-        against the currently-deployed coord this hop never succeeds — the
-        ``require_jwt`` layer in front of the path rejects a forwarded Cognito
-        bearer with 401/403, and a credential that clears the layer gets a 405
-        for the method — and ``linked_prs_state`` reads
-        ``"unavailable"``. (It is specifically NOT a 404, which is why the
-        page-wide circuit must not treat "not 404" as "coord is down".)
-        That is the correct
-        honest answer — the alternative (reporting an empty PR list) would
-        assert a fact this read has not established, and the plan is explicit
-        that an unavailable coord must not read as "no PRs". Adding the GET is
-        a coord-side follow-up; nothing here changes when it lands, the field
-        simply starts reading ``"available"``.
+        Hop 2 is SKIPPED when hop 1 already answered it: the agent by-slug read
+        carries its citations inline (:meth:`_inline_citations`), so a
+        device-principal page pays one round-trip per slug instead of two —
+        and works against a coord that has not yet shipped the dedicated
+        sub-resource. One consequence worth knowing: a device caller therefore
+        never reaches the 5xx branch below, because BOTH conditions it covers
+        — the citation relation unreadable, and this slug's citation SELECT
+        failing — reach it as an inline ``citations_error`` on a ``200``
+        instead (coord's agent by-slug ``Err`` arm). Both land on
+        ``unavailable`` for that one slug, with ``coord_available`` untouched,
+        and the 5xx branch exists to give the operator path the SAME reading of
+        the SAME coord fault.
+
+        coord's answers on the citations sub-resource map straight onto this
+        block. ``200`` → ``available``, and an empty list there IS an
+        observation of zero. ``404`` → the unit is not ours, or not there.
+        A 5xx carrying one of coord's OWN declared error codes — ``503
+        citation_surface_unavailable`` (the citation relation is unreadable) or
+        ``500 db_error`` (this slug's SELECT failed and coord rendered the PG
+        error itself) → ``unavailable`` for THIS slug and, deliberately,
+        nothing at all about coord's health: coord answering about one
+        sub-resource is coord answering, whichever 5xx it picks. An UNTYPED 5xx
+        keeps its ordinary transport reading and still trips the circuit (see
+        :func:`_is_transport_failure`, which also records what that carve-out
+        can and cannot establish).
+
+        A successful read can still carry a caveat: ``merged_degraded_reason``
+        says coord's ``merged`` predicate is running degraded, so a
+        ``merged: false`` on those rows is UNKNOWN rather than "unmerged" — see
+        :func:`_coord_pr`. Both hops honour it, off whichever payload carried
+        the citations; the inline path must, because it is the ONLY path a
+        device caller takes.
+
+        Absence of a route, of permission, or of a readable relation is never
+        evidence of an absence of PRs. Reporting an empty PR list in any of
+        those cases would assert a fact this read has not established.
 
         Reading the citations out of coord's Postgres instead is NOT the
         workaround: the web→coord read boundary is closed and
         ``tests/test_coord_schema_boundary_guard.py`` enforces it.
         """
         encoded = quote(slug, safe="")
-        payload, http_status, error = await self._get(f"/coord/work-units/{encoded}")
+        payload, http_status, error = await self._get(f"{self._coord_base}/{encoded}")
 
         if http_status == 404:
             return CandidateCoordLink(
@@ -573,22 +1084,70 @@ class _CoordProbe:
             ),
         )
 
+        inline = self._inline_citations(payload)
+        if inline is not None:
+            rows, inline_error = inline
+            if inline_error is not None:
+                link.linked_prs_state = "unavailable"
+                link.unavailable_reason = inline_error
+                return link
+            link.linked_prs_state = "available"
+            # Both coord doors carry ``merged_degraded_reason`` on the same
+            # terms — same field name, same body, present only while the
+            # predicate is degraded — so the caveat is read off THIS payload
+            # exactly as the sub-resource branch reads it off its own. It has
+            # to be: the inline path short-circuits hop 2, so a device caller
+            # never reaches that branch, and it is the caller this read exists
+            # to unbreak. ``merged: None`` on these rows means UNKNOWN, never
+            # "unmerged" (:func:`_coord_pr`).
+            #
+            # ONE field name, ONE predicate, ONE place. The degradation is not
+            # re-derived here from ``delivery.evidence_complete`` (which
+            # over-fires on gaps that have nothing to do with the merged arm)
+            # nor by matching prose in ``evidence_gaps`` (which couples this
+            # read to coord's wording); a second implementation would drift
+            # from coord's own.
+            link.linked_prs = [
+                _coord_pr(row, merged_is_degraded=_merged_is_degraded(payload))
+                for row in rows
+            ]
+            return link
+
         cites, cite_status, cite_error = await self._get(
-            f"/coord/work-units/{encoded}/citations"
+            f"{self._coord_base}/{encoded}/citations",
+            # A 5xx whose body carries coord's OWN declared error code is an
+            # answer about the citation relation — 503 when it is unreadable,
+            # 500 when this slug's SELECT failed — not a verdict on coord's
+            # reachability. An untyped 5xx is still an outage and still trips.
+            answered_codes=_CITATION_ANSWERED,
         )
         if cites is None:
-            # Includes 401/403/404/405 on the route itself — absence of a
-            # route (or of permission to call it) is not evidence of an
-            # absence of PRs. None of those trips the page-wide circuit
-            # either; see ``_is_transport_failure``.
+            # Includes 401/403/404/405 and coord's typed 503/500 — absence of
+            # a route, of permission to call it, of a readable citation
+            # relation, or of a citation SELECT that survived is not evidence
+            # of an absence of PRs. None of those trips the page-wide circuit;
+            # see ``_is_transport_failure``.
             link.linked_prs_state = "unavailable"
             link.unavailable_reason = (
                 cite_error or f"coord returned {cite_status} for citations"
             )
             return link
 
+        sub = self._inline_citations(cites)
+        if sub is not None and sub[1] is not None:
+            # A forward guard, not a shape coord emits today: the sub-resource
+            # answers 5xx rather than flagging a 200. But a body that says the
+            # read did not happen still means it did not happen, whatever the
+            # status line says — and the inline twin already uses this shape.
+            link.linked_prs_state = "unavailable"
+            link.unavailable_reason = sub[1]
+            return link
+
         link.linked_prs_state = "available"
-        link.linked_prs = [_coord_pr(row) for row in _citation_rows(cites)]
+        link.linked_prs = [
+            _coord_pr(row, merged_is_degraded=_merged_is_degraded(cites))
+            for row in _citation_rows(cites)
+        ]
         return link
 
 
@@ -932,7 +1491,7 @@ async def list_plan_candidates(
         "Set false for a purely local, coord-free read.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_audit_actor_user),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> PlanCandidateResponse:
     """Candidate selection for agents — signals, never a verdict.
 
@@ -964,7 +1523,14 @@ async def list_plan_candidates(
     list rather than extra ``items`` because a follow-up nobody has written is
     not an artifact and has no id to be a candidate with; folding it into
     ``items`` would mean inventing one. ``items`` is unchanged.
+
+    Two principals reach this route (module docstring, invariant 7) and the
+    coord half is fetched with whichever bearer they presented, so the coord
+    reads follow the credential to the door tier that accepts it — the
+    operator routes for a Cognito user, the ``agent-`` twins for the runner's
+    device JWT. Nothing else about the response differs between them.
     """
+    current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_plan_candidates(
         db, org_id=org_id, offset=offset, limit=limit
@@ -978,7 +1544,7 @@ async def list_plan_candidates(
     coord_available = True
     if include_coord:
         tenant_id = await _soft_tenant_id(request)
-        probe = _CoordProbe(tenant_id)
+        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
         slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
         links = await _coord_links(slugs, probe)
         coord_available = not probe.degraded
@@ -1137,7 +1703,7 @@ async def get_work_artifact(
         "look' is not the same answer as 'there is nothing there'.",
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(get_audit_actor_user),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
 ) -> WorkArtifactDetail:
     """One artifact, with everything the operator page's detail view renders.
 
@@ -1151,11 +1717,17 @@ async def get_work_artifact(
     * coord unreachable → ``unavailable`` on both halves. UNKNOWN, not empty.
 
     ``linked_prs_state`` is tracked separately from ``work_unit_state`` for a
-    concrete reason: today's deployed coord registers no HTTP route for the
-    citation LIST (it exists only as an MCP tool), so that half reads
-    ``unavailable`` even when the work unit resolves fine. Rendering an empty
-    PR list there would assert something this read has not established.
+    concrete reason: the two halves fail independently. The work unit can
+    resolve while coord reports the citation relation unreadable (a ``503``
+    ``SurfaceUnavailable``), or while a coord that has not yet shipped the
+    citation read refuses the hop outright. Rendering an empty PR list in
+    either case would assert something this read has not established.
+
+    The coord reads go to the door tier the CALLING credential can open —
+    coord's operator routes for a Cognito user, their ``agent-`` twins for the
+    runner's device JWT — because each tier rejects the other's bearer.
     """
+    current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
     row = await crud.get_artifact(db, artifact_id, org_id=org_id)
     if row is None:
@@ -1189,7 +1761,9 @@ async def get_work_artifact(
     coord_block = CandidateCoordLink()
     if row.work_unit_slug:
         if include_coord:
-            probe = _CoordProbe(await _soft_tenant_id(request))
+            probe = _CoordProbe(
+                await _soft_tenant_id(request), actor_kind=principal.kind
+            )
             coord_block = await probe.link_for(row.work_unit_slug)
         else:
             coord_block = CandidateCoordLink(
