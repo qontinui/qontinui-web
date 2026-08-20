@@ -84,6 +84,11 @@ import {
   RELEASE_STATE_CLASS,
 } from "@/components/admin/coord/releaseStatus";
 import {
+  CLAIM_ATTENTION_BY_PHASE,
+  CLAIM_AUTHOR_GLYPH_PHASES,
+  CLAIM_PHASE_CLASS,
+} from "@/components/admin/coord/onboardingClaimStatus";
+import {
   VERIFICATION_ATTENTION_BY_KIND,
   VERIFICATION_AUTHOR_GLYPH_KINDS,
   VERIFICATION_CLASS,
@@ -177,6 +182,15 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: VERIFICATION_CLASS,
       authorGlyphKinds: VERIFICATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- Phase 3 Wave 3 -------------------------------------------------------
+  {
+    surface: "onboarding claim (/admin/coord/onboarding-status)",
+    attentionByKind: CLAIM_ATTENTION_BY_PHASE,
+    palette: {
+      badgeClass: CLAIM_PHASE_CLASS,
+      authorGlyphKinds: CLAIM_AUTHOR_GLYPH_PHASES as ReadonlySet<string>,
     },
   },
 ];

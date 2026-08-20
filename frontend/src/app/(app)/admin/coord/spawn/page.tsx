@@ -15,14 +15,33 @@
  * spawn flow obvious and one-click — the same affordance exists as a
  * per-row button on the Plans page, but having a dedicated tab in
  * CoordNav means the spawn flow is at most one click from anywhere.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * Migrated onto `components/console` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md`, against
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — the page-level `<Card><CardHeader><CardTitle>Spawn from plan`
+ *   wrapper is gone; `coord/layout.tsx` already renders the console `<h1>`.
+ *   The body is now `p-3 sm:p-6 space-y-4` (it was a flat `p-6`).
+ * - **R1** — a `<HealthStrip>` opens the page, derived from the rows this page
+ *   ALREADY fetched. It reuses `/plans`' `derivePlansHealth` rather than
+ *   forking a second reading of the same work-unit list — the two routes read
+ *   the same endpoint and must not disagree about whether a plan is blocked.
+ * - **R2/R5** — one work unit is one `<SpawnPlanRow>` line; detail expands in
+ *   place, and `<RecordList>` keeps one open at a time.
+ *
+ * **The status `<Select>` deliberately stays a Select, not `<FilterTabs>`** —
+ * the same reason `/plans` gives: it is a SERVER-side filter (`?status=` goes
+ * to coord and changes what is fetched), so every tab but the active one would
+ * carry `–` forever. R6's dash rule permits that and it would still be a
+ * strictly worse control. `coord-spawn-status-select` is also a frozen
+ * authored testid (D4a).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -30,11 +49,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
+import { Filter, RefreshCw } from "lucide-react";
+import { HealthStrip, RecordList } from "@/components/console";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
+import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
-import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import { derivePlansHealth } from "../plans/plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -52,24 +73,6 @@ interface PlansListResponse {
   // `{work_units: [...]}`); `plans` kept for cutover tolerance.
   work_units?: CoordPlanRow[];
   plans?: CoordPlanRow[];
-}
-
-function statusBadgeVariant(
-  status?: string
-): "default" | "destructive" | "secondary" | "outline" {
-  switch ((status ?? "").toLowerCase()) {
-    case "shipped":
-      return "default";
-    case "blocked":
-      return "destructive";
-    case "in_progress":
-    case "in-progress":
-      return "default";
-    case "archived":
-      return "secondary";
-    default:
-      return "outline";
-  }
 }
 
 export default function CoordSpawnPage() {
@@ -105,121 +108,81 @@ export default function CoordSpawnPage() {
   }, [fetchData]);
 
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
+  const loaded = data !== null;
+  const health = useMemo(
+    () => derivePlansHealth(plans, loaded),
+    [plans, loaded]
+  );
 
   return (
-    <div className="p-6 space-y-4" data-testid="coord-spawn-page">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Rocket className="h-4 w-4" />
-            Spawn from plan
-            {data && (
-              <Badge variant="outline" className="ml-2">
-                {plans.length}
-              </Badge>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Pick a plan, hit Spawn, fill in device + repos + intent + the
-            initial prompt. Coord acquires claims and ships the prompt on
-            first tick.
-          </p>
+    <div className="p-3 sm:p-6 space-y-4" data-testid="coord-spawn-page">
+      <HealthStrip
+        level={health.level}
+        headline={health.headline}
+        detail={health.detail}
+        badges={health.badges}
+        data-testid="coord-spawn-health"
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger
-                className="w-[180px]"
-                data-testid="coord-spawn-status-select"
-              >
-                <SelectValue placeholder="status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_FILTERS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchData}
-              data-testid="coord-spawn-refresh"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <Select value={status} onValueChange={setStatus}>
+          <SelectTrigger
+            className="w-[180px]"
+            data-testid="coord-spawn-status-select"
+          >
+            <SelectValue placeholder="status" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_FILTERS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={fetchData}
+          data-testid="coord-spawn-refresh"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          Pick a plan, hit Spawn, fill in device + repos + intent + the initial
+          prompt. Coord acquires claims and ships the prompt on first tick.
+        </span>
+      </div>
 
-          {error && (
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          )}
+      {error && (
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
+      )}
 
-          {loading && !data ? (
-            <Skeleton className="h-24 w-full" />
-          ) : plans.length > 0 ? (
-            <div className="space-y-2" data-testid="coord-spawn-plans-list">
-              {plans.map((p) => (
-                <div
-                  key={p.slug}
-                  data-testid="coord-spawn-plan-row"
-                  className="flex items-center gap-2 rounded-md border border-border p-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-sm font-medium truncate">
-                        {p.slug}
-                      </span>
-                      {p.status && (
-                        <Badge variant={statusBadgeVariant(p.status)}>
-                          {p.status}
-                        </Badge>
-                      )}
-                      {p.current_phase && (
-                        <Badge variant="outline" className="text-xs">
-                          phase: {p.current_phase}
-                        </Badge>
-                      )}
-                    </div>
-                    {p.title && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {p.title}
-                      </p>
-                    )}
-                  </div>
-                  <Link
-                    href={`/admin/coord/plans/${encodeURIComponent(p.slug)}`}
-                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-                    data-testid="coord-spawn-plan-detail-link"
-                  >
-                    detail <ExternalLink className="h-3 w-3" />
-                  </Link>
-                  <CoordAdminOnly>
-                    <Button
-                      size="sm"
-                      onClick={() => setSpawnTarget(p)}
-                      data-testid="coord-spawn-row-button"
-                    >
-                      <Rocket className="h-3 w-3 mr-1" />
-                      Spawn
-                    </Button>
-                  </CoordAdminOnly>
-                </div>
-              ))}
-            </div>
-          ) : (
+      <div data-testid="coord-spawn-plans-list">
+        <RecordList
+          items={plans}
+          itemKey={(p) => p.slug}
+          loaded={!(loading && !data)}
+          skeletonRows={6}
+          empty={
             <p
               className="text-sm text-muted-foreground italic"
               data-testid="coord-spawn-plans-empty"
             >
               No plans matching status={status === "any" ? "any" : status}.
             </p>
+          }
+          renderRow={(p, ctx) => (
+            <SpawnPlanRow
+              plan={p}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+              onSpawn={() => setSpawnTarget(p)}
+            />
           )}
-        </CardContent>
-      </Card>
+        />
+      </div>
 
       {spawnTarget && (
         <SpawnModal
