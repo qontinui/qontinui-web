@@ -195,12 +195,29 @@ jobs:
       #     the package names and the pool the .debs come from;
       #   * the @playwright/test version -- it selects the dependency list, so
       #     a bump can add or drop packages.
-      # `ImageVersion` (the weekly image build) is deliberately NOT in the key.
-      # A newer image can only ever have MORE of these packages preinstalled,
-      # which makes a cached set a harmless superset, so keying on it would
-      # force a full re-download every week for no correctness gain. Staleness
-      # is bounded by apt itself: it validates every cached .deb against the
-      # live index and re-downloads any that no longer match.
+      # `ImageVersion` (the weekly image build) is deliberately NOT in the key,
+      # but NOT because a newer image is a superset of an older one. It is not:
+      # GitHub removes packages from the runner images as well as adding them,
+      # and this branch measured the consequence -- the identical
+      # `install-deps chromium` reports `Need to get 21.1 MB of archives` on
+      # Spec CI's runner and `Fetched 11.4 MB` on style-gate's. Same command,
+      # different preinstalled baseline, one key.
+      #
+      # What makes that safe is the SAVE key below, not a superset guarantee.
+      # Every run saves under its own run-unique key, so a run against a
+      # different baseline writes a DIFFERENT entry instead of being frozen out
+      # by whichever run populated a shared key first, and the prefix restore
+      # always takes the NEWEST match. A differing baseline therefore costs one
+      # partial hit -- never a permanently wrong set.
+      #
+      # A restored .deb that the live index no longer lists is still not a
+      # wrong install, and that does not rest on apt re-verifying anything. A
+      # Debian pool filename carries the version (`<pkg>_<ver>_<arch>.deb`) and
+      # is content-immutable for that version, so a rotated version arrives
+      # under a DIFFERENT name and apt just downloads the one it wants. (apt's
+      # fast path on an archive that is already present is a size check, with
+      # dpkg's own checks as the corruption backstop -- not a full hash
+      # re-verify. The filename is what fixes identity here.)
       - name: Resolve Playwright apt cache key
         id: pw_cache_key
         working-directory: ./frontend
@@ -218,49 +235,105 @@ jobs:
             # lock: over-keyed (any dependency bump misses) but never STALE,
             # which is the property that matters. Never fail the job over a
             # cache key -- this step is not in APT_STEP_OUTCOMES, so a red here
-            # would be reported to the author as their own diff.
-            pw="lock$(sha256sum package-lock.json | cut -c1-12)"
+            # would be reported to the author as their own diff. The `|| true`
+            # is what makes that true rather than merely intended: GitHub's
+            # default shell is `bash -e -o pipefail`, which the `set` line
+            # above does not undo, so without it a missing or unreadable
+            # lockfile would abort this step outright.
+            pw="lock$(sha256sum package-lock.json 2>/dev/null | cut -c1-12 || true)"
             echo "::notice::Could not read @playwright/test from package-lock.json; keying the Playwright apt cache on the whole lockfile digest instead."
           fi
           img="${ImageOS:-unknown}"
-          echo "key=apt-playwright-${RUNNER_OS:-Linux}-${img}-pw${pw}${KEY_SUFFIX:-}" >> "$GITHUB_OUTPUT"
-          echo "restore_prefix=apt-playwright-${RUNNER_OS:-Linux}-${img}-" >> "$GITHUB_OUTPUT"
+          base="apt-playwright-${RUNNER_OS:-Linux}-${img}-pw${pw}${KEY_SUFFIX:-}"
+          # RUN-UNIQUE save key. `actions/cache` (the combined action) does not
+          # re-save when its primary key hit exactly, so a shared key is frozen
+          # at whatever the FIRST run to populate it happened to download. A
+          # run-unique key cannot collide, so every run that has something new
+          # writes its own entry and the restore below picks the newest.
+          # `run_attempt` is in it because re-running a run keeps its `run_id`.
+          #
+          # Restore is prefix-only (a run-unique key can never be hit by name).
+          # `base_prefix` matches only entries for THIS image + Playwright
+          # version (+ engine leg, via KEY_SUFFIX) and returns the newest of
+          # them; `restore_prefix` is the wider same-image fallback.
+          {
+            echo "save_key=${base}-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}"
+            echo "base_prefix=${base}-"
+            echo "restore_prefix=apt-playwright-${RUNNER_OS:-Linux}-${img}-"
+          } >> "$GITHUB_OUTPUT"
           echo "Playwright $pw on image $img${KEY_SUFFIX:-}"
 
+      # Restore and save are SPLIT (`actions/cache/restore` here,
+      # `actions/cache/save` after the staging step) rather than the combined
+      # `actions/cache`. Two defects forced it, and neither is fixable alone:
+      #
+      #   1. The combined action saves from a post-step, but the only thing
+      #      that ever CREATES this cache directory is the staging step below,
+      #      and a failed apt step (its `timeout-minutes` firing) skips every
+      #      ordinary step after it. So on a degraded mirror the cache could
+      #      only ever be seeded by a run that did not need it: run 1 fetches
+      #      15 of 21 .debs, reds, saves nothing, and every re-run restarts
+      #      from zero for as long as the mirror is slow.
+      #   2. The combined action does not re-save on an exact primary-key hit,
+      #      so one shared key is frozen at the first populating run's package
+      #      set -- see the ImageVersion note above for why "first" is not
+      #      necessarily "most complete".
+      #
+      # Fixing only (1) would be worse than fixing neither: `if: always()` on
+      # staging, with a shared key, freezes a PARTIAL set under that key
+      # forever -- trading "0% cached" for "70% cached, permanently".
+      #
+      # Neither this step nor the save can red the job: `continue-on-error`,
+      # and no `fail-on-cache-miss`. Neither carries an `id:` -- an id here
+      # would be a step name available to APT_STEP_OUTCOMES, and nothing in
+      # this pair runs apt.
       - name: Restore Playwright apt font cache
-        id: apt_playwright_cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
+        continue-on-error: true
         with:
           path: ~/.cache/qontinui-apt-playwright
-          key: ${{ steps.pw_cache_key.outputs.key }}
-          # A prefix hit restores an older .deb set. That is safe by
-          # construction: apt validates every cached .deb against the index and
-          # downloads the ones that no longer match, so a partial hit is a
-          # partial saving, never a wrong install.
+          # This run's own save key. It is run-unique, so it can never match an
+          # existing entry -- which is deliberate: it makes the restore fall
+          # through to the prefix list below every time, and keeps the key that
+          # is saved and the key that is looked for spelled the same way.
+          key: ${{ steps.pw_cache_key.outputs.save_key }}
+          # Prefix matching, newest entry first, in narrowing-to-widening
+          # order. A prefix hit restores an older .deb set; that is safe by
+          # construction, because a rotated package version has a different
+          # pool FILENAME (see above), so apt downloads what the current index
+          # names and ignores the rest. A partial hit is a partial saving,
+          # never a wrong install.
           #
-          # The step output is `restore_prefix`, not `restore-prefix`: GitHub's
-          # expression parser reads `-` as subtraction, so a hyphenated output
-          # name cannot be dereferenced with dot syntax at all.
+          # The step outputs are `base_prefix` / `restore_prefix`, not
+          # `base-prefix` / `restore-prefix`: GitHub's expression parser reads
+          # `-` as subtraction, so a hyphenated output name cannot be
+          # dereferenced with dot syntax at all.
           restore-keys: |
+            ${{ steps.pw_cache_key.outputs.base_prefix }}
             ${{ steps.pw_cache_key.outputs.restore_prefix }}
 
-      # /var/cache/apt/archives is root-owned and actions/cache runs as the
-      # unprivileged `runner` user, so it can neither read nor write that dir
-      # directly. `sudo cp` is what moves .debs across the privilege boundary.
-      # This step touches local disk only -- no network, nothing to stall - so
-      # it is deliberately unbounded and deliberately has no `id:`.
+      # /var/cache/apt/archives is root-owned and actions/cache/restore runs as
+      # the unprivileged `runner` user, so it can neither read nor write that
+      # dir directly. `sudo cp` is what moves .debs across the privilege
+      # boundary. This step touches local disk only -- no network, nothing to
+      # stall - so it is deliberately unbounded and deliberately has no `id:`.
       - name: Seed apt archives from cache
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
           n=0
           if [ -d "$cache_dir" ]; then
-            n=$(find "$cache_dir" -maxdepth 1 -name '*.deb' | wc -l)
+            n=$(find "$cache_dir" -maxdepth 1 -name '*.deb' 2>/dev/null | wc -l || true)
           fi
           if [ "$n" -gt 0 ]; then
             # `-n` never clobbers a .deb the image already had, which could be
-            # newer than the cached one.
-            sudo cp -n "$cache_dir"/*.deb /var/cache/apt/archives/ || true
+            # newer than the cached one. `--preserve=timestamps` is
+            # load-bearing, not tidiness: the staging step prunes superseded
+            # versions by mtime, and a plain `cp` would stamp every archive
+            # with the current run's time and destroy that ordering. Only
+            # timestamps are preserved -- not ownership or mode, which must
+            # stay root's inside /var/cache/apt/archives.
+            sudo cp -n --preserve=timestamps "$cache_dir"/*.deb /var/cache/apt/archives/ || true
             echo "Seeded $n cached .deb(s) into /var/cache/apt/archives."
           else
             echo "No cached .deb archives - this run fetches them from the mirror. A MISS is slower, never broken."
@@ -296,18 +369,90 @@ jobs:
         run: npx playwright install-deps chromium ${{ matrix.engine }}
 
       # Hand whatever apt downloaded back across the privilege boundary so the
-      # actions/cache post-step (unprivileged) can save it. Local disk only, so
-      # unbounded and without an `id:`, same as the seed step. Every command is
-      # `|| true`: a cache-staging problem must never red a job, and must never
-      # be mistaken for the apt failure this plan exists to report accurately.
+      # `actions/cache/save` step below (unprivileged) can save it. Local disk
+      # only, so unbounded and without an `id:`, same as the seed step. Every
+      # command is `|| true`: a cache-staging problem must never red a job, and
+      # must never be mistaken for the apt failure this plan exists to report
+      # accurately. (GitHub's default shell is `bash -e -o pipefail`, so the
+      # guards are what make that true, not the `set` line.)
+      #
+      # `if: always()` is the point of the restore/save split. The apt step
+      # above carries `timeout-minutes` and no `continue-on-error`, so when the
+      # mirror stalls, the job fails AT that step and every ordinary later step
+      # is skipped -- including this one, which is the only thing that creates
+      # the cache directory. Without `always()` the cache can only ever be
+      # seeded by a run that did not need it. With it, a run that fetched 15 of
+      # 21 .debs before its bound fired contributes those 15, and the next
+      # re-run starts from them instead of from zero.
+      #
+      # A truncated download cannot be staged by that: apt writes in-flight
+      # downloads into /var/cache/apt/archives/partial/ and only rename(2)s
+      # them up into the top level once they are complete and verified. The
+      # `-maxdepth 1` `*.deb` glob below matches the top level only, so
+      # `partial/` -- one level deeper -- is never picked up.
       - name: Stage apt archives for cache
+        if: always()
         run: |
           set -uo pipefail
           cache_dir="$HOME/.cache/qontinui-apt-playwright"
-          mkdir -p "$cache_dir"
-          sudo cp -f /var/cache/apt/archives/*.deb "$cache_dir"/ 2>/dev/null || true
+          mkdir -p "$cache_dir" || true
+          # Fingerprint of what the restore put here. apt never writes into
+          # $cache_dir, so at this point it is still exactly the restored set.
+          # Filenames alone are a sound identity: a pool .deb is immutable for
+          # its version, so a changed set means changed filenames.
+          before="$(find "$cache_dir" -maxdepth 1 -name '*.deb' -printf '%f\n' 2>/dev/null | sort | sha256sum | cut -c1-16 || true)"
+          sudo cp -f --preserve=timestamps /var/cache/apt/archives/*.deb "$cache_dir"/ 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" "$cache_dir" || true
-          echo "$(find "$cache_dir" -maxdepth 1 -name '*.deb' | wc -l) .deb(s) staged for the cache."
+          # Drop superseded versions. Run-unique save keys mean the newest
+          # entry is always restored, so without this the directory would
+          # accumulate every version ever downloaded, forever. `<pkg>_<ver>_
+          # <arch>.deb` -> package name is everything before the first `_`;
+          # keep only the newest-mtime file per package (both copies above
+          # preserve timestamps, so mtime is genuine download time). A wrong
+          # guess costs one re-download and nothing else.
+          find "$cache_dir" -maxdepth 1 -name '*.deb' -printf '%T@ %f\n' 2>/dev/null \
+            | sort -rn \
+            | awk '{ n = $2; sub(/_.*/, "", n); if (seen[n]++) print $2 }' \
+            | while IFS= read -r stale; do rm -f "$cache_dir/$stale" || true; done || true
+          after="$(find "$cache_dir" -maxdepth 1 -name '*.deb' -printf '%f\n' 2>/dev/null | sort | sha256sum | cut -c1-16 || true)"
+          n=$(find "$cache_dir" -maxdepth 1 -name '*.deb' 2>/dev/null | wc -l || true)
+          if [ "$before" = "$after" ]; then
+            # Nothing new to contribute. Writing an identical copy under a
+            # fresh run-unique key every run would spend the repo's 10 GB
+            # cache budget on duplicates and evict unrelated caches (GitHub
+            # evicts least-recently-ACCESSED first). Skipping is safe: the
+            # restore above already refreshed the existing entry's access
+            # time, which is exactly what keeps it alive.
+            echo "APT_CACHE_DIRTY=false" >> "$GITHUB_ENV"
+            echo "$n .deb(s) staged, identical to the restored set - no new cache entry will be written."
+          else
+            echo "APT_CACHE_DIRTY=true" >> "$GITHUB_ENV"
+            echo "$n .deb(s) staged for the cache - changed from the restored set, so a new entry will be written."
+          fi
+
+      # The other half of the split restore/save. Runs on `always()` so a run
+      # whose apt step timed out still contributes what it managed to fetch,
+      # and under this run's RUN-UNIQUE key so it can never be blocked by an
+      # existing entry the way the combined action's exact-hit skip did.
+      #
+      # `env.APT_CACHE_DIRTY` is set by the staging step above and is `true`
+      # only when this run actually added or pruned something; a run that
+      # restored a complete set writes no entry at all. That is what keeps
+      # run-unique keys from churning the repo's cache budget.
+      #
+      # No `id:` here, deliberately: an id would be a step name reachable from
+      # APT_STEP_OUTCOMES, and this step runs no apt.
+      - name: Save Playwright apt font cache
+        if: always() && env.APT_CACHE_DIRTY == 'true'
+        # `actions/cache/save` already downgrades its own failures to log
+        # lines, but a cache WRITE must never be able to red a job or be
+        # mistaken for the apt failure this plan exists to report. Belt and
+        # braces.
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/qontinui-apt-playwright
+          key: ${{ steps.pw_cache_key.outputs.save_key }}
 
       - name: Install Playwright browsers (CDN, chromium for setup + ${{ matrix.engine }})
         # The CDN half over the same 48 samples, and this is the ONE site where
