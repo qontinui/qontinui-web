@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.plan_library import (
     _COORD_FANOUT,
+    _REASON_MAX_CHARS,
     _coord_links,
     _CoordProbe,
 )
@@ -2007,16 +2008,23 @@ class TestCoordErrorBodiesDoNotEgress:
         assert "<html>" not in reason
         assert "bytes" in reason, "the size breadcrumb is gone too"
 
-    async def test_an_inline_citations_error_echoes_only_its_identifiers(
+    async def test_a_DEGENERATE_inline_citations_error_body_is_still_whitelisted(
         self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        """The same discipline on the INLINE error, which the device path takes.
+        """The same discipline on a DEGENERATE inline body: a bare ``{"pg": …}``.
 
         ``citations_error`` is coord's own error object embedded in a 200, so
-        it never passes through the status-code branch — and an object whose
-        fields this read does not recognise must be DESCRIBED, not dumped.
-        ``pg_error.to_body()`` with structured detail and no ``message`` is
-        exactly that object.
+        it never passes through the status-code branch — it is rendered by
+        ``_citation_error_text``, which shape-PROBES rather than assuming.
+
+        This body is deliberately one coord does not emit today:
+        ``pg_error::to_body()`` ALWAYS writes ``error`` and ``context``
+        alongside ``pg``, and that real shape is pinned by
+        ``test_coords_REAL_to_body_shape_inline_echoes_only_its_identifiers``
+        below. Keeping this one is the point — the probe exists to survive a
+        body it does not recognise, and a partial object carrying no ``error``
+        field is the only coverage of that half. Even here the SQLSTATE is
+        lifted from ``pg.code`` and the free text around it is not.
         """
         wu = _slug("wu-inline-pg")
         plan = await _plan(
@@ -2052,3 +2060,146 @@ class TestCoordErrorBodiesDoNotEgress:
         assert "23503" in reason
         for leaked in ("9f1c2d3e", "work_unit_citations", "not present in table"):
             assert leaked not in reason, f"coord internals egressed: {leaked!r}"
+
+    #: coord's ACTUAL inline error object, as ``pg_error::PgErrorContext::
+    #: to_body()`` builds it: ``error`` and ``context`` are written on EVERY
+    #: call, with the structured ``pg`` map beside them. The degenerate
+    #: ``{"pg": …}`` above never reaches production; this shape does.
+    #:
+    #: coord PR #1559 narrows what coord's CITATION doors emit to
+    #: ``{error, code}`` — but it is open, not landed, and it does not reach
+    #: the inline ``citations_error`` on the by-slug door, which keeps this
+    #: wide shape. So this read must stay safe against it on either coord
+    #: version, which is why the narrowing does not retire this test.
+    REAL_TO_BODY = {
+        "error": "db_error",
+        "context": "listing citations for work unit wu-real-tobody",
+        "pg": {
+            "code": "23503",
+            "message": "insert or update on table work_unit_citations "
+            "violates foreign key constraint",
+            "detail": "Key (tenant_id)=(9f1c2d3e-0000-4444-8888-abcdefabcdef) "
+            "is not present in table tenants.",
+            "constraint": "work_unit_citations_tenant_id_fkey",
+            "table": "work_unit_citations",
+            "column": "tenant_id",
+        },
+    }
+
+    async def test_coords_REAL_to_body_shape_inline_echoes_only_its_identifiers(
+        self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The whitelist against the body coord ACTUALLY emits inline.
+
+        ``to_body()`` writes ``error`` AND ``context`` beside ``pg`` every
+        time, so this — not the bare ``{"pg": …}`` above — is what a real
+        citation failure puts on the device path. Both identifiers are found
+        (``error`` at the top level, the SQLSTATE nested at ``pg.code``), and
+        every free-text field around them stays inside this service: the
+        ``context`` sentence, ``pg.message``, the ROW VALUE in ``pg.detail``,
+        and the constraint/table/column names that describe coord's schema.
+        """
+        wu = _slug("wu-real-tobody")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("real-tobody"),
+            work_unit_slug=wu,
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            return {
+                "work_unit": {"slug": wu, "status": "vetted"},
+                "citations": [],
+                "citations_error": self.REAL_TO_BODY,
+            }
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await device_client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        link = row["coord"]
+        assert link["linked_prs_state"] == "unavailable", (
+            "`citations_error` beside an empty list is UNKNOWN, never zero"
+        )
+        assert link["linked_prs"] == []
+        reason = link["unavailable_reason"]
+
+        # The identifiers an operator acts on, from both places coord puts them.
+        assert "db_error" in reason
+        assert "23503" in reason
+
+        # Never: the free-text context, the message, the ROW VALUE in `detail`,
+        # or the constraint/table/column names that describe coord's schema.
+        for leaked in (
+            "listing citations",
+            "9f1c2d3e",
+            "not present in table",
+            "work_unit_citations_tenant_id_fkey",
+            "work_unit_citations",
+            "violates foreign key constraint",
+            "tenant_id",
+        ):
+            assert leaked not in reason, f"coord internals egressed: {leaked!r}"
+
+    async def test_a_pathological_error_field_is_TRUNCATED(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The whitelist is a filter, not a length bound — so a cap is needed too.
+
+        ``error`` is the field the whitelist admits unconditionally, and it is
+        not a closed set of short codes: coord builds it as free text at many
+        call sites (``json!({"error": format!("PG: {e}")})`` and friends), any
+        of which can carry a whole Postgres chain. None sits on the two routes
+        this read calls TODAY, so this is latent rather than live — but without
+        the cap the whitelist's safety rests on a property of OTHER coord
+        handlers that nothing on this side enforces.
+
+        The reason is STICKY (``_CoordProbe._trip`` repeats it on every
+        remaining row of the page), so an unbounded field is unbounded once per
+        row. The status-code path caps at ``_REASON_MAX_CHARS`` exactly as the
+        inline path already did.
+        """
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("longerr"),
+            work_unit_slug=_slug("wu-longerr"),
+        )
+
+        tail = "TAILSENTINELdb4f7a"
+        long_error = "PG: " + ("relation lookup failed; " * 200) + tail
+        assert len(long_error) > 2 * _REASON_MAX_CHARS
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=500, detail=json.dumps({"error": long_error})
+                )
+            ),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        prefix = "coord returned 500: "
+        assert reason.startswith(prefix)
+        excerpt = reason[len(prefix) :]
+        assert len(excerpt) == _REASON_MAX_CHARS, (
+            f"the whitelisted `error` field was not capped: {len(excerpt)} chars"
+        )
+        assert excerpt.endswith("…"), "truncation is not marked"
+        assert tail not in reason, (
+            "the tail of a multi-kilobyte `error` field egressed verbatim"
+        )
