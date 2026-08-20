@@ -3270,19 +3270,64 @@ async def get_dev_action_detail(
 @router.get("/plans")
 async def list_coord_plans(
     status: str | None = Query(default=None, description="Filter by status."),
+    slug_prefix: str | None = Query(
+        default=None,
+        min_length=1,
+        description="LIKE-prefix filter on the work-unit slug.",
+    ),
+    exclude_slug_prefix: str | None = Query(
+        default=None,
+        min_length=1,
+        description=(
+            "Drop work-units whose slug starts with this prefix. Ignored by a "
+            "coord that predates it (see the note below) — an optimisation, "
+            "never a contract."
+        ),
+    ),
     limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List work-units from coord (tenant-scoped).
 
     Proxies coord ``GET /coord/work-units``; the response envelope is
     ``{"work_units": [...], "limit": N, "offset": N}``.
+
+    coord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;
+    this proxy simply never forwarded them, so the console could neither page
+    past the first window nor ask for a slug subset. Forwarding them needs no
+    coord change.
+
+    ``exclude_slug_prefix`` is the one genuinely new parameter, and it ships
+    ahead of its coord half deliberately. ``ListQuery`` is
+    ``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on
+    every field and no ``deny_unknown_fields``, so a coord that does not know
+    the parameter **ignores** it and returns the unfiltered page rather than
+    erroring. Callers must therefore treat the exclusion as best-effort until
+    coord's half deploys — a page that renders shepherd rows is a coord that
+    has not caught up, not a bug here. (coord's side now documents that
+    permissiveness as a contract rather than leaving it an accident; drop this
+    paragraph once that build is deployed everywhere.)
+
+    Both prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``
+    would reach coord as ``slug NOT LIKE '' || '%'`` — i.e. ``NOT LIKE '%'``,
+    which excludes EVERY row. A console that forwarded an empty input box would
+    then render a blank list, and the paragraph above tells the operator to
+    read an unexpected page as "coord has not caught up". Rejecting the empty
+    string here is the honest failure; coord normalizes it as well, so neither
+    side depends on the other for this.
     """
     params: dict[str, Any] = {}
     if status is not None:
         params["status"] = status
+    if slug_prefix is not None:
+        params["slug_prefix"] = slug_prefix
+    if exclude_slug_prefix is not None:
+        params["exclude_slug_prefix"] = exclude_slug_prefix
     if limit is not None:
         params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
     return await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
