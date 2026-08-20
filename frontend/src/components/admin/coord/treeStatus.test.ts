@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 
-import { pullSafetyClass, type PullSafetyClass } from "./TreeCard";
+import { paletteDisagreements } from "@/components/console/attention";
+import {
+  deriveTreeStatus,
+  deriveTreesHealth,
+  pullSafetyClass,
+  staleBand,
+  verdictTestId,
+  TREE_ATTENTION_BY_KIND,
+  TREE_BADGE_CLASS,
+  TREE_STATUS_PALETTE,
+  type PullSafetyClass,
+  type TreeStatusKind,
+} from "./treeStatus";
 
 /**
  * Anti-drift guard for the client-side pull-safety ladder.
@@ -180,5 +192,151 @@ describe("pullSafetyClass — mirror of decide.rs:800 pull_safety_verdict", () =
         local_ahead: 4,
       })
     ).toEqual<PullSafetyClass>({ kind: "hold", reason: "wip_on_default" });
+  });
+});
+
+/**
+ * The console contract, added by Phase 3 Wave 1 alongside the migration of
+ * `/trees` onto `components/console`.
+ */
+describe("trees palette agrees with TREE_ATTENTION_BY_KIND (R3)", () => {
+  it("is red iff coord has stopped for a human, calm otherwise", () => {
+    expect(
+      paletteDisagreements(TREE_ATTENTION_BY_KIND, TREE_STATUS_PALETTE)
+    ).toEqual([]);
+  });
+
+  it("has an attention for every verdict kind (the table is TOTAL)", () => {
+    for (const kind of Object.keys(TREE_BADGE_CLASS) as TreeStatusKind[]) {
+      expect(TREE_ATTENTION_BY_KIND[kind]).toBeTruthy();
+    }
+  });
+
+  it("keeps the verdict testid the derived spec asserts", () => {
+    expect(verdictTestId("pull")).toBe("coord-tree-verdict-pull");
+    expect(verdictTestId("up_to_date")).toBe("coord-tree-verdict-up_to_date");
+    expect(verdictTestId("hold")).toBe("coord-tree-verdict-hold");
+    expect(verdictTestId("diverged")).toBe("coord-tree-verdict-diverged");
+    expect(verdictTestId("default_ref_sync")).toBe(
+      "coord-tree-verdict-default_ref_sync"
+    );
+  });
+});
+
+describe("staleBand", () => {
+  const hoursBack = (h: number) =>
+    new Date(Date.now() - h * 3_600_000).toISOString();
+
+  it("is none for a CLEAN tree however long since it was seen", () => {
+    // An idle clean checkout is not at risk; only uncommitted work is.
+    expect(
+      staleBand({
+        repo: "r",
+        primary_path: "p",
+        dirty: false,
+        last_seen: hoursBack(1000),
+      })
+    ).toBe("none");
+  });
+
+  it("prefers wip_last_modified over last_seen when coord recorded one", () => {
+    expect(
+      staleBand({
+        repo: "r",
+        primary_path: "p",
+        dirty: true,
+        wip_last_modified: hoursBack(1),
+        last_seen: hoursBack(1000),
+      })
+    ).toBe("none");
+  });
+
+  it("bands at 24h and 72h", () => {
+    const at = (h: number) =>
+      staleBand({
+        repo: "r",
+        primary_path: "p",
+        dirty: true,
+        wip_last_modified: hoursBack(h),
+      });
+    expect(at(23)).toBe("none");
+    expect(at(25)).toBe("warning");
+    expect(at(73)).toBe("critical");
+  });
+
+  it("is none when there is no timestamp at all — unknown, not stale", () => {
+    expect(staleBand({ repo: "r", primary_path: "p", dirty: true })).toBe(
+      "none"
+    );
+  });
+});
+
+describe("deriveTreeStatus escalation", () => {
+  const hoursBack = (h: number) =>
+    new Date(Date.now() - h * 3_600_000).toISOString();
+
+  it("escalates a calm verdict when the WIP clock has run out", () => {
+    // up_to_date is `none` by verdict, but 72h of untouched WIP needs a human.
+    const s = deriveTreeStatus({
+      repo: "r",
+      primary_path: "p",
+      behind_count: 0,
+      dirty: true,
+      wip_last_modified: hoursBack(100),
+    });
+    expect(s.kind).toBe("up_to_date");
+    expect(s.attention).toBe("author");
+  });
+
+  it("never DE-escalates a held verdict on a fresh clock", () => {
+    const s = deriveTreeStatus({
+      repo: "r",
+      primary_path: "p",
+      behind_count: 3,
+      branch: "main",
+      dirty: true,
+      wip_last_modified: hoursBack(1),
+    });
+    expect(s.kind).toBe("hold");
+    expect(s.attention).toBe("author");
+  });
+
+  it("leaves a clean pullable tree calm", () => {
+    const s = deriveTreeStatus({
+      repo: "r",
+      primary_path: "p",
+      behind_count: 3,
+      branch: "main",
+      dirty: false,
+      local_ahead: 0,
+    });
+    expect(s.kind).toBe("pull");
+    expect(s.attention).toBe("none");
+  });
+});
+
+describe("deriveTreesHealth", () => {
+  it("reports UNKNOWN-free counts derived from the rows on the page", () => {
+    const h = deriveTreesHealth([
+      { repo: "a", primary_path: "pa", behind_count: 0, dirty: false },
+      {
+        repo: "b",
+        primary_path: "pb",
+        behind_count: 2,
+        branch: "main",
+        local_ahead: 2,
+      },
+    ]);
+    expect(h.held).toBe(1);
+    expect(h.dirty).toBe(0);
+    expect(h.level).toBe("red");
+  });
+
+  it("is green with no trees held and none dirty", () => {
+    expect(
+      deriveTreesHealth([
+        { repo: "a", primary_path: "pa", behind_count: 0, dirty: false },
+      ]).level
+    ).toBe("green");
   });
 });
