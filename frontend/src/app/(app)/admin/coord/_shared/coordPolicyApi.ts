@@ -15,17 +15,61 @@ import {
 } from "./coordPolicies";
 
 /**
- * `GET /coord/policies` — the tenant's effective set (own ENABLED rows ∪ the
- * system built-ins, annotated with `built_in` / `override_state`).
+ * Coord's `ListPoliciesQuery`, as far as the web proxy forwards it.
  *
- * No filter arguments: the web backend's proxy forwards no query string to
- * coord (`_proxy_coord_get("/coord/policies", tenant_id=...)`), so coord's
- * `kind` / `repo` / `enabled` filters are unreachable from the browser and
- * every caller filters in TypeScript. Accepting an argument here that the
- * wire silently drops would be worse than not having one.
+ * ⚠️ `enabled` is NOT a safe way to list a tenant's turned-off rules. Coord's
+ * `DELETE /coord/policies/:id` is a **soft delete** that sets exactly this
+ * column (`policies/routes.rs::delete_soft` — `SET enabled = false`), and
+ * `coord.policy_rules` carries no tombstone column, so `enabled = false` means
+ * "turned off" and "deleted" indistinguishably. Listing that arm would
+ * resurrect every rule the tenant has ever deleted. See
+ * [`listCoordPolicies`]'s note.
  */
-export function listCoordPolicies(): Promise<ListCoordPoliciesResponse> {
-  return httpClient.get<ListCoordPoliciesResponse>(COORD_POLICIES_API);
+export interface CoordPolicyFilters {
+  /** A v1 `PolicyKind` string. Coord 400s an unknown one. */
+  kind?: string;
+  /** Coord matches this EXACTLY, empty string included — `""` is a real
+   *  filter (it selects the degenerate empty-repo rows), not "unfiltered". */
+  repo?: string;
+  /** EQUALITY, not "show everything": coord binds this as `AND enabled = $2`
+   *  against the tenant's own rules. Read the interface note before using it. */
+  enabled?: boolean;
+}
+
+/**
+ * `GET /coord/policies` — the tenant's effective set (its own rows in the
+ * requested `enabled` state ∪ the system built-ins, annotated with `built_in` /
+ * `override_state`).
+ *
+ * The filters are coord's own (`policies/routes.rs::ListPoliciesQuery`) and
+ * were unreachable from the browser until the web proxy learned to forward a
+ * query string. Every current caller still passes NONE of them, taking coord's
+ * `enabled = true` default — deliberately.
+ *
+ * **Why no caller lists the disabled arm.** It looks like the obvious way to
+ * show a turned-off rule, and it is not: coord's DELETE is a soft delete onto
+ * the same column, with no tombstone to tell the two apart. A console that
+ * listed `enabled=false` would show every deleted rule as merely "inactive" and
+ * offer to switch it back on. The distinction has to come from coord (a real
+ * `deleted_at`, or a `get_list` that excludes soft-deleted rows) before any
+ * caller here can honestly read that arm. `kind` / `repo` carry no such
+ * hazard.
+ *
+ * A value is sent when PRESENT, including an empty string — the same rule the
+ * proxy follows, so the two halves cannot disagree about what was asked.
+ */
+export function listCoordPolicies(
+  filters?: CoordPolicyFilters
+): Promise<ListCoordPoliciesResponse> {
+  const qs = new URLSearchParams();
+  if (filters?.kind !== undefined) qs.set("kind", filters.kind);
+  if (filters?.repo !== undefined) qs.set("repo", filters.repo);
+  if (filters?.enabled !== undefined)
+    qs.set("enabled", String(filters.enabled));
+  const query = qs.toString();
+  return httpClient.get<ListCoordPoliciesResponse>(
+    query ? `${COORD_POLICIES_API}?${query}` : COORD_POLICIES_API
+  );
 }
 
 /** `POST /coord/policies` — v1 (`kind`) or v2 (`decision_domain`) body. */
