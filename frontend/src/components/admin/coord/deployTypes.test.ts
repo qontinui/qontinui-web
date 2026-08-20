@@ -5,8 +5,8 @@ import {
   isManagedPredictedHeadFork,
   verdictChipVariant,
   verdictChipLabel,
-} from "./DeployCard";
-import type { BadgeVariant, DimensionVerdict } from "./LandCard";
+} from "./deployTypes";
+import type { BadgeVariant, DimensionVerdict } from "./landTypes";
 
 /**
  * Anti-drift guard for the schema/migration predicted-head-fork verdict

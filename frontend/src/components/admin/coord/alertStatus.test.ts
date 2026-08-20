@@ -31,9 +31,11 @@ import {
   type AlertKind,
   type CoordAlertRow,
 } from "./alertStatus";
+import { paletteDisagreements } from "@/components/console/attention";
 import {
   ALERT_AUTHOR_GLYPH_KINDS,
   ALERT_BADGE_CLASS,
+  ALERT_PER_ROW_KINDS,
   alertPaletteFor,
 } from "./AlertRow";
 
@@ -105,17 +107,21 @@ describe("ATTENTION_BY_KIND totality", () => {
   });
 
   it("keys the palette off attention — red only for author-action", () => {
-    for (const [kind, attention] of Object.entries(ATTENTION_BY_KIND)) {
-      const cls = ALERT_BADGE_CLASS[kind as AlertKind];
-      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(
-        attention === "author"
-      );
-      expect(/\bbg-amber-/.test(cls), `${kind} amber?`).toBe(
-        // `unknown` is amber-by-floor but neutral in the badge: its attention
-        // is per-row (severity-derived), so the ACCENT carries the escalation.
-        attention === "waiting" && kind !== "unknown"
-      );
-    }
+    // The SHARED R3 audit (`console/attention.ts`), not a private copy of it.
+    // This surface's inline version predated `paletteDisagreements` — it IS
+    // what the shared helper was generalised from — and it was the only
+    // console palette still auditing itself, so the exemplar was drifting
+    // behind the pattern it set. `perRowKinds` carries the same single
+    // carve-out the inline check made: `unknown` is amber-by-floor but neutral
+    // in the badge, because its attention is per-row (severity-derived) and
+    // `alertPaletteFor` resolves what actually renders — asserted below.
+    expect(
+      paletteDisagreements(
+        ATTENTION_BY_KIND,
+        { badgeClass: ALERT_BADGE_CLASS, authorGlyphKinds: ALERT_AUTHOR_GLYPH_KINDS },
+        { perRowKinds: ALERT_PER_ROW_KINDS }
+      )
+    ).toEqual([]);
   });
 
   it("paints an ESCALATED row from its computed attention, not its kind's floor", () => {
@@ -150,17 +156,13 @@ describe("ATTENTION_BY_KIND totality", () => {
     expect(alertPaletteFor(plain).badgeClass).toBe(ALERT_BADGE_CLASS);
   });
 
-  it("carries the colourblind-safe ✕ on exactly the author kinds", () => {
-    const authorKinds = (
-      Object.keys(ATTENTION_BY_KIND) as AlertKind[]
-    ).filter((k) => ATTENTION_BY_KIND[k] === "author");
-    for (const kind of authorKinds) {
-      expect(ALERT_AUTHOR_GLYPH_KINDS.has(kind), `${kind} red, no ✕`).toBe(
-        true
-      );
-    }
-    expect(ALERT_AUTHOR_GLYPH_KINDS.size).toBe(authorKinds.length);
-  });
+  // The `✕`-on-exactly-the-author-kinds loop that stood here is now clause (4)
+  // of `paletteDisagreements`, asserted by the test above. The shared clause is
+  // strictly STRONGER: it checks both directions (an author kind carries `✕`,
+  // AND a `✕` kind is an author kind) plus the set size, where the loop here
+  // only ever checked the forward direction and the size. Keeping it would be a
+  // weaker private copy of an assertion the shared audit now makes — which is
+  // the exact drift this adoption removes.
 });
 
 // ----------------------------------------------------------------------------

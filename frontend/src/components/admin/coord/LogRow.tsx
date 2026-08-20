@@ -6,16 +6,48 @@
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 5 (Wave 3b).
  *
  * Compact one-line shape: [level] [time] event_name  agent_id_short
- * Click the row to expand the structured payload as JSON. Optional
- * `onAgentClick` cross-links to the per-agent live view (the recent
- * timeline at /admin/coord/agents uses this).
+ * Click the row to expand the structured payload as JSON.
+ *
+ * ## Console style (Phase 3 Wave 2)
+ *
+ * Folded onto `<RecordRow>` / `<RecordDetail>` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md`. This row was
+ * ALREADY close to R2 — a `px-2.5 py-1.5` line with click-to-expand — so what
+ * changed is small and mostly about consistency:
+ *
+ * - the slot ORDER is now the primitive's (identity → label → status → reason
+ *   → time → chevron) rather than this file's own arrangement;
+ * - the whole line is one `<button>` instead of a `<div onClick>`, so the
+ *   expand affordance is keyboard-reachable;
+ * - the payload lives in `<RecordDetail>`'s `raw` slot, which is where R5 puts
+ *   raw ids and machine payloads.
+ *
+ * **The agent cross-link moved into the detail (D1).** It used to be a
+ * `<button>` inside the row; `<RecordRow>` renders the row itself as a
+ * `<button>`, and a button inside a button is invalid HTML that browsers
+ * silently re-parent. It keeps its `log-row-agent-link` testid and now reads
+ * "Open full page ↗", which is the same affordance every other console record
+ * offers for its detail route.
+ *
+ * Every `data-testid` this component authored is carried across (D4a) —
+ * `agent-log-row`, `agent-log-payload`, `log-row-source-badge`,
+ * `log-row-agent-link` — as are `log-level-*` and `data-log-level`, which
+ * `tests/e2e/pages/admin.spec.ts` asserts and which ride on the level chip.
+ *
+ * **Two row-level `data-*` attributes did NOT survive, and neither had a
+ * consumer.** `<RecordRow>` writes `data-row-key` and forwards no arbitrary
+ * `data-*`, so the row's own `data-log-level` and `data-agent-id` are gone.
+ * Verified by grep across `src/`, `tests/` and all four committed page specs
+ * before dropping them: nothing selects either (`data-log-level` still exists
+ * INSIDE the row, on the level chip). Recorded here rather than silently,
+ * because "no consumer today" is a measurement with a date on it.
  */
 
-import { useState } from "react";
-import { ChevronRight } from "lucide-react";
-import { LevelBadge } from "@/components/admin/coord/LevelBadge";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ExternalLink } from "lucide-react";
+import { LevelBadge } from "@/components/admin/coord/LevelBadge";
+import { RecordDetail, RecordRow, RowTime } from "@/components/console";
 
 export interface AgentLogRow {
   log_id?: string | number;
@@ -43,128 +75,140 @@ function shortId(id?: string | null, take = 8): string {
   return id.length > take ? `${id.slice(0, take)}…` : id;
 }
 
-function formatRelative(iso: string | undefined | null): string {
-  if (!iso) return "";
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) return iso;
-  const deltaSec = Math.round((Date.now() - parsed) / 1000);
-  if (Math.abs(deltaSec) < 60) return `${deltaSec}s`;
-  const deltaMin = Math.round(deltaSec / 60);
-  if (Math.abs(deltaMin) < 60) return `${deltaMin}m`;
-  const deltaHr = Math.round(deltaMin / 60);
-  if (Math.abs(deltaHr) < 48) return `${deltaHr}h`;
-  const deltaDay = Math.round(deltaHr / 24);
-  return `${deltaDay}d`;
+/**
+ * The left-edge accent, by log level. This is R4's mechanism, and the mapping
+ * is R3's: `error` is the only level a human must act on, `warn` is the one
+ * that says something else is degrading. `rowAccentClass` is not reused here
+ * because a log line carries a LEVEL, not a `RowStatus` with an attention —
+ * the level IS the severity model on this surface, and inventing a kind union
+ * to wrap five well-known strings would be ceremony, not safety.
+ */
+function levelAccent(level?: string): string {
+  const l = (level ?? "info").toLowerCase();
+  if (l === "error") return "border-l-2 border-l-red-500/80";
+  if (l === "warn" || l === "warning") return "border-l-2 border-l-amber-500/80";
+  return "";
 }
 
-function formatAbs(iso: string | undefined | null): string {
-  if (!iso) return "";
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) return iso;
-  return new Date(parsed).toISOString().replace("T", " ").replace(/\..*$/, "Z");
+/** A one-line preview of the payload, for the row's `reason` slot. */
+function payloadPreview(payload?: Record<string, unknown> | null): string {
+  if (!payload || typeof payload !== "object") return "";
+  const keys = Object.keys(payload);
+  if (keys.length === 0) return "";
+  return keys.slice(0, 4).join(", ") + (keys.length > 4 ? ", …" : "");
 }
 
 export interface LogRowProps {
   log: AgentLogRow;
-  /** When set, clicking the agent_id chip invokes this. */
+  /** When set, the detail offers a cross-link to the per-agent view. */
   onAgentClick?: (agent_id: string) => void;
   /** When true, agent_id chip is omitted (we're already on a per-agent view). */
   hideAgentId?: boolean;
-  /** When true, defaults to expanded payload (e.g. for newest row). */
-  defaultExpanded?: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }
 
 export function LogRow({
   log,
   onAgentClick,
   hideAgentId = false,
-  defaultExpanded = false,
+  expanded,
+  onToggle,
 }: LogRowProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const occurredAt = log.occurred_at ?? log.ts ?? log.created_at ?? null;
   const hasPayload =
     log.payload != null &&
     typeof log.payload === "object" &&
     Object.keys(log.payload).length > 0;
 
-  const handleAgentClick = (e: React.MouseEvent) => {
-    if (!onAgentClick) return;
-    e.stopPropagation();
-    onAgentClick(log.agent_id);
-  };
-
   return (
-    <div
+    <RecordRow
       data-testid="agent-log-row"
-      data-log-level={(log.level ?? "info").toLowerCase()}
-      data-agent-id={log.agent_id}
-      className={cn(
-        "group rounded-md border border-border bg-card px-2.5 py-1.5",
-        "hover:bg-muted/40 transition-colors cursor-pointer",
-      )}
-      onClick={() => setExpanded((v) => !v)}
-    >
-      <div className="flex items-center gap-2 flex-wrap text-xs">
-        <ChevronRight
-          className={cn(
-            "h-3 w-3 text-muted-foreground transition-transform shrink-0",
-            expanded && "rotate-90",
-          )}
-          aria-hidden
-        />
-        <LevelBadge level={log.level} />
+      rowKey={String(log.log_id ?? `${log.agent_id}-${occurredAt ?? ""}`)}
+      expanded={expanded}
+      onToggle={onToggle}
+      accent={levelAccent(log.level)}
+      // The level IS this row's identity chip: it is the one short token that
+      // classifies a log line, and `<RecordRow>` supplies the chip chrome
+      // around it (hence `inline` — see `LevelBadge`).
+      identity={<LevelBadge level={log.level} inline />}
+      label={
         <span
-          className="font-mono text-[11px] text-muted-foreground"
-          title={formatAbs(occurredAt)}
+          className="font-medium text-foreground"
+          title={log.event ?? "(no event)"}
         >
-          {formatRelative(occurredAt)}
-        </span>
-        <span className="font-medium text-foreground truncate">
           {log.event ?? "(no event)"}
         </span>
-        {log.is_interactive !== undefined && (
-          <Badge
-            data-testid="log-row-source-badge"
-            variant={log.is_interactive ? "info" : "secondary"}
-            className="text-[10px] px-1 py-0 leading-tight"
-            title={
-              log.is_interactive
-                ? "Interactive / PTY-CLI session (no coord worktree)"
-                : "Coord-spawned agent (has a worktree)"
-            }
-          >
-            {log.is_interactive ? "interactive" : "spawned"}
-          </Badge>
-        )}
-        {!hideAgentId && (
-          <button
-            type="button"
-            data-testid="log-row-agent-link"
-            onClick={handleAgentClick}
-            className={cn(
-              "ml-auto font-mono text-[10px] px-1.5 py-0.5 rounded border",
-              "border-border bg-muted/40 text-muted-foreground",
-              onAgentClick && "hover:bg-primary/10 hover:text-primary",
-            )}
-          >
-            agent {shortId(log.agent_id, 8)}
-          </button>
-        )}
-      </div>
-      {expanded && hasPayload && (
-        <pre
-          data-testid="agent-log-payload"
-          className="mt-1.5 ml-5 text-[11px] font-mono bg-muted/30 border border-border rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-words"
-        >
-          {JSON.stringify(log.payload, null, 2)}
-        </pre>
-      )}
-      {expanded && !hasPayload && (
-        <p className="mt-1 ml-5 text-[11px] text-muted-foreground italic">
-          (no payload)
-        </p>
-      )}
-    </div>
+      }
+      status={
+        <>
+          {log.is_interactive !== undefined && (
+            <Badge
+              data-testid="log-row-source-badge"
+              variant={log.is_interactive ? "info" : "secondary"}
+              className="text-[10px] px-1 py-0 leading-tight shrink-0"
+              title={
+                log.is_interactive
+                  ? "Interactive / PTY-CLI session (no coord worktree)"
+                  : "Coord-spawned agent (has a worktree)"
+              }
+            >
+              {log.is_interactive ? "interactive" : "spawned"}
+            </Badge>
+          )}
+          {!hideAgentId && (
+            <span
+              className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/40 text-muted-foreground shrink-0"
+              title={`agent ${log.agent_id}`}
+            >
+              agent {shortId(log.agent_id, 8)}
+            </span>
+          )}
+        </>
+      }
+      reason={payloadPreview(log.payload) || undefined}
+      reasonTestId="agent-log-payload-preview"
+      time={<RowTime at={occurredAt} verb="Logged" />}
+    >
+      <RecordDetail
+        why={
+          <div className="text-xs">
+            <span className="text-muted-foreground">Event: </span>
+            <span className="text-foreground/90">
+              {log.event ?? "(no event)"}
+            </span>
+          </div>
+        }
+        actions={
+          !hideAgentId && onAgentClick ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onAgentClick(log.agent_id)}
+              data-testid="log-row-agent-link"
+              title={`Open the live view for agent ${log.agent_id}`}
+            >
+              Open full page
+              <ExternalLink className="h-3 w-3 ml-1" />
+            </Button>
+          ) : undefined
+        }
+        raw={
+          hasPayload ? (
+            <pre
+              data-testid="agent-log-payload"
+              className="text-[11px] font-mono bg-muted/30 border border-border rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-words text-muted-foreground/80"
+            >
+              {JSON.stringify(log.payload, null, 2)}
+            </pre>
+          ) : (
+            <p className="text-[11px] text-muted-foreground italic">
+              (no payload)
+            </p>
+          )
+        }
+      />
+    </RecordRow>
   );
 }
 

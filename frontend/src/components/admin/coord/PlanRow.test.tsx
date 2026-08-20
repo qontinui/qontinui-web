@@ -2,8 +2,9 @@
  * PlanRow render tests — the status tag as it actually reaches the DOM, plus
  * the two contracts the Wave 1 migration had to hold.
  *
- * Ported from `PlanCard.test.tsx` (which stays, because `/history` still
- * renders `PlanCard` until Wave 2). The pure-function coverage lives in
+ * Ported from `PlanCard.test.tsx`, which was DELETED in Wave 2 along with the
+ * card itself once `/history` — its last renderer — moved onto `<PlanRow>`.
+ * Every case it held is reproduced below. The pure-function coverage lives in
  * `planStatus.test.ts`; this asserts the ROW wires it through, because the
  * original defect was a rendering one: `shipped` and `in_progress` both
  * resolved to `variant="default"` and so painted identically on screen.

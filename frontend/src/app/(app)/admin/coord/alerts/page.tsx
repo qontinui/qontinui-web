@@ -34,7 +34,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -46,9 +45,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AlertTriangle, Filter, RefreshCw } from "lucide-react";
-import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
+import { CollapsiblePanel, RecordList } from "@/components/console";
 import { AlertRow } from "@/components/admin/coord/AlertRow";
-import type { CoordAlertRow } from "@/components/admin/coord/alertStatus";
+import {
+  alertSubject,
+  type CoordAlertRow,
+} from "@/components/admin/coord/alertStatus";
 import { httpClient } from "@/services/service-factory";
 
 const API = "/api/v1/operations";
@@ -452,31 +454,38 @@ export default function CoordAlertsPage() {
           </p>
         )}
 
-        {loading && pages.length === 0 ? (
-          <Skeleton className="h-24 w-full" />
-        ) : alerts.length > 0 ? (
-          <div className="space-y-2">
-            {alerts.map((a, i) => (
-              // Keyed on the row's own identity, NEVER on array position: a
-              // row resolving out of page 1 would otherwise re-key every row
-              // after it and collapse whichever panels the operator had
-              // opened. `id` (the PK) first, `alert_key` (the dedup identity)
-              // when coord omits it, and the index only if a payload carries
-              // neither — at which point there is nothing stable to key on.
-              <AlertRow key={a.id ?? a.alert_key ?? String(i)} alert={a} />
-            ))}
-          </div>
-        ) : (
-          error === null && (
-            // Gated on `error`: a failed first load leaves `pages` empty, and
-            // asserting "nothing matched" on a request that never answered is
-            // exactly the empty-is-not-unknown mistake this page is about. The
-            // failure message above is the honest rendering.
-            <p className="text-sm text-muted-foreground italic normal-case tracking-normal">
-              No alerts matching filters.
-            </p>
-          )
-        )}
+        {/* R2/R5 — `<RecordList>` owns the skeleton, the empty state and the
+            one-open-at-a-time expansion. The `itemKey` is the row's own
+            identity, NEVER its array position: a row resolving out of page 1
+            would otherwise re-key every row after it and collapse whichever
+            panel the operator had opened. `id` (the PK) first, `alert_key`
+            (the dedup identity) when coord omits it, and the subject only if
+            a payload carries neither. */}
+        <RecordList
+          items={alerts}
+          itemKey={(a) => String(a.id ?? a.alert_key ?? alertSubject(a))}
+          loaded={!(loading && pages.length === 0)}
+          skeletonRows={6}
+          className="space-y-1.5"
+          empty={
+            error === null ? (
+              // Gated on `error`: a failed first load leaves `pages` empty, and
+              // asserting "nothing matched" on a request that never answered is
+              // exactly the empty-is-not-unknown mistake this page is about. The
+              // failure message above is the honest rendering.
+              <p className="text-sm text-muted-foreground italic normal-case tracking-normal">
+                No alerts matching filters.
+              </p>
+            ) : null
+          }
+          renderRow={(a, ctx) => (
+            <AlertRow
+              alert={a}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+            />
+          )}
+        />
 
         {(tailCursor || paged) && (
           <div className="flex items-center gap-3">
