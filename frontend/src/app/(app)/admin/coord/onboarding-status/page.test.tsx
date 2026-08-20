@@ -478,7 +478,11 @@ describe("claim params are stripped on every exit", () => {
 
     render(<OnboardingStatusPage />);
 
-    await waitFor(() => expect(screen.getByTestId("coord-onboarding-status-page")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-onboarding-status-page")
+      ).toBeInTheDocument()
+    );
     expect(window.history.replaceState).not.toHaveBeenCalled();
   });
 });
@@ -662,7 +666,9 @@ describe("recover card looks up the stateless arrival's installation", () => {
 
     const msg = await screen.findByTestId("onboarding-claim-recover-message");
     await waitFor(() =>
-      expect(msg).toHaveTextContent(/coord has not seen this installation yet\./)
+      expect(msg).toHaveTextContent(
+        /coord has not seen this installation yet\./
+      )
     );
     expect(msg).toHaveTextContent(/This connect didn't start from Qontinui/);
     expect(screen.getByTestId("onboarding-claim-recover-link")).toHaveAttribute(
@@ -691,7 +697,9 @@ describe("recover card looks up the stateless arrival's installation", () => {
 
     const msg = await screen.findByTestId("onboarding-claim-recover-message");
     await waitFor(() =>
-      expect(msg).toHaveTextContent(/couldn't check this installation with coord/)
+      expect(msg).toHaveTextContent(
+        /couldn't check this installation with coord/
+      )
     );
     expect(msg).not.toHaveTextContent(/has not seen|does not exist/);
   });
@@ -707,7 +715,9 @@ describe("recover card looks up the stateless arrival's installation", () => {
 
     const msg = await screen.findByTestId("onboarding-claim-recover-message");
     await waitFor(() =>
-      expect(msg).toHaveTextContent(/couldn't check this installation with coord/)
+      expect(msg).toHaveTextContent(
+        /couldn't check this installation with coord/
+      )
     );
   });
 
@@ -729,5 +739,117 @@ describe("recover card looks up the stateless arrival's installation", () => {
 
     await screen.findByTestId("onboarding-claim-recover");
     expect(pendingCalls()).toHaveLength(0);
+  });
+});
+
+describe("P2 runner-native hand-off", () => {
+  // Slot 5 of `state`: the runner's own return nonce, hex by construction.
+  const RUNNER_STATE = "0123456789abcdef0123456789abcdef";
+
+  function runnerCloneArrival(runnerState: string) {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `runner-clone~~${NONCE}~${TOKEN}~${runnerState}`,
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        account_login: "acme",
+        installation_id: 4242,
+        tenant_id: "t-1",
+      })
+    );
+  }
+
+  it("hands the code to the runner instead of spending it in the browser", async () => {
+    runnerCloneArrival(RUNNER_STATE);
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-handoff");
+    // The OAuth code is single-use: EITHER the runner claims it or the browser
+    // does, never both. No claim POST may have gone out from here.
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toBe(false);
+    const link = new URL(
+      screen.getByTestId("onboarding-claim-handoff-open").getAttribute("href")!
+    );
+    expect(link.protocol).toBe("qontinui:");
+    expect(link.host).toBe("github-connected");
+    expect(link.searchParams.get("code")).toBe("gho_code");
+    expect(link.searchParams.get("state")).toBe(RUNNER_STATE);
+    expect(link.searchParams.get("installation_id")).toBe("4242");
+    // The page navigated to the same link (same-tab; the OS opens the runner).
+    expect(window.location.href).toBe(link.toString());
+    // The doctor watches enrolment, and a bind-only hand-off enrols nothing.
+    expect(screen.queryByTestId("onboarding-claim-claiming")).toBeNull();
+  });
+
+  it("carries the login target on the authorize path (no installation_id)", async () => {
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      state: `runner-clone~acme~${NONCE}~${TOKEN}~${RUNNER_STATE}`,
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-handoff");
+    const link = new URL(
+      screen.getByTestId("onboarding-claim-handoff-open").getAttribute("href")!
+    );
+    expect(link.searchParams.get("account_login")).toBe("acme");
+    expect(link.searchParams.has("installation_id")).toBe(false);
+  });
+
+  it("spends the code in the browser only on the explicit fallback", async () => {
+    runnerCloneArrival(RUNNER_STATE);
+
+    render(<OnboardingStatusPage />);
+
+    await userEvent.click(
+      await screen.findByTestId("onboarding-claim-handoff-fallback")
+    );
+
+    await screen.findByTestId("onboarding-claim-success");
+    const body = claimBody();
+    expect(body.code).toBe("gho_code");
+    expect(body.installation_id).toBe(4242);
+    // The fallback is the pre-P2 browser claim, unchanged: still tenant-bound
+    // through the connect_state token, still bind-only for the clone picker.
+    expect(body.connect_state).toBe(TOKEN);
+    expect(body.bind_only).toBe(true);
+  });
+
+  it("never routes a non-runner flow to a runner, even with a runnerState", async () => {
+    // Review gap 4a: the hand-off is gated on the `runner-clone` flow marker,
+    // not on slot 5 being present. A crafted `connect~…~<hex>` state falls
+    // through to the ordinary browser claim.
+    sessionStorage.setItem("qontinui.onboarding_connect_nonce", NONCE);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `connect~~${NONCE}~${TOKEN}~${RUNNER_STATE}`,
+    });
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        ok: true,
+        account_login: "acme",
+        installation_id: 4242,
+        tenant_id: "t-1",
+      })
+    );
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-success");
+    expect(screen.queryByTestId("onboarding-claim-handoff")).toBeNull();
+    expect(window.location.href).toBe("https://qontinui.io/");
+    expect(claimBody().bind_only).toBeUndefined();
   });
 });
