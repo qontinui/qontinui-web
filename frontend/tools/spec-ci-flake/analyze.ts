@@ -19,10 +19,27 @@
  *
  * Options:
  *   --cache <path>   Where --gh stores downloaded reports (default ./.flake-cache).
+ *   --created <expr> Restrict --gh to runs created in a window, passed
+ *                    straight through to `gh run list --created` (a date,
+ *                    `>=2026-08-19`, or `2026-08-19..2026-08-20`).
  *   --json           Emit the analysis as JSON instead of the text table.
+ *
+ * WHY `--created` EXISTS, and why `--gh N` alone is not enough. `gh run list`
+ * is newest-first, so `--gh N` addresses a COUNT, never a period -- and Spec CI
+ * is busy enough that the last 100 runs covered barely 27 hours when this was
+ * measured (2026-08-20T02:20Z .. 2026-08-21T05:43Z). The six artifact-less
+ * runs of 2026-08-19 that this whole category was built for had already aged
+ * out of `--gh 100` two days later, so re-running the plan's own Phase 5 gate
+ * returned `no_artifact = 0` -- the value that gate declares to be a FAILING
+ * result -- for a reason that had nothing to do with the code. A
+ * count-addressed window silently becoming an empty one is the same
+ * silent-empty-is-unknown defect this section exists to remove, so the window
+ * is now addressable directly and is ECHOED in the output rather than left for
+ * the reader to infer.
  *
  * Usage:
  *   npx tsx tools/spec-ci-flake/analyze.ts --gh 40
+ *   npx tsx tools/spec-ci-flake/analyze.ts --gh 50 --created 2026-08-19
  *   npx tsx tools/spec-ci-flake/analyze.ts --dir ./.flake-cache
  *
  * It ALSO reports, in its own section and never averaged into the flake
@@ -128,6 +145,8 @@ interface Args {
   dir?: string;
   gh?: number;
   cache: string;
+  /** Passed through to `gh run list --created`. Undefined = no window filter. */
+  created?: string;
   json: boolean;
 }
 
@@ -153,6 +172,12 @@ function parseArgs(): Args {
       case "--cache":
         if (value !== undefined) {
           args.cache = resolve(value);
+          i++;
+        }
+        break;
+      case "--created":
+        if (value !== undefined) {
+          args.created = value;
           i++;
         }
         break;
@@ -356,6 +381,14 @@ type DeadStepLookup =
   | { kind: "no-interrupted-step" };
 
 interface RunLevelTally {
+  /**
+   * The `--created` window this tally was measured over, echoed back verbatim.
+   * `undefined` means no window filter -- the last `--gh N` runs, whatever
+   * period those happen to span. Carried because `noArtifact: 0` is only
+   * readable against the window it was measured in: over a window that
+   * predates the runs of interest it says nothing at all.
+   */
+  created?: string;
   /** Runs `gh run list` returned. */
   listed: number;
   /** Runs whose `spec-ci-report` artifact downloaded successfully. */
@@ -469,7 +502,11 @@ function resolveDeadStep(databaseId: number): DeadStepLookup {
   return { kind: "no-interrupted-step" };
 }
 
-function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: RunLevelTally } {
+function loadFromGh(
+  n: number,
+  cache: string,
+  created?: string,
+): { rows: FeatureRow[]; runLevel: RunLevelTally } {
   if (existsSync(cache)) rmSync(cache, { recursive: true, force: true });
   mkdirSync(cache, { recursive: true });
   const listOut = execFileSync(
@@ -485,6 +522,11 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
       "databaseId,conclusion,status,headSha,createdAt,event",
       "--limit",
       String(n),
+      // Window filter, when asked for. `gh` owns the expression grammar
+      // (`2026-08-19`, `>=2026-08-19`, `2026-08-19..2026-08-20`), so it is
+      // passed through untouched rather than re-parsed here -- a second,
+      // divergent grammar would be pure liability.
+      ...(created !== undefined ? ["--created", created] : []),
     ],
     { encoding: "utf-8", timeout: 60_000 },
   );
@@ -496,7 +538,9 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
     createdAt: string;
     event: string;
   }>;
-  process.stderr.write(`[flake] ${runs.length} Spec CI runs listed\n`);
+  process.stderr.write(
+    `[flake] ${runs.length} Spec CI runs listed${created !== undefined ? ` (--created ${created})` : ""}\n`,
+  );
   const noArtifact: NoArtifactRun[] = [];
   let inProgress = 0;
   let stepLookupFailures = 0;
@@ -547,6 +591,7 @@ function loadFromGh(n: number, cache: string): { rows: FeatureRow[]; runLevel: R
   return {
     rows,
     runLevel: {
+      created,
       listed: runs.length,
       withArtifact: runs.length - noArtifact.length - inProgress,
       noArtifact,
@@ -788,8 +833,19 @@ function printText(a: Analysis): void {
   } else {
     const rl = a.runLevel;
     const completed = rl.listed - rl.inProgress;
+    // The window is part of the finding, not decoration. `0 of 99` is only
+    // meaningful against the period those 99 runs covered, and `--gh N`
+    // addresses a count rather than a period -- on a busy workflow the last 100
+    // runs can span a single day. Printing the window (or saying plainly that
+    // there was none) keeps a reader from taking a 0 measured over the wrong
+    // days as evidence about the days they care about.
     lines.push(
       `RUNS WITHOUT A REPORT — ${rl.noArtifact.length} of ${completed} completed run(s) produced no spec-ci-report artifact.`,
+    );
+    lines.push(
+      rl.created !== undefined
+        ? `  window: --created ${rl.created} (${rl.listed} run(s) listed)`
+        : `  window: the last ${rl.listed} run(s), whatever period those span - NOT a date range. Use --created to pin one.`,
     );
     if (rl.inProgress > 0) {
       lines.push(
@@ -924,8 +980,19 @@ function main(): number {
       process.stderr.write("[flake] --gh requires a positive integer\n");
       return 2;
     }
-    ({ rows, runLevel } = loadFromGh(args.gh, args.cache));
+    ({ rows, runLevel } = loadFromGh(args.gh, args.cache, args.created));
   } else if (args.dir) {
+    // `--created` filters `gh run list`; on the --dir path there is no run list
+    // to filter. Accepting and ignoring it would report a WIDER window than the
+    // caller asked for under a heading that claims their window -- the exact
+    // misread this flag was added to stop -- so it is a usage error, not a
+    // no-op.
+    if (args.created !== undefined) {
+      process.stderr.write(
+        "[flake] --created applies to --gh only; --dir reads files on disk, which carry no run dates\n",
+      );
+      return 2;
+    }
     // --dir sees files on disk, not runs, so it has no run-level data at all.
     // `runLevel` stays undefined rather than becoming an empty tally: absence
     // of the measurement must not read as a measurement of zero.
