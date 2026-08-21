@@ -476,3 +476,142 @@ class TestKindPatchStaysOperatorOnly:
         assert patched.status_code == 200, patched.text
         assert patched.json()["kind"] == "investigation_report"
         assert patched.json()["kind_locked"] is True
+
+
+# ===========================================================================
+# The coord half: a device caller does not pay for an operator identity hop
+# ===========================================================================
+
+
+class TestDeviceCallerSkipsTheOperatorIdentityResolution:
+    """``_soft_tenant_id`` resolves the tenant only on the arm that HAS one.
+
+    The dual-tier asymmetry that routes the work-unit reads
+    (``/coord/work-units`` vs ``/coord/agent-work-units``) applies one layer
+    earlier too. ``get_tenant_id`` resolves identity through coord's
+    ``GET /admin/coord/me`` — an OPERATOR door, which answers a coord device
+    JWT 401/403. On the agent path that call could therefore only ever land in
+    the ``except`` branch: one guaranteed-failing coord request, on a 5s
+    timeout budget, in front of every runner-originated read.
+
+    Two claims, and the second is the one with teeth:
+
+    1. A device caller makes NO identity call.
+    2. It still forwards its bearer to coord. That capture used to be a side
+       effect of ``get_tenant_id``; skipping the resolution without taking the
+       capture directly would send coord a header dict with no
+       ``Authorization`` and turn every row ``unavailable`` — trading a slow
+       read for a broken one, and silently, because ``unavailable`` is a
+       legitimate value on this route rather than an error.
+    """
+
+    @staticmethod
+    def _spy_identity(monkeypatch) -> list[str]:
+        """Count ``get_coord_identity`` calls and answer with a home tenant."""
+        from types import SimpleNamespace
+
+        from app.api.v1.endpoints import operations
+
+        calls: list[str] = []
+
+        async def _fake(request):  # noqa: ANN001 — test double
+            calls.append("me")
+            return SimpleNamespace(home_tenant_id=uuid4())
+
+        monkeypatch.setattr(operations, "get_coord_identity", _fake)
+        return calls
+
+    @staticmethod
+    def _spy_coord(monkeypatch) -> list[dict[str, str]]:
+        """Record the headers ``_tenant_headers`` would put on the wire.
+
+        Asserted through the REAL header builder rather than by reading the
+        ContextVar directly, so the test fails if the capture stops reaching
+        the thing that actually forwards it.
+        """
+        from app.api.v1.endpoints import operations, plan_library
+
+        seen: list[dict[str, str]] = []
+
+        async def _fake(path: str, **_: Any) -> Any:
+            seen.append(operations._tenant_headers(None))
+            return {"work_unit": {"status": "shipped"}, "citations": []}
+
+        monkeypatch.setattr(plan_library, "_proxy_coord_get", _fake)
+        return seen
+
+    async def test_a_device_read_skips_the_hop_and_still_forwards_the_bearer(
+        self, device_client: httpx.AsyncClient, monkeypatch
+    ) -> None:
+        identity_calls = self._spy_identity(monkeypatch)
+        coord_headers = self._spy_coord(monkeypatch)
+
+        created = await device_client.post(
+            API_PREFIX, json=_payload(work_unit_slug=_slug("wu"))
+        )
+        assert created.status_code == 201, created.text
+
+        resp = await device_client.get(f"{API_PREFIX}/candidates")
+        assert resp.status_code == 200, resp.text
+
+        assert identity_calls == [], (
+            "a device JWT cannot resolve an operator identity, so the "
+            "/admin/coord/me hop is a guaranteed-failing round-trip in front "
+            "of every runner-originated read"
+        )
+        assert coord_headers, "the coord probe never ran, so this proves nothing"
+        assert all(
+            h.get("Authorization") == f"Bearer {DEVICE_BEARER}" for h in coord_headers
+        ), (
+            "skipping the resolution must not skip the bearer capture it used "
+            f"to carry — coord saw {coord_headers}"
+        )
+
+    async def test_the_by_id_read_takes_the_same_arm(
+        self, device_client: httpx.AsyncClient, monkeypatch
+    ) -> None:
+        """Both probe call sites, not just ``/candidates``.
+
+        ``_soft_tenant_id`` is reached from two routes; fixing one and leaving
+        the other is the same shape of bug that routing BOTH ``_CoordProbe``
+        hops by ``actor_kind`` exists to avoid.
+        """
+        created = await device_client.post(
+            API_PREFIX, json=_payload(work_unit_slug=_slug("wu"))
+        )
+        assert created.status_code == 201, created.text
+        artifact_id = created.json()["artifact"]["id"]
+
+        identity_calls = self._spy_identity(monkeypatch)
+        coord_headers = self._spy_coord(monkeypatch)
+
+        resp = await device_client.get(f"{API_PREFIX}/{artifact_id}")
+        assert resp.status_code == 200, resp.text
+
+        assert identity_calls == []
+        assert coord_headers, "the coord probe never ran, so this proves nothing"
+        assert all(
+            h.get("Authorization") == f"Bearer {DEVICE_BEARER}" for h in coord_headers
+        )
+
+    async def test_an_operator_read_still_resolves_its_tenant(
+        self, cognito_client: httpx.AsyncClient, monkeypatch
+    ) -> None:
+        """The other half of the claim — the skip is arm-scoped.
+
+        A regression guard rather than a new behaviour: an operator bearer CAN
+        open ``/admin/coord/me``, and that resolution is what the tenant
+        switcher and the 403-free degradation rest on. A skip whose condition
+        drifted wider would show up here.
+        """
+        identity_calls = self._spy_identity(monkeypatch)
+        self._spy_coord(monkeypatch)
+
+        created = await cognito_client.post(
+            API_PREFIX, json=_payload(work_unit_slug=_slug("wu"))
+        )
+        assert created.status_code == 201, created.text
+
+        resp = await cognito_client.get(f"{API_PREFIX}/candidates")
+        assert resp.status_code == 200, resp.text
+        assert identity_calls == ["me"]

@@ -286,27 +286,23 @@ class ActorPrincipal:
     ``device_id``?) can only drift away from the first. ``kind`` is that first
     decision, carried forward.
 
-    ``claims`` is the verified device JWT's claim set on the device arm and
-    ``None`` on the operator arm — deliberately, so a caller cannot read
-    claims without having established that a device authenticated.
+    It carries the ``User`` and the ``kind``, and deliberately nothing else.
+    An earlier draft also parked the verified device JWT's claim set here,
+    plus an ``is_device`` convenience predicate; neither ever acquired a
+    reader, and the claims half duplicated
+    :class:`DeviceTokenContext`/:func:`get_authenticated_device`, which is the
+    tested door for a handler that genuinely needs claims (``devices.py`` reads
+    ``tenant_id`` through it). Two ways to reach the same claim set, one of
+    them untested, is worse than one — so this type stays the *narrow* answer
+    to "which arm authenticated", and a claims consumer takes the door built
+    for claims.
     """
 
-    __slots__ = ("user", "kind", "claims")
+    __slots__ = ("user", "kind")
 
-    def __init__(
-        self,
-        user: User,
-        kind: ActorKind,
-        claims: dict | None = None,
-    ) -> None:
+    def __init__(self, user: User, kind: ActorKind) -> None:
         self.user = user
         self.kind = kind
-        self.claims = claims
-
-    @property
-    def is_device(self) -> bool:
-        """Did a coord-issued device JWT authenticate this request?"""
-        return self.kind == "device"
 
     def __repr__(self) -> str:  # pragma: no cover — debugging aid
         return f"ActorPrincipal(kind={self.kind!r}, user_id={self.user.id!r})"
@@ -342,8 +338,8 @@ async def _resolve_actor_principal(
         return ActorPrincipal(user=user, kind="operator")
 
     if credentials is not None:
-        claims, device_user = await _verify_device_jwt(credentials.credentials)
-        return ActorPrincipal(user=device_user, kind="device", claims=claims)
+        _claims, device_user = await _verify_device_jwt(credentials.credentials)
+        return ActorPrincipal(user=device_user, kind="device")
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
