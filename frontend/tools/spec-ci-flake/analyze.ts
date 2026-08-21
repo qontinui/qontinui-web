@@ -147,9 +147,48 @@ interface Args {
   cache: string;
   /** Passed through to `gh run list --created`. Undefined = no window filter. */
   created?: string;
-  /** `--created` was given a missing or flag-shaped value; main() exits 2. */
-  createdInvalid?: boolean;
+  /** A value-taking flag was given a missing, empty or flag-shaped value. */
+  usageError?: boolean;
   json: boolean;
+}
+
+/**
+ * A value-taking flag's argument, or `undefined` if it is missing, EMPTY, or
+ * itself a flag.
+ *
+ * All three failure modes are one bug wearing three hats, and the empty one is
+ * the nastiest because it is invisible. `--created ""` — which is what
+ * `--created "$WINDOW"` produces whenever `WINDOW` is unset — is neither
+ * undefined nor `--`-prefixed, so a naive guard admits it; `gh` then applies
+ * NO filter and the report prints `window: --created  (40 run(s) listed)` over
+ * an unfiltered newest-40 sample. That is the silently-narrowed window this
+ * whole flag exists to prevent, re-entered through the check added to close
+ * it. Whitespace is trimmed for the same reason: `--created " "` filters
+ * nothing either.
+ *
+ * The `--`-prefix arm matters most for `--created`, whose natural values START
+ * with `>` (`>=2026-08-19`) — an unquoted `>=` is a shell redirect, which
+ * leaves the flag bare and lets it swallow the NEXT flag as its window. But
+ * every value-taking flag here has the same shape, so all four share the
+ * check: `--dir --created 2026-08-19` otherwise resolves a directory literally
+ * named `--created` and dies in an explicit `throw` at exit 1, where this
+ * file's contract reserves 2 for usage errors.
+ *
+ * No legal `gh --created` expression starts with `--`: the grammar is GitHub
+ * date-search syntax (`2026-08-19`, `>=`/`>`/`<`/`<=`, `A..B`, `*..B`).
+ */
+function flagValue(flag: string, value: string | undefined): string | undefined {
+  if (value === undefined || value.trim() === "" || value.startsWith("--")) {
+    process.stderr.write(
+      `[flake] ${flag} needs a value` +
+        (flag === "--created"
+          ? ", e.g. 2026-08-19 or '>=2026-08-19'. Quote it: an unquoted >= is a shell redirect."
+          : ".") +
+        "\n",
+    );
+    return undefined;
+  }
+  return value;
 }
 
 function parseArgs(): Args {
@@ -157,43 +196,24 @@ function parseArgs(): Args {
   const args: Args = { cache: resolve(".flake-cache"), json: false };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
-    const value = argv[i + 1];
+    const raw = argv[i + 1];
     switch (flag) {
       case "--dir":
-        if (value !== undefined) {
-          args.dir = resolve(value);
-          i++;
-        }
-        break;
       case "--gh":
-        if (value !== undefined) {
-          args.gh = Number(value);
-          i++;
-        }
-        break;
       case "--cache":
-        if (value !== undefined) {
-          args.cache = resolve(value);
-          i++;
-        }
-        break;
-      case "--created":
-        // Reject a value that is itself a flag. Every option here has the same
-        // swallow-the-next-token shape, but `--created` is the one users will
-        // lose a value on: its natural forms START with `>` (`>=2026-08-19`),
-        // which an unquoted shell eats as a redirection and leaves the flag
-        // bare. Silently taking `--json` as the window would then hand it to
-        // `gh`, which throws out of an un-caught `execFileSync` -- a stack
-        // trace and exit 1, where this file's contract says a usage error is 2.
-        if (value === undefined || value.startsWith("--")) {
-          process.stderr.write(
-            "[flake] --created needs a window value, e.g. 2026-08-19 or '>=2026-08-19'. Quote it: an unquoted >= is a shell redirect.\n",
-          );
-          return { ...args, createdInvalid: true };
-        }
-        args.created = value;
+      case "--created": {
+        const value = flagValue(flag, raw);
+        // `usageError` short-circuits main() with exit 2. Abandoning the rest
+        // of argv is deliberate and harmless: main() returns before reading
+        // any other field, and every other exit-2 path is plain-stderr too.
+        if (value === undefined) return { ...args, usageError: true };
+        if (flag === "--dir") args.dir = resolve(value);
+        else if (flag === "--gh") args.gh = Number(value);
+        else if (flag === "--cache") args.cache = resolve(value);
+        else args.created = value;
         i++;
         break;
+      }
       case "--json":
         args.json = true;
         break;
@@ -889,10 +909,16 @@ function printText(a: Analysis): void {
     // cap wins silently. Say so where it can change the reading, rather than
     // letting the window line imply a completeness the cap may have removed.
     if (rl.truncated) {
+      // BOTH arms say MAY. `truncated` is `listed >= limit`, which is also
+      // true when the workflow's entire history is exactly `limit` runs -- so
+      // "there ARE older runs beyond this sample" would be a flat falsehood in
+      // precisely the boundary case the JSDoc above reserves as UNKNOWN. One
+      // arm asserting what the other declines to assert is the same defect
+      // this section exists to remove, at the width of a single word.
       lines.push(
         rl.created !== undefined
           ? `  ⚠ TRUNCATED — the --gh ${rl.limit} cap was reached, so this window MAY hold runs not examined here. Re-run with a higher --gh to settle it.`
-          : `  ⚠ the --gh ${rl.limit} cap was reached — there are older runs beyond this sample.`,
+          : `  ⚠ TRUNCATED — the --gh ${rl.limit} cap was reached, so there MAY be older runs beyond this sample. Re-run with a higher --gh to settle it.`,
       );
     }
     if (rl.inProgress > 0) {
@@ -901,12 +927,24 @@ function printText(a: Analysis): void {
       );
     }
     if (rl.noArtifact.length === 0) {
-      // "in this window" is only true when the whole window was read. Under
-      // truncation the honest claim is about the runs EXAMINED, not the period.
+      // "in this window" is only true when the whole window was READ and every
+      // run in it has RESOLVED. Two different things can break that, and both
+      // have to qualify this line or it over-claims:
+      //   * the `--gh` cap cut the window short (`truncated`);
+      //   * runs inside the window are still in progress -- excluded from
+      //     `noArtifact` by construction (correctly: a live run has not lost
+      //     an artifact, it has not produced one YET), so a window of 30 runs
+      //     of which 25 are live would otherwise print a window-level clean
+      //     bill derived from 5 resolved ones.
+      // Only when neither applies is the flat claim about the window true.
+      const caveats = [
+        rl.truncated ? `the --gh ${rl.limit} cap was reached` : "",
+        rl.inProgress > 0 ? `${rl.inProgress} run(s) are still in progress` : "",
+      ].filter(Boolean);
       lines.push(
-        rl.truncated
-          ? `  → no losses among the ${completed} completed run(s) examined - but the cap was reached, so this is NOT a clean bill for the whole window.`
-          : "  → every completed run reported. No CI-infrastructure losses in this window.",
+        caveats.length === 0
+          ? "  → every completed run reported. No CI-infrastructure losses in this window."
+          : `  → no losses among the ${completed} resolved run(s) examined - but ${caveats.join(" and ")}, so this is NOT a clean bill for the whole window.`,
       );
     } else {
       lines.push(
@@ -1027,7 +1065,7 @@ function printText(a: Analysis): void {
 
 function main(): number {
   const args = parseArgs();
-  if (args.createdInvalid) return 2;
+  if (args.usageError) return 2;
   let rows: FeatureRow[];
   let runLevel: RunLevelTally | undefined;
   if (args.gh !== undefined) {

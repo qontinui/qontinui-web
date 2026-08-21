@@ -691,13 +691,18 @@ jobs:
         # LOWER bound by construction -- a run killed by the stall is excluded.)
         # The bound below is NOT redundant: it covers the fallback arm, for the
         # day an image stops shipping psql.
-        # Consequence for the marker, spelled out as spec-ci.yml already does:
-        # this step normally runs NO apt, so it normally concludes `success`
-        # and no marker arm names it -- which is correct, because there was no
-        # apt call to blame. When the fallback DOES run and fails, the step
-        # still exits non-zero (`||` does not defeat `-e` for the group), so
-        # arm 1 still fires. The guard removes the exposure; it does not
-        # silence a real apt failure.
+        # Consequence for the marker, and it differs HERE from the other six
+        # sites: this step normally runs NO apt, so it normally concludes
+        # `success` and no arm names it -- correct, there was no apt call to
+        # blame. But when the fallback DOES run and fails, this step is
+        # `continue-on-error: true` (below), so its CONCLUSION is rewritten to
+        # `success` and the marker files it under `soft_failed`, reaching
+        # ARM 1B's `::warning` -- never arm 1's `::error`. That is the
+        # SHADOW-soft-fail contract working as designed, not a gap: the failure
+        # surfaces as CAPTURE-UNAVAILABLE plus arm 1b naming the cascade. Do
+        # NOT copy the other six sites' "arm 1 fires" wording back here; it is
+        # false at this one, and this is the only guarded step that is
+        # continue-on-error.
         timeout-minutes: 5
         # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
         continue-on-error: true
