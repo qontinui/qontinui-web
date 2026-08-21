@@ -105,6 +105,24 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    # This job holds an apt-dependent step and, until now, declared no
+    # job-level bound at all -- so its ceiling was GitHub's DEFAULT 360
+    # minutes, a number this repo never chose. Plan Phase 1 asks for a cap on
+    # every job that has none; it landed on e2e-tests.yml's three jobs and
+    # missed this one and migration-reversal.yml's `reverse`.
+    #
+    # Leaving it at the default is not merely untidy -- it silently disarms the
+    # marker below. Arm 2 ("the job budget expired while an apt step was still
+    # running") tests `elapsed >= JOB_TIMEOUT_MINUTES - 2`, so at 360 it can
+    # only speak after SIX HOURS. Every real stall this plan documents is
+    # 30 min to 6 h, so the arm that names a job timeout was unreachable in
+    # practice here.
+    #
+    # Measured: 40 consecutive green runs of this job -- p50 43.4 min,
+    # p90 46.4 min, max 56.9 min. 90 min is ~1.6x the worst observed success
+    # and ~1.9x p90, which keeps the plan's own "sized too tight becomes a new
+    # flake source" risk well clear while cutting the worst case from 6 h.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: ./backend
@@ -274,9 +292,21 @@ jobs:
         # false red here costs an author more than a late one does. With the
         # bound covering apt ALONE it can afford to be generous: 10 min is
         # ~5.7x the worst time ever observed for apt AND psql together.
+        # GUARDED, as spec-ci.yml has been all along. `ubuntu-latest` ships
+        # psql, so `command -v psql` short-circuits and apt is never reached --
+        # measured, not assumed: across 12 consecutive green Spec CI runs this
+        # step is 0-1s every time, while the six sites that were still calling
+        # apt unconditionally spent 3-29s per run on an `apt-get update` against
+        # the external mirror for a package apt then reports as already the
+        # newest version. That round-trip is pure exposure to the stall this
+        # plan exists to remove, and it buys nothing.
+        # (Those 3-29s figures are from `--status success` runs, so they are a
+        # LOWER bound by construction -- a run killed by the stall is excluded.)
+        # The bound below is NOT redundant: it covers the fallback arm, for the
+        # day an image stops shipping psql.
         timeout-minutes: 10
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Create test schemas and extensions
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
@@ -388,8 +418,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
-          # GitHub's DEFAULT job ceiling - this job declares no `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '360'
+          # declared at this job's `timeout-minutes`.
+          JOB_TIMEOUT_MINUTES: '90'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this

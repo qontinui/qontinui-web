@@ -679,12 +679,24 @@ jobs:
         # Measured apt+psql across green runs of all 7 sites: p50 0-16s, p90
         # <=91s, max 106s (migration-reversal). The bound now covers apt ALONE,
         # so 5 min is p90 + ~3.5 min of headroom over a strictly smaller job.
+        # GUARDED, as spec-ci.yml has been all along. `ubuntu-latest` ships
+        # psql, so `command -v psql` short-circuits and apt is never reached --
+        # measured, not assumed: across 12 consecutive green Spec CI runs this
+        # step is 0-1s every time, while the six sites that were still calling
+        # apt unconditionally spent 3-29s per run on an `apt-get update` against
+        # the external mirror for a package apt then reports as already the
+        # newest version. That round-trip is pure exposure to the stall this
+        # plan exists to remove, and it buys nothing.
+        # (Those 3-29s figures are from `--status success` runs, so they are a
+        # LOWER bound by construction -- a run killed by the stall is excluded.)
+        # The bound below is NOT redundant: it covers the fallback arm, for the
+        # day an image stops shipping psql.
         timeout-minutes: 5
         # SHADOW soft-fail (see Clone step): failure -> CAPTURE-UNAVAILABLE, not red.
         continue-on-error: true
         run: |
           set -euo pipefail
-          sudo apt-get update && sudo apt-get install -y postgresql-client
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       # Some alembic migrations reference the `runner` schema, created in dev by
       # init-scripts/01-create-runner-schema.sql. CI service containers don't run
