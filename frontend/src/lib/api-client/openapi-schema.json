@@ -1727,14 +1727,13 @@
         "type": "object"
       },
       "AgentRegistryEntry": {
-        "description": "One agent in the caller's effective registry view.\n\nThe effective entry shape derived WEB-SIDE from coord's\n``GET /coord/agent-registry`` rows + prefs: registry defaults overlaid\nwith the caller's own pref (``source`` tells the frontend which one is\nin force).",
+        "description": "One agent in the caller's effective registry view, as folded by coord.",
         "properties": {
           "agent_name": {
             "title": "Agent Name",
             "type": "string"
           },
           "disposition": {
-            "default": "block",
             "description": "block | degrade | warn_proceed",
             "title": "Disposition",
             "type": "string"
@@ -1751,7 +1750,6 @@
             "title": "Effort"
           },
           "enabled": {
-            "default": true,
             "title": "Enabled",
             "type": "boolean"
           },
@@ -1781,7 +1779,6 @@
             "title": "Model"
           },
           "policy_required": {
-            "default": false,
             "title": "Policy Required",
             "type": "boolean"
           },
@@ -1791,7 +1788,6 @@
             "type": "string"
           },
           "source": {
-            "default": "default",
             "description": "default | user_pref",
             "title": "Source",
             "type": "string"
@@ -1803,7 +1799,11 @@
           }
         },
         "required": [
-          "agent_name"
+          "agent_name",
+          "policy_required",
+          "enabled",
+          "disposition",
+          "source"
         ],
         "title": "AgentRegistryEntry",
         "type": "object"
