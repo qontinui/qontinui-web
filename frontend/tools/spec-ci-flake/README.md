@@ -54,11 +54,11 @@ Every run therefore **prints the window it measured**, and says so plainly when
 there was none. Real output from `--gh 5`:
 
 ```
-RUNS WITHOUT A REPORT — 0 of 2 completed run(s) produced no spec-ci-report artifact.
+RUNS WITHOUT A REPORT — 0 of 4 completed run(s) produced no spec-ci-report artifact.
   window: the last 5 run(s), whatever period those span - NOT a date range. Use --created to pin one.
-  ⚠ the --gh 5 cap was reached — there are older runs beyond this sample.
-  (3 of the 5 listed run(s) were still in progress — excluded, not counted as losses)
-  → no losses among the 2 completed run(s) examined - but the cap was reached, so this is NOT a clean bill for the whole window.
+  ⚠ TRUNCATED — the --gh 5 cap was reached, so there MAY be older runs beyond this sample. Re-run with a higher --gh to settle it.
+  (1 of the 5 listed run(s) were still in progress — excluded, not counted as losses)
+  → no losses among the 4 resolved run(s) examined - but the --gh 5 cap was reached and 1 run(s) are still in progress, so this is NOT a clean bill for the whole window.
 ```
 
 ### The window and the cap are TWO limits, and the cap wins silently
@@ -70,25 +70,52 @@ a day holding **61** runs reads 60 of them — and a naive report would print
 window"* over a period it never finished reading. That is the same
 silent-narrowing defect one level up, so the tool refuses to make it:
 
-- `listed === limit` sets **`truncated`**, and the text report prints
+- `listed >= limit` sets **`truncated`**, and the text report prints
   `⚠ TRUNCATED — the --gh N cap was reached, so this window MAY hold runs not
-  examined here.`
-- A clean result under truncation is phrased over the **runs examined**, never
-  over the window: *"no losses among the N completed run(s) examined - but the
-  cap was reached, so this is NOT a clean bill for the whole window."*
+  examined here.` Both arms of that line say **MAY** — see below.
 - `truncated` and `limit` are both on the `--json` surface.
 
-It is deliberately a **may**, not a **did** — a window holding exactly `N` runs
-is not truncated in fact or consequence, and asserting otherwise would be its
-own false claim. Settle it with one re-run at a higher `--gh`.
+**The clean verdict is qualified on TWO things, not one.** *"every completed run
+reported … in this window"* is only true when the whole window was **read** and
+every run in it has **resolved**. Either a reached cap or a still-running run
+breaks that, so both downgrade the line to a claim about the runs examined:
+
+```
+→ no losses among the 4 resolved run(s) examined - but the --gh 5 cap was reached
+  and 1 run(s) are still in progress, so this is NOT a clean bill for the whole window.
+```
+
+In-progress runs are excluded from `no_artifact` **correctly** — a live run has
+not *lost* an artifact, it has not produced one *yet* — but excluding them is
+exactly why the verdict cannot speak for the window while they are pending.
+
+It is deliberately a **may**, not a **did** — `truncated` is `listed >= limit`,
+which is also true when the workflow's entire history is exactly `limit` runs,
+and asserting "there ARE older runs" would be flatly false in that boundary
+case. Settle it with one re-run at a higher `--gh`.
 
 `--created` applies to `--gh` only. Passing it with `--dir` is a **usage error
 (exit 2)**, not a no-op: `--dir` reads files, which carry no run dates, so
 honouring the flag is impossible and silently ignoring it would print a wider
-window under a heading claiming the caller's narrower one. A missing or
-flag-shaped value (`--created --json`) is also **exit 2** rather than a stack
-trace: `--created`'s natural values start with `>`, and an unquoted `>=` is a
-shell redirect that leaves the flag bare.
+window under a heading claiming the caller's narrower one. A missing, **empty**, or
+flag-shaped value is also **exit 2** rather than a stack trace, and the check
+covers all four value-taking flags (`--dir`, `--gh`, `--cache`, `--created`):
+
+- `--created ""` — what `--created "$WINDOW"` produces when `WINDOW` is unset.
+  `gh` applies no filter, so without this check the report would print
+  `window: --created  (40 run(s) listed)` over an **unfiltered** sample. That is
+  the silently-narrowed window this flag exists to prevent, re-entered through
+  the guard meant to close it.
+- `--created --json` — `--created`'s natural values start with `>`, and an
+  unquoted `>=` is a shell redirect that leaves the flag bare to swallow the
+  next one.
+- `--dir --created 2026-08-19` — otherwise resolves a directory literally named
+  `--created` and dies in an explicit `throw` at exit 1.
+
+Note what is still exit **1** by design: a well-formed but *invalid* window
+(`--created yesterday`) is rejected by `gh`, not by this tool, and surfaces
+through the `gh run list` subprocess — already documented above as an exit-1
+"the harness itself failed" path.
 
 ## Exit-code contract
 

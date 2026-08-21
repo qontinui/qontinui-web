@@ -494,13 +494,16 @@ jobs:
         # LOWER bound by construction -- a run killed by the stall is excluded.)
         # The bound below is NOT redundant: it covers the fallback arm, for the
         # day an image stops shipping psql.
-        # Consequence for the marker, spelled out as spec-ci.yml already does:
-        # this step normally runs NO apt, so it normally concludes `success`
-        # and no marker arm names it -- which is correct, because there was no
-        # apt call to blame. When the fallback DOES run and fails, the step
-        # still exits non-zero (`||` does not defeat `-e` for the group), so
-        # arm 1 still fires. The guard removes the exposure; it does not
-        # silence a real apt failure.
+        # Consequence for the marker: this step normally runs NO apt, so it
+        # normally concludes `success` and no arm names it -- which is correct,
+        # because there was no apt call to blame. spec-ci.yml makes the same
+        # observation at its own site (an arm keyed on this step's failure
+        # "would have been describing a call that did not happen"); the arm
+        # attribution below is this change's, not a restatement of that one.
+        # When the fallback DOES run and fails, the step still exits non-zero
+        # (`||` does not defeat `-e` for the group) and concludes `failure`, so
+        # arm 1 fires. The guard removes the exposure; it does not silence a
+        # real apt failure.
         timeout-minutes: 5
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
