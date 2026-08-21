@@ -57,6 +57,16 @@ jobs:
     needs: detect
     if: needs.detect.outputs.relevant == 'true'
     runs-on: ubuntu-latest
+    # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
+    # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes and the
+    # marker's job-budget arm could not fire below 6 h. This workflow is named
+    # in the plan's own Why section as the third independent confirmation of
+    # the defect -- its `postgresql-client` install hung ~2 h on PR #1015 --
+    # which makes an uncapped job here the least defensible of the set.
+    #
+    # Measured: 60 consecutive green runs of this job -- p50 3.0 min,
+    # p90 5.4 min, max 7.7 min. 25 min is ~3.2x the worst observed success.
+    timeout-minutes: 25
 
     services:
       postgres:
@@ -126,9 +136,21 @@ jobs:
         # false red here costs an author more than a late one does. With the
         # bound covering apt ALONE it can afford to be generous: 10 min is
         # ~5.7x the worst time ever observed for apt AND psql together.
+        # GUARDED, as spec-ci.yml has been all along. `ubuntu-latest` ships
+        # psql, so `command -v psql` short-circuits and apt is never reached --
+        # measured, not assumed: across 12 consecutive green Spec CI runs this
+        # step is 0-1s every time, while the six sites that were still calling
+        # apt unconditionally spent 3-29s per run on an `apt-get update` against
+        # the external mirror for a package apt then reports as already the
+        # newest version. That round-trip is pure exposure to the stall this
+        # plan exists to remove, and it buys nothing.
+        # (Those 3-29s figures are from `--status success` runs, so they are a
+        # LOWER bound by construction -- a run killed by the stall is excluded.)
+        # The bound below is NOT redundant: it covers the fallback arm, for the
+        # day an image stops shipping psql.
         timeout-minutes: 10
         run: |
-          sudo apt-get update && sudo apt-get install -y postgresql-client
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
 
       - name: Create named schemas + extension
         # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
@@ -292,8 +314,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
-          # GitHub's DEFAULT job ceiling - this job declares no `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '360'
+          # declared at this job's `timeout-minutes`.
+          JOB_TIMEOUT_MINUTES: '25'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
