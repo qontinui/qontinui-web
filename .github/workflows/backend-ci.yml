@@ -111,17 +111,26 @@ jobs:
     # every job that has none; it landed on e2e-tests.yml's three jobs and
     # missed this one and migration-reversal.yml's `reverse`.
     #
-    # Leaving it at the default is not merely untidy -- it silently disarms the
-    # marker below. Arm 2 ("the job budget expired while an apt step was still
-    # running") tests `elapsed >= JOB_TIMEOUT_MINUTES - 2`, so at 360 it can
-    # only speak after SIX HOURS. Every real stall this plan documents is
-    # 30 min to 6 h, so the arm that names a job timeout was unreachable in
-    # practice here.
+    # What the cap buys: a bound this repo CHOSE, and a worst case of 90 min
+    # rather than 6 h of hosted-runner time. `JOB_TIMEOUT_MINUTES` below now
+    # names a declared value instead of documenting an inherited default.
+    #
+    # What it does NOT buy, stated because the obvious reading is wrong: it
+    # does not meaningfully re-arm the marker's arm 2. That arm needs an apt
+    # step still MID-FLIGHT (`.outcome == cancelled`) when the job budget
+    # expires -- but the step below carries its own `timeout-minutes: 10`, and
+    # a step-bound expiry concludes `failure`, which is ARM 1. So arm 2 can
+    # only fire if the apt step is still inside its own 10-minute window as the
+    # job budget ends, i.e. if the ~8 steps before it consumed ~80 of the 90
+    # minutes on a job whose measured max is 56.9. Rare, not impossible; the
+    # honest claim is that arm 1 covers the apt stall here and arm 2 is a
+    # backstop. Bounding the burn is the reason for the cap.
     #
     # Measured: 40 consecutive green runs of this job -- p50 43.4 min,
     # p90 46.4 min, max 56.9 min. 90 min is ~1.6x the worst observed success
     # and ~1.9x p90, which keeps the plan's own "sized too tight becomes a new
-    # flake source" risk well clear while cutting the worst case from 6 h.
+    # flake source" risk well clear. NOTE for whoever revisits: this job also
+    # runs on `schedule:`, where cache warmth can differ from the sampled runs.
     timeout-minutes: 90
     defaults:
       run:
@@ -304,6 +313,13 @@ jobs:
         # LOWER bound by construction -- a run killed by the stall is excluded.)
         # The bound below is NOT redundant: it covers the fallback arm, for the
         # day an image stops shipping psql.
+        # Consequence for the marker, spelled out as spec-ci.yml already does:
+        # this step normally runs NO apt, so it normally concludes `success`
+        # and no marker arm names it -- which is correct, because there was no
+        # apt call to blame. When the fallback DOES run and fails, the step
+        # still exits non-zero (`||` does not defeat `-e` for the group), so
+        # arm 1 still fires. The guard removes the exposure; it does not
+        # silence a real apt failure.
         timeout-minutes: 10
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }

@@ -22,8 +22,10 @@ npx tsx tools/spec-ci-flake/analyze.ts --gh 40
 # or reports collected by hand).
 npx tsx tools/spec-ci-flake/analyze.ts --dir ./.flake-cache
 
-# Pin an explicit window instead of a count (see the warning below).
-npx tsx tools/spec-ci-flake/analyze.ts --gh 50 --created 2026-08-19
+# Pin an explicit window instead of a count (see the warning below). Size --gh
+# ABOVE the number of runs the window holds, or the cap silently cuts it -- the
+# tool says so when it does, but a re-run at a higher --gh is the only fix.
+npx tsx tools/spec-ci-flake/analyze.ts --gh 200 --created 2026-08-19
 
 # Machine-readable:
 npx tsx tools/spec-ci-flake/analyze.ts --gh 40 --json
@@ -49,17 +51,44 @@ those runs had aged out — not because anything regressed. Reach them with
 `--created 2026-08-19` instead.
 
 Every run therefore **prints the window it measured**, and says so plainly when
-there was none:
+there was none. Real output from `--gh 5`:
 
 ```
-RUNS WITHOUT A REPORT — 0 of 99 completed run(s) produced no spec-ci-report artifact.
-  window: the last 100 run(s), whatever period those span - NOT a date range. Use --created to pin one.
+RUNS WITHOUT A REPORT — 0 of 2 completed run(s) produced no spec-ci-report artifact.
+  window: the last 5 run(s), whatever period those span - NOT a date range. Use --created to pin one.
+  ⚠ the --gh 5 cap was reached — there are older runs beyond this sample.
+  (3 of the 5 listed run(s) were still in progress — excluded, not counted as losses)
+  → no losses among the 2 completed run(s) examined - but the cap was reached, so this is NOT a clean bill for the whole window.
 ```
+
+### The window and the cap are TWO limits, and the cap wins silently
+
+`--created` narrows what `gh run list` will return; `--gh N` caps how many of
+those it actually returns, newest-first. So `--gh 60 --created 2026-08-19` over
+a day holding **61** runs reads 60 of them — and a naive report would print
+*"window: --created 2026-08-19"* and *"every completed run reported … in this
+window"* over a period it never finished reading. That is the same
+silent-narrowing defect one level up, so the tool refuses to make it:
+
+- `listed === limit` sets **`truncated`**, and the text report prints
+  `⚠ TRUNCATED — the --gh N cap was reached, so this window MAY hold runs not
+  examined here.`
+- A clean result under truncation is phrased over the **runs examined**, never
+  over the window: *"no losses among the N completed run(s) examined - but the
+  cap was reached, so this is NOT a clean bill for the whole window."*
+- `truncated` and `limit` are both on the `--json` surface.
+
+It is deliberately a **may**, not a **did** — a window holding exactly `N` runs
+is not truncated in fact or consequence, and asserting otherwise would be its
+own false claim. Settle it with one re-run at a higher `--gh`.
 
 `--created` applies to `--gh` only. Passing it with `--dir` is a **usage error
 (exit 2)**, not a no-op: `--dir` reads files, which carry no run dates, so
 honouring the flag is impossible and silently ignoring it would print a wider
-window under a heading claiming the caller's narrower one.
+window under a heading claiming the caller's narrower one. A missing or
+flag-shaped value (`--created --json`) is also **exit 2** rather than a stack
+trace: `--created`'s natural values start with `>`, and an unquoted `>=` is a
+shell redirect that leaves the flag bare.
 
 ## Exit-code contract
 

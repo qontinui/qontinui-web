@@ -58,14 +58,26 @@ jobs:
     if: needs.detect.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     # Same gap as backend-ci.yml's `test`: an apt-dependent job with no
-    # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes and the
-    # marker's job-budget arm could not fire below 6 h. This workflow is named
-    # in the plan's own Why section as the third independent confirmation of
-    # the defect -- its `postgresql-client` install hung ~2 h on PR #1015 --
-    # which makes an uncapped job here the least defensible of the set.
+    # job-level bound, so its ceiling was GitHub's DEFAULT 360 minutes -- not a
+    # value this repo chose. This workflow is named in the plan's own Why
+    # section as the third independent confirmation of the defect -- its
+    # `postgresql-client` install hung ~2 h on PR #1015 -- which makes an
+    # uncapped job here the least defensible of the set.
+    #
+    # Same caveat as backend-ci.yml's `test`, and it bites harder here: the cap
+    # bounds the BURN, it does not meaningfully re-arm the marker's arm 2. Arm
+    # 2 needs the apt step still mid-flight when the job budget expires, but
+    # that step's own `timeout-minutes: 10` turns a stall into a `failure`
+    # (arm 1) first. With four steps before it on a job whose measured max
+    # total is 7.7 min, arm 2 would need the preamble to stall ~15 min. Arm 1
+    # is what covers the apt stall here.
     #
     # Measured: 60 consecutive green runs of this job -- p50 3.0 min,
     # p90 5.4 min, max 7.7 min. 25 min is ~3.2x the worst observed success.
+    # NOTE for whoever revisits: this job replays upgrade->downgrade->upgrade
+    # over the WHOLE alembic graph, so its runtime grows monotonically with the
+    # migration count. 3.2x headroom today will erode; re-measure rather than
+    # assuming this bound still holds in six months.
     timeout-minutes: 25
 
     services:
@@ -148,6 +160,13 @@ jobs:
         # LOWER bound by construction -- a run killed by the stall is excluded.)
         # The bound below is NOT redundant: it covers the fallback arm, for the
         # day an image stops shipping psql.
+        # Consequence for the marker, spelled out as spec-ci.yml already does:
+        # this step normally runs NO apt, so it normally concludes `success`
+        # and no marker arm names it -- which is correct, because there was no
+        # apt call to blame. When the fallback DOES run and fails, the step
+        # still exits non-zero (`||` does not defeat `-e` for the group), so
+        # arm 1 still fires. The guard removes the exposure; it does not
+        # silence a real apt failure.
         timeout-minutes: 10
         run: |
           command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }

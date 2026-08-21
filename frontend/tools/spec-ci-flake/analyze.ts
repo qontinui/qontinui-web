@@ -147,6 +147,8 @@ interface Args {
   cache: string;
   /** Passed through to `gh run list --created`. Undefined = no window filter. */
   created?: string;
+  /** `--created` was given a missing or flag-shaped value; main() exits 2. */
+  createdInvalid?: boolean;
   json: boolean;
 }
 
@@ -176,10 +178,21 @@ function parseArgs(): Args {
         }
         break;
       case "--created":
-        if (value !== undefined) {
-          args.created = value;
-          i++;
+        // Reject a value that is itself a flag. Every option here has the same
+        // swallow-the-next-token shape, but `--created` is the one users will
+        // lose a value on: its natural forms START with `>` (`>=2026-08-19`),
+        // which an unquoted shell eats as a redirection and leaves the flag
+        // bare. Silently taking `--json` as the window would then hand it to
+        // `gh`, which throws out of an un-caught `execFileSync` -- a stack
+        // trace and exit 1, where this file's contract says a usage error is 2.
+        if (value === undefined || value.startsWith("--")) {
+          process.stderr.write(
+            "[flake] --created needs a window value, e.g. 2026-08-19 or '>=2026-08-19'. Quote it: an unquoted >= is a shell redirect.\n",
+          );
+          return { ...args, createdInvalid: true };
         }
+        args.created = value;
+        i++;
         break;
       case "--json":
         args.json = true;
@@ -389,6 +402,29 @@ interface RunLevelTally {
    * predates the runs of interest it says nothing at all.
    */
   created?: string;
+  /**
+   * The `--gh N` cap this run used. Carried with `truncated` because a window
+   * and a cap interact: `gh run list` is newest-first, so a `--created` window
+   * holding more runs than the cap is served only in part.
+   */
+  limit: number;
+  /**
+   * `listed === limit` — the cap was REACHED, so the window may hold runs this
+   * measurement never examined.
+   *
+   * Without this the tool re-created its own defect one level up. `--gh 60
+   * --created 2026-08-19` prints "window: --created 2026-08-19" and, on a
+   * clean result, "every completed run reported ... in this window" -- while
+   * that day actually held 61 runs. A period reported as fully measured when
+   * the cap silently cut it is the same silent-narrowing this flag was added
+   * to remove, relocated from `--gh N` to `--created`.
+   *
+   * It is deliberately a MAY, not a DID: an exactly-N window is truncated in
+   * neither fact nor consequence, and claiming otherwise would be its own
+   * false statement. UNKNOWN is the honest reading, and it costs one re-run
+   * at a higher `--gh` to settle.
+   */
+  truncated: boolean;
   /** Runs `gh run list` returned. */
   listed: number;
   /** Runs whose `spec-ci-report` artifact downloaded successfully. */
@@ -592,6 +628,8 @@ function loadFromGh(
     rows,
     runLevel: {
       created,
+      limit: n,
+      truncated: runs.length >= n,
       listed: runs.length,
       withArtifact: runs.length - noArtifact.length - inProgress,
       noArtifact,
@@ -847,13 +885,29 @@ function printText(a: Analysis): void {
         ? `  window: --created ${rl.created} (${rl.listed} run(s) listed)`
         : `  window: the last ${rl.listed} run(s), whatever period those span - NOT a date range. Use --created to pin one.`,
     );
+    // A `--created` window and a `--gh N` cap are two different limits, and the
+    // cap wins silently. Say so where it can change the reading, rather than
+    // letting the window line imply a completeness the cap may have removed.
+    if (rl.truncated) {
+      lines.push(
+        rl.created !== undefined
+          ? `  ⚠ TRUNCATED — the --gh ${rl.limit} cap was reached, so this window MAY hold runs not examined here. Re-run with a higher --gh to settle it.`
+          : `  ⚠ the --gh ${rl.limit} cap was reached — there are older runs beyond this sample.`,
+      );
+    }
     if (rl.inProgress > 0) {
       lines.push(
         `  (${rl.inProgress} of the ${rl.listed} listed run(s) were still in progress — excluded, not counted as losses)`,
       );
     }
     if (rl.noArtifact.length === 0) {
-      lines.push("  → every completed run reported. No CI-infrastructure losses in this window.");
+      // "in this window" is only true when the whole window was read. Under
+      // truncation the honest claim is about the runs EXAMINED, not the period.
+      lines.push(
+        rl.truncated
+          ? `  → no losses among the ${completed} completed run(s) examined - but the cap was reached, so this is NOT a clean bill for the whole window.`
+          : "  → every completed run reported. No CI-infrastructure losses in this window.",
+      );
     } else {
       lines.push(
         "  These are NOT spec flakes and are excluded from every number below: nothing",
@@ -973,6 +1027,7 @@ function printText(a: Analysis): void {
 
 function main(): number {
   const args = parseArgs();
+  if (args.createdInvalid) return 2;
   let rows: FeatureRow[];
   let runLevel: RunLevelTally | undefined;
   if (args.gh !== undefined) {
