@@ -153,25 +153,39 @@ async def _coord_request(
     return resp.json()
 
 
+# ── Why the four authorization fields below carry NO default ──────────────
+# Deliberately a comment, not docstring prose: a model docstring ships
+# verbatim as that component's `description` in the committed OpenAPI
+# snapshot, which coord's route-serving observer reads as the web backend's
+# declared external surface — the same reason `get_agent_registry`'s
+# rationale is a comment.
+#
+# `_render_effective` already refuses to READ a row missing one of
+# `_AUTHZ_FIELDS`, but a default here would still weaken the published
+# contract: an optional field tells every generated client that an
+# authorization state may legitimately be absent, and lets any future
+# construction path omit one silently.
+#
+# The values those defaults held make that concrete — `enabled=True` and
+# `disposition="block"`, i.e. EXACTLY the two wrong values the bug this
+# module was rewritten to remove produced on every row. (`"block"` is doubly
+# wrong: coord defaults an unset disposition to `degrade`.)
+#
+# Descriptive fields keep their defaults, matching the strict/permissive
+# split `_render_effective` applies on the read side.
 class AgentRegistryEntry(BaseModel):
-    """One agent in the caller's effective registry view.
-
-    The effective entry shape derived WEB-SIDE from coord's
-    ``GET /coord/agent-registry`` rows + prefs: registry defaults overlaid
-    with the caller's own pref (``source`` tells the frontend which one is
-    in force).
-    """
+    """One agent in the caller's effective registry view, as folded by coord."""
 
     agent_name: str
     purpose: str = ""
     spawn_path: str = ""
     model: str | None = None
     effort: str | None = None
-    policy_required: bool = False
+    policy_required: bool
     fanout_bound: int | str | None = None
-    enabled: bool = True
-    disposition: str = Field("block", description="block | degrade | warn_proceed")
-    source: str = Field("default", description="default | user_pref")
+    enabled: bool
+    disposition: str = Field(..., description="block | degrade | warn_proceed")
+    source: str = Field(..., description="default | user_pref")
 
 
 class AgentRegistryResponse(BaseModel):
@@ -224,6 +238,12 @@ def _effective_rows(payload: Any, expected_user_id: str) -> list[dict[str, Any]]
 
     That is the same confident-and-wrong shape as the bug this module was
     rewritten to remove, so it is a 502 rather than a render.
+
+    ``agents`` itself is read under the same rule its rows are: it must be a
+    LIST. Absent, ``null``, an object or a scalar are all coord failing to
+    answer — not a tenant with no agents — and collapsing any of them to
+    ``[]`` puts "No agents are registered for your tenant yet." on the
+    settings page, which is a claim, not a shrug.
     """
     if isinstance(payload, dict):
         folded_for = payload.get("folded_for")
@@ -247,7 +267,26 @@ def _effective_rows(payload: Any, expected_user_id: str) -> list[dict[str, Any]]
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="coord returned no `agents` key on the effective registry",
             )
-        rows_raw = payload.get("agents") or []
+        rows_raw = payload["agents"]
+        if not isinstance(rows_raw, list):
+            # Same null-is-not-a-value rule the row fields get. `agents: null`
+            # (or an object, or a string) is coord failing to answer, not a
+            # tenant with no agents — and `... or []` would have laundered
+            # every one of those into a confident empty list, which the
+            # settings page states as "No agents are registered for your
+            # tenant yet."
+            logger.error(
+                "agent_registry_effective_agents_not_a_list",
+                agents_type=type(rows_raw).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned a non-list `agents` on the effective "
+                    f"registry ({type(rows_raw).__name__}); refusing to render "
+                    "it as an empty registry"
+                ),
+            )
     else:
         # A bare array carries no `folded_for`, so it cannot be verified and
         # must not be rendered — an unverifiable authorization view is the
@@ -260,14 +299,25 @@ def _effective_rows(payload: Any, expected_user_id: str) -> list[dict[str, Any]]
             detail="coord returned an unrecognized effective-registry payload",
         )
     rows: list[dict[str, Any]] = []
-    for r in rows_raw:
-        if isinstance(r, dict):
-            rows.append(r)
-        else:
-            logger.warning(
+    for index, r in enumerate(rows_raw):
+        if not isinstance(r, dict):
+            # Dropping the row would remove an agent from an authorization
+            # surface without saying so — a strictly LARGER misstatement than
+            # the single missing field `_render_effective` already 502s on.
+            logger.error(
                 "agent_registry_effective_row_not_an_object",
+                index=index,
                 row_type=type(r).__name__,
             )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned a non-object effective agent row at index "
+                    f"{index} ({type(r).__name__}); refusing to render a "
+                    "registry with agents silently dropped from it"
+                ),
+            )
+        rows.append(r)
     return rows
 
 
@@ -309,16 +359,37 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
     code read ``row.get("enabled", True)`` off a route that never emitted
     ``enabled``, so it silently rendered every disabled agent as enabled for
     months. A missing authorization field must be LOUD.
+
+    ``agent_name`` is strict for a stronger reason than the four: it is the
+    row's IDENTITY, and a row that cannot be identified cannot be rendered at
+    all. Skipping it drops the agent from the page silently — a bigger
+    misstatement than misreporting one of its fields, and if it was the only
+    row the page reports the tenant as having no agents registered. Same for
+    a row that is not an object (:func:`_effective_rows`).
     """
     entries: list[AgentRegistryEntry] = []
-    for row in rows:
+    for index, row in enumerate(rows):
         name = row.get("agent_name")
         if not isinstance(name, str) or not name:
-            logger.warning(
+            # `continue` here was the one hole left in "a missing
+            # authorization field must be LOUD": identity is not a cosmetic
+            # field. A dropped row takes the agent off the settings page
+            # entirely, and if it was the only row the page then states "No
+            # agents are registered for your tenant yet." — confidently wrong
+            # in exactly the shape this module was rewritten to remove.
+            logger.error(
                 "agent_registry_effective_row_missing_agent_name",
+                index=index,
                 agent_name_type=type(name).__name__,
             )
-            continue
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned an effective agent row with no usable "
+                    f"`agent_name` at index {index}; refusing to render a "
+                    "registry with agents silently dropped from it"
+                ),
+            )
         unusable = [k for k in _AUTHZ_FIELDS if row.get(k) is None]
         if unusable:
             logger.error(
