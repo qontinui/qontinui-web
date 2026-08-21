@@ -22,12 +22,44 @@ npx tsx tools/spec-ci-flake/analyze.ts --gh 40
 # or reports collected by hand).
 npx tsx tools/spec-ci-flake/analyze.ts --dir ./.flake-cache
 
+# Pin an explicit window instead of a count (see the warning below).
+npx tsx tools/spec-ci-flake/analyze.ts --gh 50 --created 2026-08-19
+
 # Machine-readable:
 npx tsx tools/spec-ci-flake/analyze.ts --gh 40 --json
 ```
 
 Options: `--cache <path>` (where `--gh` stores downloads, default
-`./.flake-cache`), `--json` (emit JSON instead of the text table).
+`./.flake-cache`), `--created <expr>` (restrict `--gh` to a window; passed
+through to `gh run list --created`, so `2026-08-19`, `>=2026-08-19` and
+`2026-08-19..2026-08-20` all work), `--json` (emit JSON instead of the text
+table).
+
+### ⚠ `--gh N` is a COUNT, not a period — check the window before reading a zero
+
+`gh run list` is newest-first, so `--gh 100` means *the hundred most recent
+runs*, however short a stretch those cover. Measured 2026-08-21: the last 100
+Spec CI runs spanned **27 hours** (`2026-08-20T02:20Z` .. `2026-08-21T05:43Z`).
+
+That is enough to invalidate a gate. `2026-08-19-ci-apt-hang-…`'s Phase 5 gate
+reads *"`analyze.ts --gh 40` reports a non-zero `no_artifact` count for the
+known 2026-08-19 runs — a zero here means the change did not work."* Run two
+days later, `--gh 40` **and** `--gh 100` both report `no_artifact = 0`, because
+those runs had aged out — not because anything regressed. Reach them with
+`--created 2026-08-19` instead.
+
+Every run therefore **prints the window it measured**, and says so plainly when
+there was none:
+
+```
+RUNS WITHOUT A REPORT — 0 of 99 completed run(s) produced no spec-ci-report artifact.
+  window: the last 100 run(s), whatever period those span - NOT a date range. Use --created to pin one.
+```
+
+`--created` applies to `--gh` only. Passing it with `--dir` is a **usage error
+(exit 2)**, not a no-op: `--dir` reads files, which carry no run dates, so
+honouring the flag is impossible and silently ignoring it would print a wider
+window under a heading claiming the caller's narrower one.
 
 ## Exit-code contract
 
@@ -93,7 +125,10 @@ Two properties of `3` are deliberate and easy to get wrong:
   to that whole failure class: the runs it would have to count are exactly the
   ones it discarded. On `--dir` the section reports **UNKNOWN**, not zero — a
   directory of files carries no run-level data, and reporting `0` there would
-  be the same silent-empty-is-unknown defect.
+  be the same silent-empty-is-unknown defect. The section also names the
+  **window** the count was measured over (`--created …`, or an explicit
+  "a count, not a date range" line), because a `0` is only readable against the
+  period it was measured in — see the warning under Usage.
 
 ## Reading the output → hypothesis
 
