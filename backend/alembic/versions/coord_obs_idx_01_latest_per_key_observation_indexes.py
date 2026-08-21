@@ -39,18 +39,43 @@ planner cannot supply this ordering and degrades to **Seq Scan -> Sort ->
 Unique** — sorting tuples that carry the ``resource_observations`` JSONB column,
 which makes each sort tuple wide and pushes the sort to disk as the table grows.
 
-The consumers are all hot and all unmemoized:
+The consumers are all hot and all unmemoized (verified against
+``qontinui-coord`` ``origin/main``):
 
 * the ``/metrics`` scrape — **recomputed per replica, on every scrape**, since
-  the Φ_Infra gauges are DB-derived rather than fed from the observer loop;
-* every ``infra_drift_clear`` gate evaluation;
-* every ``coord_query_infra_drift`` call.
+  the Φ_Infra gauges are DB-derived rather than fed from the observer loop
+  (``metrics::assemble_metrics`` calls ``infra_metrics::render`` directly, NOT
+  through the ``metrics::cached`` TTL memo);
+* every ``infra_drift_clear`` gate evaluation (``InfraDriftClearEvaluator``);
+* every ``coord_query_infra_drift`` call;
+* every ``deploy_effects`` predict/verify site — four of them, reaching the
+  same read through ``latest_observation_worst_across_provenances``.
 
 And the table is an **append-only oplog with no retention job** — the SDK
-observer adds ~288 rows/day — so the cost grows without bound and does not
-self-heal. New index ``(provenance, observed_at DESC)`` matches the ``ORDER BY``
-exactly: ``DISTINCT ON`` becomes an ordered index scan that skips to the first
-row of each ``provenance`` group. No sort node at all.
+observer adds ~288 rows/day (a 300s leader-gated tick, one INSERT per cycle).
+
+New index ``(provenance, observed_at DESC)`` matches the ``ORDER BY`` exactly,
+so ``DISTINCT ON`` is served by an ordered index scan and the Sort node
+disappears entirely.
+
+**Stated precisely, because the tempting overstatement is wrong.** PostgreSQL
+has no loose/skip index scan for ``DISTINCT ON``: it does NOT jump to the first
+row of each ``provenance`` group. It walks every index entry in order and a
+``Unique`` node discards all but each group's first row. So this index removes
+the *sort* (and with it the wide-``resource_observations``-JSONB sort tuples and
+the disk spill), but the scan stays **O(rows)**. It is a large constant-factor
+win, not an asymptotic one — the unbounded growth is closed by the deferred
+RETENTION follow-up, not by this migration. Do not read "no sort node" as
+"bounded cost".
+
+The index does buy an asymptotic win on the table's OTHER per-key read, which
+is why it is worth more than the ``DISTINCT ON`` alone:
+``infra_observer::latest_observation_of_provenance`` —
+``WHERE provenance = $1 ORDER BY observed_at DESC LIMIT 1``, live at four call
+sites (``config_observation_watcher``, ``policies::decide``, and two MCP tool
+handlers). Equality pins the leading column and ``observed_at DESC`` trails, so
+that read goes from Seq Scan + Top-N to a single **O(log n)** index probe that
+stops at the first row.
 
 2. ``coord.dependency_observations (ecosystem, observed_at DESC)``
 ------------------------------------------------------------------------------
@@ -66,33 +91,93 @@ row of each ``provenance`` group. No sort node at all.
 
 Written as a join rather than ``DISTINCT ON`` because a dependency *cycle*
 writes one row per workspace member sharing a single ``observed_at``, so it must
-return the whole latest batch per ecosystem, not one row. The gap is the same
-one: with only ``observed_at DESC``, the inner aggregate seq-scans the table and
-HashAggregates it, and the outer join then seq-scans it a SECOND time. The new
-index serves both halves — the aggregate becomes a grouped index scan (PG takes
-``max(observed_at)`` per ``ecosystem`` from the group's first entry), and the
-outer ``o.ecosystem = ? AND o.observed_at = ?`` lookup is an equality probe on
-the index's two leading columns.
+return the whole latest batch per ecosystem, not one row. The gap rhymes with #1
+but is NOT identical: with only ``observed_at DESC``, the inner aggregate
+seq-scans the table and HashAggregates it, and the outer join then seq-scans it
+a SECOND time. The new index serves both halves, and it is worth being exact
+about *how*, because the two halves gain very different amounts:
+
+* **outer join** — ``o.ecosystem = ? AND o.observed_at = ?`` is an equality
+  probe on the index's two leading columns. This is the real win: the second
+  seq scan becomes an O(log n) lookup per driving row.
+* **inner aggregate** — ``GROUP BY ecosystem / max(observed_at)`` becomes a
+  ``GroupAggregate`` over an **index-only** scan (both referenced columns are in
+  the index), which drops the heap access and the hash table. It does NOT
+  become a per-group first-entry lookup: PostgreSQL's MIN/MAX index shortcut
+  applies to *ungrouped* aggregates only, and there is no loose/skip index scan
+  for a ``GROUP BY``. This half stays O(rows), just much cheaper per row.
+
+**``DESC`` is deliberate-but-not-load-bearing on THIS index**, unlike #1. An
+equality probe is direction-agnostic, and ``GroupAggregate`` only needs the
+input grouped by ``ecosystem`` — which either scan direction supplies. A plain
+``(ecosystem, observed_at)`` would perform identically here. ``DESC`` is kept
+for symmetry with #1 (where it *is* load-bearing) and because it costs nothing;
+do not "fix" it in either direction expecting a plan change.
 
 Do not "simplify" either index away
 ------------------------------------------------------------------------------
 Both look redundant next to the existing ``observed_at DESC`` index. They are
 not, and the direction of redundancy is the reverse of what it looks like: a
-latest-per-key query needs the key column LEADING and ``observed_at DESC``
-TRAILING in one index. Dropping the trailing column, or leaning on the existing
-single-column index, reproduces exactly the plan this migration removes. The
-pre-existing ``observed_at``-only indexes are deliberately left in place — they
-still serve the global ``ORDER BY observed_at DESC LIMIT 1`` reads
-(``infra_observer::latest_observation``) that neither new index leads with.
+latest-per-key query needs the key column LEADING in the SAME index. Dropping
+the trailing column, or leaning on the existing single-column index, reproduces
+exactly the plan this migration removes.
+
+**Why ``DESC`` is load-bearing on index #1 specifically.** It is tempting to
+call it cargo-cult — PostgreSQL scans a btree backwards perfectly well, so a
+trailing ``DESC`` is usually free to omit. It is not free here. The infra read
+wants ``ORDER BY provenance ASC, observed_at DESC`` — the two columns in
+OPPOSITE directions. A plain ``(provenance, observed_at)`` gives
+``(ASC, ASC)`` scanned forward and ``(DESC, DESC)`` scanned backward, and a
+backward scan cannot flip one column without flipping the other. Neither
+direction satisfies the request, so the planner falls back to an Incremental
+Sort (presorted on ``provenance``, re-sorting ``observed_at`` within each
+group) — and with only ~2 provenances, the "groups" are nearly the whole table,
+so that is barely better than the full Sort this migration is removing. The
+``DESC`` is what makes the match exact. (Index #2 is the opposite case — see
+its section above.)
+
+**The retained ``observed_at``-only indexes are NOT symmetric — read this
+before assuming both are still earning their keep.**
+
+* ``coord.dependency_observations``: ``idx_dependency_observations_observed_at``
+  IS still live. ``dependency_observer::latest_observation`` issues an
+  *ungrouped* ``SELECT max(observed_at) FROM coord.dependency_observations``
+  (which PostgreSQL rewrites into an ``observed_at``-led index scan + LIMIT 1)
+  and then a ``WHERE observed_at = $1`` batch fetch. Both are led by
+  ``observed_at``, which the new ``(ecosystem, …)`` index cannot serve. Keep it.
+* ``coord.infra_drift_observations``: ``idx_infra_drift_observations_observed_at``
+  has **NO remaining reader**. The provenance-blind
+  ``infra_observer::latest_observation`` that justified it was **DELETED** in
+  Phase 3b, not deprecated — see the standing comment above
+  ``latest_observation_of_provenance`` in ``infra_observer.rs``. Every surviving
+  read of that table is either the ``DISTINCT ON (provenance)`` fold or
+  ``WHERE provenance = $1 ORDER BY observed_at DESC LIMIT 1``, and the new
+  composite serves BOTH strictly better. The old index is now pure write
+  amplification on an append-heavy oplog.
+
+It is deliberately NOT dropped in this migration. Dropping it is a separate,
+separately-reversible change of a different risk class (a drop cannot be undone
+by a re-run the way ``CREATE … IF NOT EXISTS`` can), and it should follow the
+same shape as ``coord_pg_overload_idx_03``, which did exactly this cleanup for
+``_02`` in its own revision after the superseding indexes had landed. Note it is
+NOT a prefix-redundancy of the kind ``_03`` handled — ``observed_at`` is not a
+prefix of ``(provenance, observed_at)`` — so ``pg_stat_user_indexes.idx_scan``
+on production should be the evidence for the drop, not this reasoning alone.
 
 ``CREATE INDEX CONCURRENTLY`` (not plain ``CREATE INDEX``)
 ------------------------------------------------------------------------------
 Established repo convention for indexes on hot append-heavy ``coord.*``
-observation tables — same precedent as ``coord_pg_overload_idx_01`` /
-``coord_pg_overload_idx_02`` (which indexed the same latest-per-key shape on
-``release_observations`` / ``config_observations`` /
-``route_serving_observations`` during the 2026-07-21 RDS overload incident) and
-``gate_action_02``. An in-transaction build takes a write-blocking ``SHARE``
+observation tables. The precedents, kept distinct because they are two
+different incidents and conflating them misdates both:
+``coord_pg_overload_idx_01`` (2026-06-28, the unindexed per-tick FAN-OUT
+queries on ``policy_rule_resolutions`` / ``pr_events`` / ``worktree_census``);
+``coord_pg_overload_idx_02`` (2026-07-21, the 42-AAS RDS overload incident,
+which indexed this same latest-per-key shape on ``release_observations`` /
+``config_observations`` / ``route_serving_observations``); and
+``coord_pg_overload_idx_03`` / ``gate_action_02``, which additionally establish
+``DROP INDEX CONCURRENTLY`` inside the same block.
+
+An in-transaction build takes a write-blocking ``SHARE``
 lock on a table the observer loops are actively appending to. CONCURRENTLY
 cannot run inside a transaction, hence ``op.get_context().autocommit_block()``.
 On the CI fresh DB both tables are empty, so the builds are instant.
