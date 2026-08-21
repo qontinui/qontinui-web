@@ -171,6 +171,27 @@ def _extract_caller_token(request: Request) -> str | None:
     return None
 
 
+def capture_caller_bearer(request: Request) -> None:
+    """Capture the caller's bearer + tenant-switcher selection for coord.
+
+    THE side effect the coord proxies depend on: ``_tenant_headers`` reads
+    both ContextVars, and a request that never runs this forwards coord a
+    header dict with no ``Authorization`` at all — so every
+    ``forward_bearer=True`` read answers 401 no matter which door it targets.
+
+    It is deliberately separate from :func:`get_tenant_id`. That dependency
+    *also* resolves the operator's identity over HTTP, which a caller holding
+    a coord DEVICE JWT can never do — coord's ``/admin/coord/me`` is an
+    operator door. Such a caller still needs the capture, so it has to be
+    reachable without paying for a resolution that is structurally certain to
+    fail (``plan_library._soft_tenant_id``). Sharing one implementation is
+    also what keeps the ordering invariant below from drifting between the
+    dependencies that need it.
+    """
+    _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+
+
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
@@ -196,8 +217,7 @@ async def get_tenant_id(
     still pass it to ``_proxy_coord_get(..., tenant_id=...)`` to trigger
     bearer forwarding) but no longer goes on the wire.
     """
-    _caller_bearer.set(_extract_caller_token(request))
-    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+    capture_caller_bearer(request)
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
@@ -220,8 +240,7 @@ async def require_coord_tenant_admin(
     the write route is a noted follow-up, not this PR.
     """
     active = request.headers.get(ACTIVE_TENANT_HEADER)
-    _caller_bearer.set(_extract_caller_token(request))
-    _caller_active_tenant.set(active)
+    capture_caller_bearer(request)
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")

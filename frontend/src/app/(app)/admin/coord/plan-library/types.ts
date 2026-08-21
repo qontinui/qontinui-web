@@ -6,14 +6,21 @@
  * than generated, matching the sibling `prompt-documents/types.ts` — the
  * generated client covers a different slice of the API surface.
  *
- * Three of these types encode a distinction the page must never collapse:
+ * Four of these encode a distinction the page must never collapse:
  *
  * * `CoordLinkState` separates a work unit that is genuinely absent
  *   (`dangling` — the soft link has no FK and MAY dangle, which is normal)
  *   from one we could not ask about (`unavailable`).
- * * `CoordPrState` does the same for PR citations. `unavailable` means coord
- *   exposes no HTTP citation-list route today (it is MCP-only), so the empty
- *   list is "we could not ask", NOT "there are no PRs".
+ * * `CoordPrState` does the same for PR citations. `unavailable` means the
+ *   citation read did not happen — coord unreachable, the door refused, or
+ *   coord itself reported it could not read the relation — so the empty list
+ *   is "we could not ask", NOT "there are no PRs". (It no longer means "coord
+ *   has no HTTP route for this": coord ships both citation GET doors and the
+ *   backend reads them.)
+ * * `CandidateLinkedPr.state` carries that SAME distinction one level down, on
+ *   ONE row's merged state: `unknown` is what a `merged: false` becomes while
+ *   coord's merged predicate runs degraded, and it must not be rendered as the
+ *   fact "unmerged".
  * * `FleetPolicyView.resolved_scope` separates "off because nobody wrote a
  *   row" (`none`) from "off because someone turned it off".
  */
