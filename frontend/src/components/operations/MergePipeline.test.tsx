@@ -1069,4 +1069,36 @@ describe("MergePipeline gate-decisions counting", () => {
         .querySelector("[data-gate-total-evals]")
     ).toBeNull();
   });
+
+  /**
+   * What the list IS. Coord's Phase 2 returns the newest row per PR, so the
+   * population became "PRs the gate has held inside the retention window" —
+   * a PR unblocked weeks ago still appears, carrying its own timestamp. That
+   * a row is an audit record and not a live "still held" claim was already
+   * true of the pre-Phase-2 raw-row list, so the note must NOT be gated on
+   * `total_evals` the way the decision/eval nouns are: an operator reading
+   * against an older coord needs it just as much.
+   */
+  it("says a listed PR is not necessarily still held", () => {
+    render(<MergePipeline />);
+    const section = screen.getByTestId("gate-decisions");
+    expect(section.textContent).toContain("not necessarily");
+    expect(section.textContent).toContain("still held");
+  });
+
+  it("says so against a pre-Phase-2 coord too", () => {
+    hookData.current.gateTotalBlocks = 1899;
+    hookData.current.gateTotalEvals = null;
+    render(<MergePipeline />);
+    const section = screen.getByTestId("gate-decisions");
+    // Provenance is unknown here — the noun is withheld…
+    expect(
+      section
+        .querySelector("[data-gate-count-provenance]")
+        ?.getAttribute("data-gate-count-provenance")
+    ).toBe("unknown");
+    // …but what the rows ARE does not depend on which coord answered.
+    expect(section.textContent).toContain("not necessarily");
+    expect(section.textContent).toContain("still held");
+  });
 });

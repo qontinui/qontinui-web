@@ -76035,8 +76035,58 @@
     },
     "/api/v1/operations/coord/policies": {
       "get": {
-        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.",
+        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.\n\n``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``\nfilters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when\nPRESENT \u2014 including as an empty string, which is a real filter to coord and\nnot a synonym for \"unfiltered\" (``?repo=`` selects the degenerate\nempty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is\na better answer than silently listing everything). Until this route\naccepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and\na tenant's DISABLED rules were **not listable from the console** \u2014 the\n``/admin/coord/automation-rules`` enable/disable switch could therefore\nwrite a row it could never read back, and the row was unrecoverable through\nthe product.\n\n``enabled`` is an EQUALITY filter server-side, not a \"show everything\"\nswitch: coord's resolver binds it as ``AND enabled = $2`` against the\ntenant's own rules. ``enabled=false`` therefore lists the DISABLED rules\nonly. A caller wanting both states issues both requests and unions them by\n``policy_id`` \u2014 coord's system built-ins come back on BOTH arms (its\nsystem-band query hardcodes ``enabled = true``), so the union must dedupe.",
         "operationId": "api_v1_operations_coord_policies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Repo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -76047,6 +76097,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Coord Policies",
