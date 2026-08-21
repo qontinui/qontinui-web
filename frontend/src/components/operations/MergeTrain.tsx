@@ -1,44 +1,46 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// ============================================================================
+// Merge-train presentational pieces — rows and panels rendered by MergePipeline
+// ============================================================================
+//
+// This module used to export a self-fetching `MergeTrain` panel as well. That
+// panel was REPLACED by `MergePipeline` on 2026-07-15 (`946e06c7`, fleet-page
+// redesign) and `useMergePipelineData` became the single data owner; the
+// component body was left behind and stopped being rendered by anything. It
+// was deleted on 2026-08-20 — with it went a second copy of the queue / PR /
+// suggestions / gate-decisions fetches and a second WebSocket client, all
+// unreachable. That duplicate copy was still being maintained: plan
+// 2026-08-20-predicate-eval-surface-counts-evals-not-decisions Phase 2 edited
+// BOTH `fetchGateBlocks` implementations, and only one of them could run.
+//
+// What remains is presentation only — no fetching, no state, no transport.
+// Every export here is rendered by `MergePipeline`:
+//
+//   - `MergeTrainRow`      — one raw scheduler proposal ("Merge internals")
+//   - `SuggestionCard`     — one pending drift/audit suggestion
+//   - `GateDecisionCounts` — the "Gate decisions" header counts
+//   - `GateDecisionRow`    — one blast-radius gate decision
+//
+// Data for all four comes from `useMergePipelineData`.
+
+import { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  GitMerge,
   AlertTriangle,
   ExternalLink,
-  GitBranch,
   RotateCcw,
-  ShieldAlert,
   ShieldQuestion,
 } from "lucide-react";
-import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { OPERATIONS_API, relativeTime } from "./utils";
-import { CollapsiblePanel } from "./CollapsiblePanel";
-import { unstableHasFailure } from "./prPipeline";
+import { relativeTime } from "./utils";
 import { redactSecrets } from "./mergeTypes";
 import type {
   BlastRadiusBlock,
-  BlastRadiusBlocksResponse,
-  PrListResponse,
-  PrRow,
   ProposalDetail,
   ProposalStatus,
-  QueueResponse,
-  SuggestionListResponse,
   SuggestionRow,
 } from "./mergeTypes";
-
-const log = createLogger("MergeTrain");
-
-const COORD_WS_URL =
-  process.env.NEXT_PUBLIC_COORD_WS_URL || "ws://localhost:9870/ws";
-const WS_PATTERN = "events.merge.>";
-const POLL_INTERVAL_MS = 2_000;
-const REFETCH_DEBOUNCE_MS = 250;
-const MAX_RECONNECT_ATTEMPTS = 5;
 
 // ----------------------------------------------------------------------------
 // Status visual classification
@@ -82,54 +84,6 @@ function statusTint(status: ProposalStatus): string {
       // but a new coord status will now land silently as grey.
       return "bg-muted text-muted-foreground border-border";
   }
-}
-
-// ----------------------------------------------------------------------------
-// PR Merge Orchestrator Phase 1 D1.6 -- PR Outer State row tinting.
-//
-// Distinct palette from proposal-status above so the operator can tell the
-// outer (PR-level) state apart from the inner (proposal-level) state at a
-// glance. Driven by GitHub's mergeStateStatus enum, with `mergeable === false`
-// overriding any non-failing status to red.
-// ----------------------------------------------------------------------------
-
-function prStatusTint(pr: PrRow): string {
-  if (pr.mergeable === false) {
-    return "bg-red-500/15 text-red-200 border-red-500/30";
-  }
-  switch (pr.merge_state_status) {
-    case "CLEAN":
-      return "bg-green-500/15 text-green-200 border-green-500/30";
-    case "UNSTABLE":
-      // Two honest meanings: a non-required check actually FAILED (red — an
-      // agent/author should look) vs checks merely still running (muted
-      // yellow — just wait). Same predicate as prPipeline/PrsTable.
-      return unstableHasFailure(pr)
-        ? "bg-red-500/15 text-red-200 border-red-500/30"
-        : "bg-yellow-500/10 text-yellow-200/70 border-yellow-500/20";
-    case "BEHIND":
-      return "bg-orange-500/15 text-orange-200 border-orange-500/30";
-    case "BLOCKED":
-    case "DIRTY":
-      return "bg-red-500/15 text-red-200 border-red-500/30";
-    case "DRAFT":
-      return "bg-muted/40 text-muted-foreground border-border";
-    case "UNKNOWN":
-    case null:
-    case undefined:
-    default:
-      return "bg-muted text-muted-foreground border-border";
-  }
-}
-
-function prCiTint(pr: PrRow): string {
-  if (pr.ci_lifecycle === "complete" && pr.ci_conclusion === "success") {
-    return "bg-green-500/15 text-green-200 border-green-500/30";
-  }
-  if (pr.ci_lifecycle === "complete" && pr.ci_conclusion === "failure") {
-    return "bg-red-500/15 text-red-200 border-red-500/30";
-  }
-  return "bg-yellow-500/15 text-yellow-200 border-yellow-500/30";
 }
 
 // ----------------------------------------------------------------------------
@@ -201,69 +155,6 @@ export function MergeTrainRow({ proposal }: { proposal: ProposalDetail }) {
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
       )}
-    </div>
-  );
-}
-
-// ----------------------------------------------------------------------------
-// PR Merge Orchestrator Phase 1 D1.6 -- PR Outer State row component
-// ----------------------------------------------------------------------------
-
-export function PrRowDisplay({ pr }: { pr: PrRow }) {
-  const repoShort = pr.repo.includes("/")
-    ? pr.repo.split("/").slice(1).join("/")
-    : pr.repo;
-  return (
-    <div
-      className={`flex items-center gap-3 px-3 py-2 border rounded-md transition-colors ${prStatusTint(
-        pr
-      )}`}
-      data-pr-state={pr.pr_state}
-      data-pr-merge-state-status={pr.merge_state_status ?? ""}
-      data-pr-number={pr.pr_number}
-    >
-      <Badge variant="outline" className="font-mono text-xs">
-        {repoShort}#{pr.pr_number}
-      </Badge>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm truncate">
-          {pr.branch}{" "}
-          <span className="text-muted-foreground">-&gt; {pr.base_branch}</span>
-        </p>
-        <div className="flex gap-2 mt-0.5 flex-wrap">
-          {pr.merge_state_status && (
-            <Badge
-              variant="outline"
-              className="font-mono text-[10px] uppercase"
-            >
-              {pr.merge_state_status}
-            </Badge>
-          )}
-          {pr.review_decision && (
-            <Badge
-              variant="outline"
-              className="font-mono text-[10px] uppercase"
-            >
-              {pr.review_decision}
-            </Badge>
-          )}
-          {pr.mergeable === false && (
-            <span className="text-xs text-red-300 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              not mergeable
-            </span>
-          )}
-        </div>
-      </div>
-      <Badge
-        className={`font-mono text-[10px] uppercase tracking-wide ${prCiTint(pr)}`}
-      >
-        CI: {pr.ci_lifecycle ?? "?"}
-        {pr.ci_conclusion ? `/${pr.ci_conclusion}` : ""}
-      </Badge>
-      <span className="text-xs text-muted-foreground tabular-nums">
-        {relativeTime(pr.last_refreshed_at)}
-      </span>
     </div>
   );
 }
@@ -426,7 +317,7 @@ function honestyLabel(b: BlastRadiusBlock): HonestyLabel {
  * Clamped to >= 1 on purpose — rendering `×0` would claim the decision never
  * happened, which is the opposite of what the row proves.
  */
-export function gateRepeatCount(b: BlastRadiusBlock): number {
+function gateRepeatCount(b: BlastRadiusBlock): number {
   const n = b.repeat_count;
   if (typeof n !== "number" || !Number.isFinite(n) || n < 1) return 1;
   return Math.floor(n);
@@ -440,9 +331,7 @@ export function gateRepeatCount(b: BlastRadiusBlock): number {
  * NOT distinguished by the caller's copy: "unknown" is true of both, whereas
  * "not reported" would be a lie about the malformed case.
  */
-export function gateFirstSeenDay(
-  iso: string | null | undefined
-): string | null {
+function gateFirstSeenDay(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -646,433 +535,5 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
         </div>
       </div>
     </div>
-  );
-}
-
-export function MergeTrain() {
-  const [proposals, setProposals] = useState<ProposalDetail[] | null>(null);
-  // PR Merge Orchestrator Phase 1 D1.6 -- outer PR-level state list.
-  const [prs, setPrs] = useState<PrRow[] | null>(null);
-  // PR Merge Orchestrator Phase 8 D8.6 -- pending suggestions list.
-  const [suggestions, setSuggestions] = useState<SuggestionRow[] | null>(null);
-  const [suggestionBusy, setSuggestionBusy] = useState<number | null>(null);
-  // Coordination-transparency T2 -- blast-radius gate decisions (held PRs).
-  const [gateBlocks, setGateBlocks] = useState<BlastRadiusBlock[] | null>(null);
-  const [gateTotalBlocks, setGateTotalBlocks] = useState<number | null>(null);
-  // Raw evaluation-row count behind those decisions. `null` = coord did not
-  // report it (pre-Phase-2 deploy) — rendered as SILENCE, never as a repeat of
-  // the decision count.
-  const [gateTotalEvals, setGateTotalEvals] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const refetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cleanedUpRef = useRef(false);
-
-  const fetchQueue = useCallback(async () => {
-    try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/merge/queue`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as QueueResponse | ProposalDetail[];
-      // Coord returns {proposals: [...]}; tolerate either shape.
-      const list = Array.isArray(body) ? body : (body.proposals ?? []);
-      if (!cleanedUpRef.current) {
-        setProposals(list);
-        setError(null);
-      }
-    } catch (err) {
-      if (!cleanedUpRef.current) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }
-  }, []);
-
-  // PR Merge Orchestrator Phase 8 D8.6 -- fetch pending suggestions.
-  // Drift suggestions + audit-stale alerts. Best-effort, 404-tolerant.
-  const fetchSuggestions = useCallback(async () => {
-    try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/suggestions`
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setSuggestions([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | SuggestionListResponse
-        | SuggestionRow[];
-      const list = Array.isArray(body) ? body : (body.suggestions ?? []);
-      if (!cleanedUpRef.current) {
-        setSuggestions(list);
-      }
-    } catch (err) {
-      log.warn("fetchSuggestions failed", err);
-      if (!cleanedUpRef.current) setSuggestions([]);
-    }
-  }, []);
-
-  // PR Merge Orchestrator Phase 8 D8.6 -- Accept / Reject / Mute handlers.
-  const onSuggestionAction = useCallback(
-    async (
-      alertId: number,
-      action: "accept" | "reject" | "mute",
-      body?: Record<string, unknown>
-    ) => {
-      setSuggestionBusy(alertId);
-      try {
-        const res = await httpClient.fetch(
-          `${OPERATIONS_API}/pr-merge/suggestions/${alertId}/${action}`,
-          {
-            method: "POST",
-            body: JSON.stringify(body ?? {}),
-          }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn(`suggestion ${action} failed`, res.status, text);
-          if (!cleanedUpRef.current)
-            setError(`Suggestion ${action} failed: HTTP ${res.status}`);
-          return;
-        }
-        await fetchSuggestions();
-      } catch (err) {
-        log.warn(`suggestion ${action} threw`, err);
-        if (!cleanedUpRef.current)
-          setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!cleanedUpRef.current) setSuggestionBusy(null);
-      }
-    },
-    [fetchSuggestions]
-  );
-
-  // Coordination-transparency T2 -- fetch the blast-radius gate decisions.
-  // Best-effort + 404-tolerant, mirroring fetchEscalations: a failure here
-  // never clears `error` (the proposal queue owns that surface) and a 404
-  // means coord hasn't shipped `/pr-merge/blast-radius-blocks` yet, so we
-  // render an empty (hidden) section rather than an error.
-  const fetchGateBlocks = useCallback(async () => {
-    try {
-      const res = await httpClient.fetch(
-        `${OPERATIONS_API}/pr-merge/blast-radius-blocks`
-      );
-      if (!res.ok) {
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) {
-            setGateBlocks([]);
-            setGateTotalBlocks(0);
-            setGateTotalEvals(null);
-          }
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as
-        | BlastRadiusBlocksResponse
-        | BlastRadiusBlock[];
-      const list = Array.isArray(body) ? body : (body.blocks ?? []);
-      const total = Array.isArray(body)
-        ? body.length
-        : (body.total_blocks ?? list.length);
-      // `total_evals` is optional: absent means an older coord that never
-      // separated evaluations from decisions, and the surface then stays
-      // silent about evaluation volume rather than inventing a number.
-      const evals =
-        !Array.isArray(body) && typeof body.total_evals === "number"
-          ? body.total_evals
-          : null;
-      if (!cleanedUpRef.current) {
-        setGateBlocks(list);
-        setGateTotalBlocks(total);
-        setGateTotalEvals(evals);
-      }
-    } catch (err) {
-      log.warn("fetchGateBlocks failed", err);
-      if (!cleanedUpRef.current) {
-        setGateBlocks([]);
-        setGateTotalBlocks(0);
-        setGateTotalEvals(null);
-      }
-    }
-  }, []);
-
-  // PR Merge Orchestrator Phase 1 D1.6 -- fetch the outer PR list. Best-effort:
-  // a failure here does NOT clear `error` (the queue fetch owns that) so the
-  // user always sees the more-actionable proposal-side error if both fail.
-  const fetchPrs = useCallback(async () => {
-    try {
-      const res = await httpClient.fetch(`${OPERATIONS_API}/pr-merge/prs`);
-      if (!res.ok) {
-        // 404 here means the coord backend hasn't been deployed with the
-        // Phase 1 endpoint yet -- silently skip rendering the outer card.
-        if (res.status === 404) {
-          if (!cleanedUpRef.current) setPrs([]);
-          return;
-        }
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const body = (await res.json()) as PrListResponse | PrRow[];
-      const list = Array.isArray(body) ? body : (body.prs ?? []);
-      if (!cleanedUpRef.current) {
-        setPrs(list);
-      }
-    } catch (err) {
-      log.warn("fetchPrs failed", err);
-      // Don't surface PR-list fetch errors in the merge-train error toast --
-      // the proposal queue is the primary surface; the outer PR state is
-      // additive Phase 1 work. Render an empty section instead.
-      if (!cleanedUpRef.current) setPrs([]);
-    }
-  }, []);
-
-  const scheduleRefetch = useCallback(() => {
-    if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
-    refetchTimerRef.current = setTimeout(() => {
-      // Phase 1 D1.6: refetch both surfaces on any merge-event signal.
-      // The outer PR state changes on the same triggers (push, check_run,
-      // pull_request_review) that the WS pattern subscribes to via the
-      // `events.github.>` fanout, so co-refetching keeps the two columns
-      // visually consistent.
-      fetchQueue();
-      fetchPrs();
-      // Phase 8 D8.6: suggestions are background-watcher-emitted, not
-      // event-driven, so this fetch is a low-stakes refresh — it catches
-      // newly-emitted drift suggestions on the same WS-driven tick.
-      fetchSuggestions();
-      // Coordination-transparency T2: a gate decision is appended on the same
-      // predicate-eval tick a check_run/push triggers, so co-refetch keeps the
-      // held-PRs view consistent with the queue/PR columns.
-      fetchGateBlocks();
-    }, REFETCH_DEBOUNCE_MS);
-  }, [fetchQueue, fetchPrs, fetchSuggestions, fetchGateBlocks]);
-
-  const connectWs = useCallback(() => {
-    if (cleanedUpRef.current || document.hidden) return;
-    if (wsRef.current) wsRef.current.close();
-
-    const url = `${COORD_WS_URL}?pattern=${encodeURIComponent(WS_PATTERN)}`;
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (err) {
-      log.warn("WebSocket constructor failed", err);
-      return;
-    }
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (cleanedUpRef.current) {
-        ws.close();
-        return;
-      }
-      reconnectAttemptsRef.current = 0;
-      // Resync after (re)connect — events flow live but the snapshot
-      // catches any updates that happened during the disconnect.
-      scheduleRefetch();
-    };
-
-    ws.onmessage = () => {
-      // The merge-event payload only signals "something changed."
-      // Refetch the queue to get the canonical state.
-      scheduleRefetch();
-    };
-
-    ws.onerror = (e) => {
-      log.warn("WS error", e);
-    };
-
-    ws.onclose = () => {
-      if (cleanedUpRef.current) return;
-      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
-        log.warn("WS max reconnect attempts reached; relying on poll");
-        return;
-      }
-      const delay = Math.min(1_000 * 2 ** reconnectAttemptsRef.current, 30_000);
-      reconnectAttemptsRef.current += 1;
-      reconnectRef.current = setTimeout(connectWs, delay);
-    };
-  }, [scheduleRefetch]);
-
-  useEffect(() => {
-    cleanedUpRef.current = false;
-    fetchQueue();
-    fetchPrs();
-    fetchSuggestions();
-    fetchGateBlocks();
-    const pollId = setInterval(() => {
-      fetchQueue();
-      fetchPrs();
-      fetchSuggestions();
-      fetchGateBlocks();
-    }, POLL_INTERVAL_MS);
-    connectWs();
-    return () => {
-      cleanedUpRef.current = true;
-      clearInterval(pollId);
-      if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
-      if (reconnectRef.current) clearTimeout(reconnectRef.current);
-      if (wsRef.current) wsRef.current.close();
-    };
-  }, [fetchQueue, fetchPrs, fetchSuggestions, fetchGateBlocks, connectWs]);
-
-  // PR Merge Orchestrator Phase 1 D1.6 -- decide whether to render the PR
-  // Outer State sub-section. We render the heading + content only when BOTH
-  // proposal-state and pr-state are present, matching the plan's instruction
-  // ("add a section heading 'PR Outer State' above the existing proposal
-  // state when both are present").
-  const showOuterSection = prs !== null && prs.length > 0 && proposals !== null;
-
-  // PR Merge Orchestrator Phase 8 D8.6 -- Suggestions inbox visibility.
-  const showSuggestionsSection = suggestions !== null && suggestions.length > 0;
-  // Coordination-transparency T2 -- show the Gate decisions section once the
-  // fetch has resolved (even with zero blocks, so the honest "no gate blocks"
-  // state is visible rather than the section silently vanishing).
-  const showGateDecisionsSection = gateBlocks !== null;
-
-  // Blocked proposals (conflict / overlap) are the actionable signal — keep a
-  // count in the header so it stays visible when the panel is collapsed.
-  const blockedCount = useMemo(
-    () =>
-      (proposals ?? []).filter(
-        (p) => p.status === "conflict" || p.status === "blocked-by-overlap"
-      ).length,
-    [proposals]
-  );
-
-  return (
-    <CollapsiblePanel
-      storageKey="fleet:merge-train"
-      icon={<GitMerge className="h-4 w-4" />}
-      title="Merge train"
-      summary={
-        <>
-          {proposals && (
-            <Badge variant="outline" className="ml-2 font-mono text-xs">
-              {proposals.length}
-            </Badge>
-          )}
-          {blockedCount > 0 && (
-            <Badge variant="destructive" className="ml-1 font-mono text-xs">
-              {blockedCount} blocked
-            </Badge>
-          )}
-        </>
-      }
-    >
-      {error && <p className="text-xs text-red-300 mb-2">{error}</p>}
-      {showSuggestionsSection && suggestions && (
-        <div className="mb-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-            <ShieldAlert className="h-3 w-3" />
-            Suggestions
-            <Badge
-              variant="outline"
-              className="ml-2 font-mono text-[10px] normal-case"
-            >
-              {suggestions.length}
-            </Badge>
-          </h4>
-          <div className="space-y-2">
-            {suggestions.map((sug) => (
-              <SuggestionCard
-                key={sug.alert_id}
-                sug={sug}
-                busy={suggestionBusy === sug.alert_id}
-                onAction={onSuggestionAction}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-      {showGateDecisionsSection && gateBlocks && (
-        <div className="mb-4" data-testid="gate-decisions">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1">
-            <ShieldQuestion className="h-3 w-3" />
-            Gate decisions
-            <GateDecisionCounts
-              totalBlocks={gateTotalBlocks}
-              totalEvals={gateTotalEvals}
-            />
-          </h4>
-          {gateBlocks.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No gate blocks — the blast-radius merge gate has not held any of
-              your PRs.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {gateBlocks.map((b) => (
-                <GateDecisionRow
-                  key={`${b.repo}#${b.pr_number}@${b.at}`}
-                  block={b}
-                />
-              ))}
-              <p className="text-[11px] text-muted-foreground pt-1">
-                Coverage labels reflect how complete the code graph was when the
-                gate ran — a degraded decision is never authoritative.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-      {showOuterSection && (
-        <div className="mb-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            PR Outer State
-            <Badge
-              variant="outline"
-              className="ml-2 font-mono text-[10px] normal-case"
-            >
-              {prs.length}
-            </Badge>
-          </h4>
-          <div className="space-y-2">
-            {prs.map((p) => (
-              <PrRowDisplay key={`${p.repo}#${p.pr_number}`} pr={p} />
-            ))}
-          </div>
-        </div>
-      )}
-      {proposals === null ? (
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      ) : proposals.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No in-flight proposals.</p>
-      ) : (
-        <div className="space-y-2">
-          {proposals.map((p) => (
-            <MergeTrainRow key={p.proposal_id} proposal={p} />
-          ))}
-        </div>
-      )}
-      {/* PR Merge Orchestrator Phase 5 D5.5 — link to the dedicated
-            cross-repo dependency DAG view. Sibling MergeDependencyGraph
-            component is rendered on the same operations page below the
-            MergeTrain card. */}
-      <div className="mt-4 pt-3 border-t border-border/40">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
-          <GitBranch className="h-3 w-3" />
-          Cross-repo dependencies
-        </h4>
-        <p className="text-xs text-muted-foreground">
-          See the{" "}
-          <a
-            href="#merge-dep-graph"
-            className="underline hover:text-foreground"
-          >
-            dependency graph
-          </a>{" "}
-          below for the connected component of any PR. Topological auto-merge is
-          enforced upstream-first; cycle members are flagged red.
-        </p>
-      </div>
-    </CollapsiblePanel>
   );
 }

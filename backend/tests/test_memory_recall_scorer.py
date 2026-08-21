@@ -679,6 +679,134 @@ class TestPairedDelta:
         )
 
 
+class TestThePairedBlockPricesTheLift:
+    """The paired block must report the COST of the lift, not just the lift.
+
+    The direction machinery shipped complete and inert. Every metric the
+    driver paired was higher-is-better, so ``LOWER_IS_BETTER_METRICS``, the
+    sign flip inside ``credited_2sigma``, the report's ``lower_is_better``
+    key and the comment renderer's marker were reachable only from this
+    suite — never from a real run. Meanwhile the arm table printed noise
+    rate and token cost for both arms side by side, so a reader got a
+    significance label for the reward and nothing for the price.
+
+    These pin the driver's emitted metric SET, which is the only thing
+    that decides whether any of that executes.
+    """
+
+    @staticmethod
+    def _report_metrics() -> tuple[str, ...]:
+        """``PAIRED_REPORT_METRICS`` from the driver, read as text.
+
+        Parsed rather than imported for the same reason the sealed-holdout
+        checks parse it: importing the driver drags in the app, FastAPI and
+        a database URL to read one tuple of strings.
+        """
+        tree = ast.parse(_driver_source())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AnnAssign | ast.Assign):
+                continue
+            targets = (
+                [node.target] if isinstance(node, ast.AnnAssign) else list(node.targets)
+            )
+            names = {t.id for t in targets if isinstance(t, ast.Name)}
+            if "PAIRED_REPORT_METRICS" in names and node.value is not None:
+                value = ast.literal_eval(node.value)
+                return tuple(value)
+        raise AssertionError(
+            "the driver no longer defines PAIRED_REPORT_METRICS — the emitted "
+            "paired metric set is unpinned"
+        )
+
+    def test_the_report_pairs_the_cost_metrics_too(self) -> None:
+        """At least one paired metric must be lower-is-better.
+
+        Asserted as a non-empty INTERSECTION with the pinned set rather
+        than as a literal list, so adding a metric stays free and removing
+        the cost half does not.
+        """
+        metrics = set(self._report_metrics())
+        assert metrics & LOWER_IS_BETTER_METRICS, (
+            "the emitted paired block reports no lower-is-better metric, so "
+            "it says whether the candidate retrieved more without saying "
+            f"what that cost: {sorted(metrics)}"
+        )
+
+    def test_every_reported_metric_is_one_paired_delta_accepts(self) -> None:
+        """A typo in the tuple must fail HERE, not in a 20-minute CI job.
+
+        ``paired_delta`` raises ``KeyError`` on an unknown metric, and the
+        driver builds the whole block in one comprehension — so a single
+        bad name takes out the entire paired comparison, in the job that
+        needs Postgres and pgvector to reach the line at all.
+        """
+        control = [_case("a", token_cost_at_10=10), _case("b", token_cost_at_10=20)]
+        candidate = [_case("a", token_cost_at_10=12), _case("b", token_cost_at_10=18)]
+        for metric in self._report_metrics():
+            result = paired_delta(control, candidate, metric=metric)
+            assert result.metric == metric
+            assert result.n == 2
+
+    def test_the_driver_iterates_the_pinned_tuple_rather_than_a_literal(self) -> None:
+        """The pin is worth nothing if the report is built from a literal.
+
+        ``PAIRED_REPORT_METRICS`` could sit in the module unread while the
+        comprehension kept its old three-name literal, and every assertion
+        above would still pass over a report that prices nothing.
+        """
+        source = _driver_source()
+        tree = ast.parse(source)
+        emitters = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.comprehension)
+            and isinstance(node.iter, ast.Name)
+            and node.iter.id == "PAIRED_REPORT_METRICS"
+        ]
+        assert emitters, (
+            "nothing in the driver iterates PAIRED_REPORT_METRICS — the "
+            "emitted paired block is built from something else, so pinning "
+            "that tuple pins nothing"
+        )
+
+    def test_the_credit_threshold_matches_the_wire_name_it_ships_under(self) -> None:
+        """``credited_2sigma`` names the threshold in its own identifier.
+
+        The field is called ``credited_2sigma`` in ``PairedResult``, in the
+        emitted JSON and in the PR comment's column header. Moving
+        ``CREDIT_Z_THRESHOLD`` without renaming all three would leave every
+        report and every comment stating a criterion the flag was not
+        computed against — and a name is not something a renderer can read
+        out of the report at runtime. So the two move together or not at
+        all, and this is the tripwire.
+        """
+        assert CREDIT_Z_THRESHOLD == 2.0, (
+            "CREDIT_Z_THRESHOLD moved but the wire field is still named "
+            "`credited_2sigma`. Rename the field, the dataclass attribute "
+            "and the comment column together, or put the threshold back."
+        )
+
+    def test_the_comment_step_takes_the_threshold_from_the_report(self) -> None:
+        """The renderer must not restate the threshold as a literal.
+
+        ``credit_z_threshold`` is emitted on every paired row for exactly
+        this reason. The comment prose hardcoded ``z >= 2.0`` until
+        2026-08-20: a second copy of a constant, in the one place a reader
+        actually reads it, that no test compared against the first.
+        """
+        body = _WORKFLOW.read_text(encoding="utf-8").split("script: |", 1)[1]
+        assert "credit_z_threshold" in body, (
+            "the comment step no longer reads `credit_z_threshold` from the "
+            "report, so its stated threshold cannot follow the scorer's"
+        )
+        hardcoded = re.findall(r"z\s*>=\s*\d", body)
+        assert not hardcoded, (
+            "the comment step states a literal z threshold "
+            f"({hardcoded}); it must render `credit_z_threshold` from the "
+            "report instead, or it will drift from CREDIT_Z_THRESHOLD"
+        )
+
+
 class TestShuffleDetection:
     """Verification item 3 — a broken ranking must be visibly worse.
 

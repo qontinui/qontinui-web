@@ -6,7 +6,7 @@
  * Phase 2 D2.4 of the PR Merge Orchestrator
  * (`D:/qontinui-root/plans/2026-05-21-pr-merge-orchestrator-design.md`).
  *
- * Sibling of {@link MergeTrain}. Renders two sections:
+ * Sibling of {@link MergePipeline}. Renders two sections:
  *
  * 1. **Tenant defaults** — the row in `coord.tenant_merge_settings`.
  *    Inline edits PATCH `/api/v1/operations/pr-merge/settings`.
