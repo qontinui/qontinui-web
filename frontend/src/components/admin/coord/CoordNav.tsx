@@ -393,20 +393,80 @@ function isLeafActive(pathname: string, leaf: NavLeaf): boolean {
   );
 }
 
-/** Live unresolved-alert count for the Alerts tab badge. Best-effort — a
- *  failed poll renders no badge, never an error. */
-function useAlertsBadge(): { count: number; critical: boolean } {
+interface AlertsRollup {
+  alerts?: Array<{ severity?: string }>;
+  /** Rows MATCHING the query, unpaged. Absent on an un-upgraded coord. */
+  total_count?: number;
+}
+
+/** `{alerts:[…]}` and a bare list are both accepted (two coord vintages). */
+function readRollup(body: unknown): AlertsRollup {
+  if (Array.isArray(body)) {
+    return { alerts: body as Array<{ severity?: string }> };
+  }
+  return (body ?? {}) as AlertsRollup;
+}
+
+/**
+ * Live unresolved-alert count for the Alerts tab badge. Best-effort — a failed
+ * poll renders no badge, never an error.
+ *
+ * Reads the API's `total_count`, NOT `alerts.length`. Measured 2026-08-14
+ * (plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui.md`, § MEASURED):
+ * the old code read the length of coord's hard-capped 500-row window, so the
+ * badge displayed a constant **500** against 1643 unresolved rows, and
+ * `critical` was unconditionally true because the served window happened to be
+ * 100% critical — a flag that is always on carries no information. Both are
+ * now counts, not samples, and each request asks for ONE row instead of
+ * dragging 500 across the wire on every page every poll.
+ *
+ * `known: false` means the deployed coord served no `total_count`. The caller
+ * renders `≥N` — the truncated length is a LOWER BOUND, never the truth.
+ */
+function useAlertsBadge(): {
+  count: number;
+  critical: boolean;
+  known: boolean;
+} {
   const [count, setCount] = useState(0);
   const [critical, setCritical] = useState(false);
+  const [known, setKnown] = useState(false);
 
   const fetchCount = useCallback(async () => {
     try {
-      const body = await httpClient.get<
-        { alerts?: Array<{ severity?: string }> } | Array<{ severity?: string }>
-      >(ALERTS_API);
-      const alerts = Array.isArray(body) ? body : (body.alerts ?? []);
-      setCount(alerts.length);
-      setCritical(alerts.some((a) => a.severity === "critical"));
+      // Two `limit=1` reads: the unresolved total for the number, and a
+      // severity-filtered total for the red flag. The flag cannot come from
+      // the returned rows — that is precisely the truncated-slice bug.
+      const [all, criticals] = await Promise.all([
+        httpClient.get<unknown>(
+          `${ALERTS_API}?include_resolved=false&limit=1`
+        ),
+        httpClient.get<unknown>(
+          `${ALERTS_API}?include_resolved=false&severity=critical&limit=1`
+        ),
+      ]);
+      const allBody = readRollup(all);
+      const critBody = readRollup(criticals);
+
+      if (typeof allBody.total_count === "number") {
+        setCount(allBody.total_count);
+        setKnown(true);
+      } else {
+        // Degraded: an un-upgraded coord ignores `limit` and answers with the
+        // capped window. Its length is a floor, and the badge says so.
+        setCount(allBody.alerts?.length ?? 0);
+        setKnown(false);
+      }
+
+      if (typeof critBody.total_count === "number") {
+        setCritical(critBody.total_count > 0);
+      } else {
+        // Degraded: the severity filter was dropped too, so fall back to
+        // inspecting whatever rows came back.
+        setCritical(
+          (critBody.alerts ?? []).some((a) => a.severity === "critical")
+        );
+      }
     } catch (err) {
       log.warn("alerts badge fetch failed", err);
     }
@@ -418,7 +478,7 @@ function useAlertsBadge(): { count: number; critical: boolean } {
     return () => clearInterval(id);
   }, [fetchCount]);
 
-  return { count, critical };
+  return { count, critical, known };
 }
 
 /** Live UNREAD-notification count for the Notifications tab badge.
@@ -505,6 +565,13 @@ export default function CoordNav() {
             testId: "coord-nav-alerts-badge",
             count: alertsBadge.count,
             critical: alertsBadge.critical,
+            // `false` means the deployed coord served no `total_count`, so
+            // the number is a LOWER BOUND and gets the `≥` qualifier rather
+            // than being printed as if it were the truth.
+            totalKnown: alertsBadge.known,
+            title: alertsBadge.known
+              ? "unresolved alerts (coord's unpaged total)"
+              : "this coord build does not report a total — at LEAST this many",
           }
         : leaf.testId === "coord-nav-notifications"
           ? {
@@ -513,6 +580,12 @@ export default function CoordNav() {
               // Notifications are events, not conditions — nothing about an
               // unread count is "critical", so it never takes the red accent.
               critical: false,
+              // The unread count arrives as an exact scalar, so there is no
+              // lower-bound concept here at all: `undefined` (not `true`)
+              // keeps `data-total-known` off this badge entirely rather than
+              // asserting a property the surface does not have.
+              totalKnown: undefined as boolean | undefined,
+              title: undefined as string | undefined,
             }
           : null;
     return (
@@ -535,7 +608,10 @@ export default function CoordNav() {
                   ? "bg-primary-foreground/20"
                   : "bg-muted text-foreground"
             )}
+            title={badge.title}
+            data-total-known={badge.totalKnown}
           >
+            {badge.totalKnown === false ? "≥" : ""}
             {badge.count}
           </span>
         )}

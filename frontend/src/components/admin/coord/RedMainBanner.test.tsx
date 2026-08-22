@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const getMock = vi.fn();
 const fetchMock = vi.fn();
@@ -386,5 +392,105 @@ describe("<RedMainBanner> spawn fix session", () => {
     )) as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     expect(btn.textContent).toContain("fix session running");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Reachability: the banner must SURVIVE coord's churning alert window.
+//
+// Measured 2026-08-14 across 5 samples 25s apart (plan
+// `2026-08-05-coord-alerts-surface-and-fleet-style-ui.md`, § MEASURED M2): the
+// unfiltered rollup is ordered `last_seen_at DESC` under a hard 500-row cap,
+// every watcher re-stamps `last_seen_at` on its own tick, and the single
+// `red_main` row appeared in 1 of 5 answers. The banner overwrote its state
+// from every successful poll, so the surface that tells the fleet main is red
+// was blind ~80% of the time. These are the fix's regression tests.
+// ----------------------------------------------------------------------------
+describe("<RedMainBanner> reachability", () => {
+  const REPO = "jspinak/qontinui-runner";
+
+  function redRow() {
+    return {
+      id: 7,
+      alert_key: `red_main:${REPO}`,
+      severity: "critical",
+      kind: "red_main",
+      summary: `Main CI for ${REPO} is RED`,
+      first_seen_at: "2026-08-14T01:00:00Z",
+      detail: {
+        repo: REPO,
+        workflows: ["CI"],
+        blocked_pr_count: 3,
+        fix_session: "none",
+      },
+    };
+  }
+
+  beforeEach(() => {
+    getMock.mockReset();
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks coord for the red_main KIND, not the unfiltered rollup", async () => {
+    getMock.mockResolvedValue([redRow()]);
+    render(<RedMainBanner />);
+
+    await screen.findByTestId("red-main-banner");
+    const url = String(getMock.mock.calls[0][0]);
+    expect(url).toContain("kind=red_main");
+    expect(url).toContain("include_resolved=false");
+  });
+
+  it("keeps the banner up across a single empty poll, and clears once emptiness persists", async () => {
+    vi.useFakeTimers();
+    // One live answer, then nothing — exactly the 1-of-5 eviction pattern.
+    getMock.mockResolvedValueOnce([redRow()]).mockResolvedValue([]);
+    render(<RedMainBanner />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
+
+    // Polls 2 and 3 come back empty. Under the old code the first of these
+    // blanked a tenant-wide merge-outage banner.
+    for (let i = 0; i < 2; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
+    }
+
+    // Sustained emptiness IS believed — a fixed main clears the banner.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(screen.queryByTestId("red-main-banner")).not.toBeInTheDocument();
+  });
+
+  it("does not count a FAILED poll toward the clear streak", async () => {
+    vi.useFakeTimers();
+    getMock
+      .mockResolvedValueOnce([redRow()])
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockRejectedValue(new Error("boom"));
+    render(<RedMainBanner />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    for (let i = 0; i < 4; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+    }
+    // An outage in the READ path is not evidence that main went green.
+    expect(screen.queryByTestId("red-main-banner")).toBeInTheDocument();
   });
 });
