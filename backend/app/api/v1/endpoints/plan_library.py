@@ -538,9 +538,10 @@ def _citation_error_text(raw: object) -> str:
     ``pg_error`` context object — and this read must survive either without
     500ing, so the shape is probed rather than assumed.
 
-    Only the STRUCTURED identifiers cross the boundary: the ``error`` code and
-    the SQLSTATE (:func:`_coord_error_code`, which finds it at ``pg_code`` or
-    at ``pg.code``). The free-text fields are deliberately NOT echoed —
+    Only the STRUCTURED identifiers cross the boundary: the ``error`` code, the
+    ``op`` token naming WHICH read failed (:func:`_coord_error_op`), and the
+    SQLSTATE (:func:`_coord_error_code`, which finds it at ``pg_code`` or at
+    ``pg.code``). The free-text fields are deliberately NOT echoed —
     ``message``, ``context`` and everything under ``pg`` are where coord's
     Postgres internals live, and ``pg.detail`` routinely carries ROW VALUES
     (``Key (tenant_id)=(…) is not present in table …``), constraint names and
@@ -555,7 +556,13 @@ def _citation_error_text(raw: object) -> str:
     text: str
     if isinstance(raw, dict):
         parts = [
-            part for part in (_coord_error_field(raw), _coord_error_code(raw)) if part
+            part
+            for part in (
+                _coord_error_field(raw),
+                _coord_error_op(raw),
+                _coord_error_code(raw),
+            )
+            if part
         ]
         if parts:
             text = ": ".join(parts)
@@ -666,11 +673,52 @@ def _coord_error_code(parsed: object) -> str | None:
     return None
 
 
+def _coord_error_op(parsed: object) -> str | None:
+    """WHICH coord read failed — the ``op`` token of a safe error body.
+
+    coord narrowed every production error body onto
+    ``PgErrorContext::to_safe_body(op)``, which emits
+    ``{error, pg_code, op}`` (plus the schema identifiers PG named). ``op`` is
+    the operation that broke, drawn from a CLOSED set of compile-time literals
+    (``SafeOp``, whose ``ALL`` is exhaustiveness-checked in coord's own tests
+    precisely because "a free-text token is a disclosure surface").
+
+    It is read because on one live arm it is the ONLY diagnostic left. When the
+    failure never reached Postgres — a pool timeout, a connection refused —
+    there is no SQLSTATE to attach and coord spells that ``pg_code: null``
+    deliberately. Without this field the whole reason line an operator gets is
+    ``db_error``: true, and useless. With it, ``work_unit.citations.read`` and
+    ``work_unit.read`` are distinguishable, which is the difference between
+    "the citation join is sick" and "the by-slug read is sick" — and that is
+    the whole decision this line exists to inform.
+
+    Same admission test as :func:`_coord_error_field` and
+    :func:`_coord_error_code`, and for the same reason: it is a STRUCTURED
+    identifier, not free text out of another service's database. The
+    :data:`_REASON_MAX_CHARS` cap still applies to the rendered line, because
+    what makes a whitelist safe is naming the field — never trusting its
+    length.
+
+    Deliberately NOT read: ``pg_constraint`` / ``pg_table`` / ``pg_column``.
+    coord judges them safe to EMIT and it is right — they are schema, not row
+    values — but this boundary is stricter than coord's by choice, and it may
+    be: nothing on this side needs a constraint name to act. The point of a
+    whitelist is that a field crosses because it was named, so a field coord
+    added is not admitted merely by being safe.
+    """
+    if not isinstance(parsed, dict):
+        return None
+    op = parsed.get("op")
+    if isinstance(op, str) and op:
+        return op
+    return None
+
+
 def _safe_body_excerpt(body: str, parsed: object) -> str:
     """What of coord's error body may ride out in ``unavailable_reason``.
 
-    A WHITELIST, not a redaction: the ``error`` code and the SQLSTATE, and
-    nothing else. Never the body, never an excerpt of it.
+    A WHITELIST, not a redaction: the ``error`` code, coord's ``op`` token and
+    the SQLSTATE, and nothing else. Never the body, never an excerpt of it.
 
     ``unavailable_reason`` is returned to THIS api's caller, and — because the
     page-wide circuit stores the first tripping reason and repeats it on every
@@ -683,9 +731,12 @@ def _safe_body_excerpt(body: str, parsed: object) -> str:
     N — so the fix is to name the fields that may cross rather than to trim the
     ones that may not.
 
-    Those two identifiers are enough to act on: they separate "wait for the
+    Those three identifiers are enough to act on: they separate "wait for the
     migration" (``42P01``) from "page someone", which is the whole decision an
-    operator makes here. The rest of the body is in coord's own logs.
+    operator makes here, and ``op`` says which read to look at — the one thing
+    left when the failure never reached Postgres and coord answers
+    ``pg_code: null`` (see :func:`_coord_error_op`). The rest of the body is in
+    coord's own logs.
 
     A body that does not parse as JSON is not a coord error object at all, and
     it has no identifiers to lift — so it is DESCRIBED (its size) rather than
@@ -702,7 +753,11 @@ def _safe_body_excerpt(body: str, parsed: object) -> str:
     if parsed is not None:
         identifiers = [
             part
-            for part in (_coord_error_field(parsed), _coord_error_code(parsed))
+            for part in (
+                _coord_error_field(parsed),
+                _coord_error_op(parsed),
+                _coord_error_code(parsed),
+            )
             if part
         ]
         if identifiers:
@@ -825,13 +880,17 @@ def _is_transport_failure(
 
     Scope worth knowing: this arm only ever fires on a hop no caller already
     short-circuited. A device caller never reaches the citations hop at all —
-    the agent by-slug read inlines them — and once coord ships the operator
-    opt-in (``?with_citations=true``, ``_CoordProbe._presence_params``) an
-    operator page reaching it means coord IGNORED the parameter. So the
-    carve-out is deploy-order insurance rather than steady-state behaviour.
-    That is not a reason to delete it: the window it covers is exactly the one
-    where this service is ahead of coord, which is the shipping order this
-    change was written for.
+    the agent by-slug read inlines them — and coord's operator opt-in has since
+    LANDED (``?with_citations=true``, ``_CoordProbe._presence_params``), so an
+    operator page reaching this arm means the coord it talked to did not honour
+    the parameter. So the carve-out is insurance rather than steady-state
+    behaviour.
+
+    That is not a reason to delete it, and "landed" is not "everywhere":
+    landing is a fact about coord's ``main``, while this arm fires against
+    whatever coord actually answered — a deployment mid-roll, a pinned
+    environment, a local coord. The window it covers is exactly the one where
+    this service is ahead of the coord in front of it.
     """
     if answered_codes is not None and body_error is not None:
         declared = answered_codes.get(http_status)
@@ -894,10 +953,13 @@ class _CoordProbe:
         self._coord_base = (
             "/coord/agent-work-units" if actor_kind == "device" else "/coord/work-units"
         )
-        #: Query parameters for the PRESENCE hop. ``?with_citations=1`` asks
-        #: coord's OPERATOR by-slug door to embed the citations it otherwise
-        #: omits, collapsing an operator page to ONE coord round-trip per slug
-        #: instead of two — across up to 100 candidates a page.
+        #: Query parameters for the PRESENCE hop. ``?with_citations=true``
+        #: asks coord's OPERATOR by-slug door to embed the citations it
+        #: otherwise omits, collapsing an operator page to ONE coord
+        #: round-trip per slug instead of two — across up to 100 candidates a
+        #: page. (Spelled ``true`` here and everywhere, for the reason set out
+        #: at the end of this comment; the plan's own literal ``=1`` is the one
+        #: thing about it that must NOT be copied.)
         #:
         #: Operator only, and not an oversight: the agent door already passes
         #: ``with_citations = true`` unconditionally, so the parameter would be
@@ -1036,18 +1098,18 @@ class _CoordProbe:
 
         coord's AGENT by-slug read returns ``citations`` (and, when the read
         did not happen, ``citations_error``) inline unconditionally. Its
-        operator twin keeps the dashboard payload lean by default; once coord
-        ships the opt-in arm it will inline them when asked, which is what
-        ``?with_citations=true`` asks (``_presence_params``) — and until then
-        it answers the lean body regardless. So this is an opportunistic
-        short-circuit, not a contract: ``None`` means the payload carried no
-        citation key at all, which is exactly what a coord that does not know
-        the parameter answers, and the caller must make the second hop.
+        operator twin keeps the dashboard payload lean by default and inlines
+        them when ASKED — which is what ``?with_citations=true`` asks
+        (``_presence_params``), and that arm has landed on coord's ``main``.
+        So this is an opportunistic short-circuit, not a contract: ``None``
+        means the payload carried no citation key at all, which is exactly
+        what a coord PREDATING the parameter answers, and the caller must make
+        the second hop.
 
         **Two clauses below are load-bearing, and both are pinned by
         ``TestInlineCitationErrorIsNeverAnEmptyList``.** Both principals take
-        this arm once coord ships its half, so this function is then the ONLY
-        thing standing between a ``42P01`` window and a page asserting "no
+        this arm against a coord carrying the opt-in, so this function is the
+        ONLY thing standing between a ``42P01`` window and a page asserting "no
         PRs" for every candidate — the sub-resource's typed 503, which no
         caller could reach past by ignoring a field, is not in that path any
         more. The two:
@@ -1109,11 +1171,13 @@ class _CoordProbe:
         1. ``{base}/{slug}`` — presence, carrying ``?with_citations=true`` on
            the operator tier (``_presence_params``). A coord that has the
            opt-in arm answers it by embedding the citations, and hop 2 never
-           runs; one that does not — every coord deployed as this shipped —
-           ignores the key and hop 2 runs as it always has. A 404 here is the
-           NORMAL dangling case (the link is FK-less by design), and it also
-           settles the PR question: citations hang off the work unit by a hard
-           FK, so no unit really does mean no citations.
+           runs; one PREDATING it ignores the key and hop 2 runs as it always
+           has. Both are live readings: the arm landed on coord's ``main``
+           after this consumer shipped, so which one applies is a property of
+           the coord actually answering. A 404 here is the NORMAL dangling
+           case (the link is FK-less by design), and it also settles the PR
+           question: citations hang off the work unit by a hard FK, so no unit
+           really does mean no citations.
         2. ``{base}/{slug}/citations`` — the PR citations, with the live
            merged state coord's own ``shipped`` predicate reduces (coord
            projects each row to
@@ -1128,8 +1192,10 @@ class _CoordProbe:
         that has the opt-in arm — and two against one that does not, because a
         coord ignoring the parameter answers a body with no ``citations`` key
         and the sub-resource hop below runs as it always has. That fallback is
-        not vestigial: it is what this read runs on until coord ships the arm,
-        and it is why the two services may deploy in either order.
+        not vestigial — it is what this read runs on against any coord without
+        the arm, and it is why the two services may deploy in either order.
+        Gate (b) of ``TestOperatorPresenceHopAsksForTheCitationsInline``
+        exercises it head-on rather than asserting it exists.
 
         One consequence worth knowing: a caller that SHORT-CIRCUITS never
         reaches the 5xx branch below, because BOTH conditions it covers — the
