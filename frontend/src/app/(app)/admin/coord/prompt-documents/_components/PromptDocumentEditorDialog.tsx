@@ -20,6 +20,11 @@ import type {
   PromptDocumentUpdate,
 } from "../types";
 import { KIND_META } from "../types";
+import {
+  SESSION_BRIEFING_MAX_BYTES,
+  sessionBriefingByteLength,
+  validateBodyForKind,
+} from "../_lib/sessionBriefingBody";
 
 interface PromptDocumentEditorDialogProps {
   open: boolean;
@@ -50,9 +55,14 @@ interface PromptDocumentEditorDialogProps {
  * Restore-to-default is offered when the document carries a `default_source`,
  * and is itself a versioned edit — reversible from the history view.
  *
- * One kind tightens this: a `session_briefing` PATCH is refused by coord without
- * a non-empty change note, so for that kind the note is a required field and
- * Save stays disabled until it is filled in.
+ * One kind tightens this in two ways, and both are mirrored so the operator
+ * learns them from the form rather than from a rejected save. A
+ * `session_briefing` PATCH is refused by coord without a non-empty change note,
+ * so for that kind the note is a required field; and its BODY must satisfy
+ * coord's content rules (size ceiling, closed placeholder vocabulary, no forged
+ * source marker, no operator-door link, no identity), so a violating body names
+ * itself under the textarea and holds Save disabled. See
+ * `../_lib/sessionBriefingBody`.
  */
 export function PromptDocumentEditorDialog({
   open,
@@ -75,9 +85,10 @@ export function PromptDocumentEditorDialog({
     setChangeNote("");
   }, [open, document]);
 
+  const bodyDirty = document !== null && body !== document.body;
   const dirty =
     document !== null &&
-    (description !== (document.description ?? "") || body !== document.body);
+    (description !== (document.description ?? "") || bodyDirty);
 
   /**
    * `session_briefing` is the one kind whose PATCH coord REJECTS without a
@@ -96,12 +107,35 @@ export function PromptDocumentEditorDialog({
   const changeNoteMissing =
     changeNoteRequired && changeNote.trim().length === 0;
 
+  /**
+   * Coord's per-kind CONTENT rules, mirrored so a violation is answered in the
+   * form rather than by a 400 after the operator has typed the edit — the same
+   * reason the change note above is a labelled required field.
+   *
+   * Gated on `bodyDirty`, mirroring coord's `patch_one`, which runs
+   * `validate_body_for_kind` only `if let Some(ref body) = req.body`. A
+   * description-only edit therefore sends no body and is not content-checked,
+   * and blocking one here would refuse a save coord would have accepted —
+   * which matters precisely for a stored body that predates a tightened rule.
+   */
+  const bodyError =
+    document !== null && bodyDirty
+      ? validateBodyForKind(document.kind, body)
+      : null;
+
+  /** Computed once per render rather than three times inside the budget line. */
+  const bodyBytes =
+    document?.kind === "session_briefing"
+      ? sessionBriefingByteLength(body)
+      : 0;
+
   const canSubmit =
     !saving &&
     !loadingBody &&
     dirty &&
     body.trim().length > 0 &&
-    !changeNoteMissing;
+    !changeNoteMissing &&
+    bodyError === null;
 
   const handleSubmit = async () => {
     if (!document || !canSubmit) return;
@@ -210,12 +244,52 @@ export function PromptDocumentEditorDialog({
                   onChange={(e) => setBody(e.target.value)}
                   rows={18}
                   className="font-mono text-xs"
+                  aria-invalid={bodyError !== null}
+                  aria-describedby={
+                    bodyError !== null ? "doc-body-error" : undefined
+                  }
                 />
-                <p className="text-xs text-muted-foreground">
-                  {document.format === "markdown"
-                    ? "Markdown prose — served verbatim to the fleet."
-                    : "Prose — served verbatim to the fleet."}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    {document.format === "markdown"
+                      ? "Markdown prose — served verbatim to the fleet."
+                      : "Prose — served verbatim to the fleet."}
+                  </p>
+                  {/*
+                    The budget is shown only for the kind that HAS one, and it
+                    counts UTF-8 bytes because that is what coord measures. A
+                    character count would read comfortably under the cap on
+                    exactly the em-dash-heavy prose most likely to exceed it.
+                  */}
+                  {document.kind === "session_briefing" ? (
+                    <p
+                      className={`shrink-0 text-xs tabular-nums ${
+                        bodyBytes > SESSION_BRIEFING_MAX_BYTES
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground"
+                      }`}
+                      data-testid="doc-body-budget"
+                    >
+                      {bodyBytes.toLocaleString()} /{" "}
+                      {SESSION_BRIEFING_MAX_BYTES.toLocaleString()} bytes
+                    </p>
+                  ) : null}
+                </div>
+                {/*
+                  Coord refuses this body. Named here, next to the field, rather
+                  than surfaced as a toast after a failed round-trip — the
+                  operator has to be able to see which token is the problem
+                  while looking at the text that contains it.
+                */}
+                {bodyError !== null ? (
+                  <p
+                    id="doc-body-error"
+                    className="text-xs text-destructive"
+                    data-testid="doc-body-error"
+                  >
+                    {bodyError}
+                  </p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
