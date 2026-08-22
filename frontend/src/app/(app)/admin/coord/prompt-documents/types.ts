@@ -40,6 +40,29 @@ export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
   "prompt_template",
 ] as const;
 
+/**
+ * The three `session_briefing` names the runner actually resolves — coord
+ * `NAME_RUNNER_SESSION` / `NAME_PLAN_CAPTURE_CLAUSE` / `NAME_AI_SESSION_RULES`.
+ *
+ * Two properties hang off membership, and both cut the same way:
+ *
+ * 1. **Only these are read.** The runner fetches them by name; it does not LIST
+ *    the kind. A fourth row is stored and versioned but inert.
+ * 2. **Only these are protected from agent writes.** Coord's
+ *    `AGENT_UNWRITABLE_DOCUMENTS` is a list of `(kind, name)` PAIRS, not a
+ *    kind-wide deny — so a fourth row is agent-writable by default, exactly
+ *    because it is inert.
+ *
+ * Held as a constant rather than left as prose inside `KIND_META` so the create
+ * dialog can actually check the name an operator typed instead of hoping they
+ * read the sentence.
+ */
+export const SESSION_BRIEFING_DOCUMENT_NAMES: readonly string[] = [
+  "runner-session",
+  "plan-capture-clause",
+  "ai-session-rules",
+];
+
 /** Operator-facing label + one-line explanation per kind. */
 export const KIND_META: Record<
   PromptDocumentKind,
@@ -47,8 +70,10 @@ export const KIND_META: Record<
 > = {
   session_briefing: {
     label: "Session Briefing",
-    description:
-      "Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — runner-session, plan-capture-clause and ai-session-rules; any other document under this kind is stored and versioned but inert.",
+    // The three names are interpolated rather than retyped: this sentence and
+    // the create dialog's inert-name check have to agree, and a prose copy is
+    // the half that goes stale.
+    description: `Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — ${SESSION_BRIEFING_DOCUMENT_NAMES.join(", ")}; any other document under this kind is stored and versioned but inert.`,
   },
   policy: {
     label: "Policy",
@@ -134,18 +159,29 @@ export interface PromptDocumentSummary {
   agent_write_effective?: boolean;
   /**
    * Where `agent_write_effective` came from: `"operator"` when this document
-   * carries an explicit setting, `"default"` when coord's built-in meta-policy
+   * carries an explicit setting, `"default"` when coord's built-in protection
    * rule decided.
    *
    * Computed server-side ON PURPOSE. Deriving it here would mean shipping a
    * second copy of coord's `AGENT_UNWRITABLE_DOCUMENTS` list into the browser,
-   * and the day a fourth meta-policy is added in Rust this page would label it
-   * "open (default)" while coord denied every write to it.
+   * and the day a protected document is added in Rust this page would label it
+   * "open (default)" while coord denied every write to it. That is not
+   * hypothetical: the list grew from three rows to six when the session
+   * briefings were added, and this page needed no change precisely because it
+   * derives nothing.
    */
   agent_write_source?: "operator" | "default";
   /**
    * What coord's built-in rule says, IGNORING any operator override — `false`
-   * exactly for a meta-policy.
+   * exactly for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list.
+   *
+   * That list holds TWO families, protected for different reasons: the
+   * meta-policies (`kind: "policy"`), which define how every other document is
+   * classified and applied; and the three canonical session briefings
+   * (`kind: "session_briefing"`, see `SESSION_BRIEFING_DOCUMENT_NAMES`), which
+   * are pushed into every session's system prompt. The distinction does not
+   * change this field's meaning, but it does change what the operator must be
+   * told when overriding it — see `AgentWriteAccessControl`.
    *
    * This is NOT derivable from `agent_write_source`. Once an operator touches a
    * document at all, `source` becomes `"operator"` permanently, so a
