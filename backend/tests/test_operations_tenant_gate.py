@@ -129,10 +129,20 @@ def _patch_transport(
 # scheduler tick lives in a Context created long before, on the lifespan
 # portal's event loop, so it is not.
 #
-# The bias is deliberately conservative: a checkout is IGNORED only when it can
-# be positively attributed to a context that is not the request's. Anything
-# unattributable still counts, so the guard cannot be quietly hollowed out —
-# and it now holds for every future background task, not just today's three.
+# Be honest about the direction this fails in. The marker is two-state, so an
+# UNMARKED context is ignored — a checkout is not required to prove it belongs
+# to somebody else, only to fail to prove it belongs to the request. That makes
+# the guard fail OPEN if the marker ever stops arriving: no middleware on the
+# app under test, a scope the middleware passes through, or a dependency change
+# that breaks contextvars propagation, and every assertion below goes vacuously
+# green. (A tri-state — background contexts positively marked False — would
+# fail closed, but nothing here can reach into the scheduler's Context to mark
+# it.) `TestRequestScopedCheckoutAttribution` below is the positive control
+# that keeps this honest: it fails if the marker stops reaching the listener.
+#
+# One known escape hatch: bare `loop.run_in_executor(None, ...)` does NOT copy
+# the Context (unlike `asyncio.to_thread` and anyio's `to_thread.run_sync`,
+# both of which do). Nothing on the `get_tenant_id` path uses it today.
 # ---------------------------------------------------------------------------
 
 _IN_REQUEST: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -152,7 +162,12 @@ class _MarkRequestContext:
         self.app = app
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope.get("type") != "http":
+        # `lifespan` is passed through DELIBERATELY and must stay that way: the
+        # lifespan is where `scheduler.start()` creates its background tasks,
+        # and a task created under a marked Context would inherit the marker —
+        # turning every scheduler tick into a "request" checkout, which is the
+        # bug this whole block exists to fix.
+        if scope.get("type") not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
         token = _IN_REQUEST.set(True)
@@ -167,7 +182,11 @@ class _RequestPoolCheckouts:
 
     def __init__(self) -> None:
         self.checkouts: list[Any] = []
-        self._outstanding: set[int] = set()
+        # Keyed by `id(conn_record)` — so the mapping that does the bookkeeping
+        # is also the one holding the strong reference that makes those ids
+        # non-recyclable. (Keying off `checkouts` staying alive would be an
+        # invariant one refactor away from an address-reuse miscount.)
+        self._outstanding: dict[int, Any] = {}
 
     @property
     def outstanding(self) -> int:
@@ -179,6 +198,7 @@ class _RequestPoolCheckouts:
 def _record_request_pool_checkouts(engine: Any) -> Iterator[_RequestPoolCheckouts]:
     """Record only those ``engine`` pool checkouts the request itself caused."""
     from sqlalchemy import event
+    from sqlalchemy.exc import InvalidRequestError
 
     recorder = _RequestPoolCheckouts()
 
@@ -188,21 +208,27 @@ def _record_request_pool_checkouts(engine: Any) -> Iterator[_RequestPoolCheckout
             # thread. Not the request's DB work, so not this guard's business.
             return
         recorder.checkouts.append(conn_record)
-        recorder._outstanding.add(id(conn_record))
+        recorder._outstanding[id(conn_record)] = conn_record
 
     def _on_checkin(dbapi_conn: Any, conn_record: Any) -> None:
         # NOT filtered on `_IN_REQUEST`: a connection can be returned outside
         # the request's context (e.g. by a GC'd session), and we only ever
         # discard ids this recorder itself put in.
-        recorder._outstanding.discard(id(conn_record))
+        recorder._outstanding.pop(id(conn_record), None)
 
-    event.listen(engine.sync_engine, "checkout", _on_checkout)
-    event.listen(engine.sync_engine, "checkin", _on_checkin)
     try:
+        event.listen(engine.sync_engine, "checkout", _on_checkout)
+        event.listen(engine.sync_engine, "checkin", _on_checkin)
         yield recorder
     finally:
-        event.remove(engine.sync_engine, "checkout", _on_checkout)
-        event.remove(engine.sync_engine, "checkin", _on_checkin)
+        # `event.remove` on a listener that was never attached raises, so both
+        # removals are guarded — the point is that neither can be left behind
+        # on the SHARED engine for the rest of the session.
+        for name, fn in (("checkout", _on_checkout), ("checkin", _on_checkin)):
+            try:
+                event.remove(engine.sync_engine, name, fn)
+            except InvalidRequestError:
+                pass
 
 
 def _build_app(*, user_override: Any = None) -> FastAPI:
@@ -411,10 +437,6 @@ class TestVestigialSweepRoutesStillGated:
         assert resp.status_code == 200
         assert recorder.checkouts == []
         assert isinstance(async_engine.pool, QueuePool)
-        # Belt-and-braces, request-scoped: nothing the request took is still
-        # held. (The engine-wide `pool.checkedout()` cannot be asserted here —
-        # a concurrent scheduler tick legitimately holds one.)
-        assert recorder.outstanding == 0
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +546,33 @@ class TestRequestScopedCheckoutAttribution:
         assert recorder.checkouts == []
         assert recorder.outstanding == 0
 
+    def test_the_real_app_marks_the_context_through_greenlet_spawn(self) -> None:
+        """The positive control for the two guards above, on the REAL app.
+
+        Those guards assert `== []`, so every way the marker can stop arriving
+        reads there as green. This asserts the marker ARRIVES, on the app
+        `_build_app()` actually returns, at the exact dispatch point a pool
+        listener fires from: inside ``greenlet_spawn``, which is how SQLAlchemy
+        runs sync pool code (and its event listeners) from async callers.
+
+        It therefore fails — loudly, and with no Postgres — if the middleware
+        stops being installed, or if a dependency upgrade breaks contextvars
+        propagation across the greenlet hop.
+        """
+        from sqlalchemy.util import greenlet_spawn
+
+        app = _build_app()
+
+        @app.get("/__marker_probe")
+        async def _probe() -> dict[str, Any]:  # noqa: ANN202 - test-local
+            return {
+                "in_task": _IN_REQUEST.get(),
+                "in_greenlet": await greenlet_spawn(_IN_REQUEST.get),
+            }
+
+        body = TestClient(app).get("/__marker_probe").json()
+        assert body == {"in_task": True, "in_greenlet": True}
+
     def test_marker_does_not_leak_past_the_request(self) -> None:
         """``_IN_REQUEST`` is reset, so a later foreign checkout stays ignored."""
         assert _IN_REQUEST.get() is False
@@ -612,8 +661,13 @@ class TestNoDbCheckoutDuringTenantGate:
         )
         # ... and NO pooled DB connection was checked out BY THE REQUEST.
         assert recorder.checkouts == []
-        # Belt-and-braces: nothing the request took is still held.
+        # (Zero checkouts already implies nothing of the request's is still
+        # held, so there is no separate outstanding-count assertion here. The
+        # engine-wide `pool.checkedout() == 0` this replaced could genuinely
+        # catch a leak, but not without also counting a concurrent scheduler
+        # tick; `recorder.outstanding` carries that weight in
+        # `TestRequestScopedCheckoutAttribution`, where a leak is provoked.)
+        #
         # (AsyncAdaptedQueuePool subclasses QueuePool; the isinstance check
         # narrows the type for mypy, which types ``engine.pool`` as ``Pool``.)
         assert isinstance(async_engine.pool, QueuePool)
-        assert recorder.outstanding == 0
