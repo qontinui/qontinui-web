@@ -891,3 +891,108 @@ class TestOnboardingPreconditionEndpoint:
         )
         assert resp.status_code == 403
         assert resp.json()["detail"] == "tenant_not_resolved"
+
+
+# ---------------------------------------------------------------------------
+# Policy list filters (kind / repo / enabled)
+# ---------------------------------------------------------------------------
+#
+# Coord's ``GET /coord/policies`` has always taken a ``ListPoliciesQuery``
+# (``kind`` / ``repo`` / ``enabled``), but this proxy forwarded no query string
+# at all — so coord applied its ``enabled`` default of ``true`` on every call
+# and a tenant's DISABLED rules were unlistable from the console. The
+# ``/admin/coord/automation-rules`` off-switch therefore wrote a row the very
+# next reload dropped, with no way to see or re-enable it.
+#
+# ``enabled`` is an EQUALITY filter server-side (coord binds ``AND enabled =
+# $2``), so ``enabled=false`` lists the disabled rules ONLY and a caller wanting
+# both states issues both requests. These tests pin what actually reaches coord.
+
+
+class TestCoordPolicyListFilters:
+    def test_no_filters_sends_no_query_string(self, client: TestClient):
+        """Unfiltered, the call must stay byte-identical to the pre-filter
+        behaviour — coord then applies its own ``enabled`` default."""
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.args[0].endswith("/coord/policies")
+        assert instance.get.call_args.kwargs.get("params") is None
+        _assert_tenant_header_forwarded(instance.get.call_args)
+
+    def test_enabled_false_reaches_coord(self, client: TestClient):
+        """The arm that lists turned-off rules. A dropped ``enabled=false``
+        here is invisible: coord answers 200 with the ENABLED set, so the
+        console would render a confident, wrong 'no disabled rules'."""
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies?enabled=false")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {"enabled": False}
+
+    def test_enabled_true_is_forwarded_explicitly(self, client: TestClient):
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies?enabled=true")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {"enabled": True}
+
+    def test_kind_and_repo_are_forwarded(self, client: TestClient):
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(
+                f"{API_PREFIX}/coord/policies"
+                "?kind=terminal_auto_response&repo=qontinui-web"
+            )
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {
+            "kind": "terminal_auto_response",
+            "repo": "qontinui-web",
+        }
+
+    def test_empty_filter_value_is_forwarded_not_dropped(self, client: TestClient):
+        """``?repo=`` is a REAL filter to coord (it selects the degenerate
+        empty-repo rows the clearance resolver ranks in its own band), so a
+        truthiness check here would silently turn a narrow query into a wide
+        one and answer a question the caller never asked."""
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies?repo=")
+
+        assert resp.status_code == 200
+        assert instance.get.call_args.kwargs["params"] == {"repo": ""}
+
+    def test_list_stays_readable_to_a_non_admin_member(self, client: TestClient):
+        """The read gate is membership (``get_tenant_id``), not tenant-admin —
+        adding filters must not have moved it."""
+        mock_resp = _mock_response(json_data={"policies": [], "total": 0})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies?enabled=false")
+        assert resp.status_code == 200
+
+    def test_tenant_not_resolved(self, unresolved_client: TestClient):
+        resp = unresolved_client.get(f"{API_PREFIX}/coord/policies")
+        assert resp.status_code == 403

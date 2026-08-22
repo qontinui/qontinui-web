@@ -221,7 +221,7 @@ const MERGE_STATE_META: Record<string, MergeStateMeta | undefined> =
  * looked up statically: GitHub reports UNSTABLE both when a non-required
  * check FAILED (worth a look — warning) and when non-required checks are
  * merely STILL RUNNING (just wait — muted info). The split predicate is
- * shared with prPipeline/MergeTrain via `unstableHasFailure` so the surfaces
+ * shared with prPipeline/MergePipeline via `unstableHasFailure` so the surfaces
  * never drift. Exported for PrsTable.test.tsx.
  */
 export const UNSTABLE_FAILED_META = {

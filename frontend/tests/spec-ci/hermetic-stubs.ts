@@ -104,17 +104,30 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
     // renderer (badges, the fanout_bound null-guard, recordedLine, the
     // controlled toggle) unexecuted in CI: a vacuous green. Two rows split
     // the branches:
-    //   - code-reviewer  — mirrors what `backend/scripts/seed_agent_registry.py`
-    //     actually writes: spawn_path always 'in_session_subagent',
-    //     policy_required true for THIS agent only, model/effort NULL (its
-    //     .claude/agents frontmatter declares neither). fanout_bound is NOT
-    //     the seed's shape — that column is `INTEGER NOT NULL DEFAULT 15`
-    //     (agent_registry_01 migration:75) and the seed's INSERT omits it, so
-    //     a seeded row reads 15. null is chosen here to exercise the page's
-    //     `!== null && !== undefined` guard, which stays reachable because
-    //     coord may omit the field entirely (`row.get("fanout_bound")` →
-    //     None). Drives the policy-required badge + the empty meta line +
-    //     the "Registry default:" honesty line.
+    //   - code-reviewer  — follows `scripts/seed_agent_registry.py` where the
+    //     seed's shape and the branch this row has to cover agree:
+    //     spawn_path always 'in_session_subagent', policy_required true for
+    //     THIS agent only, model/effort NULL (its .claude/agents frontmatter
+    //     declares neither). NOTE the path: the seeder used to live at
+    //     `backend/scripts/`, invisible under a .gitignore'd directory, and
+    //     that duplicate was deleted — the repo root is the only copy, and the
+    //     one coord's source and the served policy both name.
+    //
+    //     Two fields deliberately DIVERGE from a freshly seeded row, because
+    //     branch coverage is what this fixture is for:
+    //       * fanout_bound null. The seeder sends `1` explicitly, so a seeded
+    //         row reads 1, not the `INTEGER NOT NULL DEFAULT 15` of
+    //         agent_registry_01 migration:75. null exercises the page's
+    //         `!== null && !== undefined` guard, which stays reachable
+    //         because coord may omit the field entirely
+    //         (`row.get("fanout_bound")` → None).
+    //       * enabled true. A policy-required agent now seeds
+    //         `default_enabled: false` — it is spawned BY POLICY on the user's
+    //         own AI account, so it is opted into rather than arriving on. If
+    //         this row followed the seed it would be the second disabled row
+    //         and nothing would render the enabled + source:"default" branch.
+    //     Drives the policy-required badge + the empty meta line + the
+    //     "Registry default:" honesty line.
     //   - debugging-specialist — every optional deliberately populated (a
     //     shape coord's registry permits but the initial seed leaves NULL) to
     //     exercise the opposite branch: the Disabled·<disposition> badge,
@@ -232,17 +245,17 @@ export const HERMETIC_STUBS: readonly HermeticStub[] = [
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/prs(\?|$)/,
     body: [],
-    note: "MergeTrain fetchPrs tolerates bare array — coord proxy",
+    note: "useMergePipelineData fetchPrs tolerates bare array — coord proxy",
   },
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/escalations(\?|$)/,
     body: [],
-    note: "MergeTrain fetchEscalations tolerates bare array (MergeTrain.tsx:526) — coord proxy",
+    note: "Escalations list; tolerates bare array. No frontend caller today — the last one went with the unrendered MergeTrain panel — coord proxy",
   },
   {
     pattern: /\/api\/v1\/operations\/pr-merge\/suggestions(\?|$)/,
     body: [],
-    note: "MergeTrain fetchSuggestions tolerates bare array (MergeTrain.tsx:596) — coord proxy",
+    note: "useMergePipelineData fetchSuggestions tolerates bare array — coord proxy",
   },
   {
     pattern: /\/api\/v1\/strategy\/mentions\/unread(\?|$)/,

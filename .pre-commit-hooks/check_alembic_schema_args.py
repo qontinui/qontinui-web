@@ -122,11 +122,18 @@ _DDL_PATTERNS = [
             re.IGNORECASE,
         ),
     ),
-    # ALTER TABLE [ONLY] <name>
+    # ALTER TABLE [IF EXISTS] [ONLY] <name>
+    #
+    # ``IF EXISTS`` is part of PostgreSQL's ALTER TABLE grammar and has to be
+    # consumed here. Without it the pattern captures the literal ``IF`` as the
+    # table identifier and reports every ``ALTER TABLE IF EXISTS coord.foo`` as
+    # unqualified — a false positive on DDL that is in fact correctly
+    # schema-qualified (the coord_prompt_docs_0{2,3} CHECK widenings both hit
+    # it; 02 only escaped because the hook re-runs on CHANGED files alone).
     (
         "ALTER TABLE",
         re.compile(
-            r"\bALTER\s+TABLE\s+(?:ONLY\s+)?(?P<ident>"
+            r"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?P<ident>"
             + _IDENT
             + r"(?:\s*\.\s*"
             + _IDENT

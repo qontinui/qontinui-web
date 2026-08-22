@@ -67,6 +67,9 @@ export function RuleList() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PolicyRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PolicyRow | null>(null);
+  // A workspace rule's OFF position is not a state this console can read back
+  // — see the dialog below. It is confirmed, never applied on the click.
+  const [disableTarget, setDisableTarget] = useState<PolicyRow | null>(null);
 
   const openCreate = () => {
     setEditingRule(null);
@@ -118,8 +121,10 @@ export function RuleList() {
                   // OFF → override with {disabled:true}; ON → revert to built-in.
                   if (enabled) void revertOverride(rule.system_rule_id);
                   else void overrideRule(rule.system_rule_id, { disabled: true });
-                } else {
+                } else if (enabled) {
                   void updateRule(rule.policy_id, { enabled });
+                } else {
+                  setDisableTarget(rule);
                 }
               }}
               onEdit={() => openEdit(rule)}
@@ -142,6 +147,56 @@ export function RuleList() {
         onRestore={restoreDefault}
         onOverride={overrideRule}
       />
+
+      {/*
+        Turning a WORKSPACE rule off is not a reversible disable, however much
+        a switch implies one. Coord's `DELETE /coord/policies/:id` is a soft
+        delete that sets this very column (`policies/routes.rs::delete_soft` —
+        `SET enabled = false`), `coord.policy_rules` carries no tombstone to
+        tell the two apart, and the list route's default (`enabled = true`)
+        then drops the row. So the switch used to write a state nothing could
+        read back: the rule vanished and could not be turned on again.
+
+        Rather than pretend otherwise, the OFF position is confirmed and routed
+        to the delete it actually is — which also gets coord's own operator
+        stamping (`operator_actor`) instead of a PATCH that leaves the row
+        looking self-modified. A genuine disable needs coord to separate the
+        two meanings first; until then two controls doing the same thing under
+        different names is the worse outcome.
+
+        BUILT-INS are untouched by this: their switch runs the override routes
+        (`{disabled: true}` / `revertOverride`), which really are reversible.
+      */}
+      <AlertDialog
+        open={disableTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDisableTarget(null);
+        }}
+      >
+        <AlertDialogContent data-testid="automation-disable-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn this rule off?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Coord has no reversible &ldquo;off&rdquo; for a workspace rule:
+              turning{" "}
+              <span className="font-medium">{disableTarget?.name}</span> off is
+              the same soft delete as the Delete button, and it will not be
+              listed here again. Re-create it to bring it back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (disableTarget) void deleteRule(disableTarget.policy_id);
+                setDisableTarget(null);
+              }}
+            >
+              Turn off and delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={deleteTarget !== null}

@@ -11,16 +11,17 @@
  *
  * A prompt document is any prompt-shaped content coord serves the fleet,
  * addressed by `(kind, name)`. This generalizes the former `policy_documents`
- * store (whose rows migrated in as `kind: "policy"`) to five kinds — one editor
- * for all of them, rather than five unrelated homes.
+ * store (whose rows migrated in as `kind: "policy"`) to six kinds — one editor
+ * for all of them, rather than six unrelated homes.
  *
  * Versioning is the core contract: coord snapshots an immutable version on EVERY
  * edit and bumps `current_version` in the same transaction. Nothing is
  * overwritten in place, so every prior wording stays readable and restorable.
  */
 
-/** The five content families (coord `KINDS`, mirroring the DB CHECK). */
+/** The six content families (coord `KINDS`, mirroring the DB CHECK). */
 export type PromptDocumentKind =
+  | "session_briefing"
   | "policy"
   | "response_prompt"
   | "continuation_rules"
@@ -29,6 +30,9 @@ export type PromptDocumentKind =
 
 /** Every kind, in the order the page renders its groups. */
 export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
+  // First on purpose: this is the most consequential document in the store —
+  // it is appended to the system prompt of every session the runner hosts.
+  "session_briefing",
   "policy",
   "response_prompt",
   "continuation_rules",
@@ -36,11 +40,41 @@ export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
   "prompt_template",
 ] as const;
 
+/**
+ * The three `session_briefing` names the runner actually resolves — coord
+ * `NAME_RUNNER_SESSION` / `NAME_PLAN_CAPTURE_CLAUSE` / `NAME_AI_SESSION_RULES`.
+ *
+ * Two properties hang off membership, and both cut the same way:
+ *
+ * 1. **Only these are read.** The runner fetches them by name; it does not LIST
+ *    the kind. A fourth row is stored and versioned but inert.
+ * 2. **Only these are protected from agent writes.** Coord's
+ *    `AGENT_UNWRITABLE_DOCUMENTS` is a list of `(kind, name)` PAIRS, not a
+ *    kind-wide deny — so a fourth row is agent-writable by default, exactly
+ *    because it is inert.
+ *
+ * Held as a constant rather than left as prose inside `KIND_META` so the create
+ * dialog can actually check the name an operator typed instead of hoping they
+ * read the sentence.
+ */
+export const SESSION_BRIEFING_DOCUMENT_NAMES: readonly string[] = [
+  "runner-session",
+  "plan-capture-clause",
+  "ai-session-rules",
+];
+
 /** Operator-facing label + one-line explanation per kind. */
 export const KIND_META: Record<
   PromptDocumentKind,
   { label: string; description: string }
 > = {
+  session_briefing: {
+    label: "Session Briefing",
+    // The three names are interpolated rather than retyped: this sentence and
+    // the create dialog's inert-name check have to agree, and a prose copy is
+    // the half that goes stale.
+    description: `Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — ${SESSION_BRIEFING_DOCUMENT_NAMES.join(", ")}; any other document under this kind is stored and versioned but inert.`,
+  },
   policy: {
     label: "Policy",
     description:
@@ -125,18 +159,29 @@ export interface PromptDocumentSummary {
   agent_write_effective?: boolean;
   /**
    * Where `agent_write_effective` came from: `"operator"` when this document
-   * carries an explicit setting, `"default"` when coord's built-in meta-policy
+   * carries an explicit setting, `"default"` when coord's built-in protection
    * rule decided.
    *
    * Computed server-side ON PURPOSE. Deriving it here would mean shipping a
    * second copy of coord's `AGENT_UNWRITABLE_DOCUMENTS` list into the browser,
-   * and the day a fourth meta-policy is added in Rust this page would label it
-   * "open (default)" while coord denied every write to it.
+   * and the day a protected document is added in Rust this page would label it
+   * "open (default)" while coord denied every write to it. That is not
+   * hypothetical: the list grew from three rows to six when the session
+   * briefings were added, and this page needed no change precisely because it
+   * derives nothing.
    */
   agent_write_source?: "operator" | "default";
   /**
    * What coord's built-in rule says, IGNORING any operator override — `false`
-   * exactly for a meta-policy.
+   * exactly for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list.
+   *
+   * That list holds TWO families, protected for different reasons: the
+   * meta-policies (`kind: "policy"`), which define how every other document is
+   * classified and applied; and the three canonical session briefings
+   * (`kind: "session_briefing"`, see `SESSION_BRIEFING_DOCUMENT_NAMES`), which
+   * are pushed into every session's system prompt. The distinction does not
+   * change this field's meaning, but it does change what the operator must be
+   * told when overriding it — see `AgentWriteAccessControl`.
    *
    * This is NOT derivable from `agent_write_source`. Once an operator touches a
    * document at all, `source` becomes `"operator"` permanently, so a
@@ -349,3 +394,66 @@ export interface ListVersionsResponse {
   versions: PromptDocumentVersionMeta[];
   total: number;
 }
+
+// ────────────────────── policy-write autonomy dial ──────────────────────
+
+/**
+ * The `fleet_runtime_policy` domain governing how much of the agent
+ * policy-write surface this tenant permits.
+ *
+ * Plan `2026-08-06-agent-policy-replace-and-write-autonomy-dial` §4. Mirrors
+ * coord's `fleet_policy::POLICY_WRITE_DOMAIN`.
+ */
+export const POLICY_WRITE_DOMAIN = "policy_write";
+
+/**
+ * The levels, most restrictive first. A total order — each strictly contains
+ * the previous. Mirrors coord's `PolicyWriteLevel::ALL`.
+ */
+export const POLICY_WRITE_LEVELS = [
+  "off",
+  "propose_only",
+  "tightening_only",
+  "full",
+] as const;
+export type PolicyWriteLevel = (typeof POLICY_WRITE_LEVELS)[number];
+
+/**
+ * What coord applies when NO row matches — deliberately NOT the resolver's bare
+ * `"off"`.
+ *
+ * `resolve_effective` answers `off` for both "nobody wrote a row" and "an
+ * operator turned it off". Taking the first literally would disable, fleet-wide
+ * and on deploy, a capability that works today. `tightening_only` is exactly
+ * coord's shipped behaviour, so a tenant that never touches the dial sees no
+ * change. Mirrors coord's `POLICY_WRITE_DEFAULT`.
+ */
+export const POLICY_WRITE_DEFAULT_LEVEL: PolicyWriteLevel = "tightening_only";
+
+/**
+ * Levels an operator may currently select.
+ *
+ * `full` is absent, and that is a shipping decision rather than an oversight:
+ * its entire safety story is that the operator is notified after a loosening
+ * lands, and nothing emits that notification yet (the notification substrate
+ * landed; the policy-change emitter did not). Coord clamps `full` to
+ * `tightening_only` server-side regardless of what this list says —
+ * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` — so hiding it here is the honest
+ * presentation of a restriction that is really enforced, not the enforcement
+ * itself.
+ */
+export const POLICY_WRITE_SELECTABLE_LEVELS: readonly PolicyWriteLevel[] = [
+  "off",
+  "propose_only",
+  "tightening_only",
+];
+
+/** One-line description per level, for the control's help text. */
+export const POLICY_WRITE_LEVEL_HELP: Record<PolicyWriteLevel, string> = {
+  off: "No agent policy writes at all — every operation is refused, including appending a new clause.",
+  propose_only:
+    "Agents write nothing directly; every operation becomes a pending proposal for you to approve.",
+  tightening_only:
+    "Agents may land a provable tightening or no-op; anything else becomes a pending proposal. This is coord's built-in default.",
+  full: "Agents may also land a classified loosening, with a notification instead of a proposal. Not selectable until policy-change notifications ship.",
+};

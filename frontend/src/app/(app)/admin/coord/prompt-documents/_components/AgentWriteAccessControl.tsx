@@ -43,12 +43,30 @@ import type { PromptDocumentSummary } from "../types";
  *
  * ## Why overriding a built-in protection is confirmed
  *
- * Three documents are protected by a compile-time constant in coord because
- * they define how every other document is classified and applied — appending to
- * them can redefine what a rule *means*, so the added text is itself the
- * authority. Opening one is legitimate (the operator owns this decision) but it
- * is not an ordinary row edit, and a control that made it one click would make
- * the fleet's most consequential setting its least deliberate.
+ * Some documents are protected by a compile-time constant in coord rather than
+ * by a setting. Opening one is legitimate — the operator owns this decision —
+ * but it is not an ordinary row edit, and a control that made it one click
+ * would make the fleet's most consequential setting its least deliberate.
+ *
+ * ## Why the confirmation names TWO reasons
+ *
+ * Coord's `AGENT_UNWRITABLE_DOCUMENTS` holds two families, protected for two
+ * genuinely different reasons:
+ *
+ * - **meta-policies** (`kind: "policy"`) define how every other document is
+ *   classified and applied, so appending to one can redefine what a rule
+ *   *means* — the added text is itself the authority;
+ * - **session briefings** (`kind: "session_briefing"`) are PUSHED into the
+ *   system prompt of every session the runner hosts, before the agent decides
+ *   anything. Every other document in the store is pulled by an agent that
+ *   chose to read it. An agent that could write one would be editing the
+ *   instructions the NEXT session runs under.
+ *
+ * The mechanics are kind-generic and stay that way — the control keys purely on
+ * the `agent_write_*` fields coord derives. The COPY cannot be: telling an
+ * operator that `session_briefing/runner-session` "defines how every other
+ * document is classified" is simply false, and it is false at the one moment
+ * they are deciding whether to drop the fleet's strongest write protection.
  */
 export interface AgentWriteAccessControlProps {
   doc: PromptDocumentSummary;
@@ -110,9 +128,24 @@ function describe(doc: PromptDocumentSummary): {
     : {
         label: "Protected (default)",
         variant: "secondary",
-        title:
-          "Protected by coord's built-in rule: this is a meta-policy — it defines how every other document is classified and applied — so agents cannot write it unless an operator overrides that.",
+        title: `Protected by coord's built-in rule: ${builtInReason(doc.kind)} — so agents cannot write it unless an operator overrides that.`,
       };
+}
+
+/**
+ * The reason coord's compile-time list protects THIS document, in one clause.
+ *
+ * Two families, two reasons — see the module header. Written as a function
+ * rather than a lookup keyed on the whole kind set because only the two
+ * protected families ever reach it; anything else falls through to the
+ * meta-policy wording it had before, which is the historical default and is
+ * only reachable if coord starts protecting a third family without this being
+ * updated.
+ */
+function builtInReason(kind: PromptDocumentSummary["kind"]): string {
+  return kind === "session_briefing"
+    ? "this text is pushed into the system prompt of every session the runner hosts, before the agent decides anything, so an agent that could write it would be editing the instructions the next session runs under"
+    : "this is a meta-policy — it defines how every other document is classified and applied";
 }
 
 export function AgentWriteAccessControl({
@@ -140,6 +173,8 @@ export function AgentWriteAccessControl({
   // prevent. Whether a document IS a meta-policy does not change when the row
   // is written.
   const overridesBuiltIn = opening && doc.agent_write_builtin_default === false;
+  /** Which of coord's two protected families this row belongs to. */
+  const isBriefing = doc.kind === "session_briefing";
 
   const apply = async () => {
     // Only dismiss on success. `onSet` resolves false on any failure (the hook
@@ -202,7 +237,9 @@ export function AgentWriteAccessControl({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Open a built-in protected document to agent writes?
+              {isBriefing
+                ? "Open the session briefing to agent writes?"
+                : "Open a built-in protected document to agent writes?"}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm">
@@ -210,18 +247,39 @@ export function AgentWriteAccessControl({
                   <code>
                     {doc.kind}/{doc.name}
                   </code>{" "}
-                  is protected by coord itself, not by a setting. It is a{" "}
-                  <strong>meta-policy</strong>: it defines how every other
-                  document is classified, tiered and applied — including the
-                  limits on the agent write tool.
+                  is protected by coord itself, not by a setting.{" "}
+                  {isBriefing ? (
+                    <>
+                      It is a <strong>session briefing</strong>: this text is
+                      appended to, or prepended into, the system prompt of every
+                      session the runner hosts.
+                    </>
+                  ) : (
+                    <>
+                      It is a <strong>meta-policy</strong>: it defines how every
+                      other document is classified, tiered and applied —
+                      including the limits on the agent write tool.
+                    </>
+                  )}
                 </p>
-                <p>
-                  That is why appending to it is different in kind from
-                  appending to an ordinary policy. A clause added here can
-                  change what a rule <em>means</em>, so the added text is itself
-                  the authority — the usual &ldquo;an append can only add, never
-                  weaken&rdquo; guarantee does not constrain it.
-                </p>
+                {isBriefing ? (
+                  <p>
+                    Every other document in this store is <em>pulled</em> by an
+                    agent that chose to read it. A briefing is{" "}
+                    <em>pushed</em> into every agent before it can decide
+                    anything — so an agent allowed to write this one would be
+                    editing the instructions the <em>next</em> session runs
+                    under, with no operator in the loop.
+                  </p>
+                ) : (
+                  <p>
+                    That is why appending to it is different in kind from
+                    appending to an ordinary policy. A clause added here can
+                    change what a rule <em>means</em>, so the added text is
+                    itself the authority — the usual &ldquo;an append can only
+                    add, never weaken&rdquo; guarantee does not constrain it.
+                  </p>
+                )}
                 <p className="text-muted-foreground">
                   This is reversible and every write stays versioned and
                   attributed. You can protect it again at any time, and the

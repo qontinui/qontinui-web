@@ -171,6 +171,27 @@ def _extract_caller_token(request: Request) -> str | None:
     return None
 
 
+def capture_caller_bearer(request: Request) -> None:
+    """Capture the caller's bearer + tenant-switcher selection for coord.
+
+    THE side effect the coord proxies depend on: ``_tenant_headers`` reads
+    both ContextVars, and a request that never runs this forwards coord a
+    header dict with no ``Authorization`` at all — so every
+    ``forward_bearer=True`` read answers 401 no matter which door it targets.
+
+    It is deliberately separate from :func:`get_tenant_id`. That dependency
+    *also* resolves the operator's identity over HTTP, which a caller holding
+    a coord DEVICE JWT can never do — coord's ``/admin/coord/me`` is an
+    operator door. Such a caller still needs the capture, so it has to be
+    reachable without paying for a resolution that is structurally certain to
+    fail (``plan_library._soft_tenant_id``). Sharing one implementation is
+    also what keeps the ordering invariant below from drifting between the
+    dependencies that need it.
+    """
+    _caller_bearer.set(_extract_caller_token(request))
+    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+
+
 async def get_tenant_id(
     request: Request,
 ) -> UUID:
@@ -196,8 +217,7 @@ async def get_tenant_id(
     still pass it to ``_proxy_coord_get(..., tenant_id=...)`` to trigger
     bearer forwarding) but no longer goes on the wire.
     """
-    _caller_bearer.set(_extract_caller_token(request))
-    _caller_active_tenant.set(request.headers.get(ACTIVE_TENANT_HEADER))
+    capture_caller_bearer(request)
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
@@ -220,8 +240,7 @@ async def require_coord_tenant_admin(
     the write route is a noted follow-up, not this PR.
     """
     active = request.headers.get(ACTIVE_TENANT_HEADER)
-    _caller_bearer.set(_extract_caller_token(request))
-    _caller_active_tenant.set(active)
+    capture_caller_bearer(request)
     identity = await get_coord_identity(request)
     if identity.home_tenant_id is None:
         raise HTTPException(status_code=403, detail="tenant_not_resolved")
@@ -3270,19 +3289,64 @@ async def get_dev_action_detail(
 @router.get("/plans")
 async def list_coord_plans(
     status: str | None = Query(default=None, description="Filter by status."),
+    slug_prefix: str | None = Query(
+        default=None,
+        min_length=1,
+        description="LIKE-prefix filter on the work-unit slug.",
+    ),
+    exclude_slug_prefix: str | None = Query(
+        default=None,
+        min_length=1,
+        description=(
+            "Drop work-units whose slug starts with this prefix. Ignored by a "
+            "coord that predates it (see the note below) — an optimisation, "
+            "never a contract."
+        ),
+    ),
     limit: int | None = Query(default=None, ge=1, le=500),
+    offset: int | None = Query(default=None, ge=0),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List work-units from coord (tenant-scoped).
 
     Proxies coord ``GET /coord/work-units``; the response envelope is
     ``{"work_units": [...], "limit": N, "offset": N}``.
+
+    coord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;
+    this proxy simply never forwarded them, so the console could neither page
+    past the first window nor ask for a slug subset. Forwarding them needs no
+    coord change.
+
+    ``exclude_slug_prefix`` is the one genuinely new parameter, and it ships
+    ahead of its coord half deliberately. ``ListQuery`` is
+    ``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on
+    every field and no ``deny_unknown_fields``, so a coord that does not know
+    the parameter **ignores** it and returns the unfiltered page rather than
+    erroring. Callers must therefore treat the exclusion as best-effort until
+    coord's half deploys — a page that renders shepherd rows is a coord that
+    has not caught up, not a bug here. (coord's side now documents that
+    permissiveness as a contract rather than leaving it an accident; drop this
+    paragraph once that build is deployed everywhere.)
+
+    Both prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``
+    would reach coord as ``slug NOT LIKE '' || '%'`` — i.e. ``NOT LIKE '%'``,
+    which excludes EVERY row. A console that forwarded an empty input box would
+    then render a blank list, and the paragraph above tells the operator to
+    read an unexpected page as "coord has not caught up". Rejecting the empty
+    string here is the honest failure; coord normalizes it as well, so neither
+    side depends on the other for this.
     """
     params: dict[str, Any] = {}
     if status is not None:
         params["status"] = status
+    if slug_prefix is not None:
+        params["slug_prefix"] = slug_prefix
+    if exclude_slug_prefix is not None:
+        params["exclude_slug_prefix"] = exclude_slug_prefix
     if limit is not None:
         params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
     return await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
@@ -6653,6 +6717,9 @@ async def delete_priority_set(
 
 @router.get("/coord/policies")
 async def list_coord_policies(
+    kind: str | None = Query(default=None),
+    repo: str | None = Query(default=None),
+    enabled: bool | None = Query(default=None),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
     """List the tenant's automation policies (rules).
@@ -6662,8 +6729,36 @@ async def list_coord_policies(
     tenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,
     and scopes the list to the caller's tenant — so the console's read view is
     visible to developers. Writes below stay admin-gated.
+
+    ``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``
+    filters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when
+    PRESENT — including as an empty string, which is a real filter to coord and
+    not a synonym for "unfiltered" (``?repo=`` selects the degenerate
+    empty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is
+    a better answer than silently listing everything). Until this route
+    accepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and
+    a tenant's DISABLED rules were **not listable from the console** — the
+    ``/admin/coord/automation-rules`` enable/disable switch could therefore
+    write a row it could never read back, and the row was unrecoverable through
+    the product.
+
+    ``enabled`` is an EQUALITY filter server-side, not a "show everything"
+    switch: coord's resolver binds it as ``AND enabled = $2`` against the
+    tenant's own rules. ``enabled=false`` therefore lists the DISABLED rules
+    only. A caller wanting both states issues both requests and unions them by
+    ``policy_id`` — coord's system built-ins come back on BOTH arms (its
+    system-band query hardcodes ``enabled = true``), so the union must dedupe.
     """
-    return await _proxy_coord_get("/coord/policies", tenant_id=tenant_id)
+    params: dict[str, Any] = {}
+    if kind is not None:
+        params["kind"] = kind
+    if repo is not None:
+        params["repo"] = repo
+    if enabled is not None:
+        params["enabled"] = enabled
+    return await _proxy_coord_get(
+        "/coord/policies", tenant_id=tenant_id, params=params or None
+    )
 
 
 @router.post("/coord/policies")
@@ -6727,10 +6822,20 @@ async def restore_coord_policy_default(
 # former ``coord.policy_documents`` (this proxy set replaces the
 # ``/coord/policy-documents`` surface it superseded; those rows migrated in as
 # ``kind='policy'``). ONE versioned store for every prompt-shaped document coord
-# serves, addressed by ``(kind, name)`` over four kinds: ``policy`` (the
+# serves, addressed by ``(kind, name)`` over six kinds: ``policy`` (the
 # meta-answer's ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A
 # meta-answer template), ``continuation_rules`` (the Stop-hook continuation
-# umbrella prompt), and ``agent_playbook`` (e.g. the merge-shepherd playbook).
+# umbrella prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
+# ``prompt_template`` (the runner terminal ``/prompt`` library), and
+# ``session_briefing`` (the briefing the runner appends to the system prompt of
+# every session it hosts).
+#
+# The forwarders below are deliberately kind-GENERIC — every one takes
+# ``kind: str`` with no enum or allowlist, so coord's own ``unknown kind`` 400 is
+# the single authority on which kinds exist. Adding a kind therefore needs the
+# alembic CHECK widening and coord's ``KINDS``, and nothing here; keep it that
+# way rather than mirroring the list into a validator that would have to be
+# re-deployed in lockstep.
 #
 # Every PATCH creates an immutable version snapshot coord-side and bumps
 # ``current_version`` — edits never silently overwrite, and the versions routes

@@ -4,9 +4,11 @@
  *
  * The coord block is where this page can most easily lie. "No linked work
  * unit", "coord doesn't have that work unit", "we couldn't reach coord" and
- * "coord has no route to list citations" are four different facts, and three
- * of them are routinely rendered as an innocuous empty state by UIs that
- * treat absence as zero. Each gets its own assertion here.
+ * "the citation read did not happen" are four different facts, and three of
+ * them are routinely rendered as an innocuous empty state by UIs that treat
+ * absence as zero. Each gets its own assertion here — as does the same
+ * distinction one level down, on a single PR row's merged state, where
+ * `unknown` must not read as the fact "unmerged".
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -37,7 +39,9 @@ const UNLINKED: CandidateCoordLink = {
   unavailable_reason: null,
 };
 
-function detail(overrides: Partial<WorkArtifactDetail> = {}): WorkArtifactDetail {
+function detail(
+  overrides: Partial<WorkArtifactDetail> = {}
+): WorkArtifactDetail {
   return {
     id: "art-1",
     organization_id: null,
@@ -136,8 +140,9 @@ describe("ArtifactDetailDialog — the coord link is four states, not two", () =
   });
 
   it("renders 'PR citations unavailable' distinctly from 'no PRs'", async () => {
-    // The real case today: the work unit resolves, but coord exposes no HTTP
-    // route to list its citations (MCP-only), so an empty list would be a lie.
+    // The work unit resolves, but the citation read did not happen — coord
+    // refused the door, was unreachable, or answered that it could not read
+    // the relation. An empty list would be a lie in every one of those cases.
     renderDialog(
       detail({
         work_unit_slug: "u1",
@@ -214,6 +219,67 @@ describe("ArtifactDetailDialog — the coord link is four states, not two", () =
     );
     expect(screen.getByTestId("coord-prs").textContent).toContain(
       "qontinui-web#1425"
+    );
+  });
+
+  it("renders an UNKNOWN merged state distinctly from 'unmerged'", async () => {
+    // The backend projects `merged: false` to `state: "unknown"` whenever
+    // coord flagged `merged_degraded_reason` — its merged predicate is running
+    // without the durable `merge_commit_sha` arm, so every PR it ff-landed
+    // reads false. Coord ff-lands routinely, which is why that false must not
+    // reach the operator as the fact "unmerged". Rendering the bare word in
+    // the same outline chip "unmerged" uses puts the whole cost of that
+    // distinction on the reader noticing one word.
+    renderDialog(
+      detail({
+        work_unit_slug: "u1",
+        coord: {
+          work_unit_slug: "u1",
+          work_unit_state: "linked",
+          work_unit_status: "shipped",
+          work_unit_title: "The unit",
+          linked_prs_state: "available",
+          linked_prs: [
+            {
+              repo: "qontinui-coord",
+              pr_number: 1554,
+              state: "unknown",
+              merged: null,
+              branch: null,
+              cited_at: null,
+              sources: [],
+            },
+            {
+              repo: "qontinui-web",
+              pr_number: 1021,
+              state: "unmerged",
+              merged: false,
+              branch: null,
+              cited_at: null,
+              sources: [],
+            },
+          ],
+          unavailable_reason: null,
+        },
+      })
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-pr-state-unknown")).toBeInTheDocument()
+    );
+
+    // The two states must not be one rendering. `unmerged` is an observation;
+    // `unknown` is the absence of one.
+    const unknown = screen.getByTestId("coord-pr-state-unknown");
+    const unmerged = screen.getByTestId("coord-pr-state-unmerged");
+    expect(unknown.className).not.toEqual(unmerged.className);
+    expect(unknown.getAttribute("title")).toMatch(/degraded/i);
+    expect(unmerged.getAttribute("title")).toBeNull();
+
+    // …and the reason is on the page, not only in a hover the operator has to
+    // discover.
+    expect(screen.getByTestId("coord-pr-unknown-hint").textContent).toContain(
+      'not "unmerged"'
     );
   });
 });
@@ -547,6 +613,8 @@ describe("ArtifactDetailDialog — the kind correction obeys the same guard", ()
     );
     expect(screen.getByTestId("artifact-detail-retry")).toBeInTheDocument();
     // The stale view is gone rather than lingering as an unlabelled lie.
-    expect(screen.queryByTestId("artifact-kind-select")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("artifact-kind-select")
+    ).not.toBeInTheDocument();
   });
 });

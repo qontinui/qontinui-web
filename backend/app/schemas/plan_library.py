@@ -149,7 +149,13 @@ class CandidateLinkedPr(BaseModel):
     pr_number: int | None = None
     #: ``"merged"`` / ``"unmerged"`` — derived from coord's ``merged`` flag,
     #: which is the SAME flag coord's own ``shipped`` predicate reduces.
-    #: ``"unknown"`` when coord returned a citation with no merged state.
+    #:
+    #: ``"unknown"`` when coord returned a citation with no merged state, AND
+    #: when coord flagged ``merged_degraded_reason``: its predicate then runs
+    #: without the durable ``merge_commit_sha`` arm, so every PR coord
+    #: ff-landed reads ``merged: false``. A ``false`` under that flag is
+    #: UNKNOWN, not an observation — the same "absence is not zero" rule
+    #: ``linked_prs_state`` applies to the list, applied to one row.
     state: Literal["merged", "unmerged", "unknown"] = "unknown"
     merged: bool | None = None
     branch: str | None = None

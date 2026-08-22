@@ -4,9 +4,9 @@
 #  had no manifest at all, so it could not run on the product's local-CI lane).
 #
 # PARITY IS A REVIEW-TIME INVARIANT: the steps below mirror the gate commands of
-# .github/workflows/frontend-ci.yml's `lint-and-typecheck` job and
-# .github/workflows/backend-ci.yml's `lint` job plus that workflow's
-# "Check OpenAPI snapshot is up to date" step. When those gates change, update
+# .github/workflows/frontend-ci.yml's `lint-and-typecheck` AND
+# `composed-cloud-build` jobs, and .github/workflows/backend-ci.yml's `lint` job
+# plus that workflow's "Check OpenAPI snapshot is up to date" step. When those gates change, update
 # this file in the SAME PR. Actions steps are referenced by NAME below, never by
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
@@ -276,11 +276,21 @@ working_dir = "frontend"
 
 [[steps]]
 name = "frontend-typecheck"
-# frontend-ci.yml "TypeScript check" runs `npx tsc --noEmit`. This invokes the
-# package.json `type-check` script, which IS `tsc --noEmit` — same compiler,
-# same flags, same tsconfig — but resolves tsc from the node_modules the
-# previous step just installed instead of letting npx reach for the network on
-# a box whose registry access this lane should not depend on.
+# frontend-ci.yml "TypeScript check" -> package.json `type-check` =
+# `tsc --noEmit -p tsconfig.typecheck.json`. Both lanes invoke the SCRIPT, so
+# they cannot drift on which config is used.
+#
+# THE `-p` IS LOAD-BEARING AND THIS COMMENT USED TO GET IT WRONG. It said the
+# workflow ran a bare `npx tsc --noEmit` and that the script was "the same
+# compiler, same flags, same tsconfig". That stopped being true when the
+# `@cloud/*` route alias landed: `tsconfig.typecheck.json` extends
+# `tsconfig.json` and adds the `@cloud/*` mapping, which must NOT live in
+# `tsconfig.json` — Next feeds tsconfig `paths` to webpack through
+# `JsConfigPathsPlugin`, which would then override the real webpack alias and
+# resolve every composed cloud build back to the OSS stubs. So a bare
+# `tsc --noEmit` on this tree now FAILS on every route shim, and the two
+# configs are deliberately different files. See frontend/tsconfig.typecheck.json
+# and frontend/docs/composed-cloud-build.md.
 command = ["npm", "run", "type-check"]
 working_dir = "frontend"
 
@@ -288,6 +298,122 @@ working_dir = "frontend"
 name = "frontend-test"
 # frontend-ci.yml "Unit tests" → package.json `test` = `vitest run`.
 command = ["npm", "test"]
+working_dir = "frontend"
+
+# ---------------------------------------------------------------------------
+# FRONTEND, COMPOSED CLOUD SHAPE — mirrors frontend-ci.yml's
+# `composed-cloud-build` job, step for step and in its order.
+#
+# ONE TREE, TWO SHAPES, IN SEQUENCE. The Actions lane needs two jobs for this
+# because each job gets a fresh checkout; this lane has one worktree, so it gets
+# both shapes by ORDERING: the four steps above run before the overlay exists
+# and are therefore genuinely the OSS shape, and the five below run from
+# `composed-cloud-install` onward and are genuinely the composed one.
+# `frontend/node_modules/@qontinui/cloud-control` is the only switch — every
+# other piece (`transpilePackages`, the `@qontinui/cloud-control` fallback
+# alias, the `@cloud/*` route alias, vitest's inlining) keys off whether that
+# path exists. The tree is left in the composed shape when the dispatch ends;
+# that is fine, the dispatch directory is scoped and removed.
+#
+# THE SIBLING IS ALREADY DECLARED — the `qontinui/qontinui-cloud-control`
+# `[[siblings]]` entry above, provisioned for the BACKEND half of this same
+# composition, is the same tree the frontend half needs. `pin =
+# "default-branch"` also matches what the Actions job does (its
+# `actions/checkout` for the sibling passes no `ref:`), so the two lanes gate
+# the same pair.
+# ---------------------------------------------------------------------------
+
+[[steps]]
+name = "composed-cloud-install"
+# frontend-ci.yml "Install the cloud-control overlay" -> package.json
+# `cloud:install` = `node scripts/cloud-control-overlay.mjs install`. Links the
+# sibling checkout into `frontend/node_modules/@qontinui/cloud-control`.
+#
+# NO `--source`, AND NO `QONTINUI_CLOUD_CONTROL_PATH` — the workflow sets that
+# env var, this step deliberately does not, and the divergence is forced from
+# both directions:
+#   * The workflow needs it because `actions/checkout` cannot write outside
+#     $GITHUB_WORKSPACE, so its sibling lands at
+#     `.sibling/qontinui-cloud-control` INSIDE the checkout rather than beside
+#     it. This lane has no such restriction: the executor materialises siblings
+#     NEXT TO the worktree, which is exactly what the script's own
+#     `DEFAULT_SOURCE` resolves to — `path.resolve(FRONTEND_DIR, "..", "..",
+#     "qontinui-cloud-control")`, the same arithmetic
+#     `backend-install-cloud-control` below does from `working_dir = "backend"`.
+#     The default is already correct here; passing the path again would be noise.
+#   * `QONTINUI_CLOUD_CONTROL_PATH` is NOT in manifest.rs::ENV_ALLOWLIST, and
+#     that list is a security boundary with no batch approval. Declaring it
+#     would be a hard validation REJECTION of this whole manifest, not a
+#     warning. So the default is not merely preferable here — it is the only
+#     spelling that parses.
+command = ["npm", "run", "cloud:install"]
+working_dir = "frontend"
+
+[[steps]]
+name = "composed-lint"
+# frontend-ci.yml "Lint (composed)" -> package.json `lint`.
+#
+# MIRRORED EVEN THOUGH IT IS A DUPLICATE OF `frontend-lint`, and the duplication
+# is a fact about the WORKFLOW, not about this lane. `.eslintrc.json`
+# `ignorePatterns` contains "node_modules/", which is exactly where the overlay
+# links cloud-control — and ESLint takes its file set from directory globs, not
+# from the module graph, so the `@cloud/*` alias cannot pull those sources in.
+# Same files, same rules, no type-aware rules configured: the composed lint can
+# only ever report what the OSS lint already reported.
+#
+# It is mirrored anyway because this file's contract is to mirror the workflow's
+# gate commands. Deciding here that one workflow step is not worth mirroring
+# would embed a judgement the parity invariant exists to forbid and make the two
+# lanes un-diffable. If the duplication should go, it should go from
+# frontend-ci.yml — and then from here, in the same PR.
+command = ["npm", "run", "lint"]
+working_dir = "frontend"
+
+[[steps]]
+name = "composed-typecheck"
+# frontend-ci.yml "TypeScript check (composed)" -> package.json `type-check`.
+#
+# THIS IS THE STEP THE COMPOSED SHAPE EXISTS FOR. `@qontinui/cloud-control`
+# ships raw `.ts`/`.tsx` with no tsconfig, no build step and no CI of its own,
+# and `@cloud/*` resolves into those sources only when the overlay is present —
+# so this is the ONLY place in either repo where they are type-checked at all,
+# and they are checked under this app's `strict` settings. `preserveSymlinks`
+# in tsconfig.json is what makes the package's own bare imports (`react`,
+# `next/navigation`, ...) resolve through the link.
+command = ["npm", "run", "type-check"]
+working_dir = "frontend"
+
+[[steps]]
+name = "composed-test"
+# frontend-ci.yml "Unit tests (composed)" -> package.json `test`.
+#
+# NOT a re-run of `frontend-test`: two suites change behaviour with the overlay
+# present. `cloud-extensions-boot.registration.test.tsx` has a composed half
+# that is skipped in the OSS shape and asserts cloud-control's services and
+# components are really in the client-side slot registry; and
+# `src/cloud-absent/cloud-route-shims.test.ts` can only diff the shims against
+# cloud-control's actual `routes/` tree when that tree is on disk — in the OSS
+# shape it has nothing to diff against.
+command = ["npm", "test"]
+working_dir = "frontend"
+
+[[steps]]
+name = "composed-build"
+# frontend-ci.yml "Build (composed)" -> package.json `build`.
+#
+# Proves webpack can RESOLVE AND TRANSPILE the composed graph — which is what
+# makes a deleted host module impossible to lose silently, since cloud-control
+# imports 26 distinct `@/...` modules from this app. It proves nothing about
+# types: next.config.mjs sets `typescript.ignoreBuildErrors: true` and
+# `eslint.ignoreDuringBuilds: true`, which is why `composed-typecheck` above is
+# a separate gate rather than something `build` subsumes.
+#
+# EASILY THE MOST EXPENSIVE STEP HERE — a full `next build`, minutes rather than
+# seconds. Mirrored regardless: the disclosed-gap list at the top of this file
+# is for steps that CANNOT run, and cost has never been a reason to drop a gate
+# from it (gap 1 is impossibility, not expense). It runs last so everything
+# cheaper has already had its chance to fail.
+command = ["npm", "run", "build"]
 working_dir = "frontend"
 
 # ---------------------------------------------------------------------------

@@ -133,6 +133,40 @@ LINK_ONLY_MEASURED_RATIO = 3.0
 #: rather than guessing.
 LINK_ONLY_IMPOSSIBLE_RATIO = 1.8
 
+#: The metrics the emitted report pairs. **Two groups, and the second is
+#: not optional.**
+#:
+#: Declaration order, which is NOT render order: the report is dumped
+#: ``sort_keys=True``, so the PR comment walks these alphabetically.
+#:
+#: The first three say whether the candidate retrieved MORE. The last two —
+#: both in :data:`~tests.memory_recall.scorer.LOWER_IS_BETTER_METRICS` — say
+#: what that cost. Until 2026-08-20 only the first group was paired, and the
+#: asymmetry was the reader's problem: the arm table prints noise rate and
+#: token cost for both arms side by side, so a reader got a significance
+#: label for the reward and nothing at all for the price. "Is the gain real?"
+#: and "was it bought with noise and tokens?" are the same question asked
+#: twice, and a harness that answers only the first is the one this plan
+#: exists to stop shipping.
+#:
+#: It is also what makes the direction-aware half of
+#: :attr:`~tests.memory_recall.scorer.PairedResult.credited_2sigma` reachable
+#: at all. Every metric in the old triple is higher-is-better, so the sign
+#: flip, the report's ``lower_is_better`` field and the comment renderer's
+#: marker were built end to end and then never executed by a real run — dead
+#: on the only path that matters.
+#:
+#: Pinned against ``LOWER_IS_BETTER_METRICS`` by
+#: ``test_the_report_pairs_the_cost_metrics_too`` in the pure suite, which
+#: reads this module as text. Dropping the cost half back out fails there.
+PAIRED_REPORT_METRICS: tuple[str, ...] = (
+    "recall_at_10",
+    "mrr",
+    "ndcg_at_10",
+    "noise_rate_at_10",
+    "token_cost_at_10",
+)
+
 #: Where a CI run drops the machine-readable report for the PR comment.
 #: **The only file this module writes that anything downstream reads.** The
 #: holdout's destination (``MEMORY_RECALL_HOLDOUT_DIR``) is deliberately a
@@ -1235,7 +1269,7 @@ class TestBaselineReport:
             metric: self._paired_rows(
                 paired_delta(fts_scores, hybrid_scores, metric=metric)
             )
-            for metric in ("recall_at_10", "mrr", "ndcg_at_10")
+            for metric in PAIRED_REPORT_METRICS
         }
         wiring.mark_wired(
             "paired", f"{hybrid_suite.arm} vs {fts_suite.arm}, matched case-by-case"
@@ -1330,7 +1364,17 @@ class TestBaselineReport:
         # mismatched set; this pins the denominator to the golden set too,
         # so a shrunken run cannot report a clean-looking comparison.
         paired_metrics = report["paired"]["metrics"]
-        assert set(paired_metrics) == {"recall_at_10", "mrr", "ndcg_at_10"}
+        assert set(paired_metrics) == set(PAIRED_REPORT_METRICS)
+        # The cost half is asserted by NAME, not just by count: a future
+        # edit that swapped `noise_rate_at_10` for a fourth recall variant
+        # would keep the set the same size and silently take the price of
+        # the lift back out of the report.
+        assert set(paired_metrics) & LOWER_IS_BETTER_METRICS, (
+            "the paired block reports no lower-is-better metric, so it says "
+            "whether the candidate retrieved more without saying what that "
+            "cost: "
+            f"{sorted(paired_metrics)}"
+        )
         for row in paired_metrics.values():
             assert row["n"] == split.train_count, (
                 f"paired comparison on {row['metric']} covered {row['n']} of "

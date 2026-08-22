@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { History, Loader2, Undo2 } from "lucide-react";
 import { diffLines } from "../_lib/diff";
+import { validateBodyForKind } from "../_lib/sessionBriefingBody";
 import type {
   ListVersionsResponse,
   PromptDocumentKind,
@@ -144,18 +145,52 @@ export function PromptDocumentHistoryDialog({
   );
 
   /**
+   * A stored snapshot that today's content rules would refuse.
+   *
+   * Coord re-validates the SNAPSHOT on restore (`restore_version` calls
+   * `validate_body_for_kind`), and does so deliberately: the body was vetted
+   * against the rules as they stood when it was written, and rules tighten — a
+   * lowered cap, a retired placeholder, a new identity shape. Restore-version
+   * is exactly the door an operator reaches for after a bad edit, so without
+   * that check it would be the legal path back to a body coord now refuses.
+   *
+   * Which means a restore CAN fail on a body the operator did not author and
+   * is looking straight at in the diff. The snapshot is already in memory by
+   * the time the control is offered, so the reason belongs next to the button
+   * rather than in a toast after the round-trip.
+   */
+  const snapshotError = useMemo(
+    () =>
+      target && snapshot
+        ? validateBodyForKind(target.kind, snapshot.body)
+        : null,
+    [target, snapshot]
+  );
+
+  /**
    * Restoring the version that is ALREADY current is a no-op that would still
    * burn a version number, so it is offered only for a genuinely prior one —
    * and only once its snapshot is loaded, so the diff above is describing the
    * change being confirmed.
    */
-  const canRestore =
+  const restoreOfferable =
     onRestoreVersion != null &&
     target != null &&
     selected != null &&
     selected !== currentVersion &&
     snapshot != null &&
     !loadingSnapshot;
+
+  const canRestore = restoreOfferable && snapshotError === null;
+
+  /**
+   * Split from `canRestore` so the explanation appears ONLY where the control
+   * would otherwise have been. Every other reason the control is absent —
+   * the selected version is already current, the dialog is read-only, the
+   * snapshot is still loading — is self-evident from the list, and explaining
+   * a button nobody expected would be noise on the common path.
+   */
+  const restoreBlockedByContent = restoreOfferable && snapshotError !== null;
 
   const startRestore = () => {
     setRestoreNote(`Restored from version ${selected}`);
@@ -394,7 +429,24 @@ export function PromptDocumentHistoryDialog({
           </div>
         )}
 
-        <div className="flex shrink-0 justify-end gap-2 pt-2">
+        <div className="flex shrink-0 items-center justify-end gap-2 pt-2">
+          {/*
+            The Restore control is hidden whenever it is not offerable, which is
+            right for "this version is already current" — self-evident from the
+            list — and wrong for a snapshot today's rules refuse. There the
+            absence looks like a missing feature, so the reason takes the
+            control's place instead of leaving a gap.
+          */}
+          {restoreBlockedByContent && !confirmingRestore && (
+            <p
+              className="mr-auto text-xs text-destructive"
+              data-testid="restore-blocked-reason"
+            >
+              Version {selected} can&apos;t be restored: coord re-checks a
+              stored snapshot against today&apos;s content rules, and this one
+              no longer passes. {snapshotError}
+            </p>
+          )}
           {canRestore && !confirmingRestore && (
             <Button
               variant="outline"

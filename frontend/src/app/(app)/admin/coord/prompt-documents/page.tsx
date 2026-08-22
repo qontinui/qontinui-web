@@ -5,12 +5,15 @@
  * document coord serves the fleet (plan
  * `2026-07-17-session-autonomy-fabric.md`, Phase 9).
  *
- * One editor over all four kinds — `policy` (the canonical prose the agent Q&A
- * meta-answer composes in via `{{policy:<name>}}`), `response_prompt` (the
- * meta-answer template itself), `continuation_rules` (the Stop-hook umbrella
- * prompt), and `agent_playbook` (e.g. the merge-shepherd playbook) — replacing
- * the kind-specific `/admin/coord/policy-documents` page it supersedes. Coord
- * seeds each document, versions every edit, and serves it per tenant.
+ * One editor over all six kinds — `session_briefing` (the text appended to the
+ * system prompt of every session the runner hosts), `policy` (the canonical
+ * prose the agent Q&A meta-answer composes in via `{{policy:<name>}}`),
+ * `response_prompt` (the meta-answer template itself), `continuation_rules` (the
+ * Stop-hook umbrella prompt), `agent_playbook` (e.g. the merge-shepherd
+ * playbook), and `prompt_template` (the runner terminal `/prompt` library) —
+ * replacing the kind-specific `/admin/coord/policy-documents` page it
+ * supersedes. Coord seeds each document, versions every edit, and serves it per
+ * tenant.
  *
  * Reads are visible to any tenant member; edits + restore are re-checked as
  * tenant-admin by coord.
@@ -30,6 +33,7 @@
  */
 
 import { NotebookText } from "lucide-react";
+import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
 
@@ -41,16 +45,28 @@ export default function PromptDocumentsPage() {
         <div>
           <h1 className="text-lg font-semibold">Prompt Documents</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            The prompt-shaped content coord serves your fleet: policy prose,
-            response templates, continuation rules, and agent playbooks. Every
-            edit is saved as a new version — prior wordings stay readable and
-            restorable, and seeded documents can be reset to their shipped
-            default.
+            The prompt-shaped content coord serves your fleet: session
+            briefings, policy prose, response templates, continuation rules,
+            agent playbooks, and prompt templates. Every edit is saved as a new
+            version — prior wordings stay readable and restorable, and seeded
+            documents can be reset to their shipped default.
           </p>
         </div>
       </div>
 
       <PromptDocumentList />
+
+      {/*
+        The tenant-wide autonomy dial sits with the per-document write-access
+        control it composes with. Two controls governing one question — "what
+        may an agent do to this policy?" — belong on one page; the per-document
+        setting decides WHETHER, this decides HOW MUCH, and the answer is the
+        more restrictive of the two. Coord's own refusal message sends operators
+        to this page for the first, so the second must be here too.
+      */}
+      <div className="border-t border-border pt-8">
+        <PolicyWriteDialControl />
+      </div>
 
       {/*
         Session compliance lives on this page rather than behind its own nav

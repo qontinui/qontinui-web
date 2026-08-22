@@ -20,6 +20,11 @@ import type {
   PromptDocumentUpdate,
 } from "../types";
 import { KIND_META } from "../types";
+import {
+  SESSION_BRIEFING_MAX_BYTES,
+  sessionBriefingByteLength,
+  validateBodyForKind,
+} from "../_lib/sessionBriefingBody";
 
 interface PromptDocumentEditorDialogProps {
   open: boolean;
@@ -49,6 +54,15 @@ interface PromptDocumentEditorDialogProps {
  * the dialog states the version the save will produce and links the history.
  * Restore-to-default is offered when the document carries a `default_source`,
  * and is itself a versioned edit — reversible from the history view.
+ *
+ * One kind tightens this in two ways, and both are mirrored so the operator
+ * learns them from the form rather than from a rejected save. A
+ * `session_briefing` PATCH is refused by coord without a non-empty change note,
+ * so for that kind the note is a required field; and its BODY must satisfy
+ * coord's content rules (size ceiling, closed placeholder vocabulary, no forged
+ * source marker, no operator-door link, no identity), so a violating body names
+ * itself under the textarea and holds Save disabled. See
+ * `../_lib/sessionBriefingBody`.
  */
 export function PromptDocumentEditorDialog({
   open,
@@ -71,10 +85,57 @@ export function PromptDocumentEditorDialog({
     setChangeNote("");
   }, [open, document]);
 
+  const bodyDirty = document !== null && body !== document.body;
   const dirty =
     document !== null &&
-    (description !== (document.description ?? "") || body !== document.body);
-  const canSubmit = !saving && !loadingBody && dirty && body.trim().length > 0;
+    (description !== (document.description ?? "") || bodyDirty);
+
+  /**
+   * `session_briefing` is the one kind whose PATCH coord REJECTS without a
+   * change note (400, `change_description` must be non-empty).
+   *
+   * The rule is coord's, not this dialog's: this text becomes the system prompt
+   * of every session the tenant's runners host, and the version log with
+   * `edited_by` is the whole mitigation for that — an unattributed edit leaves
+   * it unable to answer "why did every session change behaviour on Tuesday".
+   * Mirrored here so the operator learns the requirement from a disabled button
+   * and a labelled field BEFORE submitting, rather than from a rejected save.
+   *
+   * Deliberately NOT global: every other kind keeps the optional note.
+   */
+  const changeNoteRequired = document?.kind === "session_briefing";
+  const changeNoteMissing =
+    changeNoteRequired && changeNote.trim().length === 0;
+
+  /**
+   * Coord's per-kind CONTENT rules, mirrored so a violation is answered in the
+   * form rather than by a 400 after the operator has typed the edit — the same
+   * reason the change note above is a labelled required field.
+   *
+   * Gated on `bodyDirty`, mirroring coord's `patch_one`, which runs
+   * `validate_body_for_kind` only `if let Some(ref body) = req.body`. A
+   * description-only edit therefore sends no body and is not content-checked,
+   * and blocking one here would refuse a save coord would have accepted —
+   * which matters precisely for a stored body that predates a tightened rule.
+   */
+  const bodyError =
+    document !== null && bodyDirty
+      ? validateBodyForKind(document.kind, body)
+      : null;
+
+  /** Computed once per render rather than three times inside the budget line. */
+  const bodyBytes =
+    document?.kind === "session_briefing"
+      ? sessionBriefingByteLength(body)
+      : 0;
+
+  const canSubmit =
+    !saving &&
+    !loadingBody &&
+    dirty &&
+    body.trim().length > 0 &&
+    !changeNoteMissing &&
+    bodyError === null;
 
   const handleSubmit = async () => {
     if (!document || !canSubmit) return;
@@ -83,11 +144,21 @@ export function PromptDocumentEditorDialog({
       patch.description = description;
     }
     if (body !== document.body) patch.body = body;
+    // Safe as an unconditional guard: `canSubmit` already blocks submit while a
+    // REQUIRED note is blank, so the only path that reaches here with an empty
+    // note is a kind where coord treats it as optional.
     if (changeNote.trim().length > 0) patch.change_description = changeNote.trim();
     const ok = await onUpdate(document.kind, document.name, patch);
     if (ok) onOpenChange(false);
   };
 
+  /**
+   * Restore-to-default needs no change note even for `session_briefing`: it is a
+   * POST to coord's `restore-default` route, not a PATCH, and coord stamps the
+   * snapshot's note itself. Same for the history view's version restore
+   * ("Restored from version N"). Only the PATCH door takes the note from the
+   * operator, so only the PATCH door gates on it here.
+   */
   const handleRestore = async () => {
     if (!document) return;
     if (
@@ -127,6 +198,15 @@ export function PromptDocumentEditorDialog({
                     — referenced by the meta-answer template as{" "}
                     <code>{`{{policy:${document.name}}}`}</code>.
                   </>
+                ) : null}
+                {document.kind === "session_briefing" ? (
+                  <>
+                    {" "}
+                    — appended to the system prompt of every session the runner
+                    hosts. Edits reach sessions spawned after the next runner
+                    poll (up to 45 seconds); sessions already running keep the
+                    prompt they started with.
+                  </>
                 ) : null}{" "}
                 Format: {document.format}. Tenant-scoped; served to the fleet by
                 coord.
@@ -164,23 +244,76 @@ export function PromptDocumentEditorDialog({
                   onChange={(e) => setBody(e.target.value)}
                   rows={18}
                   className="font-mono text-xs"
+                  aria-invalid={bodyError !== null}
+                  aria-describedby={
+                    bodyError !== null ? "doc-body-error" : undefined
+                  }
                 />
-                <p className="text-xs text-muted-foreground">
-                  {document.format === "markdown"
-                    ? "Markdown prose — served verbatim to the fleet."
-                    : "Prose — served verbatim to the fleet."}
-                </p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs text-muted-foreground">
+                    {document.format === "markdown"
+                      ? "Markdown prose — served verbatim to the fleet."
+                      : "Prose — served verbatim to the fleet."}
+                  </p>
+                  {/*
+                    The budget is shown only for the kind that HAS one, and it
+                    counts UTF-8 bytes because that is what coord measures. A
+                    character count would read comfortably under the cap on
+                    exactly the em-dash-heavy prose most likely to exceed it.
+                  */}
+                  {document.kind === "session_briefing" ? (
+                    <p
+                      className={`shrink-0 text-xs tabular-nums ${
+                        bodyBytes > SESSION_BRIEFING_MAX_BYTES
+                          ? "font-medium text-destructive"
+                          : "text-muted-foreground"
+                      }`}
+                      data-testid="doc-body-budget"
+                    >
+                      {bodyBytes.toLocaleString()} /{" "}
+                      {SESSION_BRIEFING_MAX_BYTES.toLocaleString()} bytes
+                    </p>
+                  ) : null}
+                </div>
+                {/*
+                  Coord refuses this body. Named here, next to the field, rather
+                  than surfaced as a toast after a failed round-trip — the
+                  operator has to be able to see which token is the problem
+                  while looking at the text that contains it.
+                */}
+                {bodyError !== null ? (
+                  <p
+                    id="doc-body-error"
+                    className="text-xs text-destructive"
+                    data-testid="doc-body-error"
+                  >
+                    {bodyError}
+                  </p>
+                ) : null}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="doc-change-note">Change note (optional)</Label>
+                <Label htmlFor="doc-change-note">
+                  Change note {changeNoteRequired ? "(required)" : "(optional)"}
+                </Label>
                 <Input
                   id="doc-change-note"
                   data-testid="doc-change-note"
                   value={changeNote}
                   onChange={(e) => setChangeNote(e.target.value)}
                   placeholder="Why this edit — recorded on the version"
+                  aria-required={changeNoteRequired}
                 />
+                {changeNoteRequired ? (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="doc-change-note-required"
+                  >
+                    Required for this document: the edit changes the system
+                    prompt of every session spawned from now on, and the note is
+                    what makes it attributable in the version history.
+                  </p>
+                ) : null}
               </div>
 
               <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">

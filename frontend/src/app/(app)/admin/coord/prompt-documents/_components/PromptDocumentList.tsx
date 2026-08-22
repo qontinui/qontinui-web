@@ -31,7 +31,7 @@ function formatWhen(iso: string): string {
 /**
  * The prompt-document list, grouped by kind, with the edit + history dialogs.
  *
- * Discoverability without clutter: all four kinds are on one page under their
+ * Discoverability without clutter: all six kinds are on one page under their
  * own headings — the operator sees the whole surface at a glance — while bodies
  * (the bulk) stay behind the editor, and the diff stays behind the history view.
  * A kind with no documents is omitted rather than shown as an empty shell.

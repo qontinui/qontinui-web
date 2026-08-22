@@ -63,11 +63,11 @@ export interface QueueResponse {
 //
 // Mirrors coord's `GET /pr-merge/prs` response (see
 // `qontinui-coord/src/pr_merge.rs::PrRow` / `PrListResponse`). Joined to
-// per-(repo, head_sha) lifecycle from `coord.pr_check_runs`. The MergeTrain
-// dashboard renders this alongside the existing `coord.merge_proposals`
-// stream so an operator sees BOTH the outer PR state (mergeable,
-// mergeStateStatus, reviewDecision) AND the inner proposal lifecycle
-// (queued -> dry-rebasing -> ... -> merged) in one card.
+// per-(repo, head_sha) lifecycle from `coord.pr_check_runs`. The
+// MergePipeline hero joins this with the `coord.merge_proposals` stream so
+// an operator sees BOTH the outer PR state (mergeable, mergeStateStatus,
+// reviewDecision) AND the inner proposal lifecycle (queued ->
+// dry-rebasing -> ... -> merged) as ONE row per PR.
 // ============================================================================
 
 /** GitHub's PR-level merge state status -- values per the GraphQL enum. */
@@ -593,9 +593,22 @@ export interface SuggestionListResponse {
 // `GET /pr-merge/blast-radius-blocks` response (see
 // `qontinui-coord/src/pr_merge/blast_radius_monitor.rs::BlocksResponse` /
 // `BlastRadiusBlock`), proxied by the web backend's
-// `/operations/pr-merge/blast-radius-blocks`. The MergeTrain "Gate decisions"
-// section renders one row per held PR with the reason, the removed-export
-// evidence (`referenced_by [{file,line}]`), and an honesty label.
+// `/operations/pr-merge/blast-radius-blocks`. The MergePipeline "Gate
+// decisions" section renders one row per held PR with the reason, the
+// removed-export evidence (`referenced_by [{file,line}]`), and an honesty
+// label.
+//
+// Counting note (plan 2026-08-20-predicate-eval-surface-counts-evals-not-
+// decisions, Phase 2): coord's engine appends one `predicate_eval` audit row
+// per scheduler tick, so the raw row count is an EVALUATION count, not a
+// decision count — measured 2026-08-20, 1899 rows stood for 8 distinct PRs.
+// The list is now newest-per-PR (one row per held PR) and `total_blocks` is
+// the DISTINCT-PR count; the raw audit volume rides alongside as
+// `total_evals`, and each row carries `repeat_count` / `first_seen_at` so the
+// repetition is STATED rather than enumerated. Both of the new response-level
+// and row-level fields are optional-tolerant: a coord that has not deployed
+// Phase 2 yet simply omits them, and the renderer degrades to "one row, one
+// evaluation, first-seen unknown" instead of breaking.
 //
 // Honesty note (binding cross-cutting gate): coord's current
 // `BlastRadiusBlock` surfaces the per-reason evidence but does NOT yet stamp
@@ -623,8 +636,28 @@ export interface BlastRadiusBlock {
   /** `[{file, line}, ...]` — untouched files still importing the export. */
   referenced_by: ReferencedBy[];
   evaluation_latency_secs: number | null;
-  /** `created_at` of the underlying `pr_events` row, RFC3339. */
+  /**
+   * `created_at` of the underlying `pr_events` row, RFC3339 — the MOST RECENT
+   * occurrence of this decision once coord coalesces duplicate evaluations.
+   */
   at: string;
+  // ---- Repetition fields (OPTIONAL — see counting note above) ----------
+  /**
+   * How many evaluations this single row stands for. Coord returns the newest
+   * row per PR, so a row means "this decision, `repeat_count` times, from
+   * `first_seen_at` through `at`".
+   *
+   * Absent / null ⇒ an older coord that has not shipped the count. Treat that
+   * as **1**, never as 0 — the row itself is one evaluation, and rendering a
+   * `×0` would be a lie the data does not support.
+   */
+  repeat_count?: number | null;
+  /**
+   * RFC3339 timestamp of the FIRST occurrence in this coalesced run.
+   * Absent / null ⇒ unknown (older coord); the renderer says so rather than
+   * substituting `at`, which would silently claim a zero-length run.
+   */
+  first_seen_at?: string | null;
   // ---- Honesty fields (OPTIONAL — see header note) --------------------
   /** Graph coverage `[0,1]`; `<1` ⇒ partial mirror. Absent ⇒ not reported. */
   coverage?: number | null;
@@ -639,8 +672,19 @@ export interface BlastRadiusBlock {
 export interface BlastRadiusBlocksResponse {
   tenant_id: string;
   repo: string | null;
-  /** Durable cross-replica total of blocks for this tenant (+repo filter). */
+  /**
+   * Durable cross-replica total of DISTINCT held PRs for this tenant (+repo
+   * filter) — i.e. decisions. Before Phase 2 this was a raw `pr_events` row
+   * count, which read ~237x high; see the counting note above.
+   */
   total_blocks: number;
+  /**
+   * Raw evaluation-row count behind `total_blocks` — the number coord's audit
+   * log actually holds. OPTIONAL: absent ⇒ an older coord that never
+   * separated the two, and the surface must then say nothing about evaluation
+   * volume rather than reusing `total_blocks` as a stand-in.
+   */
+  total_evals?: number | null;
   returned: number;
   blocks: BlastRadiusBlock[];
 }

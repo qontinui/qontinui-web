@@ -43,6 +43,23 @@ function formatWhen(iso: string | null): string {
 }
 
 /**
+ * Why a `merged: false` can arrive as `unknown` — shown on the badge itself,
+ * because the word alone reads like a third merge state rather than an absence
+ * of evidence.
+ *
+ * The backend projects a citation to `state: "unknown"` (and `merged: null`)
+ * whenever coord flagged `merged_degraded_reason`: its `merged` predicate is
+ * then running without the durable `merge_commit_sha` arm, so every PR coord
+ * fast-forward-landed reads `false`. Coord ff-lands routinely, so rendering
+ * that `false` as the fact "unmerged" would be wrong far more often than not.
+ * A `true` is unaffected — the degraded arm can only produce false negatives.
+ */
+const UNKNOWN_MERGED_HINT =
+  "Coord's merged predicate is running degraded (no merge_commit_sha arm), " +
+  "so it cannot tell an unmerged PR from one it fast-forward-landed. This is " +
+  'an absence of evidence, not the fact "unmerged".';
+
+/**
  * The linked coord work unit and its PR citations.
  *
  * Four distinct states, and flattening any pair of them would be a
@@ -53,8 +70,12 @@ function formatWhen(iso: string | null): string {
  * * `dangling` — it names one coord does not have. Also normal: the link is
  *   FK-less by design and is allowed to dangle.
  * * `unavailable` — coord could not be read. UNKNOWN.
- * * PRs `unavailable` — coord exposes no HTTP citation-list route today (it is
- *   MCP-only), so an empty list would mean "we could not ask", not "no PRs".
+ * * PRs `unavailable` — the citation read did not happen: coord was
+ *   unreachable, refused the door, or answered that it could not read the
+ *   relation. An empty list would mean "we could not ask", not "no PRs".
+ *
+ * One level further down, an individual PR row carries the SAME distinction on
+ * its merged state — see {@link UNKNOWN_MERGED_HINT}.
  */
 function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
   if (coord.work_unit_state === "unlinked") {
@@ -91,8 +112,8 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
           className="text-xs text-muted-foreground"
           data-testid="coord-dangling"
         >
-          Coord has no work unit with this slug. The link carries no foreign
-          key and is allowed to dangle — this is a normal result, not an error.
+          Coord has no work unit with this slug. The link carries no foreign key
+          and is allowed to dangle — this is a normal result, not an error.
         </p>
       )}
 
@@ -124,9 +145,26 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
                 </code>
                 <Badge
                   variant={pr.state === "merged" ? "default" : "outline"}
+                  className={
+                    pr.state === "unknown"
+                      ? "border-dashed border-amber-500/60 text-amber-700 dark:text-amber-300"
+                      : undefined
+                  }
+                  data-testid={`coord-pr-state-${pr.state}`}
+                  title={
+                    pr.state === "unknown" ? UNKNOWN_MERGED_HINT : undefined
+                  }
                 >
                   {pr.state}
                 </Badge>
+                {pr.state === "unknown" && (
+                  <span
+                    className="text-muted-foreground"
+                    data-testid="coord-pr-unknown-hint"
+                  >
+                    not &quot;unmerged&quot; — coord could not decide
+                  </span>
+                )}
                 {pr.branch && (
                   <span className="truncate text-muted-foreground">
                     {pr.branch}
@@ -136,7 +174,10 @@ function CoordLinkBlock({ coord }: { coord: CandidateCoordLink }) {
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-muted-foreground" data-testid="coord-prs-none">
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="coord-prs-none"
+          >
             Coord answered: this work unit has no PR citations.
           </p>
         )
