@@ -2608,3 +2608,260 @@ class TestCoordErrorBodiesDoNotEgress:
         assert tail not in reason, (
             "the tail of a multi-kilobyte `error` field egressed verbatim"
         )
+
+
+class TestCoordsOpTokenNamesWhichReadFailed:
+    """coord's ``op`` token crosses the whitelist; its schema names still do not.
+
+    coord narrowed EVERY production error body onto
+    ``PgErrorContext::to_safe_body(op)`` — ``{error, pg_code, op}`` plus the
+    schema identifiers PG happened to name. ``op`` is drawn from a closed set of
+    compile-time literals (``SafeOp``), which is why coord is willing to put it
+    on the wire at all: its own test calls a free-text token "a disclosure
+    surface".
+
+    This read whitelisted ``error`` and the SQLSTATE and stopped there, which is
+    the same defect the predecessor plan already fixed once at source — the
+    SQLSTATE was briefly emitted at a key this side never looked at, "silently
+    dropping the one field that tells an operator whether to wait for a
+    migration or page someone". ``op`` is the next field along, and it matters
+    most on the arm where the SQLSTATE is *absent by construction*.
+
+    The pairing is deliberate: these tests admit ``op`` and, in the same
+    fixtures, keep proving that ``pg_constraint`` / ``pg_table`` / ``pg_column``
+    do NOT cross. coord judges those safe to emit and is right — they are
+    schema, not row values — but this boundary is stricter than coord's on
+    purpose, and a whitelist that widened whenever the producer widened would
+    not be one.
+    """
+
+    #: coord's REAL ``to_safe_body`` output for a failed citation read, with
+    #: every optional identifier populated — the widest shape this side can
+    #: actually receive.
+    SAFE_BODY = {
+        "error": "db_error",
+        "pg_code": "23503",
+        "op": "work_unit.citations.read",
+        "pg_constraint": "work_unit_citations_tenant_id_fkey",
+        "pg_table": "work_unit_citations",
+        "pg_column": "tenant_id",
+    }
+
+    async def test_the_inline_citations_error_names_the_op(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The arm the operator page now runs on.
+
+        Phase 3 moved the operator path onto the flag-on-a-200, so
+        ``citations_error`` — rendered by ``_citation_error_text`` — is where an
+        operator meets a citation failure. It is coord's ``to_safe_body`` output
+        verbatim, ``op`` included.
+        """
+        wu = _slug("wu-op-token-inline")
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("op-token-inline"),
+            work_unit_slug=wu,
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"}, [], citations_error=self.SAFE_BODY
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [c.args[0] for c in fake.await_args_list] == [
+            f"/coord/work-units/{wu}"
+        ], "the verdict must come off the inline arm, not a second hop"
+
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        reason = row["coord"]["unavailable_reason"]
+        assert row["coord"]["linked_prs_state"] == "unavailable"
+        assert "work_unit.citations.read" in reason, (
+            "coord named WHICH read broke and this side dropped it"
+        )
+        assert "db_error" in reason
+        assert "23503" in reason
+        # Control — the producer widened, the whitelist did not. The op token is
+        # stripped first so its own dotted spelling cannot satisfy the pg_table
+        # needle.
+        residue = reason.replace("work_unit.citations.read", "")
+        for withheld in (
+            "work_unit_citations_tenant_id_fkey",
+            "work_unit_citations",
+            "tenant_id",
+        ):
+            assert withheld not in residue, f"schema name egressed: {withheld!r}"
+
+    async def test_the_op_is_the_ONLY_diagnostic_when_the_read_never_reached_pg(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The discriminating case, and coord's own reason for adding ``op``.
+
+        A pool timeout or a refused connection never reaches Postgres, so there
+        is no SQLSTATE — coord spells that ``pg_code: null`` deliberately, to
+        state "the failure never reached PG" rather than dress an absence up as
+        an answer. On that arm ``error`` is the generic ``db_error`` and ``op``
+        is everything else there is.
+
+        Without the ``op`` read, the whole line an operator gets here is
+        ``coord could not read citations: db_error`` — true, and useless. That
+        exact string is asserted against, so this test fails on a revert rather
+        than merely losing a substring.
+        """
+        wu = _slug("wu-op-nopg")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("op-nopg"), work_unit_slug=wu
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"},
+            [],
+            citations_error={
+                "error": "db_error",
+                "pg_code": None,
+                "op": "work_unit.citations.read",
+            },
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        reason = row["coord"]["unavailable_reason"]
+        assert row["coord"]["linked_prs_state"] == "unavailable"
+        assert reason != "coord could not read citations: db_error", (
+            "pg_code is null on this arm, so dropping `op` leaves the operator "
+            "with a bare `db_error` and nothing to act on"
+        )
+        assert "work_unit.citations.read" in reason
+
+    async def test_a_presence_hop_500_names_WHICH_work_unit_read_broke(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The status-code arm — ``_safe_body_excerpt``, not the inline one.
+
+        The presence hop is the unguarded canary: a 500 there trips the circuit
+        and its reason is repeated stickily on every remaining row. coord now
+        answers it through the same constructor, with ``op`` distinguishing the
+        by-slug read from the history and list reads that share the ``db_error``
+        code — which is the difference between "the detail read is sick" and
+        "something else is".
+        """
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("op-presence"),
+            work_unit_slug=_slug("wu-op-presence"),
+        )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            raise HTTPException(
+                status_code=500,
+                detail=json.dumps(
+                    {
+                        "error": "db_error",
+                        "pg_code": None,
+                        "op": "work_unit.read",
+                        "pg_table": "work_units",
+                    }
+                ),
+            )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert reason == "coord returned 500: db_error: work_unit.read", (
+            "the whitelist admits exactly `error` and `op` here — the SQLSTATE "
+            "is null and the pg_table name is not this side's to forward"
+        )
+
+    async def test_an_op_alone_is_recognised_not_described_by_field_names(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A body carrying ONLY ``op`` is recognised, not described.
+
+        The "unrecognised coord error body (keys: …)" fallback exists for a body
+        with no identifier this read knows. ``op`` is now one, so it must take
+        the identifier branch — otherwise the operator is handed a list of field
+        names while the field naming the failure sits inside it.
+        """
+        wu = _slug("wu-op-only")
+        plan = await _plan(
+            async_db_session, org_id=None, slug=_slug("op-only"), work_unit_slug=wu
+        )
+
+        fake = _coord_honouring_with_citations(
+            {"slug": wu, "status": "vetted"},
+            [],
+            citations_error={"op": "work_unit.citations.delivery"},
+        )
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
+        reason = row["coord"]["unavailable_reason"]
+        assert reason == (
+            "coord could not read citations: work_unit.citations.delivery"
+        ), reason
+        assert "keys:" not in reason
+
+    async def test_a_pathological_op_field_is_TRUNCATED(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Naming the field is what makes it safe; the cap is still not optional.
+
+        ``op`` is a closed set of literals in coord TODAY, and this side does
+        not enforce that — it cannot, without reimplementing coord's enum and
+        drifting from it. So the same reasoning that caps the whitelisted
+        ``error`` field applies here: a whitelisted field is filtered, and
+        ``_cap_reason`` bounds what a filtered field may carry.
+        """
+        tail = "ROWVALUE-9f1c2d3e"
+        long_op = "x" * (_REASON_MAX_CHARS * 2) + tail
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=_slug("op-long"),
+            work_unit_slug=_slug("wu-op-long"),
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(
+                side_effect=HTTPException(
+                    status_code=500, detail=json.dumps({"op": long_op})
+                )
+            ),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        prefix = "coord returned 500: "
+        assert reason.startswith(prefix)
+        excerpt = reason[len(prefix) :]
+        assert len(excerpt) == _REASON_MAX_CHARS, (
+            f"the whitelisted `op` field was not capped: {len(excerpt)} chars"
+        )
+        assert excerpt.endswith("…"), "truncation is not marked"
+        assert tail not in reason
