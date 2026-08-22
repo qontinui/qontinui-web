@@ -27,9 +27,10 @@
  * WHY `--created` EXISTS, and why `--gh N` alone is not enough. `gh run list`
  * is newest-first, so `--gh N` addresses a COUNT, never a period -- and Spec CI
  * is busy enough that the last 100 runs covered barely 27 hours when this was
- * measured (2026-08-20T02:20Z .. 2026-08-21T05:43Z). The six artifact-less
- * runs of 2026-08-19 that this whole category was built for had already aged
- * out of `--gh 100` two days later, so re-running the plan's own Phase 5 gate
+ * measured (2026-08-20T02:20Z .. 2026-08-21T05:43Z). The seven artifact-less
+ * runs of 2026-08-19 that this whole category was built for -- six of them the
+ * apt stall, one an external cancel -- had already aged out of `--gh 100` two
+ * days later, so re-running the plan's own Phase 5 gate
  * returned `no_artifact = 0` -- the value that gate declares to be a FAILING
  * result -- for a reason that had nothing to do with the code. A
  * count-addressed window silently becoming an empty one is the same
@@ -37,9 +38,16 @@
  * is now addressable directly and is ECHOED in the output rather than left for
  * the reader to infer.
  *
+ * `--created` and `--gh N` are TWO limits, and the cap wins silently: a window
+ * holding more runs than the cap is served only in part. So size `--gh` ABOVE
+ * the window's run count. When the cap is reached the report says so
+ * (`TRUNCATED`) and downgrades any clean verdict to a claim about the runs
+ * EXAMINED rather than about the period -- but the warning is the backstop,
+ * not the plan.
+ *
  * Usage:
  *   npx tsx tools/spec-ci-flake/analyze.ts --gh 40
- *   npx tsx tools/spec-ci-flake/analyze.ts --gh 50 --created 2026-08-19
+ *   npx tsx tools/spec-ci-flake/analyze.ts --gh 200 --created 2026-08-19
  *   npx tsx tools/spec-ci-flake/analyze.ts --dir ./.flake-cache
  *
  * It ALSO reports, in its own section and never averaged into the flake
@@ -429,8 +437,9 @@ interface RunLevelTally {
    */
   limit: number;
   /**
-   * `listed === limit` — the cap was REACHED, so the window may hold runs this
-   * measurement never examined.
+   * `listed >= limit` — the cap was REACHED, so the window may hold runs this
+   * measurement never examined. (`gh run list` cannot exceed `--limit`, so
+   * this is `===` in practice; `>=` is written for the property it means.)
    *
    * Without this the tool re-created its own defect one level up. `--gh 60
    * --created 2026-08-19` prints "window: --created 2026-08-19" and, on a
