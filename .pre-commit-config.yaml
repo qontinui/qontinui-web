@@ -66,6 +66,26 @@ repos:
         # also named `_staged_consolidation/`, which the transplant
         # removed from both the tree and SCOPED_DIRS.
 
+      - id: gitignore-tracked-files
+        name: no tracked file is gitignored
+        # SAME SCRIPT as .github/workflows/gitignore-tracked-files.yml and
+        # .qontinui/ci.toml's `gitignore-tracked-files` step. Here for the
+        # earliest possible feedback: this defect class is created by a commit
+        # (a new file under an existing rule, or a rule widened over existing
+        # files) and is then invisible — `git status` never mentions it, because
+        # ignore rules do not apply to files already in the index. Two
+        # `git ls-files` calls over the index, so it costs nothing.
+        #
+        # `always_run` with `pass_filenames: false`: the check is a property of
+        # the (rules, index) PAIR, not of the staged file list. A commit that
+        # adds `foo/bar.py` under an existing `foo/` rule touches no .gitignore,
+        # so any `files:` pattern narrow enough to be worth writing would sit out
+        # exactly the commit that breaks the invariant.
+        entry: python scripts/ci/check_tracked_ignored.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint
         entry: python scripts/ci/check_web_boundary.py --files
