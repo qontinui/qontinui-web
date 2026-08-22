@@ -352,17 +352,125 @@ string.
 
 ## Deploying the composed shape
 
-**Not wired yet, and deliberately named rather than papered over.** The
-frontend deploys through Vercel, and the repo's `vercel.json` sets no
-`installCommand` / `buildCommand` — those live in the Vercel project settings,
-which this repo cannot change. Vercel also clones only this repo, so there is
-no sibling checkout for the overlay to link to. Making qontinui.io serve the
-composed shape needs a Vercel install command that fetches
-`qontinui/qontinui-cloud-control` and then runs
-`npm run cloud:install -- --source <path>` — a settings change, not a code one.
-Until that lands, the production frontend runs the OSS shape, exactly as it
-did before this mechanism existed. What changed is that the composed shape now
-exists, builds, and is gated in CI.
+**Wired.** qontinui.io deploys through Vercel's Git integration, and
+`frontend/vercel.json` sets an `installCommand` that builds the composed shape:
+
+```json
+"installCommand": "bash scripts/vercel-install.sh --config-source frontend"
+```
+
+`scripts/vercel-install.sh` runs `npm ci`, clones
+`qontinui/qontinui-cloud-control` (public — no credential) at the commit
+pinned in `frontend/cloud-control.pin` into `<repo>/.sibling/`, links it with
+`npm run cloud:install -- --source <that>`, and then **verifies the overlay
+landed and exits non-zero if it did not**. That last step is the design: a
+clone failure that quietly fell back to the OSS shape would deploy qontinui.io
+without the org switcher, the beta banner, the subscription badge, and with
+`billingService` / `organizationService` as throwing stubs — and would report
+success. It is the same failure shape as the `.catch(() => {})` loader this
+mechanism replaced. Vercel keeps the previous deployment serving when a build
+fails, so failing loud costs no availability.
+
+The layout mirrors `frontend-ci.yml`'s `composed-cloud-build` job exactly
+(sibling checked out to `.sibling/qontinui-cloud-control`, linked from there),
+so the deploy path is the path CI already proves green on every PR rather than
+a second arrangement nothing exercises.
+
+**Bumping cloud-control is a qontinui-web commit.** `cloud-control.pin` holds a
+full commit sha, and the script checks out that commit — it never follows a
+branch. cloud-control publishes no release tags, so a sha is the pin. A
+floating `main` would let a cloud-control push change what qontinui.io serves
+with no qontinui-web commit at all: an untracked input to a production build.
+Editing the pin puts the change through qontinui-web review and CI.
+
+**The pin and CI's floating `main` are deliberately different inputs**, and it
+matters which job reads which. `composed-cloud-build` checks cloud-control out
+at its **default branch**: that is what makes it a cross-repo *drift detector*,
+and pointing it at the pin would trade that away. `vercel-install-script` reads
+the **pin**, and type-checks the result — so the combination that actually
+deploys is built by something before it is built by Vercel. Neither job alone
+covers both, which is why there are two. When the pin lags `main`, expect the
+two to disagree; that disagreement is the signal to bump.
+
+### Which `vercel.json`, and how that was settled
+
+Vercel reads `vercel.json` from the project's **Root Directory**, and this repo
+has both a `frontend/` and a `backend/`. That setting is recorded nowhere in the
+tree and no Vercel credential is reachable from a dev session (the CLI's
+`auth.json` has been an empty `{}` since 2026-07-12), so it was an open question
+when this landed. It is not any more: **the Root Directory is `frontend`**, so
+`frontend/vercel.json` is the file that carries the install command.
+
+The read that settled it needs no credential. Vercel's GitHub App posts a
+comment on every PR whose body begins `[vc]: #<hash>:<base64>`, and that payload
+is the project config as Vercel itself sees it:
+
+```console
+$ gh pr view <n> --repo qontinui/qontinui-web --json comments \
+    --jq '.comments[]|select(.author.login=="vercel")|.body' \
+  | head -1 | sed 's/^\[vc\]: #[^:]*://' | base64 -d
+{"isMonorepo":true,...,"rootDirectory":"frontend"}
+```
+
+Worth keeping, because the obvious evidence points the other way and is not
+wrong — it is answering a different question. The **repo-root** `vercel.json`
+demonstrably steers Vercel: `39cb6f87` set `git.deploymentEnabled: false` there
+on 2026-05-02 and `aabaaf39` set it back on 2026-05-17, and Vercel created zero
+deployments for main commits inside that window (`08db0242`, `4fb69ed1`,
+`26519749`, `0b83f939`, `12de6861`, `80ae61bd`) against `Production/vercel[bot]`
+deployments for `f2b72d06` just before and `096c7eb0` just after. So the Git
+integration reads the repository root while the **build** settings come from the
+Root Directory. Both files matter; they do not matter for the same keys.
+
+### Reading a deployment's shape back
+
+`--config-source` is recorded verbatim in `public/composed-build.json`, which the
+deployment serves. `middleware.ts`'s matcher excludes `*.json`, so the file needs
+no session:
+
+```console
+$ curl -s https://qontinui.io/composed-build.json
+{ "composed": true, "configSource": "frontend", "cloudControlSha": "…", … }
+```
+
+It is written **last**, only on the path where the overlay verified, so an OSS
+build serves a 404 there rather than a claim it cannot back.
+
+**Ask production, not a preview.** Vercel Deployment Protection covers preview
+deployments, and it fails in a disguised way: a protected `*.vercel.app` URL
+redirects to `vercel.com/sso-api` and — following that redirect — answers
+**HTTP 200** with a complete Next.js app that is Vercel's own login page. A
+naive marker or chunk grep against it reports "not composed" for a build it
+never looked at. The production alias is not protected (`verify-frontend-deploy.yml`
+crawls `https://qontinui.io` unauthenticated for exactly this reason), so
+production is where this probe is run. Parse the response as JSON and treat a
+parse failure as *unknown*, never as *OSS*.
+
+### What gates the install script
+
+`frontend-ci.yml`'s `vercel-install-script` job runs `vercel-install.sh`
+end-to-end on Linux and asserts three things: the overlay resolves, the marker
+is valid JSON naming the same sha as `cloud-control.pin`, and — with the pin
+pointed at a sha that resolves to nothing — the script exits **non-zero and
+writes no marker**. That last case is the one the design is about, so testing
+only the success path would leave it uncovered.
+
+It is a separate job from `composed-cloud-build` on purpose.
+`composed-cloud-build` checks cloud-control out at its floating `main`, which
+is what makes it a cross-repo drift detector; pointing it at the pin instead
+would trade that away. So one job proves the two repos still compose, and the
+other proves the script that ships them does what it says.
+
+### The claim this section replaces
+
+Until this landed, this document said the install and build commands *"live in
+the Vercel project settings, which this repo cannot change"*, and deferred the
+last mile as an operator-only change. That was wrong, and being wrong here is
+what kept the whole extension surface inert in production after the loader was
+fixed: `installCommand` and `buildCommand` in `vercel.json` take precedence
+over the dashboard settings, so it was always a code change. A doc that
+mis-scopes a code change as an operator change is how the same gap gets
+deferred a second time.
 
 ## CI
 

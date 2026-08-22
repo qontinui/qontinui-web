@@ -1,0 +1,10 @@
+# The qontinui-cloud-control commit the composed cloud deploy is built
+# against. frontend/scripts/vercel-install.sh reads the first non-comment
+# line and checks that exact commit out; nothing here follows a branch.
+#
+# Bumping this file is how cloud-control changes reach qontinui.io. Do it
+# deliberately: the bump is a qontinui-web commit, so it rides qontinui-web's
+# review and its `composed-cloud-build` CI job, which builds the two repos
+# together. A floating `main` would let a cloud-control push change what
+# qontinui.io serves with no qontinui-web commit at all.
+119379a4e61bf74e9506315ba303fc3ca0c0a805
