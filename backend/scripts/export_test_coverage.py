@@ -146,9 +146,12 @@ def extract_observations(coverage_db: str, head_sha: str) -> list[dict]:
     con = sqlite3.connect(coverage_db)
     con.row_factory = sqlite3.Row
     try:
-        files = {row["id"]: row["path"] for row in con.execute("SELECT id, path FROM file")}
+        files = {
+            row["id"]: row["path"] for row in con.execute("SELECT id, path FROM file")
+        }
         contexts = {
-            row["id"]: row["context"] for row in con.execute("SELECT id, context FROM context")
+            row["id"]: row["context"]
+            for row in con.execute("SELECT id, context FROM context")
         }
 
         # (context_id -> set(file_id)) from whichever storage is present.
@@ -163,7 +166,9 @@ def extract_observations(coverage_db: str, head_sha: str) -> list[dict]:
             )
 
         if _table_exists("line_bits"):
-            for row in con.execute("SELECT file_id, context_id, numbits FROM line_bits"):
+            for row in con.execute(
+                "SELECT file_id, context_id, numbits FROM line_bits"
+            ):
                 numbits = row["numbits"]
                 if numbits and any(numbits):
                     ctx_files.setdefault(row["context_id"], set()).add(row["file_id"])
@@ -224,21 +229,27 @@ def _log_response_body(url: str, status: int, body: str) -> None:
     try:
         parsed = json.loads(body) if body.strip() else {}
     except (ValueError, TypeError):
-        warn(f"POST {url} -> {status}: response body is not valid JSON (see body above)")
+        warn(
+            f"POST {url} -> {status}: response body is not valid JSON (see body above)"
+        )
         return
     if isinstance(parsed, dict) and "accepted" in parsed and "persisted" in parsed:
         accepted = parsed.get("accepted")
         persisted = parsed.get("persisted")
         failed = parsed.get("failed")
-        try:
-            if persisted < accepted:
-                warn(
-                    f"POST {url}: persisted ({persisted}) < accepted ({accepted}) "
-                    f"-- batch partially dropped"
-                    + (f", failed={failed}" if failed is not None else "")
-                )
-        except TypeError:
+        # An explicit numeric guard rather than try/except TypeError: same
+        # behaviour and the same two messages, but the None case is visible to
+        # the reader and to the type checker instead of being caught at runtime.
+        if not isinstance(persisted, (int, float)) or not isinstance(
+            accepted, (int, float)
+        ):
             warn(f"POST {url}: non-numeric accepted/persisted in body (see body above)")
+        elif persisted < accepted:
+            warn(
+                f"POST {url}: persisted ({persisted}) < accepted ({accepted}) "
+                f"-- batch partially dropped"
+                + (f", failed={failed}" if failed is not None else "")
+            )
 
 
 def post_json(url: str, payload: dict, *, timeout: float = 30.0) -> None:
@@ -337,9 +348,15 @@ def build_synthetic_db(path: str) -> None:
     con.executemany(
         "INSERT INTO file (id, path) VALUES (?, ?)",
         [
-            (1, "/home/runner/work/qontinui-web/qontinui-web/backend/app/services/foo.py"),
+            (
+                1,
+                "/home/runner/work/qontinui-web/qontinui-web/backend/app/services/foo.py",
+            ),
             (2, "app/api/bar.py"),  # backend-relative shape
-            (3, "/home/runner/work/qontinui-web/qontinui-web/backend/tests/test_foo.py"),
+            (
+                3,
+                "/home/runner/work/qontinui-web/qontinui-web/backend/tests/test_foo.py",
+            ),
         ],
     )
     con.executemany(
@@ -387,7 +404,9 @@ def self_test() -> int:
     }
     for nodeid, expected in cases.items():
         got = nodeid_to_junit_test_id(nodeid)
-        assert got == expected, f"normalize({nodeid!r}) = {got!r}, expected {expected!r}"
+        assert got == expected, (
+            f"normalize({nodeid!r}) = {got!r}, expected {expected!r}"
+        )
 
     assert strip_phase_suffix("a::b|run") == "a::b"
     assert strip_phase_suffix("a::b|setup") == "a::b"
@@ -395,7 +414,8 @@ def self_test() -> int:
     assert strip_phase_suffix("a::b") == "a::b"
 
     assert (
-        normalize_file_path("/x/backend/app/services/foo.py") == "backend/app/services/foo.py"
+        normalize_file_path("/x/backend/app/services/foo.py")
+        == "backend/app/services/foo.py"
     )
     assert normalize_file_path("app/api/bar.py") == "backend/app/api/bar.py"
     assert normalize_file_path("backend/app/x.py") == "backend/app/x.py"
@@ -423,13 +443,22 @@ def self_test() -> int:
     assert add["lines_covered"] is None
 
     method = by_id["tests.test_foo.TestBar::test_method"]
-    assert method["files_touched"] == ["backend/app/services/foo.py"], method["files_touched"]
+    assert method["files_touched"] == ["backend/app/services/foo.py"], method[
+        "files_touched"
+    ]
 
     param = by_id["tests.test_param::test_p[1-2-3]"]
     assert param["files_touched"] == ["backend/app/api/bar.py"], param["files_touched"]
 
     # 3. Shape invariants on every observation.
-    required = {"repo", "head_sha", "test_id", "files_touched", "lines_covered", "coverage_kind"}
+    required = {
+        "repo",
+        "head_sha",
+        "test_id",
+        "files_touched",
+        "lines_covered",
+        "coverage_kind",
+    }
     for o in obs:
         assert required.issubset(o), f"missing keys in {o}"
         assert o["files_touched"], "files_touched must be non-empty"
