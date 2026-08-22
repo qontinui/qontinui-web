@@ -26,7 +26,12 @@ import type {
   PromptDocumentCreate,
   PromptDocumentKind,
 } from "../types";
-import { KIND_META, PROMPT_DOCUMENT_KINDS } from "../types";
+import {
+  KIND_META,
+  PROMPT_DOCUMENT_KINDS,
+  SESSION_BRIEFING_DOCUMENT_NAMES,
+} from "../types";
+import { validateBodyForKind } from "../_lib/sessionBriefingBody";
 
 interface PromptDocumentCreateDialogProps {
   open: boolean;
@@ -76,11 +81,41 @@ export function PromptDocumentCreateDialog({
   }, [open]);
 
   const nameValid = name.length === 0 || isKebabCase(name);
+
+  /**
+   * Coord content-checks a `session_briefing` body on the CREATE door too
+   * (`post_create` calls the same `validate_body_for_kind` as `patch_one`), so
+   * the form checks it here for the same reason the editor does — a 400 that
+   * arrives after the body is typed is the worst place to learn a content rule.
+   */
+  const bodyError = body.length > 0 ? validateBodyForKind(kind, body) : null;
+
+  /**
+   * A `session_briefing` row under a name the runner does not resolve is
+   * legal, and it is a trap worth naming rather than blocking.
+   *
+   * Coord accepts it, so refusing here would be this form inventing a rule.
+   * But the row is INERT — the runner fetches its three names by constant and
+   * never lists the kind — and, because coord's `AGENT_UNWRITABLE_DOCUMENTS`
+   * is a list of `(kind, name)` pairs rather than a kind-wide deny, it is also
+   * **agent-writable by default**. Inert and agent-writable is a coherent pair
+   * (nothing reads it, so nothing is at stake), but an operator who believes
+   * they are authoring the fleet's system prompt has got neither of the two
+   * properties they think they have. The address is permanent, so this is the
+   * only moment to say so.
+   */
+  const inertBriefingName =
+    kind === "session_briefing" &&
+    name.trim().length > 0 &&
+    isKebabCase(name.trim()) &&
+    !SESSION_BRIEFING_DOCUMENT_NAMES.includes(name.trim());
+
   const canSubmit =
     !saving &&
     name.trim().length > 0 &&
     isKebabCase(name.trim()) &&
-    body.trim().length > 0;
+    body.trim().length > 0 &&
+    bodyError === null;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -150,6 +185,19 @@ export function PromptDocumentCreateDialog({
                   Must be kebab-case: lowercase letters, digits, and single
                   dashes (no leading, trailing, or double dash).
                 </p>
+              ) : inertBriefingName ? (
+                <p
+                  className="text-xs text-amber-700 dark:text-amber-400"
+                  data-testid="create-inert-briefing"
+                >
+                  The runner resolves only{" "}
+                  {SESSION_BRIEFING_DOCUMENT_NAMES.join(", ")} — it fetches
+                  those three by name and never lists this kind. A row under any
+                  other name is stored and versioned but never injected into a
+                  prompt, and coord&apos;s built-in write protection covers those
+                  three names specifically, so this row would also be
+                  agent-writable by default. The address is permanent.
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   {kind === "policy" && isKebabCase(name.trim())
@@ -181,7 +229,20 @@ export function PromptDocumentCreateDialog({
               rows={16}
               className="font-mono text-xs"
               placeholder="Markdown prose — served verbatim to the fleet."
+              aria-invalid={bodyError !== null}
+              aria-describedby={
+                bodyError !== null ? "create-body-error" : undefined
+              }
             />
+            {bodyError !== null ? (
+              <p
+                id="create-body-error"
+                className="text-xs text-destructive"
+                data-testid="create-body-error"
+              >
+                {bodyError}
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               Saved as version 1. Every later edit is a new version — nothing is
               overwritten.
