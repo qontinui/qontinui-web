@@ -131,7 +131,11 @@ from app.api.deps import (
     get_audit_actor_principal,
     get_audit_actor_user,
 )
-from app.api.v1.endpoints.operations import _proxy_coord_get, get_tenant_id
+from app.api.v1.endpoints.operations import (
+    _proxy_coord_get,
+    capture_caller_bearer,
+    get_tenant_id,
+)
 from app.crud import work_artifact as crud
 from app.models.user import User
 from app.models.work_artifact import (
@@ -369,7 +373,7 @@ def _detail(
 # ─────────────────── coord-owned signals (HTTP only) ───────────────────
 
 
-async def _soft_tenant_id(request: Request) -> UUID | None:
+async def _soft_tenant_id(request: Request, *, actor_kind: ActorKind) -> UUID | None:
     """Resolve the caller's coord tenant WITHOUT letting a coord outage 403.
 
     ``get_tenant_id`` is the fleet's normal dependency, but it raises 403
@@ -377,11 +381,39 @@ async def _soft_tenant_id(request: Request) -> UUID | None:
     ``/candidates`` would turn "coord is slow" into "you cannot see your own
     local plans". Resolution is therefore best-effort here.
 
-    Calling it still runs its load-bearing side effect: the caller's bearer is
-    captured into the request-scoped ContextVar BEFORE identity resolution and
-    independently of its outcome, so ``_proxy_coord_get`` can forward the
-    bearer even when the tenant came back ``None``.
+    Calling it on that arm still runs its load-bearing side effect: the
+    caller's bearer is captured into the request-scoped ContextVar BEFORE
+    identity resolution and independently of its outcome, so
+    ``_proxy_coord_get`` can forward the bearer even when the tenant came back
+    ``None``.
+
+    **A DEVICE caller skips the resolution entirely** — it cannot succeed, and
+    the value it would produce is not used. ``get_tenant_id`` resolves identity
+    through coord's ``GET /admin/coord/me``, an OPERATOR door: it lifts a
+    tenant from a Cognito ``OperatorContext`` and answers a coord device JWT
+    401/403, exactly as ``/coord/work-units/...`` does (the asymmetry that
+    forced ``actor_kind`` into :class:`_CoordProbe` in the first place). So on
+    the agent path that call was a coord round-trip whose only possible outcome
+    was the ``except`` branch below — one guaranteed-failing request, on a 5s
+    timeout budget, in front of every runner-originated ``/candidates`` and
+    by-id read. The returned tenant would not have changed anything either:
+    ``_tenant_headers`` has not put a tenant on the wire since Phase T2b, and
+    coord's ``agent-`` doors lift it from the verified device JWT themselves.
+
+    What a device caller DOES still need is the bearer capture, so that is
+    taken directly (:func:`capture_caller_bearer`) rather than as a side effect
+    of the resolution. Dropping it would not merely lose the tenant — it would
+    send coord a header dict with no ``Authorization`` and turn every row of
+    the page ``unavailable``, which is the bug this whole read exists to close.
+
+    ``actor_kind`` is REQUIRED, for the same reason it is on
+    :class:`_CoordProbe`: a default would quietly hand the next call site the
+    arm it forgot to ask for, and the symptom is a slow read rather than an
+    exception.
     """
+    if actor_kind == "device":
+        capture_caller_bearer(request)
+        return None
     try:
         return await get_tenant_id(request)
     except Exception as exc:  # noqa: BLE001 — any failure degrades, none 403s
@@ -1640,7 +1672,7 @@ async def list_plan_candidates(
     links: dict[str, CandidateCoordLink] = {}
     coord_available = True
     if include_coord:
-        tenant_id = await _soft_tenant_id(request)
+        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
         probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
         slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
         links = await _coord_links(slugs, probe)
@@ -1859,7 +1891,8 @@ async def get_work_artifact(
     if row.work_unit_slug:
         if include_coord:
             probe = _CoordProbe(
-                await _soft_tenant_id(request), actor_kind=principal.kind
+                await _soft_tenant_id(request, actor_kind=principal.kind),
+                actor_kind=principal.kind,
             )
             coord_block = await probe.link_for(row.work_unit_slug)
         else:
