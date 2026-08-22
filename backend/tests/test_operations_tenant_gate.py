@@ -17,6 +17,9 @@ no live coord and no live Postgres are needed.
 """
 
 import asyncio
+import contextvars
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -98,6 +101,110 @@ def _patch_transport(
     return patch("httpx.AsyncClient", return_value=client), client
 
 
+# ---------------------------------------------------------------------------
+# Attributing pool checkouts to the REQUEST, not to whatever else the process
+# happens to be doing.
+#
+# The zero-checkout guards below listen on the app's SHARED
+# `app.db.session.async_engine`. That engine is shared with the in-process
+# scheduler (`app/core/scheduler.py`), which the session-scoped `test_client`
+# fixture starts via the app lifespan and which then ticks for the REST of the
+# pytest session. Every tick takes a pooled connection for its
+# `pg_try_advisory_lock(hashtext('sched:'||name))`, and the memory tasks
+# (`memory_reindex` / `memory_consolidate` / `memory_bridge_sync`) are
+# deliberately left ENABLED in `tests/conftest.py` because
+# `test_memory_api_db.py` depends on them having run.
+#
+# An unscoped listener records those ticks as if the gated request had caused
+# them, so `assert checkouts == []` failed intermittently — on a DIFFERENT test
+# each time, whichever one happened to overlap a tick. Observed reds: a
+# `SELECT DISTINCT tenant_id FROM coord.memory_records` sweep and the
+# `('memory_reindex',)` advisory lock.
+#
+# The fix attributes checkouts instead of silencing the guard. An ASGI
+# middleware sets `_IN_REQUEST` for the duration of the request, so everything
+# the request itself causes — dependencies, the endpoint body, tasks it spawns,
+# threadpool calls it makes, and SQLAlchemy's own `greenlet_spawn` (which
+# copies `gr_context`) — runs in a contextvars Context descended from it. A
+# scheduler tick lives in a Context created long before, on the lifespan
+# portal's event loop, so it is not.
+#
+# The bias is deliberately conservative: a checkout is IGNORED only when it can
+# be positively attributed to a context that is not the request's. Anything
+# unattributable still counts, so the guard cannot be quietly hollowed out —
+# and it now holds for every future background task, not just today's three.
+# ---------------------------------------------------------------------------
+
+_IN_REQUEST: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "operations_tenant_gate_in_request", default=False
+)
+
+
+class _MarkRequestContext:
+    """Pure-ASGI middleware that marks the request's contextvars Context.
+
+    Pure ASGI (not ``BaseHTTPMiddleware``) so the marker is set in the SAME
+    task that runs the dependency chain and the endpoint — no task hop, no
+    context copy that could drop it.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        token = _IN_REQUEST.set(True)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _IN_REQUEST.reset(token)
+
+
+class _RequestPoolCheckouts:
+    """Pool checkouts attributed to the request under test."""
+
+    def __init__(self) -> None:
+        self.checkouts: list[Any] = []
+        self._outstanding: set[int] = set()
+
+    @property
+    def outstanding(self) -> int:
+        """Request-caused connections not yet returned to the pool."""
+        return len(self._outstanding)
+
+
+@contextmanager
+def _record_request_pool_checkouts(engine: Any) -> Iterator[_RequestPoolCheckouts]:
+    """Record only those ``engine`` pool checkouts the request itself caused."""
+    from sqlalchemy import event
+
+    recorder = _RequestPoolCheckouts()
+
+    def _on_checkout(dbapi_conn: Any, conn_record: Any, conn_proxy: Any) -> None:
+        if not _IN_REQUEST.get():
+            # Positively somebody else's — a scheduler tick, a fixture, another
+            # thread. Not the request's DB work, so not this guard's business.
+            return
+        recorder.checkouts.append(conn_record)
+        recorder._outstanding.add(id(conn_record))
+
+    def _on_checkin(dbapi_conn: Any, conn_record: Any) -> None:
+        # NOT filtered on `_IN_REQUEST`: a connection can be returned outside
+        # the request's context (e.g. by a GC'd session), and we only ever
+        # discard ids this recorder itself put in.
+        recorder._outstanding.discard(id(conn_record))
+
+    event.listen(engine.sync_engine, "checkout", _on_checkout)
+    event.listen(engine.sync_engine, "checkin", _on_checkin)
+    try:
+        yield recorder
+    finally:
+        event.remove(engine.sync_engine, "checkout", _on_checkout)
+        event.remove(engine.sync_engine, "checkin", _on_checkin)
+
+
 def _build_app(*, user_override: Any = None) -> FastAPI:
     """Operations router on a minimal app — ``get_tenant_id`` NOT overridden.
 
@@ -113,6 +220,9 @@ def _build_app(*, user_override: Any = None) -> FastAPI:
             lambda: user_override
         )
     test_app.include_router(operations_router, prefix=API_PREFIX)
+    # Inert unless `_record_request_pool_checkouts` is active; installed on
+    # every app so the zero-checkout guards need no special build.
+    test_app.add_middleware(_MarkRequestContext)
     return test_app
 
 
@@ -280,7 +390,6 @@ class TestVestigialSweepRoutesStillGated:
         ``/merge/queue``, now covering the routes whose direct
         ``current_user`` (the only DB-touching dependency they had) was
         deleted."""
-        from sqlalchemy import event
         from sqlalchemy.pool import QueuePool
 
         from app.db.session import async_engine
@@ -290,26 +399,145 @@ class TestVestigialSweepRoutesStillGated:
             if route == "/coord/next-step-settings"
             else []
         )
-        checkouts: list[Any] = []
 
-        def _on_checkout(dbapi_conn: Any, rec: Any, proxy: Any) -> None:
-            checkouts.append(rec)
-
-        event.listen(async_engine.sync_engine, "checkout", _on_checkout)
-        try:
+        with _record_request_pool_checkouts(async_engine) as recorder:
             cm, _ = _patch_transport(me_delay=0.05, proxy_payload=payload)
             with cm:
                 client = TestClient(_build_app())
                 resp = client.get(
                     f"{API_PREFIX}{route}", headers={"Authorization": "Bearer tok"}
                 )
-        finally:
-            event.remove(async_engine.sync_engine, "checkout", _on_checkout)
 
         assert resp.status_code == 200
-        assert checkouts == []
+        assert recorder.checkouts == []
         assert isinstance(async_engine.pool, QueuePool)
-        assert async_engine.pool.checkedout() == 0
+        # Belt-and-braces, request-scoped: nothing the request took is still
+        # held. (The engine-wide `pool.checkedout()` cannot be asserted here —
+        # a concurrent scheduler tick legitimately holds one.)
+        assert recorder.outstanding == 0
+
+
+# ---------------------------------------------------------------------------
+# The attribution primitive the two zero-checkout guards above stand on.
+#
+# Pinned separately, and DETERMINISTICALLY: those guards can only observe
+# attribution when a background tick happens to overlap their 50ms window, so
+# a regression in `_record_request_pool_checkouts` (say, a filter that ignores
+# everything) would show up there as a permanent green — the exact false-green
+# this whole change exists to avoid. These tests race nothing: a throwaway
+# SQLite engine stands in for the shared async engine, and the two contexts are
+# produced by hand.
+# ---------------------------------------------------------------------------
+
+
+class TestRequestScopedCheckoutAttribution:
+    @staticmethod
+    def _engine_shim() -> Any:
+        """An object shaped like ``AsyncEngine`` for the recorder's purposes."""
+        from types import SimpleNamespace
+
+        from sqlalchemy import create_engine
+
+        # `check_same_thread=False`: FastAPI runs a `def` endpoint in an anyio
+        # worker thread, so the test thread has to be able to clean up after it.
+        return SimpleNamespace(
+            sync_engine=create_engine(
+                "sqlite://", connect_args={"check_same_thread": False}
+            )
+        )
+
+    def test_checkout_caused_by_the_request_is_recorded(self) -> None:
+        """The guard must still SEE a request's own DB work.
+
+        The endpoint is deliberately ``def``, not ``async def``: FastAPI runs
+        it in an anyio worker thread, so this also pins that the marker
+        survives the threadpool hop (anyio copies the Context into the worker).
+        A regression there would let a sync DB-touching dependency slip past.
+        """
+        from sqlalchemy import text
+
+        shim = self._engine_shim()
+        app = FastAPI()
+
+        @app.get("/touch")
+        def _touch() -> dict[str, bool]:  # noqa: ANN202 - test-local endpoint
+            with shim.sync_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return {"ok": True}
+
+        app.add_middleware(_MarkRequestContext)
+
+        with _record_request_pool_checkouts(shim) as recorder:
+            assert TestClient(app).get("/touch").status_code == 200
+
+        assert len(recorder.checkouts) == 1
+        assert recorder.outstanding == 0
+
+    def test_request_that_leaks_a_connection_is_reported_outstanding(self) -> None:
+        """``outstanding`` replaced the engine-wide ``pool.checkedout()``; it
+        must still catch a connection the request never gives back."""
+        from sqlalchemy import text
+
+        shim = self._engine_shim()
+        app = FastAPI()
+        leaked: list[Any] = []
+
+        @app.get("/leak")
+        def _leak() -> dict[str, bool]:  # noqa: ANN202 - test-local endpoint
+            conn = shim.sync_engine.connect()
+            conn.execute(text("SELECT 1"))
+            leaked.append(conn)  # never closed
+            return {"ok": True}
+
+        app.add_middleware(_MarkRequestContext)
+
+        try:
+            with _record_request_pool_checkouts(shim) as recorder:
+                assert TestClient(app).get("/leak").status_code == 200
+            assert len(recorder.checkouts) == 1
+            assert recorder.outstanding == 1
+        finally:
+            for conn in leaked:
+                conn.close()
+
+    def test_checkout_from_a_background_thread_is_ignored(self) -> None:
+        """A tick that merely overlaps the window is NOT the request's DB work.
+
+        Stands in for the in-process scheduler, whose tasks run on the lifespan
+        portal's event loop in their own Context.
+        """
+        import threading
+
+        from sqlalchemy import text
+
+        shim = self._engine_shim()
+
+        def _background_tick() -> None:
+            with shim.sync_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+        with _record_request_pool_checkouts(shim) as recorder:
+            worker = threading.Thread(target=_background_tick)
+            worker.start()
+            worker.join(timeout=30)
+
+        assert recorder.checkouts == []
+        assert recorder.outstanding == 0
+
+    def test_marker_does_not_leak_past_the_request(self) -> None:
+        """``_IN_REQUEST`` is reset, so a later foreign checkout stays ignored."""
+        assert _IN_REQUEST.get() is False
+
+        app = FastAPI()
+
+        @app.get("/noop")
+        async def _noop() -> dict[str, bool]:  # noqa: ANN202 - test-local
+            assert _IN_REQUEST.get() is True
+            return {"ok": True}
+
+        app.add_middleware(_MarkRequestContext)
+        assert TestClient(app).get("/noop").status_code == 200
+        assert _IN_REQUEST.get() is False
 
 
 # ---------------------------------------------------------------------------
@@ -359,19 +587,16 @@ class TestNoDbCheckoutDuringTenantGate:
         ``get_current_active_user_async`` chain), this test fails — either
         via a recorded checkout (live PG) or via a non-200 connect failure
         (no PG available to the suite).
+
+        Checkouts are attributed to the request's own contextvars Context (see
+        ``_record_request_pool_checkouts``), so a background scheduler tick on
+        the shared engine is not mistaken for the request's DB work.
         """
-        from sqlalchemy import event
         from sqlalchemy.pool import QueuePool
 
         from app.db.session import async_engine
 
-        checkouts: list[Any] = []
-
-        def _on_checkout(dbapi_conn: Any, conn_record: Any, conn_proxy: Any) -> None:
-            checkouts.append(conn_record)
-
-        event.listen(async_engine.sync_engine, "checkout", _on_checkout)
-        try:
+        with _record_request_pool_checkouts(async_engine) as recorder:
             cm, stub = _patch_transport(me_delay=0.05)
             with cm:
                 client = TestClient(_build_app())
@@ -379,18 +604,16 @@ class TestNoDbCheckoutDuringTenantGate:
                     f"{API_PREFIX}/merge/queue",
                     headers={"Authorization": "Bearer tok"},
                 )
-        finally:
-            event.remove(async_engine.sync_engine, "checkout", _on_checkout)
 
         assert resp.status_code == 200
         # The gate ran (coord /me consulted) ...
         assert any(
             call.args[0].endswith("/admin/coord/me") for call in stub.get.call_args_list
         )
-        # ... and NO pooled DB connection was checked out during the request.
-        assert checkouts == []
-        # Belt-and-braces: nothing is still checked out afterwards either.
+        # ... and NO pooled DB connection was checked out BY THE REQUEST.
+        assert recorder.checkouts == []
+        # Belt-and-braces: nothing the request took is still held.
         # (AsyncAdaptedQueuePool subclasses QueuePool; the isinstance check
         # narrows the type for mypy, which types ``engine.pool`` as ``Pool``.)
         assert isinstance(async_engine.pool, QueuePool)
-        assert async_engine.pool.checkedout() == 0
+        assert recorder.outstanding == 0
