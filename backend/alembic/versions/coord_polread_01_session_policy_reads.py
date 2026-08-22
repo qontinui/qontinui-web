@@ -204,7 +204,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "coord_polread_01"
-down_revision = "replpres_01"
+down_revision = "cmpaxis_01_comparison_computed_axis"
 branch_labels = None
 depends_on = None
 
