@@ -1614,12 +1614,19 @@ class TestCoordServiceUnavailableOnTheCitationRead:
     which reads fine.
 
     Its ``500 db_error`` — a transient PG failure on THIS slug's citation
-    SELECT, rendered by ``pg_error::to_body()`` — is the same class one status
-    band down, and reads the same way. The device path already behaves so: the
-    identical coord fault reaches an agent caller as ``200`` +
-    ``citations_error``, so without the 500 arm one coord fault produced a
-    per-slug degradation for a device caller and a blanked page for an
-    operator.
+    SELECT, rendered by coord itself — is the same class one status band down,
+    and reads the same way. coord has spelled that body two ways: the wide
+    ``pg_error::to_body()``, and since the crate-wide sweep
+    ``to_safe_body(SafeOp::WorkUnitCitationsRead)``. Both write
+    ``error: "db_error"``, which is the only field the carve-out keys on, and
+    the two tests below pin it against each shape — the narrow one because it
+    is what coord answers TODAY, the wide one because "landed" is not
+    "everywhere".
+
+    The device path already behaves so: the identical coord fault reaches an
+    agent caller as ``200`` + ``citations_error``, so without the 500 arm one
+    coord fault produced a per-slug degradation for a device caller and a
+    blanked page for an operator.
 
     The carve-out is keyed on coord's error CODE in the body, not on which hop
     asked. The tempting argument — the citations hop runs only after the
@@ -1809,10 +1816,17 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             for _ in range(4)
         ]
 
-        # coord's ``pg_error::to_body()`` with structured detail (``error`` +
-        # ``context`` + ``pg``), plus a ``chain`` key it does not emit — extra
+        # coord's WIDE ``pg_error::to_body()`` with structured detail (``error``
+        # + ``context`` + ``pg``), plus a ``chain`` key it does not emit — extra
         # fields only make the leak assertion below stricter, and this mirrors
         # the ``PG_ERROR_BODY`` fixture in ``TestCoordErrorBodiesDoNotEgress``.
+        #
+        # This is the LEGACY shape: coord's sweep moved this door onto
+        # ``to_safe_body``, so what a current coord answers here is the narrow
+        # body pinned by the test immediately below. Kept, not replaced — the
+        # whitelist has to stay safe against a coord predating the sweep, and
+        # this is the only body on this hop that carries an anyhow chain and a
+        # PG DETAIL line to be safe against.
         pg_body = {
             "error": "db_error",
             "context": "listing citations for work unit",
@@ -1866,6 +1880,99 @@ class TestCoordServiceUnavailableOnTheCitationRead:
                 "listing citations",
             ):
                 assert leaked not in reason, f"coord internals egressed: {leaked!r}"
+
+    async def test_a_typed_500_is_per_slug_on_coords_NARROW_body_TOO(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The same carve-out, against the body coord answers with TODAY.
+
+        The test above drives the carve-out with the wide
+        ``pg_error::to_body()``. coord's crate-wide sweep moved this exact door
+        onto ``citation_read_failed`` → ``to_safe_body(WorkUnitCitationsRead)``,
+        so every field of that fixture except one is gone from the wire: no
+        ``context``, no ``chain``, no nested ``pg`` map. The survivor is
+        ``error: "db_error"`` — and it is the ONLY field ``_CITATION_ANSWERED``
+        keys on, which is why the carve-out came through the narrowing
+        untouched.
+
+        That is worth an executable pin rather than an argument. The pairing is
+        a live safety property: keyed on a field coord no longer wrote, every
+        pairing would miss, ``_is_transport_failure`` would call a per-slug PG
+        fault an outage, and the page-wide circuit would blank the work-unit
+        half of every remaining row — while a suite that only ever fed it the
+        retired shape stayed green. This is not hypothetical for this body:
+        the SQLSTATE moved under exactly this narrowing once already, to a key
+        this side did not read, and was caught by inspection rather than by a
+        test.
+
+        It is also the third arm of the ``op`` read.
+        ``TestCoordsOpTokenNamesWhichReadFailed`` pins the inline arm and the
+        presence hop; this is the citations SUB-RESOURCE, which is neither —
+        it is the only one of the three reached through ``answered_codes``, so
+        it is the only one where rendering the reason and granting the
+        carve-out are the same code path.
+        """
+        plans = [
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("narrow-per-slug"),
+                work_unit_slug=_slug("wu-narrow-per-slug"),
+            )
+            for _ in range(4)
+        ]
+
+        # coord's REAL output for this door: `to_safe_body` with every optional
+        # schema identifier populated, i.e. the widest narrow body this side can
+        # receive. `pg_constraint` / `pg_table` / `pg_column` are coord's to
+        # emit and not this side's to forward.
+        narrow_body = {
+            "error": "db_error",
+            "pg_code": "23503",
+            "op": "work_unit.citations.read",
+            "pg_constraint": "work_unit_citations_tenant_id_fkey",
+            "pg_table": "work_unit_citations",
+            "pg_column": "tenant_id",
+        }
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(status_code=500, detail=json.dumps(narrow_body))
+            # No `citations` key: this coord narrowed its error bodies but does
+            # not inline citations on the operator door, so hop 2 still runs and
+            # the carve-out is actually reached. (A coord carrying both arms
+            # answers the failure inline instead — pinned by
+            # ``test_the_inline_citations_error_names_the_op``.)
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "coord's narrow `db_error` was read as an outage — the carve-out "
+            "keys on the one field the sweep did NOT change, and missing it "
+            "blanks every remaining row over one slug's PG fault"
+        )
+        assert fake.await_count == 2 * len(plans), (
+            "the circuit short-circuited the remaining slugs, so rows whose "
+            "own presence hop would have succeeded were never read"
+        )
+        by_id = {r["id"]: r for r in body["items"]}
+        for plan in plans:
+            link = by_id[str(plan.id)]["coord"]
+            assert link["work_unit_state"] == "linked"
+            assert link["linked_prs_state"] == "unavailable"
+            assert link["linked_prs"] == []
+            # Whole-string, so this is a complete control and not a needle
+            # hunt: `error`, `op` and the SQLSTATE cross in that order, and
+            # NOTHING else does — the three schema identifiers coord was
+            # willing to name are absent because they were never whitelisted.
+            assert link["unavailable_reason"] == (
+                "coord returned 500: db_error: work_unit.citations.read: 23503"
+            ), link["unavailable_reason"]
 
     async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -2203,13 +2310,20 @@ class TestCoordErrorBodiesDoNotEgress:
 
     The reason built from a coord error becomes ``_CoordProbe.reason`` on a
     circuit trip, and is then repeated on every remaining row of the page — so
-    anything echoed there leaves this API stickily. coord's generic
+    anything echoed there leaves this API stickily. coord's wide
     ``pg_error.to_body()`` carries the anyhow chain and structured Postgres
     fields, and ``pg.detail`` routinely names ROW VALUES, constraints and
     tables. Only the identifying fields may ride out.
+
+    That constructor has no production caller on coord's ``main`` any more —
+    the crate-wide sweep narrowed every door onto ``to_safe_body(op)`` and left
+    it ``#[cfg(test)]``. These tests are therefore a control against a coord
+    PREDATING the sweep, which is a live reading and not a historical one: this
+    read runs against whatever coord actually answered. The narrow body coord
+    emits today is pinned by ``TestCoordsOpTokenNamesWhichReadFailed``.
     """
 
-    #: A ``pg_error.to_body()``-shaped body: the parts that identify the
+    #: A WIDE ``pg_error.to_body()``-shaped body: the parts that identify the
     #: failure, and the parts that must never leave this service.
     PG_ERROR_BODY = {
         "error": "db_error",
@@ -2290,10 +2404,13 @@ class TestCoordErrorBodiesDoNotEgress:
     ) -> None:
         """coord puts the SQLSTATE in two different places.
 
-        The hand-rolled ``citation_surface_unavailable`` body carries
-        ``pg_code`` at the top level; ``pg_error.to_body()`` nests it at
-        ``pg.code``. Reading only one would drop the field that decides between
-        "wait for the migration" and "page someone".
+        Both bodies a CURRENT coord answers with carry ``pg_code`` at the top
+        level — the hand-rolled ``citation_surface_unavailable`` one, and
+        ``to_safe_body(op)``, which picked that spelling because
+        ``_coord_error_code`` is the only structural reader there is. The
+        nested ``pg.code`` is the wide ``to_body()``'s. Reading only one would
+        drop the field that decides between "wait for the migration" and "page
+        someone".
         """
         wu = _slug("wu-topcode")
         plan = await _plan(
@@ -2422,10 +2539,10 @@ class TestCoordErrorBodiesDoNotEgress:
         it never passes through the status-code branch — it is rendered by
         ``_citation_error_text``, which shape-PROBES rather than assuming.
 
-        This body is deliberately one coord does not emit today:
+        This body is deliberately one coord never built: the wide
         ``pg_error::to_body()`` ALWAYS writes ``error`` and ``context``
-        alongside ``pg``, and that real shape is pinned by
-        ``test_coords_REAL_to_body_shape_inline_echoes_only_its_identifiers``
+        alongside ``pg``, and that shape is pinned by
+        ``test_coords_WIDE_to_body_shape_inline_echoes_only_its_identifiers``
         below. Keeping this one is the point — the probe exists to survive a
         body it does not recognise, and a partial object carrying no ``error``
         field is the only coverage of that half. Even here the SQLSTATE is
@@ -2466,17 +2583,28 @@ class TestCoordErrorBodiesDoNotEgress:
         for leaked in ("9f1c2d3e", "work_unit_citations", "not present in table"):
             assert leaked not in reason, f"coord internals egressed: {leaked!r}"
 
-    #: coord's ACTUAL inline error object, as ``pg_error::PgErrorContext::
+    #: coord's WIDE inline error object, as ``pg_error::PgErrorContext::
     #: to_body()`` builds it: ``error`` and ``context`` are written on EVERY
     #: call, with the structured ``pg`` map beside them. The degenerate
-    #: ``{"pg": …}`` above never reaches production; this shape does.
+    #: ``{"pg": …}`` above is a shape coord never built at all; this one it
+    #: built for every failed inline citation read.
     #:
-    #: coord PR #1559 narrows what coord's CITATION doors emit to
-    #: ``{error, code}`` — but it is open, not landed, and it does not reach
-    #: the inline ``citations_error`` on the by-slug door, which keeps this
-    #: wide shape. So this read must stay safe against it on either coord
-    #: version, which is why the narrowing does not retire this test.
-    REAL_TO_BODY = {
+    #: **No longer what production emits, and kept deliberately.** coord's
+    #: crate-wide sweep (landed on coord ``main``) moved the inline
+    #: ``citations_error`` onto ``citations_error_body`` →
+    #: ``to_safe_body(SafeOp::WorkUnitCitationsRead)``, and left ``to_body``
+    #: ``#[cfg(test)]`` with zero production callers — it cannot reach a wire
+    #: at all. The narrow body that replaced it is pinned by
+    #: ``TestCoordsOpTokenNamesWhichReadFailed``.
+    #:
+    #: This stays a CONTROL, on the same terms the two-hop citation fallback
+    #: stays wired: landing is a fact about coord's ``main``, while this read
+    #: runs against whatever coord actually answered — a deployment mid-roll,
+    #: a pinned environment, a local coord. Retiring it would also retire this
+    #: file's only coverage of the whitelist against a nested ``pg`` map on the
+    #: INLINE arm — the shape whose ``pg.detail`` carries the row value the
+    #: whitelist exists to stop.
+    WIDE_TO_BODY = {
         "error": "db_error",
         "context": "listing citations for work unit wu-real-tobody",
         "pg": {
@@ -2491,18 +2619,23 @@ class TestCoordErrorBodiesDoNotEgress:
         },
     }
 
-    async def test_coords_REAL_to_body_shape_inline_echoes_only_its_identifiers(
+    async def test_coords_WIDE_to_body_shape_inline_echoes_only_its_identifiers(
         self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
     ) -> None:
-        """The whitelist against the body coord ACTUALLY emits inline.
+        """The whitelist against the WIDE body, on the device path.
 
         ``to_body()`` writes ``error`` AND ``context`` beside ``pg`` every
-        time, so this — not the bare ``{"pg": …}`` above — is what a real
-        citation failure puts on the device path. Both identifiers are found
-        (``error`` at the top level, the SQLSTATE nested at ``pg.code``), and
-        every free-text field around them stays inside this service: the
+        time, so this — not the bare ``{"pg": …}`` above — is what a citation
+        failure put on the device path before coord's sweep, and what one from
+        a coord predating the sweep still puts there. Both identifiers are
+        found (``error`` at the top level, the SQLSTATE nested at ``pg.code``),
+        and every free-text field around them stays inside this service: the
         ``context`` sentence, ``pg.message``, the ROW VALUE in ``pg.detail``,
         and the constraint/table/column names that describe coord's schema.
+
+        The narrow body a CURRENT coord puts there instead is pinned by
+        ``TestCoordsOpTokenNamesWhichReadFailed``; this one keeps the pre-sweep
+        reading covered.
         """
         wu = _slug("wu-real-tobody")
         plan = await _plan(
@@ -2516,7 +2649,7 @@ class TestCoordErrorBodiesDoNotEgress:
             return {
                 "work_unit": {"slug": wu, "status": "vetted"},
                 "citations": [],
-                "citations_error": self.REAL_TO_BODY,
+                "citations_error": self.WIDE_TO_BODY,
             }
 
         with patch(
