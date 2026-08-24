@@ -211,7 +211,12 @@ def render_remediation(
                     "        down_revision: str | Sequence[str] | None = "
                     f'"{remediation.target}"'
                 )
-            lines.append("")
+            lines += [
+                "",
+                "    (that is the shallowest UNLANDED revision on the chain,",
+                "    NOT the head — anything stacked above it travels along",
+                "    unchanged and must not be touched.)",
+            ]
         elif remediation.target:
             lines += [f"`{remediation.target}` is the landed head.", ""]
         else:
@@ -242,7 +247,7 @@ def render_remediation(
                 ]
             else:  # pragma: no cover - defensive
                 lines.append(f"  head {head} — blocked at `{named}` ({reason}).")
-            lines.append("")
+        lines.append("")
         return header + "\n".join(lines)
     # "chain": either the baseline itself is forked (two landed heads), or
     # every head is unlanded. Both need a human to pick an order. A merge
