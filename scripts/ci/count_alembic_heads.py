@@ -114,6 +114,20 @@ bookkeeping added for nothing.
 """
 
 
+def _where(revision: str, path: Path | None) -> str:
+    """A pasteable location for a revision. Repo-relative when it can be.
+
+    An absolute ``/home/...`` path is noise in a CI log and unusable to anyone
+    reading it on another machine.
+    """
+    if path is None:
+        return f"<file for {revision}>"
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _repoint_remedy(remediation: Remediation, baseline: str) -> str:
     """The author-facing text for the case that actually happens."""
     lines = [
@@ -129,15 +143,7 @@ def _repoint_remedy(remediation: Remediation, baseline: str) -> str:
         "",
     ]
     for revision, path in remediation.edits:
-        if path is None:
-            where = f"<file for {revision}>"
-        else:
-            # Repo-relative when it can be — an absolute /home/... path is
-            # noise in a CI log and unpasteable for anyone else.
-            try:
-                where = str(path.resolve().relative_to(REPO_ROOT))
-            except ValueError:
-                where = str(path)
+        where = _where(revision, path)
         lines.append(f"    {where}")
         lines.append(
             f'        down_revision: str | Sequence[str] | None = "{remediation.target}"'
@@ -174,34 +180,61 @@ def render_remediation(
         f"            unlanded head(s): {unlanded}\n\n"
     )
     if remediation.kind == "blocked":
-        # There IS one landed head — do not say there is not. What is missing
-        # is a single token to change, and the reason differs per chain.
-        lines = [
-            f"`{remediation.target}` is the landed head, but at least one",
-            "forked chain has no ONE-TOKEN fix, so this gate will not print",
-            "a `down_revision` that would make things worse:",
-            "",
-        ]
-        for head, reason in remediation.blocked:
+        # There may well BE one landed head — do not print "no single landed
+        # head to re-point onto" under a line that just named exactly one.
+        lines: list[str] = []
+        if remediation.edits and remediation.target:
+            # Name the half that IS a one-token fix. Degrading the whole
+            # answer and mentioning only the blocked chain made the author
+            # converge in two rounds instead of one.
+            lines += [
+                f"`{remediation.target}` is the landed head, and PART of this",
+                "is a one-token fix. Set it as the `down_revision` of:",
+                "",
+            ]
+            for revision, path in remediation.edits:
+                lines.append(f"    {_where(revision, path)}")
+                lines.append(
+                    "        down_revision: str | Sequence[str] | None = "
+                    f'"{remediation.target}"'
+                )
+            lines.append("")
+        elif remediation.target:
+            lines += [f"`{remediation.target}` is the landed head.", ""]
+        else:
+            lines += [
+                "There is no single landed head to re-point onto"
+                f" ({len(remediation.landed_heads)} landed).",
+                "",
+            ]
+        lines += ["At least one chain needs MORE than a re-point:", ""]
+        for head, reason, blocker in remediation.blocked:
+            named = blocker or head
             if reason == BLOCK_MERGE_REVISION:
                 lines += [
-                    f"  {head} — its chain reaches a MERGE revision, whose",
-                    "      `down_revision` is a tuple. APPEND the landed head",
-                    "      to that tuple; replacing it with a scalar would drop",
-                    "      the existing merge parents and ADD heads.",
+                    f"  head {head} — the block is `{named}`, a MERGE revision",
+                    "      whose `down_revision` is a tuple. APPEND the landed",
+                    "      head to that tuple; replacing it with a scalar drops",
+                    "      the existing merge parents and ADDS heads. Note this",
+                    f"      is `{named}`'s file, not the head's.",
                 ]
             elif reason == BLOCK_CYCLE:
                 lines += [
-                    f"  {head} — its chain contains a CYCLE, so there is no",
-                    "      shallowest revision to re-point. Break the cycle",
-                    "      first; the chain is unupgradable until you do.",
+                    f"  head {head} — the block is `{named}`, which sits on a",
+                    "      CYCLE, so there is no shallowest revision to",
+                    "      re-point. Break the cycle first; the chain is",
+                    "      unupgradable until you do.",
                 ]
             else:  # pragma: no cover - defensive
-                lines.append(f"  {head} — blocked ({reason}).")
+                lines.append(f"  head {head} — blocked at `{named}` ({reason}).")
             lines.append("")
         return header + "\n".join(lines)
     # "chain": either the baseline itself is forked (two landed heads), or
-    # every head is unlanded. Both need a human to pick an order.
+    # every head is unlanded. Both need a human to pick an order. A merge
+    # revision or a cycle can NO LONGER reach here — those are `blocked`,
+    # whatever the landed-head count — which matters because the advice below
+    # ("each one's `down_revision` naming the previous") is a scalar write and
+    # would destroy a tuple.
     return (
         header + "No single landed head to re-point onto, so this gate will not\n"
         "invent an order. Chain the unlanded revisions one behind the\n"
