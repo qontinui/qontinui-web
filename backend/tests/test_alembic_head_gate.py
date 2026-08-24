@@ -170,7 +170,7 @@ def test_a_merge_revision_head_degrades_to_chain_not_a_repoint() -> None:
     assert remediation.kind == "blocked"
     assert remediation.edits == ()
     assert remediation.target == "landed"
-    assert remediation.blocked == (("m", "merge_revision"),)
+    assert remediation.blocked == (("m", "merge_revision", "m"),)
 
 
 def test_one_unresolvable_chain_degrades_the_whole_answer() -> None:
@@ -237,7 +237,12 @@ def test_unreadable_baseline_is_unknown_not_empty() -> None:
     remediation = plan_remediation(scan, landed=None)
     assert remediation.kind == "unknown"
     assert remediation.target is None
-    assert remediation.landed_heads == () and remediation.unlanded_heads == ()
+    # Nothing can be asserted to have landed — that is the whole point — but
+    # the heads are still carried, so a renderer cannot end up printing
+    # "landed head(s) (none), unlanded head(s) (none)" two lines under a line
+    # saying the chain has 2 heads.
+    assert remediation.landed_heads == ()
+    assert remediation.unlanded_heads == scan.heads
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +399,7 @@ def test_a_cycle_inside_one_fork_is_blocked_with_its_own_reason() -> None:
     assert scan.heads == ("landed", "z")
     remediation = plan_remediation(scan, landed={"a", "landed"})
     assert remediation.kind == "blocked"
-    assert [reason for _, reason in remediation.blocked] == ["cycle"]
+    assert [reason for _, reason, _ in remediation.blocked] == ["cycle"]
 
 
 # ---------------------------------------------------------------------------
@@ -441,3 +446,150 @@ def test_the_pr_file_filter_matches_what_the_gate_scans() -> None:
     assert not notifier._in_versions_dir(f"{prefix}sub/rev.py")
     assert not notifier._in_versions_dir(f"{prefix}README.md")
     assert not notifier._in_versions_dir("backend/alembic/env.py")
+
+
+# ---------------------------------------------------------------------------
+# ENUMERATE THE CLASSIFIER'S ARMS.
+#
+# The merge-revision/cycle detection was first shipped INSIDE
+# `if len(landed_heads) == 1`, so it covered one arm of three: with 0 or >=2
+# landed heads a merge revision fell through to `chain`, whose text says
+# "each one's `down_revision` naming the previous" — the scalar write that
+# takes a 2-head chain to 3. These parametrise the landed-head count so a
+# fix placed inside a branch cannot pass again.
+# ---------------------------------------------------------------------------
+
+
+def _merge_revision_tree(landed_head_count: int) -> tuple[object, set[str]]:
+    """A tree containing a merge revision, with N of its heads landed."""
+    pairs: list[tuple[str, str | None]] = [("a", None), ("b", "a"), ("c", "a")]
+    landed = {"a"}
+    for i in range(landed_head_count):
+        pairs.append((f"L{i}", "a"))
+        landed.add(f"L{i}")
+    sources = {
+        **_tree(*pairs),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    return scan_sources(sources), landed
+
+
+@pytest.mark.parametrize("landed_head_count", [0, 1, 2, 3])
+def test_a_merge_revision_is_blocked_at_every_landed_head_count(
+    landed_head_count: int,
+) -> None:
+    scan, landed = _merge_revision_tree(landed_head_count)
+    remediation = plan_remediation(scan, landed)
+    assert remediation.kind == "blocked", (
+        f"{landed_head_count} landed head(s) fell through to "
+        f"{remediation.kind!r} — destructive advice"
+    )
+    assert [reason for _, reason, _ in remediation.blocked] == ["merge_revision"]
+
+
+@pytest.mark.parametrize("landed_head_count", [0, 1, 2, 3])
+def test_the_chain_text_is_never_shown_for_a_merge_revision(
+    landed_head_count: int,
+) -> None:
+    """`chain`'s advice is a SCALAR write; it must never reach a tuple."""
+    scan, landed = _merge_revision_tree(landed_head_count)
+    text = render_remediation(plan_remediation(scan, landed), "origin/main", scan.heads)
+    assert "naming the previous" not in text
+    assert "APPEND" in text
+
+
+def test_the_blocked_message_names_the_merge_revision_not_the_head() -> None:
+    """`top`'s own `down_revision` is a scalar; editing it is the wrong fix."""
+    sources = {
+        **_tree(("a", None), ("landed", "a"), ("b", "a"), ("c", "a")),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+        Path("top.py"): 'revision: str = "top"\ndown_revision = "m"\n',
+    }
+    scan = scan_sources(sources)
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    assert remediation.blocked == (("top", "merge_revision", "m"),)
+    text = render_remediation(remediation, "origin/main", scan.heads)
+    assert "the block is `m`" in text
+
+
+def test_the_mixed_case_reports_BOTH_halves() -> None:
+    """One resolvable chain + one blocked one. Naming only the blocked half
+    made the author converge in two rounds instead of one."""
+    sources = {
+        **_tree(
+            ("a", None),
+            ("landed", "a"),
+            ("h1", "a"),
+            ("h2", "h1"),
+            ("b", "a"),
+            ("c", "a"),
+        ),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    scan = scan_sources(sources)
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    assert remediation.kind == "blocked"
+    assert remediation.target == "landed"
+    assert [rev for rev, _ in remediation.edits] == ["h1"]
+    text = render_remediation(remediation, "origin/main", scan.heads)
+    assert "h1" in text and "one-token fix" in text
+    assert "APPEND" in text
+    comment = notifier.render_comment(scan.heads, remediation, "deadbeefcafe")
+    assert "h1" in comment and "APPEND" in comment
+
+
+def test_rendering_never_raises_on_a_path_outside_the_repo() -> None:
+    """`Path.relative_to` RAISES rather than falling back; an unguarded call
+    turns a formatting detail into an aborted sweep."""
+    scan = scan_sources(_tree(("a", None), ("landed", "a"), ("mine", "a")))
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    # `_tree` produces bare relative paths, i.e. NOT under REPO_ROOT.
+    assert notifier.render_comment(scan.heads, remediation, "cafebabe1234")
+    assert render_remediation(remediation, "origin/main", scan.heads)
+
+
+# ---------------------------------------------------------------------------
+# retry: the delay must be the one the server asked for
+# ---------------------------------------------------------------------------
+
+
+def test_a_rate_limit_403_is_recognised_from_the_body_without_headers() -> None:
+    """A secondary-rate-limit 403 with neither header is a documented shape;
+    classifying it as a permissions failure hard-fails a sweep that only
+    needed to wait."""
+    assert notifier._is_retryable(403, {}, b"You have exceeded a secondary rate limit")
+
+
+def test_a_permissions_403_stays_refused_even_with_a_retry_after_header() -> None:
+    assert not notifier._is_retryable(
+        403, {"retry-after": "60"}, b"Resource not accessible by integration"
+    )
+
+
+def test_the_asked_for_delay_is_honoured_not_the_fixed_ladder() -> None:
+    """A 2s/4s ladder against a 60s rate limit burns 6s and fails identically."""
+    assert notifier._retry_delay(1, {"retry-after": "60"}) == 60.0
+
+
+def test_an_unusably_long_delay_gives_up_instead_of_sleeping() -> None:
+    assert notifier._retry_delay(1, {"retry-after": "3600"}) is None
+
+
+def test_an_unparseable_retry_after_falls_back_to_the_ladder() -> None:
+    """An HTTP-date must not be silently read as zero."""
+    assert (
+        notifier._retry_delay(1, {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})
+        == 2.0
+    )
+
+
+def test_the_default_ladder_still_backs_off() -> None:
+    assert notifier._retry_delay(1, {}) == 2.0
+    assert notifier._retry_delay(2, {}) == 4.0
+
+
+def test_delete_is_not_replayable() -> None:
+    """Idempotent by EFFECT, not by observed STATUS: a committed-then-502'd
+    DELETE answers 404 on replay, and 404 is not retryable, so the run would
+    report a failure for a delete that succeeded."""
+    assert "DELETE" not in notifier.IDEMPOTENT_METHODS
