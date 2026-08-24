@@ -78,6 +78,22 @@ export type AlertKind =
   | "merge-stuck"
   /** A machine or the fleet link is unhealthy — `machine_*`, `fleet_*`. */
   | "machine-health"
+  /** A coord gate reached a verdict it can never clear from — `gate_*`. */
+  | "gate-stuck"
+  /** A gate is open and coord still owes it a tick — `gate_*`. */
+  | "gate-pending"
+  /** Coord's land bookkeeping disagrees with GitHub — `coord_lost_land`, … */
+  | "land-integrity"
+  /** A git ref could not be mirrored or replicated — `mirror_*`, `git_*`. */
+  | "replication"
+  /** An agent session is heartbeat-stale or unreachable — `session_*`. */
+  | "session-health"
+  /** A setting is armed but not actually in force — `config_*`. */
+  | "config-drift"
+  /** What is being served disagrees with what should be — `route_*`. */
+  | "serving-drift"
+  /** Derived data has not caught up with its source — `memory_*`. */
+  | "backfill-gap"
   /** The row has been resolved; kept visible only by the toggle. */
   | "resolved"
   /** A kind this build has never seen. NOT an error — see the module doc. */
@@ -100,8 +116,16 @@ export type AlertKind =
  * | red-main        | every PR in the repo is frozen             | YES     |
  * | auth-config     | an identity contradiction fails closed     | YES     |
  * | merge-stuck     | the train will not move this PR unaided    | YES     |
+ * | replication     | a ref will not mirror; RPO-0 is at risk    | YES      |
+ * | land-integrity  | coord and GitHub disagree that a PR landed | YES      |
+ * | gate-stuck      | the gate reached a verdict it cannot leave | YES      |
+ * | config-drift    | a setting is set but is NOT in force       | YES      |
  * | worktree-waste  | reclaimable disk; the reaper owns it       | no—waits |
  * | machine-health  | coord re-probes; heals on the next tick    | no—waits |
+ * | gate-pending    | coord still owes this gate a tick          | no—waits |
+ * | session-health  | a heartbeat-stale session; coord re-derives| no—waits |
+ * | serving-drift   | the next deploy reconciles it              | no—waits |
+ * | backfill-gap    | the backfill catches up on its own         | no—waits |
  * | resolved        | already cleared                            | no       |
  * | unknown         | see below — severity decides, never "none" | varies   |
  *
@@ -125,8 +149,16 @@ export const ATTENTION_BY_KIND: Record<AlertKind, Attention> = {
   "red-main": "author",
   "auth-config": "author",
   "merge-stuck": "author",
+  replication: "author",
+  "land-integrity": "author",
+  "gate-stuck": "author",
+  "config-drift": "author",
   "worktree-waste": "waiting",
   "machine-health": "waiting",
+  "gate-pending": "waiting",
+  "session-health": "waiting",
+  "serving-drift": "waiting",
+  "backfill-gap": "waiting",
   resolved: "none",
   unknown: "waiting",
 };
@@ -140,8 +172,16 @@ const LABEL_BY_KIND: Record<AlertKind, string> = {
   "red-main": "Main is red",
   "auth-config": "Auth config contradiction",
   "merge-stuck": "Merge is stuck",
+  replication: "Git replication failing",
+  "land-integrity": "Land record disputed",
+  "gate-stuck": "Gate can never clear",
+  "config-drift": "Setting armed but not in force",
   "worktree-waste": "Worktree wasting disk",
   "machine-health": "Machine unhealthy",
+  "gate-pending": "Gate waiting on coord",
+  "session-health": "Session stalled",
+  "serving-drift": "Serving drifted from source",
+  "backfill-gap": "Derived data behind",
   resolved: "Resolved",
   unknown: "Needs a look",
 };
@@ -173,12 +213,39 @@ const GUIDANCE_BY_KIND: Record<AlertKind, string> = {
   "merge-stuck":
     "Open the PR and clear what the train is blocked on. Coord will not " +
     "advance this candidate on its own.",
+  replication:
+    "Unblock the mirror or the standby. Coord refuses critical git writes it cannot " +
+    "replicate (strict RPO-0), so this stops lands fleet-wide, not just this ref.",
+  "land-integrity":
+    "Reconcile coord's land record with GitHub before trusting any merge " +
+    "verdict on this repo. Coord believing a PR landed when it did not is how " +
+    "work silently disappears.",
+  "gate-stuck":
+    "Fix what the gate is waiting on and re-attest it, or withdraw the gate. " +
+    "A terminal verdict never clears itself, so whatever is behind it waits " +
+    "forever.",
+  "config-drift":
+    "Satisfy the precondition or unset the flag. A setting that reads as ON " +
+    "while its behaviour does NOT run is worse than one that is off — every " +
+    "reader downstream believes it is in force.",
   "worktree-waste":
     "Let the worktree reaper reclaim it, or junction the target directory. " +
     "No action is urgent — this is disk, not correctness.",
   "machine-health":
     "No action needed yet: coord re-probes on its own tick. Escalate only if " +
     "the row survives several polls.",
+  "gate-pending":
+    "No action needed: coord still owes this gate a tick. Look only if the " +
+    "same gate is still here across several polls.",
+  "session-health":
+    "Coord re-derives session liveness every tick, so a stall CANDIDATE is not " +
+    "yet a stall. Chase it only if the session is one you are waiting on.",
+  "serving-drift":
+    "The next deploy reconciles what is served with what should be. Escalate " +
+    "only if the drift survives a deploy.",
+  "backfill-gap":
+    "The backfill catches up on its own tick. Until it does, anything reading " +
+    "the derived data sees less than the source holds.",
   resolved: "Nothing to do — coord cleared this row.",
   unknown:
     "This build does not recognise the alert kind. Expand for coord's own " +
@@ -191,6 +258,33 @@ const GUIDANCE_BY_KIND: Record<AlertKind, string> = {
  *
  * Anchored on a live production sample taken 2026-08-14 (~1643 unresolved
  * rows) plus the producers in `qontinui-coord/crates/coord/src`.
+ *
+ * ## Re-anchored 2026-08-24 — the table had already rotted
+ *
+ * Measured against production the day qontinui-web#986 landed: **13,830
+ * unresolved rows across 43 distinct kinds** (8.4× the 1,643 this table was
+ * written against nine days earlier). Under the 2026-08-15 vocabulary, **18 of
+ * those 43 kinds — 9,520 rows, 68.8% of the live corpus — classified
+ * `unknown`**, so the surface whose whole premise is "one plain-language status
+ * a reviewer can scan without expanding" answered "Needs a look" for two rows
+ * in three. The four heaviest were `expectation_stall_candidate` (4,722),
+ * `gate_continuation_pending` (1,937), `coord_lost_land` (1,134) and
+ * `land_verification_stalled` (830) — none of them exotic, all of them whole
+ * families with no entry here.
+ *
+ * That is the same rot the page's `KINDS` filter list was cured of by having
+ * coord serve the vocabulary. This table is the SECOND hardcoded vocabulary in
+ * the same feature and nothing serves it: coord's canonical registry is
+ * `crates/coord/src/alert_kind.rs` (`ALL_ALERT_KINDS`, 126 wire strings) and it
+ * is **not exposed over HTTP**, so a derived table is still the only option.
+ * What changed is the weighting — PREFIX families over exact aliases — and
+ * `alertStatus.test.ts` now pins the measured 2026-08-24 vocabulary, so the
+ * next rot fails a test instead of a reviewer.
+ *
+ * Exact aliases below are only for kinds whose family cannot be read off their
+ * prefix (`git_no_sync_target` is replication, not a ref invariant;
+ * `gate_unclearable_terminal` needs a human where the rest of `gate_*` does
+ * not). Everything a prefix gets right is left to the prefix.
  */
 const KIND_ALIASES: Readonly<Record<string, AlertKind>> = {
   stale_primary_tree: "stale-tree",
@@ -206,20 +300,84 @@ const KIND_ALIASES: Readonly<Record<string, AlertKind>> = {
   machine_degraded: "machine-health",
   machine_partitioned: "machine-health",
   fleet_partitioned: "machine-health",
+  // The one `gate_*` a human must act on: coord has already decided this gate
+  // can never clear, so nothing behind it moves until someone re-attests or
+  // withdraws it. The rest of the family is coord's own outstanding work.
+  gate_unclearable_terminal: "gate-stuck",
+  // Replication, not ref bookkeeping. All three block critical git writes
+  // under strict RPO-0, which is a fleet-wide land stop rather than one bad
+  // ref — so they must not fall into `git-invariant` beside `git_inv-*`.
+  git_no_sync_target: "replication",
+  git_conflict_ref_missing: "replication",
+  merge_land_replication_failed: "replication",
+  // `coord_*` splits, so it gets no prefix rule: these three are the land
+  // record disagreeing with GitHub. Coord's other `coord_*` kinds (GitHub
+  // ratelimit, leader-election flap) are service health and are deliberately
+  // NOT aliased — guessing a family for a kind this fleet has never served is
+  // how the table rots in the other direction.
+  coord_lost_land: "land-integrity",
+  coord_land_divergence: "land-integrity",
+  coord_bare_stale_seed: "land-integrity",
+  // Members whose prefix names the producer rather than the family.
+  serving_lag: "serving-drift",
+  "served-bundle-host": "serving-drift",
+  branch_protection_required_contexts: "config-drift",
 };
 
-/** Raw-kind prefixes handled as a family (coord adds members freely). */
+/**
+ * Raw-kind prefixes handled as a family (coord adds members freely).
+ *
+ * **Checked in order, and only after {@link KIND_ALIASES} misses**, so an alias
+ * always wins over the family its prefix would otherwise put it in.
+ *
+ * Widened 2026-08-24 (see {@link KIND_ALIASES} for the measurement): the
+ * 2026-08-15 table matched `pr_merge` and `git_inv`, which left
+ * `pr_stuck_unattributable`, `pr_reconciler_drift`, `git_no_sync_target` and
+ * `git_conflict_ref_missing` unclassified while their own siblings were
+ * covered. Each prefix below is now as short as the family stays true at,
+ * because the two failure modes are not symmetric: a too-NARROW prefix renders
+ * a whole live kind as "Needs a look" with no attention floor, while a
+ * too-WIDE one gives a future sibling a nearby label with coord's own summary
+ * underneath it. The second is recoverable by reading the row; the first is
+ * what this edit exists to undo.
+ */
 const KIND_PREFIXES: ReadonlyArray<readonly [string, AlertKind]> = [
   // `pr_merge_stuck`, `pr_merge_land_conflict_wedged`, `pr_merge_green_unlanded`,
   // `pr_merge_train_stalled`, `pr_merge_escalate_blocked`, … — coord grows this
-  // family every few weeks, so it is matched by prefix, never enumerated.
-  ["pr_merge", "merge-stuck"],
+  // family every few weeks, so it is matched by prefix, never enumerated. The
+  // whole `pr_` namespace is the merge train: its non-`pr_merge_` members
+  // (`pr_stuck_unattributable`, `pr_reconciler_drift`) are the train failing to
+  // move or to account for a PR, which is what "Merge is stuck" already says.
+  ["pr_", "merge-stuck"],
   ["merge_", "merge-stuck"],
-  // `git_inv-1` / `git_inv-2` (`format!("git_{}", invariant)` in git_observer).
-  ["git_inv", "git-invariant"],
+  // Gates coord still owes a tick. The one terminal member is aliased above,
+  // so what reaches here is the amber remainder.
+  ["gate_", "gate-pending"],
+  ["land_", "land-integrity"],
+  ["mirror_", "replication"],
+  // `git_inv-1` / `git_inv-2` (`format!("git_{}", invariant)` in git_observer),
+  // plus any future `git_*` invariant. The two replication members are aliased
+  // above and never reach this rule.
+  ["git_", "git-invariant"],
   ["worktree_", "worktree-waste"],
   ["auth_", "auth-config"],
   ["machine_", "machine-health"],
+  // `expectation_stall_candidate` is the single largest kind in the live
+  // corpus (4,722 of 13,830 on 2026-08-24) and it is about a SESSION, not a
+  // machine — coord re-derives liveness every tick, so the family floors at
+  // `waiting`: 4,722 rows of red would drown the tier that means "act now".
+  ["expectation_", "session-health"],
+  // `session_message_delivery_blocked` is the family's odd member — a blocking
+  // message that cannot reach a dead target is arguably someone's problem now.
+  // It is held at the family's `waiting` FLOOR anyway, because coord types it
+  // `warning` and the floor is a floor: if coord ever raises it to `critical`,
+  // `deriveAlertStatus` escalates the row without an edit here. Overriding
+  // coord's own severity from a lookup table is the inversion this module
+  // refuses everywhere else.
+  ["session_", "session-health"],
+  ["config_", "config-drift"],
+  ["route_", "serving-drift"],
+  ["memory_", "backfill-gap"],
 ];
 
 const UUID_SRC =
