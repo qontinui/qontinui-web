@@ -3,12 +3,24 @@ name: alembic graph check
 # Phase 5C of the multi-machine coordinator plan
 # (D:/qontinui-root/tmp_multimachine_coordinator_plan.md §9).
 #
-# Runs `alembic heads` after every PR merge to main. If more than one
-# head appears, comments on the merging PR with both heads + a recommended
-# `alembic merge` command. The job is informational, not blocking — by
-# the time it runs, the merge has already happened. Its purpose is to
-# turn "silent fork lying around in the chain for weeks" into
-# "loud notification right at merge time."
+# Two sweeps after every land on main that touches the versions dir.
+#
+#   1. `main`'s OWN chain. If more than one head appears, comment on the
+#      merging PR. Both heads are on `main` by then, so `alembic merge` is
+#      the correct remedy for THIS case (and only this case).
+#
+#   2. Every OPEN PR that carries a revision — `notify_forked_open_prs.py`.
+#      This is the one that matters. A land silently forks every open PR
+#      whose revision hung off the head it just superseded, and until this
+#      step existed nothing told those authors. All three forks on record
+#      (#1048, #989, 066c2e6c) were created that way, 83 minutes to days
+#      AFTER the forked revision was authored — so no author-time check
+#      could have caught them, and #989 sat red for 9.7 days.
+#
+# The job is informational about `main`, not blocking — by the time it runs,
+# the merge has already happened. Its purpose is to turn "silent fork lying
+# around in the chain for weeks" into "loud notification right at merge
+# time", for the merging PR AND for everyone it just forked.
 
 on:
   push:
@@ -58,7 +70,14 @@ jobs:
           # location), so running it from `backend/` is fine. Its stdout keeps the
           # `HEAD_COUNT=` / `HEAD=` line format this step's shell parses below.
           set -euo pipefail
-          python ../scripts/ci/count_alembic_heads.py --report-only | tee heads.txt
+          # `--baseline-ref HEAD`: this lane runs ON main after the land, so
+          # every revision in the checkout has landed by definition. That
+          # makes `alembic merge` the correct remedy here and the script
+          # says so — which is NOT true of the open-PR sweep below, where
+          # the forked revision is unlanded and a one-token re-point is the
+          # fix. Same script, opposite advice, because the graphs differ.
+          python ../scripts/ci/count_alembic_heads.py --report-only \
+            --baseline-ref HEAD | tee heads.txt
           count=$(grep -c '^HEAD=' heads.txt || true)
           # grep exiting 2 (hard error) leaves count empty, which would make the
           # `[ -gt ]` below a usage error rather than a comparison. Normalise.
@@ -96,7 +115,7 @@ jobs:
               ``,
               ...heads.map(h => `- \`${h}\``),
               ``,
-              `Per coordinator plan §9, this means concurrent revision authoring landed without a coordinated merge. Resolve with:`,
+              `Concurrent revision authoring landed without a coordinated merge. **Every head listed above is now on \`main\`**, so nothing can be re-pointed without rewriting landed history — which is exactly the case a merge revision is for:`,
               ``,
               '```bash',
               `cd backend`,
@@ -105,7 +124,11 @@ jobs:
               `git push`,
               '```',
               ``,
-              `The merge revision is empty bookkeeping (just joins parents); it's a no-op DDL. To prevent future forks, contributors should claim \`down_revision\` via \`/coord/claims/acquire\` before authoring (see coordinator plan §9 sibling-head guard).`,
+              `The merge revision is empty bookkeeping (just joins parents); it's a no-op DDL.`,
+              ``,
+              `> ⚠️ **Do not copy this remedy to an open PR whose chain forked.** There the forked revision has *not* landed, so the fix is a one-token \`down_revision\` edit and a merge revision would be permanent bookkeeping added for nothing. \`notify_forked_open_prs.py\` (next step in this workflow) comments the exact token on each affected PR.`,
+              ``,
+              `<sub>The advice this comment used to carry — claim \`down_revision\` via \`/coord/claims/acquire\` before authoring — is **retired**: coord answers 410 Gone for \`ClaimKind::AlembicRevision\` and the author-time sibling-head guard was deleted in favour of land-time re-pointing. It also could not have helped: in all three recorded forks the declared parent WAS the single head at authoring time.</sub>`,
             ].join('\n');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -114,3 +137,18 @@ jobs:
               body,
             });
             core.warning(`Alembic chain has ${heads.length} heads after this merge: ${heads.join(', ')}`);
+
+      - name: Notify open PRs this land forked
+        # THE SWEEP LIVES IN `scripts/ci/notify_forked_open_prs.py`, not here.
+        # It rebuilds each open PR's chain against the `main` this push
+        # created (the real files, overlaid — a simulation, not a guess) and
+        # comments the exact `down_revision` token on the ones that forked.
+        # It only ever comments: coord's restack engine owns branch rewriting
+        # and is shadow-mode by default, so notification is the missing half.
+        #
+        # It exits 2 — reddening this job — if it could not sweep at all (no
+        # token, an API error). That is deliberate: a sweep that could not run
+        # must not be indistinguishable from a sweep that found nothing.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/ci/notify_forked_open_prs.py
