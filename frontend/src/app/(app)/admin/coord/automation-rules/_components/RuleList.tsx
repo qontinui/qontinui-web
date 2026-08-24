@@ -203,15 +203,24 @@ export function RuleList() {
                   // OFF → override with {disabled:true}; ON → revert to built-in.
                   if (enabled) void revertOverride(rule.system_rule_id);
                   else void overrideRule(rule.system_rule_id, { disabled: true });
+                } else if (enabled) {
+                  // UNREACHABLE today: a workspace row can only arrive ENABLED
+                  // (coord's list route defaults to `enabled = true` and no
+                  // caller asks for the other arm), so its switch is only ever
+                  // clicked OFF.
+                  //
+                  // Inert rather than absent, and rather than a PATCH. The
+                  // PATCH this used to make writes `enabled` — coord's
+                  // soft-delete column — so it would become destructive the
+                  // day someone lists the disabled arm. But FALLING THROUGH to
+                  // the OFF branch is worse still: it would answer "turn this
+                  // on" with a confirmation titled "Turn this rule off?" and
+                  // then delete the row. Doing nothing is the only honest
+                  // answer until coord can tell "turned off" from "deleted";
+                  // whoever makes disabled rows listable owns re-enabling
+                  // them, deliberately.
+                  return;
                 } else {
-                  // A workspace row can only ever arrive ENABLED (coord's list
-                  // route defaults to `enabled = true` and no caller asks for
-                  // the other arm), so its switch is only ever clicked OFF.
-                  // There is deliberately no ON branch: the PATCH it would
-                  // make writes `enabled` — coord's soft-delete column — so
-                  // the day someone lists the disabled arm, a branch kept
-                  // "just in case" would quietly become the destructive write
-                  // this dialog exists to stop.
                   setDisableTarget(rule);
                 }
               }}

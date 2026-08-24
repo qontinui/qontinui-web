@@ -20,6 +20,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 const hooks = vi.hoisted(() => ({
   reload: vi.fn(),
   loadFailed: true,
+  rules: [] as unknown[],
 }));
 
 // The write controls are `CoordAdminOnly`-gated, which reads the auth context.
@@ -31,7 +32,7 @@ vi.mock("@/contexts/auth-context", () => ({
 
 vi.mock("./_hooks/useGateClearanceRules", () => ({
   useGateClearanceRules: () => ({
-    rules: [],
+    rules: hooks.rules,
     loading: false,
     saving: false,
     loadFailed: hooks.loadFailed,
@@ -46,6 +47,7 @@ vi.mock("./_hooks/useGateClearanceRules", () => ({
 import GateClearancePage from "./page";
 
 beforeEach(() => {
+  hooks.rules = [];
   hooks.reload.mockReset();
   // `reload` is a promise by contract (`UseCoordPoliciesResult.reload`) and the
   // button chains `.finally` off it — a bare `vi.fn()` would mock away the very
@@ -62,10 +64,12 @@ describe("gate-clearance failed read", () => {
     expect(screen.queryAllByText("Effective authority")).toHaveLength(0);
   });
 
-  it("retries in place instead of asking for a browser reload", () => {
+  it("retries in place instead of asking for a browser reload", async () => {
     render(<GateClearancePage />);
 
-    fireEvent.click(screen.getByTestId("gate-clearance-retry"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gate-clearance-retry"));
+    });
 
     expect(hooks.reload).toHaveBeenCalledTimes(1);
   });
@@ -100,10 +104,51 @@ describe("gate-clearance failed read", () => {
   it("announces the panel to assistive tech", () => {
     render(<GateClearancePage />);
 
-    expect(screen.getByTestId("gate-clearance-load-failed")).toHaveProperty(
-      "role",
-      "alert"
+    expect(screen.getByRole("alert")).toBe(
+      screen.getByTestId("gate-clearance-load-failed")
     );
+  });
+
+  /*
+    The flow this arm exists for: `replaceRule`'s create lands, its delete
+    fails, and the toast tells the operator "Both are listed — delete the old
+    one to finish the change." The refetch that immediately follows fails too,
+    because it is the SAME outage. Hiding every row at that moment strands a
+    duplicate clearance rule live in coord with nothing on screen to reach it.
+  */
+  it("keeps retained rules while still refusing to resolve the matrix", () => {
+    hooks.rules = [
+      {
+        policy_id: "r-1",
+        name: "security-surface → operator_only",
+        decision_domain: "gate_clearance",
+        mode: "data_driven",
+        payload: { gate_class: "security-surface", authority: "operator_only" },
+        priority: 100,
+        enabled: true,
+        built_in: false,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ];
+    render(<GateClearancePage />);
+
+    expect(screen.getByTestId("gate-clearance-load-failed")).toBeTruthy();
+    // The rows survive…
+    expect(screen.getByText("security-surface → operator_only")).toBeTruthy();
+    // …and the resolved claim still does not get made from a stale set.
+    expect(screen.queryAllByText("Effective authority")).toHaveLength(0);
+    expect(
+      screen.getByTestId("gate-clearance-load-failed").textContent
+    ).toContain("last successful read");
+  });
+
+  it("says nothing is listed rather than nothing exists, when empty", () => {
+    hooks.rules = [];
+    render(<GateClearancePage />);
+
+    expect(
+      screen.getByTestId("gate-clearance-load-failed").textContent
+    ).toContain("not the same as this workspace having none");
   });
 
   it("shows no panel once the read succeeds", () => {

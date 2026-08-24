@@ -118,65 +118,97 @@ export default function GateClearancePage() {
         <div className="py-10 text-center text-sm text-muted-foreground">
           Loading clearance rules…
         </div>
-      ) : loadFailed ? (
-        // A failed read is UNKNOWN, not "no rules". Rendering the matrix here
-        // would state an effective authority for every class computed from an
-        // empty set — precisely the wrong answer, confidently.
-        <div
-          role="alert"
-          className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
-          data-testid="gate-clearance-load-failed"
-        >
-          <TriangleAlert
-            className="mt-0.5 size-4 shrink-0 text-destructive"
-            aria-hidden
-          />
-          <div className="text-sm">
-            <p className="font-medium">Clearance rules could not be loaded.</p>
-            <p className="mt-1 text-muted-foreground">
-              The effective authority per class is unknown — this page will not
-              guess it. Retry once coord is reachable.
-            </p>
-            {/* Refetches in place. A full browser reload also works, but it
-                re-mounts the whole console to retry one side-fetch. The
-                in-flight flag is local because nothing in the hook moves on a
-                refetch — `loading` is first-load only — so without it a
-                hanging coord leaves a dead button. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              disabled={retrying}
-              onClick={() => {
-                setRetrying(true);
-                void reload().finally(() => setRetrying(false));
-              }}
-              data-testid="gate-clearance-retry"
-            >
-              <RotateCcw className="size-4" />
-              {retrying ? "Retrying…" : "Retry"}
-            </Button>
-          </div>
-        </div>
       ) : (
         <>
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold">Effective authority</h2>
-            <p className="text-xs text-muted-foreground">
-              What actually decides each class right now, resolved the way coord
-              resolves it.
-            </p>
-            <EffectiveAuthorityMatrix rules={rules} />
-          </section>
+          {/*
+            A failed read is UNKNOWN, not "no rules" — but the two things this
+            page renders do not fail the same way, so they are gated
+            separately.
 
-          <ClearanceRuleList
-            rules={rules}
-            saving={saving}
-            onCreate={openCreate}
-            onEdit={openEdit}
-            onOverrideSystemDefault={openOverride}
-            onDelete={(rule) => deleteRule(rule.policy_id)}
-          />
+            The MATRIX is suppressed on any failed read.
+            `resolveEffectiveAuthority` returns a definitive-looking answer for
+            every class, and a wrong one here is wrong in the dangerous
+            direction — it can show `operator_only` for a class that is
+            actually looser. Computed from an empty set it is confidently
+            wrong; computed from a stale set it is confidently out of date.
+            Neither is worth rendering.
+
+            The RULE LIST is kept whenever rules are in hand (the hook does not
+            clear them on error, so a failed REFETCH leaves the last good
+            list). It is not a resolved claim, it is rows the operator can
+            still read and act on — and one flow needs them precisely here:
+            `replaceRule`'s delete arm fails, its toast says "Both are listed —
+            delete the old one to finish the change", and the refetch that
+            follows fails too because it is the SAME outage. Hiding every row
+            at that moment strands a duplicate clearance rule live in coord
+            with no way to reach it.
+          */}
+          {loadFailed && (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
+              data-testid="gate-clearance-load-failed"
+            >
+              <TriangleAlert
+                className="mt-0.5 size-4 shrink-0 text-destructive"
+                aria-hidden
+              />
+              <div className="text-sm">
+                <p className="font-medium">
+                  Clearance rules could not be loaded.
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  The effective authority per class is unknown — this page will
+                  not guess it.{" "}
+                  {rules.length > 0
+                    ? "The rules below are the last successful read and may be out of date."
+                    : "No rules are listed, which is not the same as this workspace having none."}{" "}
+                  Retry once coord is reachable.
+                </p>
+                {/* Refetches in place. A full browser reload also works, but it
+                    re-mounts the whole console to retry one side-fetch. The
+                    in-flight flag is local because nothing in the hook moves on
+                    a refetch — `loading` is first-load only — so without it a
+                    hanging coord leaves a dead button. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  disabled={retrying}
+                  onClick={() => {
+                    setRetrying(true);
+                    void reload().finally(() => setRetrying(false));
+                  }}
+                  data-testid="gate-clearance-retry"
+                >
+                  <RotateCcw className="size-4" />
+                  {retrying ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!loadFailed && (
+            <section className="space-y-2">
+              <h2 className="text-sm font-semibold">Effective authority</h2>
+              <p className="text-xs text-muted-foreground">
+                What actually decides each class right now, resolved the way
+                coord resolves it.
+              </p>
+              <EffectiveAuthorityMatrix rules={rules} />
+            </section>
+          )}
+
+          {(!loadFailed || rules.length > 0) && (
+            <ClearanceRuleList
+              rules={rules}
+              saving={saving}
+              onCreate={openCreate}
+              onEdit={openEdit}
+              onOverrideSystemDefault={openOverride}
+              onDelete={(rule) => deleteRule(rule.policy_id)}
+            />
+          )}
         </>
       )}
 
