@@ -7,7 +7,9 @@
  * differently — so the clauses that are the RULE rather than the pipeline's
  * use of it are asserted here, once, against the primitive itself:
  *
- * - R6's `–`-not-`0` for an unfetched count (`FilterTabs`, `StatCluster`);
+ * - R6's `–`-not-`0` for an unfetched count (`FilterTabs`, `StatCluster`), and
+ *   that `FilterChips` reads the same value the same way inside a counted strip;
+ * - `FilterChips`' empty-selection contract: `[]` is NO filter, not an option;
  * - R2's fixed slot order and its truncate-don't-wrap treatment (`RecordRow`);
  * - R5's fixed section order and shared border (`RecordDetail`);
  * - the loading / empty / rows trichotomy and one-open-at-a-time (`RecordList`);
@@ -19,6 +21,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 
+import { FilterChips } from "./FilterChips";
 import { FilterTabs } from "./FilterTabs";
 import { HealthStrip } from "./HealthStrip";
 import { RecordDetail } from "./RecordDetail";
@@ -114,6 +117,155 @@ describe("FilterTabs (R6)", () => {
     );
     fireEvent.change(screen.getByTestId("q"), { target: { value: "abcd" } });
     expect(onQuery).toHaveBeenCalledWith("abcd");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// R6, multi-select — the same strip where more than one value can be on.
+//
+// The clause that is the RULE rather than one page's use of it: an EMPTY
+// selection is the unfiltered state, and it is not an option. Every console
+// filter whose values are a server vocabulary (coord's `severity`, its `kind`
+// list) would otherwise have to mint an "any" member the API has never heard
+// of and remember to strip it before it reaches a query string.
+// ----------------------------------------------------------------------------
+
+describe("FilterChips (R6, multi-select)", () => {
+  const options = [
+    { value: "info", label: "Info" },
+    { value: "warning", label: "Warning" },
+    { value: "critical", label: "Critical" },
+  ] as const;
+
+  function renderChips(selected: readonly string[], on = vi.fn(), clear = vi.fn()) {
+    render(
+      <FilterChips
+        label="severity"
+        options={[...options]}
+        selected={[...selected]}
+        onToggle={on}
+        onClear={clear}
+        testIdPrefix="f"
+      />
+    );
+    return { on, clear };
+  }
+
+  it("treats an EMPTY selection as the unfiltered state, not as an option", () => {
+    renderChips([]);
+    // `all` is pressed because nothing is selected — it is a CLEAR action
+    // reflecting state, never a fourth value the caller has to filter out.
+    expect(screen.getByTestId("f-all")).toHaveAttribute("aria-pressed", "true");
+    for (const o of options) {
+      expect(screen.getByTestId(`f-${o.value}`)).toHaveAttribute(
+        "aria-pressed",
+        "false"
+      );
+    }
+    expect(screen.getByTestId("f")).toHaveAttribute("data-selected", "");
+  });
+
+  it("marks EVERY selected chip, not just the last one", () => {
+    renderChips(["info", "critical"]);
+    expect(screen.getByTestId("f-info")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("f-critical")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByTestId("f-warning")).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    expect(screen.getByTestId("f-all")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("f")).toHaveAttribute(
+      "data-selected",
+      "info,critical"
+    );
+  });
+
+  it("disables `all` while it is already the state, so a no-op cannot fire", () => {
+    const { clear } = renderChips([]);
+    const all = screen.getByTestId("f-all");
+    // A caller's `onClear` is `setState([])` — a FRESH array every call — so a
+    // no-op click still invalidates every selection-keyed `useCallback`
+    // downstream. On a paging surface that re-runs the page-1 fetch and
+    // discards whatever the operator had paged into, for a click that changed
+    // no filter. It is also what a screen reader is told: pressed, and inert.
+    expect(all).toBeDisabled();
+    fireEvent.click(all);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it("re-enables `all` the moment there is something to clear", () => {
+    renderChips(["warning"]);
+    expect(screen.getByTestId("f-all")).not.toBeDisabled();
+  });
+
+  it("reports the toggled value and leaves add/remove to the caller", () => {
+    const { on, clear } = renderChips(["info"]);
+    // A chip that is already ON still reports a plain toggle: the primitive
+    // holds no selection state, so it cannot and must not decide the result.
+    fireEvent.click(screen.getByTestId("f-info"));
+    expect(on).toHaveBeenCalledWith("info");
+    fireEvent.click(screen.getByTestId("f-warning"));
+    expect(on).toHaveBeenLastCalledWith("warning");
+    fireEvent.click(screen.getByTestId("f-all"));
+    expect(clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders no count slot at all when NO option carries a count", () => {
+    renderChips([]);
+    // Not a row of dashes. An uncounted strip has not failed to look — per-kind
+    // counts would cost a request each, so the strip does not claim one.
+    expect(screen.getByTestId("f")).not.toHaveTextContent("–");
+  });
+
+  it("reads a count the same way FilterTabs does, once the strip has any", () => {
+    render(
+      <FilterChips
+        label="severity"
+        options={[
+          { value: "info", label: "Info", count: 4 },
+          { value: "warning", label: "Warning", count: 0 },
+          // Explicit null and plain absence are the SAME claim — we did not
+          // look — exactly as on FilterTabs.
+          { value: "critical", label: "Critical", count: null },
+          { value: "other", label: "Other" },
+        ]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        testIdPrefix="c"
+      />
+    );
+    expect(screen.getByTestId("c-info")).toHaveTextContent("4");
+    expect(screen.getByTestId("c-warning")).toHaveTextContent("0");
+    expect(screen.getByTestId("c-critical")).toHaveTextContent("–");
+    expect(screen.getByTestId("c-critical")).not.toHaveTextContent("0");
+    expect(screen.getByTestId("c-other")).toHaveTextContent("–");
+  });
+
+  it("names the group for a screen reader and honours an overridden all-label", () => {
+    render(
+      <FilterChips
+        label="kind"
+        options={[{ value: "red_main", label: "Red Main" }]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        allLabel="all (list partial)"
+        title="this coord build does not serve the kind list"
+        testIdPrefix="k"
+      />
+    );
+    const group = screen.getByRole("group", { name: "kind filter" });
+    expect(group).toHaveAttribute(
+      "title",
+      "this coord build does not serve the kind list"
+    );
+    expect(within(group).getByTestId("k-all")).toHaveTextContent(
+      "all (list partial)"
+    );
   });
 });
 
