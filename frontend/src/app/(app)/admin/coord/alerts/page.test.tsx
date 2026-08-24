@@ -56,12 +56,23 @@ const STALE_TREE = {
   },
 };
 
+/**
+ * The hoisted unresolved-critical read, told apart from the LIST read.
+ *
+ * Discriminated on `limit=1` — the probe's own page size — and NOT on
+ * `severity=critical`, which both reads can now carry: the severity filter is
+ * multi-select, so selecting the critical chip puts that string on the list
+ * request too, and routing on it would answer the list with the probe's
+ * payload for reasons unrelated to whatever the test is asserting.
+ */
+function isCriticalProbe(url: unknown): boolean {
+  return new URLSearchParams(String(url).split("?")[1] ?? "").get("limit") === "1";
+}
+
 /** Route the page read and the separate critical-total read. */
 function mockApi(page: unknown, criticalTotal: unknown) {
   httpGet.mockImplementation((url: unknown) =>
-    Promise.resolve(
-      String(url).includes("severity=critical") ? criticalTotal : page
-    )
+    Promise.resolve(isCriticalProbe(url) ? criticalTotal : page)
   );
 }
 
@@ -369,5 +380,245 @@ describe("CoordAlertsPage concurrency", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(document.body.innerHTML).not.toContain("SUPERSEDED");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Multi-select filters.
+//
+// `severity` and `kind` are REPEATABLE on `/operations/alerts` (the proxy
+// declares them `list[str]`), and the first cut of this page put a
+// single-select `<Select>` in front of them, so the multi-valued half of the
+// endpoint was unreachable. These assert the wire shape, not the styling: what
+// matters is that two selected values leave as TWO keys, and that "nothing
+// selected" sends no key at all rather than an empty one.
+// ----------------------------------------------------------------------------
+describe("CoordAlertsPage filters", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    mockApi(
+      {
+        alerts: [STALE_TREE],
+        count: 1,
+        total_count: 1643,
+        next_cursor: null,
+        kinds: ["stale_primary_tree", "stale_wip", "red_main"],
+      },
+      { alerts: [], total_count: 637 }
+    );
+  });
+
+  /**
+   * The most recent LIST read — everything that is not the hoisted-count probe
+   * (see {@link isCriticalProbe}).
+   *
+   * THROWS rather than returning `""` when no list read has happened. Three of
+   * the assertions below are negative (`not.toContain("severity=")`), and every
+   * one of them passes vacuously against an empty string — so a silent `""`
+   * would turn "the page sends no severity key" into "the page sent nothing at
+   * all, and we did not notice".
+   */
+  function lastListUrl(): string {
+    const urls = httpGet.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => !isCriticalProbe(u));
+    if (urls.length === 0) throw new Error("no list read was made");
+    return urls[urls.length - 1];
+  }
+
+  it("sends no severity or kind param while nothing is selected", async () => {
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    const u = lastListUrl();
+    // Not `severity=` either: an explicitly-blank param asks coord for the
+    // rows whose severity is the empty string, which is why the proxy drops
+    // blanks. The page must not send one in the first place.
+    expect(u).not.toContain("severity=");
+    expect(u).not.toContain("kind=");
+    expect(screen.getByTestId("coord-alerts-severity-filter")).toHaveAttribute(
+      "data-selected",
+      ""
+    );
+  });
+
+  it("sends each selected severity as its OWN repeated key", async () => {
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-warning"));
+    await waitFor(() => expect(lastListUrl()).toContain("severity=warning"));
+
+    fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-info"));
+    await waitFor(() => {
+      const u = lastListUrl();
+      // Two keys, not one comma-joined value: `?severity=info&severity=warning`
+      // is what httpx re-emits as repeated keys and what coord parses. A
+      // `severity=info,warning` would match nothing, silently.
+      expect(u).toContain("severity=info");
+      expect(u).toContain("severity=warning");
+      expect(u).not.toContain("severity=critical");
+    });
+    expect(screen.getByTestId("coord-alerts-severity-filter")).toHaveAttribute(
+      "data-selected",
+      "info,warning"
+    );
+  });
+
+  it("multi-selects kinds from the API-served vocabulary", async () => {
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    // The chips ARE the served list (`kinds` in the response), title-cased.
+    expect(
+      screen.getByTestId("coord-alerts-kind-filter-red_main")
+    ).toHaveTextContent("Red Main");
+
+    fireEvent.click(screen.getByTestId("coord-alerts-kind-filter-red_main"));
+    fireEvent.click(screen.getByTestId("coord-alerts-kind-filter-stale_wip"));
+    await waitFor(() => {
+      const u = lastListUrl();
+      expect(u).toContain("kind=red_main");
+      expect(u).toContain("kind=stale_wip");
+    });
+  });
+
+  it("de-selects on a second click, and the all chip clears everything", async () => {
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    const warning = screen.getByTestId("coord-alerts-severity-filter-warning");
+    fireEvent.click(warning);
+    await waitFor(() => expect(lastListUrl()).toContain("severity=warning"));
+    expect(warning).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(warning);
+    await waitFor(() => expect(lastListUrl()).not.toContain("severity="));
+
+    fireEvent.click(screen.getByTestId("coord-alerts-kind-filter-red_main"));
+    await waitFor(() => expect(lastListUrl()).toContain("kind=red_main"));
+    fireEvent.click(screen.getByTestId("coord-alerts-kind-filter-all"));
+    await waitFor(() => expect(lastListUrl()).not.toContain("kind="));
+  });
+
+  it("keeps a filtered-on kind selectable after its last live row resolves", async () => {
+    // Coord's served list is "kinds with a live row". Resolving the last
+    // `red_main` row drops it from that list — but the filter is still ON, so
+    // the chip has to survive or the page is filtering with no control saying
+    // so. The selection is unioned into the options for exactly this.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (isCriticalProbe(u)) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      return Promise.resolve({
+        alerts: u.includes("kind=red_main") ? [] : [STALE_TREE],
+        total_count: u.includes("kind=red_main") ? 0 : 1643,
+        next_cursor: null,
+        // The served vocabulary no longer names red_main.
+        kinds: u.includes("kind=red_main")
+          ? ["stale_primary_tree"]
+          : ["stale_primary_tree", "stale_wip", "red_main"],
+      });
+    });
+
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+    fireEvent.click(screen.getByTestId("coord-alerts-kind-filter-red_main"));
+
+    // Wait for the SHRUNKEN vocabulary to have painted, not merely for the
+    // request to have been made: `stale_wip` disappearing is the only proof
+    // that the narrowed `kinds` response committed, and without it the
+    // surviving `red_main` chip is evidence of nothing.
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-alerts-kind-filter-stale_wip")
+      ).toBeNull()
+    );
+    expect(lastListUrl()).toContain("kind=red_main");
+    expect(
+      screen.getByTestId("coord-alerts-kind-filter-red_main")
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps every kind ever seen selectable when coord serves no vocabulary", async () => {
+    // The degraded path. With no served `kinds` the options come from the
+    // rows — and the rows are ALREADY filtered by the selection, so a
+    // per-response derivation collapses to the one selected kind and a second
+    // can never be added. That would leave the multi-select unreachable on
+    // exactly the deployments this page degrades for.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (isCriticalProbe(u)) {
+        return Promise.resolve({ alerts: [] });
+      }
+      const filtered = u.includes("kind=");
+      return Promise.resolve({
+        // No `total_count`, no `next_cursor`, no `kinds` — the old shape.
+        alerts: filtered
+          ? [STALE_TREE]
+          : [STALE_TREE, { ...STALE_TREE, id: 77, kind: "red_main" }],
+      });
+    });
+
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alerts-kind-filter-red_main");
+
+    fireEvent.click(
+      screen.getByTestId("coord-alerts-kind-filter-stale_primary_tree")
+    );
+    await waitFor(() =>
+      expect(lastListUrl()).toContain("kind=stale_primary_tree")
+    );
+
+    // The response no longer carries a red_main row, and its chip must still
+    // be there to be added to the filter.
+    const redMain = screen.getByTestId("coord-alerts-kind-filter-red_main");
+    fireEvent.click(redMain);
+    await waitFor(() => {
+      const u = lastListUrl();
+      expect(u).toContain("kind=red_main");
+      expect(u).toContain("kind=stale_primary_tree");
+    });
+  });
+
+  it("does not refetch when `all` is clicked and nothing is selected", async () => {
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    // `onClear` is a `setState([])` — a fresh array every call — so a no-op
+    // click would invalidate the selection-keyed `query` and re-run the page-1
+    // fetch, discarding anything the operator had paged into. The chip is
+    // disabled while it is already the state, so the click cannot happen.
+    const all = screen.getByTestId("coord-alerts-severity-filter-all");
+    expect(all).toBeDisabled();
+    expect(all).toHaveAttribute("aria-pressed", "true");
+
+    const before = httpGet.mock.calls.length;
+    fireEvent.click(all);
+    expect(httpGet.mock.calls.length).toBe(before);
+
+    // ...and it becomes live again the moment there is something to clear.
+    fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-warning"));
+    await waitFor(() => expect(lastListUrl()).toContain("severity=warning"));
+    expect(all).not.toBeDisabled();
+  });
+
+  it("keeps the list read and the hoisted-count read apart when critical is selected", async () => {
+    // `severity=critical` is no longer unique to the hoisted probe: the filter
+    // is multi-select, so the LIST request carries it too. The page must still
+    // read its rows from the list response and its badge from the probe.
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-critical"));
+    await waitFor(() => expect(lastListUrl()).toContain("severity=critical"));
+
+    // The row is still the LIST payload's row, not the probe's empty array...
+    expect(await screen.findByTestId("coord-alert-row")).toBeInTheDocument();
+    // ...and the hoisted count is still the probe's 637, not the list's 1643.
+    expect(screen.getByTestId("coord-alerts-critical-count")).toHaveTextContent(
+      "637 critical"
+    );
   });
 });
