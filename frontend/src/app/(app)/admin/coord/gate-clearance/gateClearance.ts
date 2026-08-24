@@ -395,17 +395,26 @@ export interface GateClearanceCreate {
 }
 
 /**
- * `PATCH /coord/policies/:id` body.
+ * `PATCH /coord/policies/:id` body, for a `gate_clearance` rule.
  *
  * ⚠️ Coord's `UpdatePolicyRequest` has **no `payload` field** — a PATCH can
- * change a rule's name, priority, enabled flag and rationale, but NOT its
- * class or authority. Changing either requires replacing the row; see
+ * change a rule's name, priority and rationale, but NOT its class or
+ * authority. Changing either requires replacing the row; see
  * `useGateClearanceRules.replaceRule`.
+ *
+ * ⚠️ **Deliberately NARROWER than coord's wire shape: no `enabled`.** Coord
+ * accepts it, and this surface must never send it. `DELETE /coord/policies/:id`
+ * is a soft delete onto exactly that column (`policies/routes.rs::delete_soft`
+ * — `SET enabled = false`) and `coord.policy_rules` carries no tombstone, so
+ * `{enabled: false}` here is not a reversible disable — it is the delete, under
+ * a name that denies it, applied to the row that decides **who may clear a
+ * gate**. Nothing wrote it; leaving it declared left the trap armed for the
+ * next reader, who would find it in the type and reasonably conclude it was
+ * supported. Restore it only once coord can tell "turned off" from "deleted".
  */
 export interface GateClearanceUpdate {
   name?: string;
   priority?: number;
-  enabled?: boolean;
   rationale?: string;
 }
 

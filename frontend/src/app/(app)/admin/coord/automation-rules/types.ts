@@ -94,14 +94,25 @@ export interface PolicyCreate {
   rationale?: string;
 }
 
-/** `PATCH /coord/policies/:id` body (coord `UpdatePolicyRequest`). */
+/**
+ * `PATCH /coord/policies/:id` body (coord `UpdatePolicyRequest`).
+ *
+ * ⚠️ **Deliberately NARROWER than coord's request: no `enabled`.** Coord
+ * accepts it; this surface must never send it. `DELETE /coord/policies/:id` is
+ * a soft delete onto exactly that column (`policies/routes.rs::delete_soft` —
+ * `SET enabled = false`) with no tombstone to tell the two apart, which is why
+ * the off-switch confirms and routes to `deleteRule` instead. Leaving the
+ * field declared kept a PATCH-shaped path to the same destructive write one
+ * `else if` away — see `RuleList`'s toggle. Restore it only once coord can
+ * distinguish "turned off" from "deleted". Same call, same reasoning, as
+ * `gate-clearance/gateClearance.ts`'s `GateClearanceUpdate`.
+ */
 export interface PolicyUpdate {
   name?: string;
   kind?: RuleKind;
   condition?: PolicyCondition;
   action?: PolicyAction;
   priority?: number;
-  enabled?: boolean;
   rationale?: string;
   /**
    * The §8 autonomy dial. Settable ONLY via PATCH (coord#920) — create takes the

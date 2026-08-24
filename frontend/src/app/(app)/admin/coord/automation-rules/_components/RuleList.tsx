@@ -20,6 +20,7 @@ import {
   Plus,
   RotateCcw,
   Terminal,
+  TriangleAlert,
   Trash2,
 } from "lucide-react";
 import { useAutomationRules } from "../_hooks/useAutomationRules";
@@ -56,6 +57,8 @@ export function RuleList() {
     rules,
     loading,
     saving,
+    loadFailed,
+    reload,
     createRule,
     updateRule,
     restoreDefault,
@@ -70,6 +73,7 @@ export function RuleList() {
   // A workspace rule's OFF position is not a state this console can read back
   // — see the dialog below. It is confirmed, never applied on the click.
   const [disableTarget, setDisableTarget] = useState<PolicyRow | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const openCreate = () => {
     setEditingRule(null);
@@ -88,16 +92,94 @@ export function RuleList() {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={openCreate} data-testid="new-rule">
-          <Plus className="size-4" />
-          New Rule
+  /*
+    A failed list read is UNKNOWN, not "no rules" — and `useCoordPolicies`
+    reports the two states through DIFFERENT channels, so the render has to
+    split on both. It leaves `rules` untouched when a call throws: `[]` on a
+    failed FIRST load, but the last good list on a failed REFETCH.
+
+    Failed and empty is the one that used to lie. The empty-state card below
+    read `[]` as a fact about the workspace — announcing there are no
+    automation rules and offering to create the first one, on a page whose
+    rules may all be sitting in coord untouched. Creating from that state
+    duplicates a live rule; believing it mis-diagnoses an outage as data loss.
+    That reading got sharper when the off-switch became a soft DELETE: "my
+    rules are gone" is now something an operator can do to themselves on this
+    very screen, so a false empty looks like a confirmation of the mistake they
+    most fear having made.
+
+    Failed with rules in hand is NOT that. Replacing a list we still hold with
+    an error panel would throw away real (if possibly stale) information to
+    report a refresh failure — so that case keeps the list and says the list is
+    the last successful read.
+
+    The COPY shape is `/admin/coord/gate-clearance`'s (`gate-clearance-load-failed`);
+    the posture deliberately is NOT. That page replaces its whole body on any
+    failed read, because its primary artifact is the effective-authority matrix
+    — "who may clear a gate", rendered stale, is a worse answer than none. A
+    list of rules the operator can still read and act on is not, so this
+    surface keeps it.
+  */
+  const failedPanel = loadFailed ? (
+    <div
+      role="alert"
+      className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
+      data-testid="automation-rules-load-failed"
+    >
+      <TriangleAlert
+        className="mt-0.5 size-4 shrink-0 text-destructive"
+        aria-hidden
+      />
+      <div className="text-sm">
+        <p className="font-medium">Automation rules could not be loaded.</p>
+        <p className="mt-1 text-muted-foreground">
+          {rules.length === 0
+            ? "This is not the same as having none — the rules in this workspace are unknown right now, so none are listed and none can be edited."
+            : "The rules below are the last successful read and may be out of date. Anything changed since then is not reflected here."}{" "}
+          Retry once coord is reachable.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          disabled={retrying}
+          onClick={() => {
+            // `reload` never rejects (the hook catches), so `finally` is the
+            // whole story. The flag exists because nothing else moves on a
+            // click: a refetch does not raise `loading` after the first load,
+            // so without it a coord that hangs gives the operator a dead
+            // button and they press it again.
+            setRetrying(true);
+            void reload().finally(() => setRetrying(false));
+          }}
+          data-testid="automation-rules-retry"
+        >
+          <RotateCcw className="size-4" />
+          {retrying ? "Retrying…" : "Retry"}
         </Button>
       </div>
+    </div>
+  ) : null;
 
-      {rules.length === 0 ? (
+  // Nothing to show AND no basis for saying so.
+  const nothingKnown = loadFailed && rules.length === 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Authoring blind against a list that failed to load is how a duplicate
+          of a live rule gets made — so this is withheld, not just disabled. */}
+      {!nothingKnown && (
+        <div className="flex justify-end">
+          <Button onClick={openCreate} data-testid="new-rule">
+            <Plus className="size-4" />
+            New Rule
+          </Button>
+        </div>
+      )}
+
+      {failedPanel}
+
+      {nothingKnown ? null : rules.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border py-12 text-center">
           <p className="text-sm text-muted-foreground">
             No automation rules yet.
@@ -121,9 +203,15 @@ export function RuleList() {
                   // OFF → override with {disabled:true}; ON → revert to built-in.
                   if (enabled) void revertOverride(rule.system_rule_id);
                   else void overrideRule(rule.system_rule_id, { disabled: true });
-                } else if (enabled) {
-                  void updateRule(rule.policy_id, { enabled });
                 } else {
+                  // A workspace row can only ever arrive ENABLED (coord's list
+                  // route defaults to `enabled = true` and no caller asks for
+                  // the other arm), so its switch is only ever clicked OFF.
+                  // There is deliberately no ON branch: the PATCH it would
+                  // make writes `enabled` — coord's soft-delete column — so
+                  // the day someone lists the disabled arm, a branch kept
+                  // "just in case" would quietly become the destructive write
+                  // this dialog exists to stop.
                   setDisableTarget(rule);
                 }
               }}
