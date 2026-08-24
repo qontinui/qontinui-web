@@ -25,8 +25,24 @@ import type {
 interface PromptDocumentHistoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The document whose history is shown. `null` closes the view. */
-  target: { kind: PromptDocumentKind; name: string; label: string } | null;
+  /**
+   * The document whose history is shown. `null` closes the view.
+   *
+   * `hasDefault` is the document's `default_source != null` — carried here
+   * only so a BLOCKED restore can say whether the one door coord leaves open
+   * exists for this document. See `restoreBlockedByContent` below.
+   *
+   * Optional, and its absence FAILS CLOSED: an omitted value suppresses the
+   * sentence rather than asserting a control that may not be there. Naming a
+   * missing button to an operator who has just been refused would be a second
+   * dead end, which is the exact thing that sentence exists to remove.
+   */
+  target: {
+    kind: PromptDocumentKind;
+    name: string;
+    label: string;
+    hasDefault?: boolean;
+  } | null;
   /** The document's CURRENT body — the right-hand side of every diff. */
   currentBody: string;
   currentVersion: number;
@@ -445,6 +461,24 @@ export function PromptDocumentHistoryDialog({
               Version {selected} can&apos;t be restored: coord re-checks a
               stored snapshot against today&apos;s content rules, and this one
               no longer passes. {snapshotError}
+              {/*
+                A blocked restore is a dead end unless the operator is told what
+                is left, and one door genuinely is: coord's restore-to-DEFAULT
+                is the single write path it deliberately does not content-check
+                (`post_restore_default` re-seeds a built-in body its own test
+                pins as valid), precisely so a refused restore-version is not
+                the end of the line. Offered only where it exists — a
+                hand-authored document has no default to fall back to, and
+                naming a control that is not there would be a second dead end.
+              */}
+              {target?.hasDefault ? (
+                <>
+                  {" "}
+                  &ldquo;Restore to default&rdquo; in the editor is still open:
+                  coord does not content-check that door, because the body it
+                  re-seeds is its own.
+                </>
+              ) : null}
             </p>
           )}
           {canRestore && !confirmingRestore && (
