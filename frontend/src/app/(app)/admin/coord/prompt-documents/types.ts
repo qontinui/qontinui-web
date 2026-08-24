@@ -431,21 +431,81 @@ export type PolicyWriteLevel = (typeof POLICY_WRITE_LEVELS)[number];
 export const POLICY_WRITE_DEFAULT_LEVEL: PolicyWriteLevel = "tightening_only";
 
 /**
- * Levels an operator may currently select.
+ * Whether a string coord returned is a level this console can interpret.
  *
- * `full` is absent, and that is a shipping decision rather than an oversight:
- * its entire safety story is that the operator is notified after a loosening
- * lands, and nothing emits that notification yet (the notification substrate
- * landed; the policy-change emitter did not). Coord clamps `full` to
- * `tightening_only` server-side regardless of what this list says —
- * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` — so hiding it here is the honest
- * presentation of a restriction that is really enforced, not the enforcement
- * itself.
+ * Nothing validates `level` anywhere on the way in — coord's PUT takes it as
+ * free text by design ("a new domain and its levels are data, not schema") and a
+ * row can be written by hand — so a typo like `tightening-only` reaches the
+ * read path verbatim. Coord's ENFORCEMENT path already handles that:
+ * `PolicyWriteLevel::parse_fail_closed` resolves an unrecognized level to `off`,
+ * the most restrictive level, because "an unreadable authority setting is not
+ * permission".
+ *
+ * The generic `GET /coord/fleet-policy` does NOT run that parse — it is
+ * domain-agnostic and answers with the raw stored string. So a console that
+ * renders `effective_level` unconditionally shows a typo'd row as the level in
+ * force while agents are in fact being refused outright, which is the widest
+ * possible gap between what the operator reads and what the fleet does.
+ */
+export function isPolicyWriteLevel(value: string): value is PolicyWriteLevel {
+  return (POLICY_WRITE_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * What coord ENFORCES for a level it cannot parse — the most restrictive one,
+ * not [`POLICY_WRITE_DEFAULT_LEVEL`].
+ *
+ * The asymmetry is coord's and is deliberate: *no row* means nobody expressed an
+ * opinion, so today's shipped behaviour applies; an *unparseable row* means
+ * somebody expressed an opinion coord cannot read, which is a different and more
+ * alarming fact. Mirrors `PolicyWriteLevel::parse_fail_closed`.
+ */
+export const POLICY_WRITE_FAIL_CLOSED_LEVEL: PolicyWriteLevel = "off";
+
+/**
+ * Levels an operator may select.
+ *
+ * **`full` became selectable when coord retired its clamp** (`7708317c`,
+ * 2026-08-23). It was withheld for as long as `full`'s only safety property —
+ * that the operator is told after a loosening lands — was unbacked: the
+ * notification substrate had shipped but nothing emitted
+ * `NotificationKind::PolicyDocumentChanged`, so
+ * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` clamped `full` to `tightening_only` on
+ * every enforcement read. The emitter landed (coord#1517 + restack #1542) and,
+ * crucially, coord pinned the property rather than inspecting it once:
+ * `every_committing_version_bump_emits` fails if any committing version bump
+ * loses its emit again. Hiding `full` after that stopped describing a
+ * restriction and started being one, imposed by a console with no authority to
+ * impose it.
+ *
+ * **This list is deliberately NOT derived from coord's flag**, which is not on
+ * the wire. If the clamp is ever re-armed, an operator selecting `full` gets the
+ * honest answer from the mechanism that already exists for it: the write lands,
+ * the read-back reports `tightening_only`, and the control says devices resolve
+ * something other than what was written. A console that guessed at the flag
+ * could be wrong in the other direction — hiding a level that works.
  */
 export const POLICY_WRITE_SELECTABLE_LEVELS: readonly PolicyWriteLevel[] = [
   "off",
   "propose_only",
   "tightening_only",
+  "full",
+];
+
+/**
+ * Levels whose selection is confirmed before it is written.
+ *
+ * `full` is the only level at which an agent may land a change the operator
+ * never reviewed. Every other level either refuses the write or queues it as a
+ * proposal, so selecting them cannot widen anything by accident.
+ *
+ * The page already holds this convention: `AgentWriteAccessControl` confirms
+ * overriding a built-in protection because "a control that made it one click
+ * would make the fleet's most consequential setting its least deliberate". The
+ * same sentence applies here, and the two controls sit inches apart.
+ */
+export const POLICY_WRITE_CONFIRMED_LEVELS: readonly PolicyWriteLevel[] = [
+  "full",
 ];
 
 /** One-line description per level, for the control's help text. */
@@ -455,5 +515,5 @@ export const POLICY_WRITE_LEVEL_HELP: Record<PolicyWriteLevel, string> = {
     "Agents write nothing directly; every operation becomes a pending proposal for you to approve.",
   tightening_only:
     "Agents may land a provable tightening or no-op; anything else becomes a pending proposal. This is coord's built-in default.",
-  full: "Agents may also land a classified loosening, with a notification instead of a proposal. Not selectable until policy-change notifications ship.",
+  full: "Agents may also land a classified loosening directly, with a notification afterwards instead of a proposal to approve. The only level at which a policy change reaches the fleet without your review.",
 };
