@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
+import { paletteDisagreements } from "@/components/console/attention";
+import { STATUS_BADGE_CLASS } from "@/components/console/statusRow";
 import {
+  derivePlanStatus,
   describePlanStatus,
+  planIdentity,
+  planRest,
+  PLAN_ATTENTION_BY_TONE,
+  PLAN_STATUS_PALETTE,
   PLAN_TONE_CLASS,
   type PlanStatusTone,
 } from "./planStatus";
@@ -22,11 +29,10 @@ describe("describePlanStatus", () => {
   });
 
   it("uses the same green as the merge pipeline's merged tag", () => {
-    // Kept in lockstep with MergePipeline.tsx's `merged:` entry on purpose —
-    // a shipped plan should read exactly like a merged PR.
-    expect(PLAN_TONE_CLASS.shipped).toBe(
-      "bg-green-500/15 text-green-200 border-green-500/30"
-    );
+    // Asserted against the IMPORTED constant, not a copy of its value: a
+    // hard-coded string here would stay green while the pipeline's green
+    // moved, which is the one drift this test exists to catch.
+    expect(PLAN_TONE_CLASS.shipped).toBe(STATUS_BADGE_CLASS.merged);
   });
 
   it("never renders a raw enum for a status it knows", () => {
@@ -97,5 +103,59 @@ describe("describePlanStatus", () => {
       "unknown",
     ];
     for (const t of tones) expect(PLAN_TONE_CLASS[t]).toBeTruthy();
+  });
+});
+
+/**
+ * R3's invariant for this surface, added by Phase 3 Wave 1.
+ *
+ * `paletteDisagreements` is the shared audit `console/attention.ts` exports —
+ * the same one MergePipeline and the Alerts tab run. Auditing here rather than
+ * eyeballing the table is the whole point: the tone map and the hue map are
+ * two literals in one file and nothing but a test stops them drifting.
+ */
+describe("plans palette agrees with PLAN_ATTENTION_BY_TONE (R3)", () => {
+  it("is red iff a human must act, amber iff we are waiting/unknown", () => {
+    expect(
+      paletteDisagreements(PLAN_ATTENTION_BY_TONE, PLAN_STATUS_PALETTE)
+    ).toEqual([]);
+  });
+
+  it("has an attention for every tone (the table is TOTAL)", () => {
+    for (const tone of Object.keys(PLAN_TONE_CLASS) as PlanStatusTone[]) {
+      expect(PLAN_ATTENTION_BY_TONE[tone]).toBeTruthy();
+    }
+  });
+
+  it("derives blocked as author-action and shipped as calm", () => {
+    expect(derivePlanStatus({ status: "blocked" }).attention).toBe("author");
+    expect(derivePlanStatus({ status: "shipped" }).attention).toBe("none");
+    // An unrecognised status is UNKNOWN, not calm.
+    expect(derivePlanStatus({ status: "weird_new_state" }).attention).toBe(
+      "waiting"
+    );
+    expect(derivePlanStatus({}).attention).toBe("waiting");
+  });
+
+  it("keeps the plan's own words as the label, raw value included", () => {
+    expect(derivePlanStatus({ status: "weird_new_state" }).label).toBe(
+      "weird_new_state"
+    );
+    expect(derivePlanStatus({ status: "in_progress" }).label).toBe(
+      "In progress"
+    );
+  });
+});
+
+describe("planIdentity / planRest", () => {
+  it("splits the conventional date prefix off a plan slug", () => {
+    expect(planIdentity("2026-08-16-coord-console-ui")).toBe("2026-08-16");
+    expect(planRest("2026-08-16-coord-console-ui")).toBe("coord-console-ui");
+  });
+
+  it("never returns a blank identity for an unconventional slug", () => {
+    expect(planIdentity("adhoc-cleanup")).toBe("adhoc-cleanup");
+    expect(planIdentity("single")).toBe("single");
+    expect(planRest("single")).toBe("single");
   });
 });

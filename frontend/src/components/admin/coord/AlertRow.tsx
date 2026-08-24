@@ -11,7 +11,7 @@
  * The shape here instead:
  *   - ONE plain-language status per row, derived by the pure `alertStatus`
  *     module, with the left-edge accent and badge palette shared with
- *     MergePipeline via `components/operations/statusRow`;
+ *     MergePipeline via `components/console/statusRow`;
  *   - the row identified by what a human recognises — repo, branch, worktree
  *     name, drive — never by `alert_key`, which is a dedup identity;
  *   - timestamps through the `RowTime` idiom, never a raw ISO string;
@@ -25,7 +25,7 @@
  */
 
 import { Badge } from "@/components/ui/badge";
-import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console/CollapsiblePanel";
 import {
   AUTHOR_RED,
   INERT,
@@ -34,7 +34,7 @@ import {
   WAITING_AMBER,
   rowAccentClass,
   type StatusPalette,
-} from "@/components/operations/statusRow";
+} from "@/components/console/statusRow";
 import { ExternalLink } from "lucide-react";
 import {
   ATTENTION_BY_KIND,

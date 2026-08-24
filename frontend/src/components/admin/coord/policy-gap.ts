@@ -18,7 +18,7 @@
  * `encode_gap_context` in `qontinui-coord/src/agent_questions.rs`.
  */
 
-import type { AgentQuestionRow } from "@/components/admin/coord/QuestionCard";
+import type { AgentQuestionRow } from "@/components/admin/coord/questionStatus";
 
 /** Must match coord's `POLICY_GAP_CONTEXT_MARKER` (trailing space included). */
 export const POLICY_GAP_CONTEXT_MARKER = "POLICY_GAP ";
