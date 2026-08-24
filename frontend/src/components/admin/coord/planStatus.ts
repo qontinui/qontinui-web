@@ -44,14 +44,22 @@
  */
 
 import type { Attention } from "@/components/console/attention";
-import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+import {
+  AUTHOR_RED,
+  INERT,
+  UNKNOWN_AMBER,
+  type RowStatus,
+  type StatusPalette,
+} from "@/components/console/statusRow";
 
 /**
  * One coord work-unit as the web proxy serves it.
  *
  * Declared HERE rather than beside a card component: it is the surface's data
- * shape, and it outlives any one rendering of it. `PlanCard` re-exports it so
- * its existing importers (`planSort`, `/spawn`, `/history`) are untouched.
+ * shape, and it outlives any one rendering of it. `PlanCard` — which used to
+ * re-export it — was DELETED in Phase 3 Wave 2 once `/history`, its last
+ * renderer, moved onto `<PlanRow>`; `planSort`, `/spawn` and both list routes
+ * now import the type from here directly.
  */
 export interface CoordPlanRow {
   slug: string;
@@ -77,15 +85,24 @@ export type PlanStatusTone =
 /**
  * Tone → Tailwind classes. `shipped` deliberately reuses the merge pipeline's
  * merged-PR green (`MergePipeline.tsx`, `merged:`) so the two surfaces agree.
+ *
+ * The red and the ambers are IMPORTED, not spelled (§4.1: nothing outside
+ * `statusRow` mints a red or an amber). They were spelled here originally, and
+ * `blocked` had already drifted an opacity step off `AUTHOR_RED`
+ * (`border-red-500/30` against `/35`) — silently, because
+ * `paletteDisagreements` only tests for the `bg-red-` prefix. That is the
+ * whole argument for importing: the audit cannot see this class of drift.
+ * The greens and blues stay spelled; the rule governs red and amber, which are
+ * the two hues that carry meaning.
  */
 export const PLAN_TONE_CLASS: Record<PlanStatusTone, string> = {
   shipped: "bg-green-500/15 text-green-200 border-green-500/30",
   ready: "bg-green-500/5 text-green-300 border-green-500/25",
   active: "bg-blue-500/10 text-blue-200 border-blue-500/30",
-  pending: "bg-muted text-muted-foreground border-border",
-  blocked: "bg-red-500/15 text-red-200 border-red-500/30",
+  pending: INERT,
+  blocked: AUTHOR_RED,
   closed: "bg-muted/40 text-muted-foreground/70 border-border",
-  unknown: "bg-amber-500/10 text-amber-200 border-amber-500/30",
+  unknown: UNKNOWN_AMBER,
 };
 
 export interface PlanStatusTag {

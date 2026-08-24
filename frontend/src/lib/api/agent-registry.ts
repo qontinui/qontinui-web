@@ -1,9 +1,15 @@
 /**
  * Agent-registry API — wraps the `/api/v1/agent-registry` endpoint surface.
  *
- * Backs the `/settings/agents` page: the current user's effective agent
- * list (coord registry defaults overlaid with the user's own prefs) and
- * the per-agent enable/disposition preference write.
+ * Backs two pages:
+ *
+ * - `/settings/agents` — the current user's effective agent list (coord
+ *   registry defaults overlaid with the user's own prefs) and the per-agent
+ *   enable/disposition preference write. The write reaches coord's SELF door,
+ *   so it works for every tenant member, not only admins.
+ * - `/admin/coord/agent-registry` — the ADMIN surface for the tenant DEFAULT
+ *   (`default_enabled` / `policy_required`), i.e. what a member with no
+ *   recorded preference gets.
  *
  * Response shapes are typed locally against the backend's
  * `app/api/v1/endpoints/agent_registry.py` Pydantic models (matching the
@@ -43,8 +49,27 @@ export interface AgentPrefUpdate {
   disposition?: AgentDisposition;
 }
 
-/** Coord validation error codes forwarded through the backend's 422. */
-export type AgentPrefErrorCode = "disposition_required" | "invalid_disposition";
+/**
+ * Error codes forwarded through the backend from coord.
+ *
+ * The first two are 422 VALIDATION codes: the write was understood and
+ * refused on its content, and the settings page answers them with an inline
+ * disposition picker.
+ *
+ * `operator_not_provisioned_in_web` is a 403 and is a different kind of thing
+ * — a coord operator whose verified email matches no `auth.users` row. Nothing
+ * about the request is wrong and no permission is missing; the two accounts
+ * are simply not linked. Rendering it beside a plain authorization denial
+ * would send the reader to an admin who cannot help.
+ *
+ * A plain authorization 403 has no code of its own on purpose: coord's body
+ * for it is not a stable contract, so the page keys on `status === 403` with
+ * no recognised code rather than pattern-matching prose that may change.
+ */
+export type AgentPrefErrorCode =
+  | "disposition_required"
+  | "invalid_disposition"
+  | "operator_not_provisioned_in_web";
 
 /** Typed error carrying coord's 422 validation code (when recognizable),
  *  so the settings page can render the forced disposition choice inline
@@ -72,6 +97,9 @@ function extractErrorCode(body: unknown): AgentPrefErrorCode | null {
   const text = JSON.stringify(body ?? "");
   if (text.includes("disposition_required")) return "disposition_required";
   if (text.includes("invalid_disposition")) return "invalid_disposition";
+  if (text.includes("operator_not_provisioned_in_web")) {
+    return "operator_not_provisioned_in_web";
+  }
   return null;
 }
 
@@ -128,4 +156,67 @@ export async function putAgentPref(
     { method: "PUT", body: JSON.stringify(update) }
   );
   await handleResponse<unknown>(response, "Failed to save agent preference");
+}
+
+// ── The tenant-default admin surface ────────────────────────────────────────
+//
+// Backs `/admin/coord/agent-registry`. These read and write the REGISTRY row
+// (`default_enabled` — what a member with no recorded preference gets), never
+// a member's own pref. Both proxies are admin-gated in the web tier, so a
+// non-admin gets `not_coord_tenant_admin` here rather than an opaque coord
+// body.
+
+/** One raw registry row plus how many members have overridden it. */
+export interface AdminAgentRegistryRow {
+  agent_name: string;
+  purpose: string;
+  trigger_condition: string;
+  spawn_path: string;
+  model: string | null;
+  effort: string | null;
+  default_enabled: boolean;
+  policy_required: boolean;
+  allowed_dispositions: string[];
+  fanout_bound: number | null;
+  /** Members with a recorded pref — exactly those a default change misses. */
+  pref_count: number;
+  /** Of those, the ones whose recorded `enabled` contradicts the default. */
+  pref_differs_from_default_count: number;
+}
+
+/**
+ * Body for the tenant-default write.
+ *
+ * `default_enabled` is REQUIRED, mirroring coord: it is the lever itself, and
+ * defaulting it would let a typo silently flip a tenant's autonomy. Editing
+ * `policy_required` alone therefore still means sending the agent's current
+ * `default_enabled` back. Everything else coord stores is preserving, and this
+ * body deliberately names none of it — an earlier full-row shape is what once
+ * reset a seeded row's `purpose` and its `fanout_bound`.
+ */
+export interface AgentRegistryDefaultsUpdate {
+  default_enabled: boolean;
+  policy_required?: boolean;
+}
+
+/** ADMIN: the tenant's raw registry rows with their override counts. */
+export async function listAdminAgentRegistry(): Promise<AdminAgentRegistryRow[]> {
+  const response = await httpClient.fetch(`${AGENT_REGISTRY_API}/admin/registry`);
+  const body = await handleResponse<{ agents: AdminAgentRegistryRow[] }>(
+    response,
+    "Failed to load the agent registry"
+  );
+  return body.agents ?? [];
+}
+
+/** ADMIN: set one agent's tenant default. */
+export async function putAgentRegistryDefaults(
+  agentName: string,
+  update: AgentRegistryDefaultsUpdate
+): Promise<void> {
+  const response = await httpClient.fetch(
+    `${AGENT_REGISTRY_API}/admin/registry/${encodeURIComponent(agentName)}`,
+    { method: "PUT", body: JSON.stringify(update) }
+  );
+  await handleResponse<unknown>(response, "Failed to save the tenant default");
 }

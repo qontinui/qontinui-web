@@ -173,10 +173,11 @@ export function deriveGapStatus(
  * Format a timestamp as a short relative span (e.g. "3m", "2h", "5d").
  * Falls back to the raw ISO if parsing fails — never throws.
  *
- * Lives here rather than in a card component (its previous home) so the two
- * modules that still import it — `PlanCard` and the question detail route —
- * do not depend on a rendering. (`GapRow` and `QuestionRow` render times
- * through `RowTime` instead and import nothing from here for it.)
+ * Lives here rather than in a card component (its previous home) so the module
+ * that still imports it — the question detail route — does not depend on a
+ * rendering. (`GapRow` and `QuestionRow` render times through `RowTime`
+ * instead and import nothing from here for it; `PlanCard`, its other caller,
+ * was deleted in Phase 3 Wave 2.)
  */
 export function formatRelative(iso?: string | null): string {
   if (!iso) return "";
