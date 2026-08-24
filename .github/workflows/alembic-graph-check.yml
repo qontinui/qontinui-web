@@ -38,8 +38,13 @@ on:
 # Serialise the sweeps. The one-marker-comment-per-PR rule is enforced by
 # reading the comments first, which is a check-then-write, not a lock: two
 # lands landing within the same window would both see no marker and both POST,
-# double-notifying the same author. `cancel-in-progress: false` because a
-# cancelled sweep is a sweep that silently notified nobody.
+# double-notifying the same author. `cancel-in-progress: false` so the run
+# in flight is allowed to finish rather than being killed mid-sweep, having
+# notified some authors and not others. Note what it does NOT buy: GitHub
+# keeps at most one PENDING run per group, so a third land while one is
+# running still drops the middle one. Harmless here — every sweep is a full
+# recomputation against the then-current main, so the last one wins and is
+# correct.
 concurrency:
   group: alembic-graph-check-${{ github.ref }}
   cancel-in-progress: false

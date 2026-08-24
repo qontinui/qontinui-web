@@ -198,13 +198,58 @@ class Remediation:
     """
 
     kind: str
-    """``repoint`` | ``merge`` | ``chain`` | ``unknown``."""
+    """``repoint`` | ``merge`` | ``chain`` | ``blocked`` | ``unknown``.
+
+    ``chain`` and ``blocked`` are deliberately separate. ``chain`` means there
+    is no single landed head to re-point onto, so a human picks an order.
+    ``blocked`` means there IS one but at least one forked chain cannot be
+    fixed by one token — a merge revision or a cycle. Collapsing them
+    produced a message that said "no single landed head to re-point onto"
+    two lines under a line naming exactly one.
+    """
     landed_heads: tuple[str, ...]
     unlanded_heads: tuple[str, ...]
     target: str | None
     """The ``down_revision`` value to adopt, when ``kind == "repoint"``."""
     edits: tuple[tuple[str, Path | None], ...]
     """``(revision id to edit, the file it lives in)`` for a ``repoint``."""
+    blocked: tuple[tuple[str, str], ...] = ()
+    """``(head, reason)`` for each chain that has no single-token fix."""
+
+
+#: Why a forked chain has no single token to change. Empty string = resolved.
+BLOCK_MERGE_REVISION = "merge_revision"
+BLOCK_CYCLE = "cycle"
+
+
+def _walk_to_fork_root(
+    head: str, revisions: dict[str, str], landed: set[str]
+) -> tuple[str | None, str]:
+    """``(shallowest unlanded revision, block reason)``.
+
+    The revision is ``None`` exactly when the reason is non-empty. Both are
+    returned from one walk so the caller can EXPLAIN the block rather than
+    print a generic "pick an order", which is wrong advice for a merge
+    revision (see :func:`fork_root`).
+    """
+    current = head
+    seen = {current}
+    while True:
+        down = revisions.get(current)
+        if down is None:
+            return current, ""
+        parents = PARENT_REF_RE.findall(down)
+        if len(parents) > 1:
+            return None, BLOCK_MERGE_REVISION
+        if not parents:
+            return current, ""  # chain root — a legitimate re-point site
+        parent = parents[0]
+        if parent in seen:
+            return None, BLOCK_CYCLE
+        if parent in landed or parent not in revisions:
+            return current, ""
+        seen.add(parent)
+        current = parent
 
 
 def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str | None:
@@ -218,36 +263,20 @@ def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str | N
     parent is landed, unknown, or absent.
 
     ``None`` means "there is no single token to change here", and the caller
-    must fall back to ``chain`` rather than name a file. Two cases produce it,
-    and BOTH would otherwise generate destructive advice:
+    must not name a file. Two cases produce it, and BOTH would otherwise
+    generate destructive advice:
 
     * a **merge revision** (``down_revision = ("b", "c")``). Telling an author
       to set a scalar there drops both merge parents and creates MORE heads —
-      it takes a 2-head chain to 3.
+      it takes a 2-head chain to 3. The correct edit there is to APPEND the
+      landed head to the tuple, not replace it.
     * a **cycle**. There is no shallowest revision to name.
 
     A chain root (``down_revision = None``) is different and IS returnable:
     re-pointing a root at the landed head is exactly the right fix for a new
     chain authored with no parent.
     """
-    current = head
-    seen = {current}
-    while True:
-        down = revisions.get(current)
-        if down is None:
-            return current
-        parents = PARENT_REF_RE.findall(down)
-        if len(parents) > 1:
-            return None  # merge revision — see the docstring
-        if not parents:
-            return current  # chain root
-        parent = parents[0]
-        if parent in seen:
-            return None  # cycle
-        if parent in landed or parent not in revisions:
-            return current
-        seen.add(parent)
-        current = parent
+    return _walk_to_fork_root(head, revisions, landed)[0]
 
 
 def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
@@ -263,18 +292,28 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
     unlanded_heads = tuple(h for h in scan.heads if h not in landed)
 
     if len(landed_heads) == 1 and unlanded_heads:
-        roots = [fork_root(head, scan.revisions, landed) for head in unlanded_heads]
-        # `None` from any chain means at least one fork has no single token to
-        # change (a merge revision, or a cycle). Emitting a partial re-point
-        # would leave the chain forked while reading as a complete fix, so the
-        # whole answer degrades to `chain` and a human picks.
-        if all(root is not None for root in roots):
-            edits = tuple(
-                (root, scan.paths.get(root)) for root in dict.fromkeys(roots) if root
-            )
+        walked = {
+            head: _walk_to_fork_root(head, scan.revisions, landed)
+            for head in unlanded_heads
+        }
+        blocked = tuple(
+            (head, reason) for head, (_, reason) in walked.items() if reason
+        )
+        if blocked:
+            # At least one fork has no single token to change. Emitting a
+            # PARTIAL re-point would leave the chain forked while reading as a
+            # complete fix, so the whole answer degrades — but to `blocked`,
+            # which can name the landed head and say what is in the way.
             return Remediation(
-                "repoint", landed_heads, unlanded_heads, landed_heads[0], edits
+                "blocked", landed_heads, unlanded_heads, landed_heads[0], (), blocked
             )
+        roots = [root for root, _ in walked.values()]
+        edits = tuple(
+            (root, scan.paths.get(root)) for root in dict.fromkeys(roots) if root
+        )
+        return Remediation(
+            "repoint", landed_heads, unlanded_heads, landed_heads[0], edits
+        )
 
     if not unlanded_heads:
         # Every head is already on the baseline. Nothing can be re-pointed
