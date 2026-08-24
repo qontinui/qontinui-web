@@ -1,24 +1,33 @@
 # Console UI Style Guide
 
-**Version:** 0.2.0 (Phase 1 — §3 filled in from the shipped primitives)
-**Last Updated:** 2026-08-20
+**Version:** 0.2.1 (Phase 1 — §3 filled in from the shipped primitives)
+**Last Updated:** 2026-08-24
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`
 
 The style of `/admin/coord/fleet` — the merge Pipeline tab — written down, so the
 other 29 console routes can be moved onto it and the next operator surface can be
 built on it instead of inventing a third shape.
 
-Every code citation below was verified against `origin/main` at
-`859d8286fe611408b929c89b5e95ebf5a39e9c50` — **with one declared exception:
-[§3](#3-the-primitive-catalogue) describes
-`src/components/console/`, which is NOT on `main` yet. That directory lands with
-the Phase 1 PR, which is itself **stacked on qontinui-web#986** (still open —
-it is what moved the row atoms out of `MergePipeline.tsx` in the first place).
-So §3 describes code that exists and is tested, on a branch, behind an unlanded
-dependency. It is marked as such at its use sites, and this note comes out when
-both land.** Line numbers move; the symbol
-names do not. When a citation drifts, fix the citation — do not fix the rule to
-match whatever the code drifted into.
+Citations below were verified against `origin/main` at
+`859d8286fe611408b929c89b5e95ebf5a39e9c50`, **except in [§3](#3-the-primitive-catalogue)
+and [R6](#r6--filter-tabs-carry-live-counts), which describe `origin/main` at
+`51168755` + the `FilterChips` commit.** Line numbers move; the symbol names do not. When a
+citation drifts, fix the citation — do not fix the rule to match whatever the
+code drifted into.
+
+> **The §3 exception is discharged (2026-08-24).** This header used to declare
+> that [§3](#3-the-primitive-catalogue) described `src/components/console/`,
+> which was "NOT on `main` yet" because the Phase 1 PR was stacked on the
+> then-open qontinui-web#986 — and it said the note comes out when both land.
+> **Both landed**: #986 as `8c9e864c` (the row atoms out of
+> `MergePipeline.tsx`), Phase 1 as `51168755` + `49aa6c7b`. §3 now describes
+> shipped, imported code.
+>
+> ⚠️ **Those landings also moved the code §2 cites**, twice — first the
+> ~214-line extraction into `statusRow.tsx`, then Phase 1's refactor of
+> `MergePipeline.tsx` onto the primitives. R6 is re-anchored; R1–R5 and R7–R9
+> are known-stale. Which, and why they are flagged rather than fixed here:
+> [§2](#2-the-nine-rules), the "Where this code lives after Phase 1" note.
 
 ## Table of Contents
 
@@ -94,15 +103,23 @@ manufacturing one — see
 > | R2, R4 | `console/RecordRow.tsx`, over `console/statusRow.tsx` |
 > | R3 | `console/statusRow.tsx` + `console/attention.ts` |
 > | R5 | `console/RecordDetail.tsx`, `console/RecordList.tsx` |
-> | R6 | `console/FilterTabs.tsx` |
+> | R6 | `console/FilterTabs.tsx`; `console/FilterChips.tsx` when the filter is multi-select |
 > | R7 | `console/CollapsiblePanel.tsx` |
 > | (support) | `console/time.ts` — `relativeTime` / `absoluteTime` |
 > | R8, R9 | no primitive — they are rules about what a PAGE does, not a component |
 >
-> Both the move and this note are unlanded (§3's caveat). The ✅ line numbers are
-> re-pointed at `main` coordinates once Phase 1 lands; they are deliberately NOT
-> re-pointed at branch coordinates now, because a citation to an unmerged line
-> number is worse than a citation to a real one that has moved.
+> **The move landed** (`51168755`, `49aa6c7b`), so the sentence this paragraph
+> used to carry — "both the move and this note are unlanded" — is no longer
+> true, and the re-pointing it promised is now due. **R6's ✅/❌ pair has been
+> re-anchored** (below), because a later commit extended R6 and its ❌ had come
+> to point at code that no longer violates it. **R1–R5 and R7–R9 have not**:
+> their line numbers still describe `859d8286`, which Phase 1 moved, and the
+> mechanism each one demonstrates now lives in the primitive named in the table
+> above rather than at the cited `MergePipeline.tsx` line at all. Re-pointing
+> those is a rewrite of each ✅ block, not a line-number bump, and it belongs
+> with the migration wave that moved them — it is called out here rather than
+> left silent, because a reader who follows a citation into unrelated code
+> learns to distrust every citation in the file.
 
 ### R1 — Health strip first
 
@@ -470,33 +487,53 @@ filter input. A count that has **not been fetched renders `–`, never `0`** —
 absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 `silent-empty-is-unknown` policy, applied to a badge.
 
-✅ `src/components/operations/MergePipeline.tsx:1004-1048` — the tab strip. The
-unfetched-count rule and its full reasoning:
+✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
+`51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
+composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved
+into the primitive** (`console/FilterTabs.tsx:67-69`), so a caller expresses
+"unknown" by passing `null` and cannot forget the dash:
 
 ```tsx
-// MergePipeline.tsx:1036-1038
-{f.id === "merged" && mergedPrs === null
-  ? (mergedCount ?? "–")
-  : counts[f.id]}
+// MergePipeline.tsx:893-901 — `null` for the count nobody fetched
+tabs={FILTERS.map((f) => ({
+  id: f.id,
+  label: f.label,
+  count:
+    f.id === "merged" && mergedPrs === null ? mergedCount : counts[f.id],
+  attention: f.id === "attention" && counts[f.id] > 0,
+}))}
 ```
 
-```tsx
-// MergePipeline.tsx:1042-1048 — the right-aligned filter input
-<input
-  value={query}
-  onChange={(e) => setQuery(e.target.value)}
-  placeholder="filter: repo, branch, #number…"
-  className="ml-auto w-56 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs …"
-```
+The comment at `MergePipeline.tsx:876-891` is the rule stated in situ — *"until
+then `counts.merged` would be 0 for want of looking, not because nothing
+landed"* — and it also records the honest case where the two numbers legitimately
+differ.
 
-The comment at `MergePipeline.tsx:1022-1035` is the rule stated in situ — *"until
-then `counts.merged` is 0 for want of looking, not because nothing landed"* — and
-it also records the honest case where the two numbers legitimately differ.
+**Multi-select is the same strip.** Where more than one value can be on at once,
+the primitive is `<FilterChips>` (§3.2) and the load-bearing clause is a
+different one: **an empty selection is the unfiltered state, and it is not an
+option.** A console filter's values are usually a server vocabulary — coord's
+`severity`, its served `kind` list — so minting an `"any"` member invents a value
+the API has never heard of, which every caller then has to remember to strip
+before it reaches a query string. The `all` chip is a CLEAR action instead —
+pressed while nothing is selected, and inert while it is, so it cannot fire a
+refetch that changes no filter. This is not hypothetical bookkeeping:
+`/operations/alerts` drops blank query values because an explicitly-empty
+`?kind=` asks coord for the rows whose kind is the empty string — "no filter"
+inverted into "match nothing".
 
-❌ `src/app/(app)/admin/coord/plans/page.tsx:116-128` — filters live *inside* a
-`<CardContent>` below a title, with no per-subset counts at all. The page can tell
-you it has 40 plans; it cannot tell you how many are in each state without you
-clicking each filter and counting rows.
+❌ `src/app/(app)/admin/coord/memory/page.tsx:153-187` — the chip SHAPE is right
+(and predates the primitive), but no chip carries a count, so the page can tell
+you it holds 400 memories and not how many are `feedback`. R6's count clause is
+what is missing, not its form; adopting `<FilterChips>` is the migration, and
+supplying `count` is the fix.
+
+> The ❌ this rule carried until 2026-08-24 was
+> `plans/page.tsx:116-128` — filters inside a `<CardContent>` with no per-subset
+> counts. `/plans` was migrated onto the primitives in `49aa6c7b`, so that
+> citation now points at a fetch function and the violation is gone. Fixed
+> rather than left: a guide whose ❌ points at compliant code teaches the reader
+> to distrust the rule.
 
 ### R7 — Secondary material collapses, but its signal does not
 
@@ -807,6 +844,7 @@ same table. Every module doc cites its rule number and links this file.
 | `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
+| `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx`; a re-export shim stays at the old path for its ~15 relative importers, plus one in `operations/index.ts` (D3). |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime`, so its **23** importers are untouched — but six other files declare their own copy and are NOT among them (see §3.1). |
