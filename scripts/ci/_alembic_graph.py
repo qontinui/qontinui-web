@@ -3,8 +3,9 @@
 Extracted from ``count_alembic_heads.py`` so that the head computation has
 exactly ONE home even though three different callers now need it:
 
-  * ``count_alembic_heads.py`` — the blocking PR gate and its two mirror
-    lanes (``.qontinui/ci.toml``, ``.pre-commit-config.yaml``).
+  * ``count_alembic_heads.py`` — the blocking PR gate and its three mirror
+    lanes (``.qontinui/ci.toml``, ``.pre-commit-config.yaml``, and
+    ``alembic-graph-check.yml``'s post-land companion).
   * ``notify_forked_open_prs.py`` — the post-land notifier, which has to run
     the same computation against a SIMULATED tree (``main``'s versions dir
     with one open PR's revision files overlaid) rather than the checkout.
@@ -28,6 +29,9 @@ from pathlib import Path
 #: Where revision files live, relative to the repo root.
 VERSIONS_DIR = "backend/alembic/versions"
 
+#: Ceiling on the baseline `git archive`. A pre-commit hook must not hang.
+GIT_TIMEOUT_SECONDS = 60
+
 # Match both the legacy `revision = "x"` and the modern `revision: str = "x"`
 # syntaxes. The colon-prefixed type annotation can contain letters (e.g.
 # `: str = `, `: str | None = `), so `[: ]+` is too narrow — use an optional
@@ -35,6 +39,20 @@ VERSIONS_DIR = "backend/alembic/versions"
 REV_RE = re.compile(r'^revision\s*(?::[^=]*)?\s*=\s*["\'](.+?)["\']', re.M)
 DOWN_RE = re.compile(r"^down_revision\s*(?::[^=]*)?\s*=\s*(.+)$", re.M)
 PARENT_REF_RE = re.compile(r'["\'](\w[\w]*)["\']')
+
+#: Revision ids are interpolated into PR comments, so anything outside this
+#: set is stripped before rendering. ``REV_RE`` captures ``(.+?)`` between
+#: quotes, which would otherwise let a revision id in someone's own PR close
+#: a markdown code span and fire an @mention from a bot-authored comment.
+SAFE_ID_RE = re.compile(r"[^0-9A-Za-z._-]")
+
+# KNOWN PARSE LIMIT, deliberately unchanged: ``DOWN_RE`` is line-anchored, so
+# a ``down_revision`` tuple wrapped across lines by a formatter parses as no
+# parents at all and its children read as heads. Widening it would move the
+# gate's PASS/FAIL condition — a currently-failing tree would start passing —
+# which is out of scope for the advice work this module exists for. The
+# repo's revisions are all single-line today. If that changes, fix it as its
+# own change, with its own reasoning about the verdict move.
 
 
 @dataclass(frozen=True)
@@ -54,6 +72,15 @@ class Scan:
     """revision id -> the file it was parsed from."""
     heads: tuple[str, ...]
     """Sorted revision ids that no other revision names as a parent."""
+
+
+def safe_id(revision: str) -> str:
+    """A revision id with everything outside ``[0-9A-Za-z._-]`` stripped.
+
+    For rendering into markdown a bot posts on someone else's PR. See
+    :data:`SAFE_ID_RE`.
+    """
+    return SAFE_ID_RE.sub("", revision)
 
 
 def parse_source(source: str) -> tuple[str, str] | None:
@@ -93,13 +120,22 @@ def scan_sources(sources: dict[Path, str]) -> Scan:
     return Scan(file_count=len(sources), revisions=revisions, paths=paths, heads=heads)
 
 
-def scan_dir(versions_dir: Path) -> Scan:
-    """:func:`scan_sources` over every ``*.py`` in ``versions_dir``."""
-    sources = {
+def read_dir_sources(versions_dir: Path) -> dict[Path, str]:
+    """``{path: text}`` for every ``*.py`` directly in ``versions_dir``.
+
+    Non-recursive on purpose: it must match what the gate scans, so that a
+    caller simulating a tree cannot disagree with the gate about which files
+    are in the revision set.
+    """
+    return {
         path: path.read_text(encoding="utf-8", errors="replace")
         for path in sorted(versions_dir.glob("*.py"))
     }
-    return scan_sources(sources)
+
+
+def scan_dir(versions_dir: Path) -> Scan:
+    """:func:`scan_sources` over every ``*.py`` in ``versions_dir``."""
+    return scan_sources(read_dir_sources(versions_dir))
 
 
 def revisions_at_ref(ref: str, repo_root: Path) -> set[str] | None:
@@ -115,20 +151,23 @@ def revisions_at_ref(ref: str, repo_root: Path) -> set[str] | None:
     # One `git archive` rather than one `git show` per file: the dir holds
     # 500+ revisions, and 500 subprocesses in a pre-commit hook would turn a
     # sub-second check into a visible stall.
+    # Bare `except Exception` on purpose, and it is the safe direction here.
+    # This function only ever chooses the WORDING of an already-decided
+    # verdict, so any failure must degrade to UNKNOWN. Letting an unexpected
+    # exception escape would turn `--report-only`'s intended exit 0 into an
+    # uncaught traceback, aborting the post-land workflow before it can notify
+    # anyone — the opposite of what this module is for.
     try:
         archive = subprocess.run(
             ["git", "archive", "--format=tar", ref, "--", VERSIONS_DIR],
             cwd=repo_root,
             capture_output=True,
             check=False,
+            timeout=GIT_TIMEOUT_SECONDS,
         )
-    except (OSError, ValueError):
-        return None
-    if archive.returncode != 0 or not archive.stdout:
-        return None
-
-    found: set[str] = set()
-    try:
+        if archive.returncode != 0 or not archive.stdout:
+            return None
+        found: set[str] = set()
         with tarfile.open(fileobj=io.BytesIO(archive.stdout)) as tar:
             for member in tar:
                 if not member.isfile() or not member.name.endswith(".py"):
@@ -139,7 +178,7 @@ def revisions_at_ref(ref: str, repo_root: Path) -> set[str] | None:
                 parsed = parse_source(handle.read().decode("utf-8", errors="replace"))
                 if parsed is not None:
                     found.add(parsed[0])
-    except tarfile.TarError:
+    except Exception:
         return None
     return found or None
 
@@ -168,8 +207,8 @@ class Remediation:
     """``(revision id to edit, the file it lives in)`` for a ``repoint``."""
 
 
-def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str:
-    """The shallowest UNLANDED revision on ``head``'s chain.
+def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str | None:
+    """The shallowest UNLANDED revision on ``head``'s chain, or ``None``.
 
     Re-pointing the head itself is usually wrong. #989 is the worked example:
     its heads were ``coord_polread_01`` (landed) and ``devenv_10`` (unlanded),
@@ -177,6 +216,19 @@ def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str:
     chain actually leaves the landed graph — so ``devenv_09`` is the file to
     edit and ``devenv_10`` must not be touched. Walk down until the next
     parent is landed, unknown, or absent.
+
+    ``None`` means "there is no single token to change here", and the caller
+    must fall back to ``chain`` rather than name a file. Two cases produce it,
+    and BOTH would otherwise generate destructive advice:
+
+    * a **merge revision** (``down_revision = ("b", "c")``). Telling an author
+      to set a scalar there drops both merge parents and creates MORE heads —
+      it takes a 2-head chain to 3.
+    * a **cycle**. There is no shallowest revision to name.
+
+    A chain root (``down_revision = None``) is different and IS returnable:
+    re-pointing a root at the landed head is exactly the right fix for a new
+    chain authored with no parent.
     """
     current = head
     seen = {current}
@@ -185,12 +237,14 @@ def fork_root(head: str, revisions: dict[str, str], landed: set[str]) -> str:
         if down is None:
             return current
         parents = PARENT_REF_RE.findall(down)
-        if len(parents) != 1:
-            # A root (``down_revision = None``) or an existing merge revision
-            # with two parents — either way, stop here rather than guess.
-            return current
+        if len(parents) > 1:
+            return None  # merge revision — see the docstring
+        if not parents:
+            return current  # chain root
         parent = parents[0]
-        if parent in landed or parent not in revisions or parent in seen:
+        if parent in seen:
+            return None  # cycle
+        if parent in landed or parent not in revisions:
             return current
         seen.add(parent)
         current = parent
@@ -209,14 +263,18 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
     unlanded_heads = tuple(h for h in scan.heads if h not in landed)
 
     if len(landed_heads) == 1 and unlanded_heads:
-        target = landed_heads[0]
-        edits = tuple(
-            (root, scan.paths.get(root))
-            for root in dict.fromkeys(
-                fork_root(head, scan.revisions, landed) for head in unlanded_heads
+        roots = [fork_root(head, scan.revisions, landed) for head in unlanded_heads]
+        # `None` from any chain means at least one fork has no single token to
+        # change (a merge revision, or a cycle). Emitting a partial re-point
+        # would leave the chain forked while reading as a complete fix, so the
+        # whole answer degrades to `chain` and a human picks.
+        if all(root is not None for root in roots):
+            edits = tuple(
+                (root, scan.paths.get(root)) for root in dict.fromkeys(roots) if root
             )
-        )
-        return Remediation("repoint", landed_heads, unlanded_heads, target, edits)
+            return Remediation(
+                "repoint", landed_heads, unlanded_heads, landed_heads[0], edits
+            )
 
     if not unlanded_heads:
         # Every head is already on the baseline. Nothing can be re-pointed
