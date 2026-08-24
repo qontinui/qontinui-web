@@ -35,12 +35,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
 sys.path.insert(0, str(SCRIPTS_CI))
 
+import notify_forked_open_prs as notifier  # noqa: E402
 from _alembic_graph import (  # noqa: E402
     fork_root,
     plan_remediation,
     safe_id,
     scan_sources,
 )
+from count_alembic_heads import render_remediation  # noqa: E402
 
 COUNTER = SCRIPTS_CI / "count_alembic_heads.py"
 
@@ -163,8 +165,12 @@ def test_a_merge_revision_head_degrades_to_chain_not_a_repoint() -> None:
     assert scan.heads == ("landed", "m")
     remediation = plan_remediation(scan, landed={"a", "landed"})
     # NOT "repoint" — see test_fork_root_returns_none_for_a_merge_revision.
-    assert remediation.kind == "chain"
+    # And NOT "chain" either: there IS one landed head, so a message saying
+    # "no single landed head to re-point onto" would contradict itself.
+    assert remediation.kind == "blocked"
     assert remediation.edits == ()
+    assert remediation.target == "landed"
+    assert remediation.blocked == (("m", "merge_revision"),)
 
 
 def test_one_unresolvable_chain_degrades_the_whole_answer() -> None:
@@ -174,7 +180,7 @@ def test_one_unresolvable_chain_degrades_the_whole_answer() -> None:
         Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
     }
     remediation = plan_remediation(scan_sources(sources), landed={"a", "landed"})
-    assert remediation.kind == "chain"
+    assert remediation.kind == "blocked"
 
 
 # ---------------------------------------------------------------------------
@@ -349,3 +355,89 @@ def test_the_real_repo_chain_has_exactly_one_head() -> None:
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "HEAD_COUNT=1" in result.stdout
+
+
+def test_blocked_is_not_chain_and_says_append_not_replace() -> None:
+    """The two must render differently; conflating them produced wrong advice."""
+    sources = {
+        **_tree(("a", None), ("landed", "a"), ("b", "a"), ("c", "a")),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    scan = scan_sources(sources)
+    text = render_remediation(
+        plan_remediation(scan, landed={"a", "landed"}), "origin/main", scan.heads
+    )
+    assert "no single landed head" not in text.lower()
+    assert "APPEND" in text
+    assert "`landed` is the landed head" in text
+
+
+def test_chain_still_says_there_is_no_landed_head_to_use() -> None:
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "a")))
+    text = render_remediation(
+        plan_remediation(scan, landed={"a"}), "origin/main", scan.heads
+    )
+    assert "No single landed head to re-point onto" in text
+
+
+def test_a_cycle_inside_one_fork_is_blocked_with_its_own_reason() -> None:
+    # `z` is the head; walking down from it enters an x<->y cycle. (A cycle
+    # on its own has no head at all — the gate exits 2 on that — so it only
+    # reaches the remediation path when something outside points into it.)
+    sources = {
+        **_tree(("a", None), ("landed", "a")),
+        Path("z.py"): 'revision: str = "z"\ndown_revision = "x"\n',
+        Path("x.py"): 'revision: str = "x"\ndown_revision = "y"\n',
+        Path("y.py"): 'revision: str = "y"\ndown_revision = "x"\n',
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("landed", "z")
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    assert remediation.kind == "blocked"
+    assert [reason for _, reason in remediation.blocked] == ["cycle"]
+
+
+# ---------------------------------------------------------------------------
+# the notifier's retry policy — the NEGATIVE path
+#
+# A retry that replays a POST is worse than no retry: GitHub can 502 after the
+# write commits, so the replay posts a SECOND marker comment — the exact
+# duplicate the upsert and the workflow's `concurrency:` group exist to
+# prevent. These pin the discrimination rather than the happy path.
+# ---------------------------------------------------------------------------
+
+
+def test_writes_that_create_are_never_replayed() -> None:
+    assert "POST" not in notifier.IDEMPOTENT_METHODS
+
+
+@pytest.mark.parametrize("method", ["GET", "PATCH"])
+def test_reads_and_in_place_updates_are_replayable(method: str) -> None:
+    assert method in notifier.IDEMPOTENT_METHODS
+
+
+def test_a_permissions_403_is_not_retried() -> None:
+    """`Resource not accessible by integration` is an answer, not a blip."""
+    assert notifier._is_retryable(403, {}) is False
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{"retry-after": "60"}, {"x-ratelimit-remaining": "0"}],
+)
+def test_a_rate_limit_403_is_retried(headers: dict[str, str]) -> None:
+    assert notifier._is_retryable(403, headers) is True
+
+
+def test_server_errors_are_retried_and_client_errors_are_not() -> None:
+    assert all(notifier._is_retryable(code, {}) for code in (429, 500, 502, 503, 504))
+    assert not any(notifier._is_retryable(code, {}) for code in (400, 404, 409, 422))
+
+
+def test_the_pr_file_filter_matches_what_the_gate_scans() -> None:
+    """A looser filter tells authors a green required check is red."""
+    prefix = f"{notifier.VERSIONS_DIR}/"
+    assert notifier._in_versions_dir(f"{prefix}rev.py")
+    assert not notifier._in_versions_dir(f"{prefix}sub/rev.py")
+    assert not notifier._in_versions_dir(f"{prefix}README.md")
+    assert not notifier._in_versions_dir("backend/alembic/env.py")
