@@ -23,7 +23,46 @@
  *    `vetted_unattested` is written by `/vet-plan` whenever coord refuses the
  *    `vetted` attestation (separation of duties: an actor may not attest its
  *    own work unit). It is a normal, common state, not an error.
+ *
+ * ## The console contract (added by Phase 3 Wave 1)
+ *
+ * `/plans` renders through the console primitives
+ * (`frontend/docs/console-ui-style-guide.md`), so this module now also carries
+ * the two things R3 requires of a console surface, in the shape
+ * `alertStatus.ts` established:
+ *
+ *   - {@link PLAN_ATTENTION_BY_TONE} — the audited tone → attention table,
+ *     TOTAL over {@link PlanStatusTone}: red iff a human must act on the plan
+ *     now, amber iff we are waiting on something (or do not know), calm
+ *     otherwise;
+ *   - {@link derivePlanStatus} — the pure row-status derivation the row
+ *     component renders, so the copy an operator reads is testable without a
+ *     DOM.
+ *
+ * `planStatus.test.ts` audits {@link PLAN_TONE_CLASS} against that table with
+ * `paletteDisagreements`, so the hue and the severity can never drift apart.
  */
+
+import type { Attention } from "@/components/console/attention";
+import type { RowStatus, StatusPalette } from "@/components/console/statusRow";
+
+/**
+ * One coord work-unit as the web proxy serves it.
+ *
+ * Declared HERE rather than beside a card component: it is the surface's data
+ * shape, and it outlives any one rendering of it. `PlanCard` re-exports it so
+ * its existing importers (`planSort`, `/spawn`, `/history`) are untouched.
+ */
+export interface CoordPlanRow {
+  slug: string;
+  title?: string;
+  status?: string;
+  current_phase?: string | null;
+  /** coord `work_units.created_at` — the sort key operators asked for. */
+  created_at?: string | null;
+  updated_at?: string | null;
+  shipped_at?: string | null;
+}
 
 /** Colour families, shared with the merge pipeline's status vocabulary. */
 export type PlanStatusTone =
@@ -109,4 +148,90 @@ export function describePlanStatus(raw?: string | null): PlanStatusTag {
       ? `${hit.label} — derived by coord from a predicate (not directly settable).`
       : hit.label,
   };
+}
+
+// ============================================================================
+// The console contract — R3's audited severity table, and the row status.
+// ============================================================================
+
+/**
+ * The audited tone -> attention table. TOTAL over {@link PlanStatusTone},
+ * and `planStatus.test.ts` asserts {@link PLAN_TONE_CLASS} agrees with it.
+ *
+ * Only two tones are loud, and each earns it:
+ *
+ * - `blocked` is `author` — a blocked work unit is blocked ON A HUMAN. Nothing
+ *   downstream clears it; that is what the status means.
+ * - `unknown` is `waiting`, which is `attentionOf`'s floor rather than
+ *   a claim. Work-unit status is opaque text in coord, so an unrecognised
+ *   value is a statement of ignorance, and rendering ignorance as calm is the
+ *   `silent-empty-is-unknown` mistake with a badge attached.
+ *
+ * Everything else is calm on purpose. `shipped`, `ready`, `active`, `pending`
+ * and `closed` are all states where the next move belongs to a process, not to
+ * the operator reading the list — and a red badge nobody must act on is what
+ * trains the eye to ignore red.
+ */
+export const PLAN_ATTENTION_BY_TONE: Record<PlanStatusTone, Attention> = {
+  blocked: "author",
+  unknown: "waiting",
+  shipped: "none",
+  ready: "none",
+  active: "none",
+  pending: "none",
+  closed: "none",
+};
+
+/** Red <=> the colourblind-safe `x` glyph: exactly the `author` tones. */
+export const PLAN_AUTHOR_GLYPH_TONES: ReadonlySet<PlanStatusTone> = new Set(
+  (Object.keys(PLAN_ATTENTION_BY_TONE) as PlanStatusTone[]).filter(
+    (t) => PLAN_ATTENTION_BY_TONE[t] === "author"
+  )
+);
+
+export const PLAN_STATUS_PALETTE: StatusPalette<PlanStatusTone> = {
+  badgeClass: PLAN_TONE_CLASS,
+  authorGlyphKinds: PLAN_AUTHOR_GLYPH_TONES,
+  doneGlyphKinds: new Set<PlanStatusTone>(["shipped"]),
+};
+
+/**
+ * The row status `/plans` renders: the plan's operator-facing status tag,
+ * widened into the console's {@link RowStatus} shape.
+ *
+ * `kind` is the TONE, not the raw coord status, because the tone is what the
+ * palette is keyed on and what the R3 audit can be total over — coord's status
+ * column is opaque text with no closed vocabulary to be total over. `label`
+ * stays the human status word (and, for an unrecognised value, the raw string
+ * verbatim), so nothing is lost by keying the colour on the tone.
+ */
+export function derivePlanStatus(
+  plan: Pick<CoordPlanRow, "status" | "current_phase">
+): RowStatus<PlanStatusTone> {
+  const tag = describePlanStatus(plan.status);
+  return {
+    kind: tag.tone,
+    label: tag.label,
+    reason: plan.current_phase ? `phase ${plan.current_phase}` : undefined,
+    attention: PLAN_ATTENTION_BY_TONE[tag.tone],
+  };
+}
+
+/**
+ * The date prefix a plan slug conventionally opens with, used as the row's
+ * mono identity chip. Falls back to the leading segment so a slug that does
+ * not follow the convention still gets a stable, short identity rather than a
+ * blank chip.
+ */
+export function planIdentity(slug: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})-/.exec(slug);
+  if (m?.[1]) return m[1];
+  const head = slug.split("-").slice(0, 2).join("-");
+  return head || slug;
+}
+
+/** The slug with its {@link planIdentity} prefix removed (never empty). */
+export function planRest(slug: string): string {
+  const id = planIdentity(slug);
+  return slug.startsWith(`${id}-`) ? slug.slice(id.length + 1) : slug;
 }
