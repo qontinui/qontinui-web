@@ -23,6 +23,13 @@
  *    `worktree_unjunctioned`, `worktree_disk_danger`, `red_main`, `pr_merge_*`,
  *    `auth_client_aud_active_negation`, …). A hardcoded vocabulary rots every
  *    time a watcher is added.
+ *  - **Both filters are multi-select**, because both are repeatable on the
+ *    API: the proxy declares `severity` / `kind` as `list[str]` and forwards
+ *    them as repeated query keys (`?kind=stale_wip&kind=red_main`) so coord
+ *    filters in SQL. The first cut of this page shipped a single-select
+ *    `<Select>` in front of them, which left the multi-valued half of the
+ *    endpoint unreachable — "warning AND critical", or "the two kinds this
+ *    outage spans", could not be asked at all.
  *  - **Keyset paging** (`limit` + opaque `cursor` → `next_cursor`).
  *
  * DEGRADATION. The coord half of the plan may not have deployed. Coord's query
@@ -31,21 +38,20 @@
  * `kinds`, and 500 rows regardless of `limit`. A missing `total_count` is
  * therefore UNKNOWN, not truth — the count renders with a `≥` prefix off the
  * rows in hand, and never silently as the real number.
+ *
+ * The kind filter degrades the same way, and its trap is subtler: with no
+ * served vocabulary the options come from the rows, and the rows are already
+ * filtered by the selection. Derived per-response they would collapse to the
+ * one selected kind and a second could never be added, so the fallback
+ * ACCUMULATES every kind ever seen (`seenKinds`) instead.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AlertTriangle, Filter, RefreshCw } from "lucide-react";
-import { CollapsiblePanel, RecordList } from "@/components/console";
+import { CollapsiblePanel, FilterChips, RecordList } from "@/components/console";
 import { AlertRow } from "@/components/admin/coord/AlertRow";
 import {
   alertSubject,
@@ -58,10 +64,7 @@ const POLL_INTERVAL_MS = 10_000;
 /** One screenful of rows. Coord's hard max is 1000; 100 is its default. */
 const PAGE_SIZE = 100;
 
-const ANY = "any";
-
 const SEVERITIES = [
-  { value: ANY, label: "All severities" },
   { value: "info", label: "Info" },
   { value: "warning", label: "Warning" },
   { value: "critical", label: "Critical" },
@@ -70,6 +73,20 @@ const SEVERITIES = [
 /** Coord's `kind` values are snake_case machine names — title them for the menu. */
 function kindLabel(kind: string): string {
   return kind.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * Toggle `value` in a selection, preserving the array identity when nothing
+ * changes is NOT a concern here — every call is a user action.
+ *
+ * Returned SORTED so the same selection always produces the same query string:
+ * `query` is a `useCallback` keyed on these arrays, and two orderings of the
+ * same filter would otherwise be two different requests.
+ */
+function toggle(selection: string[], value: string): string[] {
+  return selection.includes(value)
+    ? selection.filter((v) => v !== value)
+    : [...selection, value].sort();
 }
 
 interface AlertsResponse {
@@ -198,8 +215,13 @@ function useCriticalTotal(): {
 }
 
 export default function CoordAlertsPage() {
-  const [severity, setSeverity] = useState(ANY);
-  const [kind, setKind] = useState(ANY);
+  // Both filters are MULTI-select and both ride the wire as REPEATED query
+  // keys (`?kind=stale_wip&kind=red_main`) — the shape the proxy declares and
+  // coord parses. An empty array is "no filter", never `?kind=`: the proxy
+  // drops blanks precisely because an explicitly-empty param asks coord for
+  // the rows whose kind is the empty string.
+  const [severities, setSeverities] = useState<string[]>([]);
+  const [selectedKinds, setSelectedKinds] = useState<string[]>([]);
   const [includeResolved, setIncludeResolved] = useState(false);
 
   /** Accumulated pages. Index 0 is the live page the poller refreshes. */
@@ -234,13 +256,55 @@ export default function CoordAlertsPage() {
       const qs = new URLSearchParams();
       qs.set("include_resolved", String(includeResolved));
       qs.set("limit", String(PAGE_SIZE));
-      if (severity !== ANY) qs.set("severity", severity);
-      if (kind !== ANY) qs.set("kind", kind);
+      // `append`, not `set` — a repeated key is the whole point.
+      for (const s of severities) qs.append("severity", s);
+      for (const k of selectedKinds) qs.append("kind", k);
       if (cursor) qs.set("cursor", cursor);
       return `${API}/alerts?${qs.toString()}`;
     },
-    [severity, kind, includeResolved]
+    // Array identity is stable between renders (`useState` hands back the same
+    // array until a toggle replaces it), so this does not re-fire per render.
+    [severities, selectedKinds, includeResolved]
   );
+
+  /**
+   * Every kind seen in a ROW so far, accumulated across responses.
+   *
+   * Only consulted on the degraded path (coord served no `kinds`), and it has
+   * to accumulate rather than read the current window because on that path the
+   * window is ALREADY filtered by the selection. Deriving the options from it
+   * directly would collapse the chip row to the one kind currently filtered on
+   * the moment you picked it, and a second kind could never be added — the
+   * multi-select would be a capability with no way to reach it, which is the
+   * exact shape this page exists to stop shipping.
+   *
+   * Written where a response COMMITS, never during render: a set filled from a
+   * `useMemo` body is a side effect in render, and the accumulation has to
+   * happen exactly once per committed response either way. Filled
+   * unconditionally rather than only on the degraded path, so a coord that
+   * flaps between serving `kinds` and not has a full fallback set the moment
+   * it stops.
+   *
+   * STATE rather than a ref, and the set is replaced only when a response
+   * actually carries a kind that is new. A ref would be cheaper by one
+   * `useState`, but nothing downstream could depend on it honestly: the memo
+   * below would have to list `alerts` to re-run, which is a dependency it does
+   * not read — a lie the linter catches and a reader cannot. Returning the
+   * SAME set when nothing is new keeps the cost at zero anyway, and the update
+   * batches with the `setPages` beside it.
+   */
+  const [seenKinds, setSeenKinds] = useState<ReadonlySet<string>>(new Set());
+
+  /** Record the kinds a committed response carried. */
+  const rememberKinds = useCallback((rows: CoordAlertRow[]) => {
+    setSeenKinds((prev) => {
+      const added = rows.filter((a) => a.kind && !prev.has(a.kind));
+      if (added.length === 0) return prev;
+      const next = new Set(prev);
+      for (const a of added) next.add(a.kind as string);
+      return next;
+    });
+  }, []);
 
   /** Refetch the FIRST page, discarding anything the user had paged into. */
   const fetchFirstPage = useCallback(async () => {
@@ -249,6 +313,7 @@ export default function CoordAlertsPage() {
       const body = readBody(await httpClient.get<unknown>(query(null)));
       if (mine !== generation.current) return;
       setHead(body);
+      rememberKinds(body.alerts ?? []);
       setPages([body.alerts ?? []]);
       setTailCursor(body.next_cursor ?? null);
       setError(null);
@@ -258,7 +323,7 @@ export default function CoordAlertsPage() {
     } finally {
       if (mine === generation.current) setLoading(false);
     }
-  }, [query]);
+  }, [query, rememberKinds]);
 
   const loadMore = useCallback(async () => {
     if (!tailCursor) return;
@@ -269,6 +334,7 @@ export default function CoordAlertsPage() {
     try {
       const body = readBody(await httpClient.get<unknown>(query(tailCursor)));
       if (mine !== generation.current) return;
+      rememberKinds(body.alerts ?? []);
       setPages((prev) => [...prev, body.alerts ?? []]);
       setTailCursor(body.next_cursor ?? null);
       setError(null);
@@ -278,7 +344,7 @@ export default function CoordAlertsPage() {
     } finally {
       if (mine === generation.current) setPaging(false);
     }
-  }, [query, tailCursor]);
+  }, [query, tailCursor, rememberKinds]);
 
   // Filters reset the accumulation; the poller only ever refreshes page 1.
   useEffect(() => {
@@ -297,23 +363,23 @@ export default function CoordAlertsPage() {
   const servedKinds = useMemo(() => readKinds(head), [head]);
   const kindsAreServed = servedKinds.length > 0;
 
-  // The kind vocabulary: served by the API when it can be, otherwise derived
-  // from the rows in hand. The derived list is PARTIAL by construction (it can
-  // only name kinds inside the served window) — labelled as such rather than
-  // presented as the vocabulary.
+  // The kind vocabulary: served by the API when it can be, otherwise every
+  // kind observed so far. The derived list is PARTIAL by construction (it can
+  // only name kinds that have appeared in some window) — labelled as such
+  // rather than presented as the vocabulary.
   //
-  // The SELECTED kind is unioned into BOTH branches. Coord's served list is
-  // "kinds with a live row", so resolving the last row of the kind currently
-  // filtered on would drop it from the options and blank the trigger while the
-  // filter is still applied — a control showing nothing while doing something.
+  // The SELECTED kinds are unioned into BOTH branches. Coord's served list is
+  // "kinds with a live row", so resolving the last row of a kind currently
+  // filtered on would drop its chip from the row while the filter is still
+  // applied — a filter doing something with no control showing it.
   const kinds = useMemo(() => {
     const seen = new Set<string>(servedKinds);
     if (seen.size === 0) {
-      for (const a of alerts) if (a.kind) seen.add(a.kind);
+      for (const k of seenKinds) seen.add(k);
     }
-    if (kind !== ANY) seen.add(kind);
+    for (const k of selectedKinds) seen.add(k);
     return [...seen].sort();
-  }, [servedKinds, alerts, kind]);
+  }, [servedKinds, seenKinds, selectedKinds]);
 
   const headTotal = head?.total_count;
   const totalKnown = typeof headTotal === "number";
@@ -376,45 +442,39 @@ export default function CoordAlertsPage() {
       >
         <div className="flex flex-wrap items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={severity} onValueChange={setSeverity}>
-            <SelectTrigger
-              className="w-[160px]"
-              data-testid="coord-alerts-severity-select"
-            >
-              <SelectValue placeholder="severity" />
-            </SelectTrigger>
-            <SelectContent>
-              {SEVERITIES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger
-              className="w-[200px]"
-              data-testid="coord-alerts-kind-select"
-              title={
-                kindsAreServed
-                  ? "kinds served by the API"
-                  : "this coord build does not serve the kind list — showing only " +
-                    "the kinds present in the rows loaded so far"
-              }
-            >
-              <SelectValue placeholder="kind" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>
-                {kindsAreServed ? "All kinds" : "All kinds (list partial)"}
-              </SelectItem>
-              {kinds.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {kindLabel(k)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterChips
+            label="severity"
+            testIdPrefix="coord-alerts-severity-filter"
+            options={SEVERITIES}
+            selected={severities}
+            onToggle={(v) => setSeverities((prev) => toggle(prev, v))}
+            onClear={() => setSeverities([])}
+          />
+          <FilterChips
+            label="kind"
+            testIdPrefix="coord-alerts-kind-filter"
+            options={kinds.map((k) => ({ value: k, label: kindLabel(k) }))}
+            // The vocabulary is coord's, not ours: 43 distinct live kinds on
+            // 2026-08-24 (qontinui-web#1063) against the ~10 this page was
+            // written for. Uncapped that is four or five wrapped rows of chips
+            // above the records — §5's density budget spent on a control.
+            // Selected kinds are exempt from the cap.
+            maxVisible={12}
+            selected={selectedKinds}
+            onToggle={(v) => setSelectedKinds((prev) => toggle(prev, v))}
+            onClear={() => setSelectedKinds([])}
+            // The vocabulary is served by the API when it can be; when it is
+            // not, the chips are only the kinds inside the window already
+            // loaded. Say which — a partial list presented as the vocabulary
+            // is the `silent-empty-is-unknown` mistake in menu form.
+            allLabel={kindsAreServed ? "all" : "all (list partial)"}
+            title={
+              kindsAreServed
+                ? "kinds served by the API"
+                : "this coord build does not serve the kind list — showing only " +
+                  "the kinds present in the rows loaded so far"
+            }
+          />
           <div className="flex items-center gap-1.5 ml-2">
             <Switch
               id="include-resolved"

@@ -20,6 +20,7 @@
  * | `RecordList` | R2, R5 — one open at a time, honest empty state |
  * | `RecordDetail` | R5 — detail expands in place, fixed section order |
  * | `FilterTabs` | R6 — live counts, and `–`-not-`0` for an unfetched one |
+ * | `FilterChips` | R6 — the same strip where the filter is MULTI-select |
  * | `CollapsiblePanel` | R7 — collapses, keeps its signal, unmounts children |
  * | `statusRow` atoms | R2, R3, R4 — the badge, the accent, the timestamp |
  * | `attention` | R3 — the severity vocabulary and its palette invariant |
@@ -66,6 +67,9 @@ export type {
 
 export { FilterTabs } from "./FilterTabs";
 export type { FilterTab, FilterTabsProps } from "./FilterTabs";
+
+export { FilterChips } from "./FilterChips";
+export type { FilterChipOption, FilterChipsProps } from "./FilterChips";
 
 export { CollapsiblePanel } from "./CollapsiblePanel";
 
