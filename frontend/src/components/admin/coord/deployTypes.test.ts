@@ -3,10 +3,9 @@ import { describe, it, expect } from "vitest";
 import {
   MANAGED_HEAD_FORK_SUBCLASS,
   isManagedPredictedHeadFork,
-  verdictChipVariant,
   verdictChipLabel,
-} from "./DeployCard";
-import type { BadgeVariant, DimensionVerdict } from "./LandCard";
+} from "./deployTypes";
+import type { DimensionVerdict } from "./landTypes";
 
 /**
  * Anti-drift guard for the schema/migration predicted-head-fork verdict
@@ -50,49 +49,16 @@ describe("isManagedPredictedHeadFork", () => {
   });
 });
 
-describe("verdictChipVariant — managed fork forced amber", () => {
-  it("managed fork → warning (amber) even when outcome is Failure", () => {
-    expect(
-      verdictChipVariant(
-        verdict({
-          drift_subclass: MANAGED_HEAD_FORK_SUBCLASS,
-          outcome: "Failure",
-        })
-      )
-    ).toBe<BadgeVariant>("warning");
-  });
-  it("managed fork → warning even when outcome is contradiction", () => {
-    expect(
-      verdictChipVariant(
-        verdict({
-          drift_subclass: MANAGED_HEAD_FORK_SUBCLASS,
-          outcome: "contradiction",
-        })
-      )
-    ).toBe<BadgeVariant>("warning");
-  });
-  it("unmanaged predicted_head_fork stays red (destructive) via outcome", () => {
-    expect(
-      verdictChipVariant(
-        verdict({
-          drift_subclass: "schema:predicted_head_fork",
-          outcome: "contradiction",
-        })
-      )
-    ).toBe<BadgeVariant>("destructive");
-  });
-  it("ordinary verdicts fall through to the outcome color ladder", () => {
-    expect(verdictChipVariant(verdict({ outcome: "confirmed" }))).toBe<BadgeVariant>(
-      "success"
-    );
-    expect(verdictChipVariant(verdict({ outcome: "failure" }))).toBe<BadgeVariant>(
-      "destructive"
-    );
-    expect(verdictChipVariant(verdict({ outcome: null }))).toBe<BadgeVariant>(
-      "outline"
-    );
-  });
-});
+/*
+ * The `verdictChipVariant` describe block that stood here was DELETED in Phase
+ * 3 Wave 2 with the function it covered. `<DeployRow>` renders per-dimension
+ * verdicts through `<VerdictChips>`, which encodes the outcome as a
+ * colourblind-safe GLYPH rather than a `BadgeVariant`, so nothing called it —
+ * and the block described the managed head-fork as "forced amber", which is no
+ * longer what the surface does (it renders the calm `~`). The managed-fork
+ * contract itself is still pinned, by the `isManagedPredictedHeadFork` and
+ * `verdictChipLabel` blocks either side of this note.
+ */
 
 describe("verdictChipLabel — friendly managed-fork label", () => {
   it("managed fork reads 'auto-managed' (not its raw outcome)", () => {

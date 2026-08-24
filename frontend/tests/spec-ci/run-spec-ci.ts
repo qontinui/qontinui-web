@@ -981,7 +981,7 @@ function routeForSpec(
     // Coord lands dashboard (slug != route segment). Auto-fetches the recent
     // lands list; metadata.routeStubs fulfills it with one canned land row
     // carrying a correlation_id + sibling_cascades (web #457 multi-repo
-    // consumer) so the cross-repo badge + verified LandCard render
+    // consumer) so the cross-repo badge + verified LandRow render
     // deterministically (prod's real list is empty).
     "coord-lands": "/admin/coord/lands",
     // Dynamic detail routes — sentinel ids for stubbed fetch resolution.

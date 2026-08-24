@@ -12,11 +12,19 @@
  * positive predictions, or no actual positives). We render "no data yet"
  * for nulls and NEVER fabricate a 0% or 100%. `formatRate` is the single
  * source of that rule and is unit-tested.
+ *
+ * ## R7 (Phase 3 Wave 2)
+ *
+ * This component no longer renders its own `<Card><CardHeader><CardTitle>`.
+ * It is infrastructural material — per-dimension predictor calibration, the
+ * third section of a three-section page — so `lands/page.tsx` now hosts it in
+ * a `<CollapsiblePanel>` that supplies the header, keeps a summary badge
+ * visible while collapsed, and UNMOUNTS this table when the operator folds it
+ * away (which is also what stops its 30s poll). A component that draws its own
+ * card cannot be given a collapsible header without drawing two.
  */
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Gauge } from "lucide-react";
 
 export interface PrecisionDimension {
   dimension: string;
@@ -61,15 +69,8 @@ export function LandPrecisionPanel({
   const dims = data?.dimensions ?? [];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Gauge className="h-4 w-4" />
-          Predictor calibration (per dimension)
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        {loading && dims.length === 0 ? (
+    <>
+      {loading && dims.length === 0 ? (
           <div className="p-4">
             <Skeleton className="h-24 w-full" />
           </div>
@@ -150,7 +151,6 @@ export function LandPrecisionPanel({
             </table>
           </div>
         )}
-      </CardContent>
-    </Card>
+    </>
   );
 }

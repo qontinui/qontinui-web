@@ -166,6 +166,27 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
 // ---------------------------------------------------------------------------
 
 export const PER_ROUTE_WAIVERS: Readonly<Record<string, PerRouteWaiver>> = {
+  "/admin/coord/agent-registry": {
+    serverPatterns: ["/api/v1/agent-registry/admin/"],
+    class: "ci-env",
+    note:
+      "CI-ENV-UNAVOIDABLE (hermetic lane). /api/v1/agent-registry/admin/* are " +
+      "the two ADMIN proxies behind the tenant-default editor: both depend on " +
+      "require_coord_tenant_admin, which resolves the operator's tenant and " +
+      "role via coord (GET /admin/coord/me) before either handler runs. No " +
+      "coord runs in the hermetic Spec CI stack, so that dependency 502s and " +
+      "the page's on-mount read never reaches its own handler. Same class as " +
+      "the /api/v1/operations/ global waiver — a coord-backed /admin/coord/* " +
+      "dashboard with no IR spec. Route-scoped because exactly one crawl route " +
+      "owns these endpoints. " +
+      "The pattern is deliberately anchored on the /admin/ segment: the " +
+      "PER-USER routes on the same router (/api/v1/agent-registry and " +
+      "/api/v1/agent-registry/prefs/*, which /settings/agents drives) are NOT " +
+      "waived, so a real regression on them still reds the gate. " +
+      "Strictly stronger follow-up: give this page an IR spec + prod-parity " +
+      "hermetic stub, which would assert the authored render instead of only " +
+      "tolerating the 5xx.",
+  },
   "/admin/coord/gates": {
     serverPatterns: ["/api/v1/admin-dev/overview"],
     class: "ci-env",

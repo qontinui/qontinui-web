@@ -58,6 +58,7 @@ import {
   Anchor,
   Bell,
   BookOpen,
+  Bot,
   Boxes,
   ChevronDown,
   ExternalLink,
@@ -367,6 +368,15 @@ const GROUPS: NavGroup[] = [
         label: "Members",
         icon: UserCog,
         testId: "coord-nav-members",
+      },
+      {
+        // The tenant DEFAULT for each agent — what a member with no recorded
+        // preference gets. A member's own preference lives at
+        // /settings/agents, which is not a console surface.
+        href: "/admin/coord/agent-registry",
+        label: "Agent Registry",
+        icon: Bot,
+        testId: "coord-nav-agent-registry",
       },
       {
         href: "/admin/agent-claims",
