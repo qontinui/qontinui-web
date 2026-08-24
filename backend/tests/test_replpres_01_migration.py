@@ -49,6 +49,15 @@ What is asserted, and why each one is unsafe-if-wrong
    expression — that forces the naive value to be interpreted as local time
    and comes back off by the whole offset.
 
+   ``boot_at`` is held to the same rule by a cheaper route, and deliberately
+   so — there is no second subtraction, and none is needed. The insert arm
+   writes both columns from one ``now()``, so step 4 of the walk below asserts
+   they come back EQUAL, and an aware datetime never compares equal to a naive
+   one in Python: that fails the moment exactly one of the two goes naive. The
+   ``first_hb.tzinfo is not None`` check beside it fails when both do. Between
+   them the tz space is closed, so the one assertion that reads ``uptime_secs``
+   is about the PROJECTION, never about the column's type.
+
 3. **``replica_id`` is the primary key.** It is the conflict target of coord's
    upsert (``ON CONFLICT (replica_id)``). With no unique constraint matching
    it PostgreSQL does not append — it raises ``InvalidColumnReference`` — and
@@ -68,10 +77,17 @@ What is asserted, and why each one is unsafe-if-wrong
    a consumer that has since landed, so the transcription is of shipped code
    rather than of a proposal.
 
-5. **The upsert advances ``heartbeat_at`` and leaves ``boot_at`` alone.**
-   ``boot_at`` is what makes uptime truthful in the ``coord_query_workers``
-   drill-down; a ``DO UPDATE`` that re-seated it would report every replica as
-   just-booted, forever, without ever erroring.
+5. **The upsert advances ``heartbeat_at`` and leaves ``boot_at`` alone**, and
+   ``uptime_secs >= age_secs`` therefore holds. ``boot_at`` is what makes
+   uptime truthful in the ``coord_query_workers`` drill-down; a ``DO UPDATE``
+   that re-seated it would report every replica as just-booted, forever,
+   without ever erroring — pinned directly, on the upsert, by
+   ``second_boot == first_boot``. Coord calls the resulting ordering
+   *structural* (``worker_ledger.rs``) and renders the DIFFERENCE of the two
+   as "how long this replica went on ticking before it went quiet"; step 7 of
+   the walk below reads that difference once, off a seeded quiet replica, as a
+   guard on the transcribed projection rather than on the upsert this item
+   covers.
 
 6. **The upsert can DEMOTE ``dedicated_pool`` to false.** A replica whose
    dedicated lease pool fails mid-life must be able to overwrite its own
@@ -174,10 +190,27 @@ _COORD_PRUNE = text(
 # and the one that makes `timestamptz` load-bearing: `now() - heartbeat_at`
 # type-checks against a naive `timestamp` too, and then returns an age wrong by
 # the session's UTC offset — which is a live replica reading as hours stale.
+#
+# All FOUR select expressions, in coord's order. The width is load-bearing
+# because coord decodes this result set POSITIONALLY:
+# `row.try_get::<_, f64>(2)` is `uptime_secs` and `try_get::<_, bool>(3)` is
+# `dedicated_pool` (`worker_ledger.rs`; index 2 is read with `.ok()` because
+# uptime is drill-down context with no gate authority, index 3 with a hard
+# `continue`). A copy of this statement that is a column short is therefore
+# not one column less thorough — it is a different projection, in which
+# `dedicated_pool` sits at the index coord decodes as an `f64`. Step 6
+# unpacks all four names against it, which is what pins both facts.
+#
+# Note what this statement does NOT have to carry: the timezone proof. Step 4
+# settles that from the pair it writes with a single `now()` — an aware and a
+# naive datetime never compare equal in Python, so `first_hb == first_boot`
+# fails if exactly one column goes naive, and `first_hb.tzinfo is not None`
+# fails if both do.
 _COORD_LOAD = text(
     """
     SELECT replica_id,
            EXTRACT(EPOCH FROM (now() - heartbeat_at))::float8 AS age_secs,
+           EXTRACT(EPOCH FROM (now() - boot_at))::float8 AS uptime_secs,
            dedicated_pool
       FROM coord.replica_presence
     """
@@ -399,7 +432,15 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
             conn.execute(text("SET TIME ZONE 'Pacific/Kiritimati'"))
             loaded = conn.execute(_COORD_LOAD).all()
         assert len(loaded) == 1
-        loaded_id, age_secs, loaded_dedicated = loaded[0]
+        # Four-arity unpack, deliberately. This is the positional guard: coord
+        # decodes this result set by index — `try_get::<_, f64>(2)` is uptime,
+        # `try_get::<_, bool>(3)` is `dedicated_pool` — so binding four names
+        # pins the projection's WIDTH (a dropped or added expression raises
+        # here) and pins `dedicated_pool` at the index coord reads it from.
+        # `_uptime_secs` is unread at this step on purpose: with both
+        # timestamps written by one `now()` there is nothing here it could
+        # show that step 7 does not show better.
+        loaded_id, age_secs, _uptime_secs, loaded_dedicated = loaded[0]
         assert loaded_id == replica
         assert loaded_dedicated is False
         assert 0.0 <= age_secs < 60.0, (
@@ -409,9 +450,26 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         )
 
         # ----------------------------------------------------------------
-        # 7. Coord's retention sweep. Seed one stale row beside the fresh
-        #    one and run the DELETE the index exists for: the stale row goes,
-        #    the fresh one stays.
+        # 7. Seed a QUIET replica beside the fresh one — booted 9h ago, last
+        #    ticked 3h ago — and read the DIFFERENCE coord's drill-down
+        #    renders from it: "how long this replica went on ticking before
+        #    it went quiet", 6h here.
+        #
+        #    This is a TRANSCRIPTION guard, not a schema one. "boot_at
+        #    survived the upsert" is owned outright by step 5's
+        #    `second_boot == first_boot`, and the fresh row cannot show a
+        #    difference at all (one `now()` writes both columns). What
+        #    nothing else catches is a future edit mangling `_COORD_LOAD`
+        #    itself — swapping the two EXTRACT expressions flips this to
+        #    -6h, repointing the uptime one at `heartbeat_at` collapses it
+        #    to 0 — and that block is worth only as much as its fidelity to
+        #    coord's statement.
+        #
+        #    Deterministic, not timing-sensitive: both EXTRACTs share one
+        #    statement-stable `now()`, so it cancels and this is precisely
+        #    `heartbeat_at - boot_at`. `approx` is still right — the two
+        #    float8 values round independently, so the difference lands a
+        #    hair off 21600.0 and a bare `==` would be flaky.
         # ----------------------------------------------------------------
         stale = uuid.uuid4()
         with engine.begin() as conn:
@@ -428,6 +486,23 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
             )
         assert _row_count(engine) == 2
 
+        # `_COORD_LOAD` verbatim again — never a narrowed variant of it, or
+        # this stops being a test of the statement coord runs. The fresh row
+        # comes back too and is simply not the one read here.
+        with engine.connect() as conn:
+            by_id = {row[0]: row for row in conn.execute(_COORD_LOAD).all()}
+        _, stale_age, stale_uptime, _ = by_id[stale]
+        assert stale_uptime - stale_age == pytest.approx(6 * 3600, abs=1), (
+            "boot_at and heartbeat_at must subtract independently: a row that "
+            "booted 9h ago and last ticked 3h ago went on ticking for 6h, and "
+            f"coord's drill-down renders that number. Got {stale_uptime}s - "
+            f"{stale_age}s = {stale_uptime - stale_age}s."
+        )
+
+        # ----------------------------------------------------------------
+        # 8. Coord's retention sweep — the DELETE the index exists for: the
+        #    quiet row goes, the fresh one stays.
+        # ----------------------------------------------------------------
         with engine.begin() as conn:
             # coord binds `PRESENCE_RETENTION_SECS` here — 2h
             # (`replica_presence.rs`: `2.0 * 60.0 * 60.0`).
@@ -442,7 +517,7 @@ def test_replpres_01_creates_the_contract_coord_actually_consumes() -> None:
         )
 
         # ----------------------------------------------------------------
-        # 8. Downgrade takes the index with the table; re-upgrade restores
+        # 9. Downgrade takes the index with the table; re-upgrade restores
         #    a table that is empty (presence is per-boot state, never data
         #    to preserve) and immediately usable.
         # ----------------------------------------------------------------
