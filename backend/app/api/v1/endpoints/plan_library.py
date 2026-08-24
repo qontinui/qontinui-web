@@ -535,8 +535,10 @@ def _citation_error_text(raw: object) -> str:
 
     coord emits a structured body — ``{"error": "citation_surface_unavailable",
     "pg_code": "42P01", "message": …}`` for the pre-migration window, or a
-    ``pg_error`` context object — and this read must survive either without
-    500ing, so the shape is probed rather than assumed.
+    ``pg_error`` context object — ``to_safe_body(op)`` since coord's
+    crate-wide narrowing, the wide ``to_body()`` on a coord predating it — and
+    this read must survive any of them without 500ing, so the shape is probed
+    rather than assumed.
 
     Only the STRUCTURED identifiers cross the boundary: the ``error`` code, the
     ``op`` token naming WHICH read failed (:func:`_coord_error_op`), and the
@@ -582,10 +584,24 @@ def _citation_error_text(raw: object) -> str:
 _CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
 
 #: coord's error code for a Postgres failure it CAUGHT and rendered itself.
-#: ``pg_error::PgErrorContext::to_body()`` emits ``{"error": "db_error",
-#: "context": …, "pg"|"message": …}`` from every route whose query failed, and
-#: on the citation sub-resource that is a transient fault on ONE slug's SELECT.
-#: coord declaring it is coord ANSWERING, exactly as the 503 above is.
+#: On the citation sub-resource that is a transient fault on ONE slug's SELECT,
+#: and coord declaring it is coord ANSWERING, exactly as the 503 above is.
+#:
+#: **It survived coord's error-body narrowing unchanged, and that is the
+#: property this carve-out rests on.** coord swept every production body onto
+#: ``PgErrorContext::to_safe_body(op)`` — ``{error, pg_code, op}`` plus the
+#: schema identifiers PG named — leaving the wide ``to_body()`` with zero
+#: production callers (``#[cfg(test)]`` on coord's ``main``, so it cannot
+#: reach a wire at all). Both spellings write ``error: "db_error"``, so the
+#: discriminator moved not at all while the body around it was rewritten.
+#:
+#: Worth stating rather than assuming: the SQLSTATE moved once already under
+#: exactly this kind of narrowing, to a key this side never looked at, and was
+#: fixed at source only because someone checked. A coord that renamed THIS
+#: field would leave the pairing below matching nothing — and a per-slug PG
+#: fault would go back to tripping the page-wide circuit, silently, with this
+#: suite green. ``TestCoordServiceUnavailableOnTheCitationRead`` pins the
+#: carve-out against BOTH shapes for that reason.
 _COORD_DB_ERROR = "db_error"
 
 #: The ``(status, coord error code)`` pairs that mean *coord answered about the
@@ -653,12 +669,21 @@ def _coord_error_field(parsed: object) -> str | None:
 def _coord_error_code(parsed: object) -> str | None:
     """The Postgres SQLSTATE coord attached, from either place it puts it.
 
-    coord's hand-rolled ``citation_surface_unavailable`` body carries
-    ``pg_code`` at the TOP level; its generic ``pg_error.to_body()`` nests the
-    same thing at ``pg.code``. Both are read, because which one arrives depends
-    on which of coord's error paths answered, and the SQLSTATE is the field
-    that tells an operator whether to wait for a migration (``42P01``) or to
-    page someone.
+    Both of coord's CURRENT bodies put it at the TOP level: the hand-rolled
+    ``citation_surface_unavailable`` body, and — since the crate-wide sweep —
+    ``PgErrorContext::to_safe_body(op)``, which chose the ``pg_code`` spelling
+    precisely because this function is the only structural reader of coord
+    error bodies that exists and looks in exactly two places.
+
+    ``pg.code`` is the LEGACY one. The wide ``to_body()`` nested it there, and
+    that constructor is ``#[cfg(test)]`` on coord's ``main`` today — it has no
+    production caller left. It is still read for the same reason the two-hop
+    citation fallback is still taken: landing is a fact about coord's ``main``,
+    while this read runs against whatever coord actually answered — a
+    deployment mid-roll, a pinned environment, a local coord.
+
+    Either way the SQLSTATE is the field that tells an operator whether to wait
+    for a migration (``42P01``) or to page someone.
     """
     if not isinstance(parsed, dict):
         return None
@@ -723,10 +748,11 @@ def _safe_body_excerpt(body: str, parsed: object) -> str:
     ``unavailable_reason`` is returned to THIS api's caller, and — because the
     page-wide circuit stores the first tripping reason and repeats it on every
     remaining row (:meth:`_CoordProbe._trip`) — it is returned STICKILY, on
-    rows that never talked to coord at all. coord's ``pg_error.to_body()``
+    rows that never talked to coord at all. coord's wide ``pg_error.to_body()``
     carries the full anyhow chain plus structured Postgres fields, and
     ``pg.detail`` routinely contains ROW VALUES (``Key (tenant_id)=(…) is not
-    present in table …``), constraint names and table names. Capping such a
+    present in table …``), constraint names and table names — the shape a coord
+    predating the crate-wide narrowing still answers with. Capping such a
     body at N characters does not make it safe — the row value is in the first
     N — so the fix is to name the fields that may cross rather than to trim the
     ones that may not.
@@ -804,7 +830,11 @@ def _is_transport_failure(
     * ``503`` + ``citation_surface_unavailable`` — the unit is yours and the
       relation backing the citation join is absent (a pre-migration window).
     * ``500`` + ``db_error`` — coord caught a Postgres failure on THIS slug's
-      citation SELECT and rendered it through ``pg_error::to_body()``.
+      citation SELECT and rendered it itself: today through
+      ``to_safe_body(SafeOp::WorkUnitCitationsRead)``, on a coord predating the
+      narrowing through the wide ``pg_error::to_body()``. The pairing is keyed
+      on the ``error`` code, which is ``db_error`` in BOTH — so the carve-out
+      came through the narrowing untouched (see :data:`_COORD_DB_ERROR`).
 
     Both are the same class as the 401/403/405 above, one status band up: coord
     answering *about one sub-resource*. Each must land as a per-slug
