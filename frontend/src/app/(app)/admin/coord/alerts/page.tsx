@@ -267,6 +267,45 @@ export default function CoordAlertsPage() {
     [severities, selectedKinds, includeResolved]
   );
 
+  /**
+   * Every kind seen in a ROW so far, accumulated across responses.
+   *
+   * Only consulted on the degraded path (coord served no `kinds`), and it has
+   * to accumulate rather than read the current window because on that path the
+   * window is ALREADY filtered by the selection. Deriving the options from it
+   * directly would collapse the chip row to the one kind currently filtered on
+   * the moment you picked it, and a second kind could never be added — the
+   * multi-select would be a capability with no way to reach it, which is the
+   * exact shape this page exists to stop shipping.
+   *
+   * Written where a response COMMITS, never during render: a set filled from a
+   * `useMemo` body is a side effect in render, and the accumulation has to
+   * happen exactly once per committed response either way. Filled
+   * unconditionally rather than only on the degraded path, so a coord that
+   * flaps between serving `kinds` and not has a full fallback set the moment
+   * it stops.
+   *
+   * STATE rather than a ref, and the set is replaced only when a response
+   * actually carries a kind that is new. A ref would be cheaper by one
+   * `useState`, but nothing downstream could depend on it honestly: the memo
+   * below would have to list `alerts` to re-run, which is a dependency it does
+   * not read — a lie the linter catches and a reader cannot. Returning the
+   * SAME set when nothing is new keeps the cost at zero anyway, and the update
+   * batches with the `setPages` beside it.
+   */
+  const [seenKinds, setSeenKinds] = useState<ReadonlySet<string>>(new Set());
+
+  /** Record the kinds a committed response carried. */
+  const rememberKinds = useCallback((rows: CoordAlertRow[]) => {
+    setSeenKinds((prev) => {
+      const added = rows.filter((a) => a.kind && !prev.has(a.kind));
+      if (added.length === 0) return prev;
+      const next = new Set(prev);
+      for (const a of added) next.add(a.kind as string);
+      return next;
+    });
+  }, []);
+
   /** Refetch the FIRST page, discarding anything the user had paged into. */
   const fetchFirstPage = useCallback(async () => {
     const mine = ++generation.current;
@@ -274,6 +313,7 @@ export default function CoordAlertsPage() {
       const body = readBody(await httpClient.get<unknown>(query(null)));
       if (mine !== generation.current) return;
       setHead(body);
+      rememberKinds(body.alerts ?? []);
       setPages([body.alerts ?? []]);
       setTailCursor(body.next_cursor ?? null);
       setError(null);
@@ -283,7 +323,7 @@ export default function CoordAlertsPage() {
     } finally {
       if (mine === generation.current) setLoading(false);
     }
-  }, [query]);
+  }, [query, rememberKinds]);
 
   const loadMore = useCallback(async () => {
     if (!tailCursor) return;
@@ -294,6 +334,7 @@ export default function CoordAlertsPage() {
     try {
       const body = readBody(await httpClient.get<unknown>(query(tailCursor)));
       if (mine !== generation.current) return;
+      rememberKinds(body.alerts ?? []);
       setPages((prev) => [...prev, body.alerts ?? []]);
       setTailCursor(body.next_cursor ?? null);
       setError(null);
@@ -303,7 +344,7 @@ export default function CoordAlertsPage() {
     } finally {
       if (mine === generation.current) setPaging(false);
     }
-  }, [query, tailCursor]);
+  }, [query, tailCursor, rememberKinds]);
 
   // Filters reset the accumulation; the poller only ever refreshes page 1.
   useEffect(() => {
@@ -322,22 +363,6 @@ export default function CoordAlertsPage() {
   const servedKinds = useMemo(() => readKinds(head), [head]);
   const kindsAreServed = servedKinds.length > 0;
 
-  /**
-   * Every kind seen in a ROW so far, accumulated across responses.
-   *
-   * Only consulted on the degraded path (coord served no `kinds`), and it has
-   * to accumulate rather than read the current window because on that path the
-   * window is ALREADY filtered by the selection. Deriving the options from it
-   * directly would collapse the chip row to the one kind currently filtered on
-   * the moment you picked it, and a second kind could never be added — the
-   * multi-select would be a capability with no way to reach it, which is the
-   * exact shape this page exists to stop shipping.
-   *
-   * A ref, not state: it only ever feeds a `useMemo` that already re-runs when
-   * `alerts` changes, so making it state would add a render for no new paint.
-   */
-  const seenKinds = useRef<Set<string>>(new Set());
-
   // The kind vocabulary: served by the API when it can be, otherwise every
   // kind observed so far. The derived list is PARTIAL by construction (it can
   // only name kinds that have appeared in some window) — labelled as such
@@ -348,14 +373,13 @@ export default function CoordAlertsPage() {
   // filtered on would drop its chip from the row while the filter is still
   // applied — a filter doing something with no control showing it.
   const kinds = useMemo(() => {
-    for (const a of alerts) if (a.kind) seenKinds.current.add(a.kind);
     const seen = new Set<string>(servedKinds);
     if (seen.size === 0) {
-      for (const k of seenKinds.current) seen.add(k);
+      for (const k of seenKinds) seen.add(k);
     }
     for (const k of selectedKinds) seen.add(k);
     return [...seen].sort();
-  }, [servedKinds, alerts, selectedKinds]);
+  }, [servedKinds, seenKinds, selectedKinds]);
 
   const headTotal = head?.total_count;
   const totalKnown = typeof headTotal === "number";

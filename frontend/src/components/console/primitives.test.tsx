@@ -183,7 +183,7 @@ describe("FilterChips (R6, multi-select)", () => {
     );
   });
 
-  it("disables `all` while it is already the state, so a no-op cannot fire", () => {
+  it("makes `all` inert while it is already the state, so a no-op cannot fire", () => {
     const { clear } = renderChips([]);
     const all = screen.getByTestId("f-all");
     // A caller's `onClear` is `setState([])` — a FRESH array every call — so a
@@ -191,14 +191,33 @@ describe("FilterChips (R6, multi-select)", () => {
     // downstream. On a paging surface that re-runs the page-1 fetch and
     // discards whatever the operator had paged into, for a click that changed
     // no filter. It is also what a screen reader is told: pressed, and inert.
-    expect(all).toBeDisabled();
+    expect(all).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(all);
     expect(clear).not.toHaveBeenCalled();
   });
 
-  it("re-enables `all` the moment there is something to clear", () => {
-    renderChips(["warning"]);
-    expect(screen.getByTestId("f-all")).not.toBeDisabled();
+  it("keeps the inert `all` chip focusable and un-dimmed", () => {
+    renderChips([]);
+    const all = screen.getByTestId("f-all");
+    // `aria-disabled`, never the real attribute. A real `disabled` drops the
+    // button out of the tab order the instant it is activated — the keyboard
+    // operator who tabs to `all` and presses Enter loses focus to `<body>` on
+    // the one interaction the chip exists for — and picks up the base button's
+    // `disabled:opacity-50`, dimming the page's DEFAULT state.
+    // `disabled:opacity-50` is a Tailwind VARIANT on the base button class and
+    // is always in the class string; what decides whether it paints is the
+    // attribute, and the attribute is what must stay off.
+    expect(all).not.toBeDisabled();
+    all.focus();
+    expect(document.activeElement).toBe(all);
+  });
+
+  it("re-arms `all` the moment there is something to clear", () => {
+    const { clear } = renderChips(["warning"]);
+    const all = screen.getByTestId("f-all");
+    expect(all).toHaveAttribute("aria-disabled", "false");
+    fireEvent.click(all);
+    expect(clear).toHaveBeenCalledTimes(1);
   });
 
   it("reports the toggled value and leaves add/remove to the caller", () => {

@@ -200,7 +200,7 @@ describe("CoordAlertsPage", () => {
 
     const pageCall = httpGet.mock.calls
       .map((c) => String(c[0]))
-      .find((u) => !u.includes("severity=critical"));
+      .find((u) => !isCriticalProbe(u));
     expect(pageCall).toContain("limit=");
     expect(pageCall).toContain("include_resolved=false");
   });
@@ -265,7 +265,7 @@ describe("CoordAlertsPage concurrency", () => {
     let listReads = 0;
     httpGet.mockImplementation((url: unknown) => {
       const u = String(url);
-      if (u.includes("severity=critical")) {
+      if (isCriticalProbe(u)) {
         return Promise.resolve({ alerts: [], total_count: 0 });
       }
       if (u.includes("cursor=")) {
@@ -335,7 +335,7 @@ describe("CoordAlertsPage concurrency", () => {
     let listReads = 0;
     httpGet.mockImplementation((url: unknown) => {
       const u = String(url);
-      if (u.includes("severity=critical")) {
+      if (isCriticalProbe(u)) {
         return Promise.resolve({ alerts: [], total_count: 0 });
       }
       listReads += 1;
@@ -567,9 +567,15 @@ describe("CoordAlertsPage filters", () => {
     fireEvent.click(
       screen.getByTestId("coord-alerts-kind-filter-stale_primary_tree")
     );
+    // Wait for the FILTERED window to have committed — two rows unfiltered,
+    // one filtered. Waiting on the request URL alone is satisfied at request
+    // time, so `red_main` could still be on screen from the previous window
+    // and the test would pass against the very per-window derivation it exists
+    // to rule out.
     await waitFor(() =>
-      expect(lastListUrl()).toContain("kind=stale_primary_tree")
+      expect(screen.getAllByTestId("coord-alert-row")).toHaveLength(1)
     );
+    expect(lastListUrl()).toContain("kind=stale_primary_tree");
 
     // The response no longer carries a red_main row, and its chip must still
     // be there to be added to the filter.
@@ -591,8 +597,11 @@ describe("CoordAlertsPage filters", () => {
     // fetch, discarding anything the operator had paged into. The chip is
     // disabled while it is already the state, so the click cannot happen.
     const all = screen.getByTestId("coord-alerts-severity-filter-all");
-    expect(all).toBeDisabled();
+    expect(all).toHaveAttribute("aria-disabled", "true");
     expect(all).toHaveAttribute("aria-pressed", "true");
+    // Inert, but still reachable: `aria-disabled` rather than the attribute,
+    // so activating it does not blur a keyboard operator to `<body>`.
+    expect(all).not.toBeDisabled();
 
     const before = httpGet.mock.calls.length;
     fireEvent.click(all);
@@ -601,7 +610,7 @@ describe("CoordAlertsPage filters", () => {
     // ...and it becomes live again the moment there is something to clear.
     fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-warning"));
     await waitFor(() => expect(lastListUrl()).toContain("severity=warning"));
-    expect(all).not.toBeDisabled();
+    expect(all).toHaveAttribute("aria-disabled", "false");
   });
 
   it("keeps the list read and the hoisted-count read apart when critical is selected", async () => {
@@ -614,8 +623,14 @@ describe("CoordAlertsPage filters", () => {
     fireEvent.click(screen.getByTestId("coord-alerts-severity-filter-critical"));
     await waitFor(() => expect(lastListUrl()).toContain("severity=critical"));
 
-    // The row is still the LIST payload's row, not the probe's empty array...
+    // The row is still the LIST payload's row, not the probe's empty array —
+    // and `1643` is the list response's `total_count`, which can only have got
+    // there from a committed list read (a `findByTestId` on the row alone is
+    // satisfiable by the pre-click render).
     expect(await screen.findByTestId("coord-alert-row")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-alerts-match-count")).toHaveTextContent(
+      "1643"
+    );
     // ...and the hoisted count is still the probe's 637, not the list's 1643.
     expect(screen.getByTestId("coord-alerts-critical-count")).toHaveTextContent(
       "637 critical"

@@ -9,8 +9,9 @@ other 29 console routes can be moved onto it and the next operator surface can b
 built on it instead of inventing a third shape.
 
 Citations below were verified against `origin/main` at
-`859d8286fe611408b929c89b5e95ebf5a39e9c50`, **except where a later commit is
-named at the use site.** Line numbers move; the symbol names do not. When a
+`859d8286fe611408b929c89b5e95ebf5a39e9c50`, **except in [§3](#3-the-primitive-catalogue)
+and [R6](#r6--filter-tabs-carry-live-counts), which describe `origin/main` at
+`51168755` + the `FilterChips` commit.** Line numbers move; the symbol names do not. When a
 citation drifts, fix the citation — do not fix the rule to match whatever the
 code drifted into.
 
@@ -486,7 +487,8 @@ filter input. A count that has **not been fetched renders `–`, never `0`** —
 absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 `silent-empty-is-unknown` policy, applied to a badge.
 
-✅ `src/components/operations/MergePipeline.tsx:892-909` — the tab strip, now
+✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
+`51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
 composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved
 into the primitive** (`console/FilterTabs.tsx:67-69`), so a caller expresses
 "unknown" by passing `null` and cannot forget the dash:
@@ -514,8 +516,8 @@ option.** A console filter's values are usually a server vocabulary — coord's
 `severity`, its served `kind` list — so minting an `"any"` member invents a value
 the API has never heard of, which every caller then has to remember to strip
 before it reaches a query string. The `all` chip is a CLEAR action instead —
-pressed while nothing is selected, and disabled while it is, so it cannot fire
-a refetch that changes no filter. This is not hypothetical bookkeeping:
+pressed while nothing is selected, and inert while it is, so it cannot fire a
+refetch that changes no filter. This is not hypothetical bookkeeping:
 `/operations/alerts` drops blank query values because an explicitly-empty
 `?kind=` asks coord for the rows whose kind is the empty string — "no filter"
 inverted into "match nothing".
@@ -842,7 +844,7 @@ same table. Every module doc cites its rule number and links this file.
 | `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
-| `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **disabled while it is** — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
+| `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
 | `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx`; a re-export shim stays at the old path for its ~15 relative importers, plus one in `operations/index.ts` (D3). |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
 | `time.ts` | supports R2 | `relativeTime(iso)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime`, so its **23** importers are untouched — but six other files declare their own copy and are NOT among them (see §3.1). |

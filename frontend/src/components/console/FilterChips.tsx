@@ -93,9 +93,10 @@ export interface FilterChipsProps<V extends string> {
   onToggle: (value: V) => void;
   /**
    * Called by the `all` chip. Clears to the unfiltered state. Never called
-   * while the selection is ALREADY empty — that chip is disabled, so a caller
-   * may write the obvious `() => setSelected([])` without its fresh array
-   * invalidating a selection-keyed callback on a click that changed nothing.
+   * while the selection is ALREADY empty — that chip goes inert (`aria-disabled`
+   * with no handler), so a caller may write the obvious `() => setSelected([])`
+   * without its fresh array invalidating a selection-keyed callback on a click
+   * that changed nothing.
    */
   onClear: () => void;
   /**
@@ -180,17 +181,25 @@ export function FilterChips<V extends string>({
         type="button"
         size="sm"
         variant={none ? "secondary" : "ghost"}
-        onClick={onClear}
-        aria-pressed={none}
-        // DISABLED while it is already the state, for two reasons that are the
-        // same reason: a control that announces itself pressed and then does
-        // nothing is a lie to a screen reader, and `onClear` is a caller's
-        // `setState([])` — a FRESH array every call, so React's `Object.is`
+        // Inert while it is already the state. `onClear` is a caller's
+        // `setState([])` — a FRESH array every call — so React's `Object.is`
         // bailout never fires and a no-op click still invalidates every
         // selection-keyed `useCallback` downstream. On a paging surface that
         // is not cosmetic: it re-runs the page-1 fetch and discards whatever
         // the operator had paged into, for a click that changed no filter.
-        disabled={none}
+        onClick={none ? undefined : onClear}
+        aria-pressed={none}
+        // `aria-disabled`, NOT the `disabled` attribute. A real `disabled`
+        // drops the button out of the tab order the instant it is activated,
+        // so a keyboard operator who tabs to `all` and presses Enter is
+        // blurred to `<body>` and restarts from the top of the document — on
+        // the one interaction the chip exists for. It also picks up the base
+        // button's `disabled:opacity-50`, which would render the alerts page's
+        // DEFAULT state (nothing selected) at half opacity, reading as
+        // "unavailable" against the `secondary` variant on the same element
+        // saying "this is the current state". `aria-disabled` announces the
+        // same thing to a screen reader and keeps both.
+        aria-disabled={none}
         data-testid={testIdPrefix ? `${testIdPrefix}-all` : undefined}
       >
         {allLabel}
