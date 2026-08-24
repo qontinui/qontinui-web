@@ -430,6 +430,12 @@ export default function CoordAlertsPage() {
             label="kind"
             testIdPrefix="coord-alerts-kind-filter"
             options={kinds.map((k) => ({ value: k, label: kindLabel(k) }))}
+            // The vocabulary is coord's, not ours: 43 distinct live kinds on
+            // 2026-08-24 (qontinui-web#1063) against the ~10 this page was
+            // written for. Uncapped that is four or five wrapped rows of chips
+            // above the records — §5's density budget spent on a control.
+            // Selected kinds are exempt from the cap.
+            maxVisible={12}
             selected={selectedKinds}
             onToggle={(v) => setSelectedKinds((prev) => toggle(prev, v))}
             onClear={() => setSelectedKinds([])}

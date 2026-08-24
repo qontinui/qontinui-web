@@ -245,6 +245,60 @@ describe("FilterChips (R6, multi-select)", () => {
     expect(screen.getByTestId("c-other")).toHaveTextContent("–");
   });
 
+  it("caps a long vocabulary behind `+N more`, and never hides a SELECTED chip", () => {
+    // Coord's alert vocabulary was 43 live kinds on 2026-08-24 against the ~10
+    // the alerts page was written for, so the cap is what keeps a server-sized
+    // option list from spending §5's density budget on a control.
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      value: `k${i}`,
+      label: `K${i}`,
+    }));
+    render(
+      <FilterChips
+        label="kind"
+        options={many}
+        // `k9` is past the cap and selected — the exemption is the point: a
+        // filter that hides what it is filtering on is the same defect as a
+        // chip that vanishes when its last row resolves.
+        selected={["k9"]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        maxVisible={3}
+        testIdPrefix="m"
+      />
+    );
+    expect(screen.getByTestId("m-k0")).toBeInTheDocument();
+    expect(screen.getByTestId("m-k2")).toBeInTheDocument();
+    expect(screen.queryByTestId("m-k3")).toBeNull();
+    expect(screen.getByTestId("m-k9")).toHaveAttribute("aria-pressed", "true");
+    // 10 options, 4 shown (3 capped + the exempt selection) → 6 hidden.
+    expect(screen.getByTestId("m-more")).toHaveTextContent("+6 more");
+
+    fireEvent.click(screen.getByTestId("m-more"));
+    expect(screen.getByTestId("m-k3")).toBeInTheDocument();
+    expect(screen.getByTestId("m-more")).toHaveTextContent("show fewer");
+  });
+
+  it("shows no disclosure when the vocabulary fits, capped or not", () => {
+    const { unmount } = render(
+      <FilterChips
+        label="kind"
+        options={[{ value: "a", label: "A" }]}
+        selected={[]}
+        onToggle={() => {}}
+        onClear={() => {}}
+        maxVisible={3}
+        testIdPrefix="s"
+      />
+    );
+    expect(screen.queryByTestId("s-more")).toBeNull();
+    unmount();
+
+    // ...and an uncapped strip never discloses, however long it is.
+    renderChips([]);
+    expect(screen.queryByTestId("f-more")).toBeNull();
+  });
+
   it("names the group for a screen reader and honours an overridden all-label", () => {
     render(
       <FilterChips

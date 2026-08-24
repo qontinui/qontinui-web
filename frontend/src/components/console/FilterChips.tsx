@@ -49,9 +49,23 @@
  * `count === undefined` as "no count wanted" per-chip would have made the two
  * components disagree about the same value, which is exactly the drift the
  * primitive catalogue exists to prevent.
+ *
+ * ## `maxVisible`, and why a server vocabulary needs it
+ *
+ * `FilterTabs`' vocabulary is authored — four tabs, and the author sees them.
+ * This one's usually is not: it is whatever the server currently has. Coord's
+ * alert corpus was **43 distinct live kinds on 2026-08-24** (measured, not
+ * estimated — qontinui-web#1063), against the ~10 the alerts page was written
+ * for. Forty-three chips is four or five wrapped rows above the records, which
+ * is §5's density budget spent on a control.
+ *
+ * So a capped strip discloses `+N more`, every selected option is exempt from
+ * the cap, and the order is the options' own — a chip that jumped position on
+ * click would trade one usability problem for another. Omit `maxVisible` for a
+ * vocabulary you author and can count.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 export interface FilterChipOption<V extends string> {
@@ -90,6 +104,17 @@ export interface FilterChipsProps<V extends string> {
    * kind vocabulary and the options are only the kinds already loaded.
    */
   allLabel?: ReactNode;
+  /**
+   * Cap the chips rendered before a `+N more` disclosure. Omit for a small,
+   * fixed vocabulary (three severities); supply it whenever the options come
+   * from a SERVER list, which has no ceiling you control.
+   *
+   * A SELECTED option is never hidden by the cap — the visible set is the
+   * first `maxVisible` options unioned with everything selected, in the
+   * options' own order. A filter that hides what it is filtering on is the
+   * same defect as one whose chip disappears when its last row resolves.
+   */
+  maxVisible?: number;
   /** `${testIdPrefix}-${value}` per chip, plus `${testIdPrefix}-all`. */
   testIdPrefix?: string;
   /** Applied to the group, e.g. to explain a partial option list. */
@@ -113,15 +138,29 @@ export function FilterChips<V extends string>({
   onToggle,
   onClear,
   allLabel = "all",
+  maxVisible,
   testIdPrefix,
   title,
   className,
 }: FilterChipsProps<V>) {
+  const [expanded, setExpanded] = useState(false);
   const none = selected.length === 0;
   // Counts are a group decision, so that an absent `count` and an explicit
   // `null` keep meaning the same thing INSIDE a counted strip — the reading
   // `FilterTabs` already has. An uncounted strip renders no slot at all.
   const counted = options.some((o) => o.count !== undefined);
+
+  // The cap, with every selected option exempt from it. `head` is the first
+  // `maxVisible`; the union keeps the options' own order rather than hoisting
+  // the selected ones, so a chip does not jump position the moment you click
+  // it.
+  const capped =
+    maxVisible !== undefined && !expanded && options.length > maxVisible;
+  const visible = capped
+    ? options.filter((o, i) => i < maxVisible || selected.includes(o.value))
+    : options;
+  const hidden = options.length - visible.length;
+
   return (
     <div
       className={className ?? "flex flex-wrap items-center gap-1"}
@@ -156,7 +195,7 @@ export function FilterChips<V extends string>({
       >
         {allLabel}
       </Button>
-      {options.map((o) => {
+      {visible.map((o) => {
         const active = selected.includes(o.value);
         return (
           <Button
@@ -177,6 +216,19 @@ export function FilterChips<V extends string>({
           </Button>
         );
       })}
+      {(hidden > 0 || expanded) && (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setExpanded((e) => !e)}
+          aria-expanded={expanded}
+          className="text-muted-foreground"
+          data-testid={testIdPrefix ? `${testIdPrefix}-more` : undefined}
+        >
+          {expanded ? "show fewer" : `+${hidden} more`}
+        </Button>
+      )}
     </div>
   );
 }
