@@ -68,6 +68,7 @@ from _gate_lib import (  # noqa: E402
     REPO_ROOT,
     err,
     note,
+    repo_relative,
     require_nonempty,
 )
 
@@ -115,17 +116,8 @@ bookkeeping added for nothing.
 
 
 def _where(revision: str, path: Path | None) -> str:
-    """A pasteable location for a revision. Repo-relative when it can be.
-
-    An absolute ``/home/...`` path is noise in a CI log and unusable to anyone
-    reading it on another machine.
-    """
-    if path is None:
-        return f"<file for {revision}>"
-    try:
-        return str(path.resolve().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    """A pasteable location for a revision."""
+    return repo_relative(path, f"<file for {revision}>")
 
 
 def _repoint_remedy(remediation: Remediation, baseline: str) -> str:
@@ -161,6 +153,27 @@ def _repoint_remedy(remediation: Remediation, baseline: str) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _roots_block(remediation: Remediation) -> list[str]:
+    """Name the shallowest unlanded revision on each chain, when we have them.
+
+    These were computed and then thrown away on the arms without a single
+    landed head, so the message said "no single landed head" and stopped —
+    while the exact files to edit were already in hand.
+    """
+    if not remediation.edits:
+        return []
+    lines = ["", "The shallowest UNLANDED revision on each forked chain is:", ""]
+    for revision, path in remediation.edits:
+        lines.append(f"    {_where(revision, path)}   (revision {revision})")
+    lines += [
+        "",
+        "Those are the files to edit — not the heads, which travel along",
+        "unchanged.",
+        "",
+    ]
+    return lines
 
 
 def render_remediation(
@@ -204,9 +217,11 @@ def render_remediation(
         else:
             lines += [
                 "There is no single landed head to re-point onto"
-                f" ({len(remediation.landed_heads)} landed).",
+                f" ({len(remediation.landed_heads)} landed), so this gate will",
+                "not pick one for you.",
                 "",
             ]
+            lines += _roots_block(remediation)
         lines += ["At least one chain needs MORE than a re-point:", ""]
         for head, reason, blocker in remediation.blocked:
             named = blocker or head
@@ -240,6 +255,7 @@ def render_remediation(
         "invent an order. Chain the unlanded revisions one behind the\n"
         "other (each one's `down_revision` naming the previous) so the\n"
         "set ends in exactly one head, and re-run.\n"
+        + "\n".join(_roots_block(remediation))
     )
 
 
