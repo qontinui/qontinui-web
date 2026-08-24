@@ -63,6 +63,33 @@ export const SESSION_BRIEFING_DOCUMENT_NAMES: readonly string[] = [
   "ai-session-rules",
 ];
 
+/**
+ * True for a `session_briefing` row the runner will never read.
+ *
+ * The membership test itself is one line; what earns it a name is that TWO
+ * surfaces have to agree on it and they answer different questions with it.
+ * The create dialog asks "is the address the operator is about to take a trap?"
+ * — a question about a name being typed. The list asks "is this stored row one
+ * of the live three?" — a question about a row that already exists, which is
+ * the case the create-time warning cannot reach: a row seeded before that
+ * warning shipped, or one an agent created through
+ * `coord_write_prompt_document` (coord's `AGENT_UNWRITABLE_DOCUMENTS` covers
+ * the three canonical `(kind, name)` pairs, so any OTHER briefing name is
+ * agent-writable by default).
+ *
+ * `name` is trimmed because the create dialog checks a live input value; a
+ * stored row's name is already normalized by coord.
+ */
+export function isInertSessionBriefing(
+  kind: PromptDocumentKind,
+  name: string
+): boolean {
+  return (
+    kind === "session_briefing" &&
+    !SESSION_BRIEFING_DOCUMENT_NAMES.includes(name.trim())
+  );
+}
+
 /** Operator-facing label + one-line explanation per kind. */
 export const KIND_META: Record<
   PromptDocumentKind,
