@@ -518,15 +518,31 @@ class TestDeployOrderIsSelfDiagnosing:
 
 
 class TestPrefWriteIgnoresClientSuppliedUserId:
-    """The PUT must send the AUTHENTICATED user's id, never the client's.
+    """The PUT must never let the client name the user it writes.
 
-    This module had no tests at all before this PR, which is why the GET bug
-    lived for months. The write path's security-relevant invariant is correct
-    today (``AgentPrefUpdateRequest`` omits ``user_id`` and pydantic drops
-    extras) but was entirely unpinned.
+    This module had no tests at all before the effective-view rewrite, which
+    is why the GET bug lived for months. The write path's security-relevant
+    invariant is correct today (``AgentPrefUpdateRequest`` omits ``user_id``
+    and pydantic drops extras) but was entirely unpinned.
+
+    **The assertion changed shape with plan
+    ``2026-08-22-agent-registry-prefs-are-admin-only-and-the-tenant-default-has-no-ui``
+    and the invariant did not.** This used to assert the forwarded body
+    carried ``user_id == str(USER_ID)``: the target user was derived
+    server-side HERE and named on the wire to coord's admin prefs door. That
+    door names the user it writes, which is exactly why coord keeps it
+    admin-gated — so the page 403'd for every non-admin member. The route now
+    proxies coord's SELF door, which takes the acting user from the verified
+    operator token; the body carries no ``user_id`` at all, and coord's
+    ``deny_unknown_fields`` makes one a 422.
+
+    So the property "a client-supplied ``user_id`` cannot reach coord" is
+    STRONGER than before (the field has no wire representation at all), and
+    the fuller Phase-2 coverage lives in
+    ``test_agent_registry_admin_surface.py``.
     """
 
-    def test_user_id_comes_from_the_session_not_the_body(self):
+    def test_a_client_supplied_user_id_never_reaches_coord(self):
         attacker = str(uuid4())
         app = _build_app()
         with patch(
@@ -541,5 +557,8 @@ class TestPrefWriteIgnoresClientSuppliedUserId:
 
         assert resp.status_code == 200
         sent_body = mock_req.call_args.kwargs["json_body"]
-        assert sent_body["user_id"] == str(USER_ID)
-        assert sent_body["user_id"] != attacker
+        assert "user_id" not in sent_body
+        assert attacker not in str(sent_body)
+        # The self door, whose acting user coord derives from the token.
+        (_, sent_path) = mock_req.call_args.args
+        assert sent_path == "/coord/agent-registry/prefs/me/code-reviewer"

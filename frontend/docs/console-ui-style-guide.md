@@ -197,12 +197,18 @@ six slots, one line:
 >
 ```
 
-❌ `src/components/admin/coord/PlanCard.tsx:44-48` — a `<Card>` per record, with
-`p-4` padding and three stacked lines inside. ~96px per record against the
-Pipeline row's ~34px.
+❌ `PlanCard.tsx:44-48` — a `<Card>` per record, with `p-4` padding and three
+stacked lines inside. ~96px per record against the Pipeline row's ~34px.
+
+> **This file was DELETED in Phase 3 Wave 2**, once `/history` — its last
+> renderer — moved onto `<PlanRow>`. The quote below is kept verbatim because
+> it is the clearest small example of the shape this rule forbids; read it at
+> `git show 3e69607c:frontend/src/components/admin/coord/PlanCard.tsx`. A live
+> equivalent is still on `main` in whichever Family-B routes Waves 3-5 have not
+> reached yet — re-run the census rather than trusting a name written here.
 
 ```tsx
-// PlanCard.tsx:44-52
+// PlanCard.tsx:44-52 (deleted in Wave 2; read at 3e69607c)
 <Card className="hover:bg-muted/50 transition-colors" data-testid="coord-plan-card">
   <CardContent className="p-4">
     <div className="flex items-start gap-2">
@@ -374,10 +380,10 @@ function rowAccentClass(row: PipelineRow): string {
 The badge (`STATUS_BADGE_CLASS`, `MergePipeline.tsx:101-130`) carries the
 `bg-*/15` tint; the *row* carries only the edge.
 
-❌ `src/components/admin/coord/PlanCard.tsx:44` — the card's only state affordance
-is `hover:bg-muted/50`, i.e. a hover tint on the whole surface and no resting
-attention signal whatsoever. There is no accent to be quiet about, because there
-is no attention model to drive one.
+❌ `PlanCard.tsx:44` (deleted in Wave 2; read at `3e69607c`) — the card's only
+state affordance was `hover:bg-muted/50`, i.e. a hover tint on the whole surface
+and no resting attention signal whatsoever. There was no accent to be quiet
+about, because there was no attention model to drive one.
 
 ### R5 — Detail expands in place
 
@@ -425,12 +431,15 @@ const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
 ❌ Two different failures, both live:
 
-**❌ (a) — navigate away instead of expanding.** `PlanCard.tsx:50-53` wraps the
-record in a `<Link>` to a detail route. Clicking costs a navigation, a fetch, and
-your filter and scroll position — to read four more fields:
+**❌ (a) — navigate away instead of expanding.** `PlanCard.tsx:50-53` wrapped the
+record in a `<Link>` to a detail route. Clicking cost a navigation, a fetch, and
+your filter and scroll position — to read four more fields. (Deleted in Wave 2;
+read at `3e69607c`. `MemoryCard`, `PullDecisionCard`, `ReleaseCard`, `LandCard`
+and `DeployCard` went the same way in the same wave, so this failure is now a
+historical citation rather than a live one — which is the point.)
 
 ```tsx
-// PlanCard.tsx:50-53
+// PlanCard.tsx:50-53 (deleted in Wave 2; read at 3e69607c)
 <Link
   href={`/admin/coord/plans/${encodeURIComponent(plan.slug)}`}
   className="flex-1 min-w-0 space-y-1.5"
@@ -534,8 +543,10 @@ collapse (`fleet/page.tsx:289-310`: `{unhealthy} unhealthy`,
 (`useFleetHealth`, `fleet/page.tsx:86`, called at `:222`) precisely so the collapse
 cannot take the signal with it.
 
-❌ `src/app/(app)/admin/coord/lands/page.tsx:337` — `<LandPrecisionPanel>` is
-rendered **unconditionally**, and its own fetch polls every 30s
+❌ `src/app/(app)/admin/coord/lands/page.tsx:337` — **FIXED in Phase 3 Wave 2**;
+kept here because it is the clearest worked example this rule has, and because
+the shape of the fix is the rule. As it stood, `<LandPrecisionPanel>` was
+rendered **unconditionally**, and its own fetch polled every 30s
 (`lands/page.tsx:184-189`; `POLL_INTERVAL_MS` at `:51`) for the whole life of the
 page. It is section 3 of a three-section page — per-dimension predictor
 precision/recall calibration
@@ -544,7 +555,7 @@ infrastructural material R7 says belongs behind a click. Every visitor to `/land
 pays that poll whether or not they came to read a calibration table:
 
 ```tsx
-// lands/page.tsx:331-337
+// lands/page.tsx:331-337 — as it stood before Wave 2 (read at 3e69607c)
 {/* ---- 3. Calibration ---- */}
 {precisionError && (
   <p className="text-sm text-destructive">
@@ -554,13 +565,33 @@ pays that poll whether or not they came to read a calibration table:
 <LandPrecisionPanel data={precision} loading={precisionLoading} />
 ```
 
+✅ What replaced it, and the part worth copying: the panel is a
+`<CollapsiblePanel>`, and **the fetch moved INTO a child of that panel**
+(`<LandPrecisionSection>`) rather than staying on the page. That is what makes
+"a closed panel costs zero polling" true rather than aspirational — a poll left
+in the page keeps running while the panel it belongs to is shut, and a comment
+saying otherwise is the honesty defect, not the fix. The last value it saw stays
+in the panel's `summary` badge, labelled as a snapshot, so collapsing hides the
+table without hiding the signal.
+
+One caveat recorded so it is not mistaken for laziness: the panel
+`defaultOpen`s, because `specs/pages/coord-lands/` asserts
+`coord-land-precision-table` (and three of its header cells) in a state with no
+transitions, and `<CollapsiblePanel>` unmounts its children. The operator's
+choice persists via `storageKey`, so the poll stops the moment they fold it
+away.
+
 **At RECORD scale, R7 has no live violator — and one near-miss worth recording so
-nobody "fixes" it.** `LandCard.tsx`'s `<CrossRepoVerdictPanel>` looks like an
-embedded per-record panel and is not one: it is gated on `crossRepoOpen`
-(`LandCard.tsx:594-597`), toggled at `:485-491`, and its own comment at `:335-336`
-records that it fetches **once on mount** and that *"the panel only mounts when the
-operator expands it"*. That is R7 already satisfied, by a file that wrote down the
-same rationale this rule gives. Leave it alone.
+nobody "fixes" it.** `LandRow.tsx`'s `<CrossRepoVerdictPanel>` looks like an
+embedded per-record panel and is not one: it mounts only inside the row's
+expanded `<RecordDetail>`, and its own comment records that it fetches **once on
+mount** and unmounts on collapse. That is R7 already satisfied, by a file that
+wrote down the same rationale this rule gives. Leave it alone.
+
+*(It read the same way in `LandCard.tsx:594-597` before Wave 2, where the plan
+first mis-filed it as a violator and then corrected itself. Wave 2 changed only
+WHICH click opens it — the row's, like every other console record — not whether
+it is lazy.)*
 
 ### R8 — No internal vocabulary on a primary surface
 
