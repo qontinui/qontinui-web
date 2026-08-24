@@ -11,8 +11,24 @@
  * After every save the row re-renders from re-fetched server state, so
  * what is shown is what was actually recorded.
  *
+ * The switch is driven ENTIRELY by server state (`checked={entry.enabled}`)
+ * and is disabled while a save is in flight, so there is no local toggle
+ * state that a failed save could leave disagreeing with the truth. Do not add
+ * optimistic toggling or rollback here: a failed save already leaves the
+ * control showing the truth, and optimism would be the only way to make it
+ * show something else.
+ *
+ * Two refusals that are ABOUT THE ACCOUNT (a plain authorization 403, and
+ * `operator_not_provisioned_in_web`) render as distinct, standing inline
+ * states rather than toasts — see `DENIAL_COPY`. Transport and server
+ * failures keep the toast.
+ *
  * Backend: GET /api/v1/agent-registry, PUT /api/v1/agent-registry/prefs/{name}
- * (Phase 4d of plan 2026-07-28-migrate-claude-md-into-qontinui.md).
+ * (Phase 4d of plan 2026-07-28-migrate-claude-md-into-qontinui.md; the pref
+ * write moved onto coord's SELF door — so it works for every member, not only
+ * admins — in Phase 2 of plan
+ * 2026-08-22-agent-registry-prefs-are-admin-only-and-the-tenant-default-has-no-ui).
+ * The tenant DEFAULT behind these rows is edited at /admin/coord/agent-registry.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -64,6 +80,51 @@ interface PickerState {
   forced: boolean;
 }
 
+/**
+ * A refusal that is ABOUT THE ACCOUNT, not about the request.
+ *
+ * Both arrive as 403 and neither is a transport failure, so neither belongs in
+ * `toast.error(err.message)` with coord's raw text — a toast disappears, and
+ * the reader is left with a switch that did not move and no standing
+ * explanation of why. They render inline beside the agent, like the 422
+ * disposition picker.
+ *
+ * They are kept DISTINCT because the remedy differs and the wrong one wastes
+ * the reader's time:
+ *
+ * - `not_authorized` — the tenant has restricted this lever. Ask an admin.
+ * - `not_provisioned` — the coord operator's verified email matches no
+ *   qontinui-web account. No admin can grant a permission that would fix this;
+ *   the two accounts have to be linked first.
+ *
+ * Both stay reachable after the write moved to coord's self door: a tenant may
+ * later restrict the lever, and account linking can lapse independently.
+ */
+type DenialKind = "not_authorized" | "not_provisioned";
+
+const DENIAL_COPY: Record<
+  DenialKind,
+  { title: string; body: string; testId: string }
+> = {
+  not_authorized: {
+    title: "Your account cannot change this",
+    body:
+      "This tenant does not allow your account to change agent preferences. " +
+      "A tenant administrator can change it for you, or grant you the role.",
+    testId: "agent-pref-denied-not-authorized",
+  },
+  not_provisioned: {
+    title: "Your coord account is not linked to a qontinui account",
+    body:
+      "Coord recognises your sign-in, but its verified email matches no " +
+      "qontinui-web account, so there is no profile to save the preference " +
+      "against. This is an account-linking problem, not a permissions one — " +
+      "granting your account a role will not fix it. Ask an administrator to " +
+      "link the two accounts.",
+    testId: "agent-pref-denied-not-provisioned",
+  },
+};
+
 function recordedLine(entry: AgentRegistryEntry): string {
   const state = entry.enabled
     ? "enabled"
@@ -83,6 +144,10 @@ export default function AgentsSettingsPage() {
     new Set()
   );
   const [pickers, setPickers] = useState<Record<string, PickerState>>({});
+  // Per-agent, for the same reason `savingAgents` is a set: a denial on one
+  // row says nothing about another, and a single value would clear the
+  // standing explanation the moment an unrelated row was toggled.
+  const [denials, setDenials] = useState<Record<string, DenialKind>>({});
 
   const refresh = useCallback(async (): Promise<AgentRegistryEntry[]> => {
     const rows = await listAgentRegistry();
@@ -113,12 +178,25 @@ export default function AgentsSettingsPage() {
     });
   };
 
+  const clearDenial = (agentName: string) => {
+    setDenials((prev) => {
+      if (!(agentName in prev)) return prev;
+      const next = { ...prev };
+      delete next[agentName];
+      return next;
+    });
+  };
+
   const save = async (
     agentName: string,
     update: { enabled: boolean; disposition?: AgentDisposition },
     fromPicker: boolean
   ) => {
     setSavingAgents((prev) => new Set(prev).add(agentName));
+    // A retry starts from no standing explanation: leaving the previous one
+    // up while a new attempt is in flight states a refusal that has not
+    // happened yet.
+    clearDenial(agentName);
     try {
       await putAgentPref(agentName, update);
       const rows = await refresh();
@@ -155,7 +233,24 @@ export default function AgentsSettingsPage() {
             forced: prev[agentName]?.forced ?? false,
           },
         }));
+      } else if (err instanceof AgentPrefError && err.status === 403) {
+        // A refusal ABOUT THE ACCOUNT — inline and standing, never a toast.
+        // The two codes are rendered distinctly because the remedy differs;
+        // see `DENIAL_COPY`. An unrecognised 403 body is the plain
+        // authorization case: coord's prose for it is not a stable contract,
+        // so the status is what is keyed on, not the message.
+        setDenials((prev) => ({
+          ...prev,
+          [agentName]:
+            err.code === "operator_not_provisioned_in_web"
+              ? "not_provisioned"
+              : "not_authorized",
+        }));
+        // The picker asks for a choice that cannot be saved by this account.
+        closePicker(agentName);
       } else {
+        // Everything left is a transport or server failure — genuinely
+        // transient, and a toast is the right weight for it.
         toast.error(
           err instanceof Error ? err.message : "Failed to save preference"
         );
@@ -262,6 +357,7 @@ export default function AgentsSettingsPage() {
         entries.map((entry) => {
           const picker = pickers[entry.agent_name];
           const saving = savingAgents.has(entry.agent_name);
+          const denial = denials[entry.agent_name];
           return (
             <div className="card" key={entry.agent_name}>
               <div className="card-content flex items-start justify-between gap-4">
@@ -325,6 +421,34 @@ export default function AgentsSettingsPage() {
                   {entry.enabled ? "On" : "Off"}
                 </label>
               </div>
+
+              {denial && (
+                <div
+                  className="card-footer space-y-2"
+                  data-testid={DENIAL_COPY[denial].testId}
+                  role="status"
+                >
+                  <p className="form-error font-medium">
+                    {DENIAL_COPY[denial].title}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {DENIAL_COPY[denial].body}
+                  </p>
+                  {/* The switch above still shows what the SERVER has
+                      recorded, so this explains why it did not move rather
+                      than apologising for a state it is not in. */}
+                  <p className="text-xs text-muted-foreground italic">
+                    {recordedLine(entry)} — unchanged.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-ghost btn-sm"
+                    onClick={() => clearDenial(entry.agent_name)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
 
               {picker && (
                 <div className="card-footer space-y-3">
