@@ -13,6 +13,7 @@
 // Everything here is pure and side-effect free (timestamps are passed in),
 // so the status table and health heuristics are unit-testable without a DOM.
 
+import type { Attention } from "@/components/console/attention";
 import { redactSecrets } from "./mergeTypes";
 import type {
   MergeEconomics,
@@ -64,8 +65,15 @@ export type UnifiedStatusKind =
   | "draft"
   | "unknown";
 
-/** Who (if anyone) the status is waiting on — drives the row accent. */
-export type Attention = "author" | "waiting" | "none";
+/**
+ * Who (if anyone) the status is waiting on — drives the row accent.
+ *
+ * Declared in `@/components/console/attention` (the console's base layer) and
+ * re-exported here so this module's long-standing importers do not move. The
+ * vocabulary is shared with every other console surface by construction, not
+ * by two identical unions that can drift.
+ */
+export type { Attention } from "@/components/console/attention";
 
 /**
  * Whether a still-`waiting` row's DWELL CLOCK exists at all.

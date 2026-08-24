@@ -89,10 +89,14 @@ export function useGateClearanceRules() {
    *      here instead — which is the intended end state, one step early.)
    *   2. delete the old rule. The replacement takes over, in one step.
    *
-   * Deliberately NOT "disable the old rule, then delete it": a disabled row is
-   * invisible in this console (the web proxy forwards no `enabled` filter to
-   * coord — see `coordPolicyApi.listCoordPolicies`), so a failure after the
-   * disable would strand an orphan the user could neither see nor clean up.
+   * Deliberately NOT "disable the old rule, then delete it", for two reasons
+   * that both survived the proxy learning to forward `enabled`: a disabled row
+   * is invisible in this console (no caller lists that arm, and
+   * `coordPolicyApi.listCoordPolicies` says why it must not), so a failure
+   * after the disable would strand an orphan the user could neither see nor
+   * clean up — and the disable would not be a step short of the delete anyway,
+   * since coord's DELETE writes exactly that column. It would be the same
+   * destructive write, done twice.
    *
    * There is no instant with NO rule for the class, so the change can never
    * pass through a transiently looser authority. If step 2 fails, BOTH rules

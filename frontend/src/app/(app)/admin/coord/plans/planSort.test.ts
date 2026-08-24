@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
-import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
 const row = (
   slug: string,

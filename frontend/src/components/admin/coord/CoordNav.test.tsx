@@ -39,7 +39,7 @@ import CoordNav from "./CoordNav";
 describe("CoordNav", () => {
   beforeEach(() => {
     httpGet.mockReset();
-    httpGet.mockResolvedValue({ alerts: [] });
+    httpGet.mockResolvedValue({ alerts: [], total_count: 0 });
     pathname = "/admin/coord/fleet";
     isSuperuser = false;
   });
@@ -136,16 +136,85 @@ describe("CoordNav", () => {
     );
   });
 
-  it("renders a live unresolved-alerts badge, red when critical", async () => {
-    httpGet.mockResolvedValue({
-      alerts: [{ severity: "critical" }, { severity: "warning" }],
-    });
+  // --------------------------------------------------------------------------
+  // The alerts badge is a COUNT, not the length of a truncated sample.
+  //
+  // Measured 2026-08-14 (plan
+  // `2026-08-05-coord-alerts-surface-and-fleet-style-ui.md`, § MEASURED): the
+  // badge read a constant 500 against 1643 unresolved rows because it counted
+  // the rows in coord's hard-capped window, and `critical` was unconditionally
+  // true because that window happened to be 100% critical. These are the
+  // fix's regression tests, not a guard against one.
+  // --------------------------------------------------------------------------
+
+  /** Route the two `limit=1` reads the badge issues. */
+  function mockTotals(all: unknown, criticals: unknown) {
+    httpGet.mockImplementation((url: unknown) =>
+      Promise.resolve(
+        String(url).includes("severity=critical") ? criticals : all
+      )
+    );
+  }
+
+  it("reads total_count, not the length of the served window", async () => {
+    mockTotals(
+      // One row served (limit=1) but 1643 matching — the badge must say 1643.
+      { alerts: [{ severity: "critical" }], total_count: 1643 },
+      { alerts: [{ severity: "critical" }], total_count: 637 }
+    );
     render(<CoordNav />);
 
     const badge = await screen.findByTestId("coord-nav-alerts-badge");
-    expect(badge).toHaveTextContent("2");
+    expect(badge).toHaveTextContent("1643");
+    expect(badge.textContent).not.toContain("≥");
     expect(badge.className).toContain("text-red-200");
-    expect(httpGet).toHaveBeenCalledWith("/api/v1/operations/alerts");
+    expect(badge).toHaveAttribute("data-total-known", "true");
+
+    // And it asks for ONE row, not the 500 the old code dragged over the wire
+    // on every page every poll.
+    //
+    // Scoped to the ALERTS reads: the sibling Notifications badge polls
+    // `/operations/notifications?limit=1` from this same component, and that
+    // endpoint has no `include_resolved` axis at all — sweeping every
+    // `httpGet` call would fail on a URL this assertion was never about.
+    // The explicit count keeps the filter from passing vacuously on an empty
+    // list if the badge ever stops issuing the reads.
+    const alertsCalls = httpGet.mock.calls.filter((call) =>
+      String(call[0]).startsWith("/api/v1/operations/alerts")
+    );
+    expect(alertsCalls).toHaveLength(2);
+    for (const call of alertsCalls) {
+      expect(String(call[0])).toContain("limit=1");
+      expect(String(call[0])).toContain("include_resolved=false");
+    }
+  });
+
+  it("takes the critical flag from a severity-filtered total, not the sample", async () => {
+    // The window is 100% critical, but ZERO criticals match — the old
+    // `alerts.some(...)` read would paint this red.
+    mockTotals(
+      { alerts: [{ severity: "critical" }], total_count: 42 },
+      { alerts: [], total_count: 0 }
+    );
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge).toHaveTextContent("42");
+    expect(badge.className).not.toContain("text-red-200");
+  });
+
+  it("degrades a missing total_count to a ≥ lower bound, never to the truth", async () => {
+    // An un-upgraded coord silently drops `limit`/`severity` and answers with
+    // the old shape. Its length is a FLOOR — say so rather than presenting a
+    // truncated count as the real one.
+    const window = { alerts: [{ severity: "critical" }, { severity: "warning" }] };
+    mockTotals(window, window);
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge.textContent).toContain("≥2");
+    expect(badge).toHaveAttribute("data-total-known", "false");
+    expect(badge.className).toContain("text-red-200");
   });
 
   it("renders no badge when the rollup is empty or unavailable", async () => {

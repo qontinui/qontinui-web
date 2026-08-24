@@ -11,10 +11,11 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
-# Three gates are stronger than "mirrored": web-boundary-lint, forbid-public-
-# schema and alembic-single-head invoke the SAME committed script the workflow
-# invokes (scripts/ci/*.py), so there is nothing left to keep in sync — the two
-# lanes cannot drift because there is only one copy of the logic. That is the
+# Four gates are stronger than "mirrored": web-boundary-lint, forbid-public-
+# schema, alembic-single-head and gitignore-tracked-files invoke the SAME
+# committed script the workflow invokes (scripts/ci/*.py), so there is nothing
+# left to keep in sync — the two lanes cannot drift because there is only one
+# copy of the logic. That is the
 # preferred shape for any future gate here; the string-mirroring above is what
 # you settle for when the workflow step is a third-party action or a package.json
 # script this lane must name for itself.
@@ -206,12 +207,14 @@ pin = "default-branch"
 # REPO-WIDE GATES — first, because they are the only steps here that need no
 # provisioning at all: no npm install, no poetry venv, no sibling repo. Each is
 # an offline scan of the checked-out tree taking a few seconds (measured on this
-# lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for all three), against
-# minutes for the installs that follow. So putting them ahead of
+# lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for the first three;
+# `gitignore-tracked-files` was added later and is the same order of magnitude —
+# two `git ls-files` calls over the index), against minutes for the installs
+# that follow. So putting them ahead of
 # `frontend-install` means a dispatch that is going to fail on one of them fails
 # before it pays for a dependency install.
 #
-# These three are NOT string-mirrors of their workflows — both lanes invoke the
+# These four are NOT string-mirrors of their workflows — both lanes invoke the
 # same committed script, so they cannot drift.
 #
 # Each script exits 1 on the violation it checks for and 2 when it COULD NOT
@@ -253,6 +256,15 @@ name = "alembic-single-head"
 # and needs no database, which is exactly why this gate CAN live here while the
 # rest of backend-ci.yml's `test` job (gap 1 above) cannot.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
+
+[[steps]]
+name = "gitignore-tracked-files"
+# gitignore-tracked-files.yml, step "Scan for tracked-but-ignored files". Fails
+# if any file in the index is matched by a committed .gitignore rule — the state
+# that hid backend/scripts' 10 tracked files from ruff until `ec9fae1a`. Like
+# forbid-public-schema, it reads the index, so it needs the dispatch checkout to
+# be a real git worktree, which it is.
+command = ["python", "scripts/ci/check_tracked_ignored.py"]
 
 # ---------------------------------------------------------------------------
 # FRONTEND — mirrors frontend-ci.yml's `lint-and-typecheck` job, step for step

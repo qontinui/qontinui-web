@@ -20,7 +20,13 @@ database_backup.sql
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+# Stray lockfiles from scratch envs stay out; the two the build reads are
+# tracked and must NOT be ignored (see the tracked-file gate in
+# scripts/ci/check_tracked_ignored.py).
 poetry.lock
+!/poetry.lock
+!/backend/poetry.lock
+
 # Keep ad-hoc/local backend scripts out, but NOT the tracked ones.
 # A bare `backend/scripts` ignored the whole directory while 11 scripts in
 # it were tracked, and `git add` on a tracked-but-ignored path exits 1 --
@@ -52,7 +58,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+# ...but frontend/package-lock.json IS tracked and load-bearing: CI and Vercel
+# both run `npm ci`, which takes the lockfile as its input. See the sibling
+# comment on frontend/pnpm-lock.yaml further down.
 package-lock.json
+!/frontend/package-lock.json
 next.config.js
 frontend/scripts/*
 !frontend/scripts/inject-build-id.mjs
@@ -60,6 +70,7 @@ frontend/scripts/*
 !frontend/scripts/vercel-install.sh
 !frontend/scripts/check-browser-safe-imports.mjs
 !frontend/scripts/export-test-coverage.mjs
+!frontend/scripts/generate-api-types.ts
 !frontend/scripts/prod-probes/
 !frontend/scripts/prod-probes/**
 
@@ -139,6 +150,9 @@ backend/reset_aws_password.example.env
 
 .vercel
 .env*
+# ...but the two tracked, secret-free example templates are documentation.
+!/backend/.env.example
+!/backend/.env.staging.example
 
 # npm is the canonical package manager for frontend/ (CI npm ci + Vercel use
 # package-lock.json); stray lockfiles from other managers must never be committed.

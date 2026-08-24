@@ -40,6 +40,7 @@ export function useAutomationRules() {
     rules,
     loading,
     saving,
+    loadFailed,
     reload,
     createRule,
     updateRule,
@@ -58,6 +59,16 @@ export function useAutomationRules() {
     rules: rules as PolicyRow[],
     loading,
     saving,
+    /**
+     * The last list call FAILED, so `rules` is UNKNOWN — not "this workspace
+     * has no rules". Re-exported because the surface must say so: an empty
+     * array from a failed read used to render the "No automation rules yet"
+     * card, which invites the operator to re-create a rule that already
+     * exists. Since the off-switch became a soft DELETE, that false-empty is
+     * also indistinguishable from the one state an operator most fears having
+     * caused, so it must never be shown as a fact.
+     */
+    loadFailed,
     reload,
     // The list/editor callers only care whether the create landed.
     createRule: async (data: PolicyCreate) => (await createRule(data)) !== null,
