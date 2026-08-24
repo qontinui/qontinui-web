@@ -394,6 +394,25 @@ RESOLVED_BODY = "\n".join(
 )
 
 
+def _is_our_comment(comment: dict) -> bool:
+    """Is this one of OURS, as opposed to a human quoting one of ours?
+
+    `MARKER in body` is not enough. GitHub's "Quote reply" copies the raw
+    markdown of the comment being quoted, HTML comment included, so a human
+    replying to a fork notice produces a body containing the marker — which
+    under a first-match lookup was merely confusing and under an all-matches
+    lookup is worse: it raises a spurious "delete the extras" failure and
+    REDDENS the job over a normal human reply.
+
+    Every comment this script writes begins with the marker; a quote-reply
+    always prefixes `> `. So anchor it. Deliberately NOT an author check: the
+    token holder is `github-actions[bot]` in the workflow but need not be
+    elsewhere, and a filter that stops recognising our own comments would
+    post a fresh one on every land.
+    """
+    return str(comment.get("body") or "").lstrip().startswith(MARKER)
+
+
 def find_marker_comments(repo: str, number: int, token: str) -> list[dict]:
     """EVERY comment on ``number`` carrying this script's marker. One API call.
 
@@ -407,7 +426,7 @@ def find_marker_comments(repo: str, number: int, token: str) -> list[dict]:
     comments = _paginate(
         f"{API_ROOT}/repos/{repo}/issues/{number}/comments?per_page=100", token
     )
-    return [c for c in comments if MARKER in str(c.get("body", ""))]
+    return [c for c in comments if _is_our_comment(c)]
 
 
 def _report_duplicates(number: int, found: list[dict], failures: list[str]) -> None:

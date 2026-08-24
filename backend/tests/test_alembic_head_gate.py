@@ -25,8 +25,11 @@ single head, exit 1 on a fork, exit 2 on a scan that proved nothing.
 
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
+import types
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -516,7 +519,81 @@ def test_rendering_never_raises_on_a_path_outside_the_repo() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_one_http_failure_produces_exactly_one_attempt() -> None:
+    """THE pin: behavioural, so it survives a rename.
+
+    The name list below guards six exact strings; this guards the property
+    those strings used to break. A re-added retry under ANY name — including
+    `_should_retry` / `_backoff_seconds` — fails here, because a second
+    `urlopen` call is a second POST, and a POST that GitHub 502s AFTER
+    committing is how a duplicate marker comment gets created that nothing in
+    this repo can ever remove.
+    """
+    calls: list[str] = []
+
+    def exploding_urlopen(request, timeout=None):
+        calls.append(request.get_method())
+        raise urllib.error.HTTPError(
+            request.full_url, 502, "Bad Gateway", {}, io.BytesIO(b"boom")
+        )
+
+    original = notifier.urllib.request.urlopen
+    notifier.urllib.request.urlopen = exploding_urlopen
+    try:
+        for method in ("GET", "POST", "PATCH"):
+            calls.clear()
+            with pytest.raises(notifier.ApiError):
+                notifier._request(
+                    "https://example.invalid/x",
+                    "t",
+                    method=method,
+                    body=None if method == "GET" else {"body": "b"},
+                )
+            assert len(calls) == 1, (
+                f"{method} was attempted {len(calls)} times — a retry layer is "
+                "back. See the module docstring: a replayed POST creates a "
+                "permanent duplicate comment."
+            )
+    finally:
+        notifier.urllib.request.urlopen = original
+
+
+def test_the_retry_probe_itself_can_fail() -> None:
+    """Positive control for the test above.
+
+    An absence guard that cannot fail is worse than none. This proves the
+    probe detects a second attempt, so a green result there means something.
+    """
+    calls: list[int] = []
+
+    def flaky(request, timeout=None):
+        calls.append(1)
+        raise urllib.error.HTTPError(
+            request.full_url, 502, "Bad Gateway", {}, io.BytesIO(b"boom")
+        )
+
+    def retrying_request(url, token, **kwargs):
+        for _ in range(3):  # a hypothetical re-added retry layer
+            try:
+                return flaky(types.SimpleNamespace(full_url=url), None)
+            except urllib.error.HTTPError:
+                continue
+        raise notifier.ApiError("gave up")
+
+    with pytest.raises(notifier.ApiError):
+        retrying_request("https://example.invalid/x", "t")
+    assert len(calls) == 3, "the probe would not have noticed a retry"
+
+
 def test_there_is_no_retry_layer() -> None:
+    """Secondary, name-based pin. Cheap, and NOT sufficient on its own.
+
+    It cannot tell "correctly absent" from "never existed", and a re-added
+    layer under different names passes it. That is what
+    `test_one_http_failure_produces_exactly_one_attempt` is for. Kept because
+    it names the exact symbols and the reason, which a behavioural failure
+    message cannot.
+    """
     for gone in (
         "_is_retryable",
         "_retry_delay",
@@ -668,3 +745,42 @@ def test_repo_relative_never_raises_and_has_one_home() -> None:
         "/definitely/not/in/the/repo"
     )
     assert notifier._pretty_path("rev", None) == "rev"
+
+
+def test_the_gate_unknown_arm_is_pinned_too() -> None:
+    """Mirror of `test_the_unknown_comment_says_unknown_and_not_a_head_split`.
+
+    Only the notifier side was pinned, so the gate's unknown arm could be
+    regressed to the `landed head(s): (none)` header — the exact falsehood —
+    with every test still green.
+    """
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "a")))
+    text = render_remediation(
+        plan_remediation(scan, landed=None), "origin/main", scan.heads
+    )
+    assert "UNKNOWN" in text
+    assert "landed head(s)" not in text
+    assert "(none)" not in text
+
+
+def test_a_human_quoting_the_notice_is_not_counted_as_a_marker() -> None:
+    """GitHub's "Quote reply" copies the raw HTML comment, so `MARKER in body`
+    matches a human reply — which under an all-matches lookup raises a
+    spurious "delete the extras" failure and reddens the job."""
+    ours = {"id": 1, "body": notifier.MARKER + "\n### fork notice"}
+    quoted = {"id": 2, "body": "> " + notifier.MARKER + "\n> quoting you\n\nfix?"}
+    assert notifier._is_our_comment(ours)
+    assert not notifier._is_our_comment(quoted)
+    assert not notifier._is_our_comment({"id": 3, "body": None})
+    assert not notifier._is_our_comment({"id": 4})
+
+    original = notifier._paginate
+    notifier._paginate = lambda url, token: [ours, quoted]
+    try:
+        found = notifier.find_marker_comments("o/r", 1, "t")
+    finally:
+        notifier._paginate = original
+    assert [c["id"] for c in found] == [1]
+    failures: list[str] = []
+    notifier._report_duplicates(1, found, failures)
+    assert failures == []
