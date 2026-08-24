@@ -80,7 +80,6 @@ import argparse
 import json
 import os
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -96,98 +95,20 @@ from _alembic_graph import (  # noqa: E402
     scan_dir,
     scan_sources,
 )
-from _gate_lib import EXIT_VACUOUS, REPO_ROOT, err, note  # noqa: E402
+from _gate_lib import (  # noqa: E402
+    EXIT_VACUOUS,
+    REPO_ROOT,
+    err,
+    note,
+    repo_relative,
+)
 
 MARKER = "<!-- alembic-fork-notice -->"
-#: Statuses ALWAYS worth a second look on an idempotent request. 403 is not
-#: here because it is CONDITIONAL — see `_is_retryable`, which retries the
-#: rate-limit 403 and refuses the permissions 403. Do not read this constant
-#: on its own as "403 is never retried".
-RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
-#: Methods safe to replay, limited to the ones this file actually issues.
-#:
-#: POST is NOT one: GitHub can 502 *after* the write commits, so retrying
-#: `POST /issues/{n}/comments` posts two marker comments on one PR — the exact
-#: duplicate the marker upsert and the workflow's `concurrency:` group both
-#: exist to prevent. It gets read-back idempotency instead (`_post_comment`),
-#: which is safe AND keeps the resilience a blanket refusal would throw away.
-#:
-#: DELETE is deliberately ABSENT even though it is idempotent by EFFECT: it is
-#: not idempotent by observed STATUS. A DELETE that commits and then 502s
-#: answers 404 on replay, 404 is not retryable, so the run would report a
-#: FAILURE for a delete that SUCCEEDED. If a real delete is ever added here
-#: (removing a stale notice rather than rewriting it), treat 404-after-a-
-#: retried-DELETE as success before adding DELETE to this set. HEAD and PUT
-#: are omitted on the same principle: nothing here issues them, so nothing
-#: here allows them.
-IDEMPOTENT_METHODS = frozenset({"GET", "PATCH"})
-RETRIES = 3
-BACKOFF_SECONDS = 2.0
-#: Ceiling on an honoured `Retry-After` / `x-ratelimit-reset`. GitHub's primary
-#: limit can reset an hour out and its secondary asks for >=60s; a CI job must
-#: not sit there. Past this we give up and say so rather than sleep.
-MAX_HONOURED_DELAY_SECONDS = 90.0
 API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
 class ApiError(RuntimeError):
     """A GitHub API call failed. Always fatal — never swallowed into a pass."""
-
-
-def _is_retryable(status: int, headers: dict[str, str], detail: bytes = b"") -> bool:
-    """Is this status worth another attempt?
-
-    403 is the interesting one and must not be blanket-retryable in EITHER
-    direction. GitHub uses it for two unrelated things: a rate limit
-    (transient) and ``Resource not accessible by integration`` (a permissions
-    failure — the exact class ``issues: write`` was added to defend against).
-    Retrying the latter buys attempts and sleep before the identical failure;
-    refusing the former gives up on something that would have succeeded.
-
-    Headers alone cannot make that call: a secondary-rate-limit 403 carrying
-    NEITHER ``retry-after`` nor ``x-ratelimit-remaining: 0`` is a documented
-    GitHub shape, and classifying it as a permissions failure hard-fails a
-    sweep that only needed to wait. The response BODY is the strong signal and
-    the caller already has it, so read that first and fall back to headers.
-    """
-    if status in RETRYABLE_STATUS:
-        return True
-    if status != 403:
-        return False
-    body = detail.lower()
-    if b"rate limit" in body:
-        return True
-    if b"not accessible" in body or b"must have admin rights" in body:
-        return False
-    return (
-        bool(headers.get("retry-after")) or headers.get("x-ratelimit-remaining") == "0"
-    )
-
-
-def _retry_delay(attempt: int, headers: dict[str, str]) -> float | None:
-    """Seconds to wait before ``attempt``, or ``None`` meaning give up loudly.
-
-    A fixed 2s/4s ladder is useless against a rate limit that asks for 60s: it
-    burns three attempts and six seconds and then fails identically — exactly
-    the waste this module criticises for the permissions 403. Honour what the
-    server asked for, up to :data:`MAX_HONOURED_DELAY_SECONDS`. Past that,
-    sleeping is not a strategy a CI job can use, so return ``None`` and let
-    the caller fail loudly rather than pretend a retry will help.
-    """
-    raw = headers.get("retry-after", "").strip()
-    asked: float | None = None
-    if raw.isdigit():
-        # GitHub sends delay-seconds here. The legal HTTP-date form is not
-        # parsed; it falls through to the plain ladder rather than being
-        # silently misread as zero.
-        asked = float(raw)
-    elif headers.get("x-ratelimit-remaining") == "0":
-        reset = headers.get("x-ratelimit-reset", "").strip()
-        if reset.isdigit():
-            asked = max(0.0, float(reset) - time.time())
-    if asked is None:
-        return BACKOFF_SECONDS * (2 ** (attempt - 1))
-    return None if asked > MAX_HONOURED_DELAY_SECONDS else asked
 
 
 def _request(
@@ -205,40 +126,31 @@ def _request(
     request.add_header("X-GitHub-Api-Version", "2022-11-28")
     if data is not None:
         request.add_header("Content-Type", "application/json")
-    # Retry the transient shapes only, and ONLY on a replayable method. A 404
-    # or a 422 is an answer, not a blip, and retrying it just burns budget.
-    attempts = RETRIES if method in IDEMPOTENT_METHODS else 1
-    last: Exception | None = None
-    delay = 0.0
-    for attempt in range(attempts):
-        if attempt:
-            time.sleep(delay)
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read()
-                headers = {k.lower(): v for k, v in response.headers.items()}
-            break
-        except urllib.error.HTTPError as exc:  # pragma: no cover - network path
-            detail = exc.read()[:400]
-            headers = (
-                {k.lower(): v for k, v in exc.headers.items()} if exc.headers else {}
-            )
-            last = ApiError(f"{method} {url} -> HTTP {exc.code}: {detail!r}")
-            if not _is_retryable(exc.code, headers, detail):
-                raise last from exc
-            wait = _retry_delay(attempt + 1, headers)
-            if wait is None:
-                raise ApiError(
-                    f"{method} {url} -> HTTP {exc.code}, and the server asked for a "
-                    f"wait longer than {MAX_HONOURED_DELAY_SECONDS:.0f}s; "
-                    "not sleeping through it"
-                ) from exc
-            delay = wait
-        except urllib.error.URLError as exc:  # pragma: no cover - network path
-            last = ApiError(f"{method} {url} -> {exc.reason}")
-            delay = BACKOFF_SECONDS * (2**attempt)
-    else:
-        raise last or ApiError(f"{method} {url} -> exhausted {attempts} attempt(s)")
+    # ONE attempt, deliberately. There is no retry layer here any more.
+    #
+    # Four of the six blockers found reviewing this file lived in a
+    # hand-rolled retry, and each fix was locally correct while getting the
+    # blast radius wrong in a new direction: a replayed POST that duplicated
+    # a comment, a 403 classifier that hard-failed a wait-and-succeed, a
+    # rate-limit cap that hard-failed a trivially retryable 5xx, and a
+    # read-back that turned a transient duplicate into a PERMANENT one.
+    #
+    # The complexity never paid for itself, because this module's job is
+    # NOTIFICATION, not delivery. Every failure is recorded and reddens the
+    # job, the workflow re-runs on the next push to the versions dir, and a
+    # human can re-run a red job immediately — which is a better retry than
+    # this code was, because it has context. Not re-POSTing is also the only
+    # way to be certain a duplicate marker comment is never created.
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read()
+            headers = {k.lower(): v for k, v in response.headers.items()}
+    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
+        raise ApiError(
+            f"{method} {url} -> HTTP {exc.code}: {exc.read()[:400]!r}"
+        ) from exc
+    except urllib.error.URLError as exc:  # pragma: no cover - network path
+        raise ApiError(f"{method} {url} -> {exc.reason}") from exc
     if accept.endswith("raw"):
         return raw.decode("utf-8", errors="replace"), headers
     return (json.loads(raw) if raw else None), headers
@@ -325,18 +237,31 @@ def simulate(
 
 
 def _pretty_path(revision: str, path: Path | None) -> str:
-    """A pasteable location. Repo-relative when it can be, never a crash.
+    """A pasteable location for a revision."""
+    return repo_relative(path, safe_id(revision))
 
-    `Path.relative_to` RAISES when the path is not under the root — it does
-    not fall back — so an unguarded call here turns a rendering detail into
-    an exception that aborts the whole sweep.
+
+def _roots_block(remediation) -> list[str]:
+    """Name the shallowest unlanded revision per chain when no single target.
+
+    These were computed and then dropped on the arms without exactly one
+    landed head, so the comment named the problem and withheld the file list
+    it already had.
     """
-    if path is None:
-        return safe_id(revision)
-    try:
-        return str(path.relative_to(REPO_ROOT))
-    except ValueError:
-        return str(path)
+    if not remediation.edits:
+        return []
+    return [
+        "The shallowest **unlanded** revision on each forked chain is:",
+        "",
+        *[
+            f"- `{_pretty_path(revision, path)}` (revision `{safe_id(revision)}`)"
+            for revision, path in remediation.edits
+        ],
+        "",
+        "Those are the files to edit — not the heads, which travel along",
+        "unchanged.",
+        "",
+    ]
 
 
 def _edit_lines(remediation) -> list[str]:
@@ -413,6 +338,8 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
                 *_edit_lines(remediation),
                 "",
             ]
+        elif remediation.edits:
+            lines += _roots_block(remediation)
         lines += ["**But at least one chain needs more than a re-point:**", ""]
         for head, reason, blocker in remediation.blocked:
             named = safe_id(blocker or head)
@@ -425,7 +352,17 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
             "Run `python scripts/ci/count_alembic_heads.py` locally for the full",
             "diagnosis before editing anything named above.",
         ]
+    elif remediation.kind == "unknown":
+        # Say UNKNOWN. Printing a landed/unlanded split here would assert
+        # something about a baseline that could not be read at all.
+        lines += [
+            "The baseline could not be read, so which of these heads already",
+            "landed is **unknown** — and this comment will not guess. Run",
+            "`python scripts/ci/count_alembic_heads.py` locally, where",
+            "`origin/main` is available, for the exact token.",
+        ]
     else:
+        lines += _roots_block(remediation)
         lines += [
             "This one does not reduce to a single re-point "
             f"(`{remediation.kind}`): landed head(s) "
@@ -457,12 +394,30 @@ RESOLVED_BODY = "\n".join(
 )
 
 
-def find_marker_comment(repo: str, number: int, token: str) -> dict | None:
-    """This script's own comment on ``number``, or ``None``. One API call."""
+def find_marker_comments(repo: str, number: int, token: str) -> list[dict]:
+    """EVERY comment on ``number`` carrying this script's marker. One API call.
+
+    All of them, not just the first. A first-match-only lookup silently
+    ORPHANS any duplicate: every later run edits comment #1 and nothing in
+    this file can ever see, update or remove #2. Duplicates should be
+    impossible now that nothing re-POSTs, but "impossible" is exactly the
+    claim worth checking rather than assuming — so the caller reports any it
+    finds instead of quietly editing around them.
+    """
     comments = _paginate(
         f"{API_ROOT}/repos/{repo}/issues/{number}/comments?per_page=100", token
     )
-    return next((c for c in comments if MARKER in str(c.get("body", ""))), None)
+    return [c for c in comments if MARKER in str(c.get("body", ""))]
+
+
+def _report_duplicates(number: int, found: list[dict], failures: list[str]) -> None:
+    """A second marker comment is a defect, not something to edit around."""
+    if len(found) > 1:
+        ids = ", ".join(str(c.get("id")) for c in found[1:])
+        failures.append(
+            f"#{number}: {len(found)} fork-notice comments exist (extra ids: "
+            f"{ids}); only the first is maintained. Delete the extras."
+        )
 
 
 def write_comment(
@@ -487,36 +442,13 @@ def write_comment(
             body={"body": body},
         )
         return "edited"
-    return _post_comment(repo, number, body, token)
-
-
-def _post_comment(repo: str, number: int, body: str, token: str) -> str:
-    """POST once; on failure, READ BACK before deciding whether to POST again.
-
-    POST cannot be blindly replayed — GitHub can 502 after the write commits,
-    and the replay would post a second marker comment. But refusing to retry
-    at all throws away resilience the code had before: a connection reset that
-    never reached GitHub leaves that PR unnotified until the NEXT land
-    touching the versions dir, an interval this module's own docstring
-    measures in DAYS. Read-back gets both properties. If the marker is there
-    now, the write landed and only the response was lost; if it is not, the
-    write did not land and one more POST is safe.
-    """
-    url = f"{API_ROOT}/repos/{repo}/issues/{number}/comments"
-    try:
-        _request(url, token, method="POST", body={"body": body})
-        return "posted"
-    except ApiError as first:
-        try:
-            landed = find_marker_comment(repo, number, token)
-        except ApiError:
-            # Could not establish what happened. Surface the ORIGINAL failure
-            # rather than the read error, and never guess that it worked.
-            raise first from None
-        if landed is not None:
-            return "posted"
-        _request(url, token, method="POST", body={"body": body})
-        return "posted-on-retry"
+    _request(
+        f"{API_ROOT}/repos/{repo}/issues/{number}/comments",
+        token,
+        method="POST",
+        body={"body": body},
+    )
+    return "posted"
 
 
 def prs_carrying_a_notice(repo: str, token: str) -> tuple[set[int] | None, str]:
@@ -557,15 +489,19 @@ def prs_carrying_a_notice(repo: str, token: str) -> tuple[set[int] | None, str]:
     # so this can only fire above 100 carriers — unreachable on a repo with
     # ~16 open PRs, but structural rather than decorative: it must say so
     # rather than truncate in silence.
+    reasons = []
     if isinstance(total, int) and total > len(items):
-        partial = (
+        reasons.append(
             f"{total} PRs carry a fork notice but only {len(items)} were listed; "
             f"{total - len(items)} may still be showing a stale one."
         )
-    elif page.get("incomplete_results"):
-        partial = "GitHub reported the notice search as incomplete (it timed out)."
-    if partial:
-        err(partial)
+    # `if`, not `elif`: both can be true, and reporting only the first one
+    # silently drops a signal the caller was given.
+    if page.get("incomplete_results"):
+        reasons.append(
+            "GitHub reported the notice search as incomplete (it timed out)."
+        )
+    partial = " ".join(reasons)
     return {int(item["number"]) for item in items}, partial
 
 
@@ -643,7 +579,9 @@ def main() -> int:
         # The search SUCCEEDED and returned a knowingly-incomplete answer. That
         # is not the blessed best-effort case (a FAILED search), and leaving it
         # green would let PRs keep a false notice while the job reads clean.
-        failures.append(notice_search_partial)
+        # Prefixed, because `failures` is otherwise per-PR and the summary
+        # counts it: an unlabelled entry reads as "a PR could not be swept".
+        failures.append(f"notice search: {notice_search_partial}")
     examined = forked = cleared = 0
     for pr in prs:
         number = int(pr["number"])
@@ -658,7 +596,9 @@ def main() -> int:
             # earlier land, which is now a lie.
             if notified is not None and number in notified:
                 try:
-                    existing = find_marker_comment(args.repo, number, token)
+                    found = find_marker_comments(args.repo, number, token)
+                    existing = found[0] if found else None
+                    _report_duplicates(number, found, failures)
                     if existing is not None:
                         result = write_comment(
                             args.repo,
@@ -704,7 +644,9 @@ def main() -> int:
         if len(scan.heads) == 1:
             note(f"#{number}: single head ({scan.heads[0]}) — ok")
             try:
-                existing = find_marker_comment(args.repo, number, token)
+                found = find_marker_comments(args.repo, number, token)
+                existing = found[0] if found else None
+                _report_duplicates(number, found, failures)
             except ApiError as exc:
                 failures.append(f"#{number}: could not read comments: {exc}")
                 continue
@@ -732,7 +674,9 @@ def main() -> int:
         remediation = plan_remediation(scan, landed)
         body = render_comment(scan.heads, remediation, args.sha or "main")
         try:
-            existing = find_marker_comment(args.repo, number, token)
+            found = find_marker_comments(args.repo, number, token)
+            existing = found[0] if found else None
+            _report_duplicates(number, found, failures)
             result = write_comment(
                 args.repo, number, body, token, existing, dry_run=args.dry_run
             )
@@ -755,10 +699,7 @@ def main() -> int:
     if failures:
         for failure in failures:
             err(failure)
-        err(
-            f"{len(failures)} PR(s) could not be swept — this run is INCOMPLETE, "
-            "not clean."
-        )
+        err(f"{len(failures)} problem(s) recorded — this run is INCOMPLETE, not clean.")
         return EXIT_VACUOUS
     return 0
 

@@ -289,7 +289,13 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
     inventing a recommendation from a baseline they never saw.
     """
     if landed is None:
-        return Remediation("unknown", (), scan.heads, None, ())
+        # Assert NOTHING about what landed. Putting every head in
+        # `unlanded_heads` reads as a definite "none of these have landed",
+        # which is the exact inversion `revisions_at_ref` warns about: the
+        # baseline was UNREADABLE, not empty. Renderers must special-case
+        # this arm rather than print a landed/unlanded split that is a claim
+        # nobody made.
+        return Remediation("unknown", (), (), None, ())
     landed_heads = tuple(h for h in scan.heads if h in landed)
     unlanded_heads = tuple(h for h in scan.heads if h not in landed)
 
@@ -331,6 +337,9 @@ def plan_remediation(scan: Scan, landed: set[str] | None) -> Remediation:
         return Remediation("repoint", landed_heads, unlanded_heads, target, edits)
 
     # Two or more landed heads (the baseline itself is forked), or every head
-    # unlanded (several new chains authored off the same parent). Both need a
-    # human to choose an order; do not fabricate one.
-    return Remediation("chain", landed_heads, unlanded_heads, None, ())
+    # unlanded (several new chains authored off the same parent). Neither has
+    # a single token to name, so this arm will not fabricate an order — but
+    # it still carries `edits`, the shallowest unlanded revision on each
+    # chain. Dropping them made the caller say "no single landed head" and
+    # nothing else, when the exact files to edit were already computed.
+    return Remediation("chain", landed_heads, unlanded_heads, None, edits)

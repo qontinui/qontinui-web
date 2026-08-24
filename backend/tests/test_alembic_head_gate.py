@@ -237,12 +237,9 @@ def test_unreadable_baseline_is_unknown_not_empty() -> None:
     remediation = plan_remediation(scan, landed=None)
     assert remediation.kind == "unknown"
     assert remediation.target is None
-    # Nothing can be asserted to have landed — that is the whole point — but
-    # the heads are still carried, so a renderer cannot end up printing
-    # "landed head(s) (none), unlanded head(s) (none)" two lines under a line
-    # saying the chain has 2 heads.
-    assert remediation.landed_heads == ()
-    assert remediation.unlanded_heads == scan.heads
+    assert remediation.edits == ()
+    # What it must NOT assert about the head split is pinned by
+    # test_the_unknown_arm_asserts_nothing_about_what_landed below.
 
 
 # ---------------------------------------------------------------------------
@@ -402,43 +399,6 @@ def test_a_cycle_inside_one_fork_is_blocked_with_its_own_reason() -> None:
     assert [reason for _, reason, _ in remediation.blocked] == ["cycle"]
 
 
-# ---------------------------------------------------------------------------
-# the notifier's retry policy — the NEGATIVE path
-#
-# A retry that replays a POST is worse than no retry: GitHub can 502 after the
-# write commits, so the replay posts a SECOND marker comment — the exact
-# duplicate the upsert and the workflow's `concurrency:` group exist to
-# prevent. These pin the discrimination rather than the happy path.
-# ---------------------------------------------------------------------------
-
-
-def test_writes_that_create_are_never_replayed() -> None:
-    assert "POST" not in notifier.IDEMPOTENT_METHODS
-
-
-@pytest.mark.parametrize("method", ["GET", "PATCH"])
-def test_reads_and_in_place_updates_are_replayable(method: str) -> None:
-    assert method in notifier.IDEMPOTENT_METHODS
-
-
-def test_a_permissions_403_is_not_retried() -> None:
-    """`Resource not accessible by integration` is an answer, not a blip."""
-    assert notifier._is_retryable(403, {}) is False
-
-
-@pytest.mark.parametrize(
-    "headers",
-    [{"retry-after": "60"}, {"x-ratelimit-remaining": "0"}],
-)
-def test_a_rate_limit_403_is_retried(headers: dict[str, str]) -> None:
-    assert notifier._is_retryable(403, headers) is True
-
-
-def test_server_errors_are_retried_and_client_errors_are_not() -> None:
-    assert all(notifier._is_retryable(code, {}) for code in (429, 500, 502, 503, 504))
-    assert not any(notifier._is_retryable(code, {}) for code in (400, 404, 409, 422))
-
-
 def test_the_pr_file_filter_matches_what_the_gate_scans() -> None:
     """A looser filter tells authors a green required check is red."""
     prefix = f"{notifier.VERSIONS_DIR}/"
@@ -549,47 +509,162 @@ def test_rendering_never_raises_on_a_path_outside_the_repo() -> None:
 
 
 # ---------------------------------------------------------------------------
-# retry: the delay must be the one the server asked for
+# There is no retry layer any more — descoped after four of six review
+# blockers on this file lived in it. These pin its ABSENCE, because the
+# tempting "just add a retry" edit is what produced a permanent duplicate
+# comment last time.
 # ---------------------------------------------------------------------------
 
 
-def test_a_rate_limit_403_is_recognised_from_the_body_without_headers() -> None:
-    """A secondary-rate-limit 403 with neither header is a documented shape;
-    classifying it as a permissions failure hard-fails a sweep that only
-    needed to wait."""
-    assert notifier._is_retryable(403, {}, b"You have exceeded a secondary rate limit")
+def test_there_is_no_retry_layer() -> None:
+    for gone in (
+        "_is_retryable",
+        "_retry_delay",
+        "_post_comment",
+        "RETRYABLE_STATUS",
+        "IDEMPOTENT_METHODS",
+        "MAX_HONOURED_DELAY_SECONDS",
+    ):
+        assert not hasattr(notifier, gone), (
+            f"{gone} is back. A re-POST can duplicate a marker comment, and a "
+            "read-back cannot fix it — see the module docstring."
+        )
 
 
-def test_a_permissions_403_stays_refused_even_with_a_retry_after_header() -> None:
-    assert not notifier._is_retryable(
-        403, {"retry-after": "60"}, b"Resource not accessible by integration"
+def test_all_marker_comments_are_found_not_just_the_first() -> None:
+    """A first-match-only lookup ORPHANS a duplicate: every later run edits
+    #1 and nothing can ever see, update or remove #2."""
+    captured: list[dict] = [
+        {"id": 1, "body": notifier.MARKER + "\nfirst"},
+        {"id": 2, "body": "unrelated"},
+        {"id": 3, "body": notifier.MARKER + "\nsecond"},
+    ]
+    original = notifier._paginate
+    notifier._paginate = lambda url, token: captured
+    try:
+        found = notifier.find_marker_comments("o/r", 1, "t")
+    finally:
+        notifier._paginate = original
+    assert [c["id"] for c in found] == [1, 3]
+
+
+def test_a_duplicate_notice_is_reported_not_silently_edited_around() -> None:
+    failures: list[str] = []
+    notifier._report_duplicates(7, [{"id": 1}, {"id": 2}], failures)
+    assert len(failures) == 1 and "#7" in failures[0] and "2" in failures[0]
+    failures.clear()
+    notifier._report_duplicates(7, [{"id": 1}], failures)
+    assert failures == []
+
+
+# ---------------------------------------------------------------------------
+# the fork roots must not be dropped just because no single head landed
+# ---------------------------------------------------------------------------
+
+
+def _mixed_two_landed_heads():
+    sources = {
+        **_tree(
+            ("a", None),
+            ("L1", "a"),
+            ("L2", "a"),
+            ("r1", "a"),
+            ("r2", "r1"),
+            ("b", "a"),
+            ("c", "a"),
+        ),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    return scan_sources(sources), {"a", "L1", "L2"}
+
+
+def test_the_fork_roots_survive_when_there_is_no_single_landed_head() -> None:
+    scan, landed = _mixed_two_landed_heads()
+    remediation = plan_remediation(scan, landed)
+    assert remediation.target is None
+    assert [rev for rev, _ in remediation.edits] == ["r1"]
+
+
+def test_both_renderers_name_the_roots_when_there_is_no_single_target() -> None:
+    scan, landed = _mixed_two_landed_heads()
+    remediation = plan_remediation(scan, landed)
+    text = render_remediation(remediation, "origin/main", scan.heads)
+    comment = notifier.render_comment(scan.heads, remediation, "cafebabe1234")
+    assert "r1" in text, "the gate computed the root and then withheld it"
+    assert "r1" in comment, "the comment computed the root and then withheld it"
+
+
+def test_plain_chain_also_names_its_roots() -> None:
+    scan = scan_sources(_tree(("a", None), ("p", "a"), ("q", "a")))
+    remediation = plan_remediation(scan, landed={"a"})
+    assert remediation.kind == "chain"
+    assert {rev for rev, _ in remediation.edits} == {"p", "q"}
+    assert "p" in render_remediation(remediation, "origin/main", scan.heads)
+
+
+# ---------------------------------------------------------------------------
+# UNKNOWN must not become a claim
+# ---------------------------------------------------------------------------
+
+
+def test_the_unknown_arm_asserts_nothing_about_what_landed() -> None:
+    """Putting every head in `unlanded_heads` reads as a definite "none of
+    these landed" — the exact inversion `revisions_at_ref` warns about."""
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "a")))
+    remediation = plan_remediation(scan, landed=None)
+    assert remediation.kind == "unknown"
+    assert remediation.landed_heads == ()
+    assert remediation.unlanded_heads == ()
+
+
+def test_the_unknown_comment_says_unknown_and_not_a_head_split() -> None:
+    scan = scan_sources(_tree(("a", None), ("b", "a"), ("c", "a")))
+    comment = notifier.render_comment(
+        scan.heads, plan_remediation(scan, landed=None), "cafebabe1234"
     )
+    assert "unknown" in comment.lower()
+    assert "landed head(s)" not in comment
 
 
-def test_the_asked_for_delay_is_honoured_not_the_fixed_ladder() -> None:
-    """A 2s/4s ladder against a 60s rate limit burns 6s and fails identically."""
-    assert notifier._retry_delay(1, {"retry-after": "60"}) == 60.0
+# ---------------------------------------------------------------------------
+# the search must not drop a signal it was handed
+# ---------------------------------------------------------------------------
 
 
-def test_an_unusably_long_delay_gives_up_instead_of_sleeping() -> None:
-    assert notifier._retry_delay(1, {"retry-after": "3600"}) is None
+def test_both_partial_signals_are_reported_not_just_the_first() -> None:
+    page = {
+        "total_count": 250,
+        "incomplete_results": True,
+        "items": [{"number": i} for i in range(100)],
+    }
+    original = notifier._request
+    notifier._request = lambda url, token, **kw: (page, {})
+    try:
+        found, partial = notifier.prs_carrying_a_notice("o/r", "t")
+    finally:
+        notifier._request = original
+    assert len(found) == 100
+    assert "250 PRs carry" in partial
+    assert "incomplete" in partial
 
 
-def test_an_unparseable_retry_after_falls_back_to_the_ladder() -> None:
-    """An HTTP-date must not be silently read as zero."""
-    assert (
-        notifier._retry_delay(1, {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})
-        == 2.0
+def test_a_clean_search_reports_no_partial_reason() -> None:
+    page = {"total_count": 2, "incomplete_results": False, "items": [{"number": 4}]}
+    original = notifier._request
+    notifier._request = lambda url, token, **kw: (page, {})
+    try:
+        _, partial = notifier.prs_carrying_a_notice("o/r", "t")
+    finally:
+        notifier._request = original
+    # total_count(2) > len(items)(1) IS a truncation and must be reported.
+    assert "2 PRs carry" in partial
+
+
+def test_repo_relative_never_raises_and_has_one_home() -> None:
+    from _gate_lib import repo_relative
+
+    assert repo_relative(None, "fallback") == "fallback"
+    assert repo_relative(Path("/definitely/not/in/the/repo")) == (
+        "/definitely/not/in/the/repo"
     )
-
-
-def test_the_default_ladder_still_backs_off() -> None:
-    assert notifier._retry_delay(1, {}) == 2.0
-    assert notifier._retry_delay(2, {}) == 4.0
-
-
-def test_delete_is_not_replayable() -> None:
-    """Idempotent by EFFECT, not by observed STATUS: a committed-then-502'd
-    DELETE answers 404 on replay, and 404 is not retryable, so the run would
-    report a failure for a delete that succeeded."""
-    assert "DELETE" not in notifier.IDEMPOTENT_METHODS
+    assert notifier._pretty_path("rev", None) == "rev"
