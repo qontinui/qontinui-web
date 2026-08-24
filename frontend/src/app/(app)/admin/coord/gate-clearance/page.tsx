@@ -39,7 +39,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, TriangleAlert } from "lucide-react";
+import { RotateCcw, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { CoordPolicyRow } from "../_shared/coordPolicies";
 import { ClearanceRuleEditorDialog } from "./_components/ClearanceRuleEditorDialog";
 import { ClearanceRuleList } from "./_components/ClearanceRuleList";
@@ -53,6 +53,7 @@ export default function GateClearancePage() {
     loading,
     saving,
     loadFailed,
+    reload,
     create,
     patchRule,
     deleteRule,
@@ -60,6 +61,7 @@ export default function GateClearancePage() {
   } = useGateClearanceRules();
 
   const [editorOpen, setEditorOpen] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [editingRule, setEditingRule] = useState<CoordPolicyRow | null>(null);
   const [seed, setSeed] = useState<{
     gateClass: string;
@@ -121,6 +123,7 @@ export default function GateClearancePage() {
         // would state an effective authority for every class computed from an
         // empty set — precisely the wrong answer, confidently.
         <div
+          role="alert"
           className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4"
           data-testid="gate-clearance-load-failed"
         >
@@ -132,8 +135,27 @@ export default function GateClearancePage() {
             <p className="font-medium">Clearance rules could not be loaded.</p>
             <p className="mt-1 text-muted-foreground">
               The effective authority per class is unknown — this page will not
-              guess it. Reload once coord is reachable.
+              guess it. Retry once coord is reachable.
             </p>
+            {/* Refetches in place. A full browser reload also works, but it
+                re-mounts the whole console to retry one side-fetch. The
+                in-flight flag is local because nothing in the hook moves on a
+                refetch — `loading` is first-load only — so without it a
+                hanging coord leaves a dead button. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              disabled={retrying}
+              onClick={() => {
+                setRetrying(true);
+                void reload().finally(() => setRetrying(false));
+              }}
+              data-testid="gate-clearance-retry"
+            >
+              <RotateCcw className="size-4" />
+              {retrying ? "Retrying…" : "Retry"}
+            </Button>
           </div>
         </div>
       ) : (
