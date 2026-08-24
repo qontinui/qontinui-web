@@ -1,7 +1,7 @@
 """coord.pr_author_nudges.failure_signature — CI-red nudge dedup on failure identity
 
 Revision ID: coord_pr_author_nudges_02
-Revises: coord_obs_idx_01
+Revises: coord_polread_01
 Create Date: 2026-08-22
 
 Phase 3 of plan
@@ -80,7 +80,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_pr_author_nudges_02"
-down_revision: str | Sequence[str] | None = "coord_obs_idx_01"
+down_revision: str | Sequence[str] | None = "coord_polread_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
