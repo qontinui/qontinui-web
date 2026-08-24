@@ -18,6 +18,17 @@
  * CoordNav comes from the /admin/coord layout. That layout does NOT admin-gate
  * — any authenticated tenant member may reach this page, including the
  * `connect` install CTA below. Mutations gate on `isCoordAdmin` per page.
+ *
+ * ## Console style (Phase 3 ride-along) — checked, already satisfied
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` classes this
+ * route as a form/dialog surface taking "R9 + R3 only". Audited 2026-08-24:
+ * this page file already satisfies R9 — no `<h1>`, no page-level `<Card>`,
+ * body is `p-3 sm:p-6`. `space-y-6` is kept rather than narrowed to the
+ * console's `space-y-4`: the three children are sequential steps in an
+ * enrolment flow, and the extra gap is what keeps them from reading as one
+ * form. No code change was needed; recorded so the next session reads a
+ * verdict rather than re-auditing.
  */
 
 import { ConnectGitHubOrg } from "@/components/operations/ConnectGitHubOrg";
