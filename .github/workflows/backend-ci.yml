@@ -46,12 +46,36 @@ env:
 jobs:
   lint:
     name: Lint & Format Check
-    # Self-hosted runners (label 'qontinui') have Python 3.12 pre-installed
-    # plus a persistent pip cache — avoids the ubuntu-latest cold-boot tax
-    # (~90s of action downloads + apt + pip warmup per run). Requires a
-    # self-hosted runner to be online; if none are available the job
-    # queues until one comes up (no automatic ubuntu-latest fallback).
-    runs-on: [self-hosted, qontinui]
+    # ubuntu-latest, NOT [self-hosted, qontinui].
+    #
+    # This job was pinned to the self-hosted pool because those runners had
+    # Python 3.12 pre-installed plus a persistent pip cache, which avoided the
+    # ubuntu-latest cold-boot tax (~90s of action downloads + apt + pip warmup).
+    # That optimisation stopped being free on 2026-08-24: the pool's image moved
+    # to Debian 13, actions/setup-python@v5 found no 3.12 in the runner tool
+    # cache, and the download it fell back to does not exist for that platform:
+    #
+    #   ##[error]The version '3.12' with architecture 'x64' was not found for
+    #   Debian 13.
+    #
+    # The job then failed in ~13s having never reached ruff or mypy, on EVERY
+    # branch (verified across two unrelated PRs and confirmed against the last
+    # green run on this same pool at 16:37 UTC that day). A required check that
+    # cannot pass is worse than a slow one: it blocks the merge train for the
+    # whole repo.
+    #
+    # ubuntu-latest is not a guess — the `test` job below already runs there
+    # with the IDENTICAL actions/setup-python@v5 + PYTHON_VERSION + pip cache,
+    # and was green on the run where this job broke. So this restores a
+    # configuration already proven in this file rather than inventing one.
+    #
+    # Re-pinning to [self-hosted, qontinui] is fine once the pool image ships a
+    # 3.12 that setup-python can resolve (or once the runner tool cache is
+    # seeded with one). Re-verify against a real run before doing so; the
+    # comment that used to live here asserted "pre-installed" as a standing
+    # fact, and that assertion is exactly what went stale.
+    runs-on: ubuntu-latest
+
     defaults:
       run:
         working-directory: ./backend
@@ -64,8 +88,11 @@ jobs:
       # `path:` outside the workspace, so clone them via git directly.
       # qontinui-cloud-control is now AGPL/public — plain clone so the test
       # harness can side-effect-import it (see backend/tests/conftest.py).
-      # Self-hosted runners reuse $GITHUB_WORKSPACE/..; remove stale clones
-      # first so each run starts from a known state.
+      # The `rm -rf` predates this job's move to ubuntu-latest, where the
+      # workspace is fresh per run and the clones cannot be stale. It is kept
+      # deliberately: it costs nothing on a clean runner and is what makes the
+      # step correct again the moment this job is re-pinned to the self-hosted
+      # pool, which DOES reuse $GITHUB_WORKSPACE/.. between runs.
       - name: Checkout sibling repos (qontinui-schemas, qontinui, qontinui-cloud-control)
         run: |
           cd "$GITHUB_WORKSPACE/.."
