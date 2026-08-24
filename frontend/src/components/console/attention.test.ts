@@ -9,10 +9,17 @@
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md`).
  *
  * So the invariant is generalised into `paletteDisagreements` and audited here
- * over a REGISTRY. Adding a console surface means adding one line to
+ * over a REGISTRY. Adding a console surface means adding one row to
  * {@link CONSOLE_PALETTES}; forgetting to is the one failure this file cannot
  * catch, which is why the registry sits next to the primitive rather than
  * inside a page.
+ *
+ * **That failure had already happened**, which is the best argument for the
+ * warning above being load-bearing rather than decorative: Wave 1 shipped three
+ * palettes and Wave 2 four, and none of the seven were registered here — each
+ * had only its own module-local audit. All seven are registered now. A surface
+ * whose palette is audited only beside itself is a surface whose audit can be
+ * deleted with it.
  *
  * See `frontend/docs/console-ui-style-guide.md` §4.2 (the
  * `ATTENTION_BY_KIND` audit-table contract).
@@ -42,7 +49,45 @@ import { ATTENTION_BY_KIND as ALERT_ATTENTION } from "@/components/admin/coord/a
 import {
   ALERT_AUTHOR_GLYPH_KINDS,
   ALERT_BADGE_CLASS,
+  ALERT_PER_ROW_KINDS,
 } from "@/components/admin/coord/AlertRow";
+// Wave 1 surfaces.
+import {
+  PLAN_ATTENTION_BY_TONE,
+  PLAN_AUTHOR_GLYPH_TONES,
+  PLAN_TONE_CLASS,
+} from "@/components/admin/coord/planStatus";
+import {
+  TREE_ATTENTION_BY_KIND,
+  TREE_AUTHOR_GLYPH_KINDS,
+  TREE_BADGE_CLASS,
+} from "@/components/admin/coord/treeStatus";
+import {
+  QUESTION_ATTENTION_BY_KIND,
+  QUESTION_AUTHOR_GLYPH_KINDS,
+  QUESTION_BADGE_CLASS,
+} from "@/components/admin/coord/questionStatus";
+// Wave 2 surfaces.
+import {
+  MEMORY_ATTENTION_BY_TONE,
+  MEMORY_AUTHOR_GLYPH_TONES,
+  MEMORY_TONE_CLASS,
+} from "@/components/admin/coord/memoryStatus";
+import {
+  PULL_ATTENTION_BY_VERDICT,
+  PULL_AUTHOR_GLYPH_VERDICTS,
+  PULL_VERDICT_CLASS,
+} from "@/components/admin/coord/pullDecisionStatus";
+import {
+  RELEASE_ATTENTION_BY_STATE,
+  RELEASE_AUTHOR_GLYPH_STATES,
+  RELEASE_STATE_CLASS,
+} from "@/components/admin/coord/releaseStatus";
+import {
+  VERIFICATION_ATTENTION_BY_KIND,
+  VERIFICATION_AUTHOR_GLYPH_KINDS,
+  VERIFICATION_CLASS,
+} from "@/components/admin/coord/verificationStatus";
 
 /**
  * Every kind→attention table in the console, paired with the palette that
@@ -74,7 +119,65 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     // badge: its real attention is severity-derived per row, and
     // `alertPaletteFor` paints the row from that. `alertStatus.test.ts`
     // covers the per-row resolution; this audit covers the static table.
-    perRowKinds: new Set(["unknown"]),
+    perRowKinds: ALERT_PER_ROW_KINDS as ReadonlySet<string>,
+  },
+  // --- Phase 3 Wave 1 -------------------------------------------------------
+  {
+    surface: "plans (/admin/coord/plans, /history)",
+    attentionByKind: PLAN_ATTENTION_BY_TONE,
+    palette: {
+      badgeClass: PLAN_TONE_CLASS,
+      authorGlyphKinds: PLAN_AUTHOR_GLYPH_TONES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "trees (/admin/coord/trees)",
+    attentionByKind: TREE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: TREE_BADGE_CLASS,
+      authorGlyphKinds: TREE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "questions (/admin/coord/questions)",
+    attentionByKind: QUESTION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: QUESTION_BADGE_CLASS,
+      authorGlyphKinds: QUESTION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- Phase 3 Wave 2 -------------------------------------------------------
+  {
+    surface: "memory (/admin/coord/memory)",
+    attentionByKind: MEMORY_ATTENTION_BY_TONE,
+    palette: {
+      badgeClass: MEMORY_TONE_CLASS,
+      authorGlyphKinds: MEMORY_AUTHOR_GLYPH_TONES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "pull decisions (/admin/coord/pull-decisions)",
+    attentionByKind: PULL_ATTENTION_BY_VERDICT,
+    palette: {
+      badgeClass: PULL_VERDICT_CLASS,
+      authorGlyphKinds: PULL_AUTHOR_GLYPH_VERDICTS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "releases (/admin/coord/releases)",
+    attentionByKind: RELEASE_ATTENTION_BY_STATE,
+    palette: {
+      badgeClass: RELEASE_STATE_CLASS,
+      authorGlyphKinds: RELEASE_AUTHOR_GLYPH_STATES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "land + deploy verification (/admin/coord/lands, /deploys)",
+    attentionByKind: VERIFICATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: VERIFICATION_CLASS,
+      authorGlyphKinds: VERIFICATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
   },
 ];
 

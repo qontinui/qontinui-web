@@ -16,7 +16,7 @@
  * corpus-wide answer.
  */
 
-import type { CoordPlanRow } from "@/components/admin/coord/PlanCard";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
 export type SortKey =
   | "created_desc"

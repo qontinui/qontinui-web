@@ -31,9 +31,11 @@ import {
   type AlertKind,
   type CoordAlertRow,
 } from "./alertStatus";
+import { paletteDisagreements } from "@/components/console/attention";
 import {
   ALERT_AUTHOR_GLYPH_KINDS,
   ALERT_BADGE_CLASS,
+  ALERT_PER_ROW_KINDS,
   alertPaletteFor,
 } from "./AlertRow";
 
@@ -105,17 +107,28 @@ describe("ATTENTION_BY_KIND totality", () => {
   });
 
   it("keys the palette off attention — red only for author-action", () => {
-    for (const [kind, attention] of Object.entries(ATTENTION_BY_KIND)) {
-      const cls = ALERT_BADGE_CLASS[kind as AlertKind];
-      expect(/\bbg-red-/.test(cls), `${kind} red?`).toBe(
-        attention === "author"
-      );
-      expect(/\bbg-amber-/.test(cls), `${kind} amber?`).toBe(
-        // `unknown` is amber-by-floor but neutral in the badge: its attention
-        // is per-row (severity-derived), so the ACCENT carries the escalation.
-        attention === "waiting" && kind !== "unknown"
-      );
-    }
+    // The SHARED R3 audit (`console/attention.ts`), not a private copy of it.
+    // This surface's inline version predated `paletteDisagreements` — it IS
+    // what the shared helper was generalised from — and it was the only
+    // console palette still auditing itself, so the exemplar was drifting
+    // behind the pattern it set.
+    //
+    // `perRowKinds` exempts `unknown` because its attention is per-row
+    // (severity-derived) and `alertPaletteFor` resolves what actually renders
+    // — asserted below. Note the exemption is the same SET as the inline
+    // check's, but not the same SHAPE: the inline
+    // `attention === "waiting" && kind !== "unknown"` positively asserted that
+    // `unknown`'s badge is NOT amber, whereas `perRowKinds` skips clause (3)
+    // for it entirely. That one bit is no longer pinned. It is deliberate
+    // rather than overlooked: amber there would be MORE R3-compliant, not
+    // less, so the lost assertion guarded against an improvement.
+    expect(
+      paletteDisagreements(
+        ATTENTION_BY_KIND,
+        { badgeClass: ALERT_BADGE_CLASS, authorGlyphKinds: ALERT_AUTHOR_GLYPH_KINDS },
+        { perRowKinds: ALERT_PER_ROW_KINDS }
+      )
+    ).toEqual([]);
   });
 
   it("paints an ESCALATED row from its computed attention, not its kind's floor", () => {
@@ -150,17 +163,17 @@ describe("ATTENTION_BY_KIND totality", () => {
     expect(alertPaletteFor(plain).badgeClass).toBe(ALERT_BADGE_CLASS);
   });
 
-  it("carries the colourblind-safe ✕ on exactly the author kinds", () => {
-    const authorKinds = (
-      Object.keys(ATTENTION_BY_KIND) as AlertKind[]
-    ).filter((k) => ATTENTION_BY_KIND[k] === "author");
-    for (const kind of authorKinds) {
-      expect(ALERT_AUTHOR_GLYPH_KINDS.has(kind), `${kind} red, no ✕`).toBe(
-        true
-      );
-    }
-    expect(ALERT_AUTHOR_GLYPH_KINDS.size).toBe(authorKinds.length);
-  });
+  // The `✕`-on-exactly-the-author-kinds loop that stood here is now clause (4)
+  // of `paletteDisagreements`, asserted by the test above.
+  //
+  // It is worth being exact about WHY it went, because the tempting reason is
+  // wrong: the shared clause is NOT strictly stronger. Forward containment
+  // plus set-size equality already implies set equality, so the loop and the
+  // clause pin the same property. The real reason is duplication that was
+  // already shipped — Wave 1's `console/attention.test.ts` runs
+  // `paletteDisagreements` over THIS palette, with this same `perRowKinds`,
+  // as its worked example. The loop was a third copy of an assertion two
+  // other places already make.
 });
 
 // ----------------------------------------------------------------------------
