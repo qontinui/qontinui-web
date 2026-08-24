@@ -27,11 +27,16 @@ import type {
   PromptDocumentKind,
 } from "../types";
 import {
+  isInertSessionBriefing,
   KIND_META,
   PROMPT_DOCUMENT_KINDS,
   SESSION_BRIEFING_DOCUMENT_NAMES,
 } from "../types";
-import { validateBodyForKind } from "../_lib/sessionBriefingBody";
+import {
+  SESSION_BRIEFING_MAX_BYTES,
+  sessionBriefingByteLength,
+  validateBodyForKind,
+} from "../_lib/sessionBriefingBody";
 
 interface PromptDocumentCreateDialogProps {
   open: boolean;
@@ -90,6 +95,10 @@ export function PromptDocumentCreateDialog({
    */
   const bodyError = body.length > 0 ? validateBodyForKind(kind, body) : null;
 
+  /** Computed once per render rather than twice inside the budget line. */
+  const bodyBytes =
+    kind === "session_briefing" ? sessionBriefingByteLength(body) : 0;
+
   /**
    * A `session_briefing` row under a name the runner does not resolve is
    * legal, and it is a trap worth naming rather than blocking.
@@ -105,10 +114,9 @@ export function PromptDocumentCreateDialog({
    * only moment to say so.
    */
   const inertBriefingName =
-    kind === "session_briefing" &&
     name.trim().length > 0 &&
     isKebabCase(name.trim()) &&
-    !SESSION_BRIEFING_DOCUMENT_NAMES.includes(name.trim());
+    isInertSessionBriefing(kind, name);
 
   const canSubmit =
     !saving &&
@@ -220,7 +228,30 @@ export function PromptDocumentCreateDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="create-body">Body</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="create-body">Body</Label>
+              {/*
+                The size ceiling is the one content rule an operator can breach
+                without doing anything odd — a pasted long-form briefing. The
+                editor already shows the budget while typing; the create dialog
+                is where the FIRST version is written, so showing it only after
+                the fact would teach the rule at the later door. Counted in
+                UTF-8 bytes because that is what coord measures.
+              */}
+              {kind === "session_briefing" ? (
+                <p
+                  className={`shrink-0 text-xs tabular-nums ${
+                    bodyBytes > SESSION_BRIEFING_MAX_BYTES
+                      ? "font-medium text-destructive"
+                      : "text-muted-foreground"
+                  }`}
+                  data-testid="create-body-budget"
+                >
+                  {bodyBytes.toLocaleString()} /{" "}
+                  {SESSION_BRIEFING_MAX_BYTES.toLocaleString()} bytes
+                </p>
+              ) : null}
+            </div>
             <Textarea
               id="create-body"
               data-testid="create-body"
