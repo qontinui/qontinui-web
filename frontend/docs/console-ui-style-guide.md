@@ -1,6 +1,6 @@
 # Console UI Style Guide
 
-**Version:** 0.1.0 (Phase 0 — prose only; §3 is a stub until Phase 1 lands)
+**Version:** 0.2.0 (Phase 1 — §3 filled in from the shipped primitives)
 **Last Updated:** 2026-08-20
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`
 
@@ -10,10 +10,13 @@ built on it instead of inventing a third shape.
 
 Every code citation below was verified against `origin/main` at
 `859d8286fe611408b929c89b5e95ebf5a39e9c50` — **with one declared exception:
-[§3.1](#31-the-base-this-is-built-on--operationsstatusrowtsx) cites
-`operations/statusRow.tsx`, which is NOT on `main`. It lands with qontinui-web#986
-(open at the time of writing), and its line numbers are as of the `pr986` ref.
-Every such citation is marked at its use site.** Line numbers move; the symbol
+[§3](#3-the-primitive-catalogue) describes
+`src/components/console/`, which is NOT on `main` yet. That directory lands with
+the Phase 1 PR, which is itself **stacked on qontinui-web#986** (still open —
+it is what moved the row atoms out of `MergePipeline.tsx` in the first place).
+So §3 describes code that exists and is tested, on a branch, behind an unlanded
+dependency. It is marked as such at its use sites, and this note comes out when
+both land.** Line numbers move; the symbol
 names do not. When a citation drifts, fix the citation — do not fix the rule to
 match whatever the code drifted into.
 
@@ -75,6 +78,31 @@ varies per rule, and each ❌ below names the file it came from. Where a rule ha
 **no** live violator at a given scale, the guide says so rather than
 manufacturing one — see
 [R7](#r7--secondary-material-collapses-but-its-signal-does-not).
+
+> **Where this code lives after Phase 1.** The ✅ examples below are `origin/main`
+> coordinates, and they are still exactly right about `origin/main`. They are no
+> longer where you should COPY FROM: Phase 1 moved the mechanism each one
+> demonstrates out of `MergePipeline.tsx` and into a primitive
+> ([§3](#3-the-primitive-catalogue)), and `MergePipeline` now composes those
+> primitives like any other page. The examples stay as the *derivation* of each
+> rule — they show the code the rule was read off — and this table is the map from
+> the rule to the thing to reach for:
+>
+> | Rule | Now lives in |
+> |---|---|
+> | R1 | `console/HealthStrip.tsx`, `console/StatCluster.tsx` |
+> | R2, R4 | `console/RecordRow.tsx`, over `console/statusRow.tsx` |
+> | R3 | `console/statusRow.tsx` + `console/attention.ts` |
+> | R5 | `console/RecordDetail.tsx`, `console/RecordList.tsx` |
+> | R6 | `console/FilterTabs.tsx` |
+> | R7 | `console/CollapsiblePanel.tsx` |
+> | (support) | `console/time.ts` — `relativeTime` / `absoluteTime` |
+> | R8, R9 | no primitive — they are rules about what a PAGE does, not a component |
+>
+> Both the move and this note are unlanded (§3's caveat). The ✅ line numbers are
+> re-pointed at `main` coordinates once Phase 1 lands; they are deliberately NOT
+> re-pointed at branch coordinates now, because a citation to an unmerged line
+> number is worse than a citation to a real one that has moved.
 
 ### R1 — Health strip first
 
@@ -198,6 +226,89 @@ Three families only:
 A single audited table is the source of truth for which kind gets which family,
 and a unit test asserts the palette map agrees with it — so severity and colour
 can never drift apart. Full contract in [§4](#4-the-attention-palette).
+
+#### Amber's contract is **self-clearing**, and that is the whole test
+
+The families are not a severity ladder with three rungs. Read them as answers to
+one question — *whose move is it?*
+
+| family | whose move | the promise it makes |
+|---|---|---|
+| **red** | the operator's, **now** | nothing else will resolve this |
+| **amber** | something else's — *or* nobody's, because we do not know | **it will clear itself**; you are watching, not acting |
+| **calm** | nobody's **right now** | **nothing is waiting on you**; any ask is stated **in words**, not in the hue |
+
+Read the calm row precisely: it is *not* "there is nothing to do". A calm row
+may still owe somebody a decision — see [the third case](#the-third-case-a-real-decision-that-is-not-blocking-anyone)
+below. What calm promises is only that nothing is blocked and nothing decays
+while it waits, so the ask belongs in the detail where it can be *read*.
+
+So before painting a row amber, name the thing that clears it. If you cannot,
+**and you do know what the row's state is**, it is not amber. This has already
+been got wrong once, and it was caught in review rather than by the palette
+test — because that test only checks the hue matches the *declared* attention,
+never that the declared attention is right:
+
+- **Idle uncommitted work** (`treeStatus.ts`, the 24-72h stale-WIP band) was
+  `waiting`. Nothing times out and no process commits your WIP for you — only a
+  human does. It is **red**, which is also what `alertStatus.ts` had already
+  concluded for the same condition, and where the failure mode is lost work the
+  tie breaks toward the louder signal.
+
+#### The one exception: amber also covers **we do not know**
+
+The clause above has a deliberate exception, and it is shipped in three places,
+so do not "fix" it:
+
+| site | value |
+|---|---|
+| `console/attention.ts` — `attentionOf(map, kind, floor = "waiting")` | an unrecognised kind floors at **amber**, never calm |
+| `planStatus.ts` — `unknown: "waiting"`, painted `bg-amber-500/10` | a work-unit status this build has no label for |
+| `alertStatus.ts` — `unknown: "waiting"` | an alert kind this build has never seen |
+
+Nothing clears an unrecognised status except a human extending the vocabulary,
+so read literally the name-the-clearer rule would condemn all three. It does
+not, because **an amber painted on ignorance is a statement about our
+knowledge, not a promise about the row.** It says *we cannot tell you whose
+move this is* — and the alternative, painting it calm, is the
+`silent-empty-is-unknown` mistake with a badge attached: exactly the same
+discipline that makes an unfetched count render `–` and never `0` (R6). Calm on
+an unknown row asserts "nothing is wrong here", which is precisely what we do
+not know.
+
+The test is therefore two-part, and both halves must hold before amber is
+wrong: **you cannot name what clears the row, *and* you actually know what the
+row's state is.** `attention.ts` states the floor and its reasoning; a new
+surface inherits it by passing its kind map through `attentionOf` rather than
+indexing the map directly.
+
+The second mis-fit is subtler, and the families genuinely do not cover it.
+
+#### The third case: a real decision that is not blocking anyone
+
+There is a state the three families do not obviously fit, and the instinct is to
+reach for amber. **Do not.** It looks like this: something genuinely wants a
+human decision, but nothing is stopped and nothing degrades while it waits.
+
+The worked example is a **pre-answered policy gap** (`questionStatus.ts`,
+`gap-handled`): coord applied the category default inline, so no agent is
+blocked and no work is at risk — but accepting or dismissing the proposed clause
+is still a real call somebody has to make. It is not red, because no one must
+act *now* and nothing is lost if they do not. It is not amber, because nothing
+clears it.
+
+**Rule: it is CALM, and the ask goes in the row detail, in words.** That is
+what the calm row of the table above means by "nobody's move *right now*" — the
+move is genuinely the operator's, it is simply not owed today. The hue answers
+"must a human act now?" and the honest answer is no; the detail answers "is
+anything owed?" and says so explicitly — see `<GapRow>`'s
+`coord-gap-review-owed` line. Putting the ask in the hue would spend amber's
+credibility on something that is not waiting on anything, and amber only works
+for as long as it means what it says.
+
+This case is written down here rather than solved once in `questionStatus.ts`
+because R3 governs 30+ routes: a vocabulary hole patched in one file gets
+rediscovered — and refiled under amber — by the next surface that meets it.
 
 ✅ `src/components/operations/MergePipeline.tsx:96-99` — the families, named, once:
 
@@ -557,71 +668,159 @@ This exact shape is repeated across 18 Family-B routes.
 
 ## 3. The primitive catalogue
 
-> **STUB — filled in by Phase 1.** The components below do not exist yet. This
-> section is the contract Phase 1 must satisfy, not a description of shipped code.
-> When Phase 1 lands, replace each "planned" row with the real prop signature and
-> add the module-doc back-reference.
+> **Filled in by Phase 1, 2026-08-20.** Everything below EXISTS and is unit-tested
+> — but **on a branch**, not on `main`. `src/components/console/` lands with the
+> Phase 1 PR, which is stacked on **qontinui-web#986** (still open). Read every
+> row as "shipped in Phase 1, unlanded until #986 and Phase 1 both merge". The
+> caveat comes out when they do; it is not removed earlier just because the code
+> is written.
 
-### 3.1 The base this is built on — `operations/statusRow.tsx`
+The primitives are the **executable half of this guide**. A prose rule is a
+suggestion; `import { RecordRow } from "@/components/console"` is a fact visible in
+a diff. §6.4's rule — *a new console page adds no new visual vocabulary* — is
+enforceable only because there is something to compose instead.
 
-> **This module is NOT on `main`.** `src/components/operations/statusRow.tsx`
-> lands with **qontinui-web#986**, which was still **open** (`mergedAt: null`) when
-> this section was written. Everything in §3.1 is therefore a forward reference: it
-> describes the shape Phase 1 builds on **once #986 merges**, and until then this
-> section is dead — do not import from it, and do not read its citations as `main`.
-> Line numbers below are as of the `pr986` ref. If #986 is abandoned or lands with
-> a different shape, Phase 1 re-derives its base from `MergePipeline.tsx` and this
-> section is rewritten before any primitive is built.
+They are **presentation only**. Nothing in `console/` fetches, polls, or knows a
+route, and **no shipped module under `console/` has any runtime dependency on
+`components/operations/`** — the only edge from shipped code is an
+`import type` on `prPipeline`, which erases at build time. (`console/`'s TESTS
+do import values from `operations/` and `admin/coord/` — that is
+`attention.test.ts`, the cross-surface palette oracle described below, and it is
+supposed to. Test files ship nothing.) That is what lets `/admin/coord/*`,
+`/admin/agent-claims` and `/admin/agent-sessions` share them without sharing a
+data model, and it is what makes R1's *"derived, never a second fetch"*
+structurally true rather than a thing reviewers have to remember to check.
 
-Phase 1 will **not** start from a blank file. `qontinui-web#986` (plan
-`2026-08-05-coord-alerts-surface-and-fleet-style-ui`) **extracts** the row
-primitives out of `MergePipeline.tsx` and generalises them over a surface-agnostic
-`RowStatus` interface plus a per-surface `StatusPalette`. That module —
-`statusRow.tsx`, 287 lines — **will be** the foundation the console primitives are
-built on. Anything below that overlaps it **wraps or moves** it; it is never
-re-extracted a second time.
+That property is **checked, not assumed** — see the note at the end of
+[§3.1](#31-the-base-this-is-built-on--consolestatusrowtsx) for the single
+harmless-looking import that falsified it, and what it cost to make it true.
 
-What `statusRow.tsx` provides once it lands (line numbers as of the `pr986` ref):
+### 3.1 The base this is built on — `console/statusRow.tsx`
+
+> **This module is not on `main`.** It arrived on **qontinui-web#986** as
+> `src/components/operations/statusRow.tsx`, and Phase 1 **moved it** to
+> `src/components/console/statusRow.tsx` — unchanged apart from its module doc and
+> its import paths. A re-export stays in `operations/index.ts` so no existing
+> import breaks (D3). Until #986 and Phase 1 both land, every citation in this
+> section is a citation to branch code. Line numbers are as of the Phase 1 branch.
+
+Phase 1 did **not** start from a blank file, and it did not re-extract these atoms.
+`qontinui-web#986` (plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui`) had
+already pulled the row primitives out of `MergePipeline.tsx` and generalised them
+over a surface-agnostic `RowStatus` interface plus a per-surface `StatusPalette`.
+Building a second `StatusBadge` beside it would have been exactly the
+duplicate-helper defect this plan exists to remove, so the module **moved** into the
+console layer and the composition primitives were built **around** its contract.
+
+Its own module doc records why it exists, and the sentence generalises past this
+one module:
+
+> *"Two surfaces sharing one paragraph had already drifted; two surfaces sharing one
+> implementation cannot."*
+
+What `statusRow.tsx` provides (300 lines):
 
 | Export | What it is |
 |---|---|
-| `RowStatus<K>` (`:55`) | The minimum a row's status must carry: `kind`, `label`, `reason?`, `attention`, `dwellEvidence?`. Both `prPipeline`'s `UnifiedStatus` and `alertStatus`'s `AlertStatus` are structurally assignable to it. |
-| `AUTHOR_RED` / `WAITING_AMBER` / `CI_YELLOW` / `INERT` (`:70`, `:72`, `:74`, `:76`) | The three colour families plus inert, **exported** — so a second surface cannot pick its own red. |
-| `STATUS_BADGE_CLASS` (`:84`), `AUTHOR_GLYPH_KINDS` (`:127`) | The merge pipeline's own kind→class table and `✕`-glyph set, moved beside the families they are built from. |
-| `StatusPalette<K>` (`:158`) | Everything a surface supplies to render its own badges: `badgeClass`, `authorGlyphKinds`, `doneGlyphKinds?`, `unknownNote?`. One object, so each surface's unit test has a single thing to audit against its kind→attention table. |
-| `rowAccentClass(status)` (`:170`) | R4, generalised to `Pick<RowStatus, "attention">`. |
-| `StatusBadge({status, palette, className})` (`:185`) | R3 + the colourblind-safe glyph rule + the native-`title` "why". |
-| `RowTime({at, verb, prefix, absent, className})` (`:252`) | The right-hand timestamp, with an **explicit** rendering for "this row has no time" rather than a blank or a fabricated one. |
+| `RowStatus<K>` (`:67`) | The minimum a row's status must carry: `kind`, `label`, `reason?`, `attention`, `dwellEvidence?`. Both `prPipeline`'s `UnifiedStatus` and `alertStatus`'s `AlertStatus` are structurally assignable to it. |
+| `AUTHOR_RED` / `WAITING_AMBER` / `CI_YELLOW` / `INERT` (`:82`, `:84`, `:86`, `:88`) | The three colour families plus inert, **exported** — so a second surface cannot pick its own red. |
+| `STATUS_BADGE_CLASS` (`:96`), `AUTHOR_GLYPH_KINDS` (`:139`) | The merge pipeline's own kind→class table and `✕`-glyph set, beside the families they are built from. |
+| `StatusPalette<K>` (`:170`) | Everything a surface supplies to render its own badges: `badgeClass`, `authorGlyphKinds`, `doneGlyphKinds?`, `unknownNote?`. One object, so each surface's agreement test has a single thing to audit. |
+| `rowAccentClass(status)` (`:182`) | R4, over `Pick<RowStatus, "attention">`. |
+| `StatusBadge({status, palette, className})` (`:197`) | R3 + the colourblind-safe glyph rule + the native-`title` "why". |
+| `RowTime({at, verb, prefix, absent, className})` (`:265`) | The right-hand timestamp, with an **explicit** rendering for "this row has no time" rather than a blank or a fabricated one. |
 
-It is deliberately **type-only** on `prPipeline` (`statusRow.tsx:33-41`), so a
-surface using these primitives does not bundle 1576 lines of merge-train
-derivation. Keep that property.
+It is deliberately **type-only** on `prPipeline`, so a surface using these
+primitives does not bundle 1576 lines of merge-train derivation. **Keep that
+property** — it is the difference between a shared primitive and a shared bundle.
 
-### 3.2 The console primitives — planned
+**No shipped module under `console/` has any runtime dependency on
+`components/operations/`**, and that took one deliberate move to be true.
+`statusRow` used to import `relativeTime` from `@/components/operations/utils`
+— which is not a neutral util bag but the 730-line merge-train **route
+catalogue** (`OPERATIONS_API`, `GATES_LIST_API`, ~30 URL builders, the
+poll-cadence constants, a runtime dependency on `@/services/api-config`). One
+28-line pure formatter was dragging all of it into the base layer and falsifying
+the barrel's own "nothing here knows a route". Phase 1 moved `relativeTime` into
+`console/time.ts` and left a re-export in `operations/utils.ts`, so all **23**
+existing importers are untouched (13 via `@/components/operations/utils`, 10 via
+`./utils`). The lesson generalises: **check this property when adding a
+primitive**, because the import that broke it looked completely harmless.
 
-| Component | Rule(s) | Extracted from | Props (planned) | Status |
-|---|---|---|---|---|
-| `HealthStrip` | R1 | `MergePipeline.tsx:430-495` | `{ level, headline, detail?, badges[] }` | planned |
-| `RecordRow` | R2, R4 | `PipelineRowDisplay` `MergePipeline.tsx:812-878`, over `statusRow`'s `rowAccentClass` + `StatusBadge` + `RowTime` | `{ identity, label, status, reason?, time, accent, expanded, onToggle }` | planned |
-| `RecordDetail` | R5 | `RowDetail` `MergePipeline.tsx:647-777` | `{ why, problems, actions, history, raw }` — five slots in that order | planned |
-| `RecordList` | R2, R5 | the `expandedKey` state + skeleton + empty-state block, `MergePipeline.tsx:925`, `:1064-1095` | `{ items, renderRow, renderDetail, loading, empty }`, one-open-at-a-time | planned |
-| `StatusBadge` | R3 | **re-export** of `statusRow.tsx:185` — not a new implementation | `{ status, palette, className? }` | **exists on qontinui-web#986 (unlanded)** |
-| `FilterTabs` | R6 | `MergePipeline.tsx:1004-1048`, including the `–`-not-`0` unfetched-count rule | `{ tabs, active, onChange, counts, query, onQuery }` | planned |
-| `StatCluster` | R1 | `SummaryCards`/`StatCard` `gates/_components/SummaryCards.tsx:20-44`, retuned from `text-2xl` cards to an inline mono badge row | `{ stats[] }` | planned |
-| `CollapsiblePanel` | R7 | **moved** from `operations/CollapsiblePanel.tsx`, unchanged; a re-export stays in `operations/index.ts` so no import breaks | unchanged | exists on `main` (`operations/index.ts:2`) |
-| `attention.ts` | R3 | `ATTENTION_BY_KIND` (`prPipeline.ts:128`) generalised: `attentionOf(kind) → "author" \| "waiting" \| "none"` over a per-page kind map | — | planned |
+> **Later-wave debt, discovered while counting those 23.** Six more files
+> declare their OWN `relativeTime` and import nothing, so the shim does not
+> reach them and this move did not touch them:
+> `admin/agent-claims/AgentClaimsDashboard.tsx`,
+> `admin/agent-sessions/AgentSessionsDashboard.tsx`,
+> `admin/coord/TreeCard.tsx`,
+> `admin/prompt-injections/PromptInjectionsDashboard.tsx`,
+> `execute/ScheduleListItem.tsx`, `sessions/LineageTimeline.tsx` — plus
+> `operations/gatesPredicate.ts`'s `relativeAgo`, a same-shape copy under
+> another name that discloses itself in its own comment. Three of them
+> (`/admin/agent-claims`, `/admin/agent-sessions`, `TreeCard` on the coord
+> console) are surfaces [§1](#1-scope) explicitly claims, so these are six
+> live instances of the duplicate-helper defect this plan exists to remove.
+> **Migrate each onto `console/time` as its wave reaches it**, and do not read
+> "23 importers" as "every caller".
 
-Rules for the extraction, restated so they are reviewable against this file:
+### 3.2 The console primitives
 
-1. **Refactor `MergePipeline` onto the primitives in the same PR.** If the Pipeline
-   tab does not render identically afterwards, the extraction is wrong.
-   `MergePipeline.test.tsx` (930 lines) is the oracle and must pass **unmodified**.
-2. **Port the palette agreement test** (`MergePipeline.test.tsx:354-368`) into the
-   console package, so the invariant binds every future consumer rather than only
-   the merge pipeline.
+All exported from the `@/components/console` barrel, whose module doc carries the
+same table. Every module doc cites its rule number and links this file.
+
+| Component | Rule(s) | Props | Notes |
+|---|---|---|---|
+| `HealthStrip` | R1 | `{ level, headline, detail?, badges?, className?, "data-testid"? }` where `badges: { key, label, tone?, onClick?, title?, "data-testid"? }[]` and `tone: "default" \| "muted" \| "attention"` | Takes the **already-derived** verdict. It cannot fetch, so R1's "never a second fetch" is structural. A badge with an `onClick` becomes a real `<button>` wrapping the badge in `display:contents`. |
+| `StatCluster` | R1 | `{ stats, className?, "data-testid"? }` where `stats: { key, label, value, tone?, title?, onClick?, "data-testid"? }[]` and `tone: "default" \| "success" \| "warning" \| "attention" \| "muted"` | The count-cluster form of the same opening, for a table page with no single traffic-light verdict. `value: null` renders `–`, never `0`. **No consumer yet** — `/gates` adopts it in Wave 4, which is where `SummaryCards`' testids get ported. |
+| `RecordRow` | R2, R4 | `{ identity, label, status?, reason?, time?, accent?, expanded, onToggle, children?, rowKey?, className?, "data-testid"?, reasonTestId? }` | Slot ORDER is fixed by the primitive, not the caller. `status` and `time` are `ReactNode` slots so each surface renders its own `<StatusBadge palette={…}>` without the row knowing a kind union. `accent` is the string from `rowAccentClass(status)`. The whole line is one `<button>` — R5 has to be keyboard-reachable. `children` render below the row, only while expanded. |
+| `RecordDetail` | R5 | `{ why?, problems?, actions?, history?, raw?, className?, "data-testid"? }` | Five slots in that order, each a bare fragment, so the panel's `space-y-3` spaces real content and an absent slot leaves no gap. Shares the row's border (`border-t-0 rounded-b-md`). Not a slide-over (D2). |
+| `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
+| `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
+| `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx`; a re-export shim stays at the old path for its ~15 relative importers, plus one in `operations/index.ts` (D3). |
+| `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
+| `time.ts` | supports R2 | `relativeTime(iso)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime`, so its **23** importers are untouched — but six other files declare their own copy and are NOT among them (see §3.1). |
+| `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
+
+**How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
+and `alertStatus.test.ts`'s three each audit one surface. Neither can bind a surface
+that does not exist yet, and 29 routes are about to adopt the pattern. So the
+assertion became `paletteDisagreements()` and
+`src/components/console/attention.test.ts` runs it over a **registry** of every
+console palette — today the merge pipeline and alerts. Adding a surface means adding
+one line to that registry. The per-surface tests stay: they are each surface's own
+oracle, and they cover things the generic audit cannot (per-row escalation, UUID
+hygiene).
+
+The audit carries exactly one declared exemption, `perRowKinds`, for a kind whose
+badge class is resolved per row rather than read off the static table — the alerts
+surface's `unknown`, whose attention is severity-derived. Its static entry is a
+FLOOR, not the thing that renders, so auditing that floor for amber would demand a
+colour the surface deliberately does not paint.
+
+**It exempts the amber clause and nothing else.** The inline carve-out it
+generalises (`alertStatus.test.ts`, `attention === "waiting" && kind !== "unknown"`)
+only ever skipped amber, so exempting red as well would have made the shared audit
+strictly weaker than the check it replaced — a shared invariant that is looser than
+the per-surface one it absorbed is a regression dressed as a refactor. Red ⇔ author,
+"every kind has a class", and red ⇔ `✕` all still run on a per-row kind, and the
+surface's own test still has to cover the per-row resolution.
+
+**How the extraction was proved.** The three rules Phase 1 was held to:
+
+1. **`MergePipeline` was refactored onto the primitives in the same PR.** If the
+   Pipeline tab did not render identically afterwards, the extraction was wrong.
+   `MergePipeline.test.tsx` (930 lines, 36 tests) is the oracle and passed
+   **unmodified**, as did `prPipeline.test.ts` (127) and `alertStatus.test.ts` (45).
+2. **The palette agreement test was ported** into `console/attention.test.ts`, over
+   the registry described above.
 3. **Every module doc cites its rule number and links this file.** A primitive whose
    doc does not say which rule it enforces is a primitive nobody will know when to
    reach for.
+
+Three authored testids moved from `MergePipeline.tsx` into the primitives that now
+own them — `pipeline-search` (`queryTestId`), `pipeline-filter-<id>`
+(`testIdPrefix`) and `row-reason` (`reasonTestId`'s default). They render
+identically; the oracle asserting all three unmodified is the evidence.
 
 ---
 
@@ -641,13 +840,28 @@ looks reasonable on its own.
 | Family | Means | Class (today) | May be used by |
 |---|---|---|---|
 | **red** | someone must act **now** | `bg-red-500/15 text-red-200 border-red-500/35` | a kind whose attention is `"author"` — and every one of them |
-| **amber** | waiting on something else; it will clear itself | `bg-amber-500/15 text-amber-200 border-amber-500/30` | a kind whose attention is `"waiting"` — and every one of them |
-| everything else | in flight or terminal; nobody is blocked | yellow / purple / blue / green / muted / dashed | a kind whose attention is `"none"` |
+| **amber** | waiting on something else and it will clear itself — **or** we do not know what this is | `bg-amber-500/15 text-amber-200 border-amber-500/30` | a kind whose attention is `"waiting"` — and every one of them |
+| everything else | nobody is blocked **right now**: in flight, terminal, or owed-but-not-blocking | yellow / purple / blue / green / muted / dashed | a kind whose attention is `"none"` |
+
+Three clauses in that table are load-bearing and each is spelled out in
+[§2 R3](#r3--colour-encodes-who-must-act):
+
+- **amber's "or we do not know"** — the ignorance floor (`attentionOf`'s
+  `"waiting"` default, `planStatus`/`alertStatus`'s `unknown`). Amber on an
+  unknown row is a statement about our knowledge, not a promise about the row.
+- **"right now"** in the calm row — calm does **not** mean nothing is owed. A
+  state that wants a real human decision while blocking nobody and decaying
+  nothing is calm; `questionStatus`'s `gap-handled` is the worked example.
+- **"owed-but-not-blocking"** — and when a calm kind *is* owed something, the
+  ask is rendered **in words in the row detail**, never by borrowing amber.
+  Borrowing amber for it spends the credibility of the one hue whose whole
+  value is that it means what it says.
 
 Defined once at `MergePipeline.tsx:96-99`. **On `main` those four constants are
 module-private — they are not exported, so grepping for an import of them finds
-nothing.** qontinui-web#986 moves them to `statusRow.tsx:70-76` and exports them
-for cross-surface reuse (unlanded — see the §3.1 caveat). Either way the rule is
+nothing.** qontinui-web#986 moved them into a shared module and Phase 1 moved that module
+into the console layer: they are now `console/statusRow.tsx:82-88`, **exported**
+for cross-surface reuse (both unlanded — see the §3.1 caveat). Either way the rule is
 the same: nothing else may mint a red or an amber.
 
 Two glyph rules ride along, both for colourblind readers, both total rather than
@@ -669,7 +883,7 @@ off a parallel judgement. Its own doc comment carries a one-line-per-kind audit 
 *why* each kind lands where it does (`prPipeline.ts:95-127`), which is what makes a
 review of a new kind possible at all.
 
-The contract a new surface must honour, in three parts:
+The contract a new surface must honour, in four parts:
 
 1. **The kind→attention table is authored and audited.** One row per kind, with a
    stated reason. Not derived, not inferred from the label.
@@ -677,6 +891,14 @@ The contract a new surface must honour, in three parts:
    its attention, never by re-reading the kind name.
 3. **A unit test asserts the two agree.** Not a convention — an assertion, so the
    next kind added cannot silently pick the wrong colour.
+4. **A calm kind that is nonetheless OWED something says so in words.** The
+   audit table records that it is `"none"` and *why*; the row detail carries
+   the ask. `questionStatus.ts`'s `gap-handled` is the worked example and
+   `<GapRow>`'s `coord-gap-review-owed` line is where it is rendered. This part
+   exists because (1)–(3) are all satisfiable by a kind that is silently
+   under-served: `paletteDisagreements` proves the hue matches the declared
+   attention, and can never prove the declared attention was the right one.
+   That is the gap both Wave-1 mis-filings fell through.
 
 Both halves of (3) are already enforced on `main`:
 
@@ -703,8 +925,10 @@ cases the original bug got wrong (`prPipeline.test.ts:1678-1680`):
 `checks-pending` → `none`, `awaiting-ci` → `none`, `checks-failing` → `author`.
 
 **A console surface with statuses ships its own kind→attention table and its own
-agreement test.** `statusRow.tsx:158` (`StatusPalette<K>`) exists to make that one
-object per surface rather than four loose constants.
+agreement test.** `console/statusRow.tsx:170` (`StatusPalette<K>`) exists to make
+that one object per surface rather than four loose constants, and Phase 1's
+`console/attention.ts` (`paletteDisagreements`) makes the agreement assertion
+itself shared — see §3.2.
 
 ### 4.3 Known gap — the palette is not tokenised
 
@@ -763,7 +987,7 @@ so each has one home, and this table says plainly which ones actually gate a PR.
 | Layer | Artefact | Enforced by | Gates a PR? |
 |---|---|---|---|
 | **Prose + rationale** — the pattern, when it applies, the anti-patterns | **this file** (`frontend/docs/console-ui-style-guide.md`) | Human review; cited from every console component's module doc | **No** — review only |
-| **Executable** — the primitives every console page composes from | `frontend/src/components/console/` (+ `index.ts` barrel), built on `operations/statusRow.tsx` | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't | **Yes** — `tsc` + `vitest` |
+| **Executable** — the primitives every console page composes from | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx` | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't | **Yes** — `tsc` + `vitest` |
 | **Declarative atoms** — density and palette as CSS-property rules | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`) | **Nothing. There is no evaluator for this file anywhere in the fleet.** | **No** |
 | **CI-enforced atoms** — what actually bites | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock` | **Yes, but indirectly** — the workflow is *not* a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
 
