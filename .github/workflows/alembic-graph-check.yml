@@ -17,6 +17,13 @@ name: alembic graph check
 #      AFTER the forked revision was authored — so no author-time check
 #      could have caught them, and #989 sat red for 9.7 days.
 #
+# NOTE the one behaviour change to this job: when `main` ITSELF is multi-headed
+# the notifier exits 2 and reddens the job, where before it stayed green with a
+# comment. That is deliberate — the sweep cannot advise other PRs against a
+# baseline that should not exist — but it means a forked `main` now shows up as
+# a red workflow as well as a PR comment, and the sweep is offline until it is
+# fixed.
+#
 # The job is informational about `main`, not blocking — by the time it runs,
 # the merge has already happened. Its purpose is to turn "silent fork lying
 # around in the chain for weeks" into "loud notification right at merge
@@ -28,9 +35,24 @@ on:
     paths:
       - "backend/alembic/versions/**"
 
+# Serialise the sweeps. The one-marker-comment-per-PR rule is enforced by
+# reading the comments first, which is a check-then-write, not a lock: two
+# lands landing within the same window would both see no marker and both POST,
+# double-notifying the same author. `cancel-in-progress: false` because a
+# cancelled sweep is a sweep that silently notified nobody.
+concurrency:
+  group: alembic-graph-check-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   pull-requests: write   # so the job can comment on the just-merged PR
+  issues: write          # the notifier EDITS its own comment via
+                         # PATCH /repos/{repo}/issues/comments/{id}, which is
+                         # addressed by comment id — GitHub cannot tell it
+                         # targets a PR, so `pull-requests: write` alone may
+                         # not carry it. Cheap insurance against every land
+                         # after the first notice failing.
 
 jobs:
   alembic-heads:
@@ -43,11 +65,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install alembic + sqlalchemy
-        run: |
-          python -m pip install --upgrade pip
-          pip install alembic sqlalchemy
 
       - name: Count heads
         id: heads
@@ -91,9 +108,19 @@ jobs:
       - name: Comment on merging PR if forked
         if: steps.heads.outputs.count > 1 && github.event.head_commit.message != ''
         uses: actions/github-script@v7
+        env:
+          # Via `env`, not `${{ }}` inside the script: a direct interpolation
+          # into a double-quoted JS string breaks on a revision id containing a
+          # quote or a trailing backslash, and is an injection point if a
+          # hostile revision ever lands on main.
+          HEADS_LIST: ${{ steps.heads.outputs.heads_list }}
         with:
           script: |
-            const heads = "${{ steps.heads.outputs.heads_list }}".trim().split(/\s+/);
+            const heads = (process.env.HEADS_LIST || "").trim().split(/\s+/).filter(Boolean);
+            if (!heads.length) {
+              core.warning("no heads parsed; skipping comment");
+              return;
+            }
             const sha = context.sha;
             // Find the PR that produced this merge commit.
             const prs = await github.rest.repos.listPullRequestsAssociatedWithCommit({

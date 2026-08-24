@@ -38,6 +38,7 @@ sys.path.insert(0, str(SCRIPTS_CI))
 from _alembic_graph import (  # noqa: E402
     fork_root,
     plan_remediation,
+    safe_id,
     scan_sources,
 )
 
@@ -132,9 +133,73 @@ def test_fork_root_stops_at_the_first_landed_parent() -> None:
     assert fork_root("c", revisions, landed={"a", "b"}) == "c"
 
 
-def test_fork_root_does_not_loop_on_a_cycle() -> None:
+def test_fork_root_returns_none_on_a_cycle() -> None:
     revisions = {"x": '"y"', "y": '"x"'}
-    assert fork_root("x", revisions, landed=set()) in {"x", "y"}
+    assert fork_root("x", revisions, landed=set()) is None
+
+
+def test_fork_root_returns_none_for_a_merge_revision() -> None:
+    """Naming a merge revision as the edit site is DESTRUCTIVE advice.
+
+    Its `down_revision` is a tuple. Telling the author to write a scalar there
+    drops both merge parents, which takes a 2-head chain to 3 — the gate would
+    go from red to redder while the comment read like a complete fix.
+    """
+    revisions = {"m": '("b", "c")', "b": '"a"', "c": '"a"', "a": "None"}
+    assert fork_root("m", revisions, landed={"a"}) is None
+
+
+def test_fork_root_returns_a_chain_root() -> None:
+    """`down_revision = None` IS a legitimate re-point site, unlike a merge."""
+    assert fork_root("r", {"r": "None"}, landed=set()) == "r"
+
+
+def test_a_merge_revision_head_degrades_to_chain_not_a_repoint() -> None:
+    sources = {
+        **_tree(("a", None), ("landed", "a"), ("b", "a"), ("c", "a")),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    scan = scan_sources(sources)
+    assert scan.heads == ("landed", "m")
+    remediation = plan_remediation(scan, landed={"a", "landed"})
+    # NOT "repoint" — see test_fork_root_returns_none_for_a_merge_revision.
+    assert remediation.kind == "chain"
+    assert remediation.edits == ()
+
+
+def test_one_unresolvable_chain_degrades_the_whole_answer() -> None:
+    """A partial re-point reads like a complete fix and leaves the chain forked."""
+    sources = {
+        **_tree(("a", None), ("landed", "a"), ("ok", "a"), ("b", "a"), ("c", "a")),
+        Path("m.py"): 'revision: str = "m"\ndown_revision = ("b", "c")\n',
+    }
+    remediation = plan_remediation(scan_sources(sources), landed={"a", "landed"})
+    assert remediation.kind == "chain"
+
+
+# ---------------------------------------------------------------------------
+# rendering safety — these ids reach a bot-authored comment on someone's PR
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("coord_polread_01", "coord_polread_01"),
+        (
+            "devenv_10_unique_active_coord_device",
+            "devenv_10_unique_active_coord_device",
+        ),
+        ("a` @org/team `b", "aorgteamb"),
+        # `-` survives (harmless inside a code span); `<`, `>`, `!`, space do not.
+        ("x<!-- -->y", "x----y"),
+        ("a\nb", "ab"),
+    ],
+)
+def test_safe_id_strips_everything_that_could_escape_a_code_span(
+    raw: str, expected: str
+) -> None:
+    assert safe_id(raw) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +332,14 @@ def test_the_new_flags_exist(flag: str) -> None:
 
 
 def test_the_real_repo_chain_has_exactly_one_head() -> None:
-    """The gate's own subject. If this fails, main is forked — fix that."""
+    """The gate's own subject. If this fails, main is forked — fix that.
+
+    DELIBERATELY duplicates the required `alembic-heads-pr` check inside the
+    backend test job. That is redundancy on purpose, not an oversight: the two
+    run at different times against different trees (this one against whatever
+    the test job checked out), and a chain that is forked should be loud in
+    both places rather than only in the one someone might re-run.
+    """
     result = subprocess.run(
         [sys.executable, str(COUNTER)],
         capture_output=True,

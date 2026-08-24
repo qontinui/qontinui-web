@@ -47,10 +47,25 @@ deliberately retired — it now answers **410 Gone** — in favour of land-time
 re-pointing. The stale advice to use it is removed from this workflow's
 comment in the same change that adds this script.
 
-Exit codes: 0 the sweep ran (whether or not it found forks), 2 it could not
-run — no token, an API error, or ``main``'s own chain unreadable. Silence is
-never success: a sweep that could not list PRs must not look like a sweep
-that found nothing.
+## Scope and cost
+
+Only PRs based on ``main`` are swept: this runs on a push to ``main``, so a
+``develop``-based PR was not forked by it. ``alembic-graph-pr.yml`` does gate
+``develop`` PRs too, and they are NOT covered here — say so rather than imply
+the sweep is exhaustive.
+
+Cost is one API call per open PR (its file list), plus a blob per changed
+revision file and a comment listing per PR that actually carries one, plus a
+single search for PRs holding a stale notice. With 16 open PRs that is ~20
+calls; ``GITHUB_TOKEN``'s budget is 1,000/hour/repo. It scales linearly with
+open PRs, so on a repo with hundreds, watch it.
+
+Exit codes: 0 the sweep ran to completion (whether or not it found forks), 2
+it could not run or could not finish — no token, ``main``'s own chain
+unreadable, or one or more PRs that could not be swept. Silence is never
+success: a sweep that skipped PRs must not look like a sweep that found
+nothing. Per-PR failures are collected rather than fatal on the spot, so one
+transient 502 cannot leave the rest of the PRs unnotified.
 """
 
 from __future__ import annotations
@@ -59,6 +74,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -69,12 +85,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _alembic_graph import (  # noqa: E402
     VERSIONS_DIR,
     plan_remediation,
+    read_dir_sources,
+    safe_id,
     scan_dir,
     scan_sources,
 )
 from _gate_lib import EXIT_VACUOUS, REPO_ROOT, err, note  # noqa: E402
 
 MARKER = "<!-- alembic-fork-notice -->"
+#: HTTP statuses worth a second look: 5xx, secondary rate limit, primary
+#: rate limit. Everything else is an answer.
+RETRYABLE_STATUS = frozenset({403, 429, 500, 502, 503, 504})
+RETRIES = 3
+BACKOFF_SECONDS = 2.0
 API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 
@@ -97,16 +120,27 @@ def _request(
     request.add_header("X-GitHub-Api-Version", "2022-11-28")
     if data is not None:
         request.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            raw = response.read()
-            headers = {k.lower(): v for k, v in response.headers.items()}
-    except urllib.error.HTTPError as exc:  # pragma: no cover - network path
-        raise ApiError(
-            f"{method} {url} -> HTTP {exc.code}: {exc.read()[:400]!r}"
-        ) from exc
-    except urllib.error.URLError as exc:  # pragma: no cover - network path
-        raise ApiError(f"{method} {url} -> {exc.reason}") from exc
+    # Retry the transient shapes only: 5xx, the secondary-rate-limit 403, the
+    # primary 429, and connection errors. A 404 or a 422 is an answer, not a
+    # blip, and retrying it just burns budget.
+    last: Exception | None = None
+    for attempt in range(RETRIES):
+        if attempt:
+            time.sleep(BACKOFF_SECONDS * (2 ** (attempt - 1)))
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw = response.read()
+                headers = {k.lower(): v for k, v in response.headers.items()}
+            break
+        except urllib.error.HTTPError as exc:  # pragma: no cover - network path
+            detail = exc.read()[:400]
+            last = ApiError(f"{method} {url} -> HTTP {exc.code}: {detail!r}")
+            if exc.code not in RETRYABLE_STATUS:
+                raise last from exc
+        except urllib.error.URLError as exc:  # pragma: no cover - network path
+            last = ApiError(f"{method} {url} -> {exc.reason}")
+    else:
+        raise last or ApiError(f"{method} {url} -> exhausted {RETRIES} attempts")
     if accept.endswith("raw"):
         return raw.decode("utf-8", errors="replace"), headers
     return (json.loads(raw) if raw else None), headers
@@ -133,11 +167,25 @@ def open_prs(repo: str, token: str) -> list[dict]:
 
 
 def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
+    """This PR's changes to files the GATE would actually scan.
+
+    The filter must match ``scan_dir``'s ``glob("*.py")`` exactly — directly
+    in the dir, ``.py`` only. A looser prefix match would flag a PR adding
+    ``backend/alembic/versions/sub/x.py`` as forked while `alembic-heads-pr`
+    passes it green, i.e. tell an author their required check is red when it
+    is not. Disagreeing with the gate is the one thing this must never do.
+    """
     files = _paginate(
         f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
     )
     prefix = f"{VERSIONS_DIR}/"
-    return [f for f in files if str(f.get("filename", "")).startswith(prefix)]
+    return [
+        f
+        for f in files
+        if (name := str(f.get("filename", ""))).startswith(prefix)
+        and name.endswith(".py")
+        and "/" not in name[len(prefix) :]
+    ]
 
 
 def blob_at(repo: str, path: str, ref: str, token: str) -> str:
@@ -149,7 +197,11 @@ def blob_at(repo: str, path: str, ref: str, token: str) -> str:
 
 
 def simulate(
-    main_sources: dict[Path, str], repo: str, pr: dict, token: str
+    main_sources: dict[Path, str],
+    repo: str,
+    pr: dict,
+    touched: list[dict],
+    token: str,
 ) -> dict[Path, str]:
     """``main``'s versions dir with this PR's revision files overlaid.
 
@@ -159,7 +211,10 @@ def simulate(
     """
     sources = dict(main_sources)
     head_sha = pr["head"]["sha"]
-    for entry in pr_version_files(repo, pr["number"], token):
+    # `touched` is passed in rather than re-fetched: main() already paid for
+    # this PR's file list, and the sweep's cost is dominated by one API call
+    # per open PR.
+    for entry in touched:
         path = REPO_ROOT / entry["filename"]
         if entry.get("status") == "removed":
             sources.pop(path, None)
@@ -176,7 +231,11 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
         f"`main` moved to `{landed_sha[:8]}` with a new revision. Rebuilt against it,",
         f"this PR's chain has **{len(heads)} heads**:",
         "",
-        *[f"- `{h}`" for h in heads],
+        # `safe_id`, not the raw id: these come from a `(.+?)` capture in a
+        # file the PR author controls, and this comment is posted by a bot.
+        # An id like ``a` @org/team `b`` would close the code span and fire
+        # a real team mention.
+        *[f"- `{safe_id(h)}`" for h in heads],
         "",
         "`alembic-heads-pr` is a required check and will be red until this is",
         "resolved. Nothing is wrong with the code in this PR — the revision it",
@@ -189,13 +248,13 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
             "**Fix — one token.** Set",
             "",
             "```python",
-            f'down_revision: str | Sequence[str] | None = "{remediation.target}"',
+            f'down_revision: str | Sequence[str] | None = "{safe_id(remediation.target or "")}"',
             "```",
             "",
             "in:",
             "",
             *[
-                f"- `{path.relative_to(REPO_ROOT) if path else revision}`"
+                f"- `{path.relative_to(REPO_ROOT) if path else safe_id(revision)}`"
                 for revision, path in remediation.edits
             ],
             "",
@@ -213,9 +272,9 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
         lines += [
             "This one does not reduce to a single re-point "
             f"(`{remediation.kind}`): landed head(s) "
-            f"{', '.join(f'`{h}`' for h in remediation.landed_heads) or '(none)'}, "
+            f"{', '.join(f'`{safe_id(h)}`' for h in remediation.landed_heads) or '(none)'}, "
             "unlanded head(s) "
-            f"{', '.join(f'`{h}`' for h in remediation.unlanded_heads) or '(none)'}.",
+            f"{', '.join(f'`{safe_id(h)}`' for h in remediation.unlanded_heads) or '(none)'}.",
             "",
             "Run `python scripts/ci/count_alembic_heads.py` locally for the full",
             "diagnosis rather than guessing an order from this comment.",
@@ -241,14 +300,24 @@ RESOLVED_BODY = "\n".join(
 )
 
 
-def upsert_comment(
-    repo: str, number: int, body: str, token: str, *, dry_run: bool
-) -> str:
-    """Edit the existing marker comment, or post one. Never a second one."""
+def find_marker_comment(repo: str, number: int, token: str) -> dict | None:
+    """This script's own comment on ``number``, or ``None``. One API call."""
     comments = _paginate(
         f"{API_ROOT}/repos/{repo}/issues/{number}/comments?per_page=100", token
     )
-    existing = next((c for c in comments if MARKER in str(c.get("body", ""))), None)
+    return next((c for c in comments if MARKER in str(c.get("body", ""))), None)
+
+
+def write_comment(
+    repo: str,
+    number: int,
+    body: str,
+    token: str,
+    existing: dict | None,
+    *,
+    dry_run: bool,
+) -> str:
+    """Edit ``existing`` if given, else post. Never a second marker comment."""
     if existing is not None and str(existing.get("body", "")).strip() == body.strip():
         return "unchanged"
     if dry_run:
@@ -268,6 +337,32 @@ def upsert_comment(
         body={"body": body},
     )
     return "posted"
+
+
+def prs_carrying_a_notice(repo: str, token: str) -> set[int] | None:
+    """Open PRs that already carry this script's marker comment.
+
+    ONE search call, so that a PR which has since dropped its revision file
+    still gets its stale "your chain forked" notice cleared. Without this the
+    per-PR loop skips it (it no longer touches the dir) and the false warning
+    stands forever.
+
+    Returns ``None`` on failure — UNKNOWN, so the caller says "could not
+    check" rather than "nobody was notified". Search is eventually consistent,
+    so a miss just means the next land clears it; a false positive is
+    impossible because the marker is re-verified before anything is written.
+    """
+    query = urllib.parse.urlencode(
+        {"q": f'repo:{repo} is:pr is:open "{MARKER}" in:comments', "per_page": "100"}
+    )
+    try:
+        page, _ = _request(f"{API_ROOT}/search/issues?{query}", token)
+    except ApiError as exc:
+        err(f"could not search for existing fork notices: {exc}")
+        return None
+    if not isinstance(page, dict) or "items" not in page:
+        return None
+    return {int(item["number"]) for item in page["items"]}
 
 
 def main() -> int:
@@ -320,10 +415,8 @@ def main() -> int:
         return EXIT_VACUOUS
     note(f"main head: {main_scan.heads[0]} ({len(main_scan.revisions)} revisions)")
 
-    main_sources = {
-        path: path.read_text(encoding="utf-8", errors="replace")
-        for path in sorted(versions.glob("*.py"))
-    }
+    # Reuse what `scan_dir` already read rather than reading 500 files twice.
+    main_sources = read_dir_sources(versions)
     landed = set(main_scan.revisions)
 
     try:
@@ -333,52 +426,103 @@ def main() -> int:
         return EXIT_VACUOUS
     note(f"open PRs against main: {len(prs)}")
 
-    examined = forked = 0
+    notified = prs_carrying_a_notice(args.repo, token)
+    if notified is None:
+        note("existing-notice search failed: stale notices will not be cleared.")
+
+    # Per-PR failures are COLLECTED, not fatal on the spot. One 502 on PR #17
+    # must not leave #18..#N unnotified — the whole point of this script is
+    # that the affected authors hear about it. The job still reddens at the
+    # end, so a partial sweep is never mistaken for a clean one.
+    failures: list[str] = []
+    examined = forked = cleared = 0
     for pr in prs:
-        number = pr["number"]
+        number = int(pr["number"])
         try:
             touched = pr_version_files(args.repo, number, token)
         except ApiError as exc:
-            err(f"#{number}: could not list files: {exc}")
-            return EXIT_VACUOUS
-        if not touched:
+            failures.append(f"#{number}: could not list files: {exc}")
             continue
+
+        if not touched:
+            # Nothing to check — but it may still be carrying a notice from an
+            # earlier land, which is now a lie.
+            if notified and number in notified:
+                try:
+                    existing = find_marker_comment(args.repo, number, token)
+                    if existing is not None:
+                        result = write_comment(
+                            args.repo,
+                            number,
+                            RESOLVED_BODY,
+                            token,
+                            existing,
+                            dry_run=args.dry_run,
+                        )
+                        cleared += 1
+                        note(
+                            f"#{number}: no longer carries a revision; notice {result}"
+                        )
+                except ApiError as exc:
+                    failures.append(f"#{number}: could not clear its notice: {exc}")
+            continue
+
         examined += 1
         try:
-            sources = simulate(main_sources, args.repo, pr, token)
+            sources = simulate(main_sources, args.repo, pr, touched, token)
         except ApiError as exc:
-            err(f"#{number}: could not read its revision files: {exc}")
-            return EXIT_VACUOUS
+            failures.append(f"#{number}: could not read its revision files: {exc}")
+            continue
         scan = scan_sources(sources)
-        if len(scan.heads) <= 1:
-            note(
-                f"#{number}: single head ({scan.heads[0] if scan.heads else 'none'}) — ok"
+
+        if not scan.heads:
+            # A zero-head chain is a CYCLE. `count_alembic_heads.py` exits 2 on
+            # exactly this tree, so it is not "ok" and its notice must not be
+            # cleared — but it is also not the fork this script describes, and
+            # posting the fork text would be wrong. Report and leave alone.
+            failures.append(
+                f"#{number}: simulated chain has ZERO heads (a cycle) — "
+                "not a fork; left untouched"
             )
+            continue
+
+        if len(scan.heads) == 1:
+            note(f"#{number}: single head ({scan.heads[0]}) — ok")
             try:
-                outcome = upsert_comment(
-                    args.repo, number, RESOLVED_BODY, token, dry_run=True
-                )
+                existing = find_marker_comment(args.repo, number, token)
             except ApiError as exc:
-                err(f"#{number}: could not read comments: {exc}")
-                return EXIT_VACUOUS
+                failures.append(f"#{number}: could not read comments: {exc}")
+                continue
             # Only clear a notice that is actually there; never post a
             # "resolved" comment to a PR that was never told it was forked.
-            if outcome == "would-edit":
-                result = upsert_comment(
-                    args.repo, number, RESOLVED_BODY, token, dry_run=args.dry_run
-                )
+            if existing is not None:
+                try:
+                    result = write_comment(
+                        args.repo,
+                        number,
+                        RESOLVED_BODY,
+                        token,
+                        existing,
+                        dry_run=args.dry_run,
+                    )
+                except ApiError as exc:
+                    failures.append(f"#{number}: could not clear its notice: {exc}")
+                    continue
+                cleared += 1
                 note(f"#{number}: fork notice cleared ({result})")
             continue
+
         forked += 1
         remediation = plan_remediation(scan, landed)
         body = render_comment(scan.heads, remediation, args.sha or "main")
         try:
-            result = upsert_comment(
-                args.repo, number, body, token, dry_run=args.dry_run
+            existing = find_marker_comment(args.repo, number, token)
+            result = write_comment(
+                args.repo, number, body, token, existing, dry_run=args.dry_run
             )
         except ApiError as exc:
-            err(f"#{number}: could not comment: {exc}")
-            return EXIT_VACUOUS
+            failures.append(f"#{number}: could not comment: {exc}")
+            continue
         note(
             f"#{number}: FORKED — heads {', '.join(scan.heads)}; "
             f"remedy={remediation.kind} target={remediation.target}; comment={result}"
@@ -389,8 +533,17 @@ def main() -> int:
             note("---- end ----")
 
     note(
-        f"swept {len(prs)} open PR(s); {examined} touch {VERSIONS_DIR}/; {forked} forked."
+        f"swept {len(prs)} open PR(s); {examined} touch {VERSIONS_DIR}/; "
+        f"{forked} forked; {cleared} notice(s) cleared."
     )
+    if failures:
+        for failure in failures:
+            err(failure)
+        err(
+            f"{len(failures)} PR(s) could not be swept — this run is INCOMPLETE, "
+            "not clean."
+        )
+        return EXIT_VACUOUS
     return 0
 
 
