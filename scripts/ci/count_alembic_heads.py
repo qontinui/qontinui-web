@@ -206,8 +206,11 @@ def main() -> int:
         default=None,
         help=(
             "Scan this directory instead of the checkout's "
-            f"{VERSIONS_DIR}/. For simulating a tree (the post-land open-PR "
-            "notifier overlays a PR's revision files onto main's)."
+            f"{VERSIONS_DIR}/. No production lane passes it — it exists so the "
+            "gate's own tests can exercise every graph shape (fork, cycle, "
+            "empty, unparseable) against a real invocation rather than a "
+            "mocked one. The post-land notifier imports `_alembic_graph` "
+            "directly and does not shell out to this script."
         ),
     )
     parser.add_argument(
