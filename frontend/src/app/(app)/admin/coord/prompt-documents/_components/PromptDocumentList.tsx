@@ -21,7 +21,12 @@ import type {
   PromptDocumentKind,
   PromptDocumentSummary,
 } from "../types";
-import { KIND_META, PROMPT_DOCUMENT_KINDS } from "../types";
+import {
+  isInertSessionBriefing,
+  KIND_META,
+  PROMPT_DOCUMENT_KINDS,
+  SESSION_BRIEFING_DOCUMENT_NAMES,
+} from "../types";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -128,6 +133,10 @@ export function PromptDocumentList() {
             kind: editing.kind,
             name: editing.name,
             label: editing.description ?? editing.name,
+            // Whether a restore-to-default exists for this document — the
+            // history dialog names it as the way out of a snapshot today's
+            // content rules refuse, and must not name it when there is none.
+            hasDefault: editing.default_source != null,
           }
         : null,
     [editing]
@@ -301,6 +310,25 @@ function DocumentRow({
   // A document with a `default_source` has a shipped default the editor can
   // restore; one without is hand-authored with nothing to fall back to.
   const restorable = doc.default_source != null;
+  /**
+   * A `session_briefing` row under a name the runner does not resolve.
+   *
+   * The create dialog warns about this at authoring time, which covers exactly
+   * one of the ways such a row appears. It does not cover a row seeded before
+   * that warning existed, nor one an agent created through
+   * `coord_write_prompt_document` — and that second case is not hypothetical:
+   * coord's `AGENT_UNWRITABLE_DOCUMENTS` lists the three canonical
+   * `(kind, name)` PAIRS, so every other briefing name is agent-writable by
+   * default. For those rows this list is the only place an operator ever meets
+   * them, and until now it rendered them identically to the three live ones,
+   * under a heading that says this kind becomes the fleet's system prompt.
+   *
+   * Flagged rather than hidden: the row is legal, coord stores and versions it,
+   * and hiding it would be worse — an operator would lose the one view that
+   * shows it exists. Only the exception is marked, so the common case (the
+   * three live briefings) stays uncluttered.
+   */
+  const inertBriefing = isInertSessionBriefing(doc.kind, doc.name);
   return (
     <div
       className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
@@ -329,6 +357,17 @@ function DocumentRow({
           >
             {restorable ? "Restorable" : "Custom"}
           </span>
+          {inertBriefing && (
+            <span
+              className="inline-flex shrink-0 items-center rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400"
+              title={`Never injected into a prompt: the runner fetches only ${SESSION_BRIEFING_DOCUMENT_NAMES.join(
+                ", "
+              )} by name and never lists this kind. Coord's built-in write protection covers those three names specifically, so this row is also agent-writable unless an operator protects it.`}
+              data-testid={`doc-inert-${doc.kind}-${doc.name}`}
+            >
+              Inert
+            </span>
+          )}
         </div>
         <p className="truncate text-xs text-muted-foreground">
           v{doc.current_version} · edited by {doc.updated_by ?? "unknown"} ·{" "}
