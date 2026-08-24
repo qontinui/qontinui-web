@@ -66,6 +66,12 @@ unreadable, or one or more PRs that could not be swept. Silence is never
 success: a sweep that skipped PRs must not look like a sweep that found
 nothing. Per-PR failures are collected rather than fatal on the spot, so one
 transient 502 cannot leave the rest of the PRs unnotified.
+
+The ONE relaxation of that rule, stated so it is not a surprise: a failed
+notice SEARCH (:func:`prs_carrying_a_notice`) logs and returns ``None``
+without changing the exit code. It only drives best-effort clearing of stale
+notices on PRs that no longer carry a revision; nothing about the current
+land's correctness depends on it, and the next land retries.
 """
 
 from __future__ import annotations
@@ -93,9 +99,15 @@ from _alembic_graph import (  # noqa: E402
 from _gate_lib import EXIT_VACUOUS, REPO_ROOT, err, note  # noqa: E402
 
 MARKER = "<!-- alembic-fork-notice -->"
-#: HTTP statuses worth a second look: 5xx, secondary rate limit, primary
-#: rate limit. Everything else is an answer.
-RETRYABLE_STATUS = frozenset({403, 429, 500, 502, 503, 504})
+#: HTTP statuses worth a second look on an IDEMPOTENT request: 5xx and the
+#: primary rate limit. Everything else is an answer.
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+#: Methods safe to replay. A POST is NOT one: GitHub can 502 *after* the write
+#: commits, so retrying `POST /issues/{n}/comments` produces two marker
+#: comments on one PR — the exact duplicate the marker upsert and the
+#: workflow's `concurrency:` group both exist to prevent. A retry that makes a
+#: previously-safe write non-idempotent is worse than no retry at all.
+IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "PATCH", "PUT", "DELETE"})
 RETRIES = 3
 BACKOFF_SECONDS = 2.0
 API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
@@ -103,6 +115,27 @@ API_ROOT = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 
 class ApiError(RuntimeError):
     """A GitHub API call failed. Always fatal — never swallowed into a pass."""
+
+
+def _is_retryable(status: int, headers: dict[str, str]) -> bool:
+    """Is this status worth another attempt?
+
+    403 is the interesting one and must NOT be blanket-retryable. GitHub uses
+    it for two unrelated things: the secondary rate limit (transient, and the
+    response carries ``retry-after`` or ``x-ratelimit-remaining: 0``) and
+    ``Resource not accessible by integration`` (a permissions failure — the
+    exact class ``issues: write`` was added to defend against). Retrying the
+    latter buys three attempts and six seconds of sleep per call before the
+    identical failure, which at 20 forked PRs is minutes of dead time and
+    dozens of wasted calls. Read the headers instead of guessing.
+    """
+    if status in RETRYABLE_STATUS:
+        return True
+    if status != 403:
+        return False
+    return (
+        bool(headers.get("retry-after")) or headers.get("x-ratelimit-remaining") == "0"
+    )
 
 
 def _request(
@@ -120,11 +153,11 @@ def _request(
     request.add_header("X-GitHub-Api-Version", "2022-11-28")
     if data is not None:
         request.add_header("Content-Type", "application/json")
-    # Retry the transient shapes only: 5xx, the secondary-rate-limit 403, the
-    # primary 429, and connection errors. A 404 or a 422 is an answer, not a
-    # blip, and retrying it just burns budget.
+    # Retry the transient shapes only, and ONLY on a replayable method. A 404
+    # or a 422 is an answer, not a blip, and retrying it just burns budget.
+    attempts = RETRIES if method in IDEMPOTENT_METHODS else 1
     last: Exception | None = None
-    for attempt in range(RETRIES):
+    for attempt in range(attempts):
         if attempt:
             time.sleep(BACKOFF_SECONDS * (2 ** (attempt - 1)))
         try:
@@ -134,13 +167,16 @@ def _request(
             break
         except urllib.error.HTTPError as exc:  # pragma: no cover - network path
             detail = exc.read()[:400]
+            headers = (
+                {k.lower(): v for k, v in exc.headers.items()} if exc.headers else {}
+            )
             last = ApiError(f"{method} {url} -> HTTP {exc.code}: {detail!r}")
-            if exc.code not in RETRYABLE_STATUS:
+            if not _is_retryable(exc.code, headers):
                 raise last from exc
         except urllib.error.URLError as exc:  # pragma: no cover - network path
             last = ApiError(f"{method} {url} -> {exc.reason}")
     else:
-        raise last or ApiError(f"{method} {url} -> exhausted {RETRIES} attempts")
+        raise last or ApiError(f"{method} {url} -> exhausted {attempts} attempt(s)")
     if accept.endswith("raw"):
         return raw.decode("utf-8", errors="replace"), headers
     return (json.loads(raw) if raw else None), headers
@@ -166,6 +202,16 @@ def open_prs(repo: str, token: str) -> list[dict]:
     return _paginate(f"{API_ROOT}/repos/{repo}/pulls?{query}", token)
 
 
+def _in_versions_dir(name: str) -> bool:
+    """Would ``scan_dir`` scan this path? Non-recursive, ``.py`` only."""
+    prefix = f"{VERSIONS_DIR}/"
+    return (
+        name.startswith(prefix)
+        and name.endswith(".py")
+        and "/" not in name[len(prefix) :]
+    )
+
+
 def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
     """This PR's changes to files the GATE would actually scan.
 
@@ -178,14 +224,7 @@ def pr_version_files(repo: str, number: int, token: str) -> list[dict]:
     files = _paginate(
         f"{API_ROOT}/repos/{repo}/pulls/{number}/files?per_page=100", token
     )
-    prefix = f"{VERSIONS_DIR}/"
-    return [
-        f
-        for f in files
-        if (name := str(f.get("filename", ""))).startswith(prefix)
-        and name.endswith(".py")
-        and "/" not in name[len(prefix) :]
-    ]
+    return [f for f in files if _in_versions_dir(str(f.get("filename", "")))]
 
 
 def blob_at(repo: str, path: str, ref: str, token: str) -> str:
@@ -269,7 +308,20 @@ def render_comment(heads: tuple[str, ...], remediation, landed_sha: str) -> str:
             "while a merge revision would be permanent bookkeeping in the chain.",
         ]
     else:
+        blocked_note = {
+            "merge_revision": (
+                "a MERGE revision is in the way — APPEND the landed head to its "
+                "`down_revision` tuple; replacing it with a scalar would drop the "
+                "existing merge parents and ADD heads"
+            ),
+            "cycle": "the chain contains a CYCLE, so there is no revision to re-point",
+        }
         lines += [
+            *[
+                f"`{safe_id(head)}`: {blocked_note.get(reason, reason)}."
+                for head, reason in remediation.blocked
+            ],
+            "",
             "This one does not reduce to a single re-point "
             f"(`{remediation.kind}`): landed head(s) "
             f"{', '.join(f'`{safe_id(h)}`' for h in remediation.landed_heads) or '(none)'}, "
@@ -362,7 +414,18 @@ def prs_carrying_a_notice(repo: str, token: str) -> set[int] | None:
         return None
     if not isinstance(page, dict) or "items" not in page:
         return None
-    return {int(item["number"]) for item in page["items"]}
+    items = page["items"]
+    total = page.get("total_count")
+    if isinstance(total, int) and total > len(items):
+        # One un-paginated page. Say so rather than let the excess go
+        # un-cleared in silence — this does NOT self-heal on the next land.
+        err(
+            f"{total} PRs carry a fork notice but only {len(items)} were "
+            "listed; the remainder will not have theirs cleared this run."
+        )
+    if page.get("incomplete_results"):
+        err("GitHub reported the notice search as incomplete; treat it as partial.")
+    return {int(item["number"]) for item in items}
 
 
 def main() -> int:
@@ -447,7 +510,7 @@ def main() -> int:
         if not touched:
             # Nothing to check — but it may still be carrying a notice from an
             # earlier land, which is now a lie.
-            if notified and number in notified:
+            if notified is not None and number in notified:
                 try:
                     existing = find_marker_comment(args.repo, number, token)
                     if existing is not None:
@@ -508,7 +571,8 @@ def main() -> int:
                 except ApiError as exc:
                     failures.append(f"#{number}: could not clear its notice: {exc}")
                     continue
-                cleared += 1
+                if result not in {"unchanged"}:
+                    cleared += 1
                 note(f"#{number}: fork notice cleared ({result})")
             continue
 

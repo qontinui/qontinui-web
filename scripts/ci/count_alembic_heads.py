@@ -53,6 +53,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _alembic_graph import (  # noqa: E402
+    BLOCK_CYCLE,
+    BLOCK_MERGE_REVISION,
     VERSIONS_DIR,
     Remediation,
     Scan,
@@ -165,14 +167,43 @@ def render_remediation(
         return MERGE_REMEDY.format(baseline=baseline, heads=" ".join(heads))
     if remediation.kind == "unknown":
         return UNKNOWN_REMEDY.format(baseline=baseline)
-    # "chain": either the baseline itself is forked, or every head is
-    # unlanded. Both need a human to pick an order.
     landed = ", ".join(remediation.landed_heads) or "(none)"
     unlanded = ", ".join(remediation.unlanded_heads) or "(none)"
-    return (
+    header = (
         f"\nResolution: landed head(s): {landed}\n"
         f"            unlanded head(s): {unlanded}\n\n"
-        "No single landed head to re-point onto, so this gate will not\n"
+    )
+    if remediation.kind == "blocked":
+        # There IS one landed head — do not say there is not. What is missing
+        # is a single token to change, and the reason differs per chain.
+        lines = [
+            f"`{remediation.target}` is the landed head, but at least one",
+            "forked chain has no ONE-TOKEN fix, so this gate will not print",
+            "a `down_revision` that would make things worse:",
+            "",
+        ]
+        for head, reason in remediation.blocked:
+            if reason == BLOCK_MERGE_REVISION:
+                lines += [
+                    f"  {head} — its chain reaches a MERGE revision, whose",
+                    "      `down_revision` is a tuple. APPEND the landed head",
+                    "      to that tuple; replacing it with a scalar would drop",
+                    "      the existing merge parents and ADD heads.",
+                ]
+            elif reason == BLOCK_CYCLE:
+                lines += [
+                    f"  {head} — its chain contains a CYCLE, so there is no",
+                    "      shallowest revision to re-point. Break the cycle",
+                    "      first; the chain is unupgradable until you do.",
+                ]
+            else:  # pragma: no cover - defensive
+                lines.append(f"  {head} — blocked ({reason}).")
+            lines.append("")
+        return header + "\n".join(lines)
+    # "chain": either the baseline itself is forked (two landed heads), or
+    # every head is unlanded. Both need a human to pick an order.
+    return (
+        header + "No single landed head to re-point onto, so this gate will not\n"
         "invent an order. Chain the unlanded revisions one behind the\n"
         "other (each one's `down_revision` naming the previous) so the\n"
         "set ends in exactly one head, and re-run.\n"
