@@ -123,6 +123,21 @@ export const KIND_BAND: Record<PromptDocumentKind, PromptDocumentBand> = {
  * `product_intent` rows exist — including an unedited shipped skeleton, which
  * is UNKNOWN rather than intent. The band split must not demote the fleet's
  * system prompt beneath a placeholder.
+ *
+ * That is the same false-signal class the selection loop's step-1 skeleton rule
+ * exists to prevent (`current_version === 1 && default_source !== null` ⇒ never
+ * edited ⇒ do not rank against it). Fixing it in the ranking and reintroducing
+ * it in the layout would be incoherent.
+ *
+ * **Do not flip this to put Intent first.** It looks like the obvious tidy-up —
+ * the nav section is called `Intent ▾`, so Intent-first reads more consistent —
+ * and it was considered and rejected on 2026-08-25 by the two sessions that own
+ * the two halves (this plan, and
+ * `2026-08-25-coord-console-intent-and-devops-sections`, which owns the nav
+ * section). The section label was chosen KNOWING it names only half of what the
+ * section holds; the honesty comes from the bands being visible and LABELLED,
+ * not from their order. The section-level wobble is answered by the page's
+ * intro copy, which names both halves — not by reordering these.
  */
 export const PROMPT_DOCUMENT_BANDS: readonly PromptDocumentBand[] = [
   "behavior",
