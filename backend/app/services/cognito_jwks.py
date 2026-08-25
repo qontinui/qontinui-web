@@ -38,6 +38,7 @@ is unreachable on cold start, REJECT — never silently fall back to
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import httpx
@@ -52,6 +53,12 @@ from jwt.exceptions import (
 from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
+
+# Minimum interval between FORCED (kid-miss-driven) JWKS refetches. Matches
+# coord's `auth_sso::FORCED_REFRESH_COOLDOWN` and this package's own
+# `coord_jwks._FORCED_REFRESH_COOLDOWN_S`, so all three doors throttle a
+# stream of unknown kids identically.
+_FORCED_REFRESH_COOLDOWN_S = 30
 
 # Clock-skew tolerance for ``exp`` / ``iat`` validation. Web and Cognito
 # run on different clocks; standard distributed-JWT practice is 30-60s.
@@ -96,6 +103,7 @@ class CognitoJWKSClient:
         self._jwks_url = jwks_url or f"{self._issuer}/.well-known/jwks.json"
         self._http_timeout_s = http_timeout_s
         self._jwks: dict[str, Any] | None = None
+        self._forced_at: float = 0.0
         self._lock = asyncio.Lock()
 
     @property
@@ -142,10 +150,32 @@ class CognitoJWKSClient:
         Unlike a TTL cache, the Cognito set is cached for the process
         lifetime; the only refetch trigger is a ``kid``-miss (handled by
         the caller passing ``force_refresh=True``).
+
+        Forced refetches are RATE-LIMITED. ``kid`` is read from an
+        unverified header, so it is attacker-controlled: without a
+        cooldown, any unauthenticated caller could drive one outbound
+        Cognito round-trip per request simply by presenting a token with
+        an unknown ``kid`` — an amplification vector, and one that also
+        stalls every concurrent verification behind ``self._lock`` for
+        the duration of that fetch. The cooldown collapses a stream of
+        unknown kids to at most one fetch per window, at the cost of at
+        most one window of kid-miss rejections in the pathological
+        single-key-rotation case.
+
+        Mirrors coord's own ``auth_sso::FORCED_REFRESH_COOLDOWN`` and the
+        sibling ``coord_jwks`` client, which already do exactly this.
         """
         async with self._lock:
             if self._jwks is not None and not force_refresh:
                 return self._jwks
+
+            if force_refresh and self._jwks is not None:
+                now = time.monotonic()
+                if (now - self._forced_at) < _FORCED_REFRESH_COOLDOWN_S:
+                    # Already refetched recently — serve the cache and let
+                    # the caller's kid lookup fail as it would have.
+                    return self._jwks
+                self._forced_at = now
 
             jwks = await self._fetch_jwks()
             self._jwks = jwks

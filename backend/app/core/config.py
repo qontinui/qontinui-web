@@ -201,6 +201,14 @@ class Settings(BaseSettings):
         default="http://localhost:9870",
         description="Base URL of qontinui-coord for the strategy bridge",
     )
+    COORD_DEVICE_URL: str | None = Field(
+        default=None,
+        description=(
+            "Base URL of the coord that issues DEVICE identities, when that "
+            "is not the same coord as COORD_URL. Unset (the default) means "
+            "'same as COORD_URL', so every existing deployment is unchanged."
+        ),
+    )
     COORD_ADMIN_SECRET: str | None = Field(
         default=None,
         description=(
@@ -647,3 +655,27 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def coord_device_base() -> str:
+    """Base URL of the coord that issues DEVICE identities.
+
+    COORD_URL is overloaded: it addresses the admin/service-token
+    bridge (whose shared secret is paired with ONE coord), the operator
+    proxy routes, AND the device-identity surface — JWKS verification of
+    device tokens plus the device-routing reads behind the runner proxy.
+
+    Those are independent trust relationships and they do not have to
+    point at the same coord. A dev box legitimately runs a LOCAL coord
+    container for the admin bridge while its runner is paired to the
+    fleet's coord, and device tokens are then signed by a key the local
+    coord has never held. Before this split there was no way to express
+    that: measured 2026-08-25, the local secret authenticated against the
+    local coord (200) and was rejected by the fleet coord (401), so
+    repointing COORD_URL to fix device verification would have
+    fail-fast-ed the backend at boot in strategy_client.startup().
+
+    Unset (the default) means "same as COORD_URL", so every existing
+    deployment — prod, CI, single-coord dev — is byte-for-byte unchanged.
+    """
+    return (settings.COORD_DEVICE_URL or settings.COORD_URL).rstrip("/")
