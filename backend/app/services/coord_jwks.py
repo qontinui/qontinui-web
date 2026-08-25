@@ -8,7 +8,9 @@ authenticates with a coord-issued device-token JWT that the runner
 obtained via the OAuth-loopback pairing flow (``POST
 /coord/devices/pair-complete``).
 
-This module fetches coord's JWKS (``GET {COORD_URL}/coord/auth/jwks``)
+This module fetches coord's JWKS (``GET {coord_device_base()}/coord/auth/jwks``
+-- the DEVICE-identity coord, which is ``COORD_DEVICE_URL`` when set and
+``COORD_URL`` otherwise)
 on demand, caches it for 1 hour, and verifies presented device-token
 JWTs using ``PyJWT`` (with the ``cryptography`` backend, required for
 the ``EdDSA`` / Ed25519 algorithm coord uses to sign).
@@ -41,7 +43,7 @@ from jwt.exceptions import (
     PyJWTError,
 )
 
-from app.core.config import settings
+from app.core.config import coord_device_base
 
 logger = structlog.get_logger(__name__)
 
@@ -126,7 +128,7 @@ class CoordTokenForeignIssuerError(CoordTokenInvalidError):
 
     **Not inherently a fault.** For a caller that treats a rejection as
     terminal (``deps``, ``devices_ws``) this arm means the token was
-    minted by a different coord than ``settings.COORD_URL`` points at —
+    minted by a different coord than ``coord_device_base()`` points at —
     a deployment-wiring bug worth an alarm. But ``memory`` verifies every
     bearer here purely to decide whether it is coord-signed at all, and a
     Cognito token legitimately lands in this arm on the way to a
@@ -368,4 +370,4 @@ class CoordJWKSClient:
 
 
 # Process-wide singleton — wired at import time.
-coord_jwks_client = CoordJWKSClient(coord_url=settings.COORD_URL)
+coord_jwks_client = CoordJWKSClient(coord_url=coord_device_base())
