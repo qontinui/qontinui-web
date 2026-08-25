@@ -14,12 +14,18 @@ import { SpawnModal } from "./SpawnModal";
  * looked identical, and none of them offered any way forward, so an
  * operator whose roster was momentarily empty simply could not spawn.
  *
- * That last case is not hypothetical: coord lists a device only while
- * `coord.devices.last_seen_at` is inside `COORD_DEVICE_HEARTBEAT_TTL_SECS`
- * (120s default), while the runner's only regular writer of that column is
- * the budget republisher on `BUDGET_REPUBLISH_DEFAULT_SECS` (600s). A
- * healthy device is therefore ABSENT from the roster most of the time, and
- * the operator surface has to survive that rather than dead-end on it.
+ * That last case is not hypothetical — it is the live production symptom
+ * this change was written for. `list_live_devices_for_tenant` requires a
+ * device to be BOTH bound to the reading principal's tenant (an INNER JOIN
+ * on `coord.tenant_devices`) and inside the liveness window, and an operator
+ * hitting `/admin/coord/spawn` got `{"devices": [], "count": 0}` with
+ * healthy machines running.
+ *
+ * These tests deliberately do NOT encode WHY the roster was empty. An
+ * earlier revision asserted a specific cause — a 120s reader vs a 600s
+ * writer — which was subsequently falsified (a dedicated 30s device
+ * heartbeat exists and was running). The surface's job is to survive an
+ * empty roster whatever the reason, so that is all that is pinned here.
  *
  * So the assertions below pin two properties per state:
  *   1. the cause is NAMED (an operator can tell auth from liveness), and

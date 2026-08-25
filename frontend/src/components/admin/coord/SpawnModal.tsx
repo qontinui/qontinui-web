@@ -287,18 +287,23 @@ export function SpawnModal({
         if (cancelled) return;
         const roster = body.devices ?? [];
         setDevices(roster);
-        // A 200 with an empty roster is a real answer, not a failure: coord
-        // lists a device only while `last_seen_at` is inside
-        // COORD_DEVICE_HEARTBEAT_TTL_SECS (120s) or it advertises a
-        // health_url. Say so, rather than leaving a blank dropdown to be
-        // read as "the fleet is down".
+        // A 200 with an empty roster is a real answer, not a failure. Coord
+        // lists a device only when it is BOTH bound to the reading
+        // principal's tenant (an INNER JOIN on `coord.tenant_devices`) and
+        // inside the liveness window. Say so, rather than leaving a blank
+        // dropdown to be read as "the fleet is down".
+        //
+        // Deliberately does NOT name a cause: an empty roster has several,
+        // and this surface cannot tell them apart. An earlier draft asserted
+        // a specific one (a heartbeat-cadence gap) that was later falsified —
+        // wrong prose in a user-facing string is worse than none.
         if (roster.length === 0) {
           setDevicesError({
             kind: "empty",
             message:
-              "Coord reported 0 live devices for this tenant. A device is listed " +
-              "only while its last heartbeat is inside coord's liveness window, " +
-              "so a healthy machine can be absent between heartbeats. Enter the " +
+              "Coord reported 0 live devices for this tenant. A device is " +
+              "listed only if it is bound to this tenant and its last heartbeat " +
+              "is recent, so a healthy machine can still be absent. Enter the " +
               "device id directly if you know it.",
           });
           setManualDevice(true);
