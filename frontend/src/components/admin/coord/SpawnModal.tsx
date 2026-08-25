@@ -182,6 +182,18 @@ export function SpawnModal({
 
   const [devices, setDevices] = useState<FleetHealthDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
+  /** Why the roster is unusable, when it is. `null` = the fetch succeeded.
+   *
+   *  An empty roster and a FAILED roster fetch used to render identically
+   *  ("No devices reporting"), because the catch below only reached
+   *  `console.warn`. They have opposite fixes — one is a coord-side
+   *  liveness question, the other an auth/proxy fault — so the operator
+   *  has to be able to tell them apart without opening devtools. */
+  const [devicesError, setDevicesError] = useState<string | null>(null);
+  /** Type a device id instead of picking one. Auto-armed whenever the
+   *  roster comes back unusable, so an empty dropdown is never a dead end
+   *  (the roster is a CONVENIENCE — `target_device_id` is just a uuid). */
+  const [manualDevice, setManualDevice] = useState(false);
 
   // Reset form state on every open so a fresh spawn doesn't inherit
   // the previous one.
@@ -189,6 +201,8 @@ export function SpawnModal({
     if (!open) return;
     setPhase(initialPhase ?? "");
     setDeviceId("");
+    setManualDevice(false);
+    setDevicesError(null);
     setSelectedRepos([]);
     setOtherRepos("");
     setIntent("");
@@ -203,17 +217,39 @@ export function SpawnModal({
     if (!open) return;
     let cancelled = false;
     setDevicesLoading(true);
+    setDevicesError(null);
     fetch(`${API}/fleet/health`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(res.status)))
+      .then((res) =>
+        res.ok
+          ? res.json()
+          : Promise.reject(new Error(`fleet/health returned HTTP ${res.status}`))
+      )
       .then((body: FleetHealthPayload) => {
         if (cancelled) return;
-        setDevices(body.devices ?? []);
+        const roster = body.devices ?? [];
+        setDevices(roster);
+        // A 200 with an empty roster is a real answer, not a failure: coord
+        // lists a device only while `last_seen_at` is inside
+        // COORD_DEVICE_HEARTBEAT_TTL_SECS (120s) or it advertises a
+        // health_url. Say so, rather than leaving a blank dropdown to be
+        // read as "the fleet is down".
+        if (roster.length === 0) {
+          setDevicesError(
+            "Coord reported 0 live devices for this tenant. A device is listed " +
+              "only while its last heartbeat is inside coord's liveness window, " +
+              "so a healthy machine can be absent between heartbeats. Enter the " +
+              "device id directly if you know it."
+          );
+          setManualDevice(true);
+        }
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (cancelled) return;
-        // Fall through silently — operator can still type a device ID
-        // via the free-text alternative if coord is unreachable.
+        const detail = e instanceof Error ? e.message : String(e);
         console.warn("[SpawnModal] fleet/health fetch failed", e);
+        setDevices([]);
+        setDevicesError(`Could not load the device roster — ${detail}.`);
+        setManualDevice(true);
       })
       .finally(() => {
         if (cancelled) return;
@@ -358,6 +394,16 @@ export function SpawnModal({
             <Label htmlFor="spawn-device">Device</Label>
             {devicesLoading ? (
               <Skeleton className="h-9 w-full" />
+            ) : manualDevice ? (
+              <Input
+                id="spawn-device"
+                data-testid="coord-spawn-device-input"
+                value={deviceId}
+                onChange={(e) => setDeviceId(e.target.value.trim())}
+                placeholder="target device id (uuid)"
+                className="font-mono text-xs"
+                spellCheck={false}
+              />
             ) : (
               <Select value={deviceId} onValueChange={setDeviceId}>
                 <SelectTrigger
@@ -367,11 +413,6 @@ export function SpawnModal({
                   <SelectValue placeholder="Choose a device" />
                 </SelectTrigger>
                 <SelectContent>
-                  {devices.length === 0 && (
-                    <SelectItem value="__none__" disabled>
-                      No devices reporting
-                    </SelectItem>
-                  )}
                   {devices.map((d) => (
                     <SelectItem key={d.device_id} value={d.device_id}>
                       <span className="font-mono text-xs">
@@ -386,6 +427,31 @@ export function SpawnModal({
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {devicesError && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-spawn-device-notice"
+              >
+                {devicesError}
+              </p>
+            )}
+            {!devicesLoading && (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                data-testid="coord-spawn-device-toggle"
+                onClick={() => {
+                  setManualDevice((v) => !v);
+                  setDeviceId("");
+                }}
+              >
+                {manualDevice
+                  ? `Choose from the roster${
+                      devices.length > 0 ? ` (${devices.length})` : ""
+                    }`
+                  : "Enter a device id instead"}
+              </button>
             )}
           </div>
 
