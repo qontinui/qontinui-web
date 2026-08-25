@@ -5619,6 +5619,7 @@ async def websocket_ci_status(
 #   POST   /api/v1/operations/sessions/{id}/steal { reason, machine_id }
 #   DELETE /api/v1/operations/sessions/{id}
 #   GET    /api/v1/operations/tenants                              (list)
+#   POST   /api/v1/operations/tenants { display_name }             (create)
 #
 # `GET /sessions/.../events` is an SSE proxy; the upstream coord stream
 # is open until the browser disconnects. The proxy must NOT buffer —
@@ -6257,9 +6258,12 @@ async def list_user_tenants(
     the first entry is the active default. A coord 403 for an unlinked
     operator propagates as ``tenant_not_resolved``.
 
-    The per-tenant ``name`` field is not in the ``/me`` payload (coord
-    returns ``{tenant_id, slug, roles}``); the dashboard tenant chip
-    renders the slug, so ``name`` falls back to the slug.
+    The per-tenant ``name`` is coord's ``display_name`` — the human-chosen
+    "Project" name a user typed into ``POST /tenants``. It is optional on
+    the ``/me`` wire (absent on a coord that predates it, and null for the
+    SSO auto-provisioned tenants that only ever got a slug), so ``name``
+    falls back to the slug. The dashboard tenant chip renders whichever
+    it gets.
 
     Wire shape::
 
@@ -6276,18 +6280,89 @@ async def list_user_tenants(
     for tid in ordered_ids:
         member = by_id.get(tid)
         slug = member.slug if member is not None else ""
+        display_name = member.display_name if member is not None else None
         tenants_out.append(
             {
                 "id": str(tid),
                 "slug": slug,
-                # `/me` carries no display_name; the UI renders the slug.
-                "name": slug,
+                # The typed "Project" name when coord has one for this
+                # tenant; the slug otherwise (older coord, or an
+                # SSO-auto-provisioned tenant that never got a name).
+                "name": display_name or slug,
             }
         )
     return {
         "tenants": tenants_out,
         "active_tenant_id": str(ordered_ids[0]),
     }
+
+
+class TenantCreateIn(BaseModel):
+    """Body for ``POST /operations/tenants`` — the user-typed project name.
+
+    Only the display name crosses the wire: coord derives the slug itself
+    (``slugify_user_tenant_name``) and REJECTS a name that does not survive
+    slugification rather than mangling it, so web must not pre-slugify or
+    pre-sanitize here — doing so would silently change what the user typed
+    and hide coord's ``invalid_name`` answer.
+
+    The bounds below are a cheap client-side courtesy, not the security
+    control: coord validates the name, enforces the reserved-slug denylist
+    and the per-operator creation cap. They are deliberately WIDER than
+    coord's 3..=63 *slug* bound, since a display name of "Joe's Café ☕"
+    slugifies shorter than it reads.
+    """
+
+    display_name: str = Field(min_length=1, max_length=120)
+
+
+@router.post("/tenants")
+async def create_user_tenant(
+    body: TenantCreateIn,
+    current_user: UserModel = Depends(get_current_active_user_async),
+) -> Any:
+    """Create a new tenant ("Project") owned by the calling operator.
+
+    A thin authenticated proxy to coord's ``POST /coord/tenants`` (plan
+    ``2026-08-25-self-service-tenant-project-creation`` Phase 1). Coord
+    creates the tenant, seeds its ``tenant_policies`` row, and grants the
+    caller ``admin`` in it — all in one transaction — then returns::
+
+        { "tenant_id": "<uuid>", "slug": "<str>", "display_name": "<str>" }
+
+    That body is forwarded VERBATIM rather than through a ``response_model``:
+    coord's create is the transaction of record, so re-validating its answer
+    web-side could only turn a tenant that WAS created into a 500 the caller
+    reads as failure — and then retries into a ``409``.
+
+    ``forward_bearer=True`` forwards the caller's Cognito bearer WITHOUT
+    resolving a tenant: this call creates one, so there is nothing to
+    resolve, and authorization is coord's (``require_sso`` +
+    ``require_role("operator")``, the role floor — any authenticated
+    operator). Web adds no auth logic of its own beyond requiring a
+    logged-in user.
+
+    Coord's 4xx answers propagate verbatim through ``_proxy_coord_post``
+    (see its ``raise HTTPException(status_code=resp.status_code, ...)``),
+    so the browser sees the real reason rather than a generic 500:
+
+    - ``400 invalid_name`` — the name does not slugify to a usable slug,
+      or hits the reserved-slug denylist;
+    - ``409 slug_taken`` — the derived slug already exists. Deliberately a
+      rejection, never a join: attaching a caller to a stranger's tenant on
+      a name collision is the hijack vector coord's plain-INSERT closes;
+    - ``429``/``403`` — the per-operator creation cap
+      (``COORD_SELF_SERVICE_TENANT_CAP``).
+
+    NOTE (plan Q5, out of scope here): the new tenant is an ADDITIONAL
+    membership, not the creator's home tenant, and ``mint_pair_code_endpoint``
+    can only mint pair codes for the caller's home — so no runner can be
+    paired to a self-service project until that endpoint is generalized.
+    The create dialog states this.
+    """
+    return await _proxy_coord_post(
+        "/coord/tenants", body.model_dump(), forward_bearer=True
+    )
 
 
 # ---- Repo management proxy (canonical-repos on coord) ----------------------
