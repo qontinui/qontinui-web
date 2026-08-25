@@ -17,12 +17,16 @@ that keep a silently-dead schedule from shipping again:
   regression that would silently stop the 30s dispatch poll behind a 10-minute
   memory consolidation.
 
-**No Postgres needed.** ``_run_under_lock`` reaches the DB through a *lazy*
-``from app.db.session import async_engine``, so monkeypatching that module
-attribute with :class:`_FakeLockEngine` lets these tests exercise the REAL
-locking code path (including the unlock-in-``finally``) against a fake
-connection. The genuine ``pg_try_advisory_lock`` mutual-exclusion semantics are
-covered against live Postgres in ``tests/test_scheduler_db.py``.
+**No Postgres needed.** ``SchedulerService`` takes an injectable ``lock_engine``
+test seam, so passing :class:`_FakeLockEngine` to the constructor lets these
+tests exercise the REAL locking code path (including the unlock-in-``finally``)
+against a fake connection. Injection is deliberately per-instance rather than a
+monkeypatch of the ``app.db.session.async_engine`` global: patching the global
+redirects EVERY scheduler in the process, so the app's own module-level
+singleton could dump its advisory-lock traffic into a test's fake and make
+assertions like ``lock_calls == []`` a lottery. The genuine
+``pg_try_advisory_lock`` mutual-exclusion semantics are covered against live
+Postgres in ``tests/test_scheduler_db.py``.
 """
 
 from __future__ import annotations
@@ -97,7 +101,12 @@ class _FakeConnCtx:
 
 
 class _FakeLockEngine:
-    """Stands in for ``app.db.session.async_engine`` in the lock path."""
+    """Stands in for ``app.db.session.async_engine`` in the lock path.
+
+    Injected per-instance via ``SchedulerService(lock_engine=...)`` — never
+    patched over the module global, so only the service under test can record
+    calls here.
+    """
 
     def __init__(self, *, grant: bool = True) -> None:
         self.grant = grant
@@ -112,11 +121,14 @@ class _FakeLockEngine:
 
 
 @pytest.fixture
-def lock_engine(monkeypatch) -> _FakeLockEngine:
-    """Patch the scheduler's advisory-lock engine; always grants the lock."""
-    engine = _FakeLockEngine(grant=True)
-    monkeypatch.setattr("app.db.session.async_engine", engine)
-    return engine
+def lock_engine() -> _FakeLockEngine:
+    """A fake advisory-lock engine that always grants the lock.
+
+    Patches nothing: the test must wire it in explicitly with
+    ``SchedulerService(lock_engine=lock_engine)``. That keeps every recorded
+    lock/unlock call attributable to the service under test.
+    """
+    return _FakeLockEngine(grant=True)
 
 
 class _EveryTick(ScheduledTask):
@@ -463,7 +475,7 @@ class TestKillSwitches:
         """QONTINUI_SCHEDULER_ENABLED=0 → start() does nothing at all."""
         monkeypatch.setenv("QONTINUI_SCHEDULER_ENABLED", "0")
         ran = []
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
 
         async def _job() -> None:
             ran.append(1)
@@ -496,7 +508,7 @@ class TestKillSwitches:
         async def _on() -> None:
             on_ran.append(1)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(_EveryTick(name="off_task", coro=_off, interval_seconds=0.01))
         )
@@ -532,7 +544,7 @@ class TestLockGating:
         async def _job() -> None:
             ran.append(1)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(_EveryTick(name="locked", coro=_job, interval_seconds=0.01))
         )
@@ -550,16 +562,15 @@ class TestLockGating:
         assert "AUTOCOMMIT" in lock_engine.isolation_levels
 
     @pytest.mark.asyncio
-    async def test_losing_the_lock_skips_the_tick(self, monkeypatch):
+    async def test_losing_the_lock_skips_the_tick(self):
         """Another replica holds the lock → we skip silently, recording nothing."""
         engine = _FakeLockEngine(grant=False)
-        monkeypatch.setattr("app.db.session.async_engine", engine)
         ran: list[int] = []
 
         async def _job() -> None:
             ran.append(1)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=engine)
         service.register(
             _due_now(_EveryTick(name="contended", coro=_job, interval_seconds=0.01))
         )
@@ -592,7 +603,7 @@ class TestRunSemantics:
         async def _ok() -> None:
             ok_ran.append(1)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(_EveryTick(name="boom", coro=_boom, interval_seconds=0.01))
         )
@@ -626,7 +637,7 @@ class TestRunSemantics:
         async def _wedged() -> None:
             await asyncio.sleep(30)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(
                 _EveryTick(
@@ -664,7 +675,7 @@ class TestRunSemantics:
             starts.append(1)
             await release.wait()
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(_EveryTick(name="slow", coro=_slow, interval_seconds=0.01))
         )
@@ -708,7 +719,7 @@ class TestRunSemantics:
         async def _short() -> None:
             short_runs.append(1)
 
-        service = SchedulerService()
+        service = SchedulerService(lock_engine=lock_engine)
         service.register(
             _due_now(_EveryTick(name="long", coro=_long, interval_seconds=0.01))
         )

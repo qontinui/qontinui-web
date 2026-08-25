@@ -186,7 +186,14 @@ class ScheduledTask:
 class SchedulerService:
     """Registry-driven asyncio scheduler with advisory-lock multi-replica gating."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, lock_engine: Any | None = None) -> None:
+        # ``lock_engine`` is a TEST SEAM: it overrides the module-global
+        # ``app.db.session.async_engine`` used for advisory locking, for THIS
+        # instance only. Tests inject a fake here instead of patching the
+        # global, so a foreign scheduler's lock traffic (e.g. the app's own
+        # module-level singleton, which keeps the real engine) can never land
+        # in a test's fake and vice versa.
+        self._lock_engine: Any | None = lock_engine
         self._tasks: dict[str, ScheduledTask] = {}
         self._status: dict[str, dict[str, Any]] = {}
         self._loop_task: asyncio.Task[None] | None = None
@@ -362,13 +369,15 @@ class SchedulerService:
 
         from app.db.session import async_engine
 
+        engine = self._lock_engine if self._lock_engine is not None else async_engine
+
         lock_sql = text(
             "SELECT pg_try_advisory_lock(hashtext('sched:' || :name)) AS locked"
         )
         unlock_sql = text("SELECT pg_advisory_unlock(hashtext('sched:' || :name))")
 
         try:
-            async with async_engine.connect() as conn:
+            async with engine.connect() as conn:
                 conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
                 got = await conn.execute(lock_sql, {"name": task.name})
                 if not bool(got.scalar()):

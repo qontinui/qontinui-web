@@ -21,6 +21,11 @@ regardless of dispatch outcome.
 The ``run-now`` endpoint calls :func:`fire_scheduled_run` directly to fire a single
 row immediately, bypassing the poll.
 
+Both entry points take an optional ``engine`` keyword. Production leaves it unset
+and gets the process-global pooled engine; tests pass their own engine so the
+sweep runs against the test database **without** rebinding
+``app.db.session.async_engine``, which would also redirect the real cron sweeper.
+
 .. warning::
 
    **Dispatch is replica-local; the rest of the scheduler is not.** The advisory
@@ -50,7 +55,7 @@ import structlog
 from croniter import croniter  # type: ignore[import-untyped]
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.services.workflow_dispatcher import (
@@ -117,19 +122,42 @@ async def _anchor_unscheduled_rows(db: AsyncSession, now: datetime) -> int:
     return anchored
 
 
-async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int]:
+def _resolve_engine(engine: AsyncEngine | None) -> AsyncEngine:
+    """Return ``engine``, falling back to the process-global pooled engine.
+
+    The import is deliberately late and *inside* the fallback: importing
+    ``app.db.session`` at module scope would build the engine at import time.
+    """
+    if engine is not None:
+        return engine
+    from app.db.session import async_engine
+
+    return async_engine
+
+
+async def poll_and_dispatch_due(
+    *, now: datetime | None = None, engine: AsyncEngine | None = None
+) -> dict[str, int]:
     """Dispatch every due scheduled run; advance ``next_fire_at`` first.
 
     Returns a stats dict (``due`` / ``dispatched`` / ``failed`` / ``skipped``)
     for observability and test assertions. ``skipped`` counts rows that vanished
     or were disabled between the claim and the fire — a benign race, kept out of
     ``failed`` so that metric stays alertable.
+
+    ``engine`` is an explicit seam for tests: pass an engine and BOTH halves of
+    the sweep (the claim here and the fire in :func:`fire_scheduled_run`) run on
+    it. The alternative — rebinding ``app.db.session.async_engine`` — repoints a
+    process global, which also redirects the REAL cron sweeper at whatever the
+    test handed it (web#901). Note this must be threaded into the fire call
+    below: injecting it only here would split the claim onto the caller's engine
+    while the fire stayed on the global one.
     """
-    from app.db.session import async_engine
+    resolved_engine = _resolve_engine(engine)
 
     now = now or utc_now()
     session_maker = async_sessionmaker(
-        async_engine, class_=AsyncSession, expire_on_commit=False
+        resolved_engine, class_=AsyncSession, expire_on_commit=False
     )
 
     # 0. Anchor any enabled-but-unscheduled row onto its cron (without firing it).
@@ -169,7 +197,7 @@ async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int
     stats = {"due": len(claimed), "dispatched": 0, "failed": 0, "skipped": 0}
     for run_id in claimed:
         try:
-            result_dict = await fire_scheduled_run(run_id)
+            result_dict = await fire_scheduled_run(run_id, engine=resolved_engine)
         except Exception:  # noqa: BLE001 - defensive; core is already guarded
             stats["failed"] += 1
             logger.exception(
@@ -189,18 +217,18 @@ async def poll_and_dispatch_due(*, now: datetime | None = None) -> dict[str, int
     return stats
 
 
-async def fire_scheduled_run(scheduled_run_id: str) -> dict[str, Any]:
+async def fire_scheduled_run(
+    scheduled_run_id: str, *, engine: AsyncEngine | None = None
+) -> dict[str, Any]:
     """Fire one scheduled run by id. Records the outcome on the row.
 
-    Opens its own committed session over the shared pooled engine. On
-    ``DispatchError`` it records ``failed`` + ``last_error`` and returns a
-    status dict — it does NOT re-raise.
+    Opens its own committed session over ``engine``, defaulting to the shared
+    pooled engine. On ``DispatchError`` it records ``failed`` + ``last_error``
+    and returns a status dict — it does NOT re-raise.
     """
-    from app.db.session import async_engine
-
     run_uuid = UUID(scheduled_run_id)
     session_maker = async_sessionmaker(
-        async_engine, class_=AsyncSession, expire_on_commit=False
+        _resolve_engine(engine), class_=AsyncSession, expire_on_commit=False
     )
 
     async with session_maker() as db:
