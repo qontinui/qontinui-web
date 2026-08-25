@@ -34,6 +34,8 @@ import httpx
 import jwt as pyjwt
 import structlog
 from jwt.exceptions import (
+    ExpiredSignatureError,
+    ImmatureSignatureError,
     InvalidTokenError,
     PyJWKError,
     PyJWTError,
@@ -56,13 +58,103 @@ _JWKS_TTL_S = 3600
 # bad case (clocks hours apart).
 _CLOCK_SKEW_LEEWAY_S = 30
 
+# Cap on the attacker-controlled ``kid`` where it reaches an exception
+# message (which callers log). Real coord kids are ~28 chars
+# (``coord-ed25519-`` plus a 16-hex thumbprint); Cognito's are ~44.
+_MAX_KID_CHARS = 64
+
 
 class CoordJWKSUnavailableError(RuntimeError):
     """Raised when coord's JWKS cannot be fetched (cold-start failure)."""
 
 
 class CoordTokenInvalidError(RuntimeError):
-    """Raised when a presented device-token JWT fails verification."""
+    """Raised when a presented device-token JWT fails verification.
+
+    Base class for the two more specific failures below, so any caller
+    that only cares about "did this token verify" keeps working
+    unchanged while callers that can act on the distinction may catch
+    the subclasses first.
+    """
+
+
+class CoordTokenExpiredError(CoordTokenInvalidError):
+    """The token verified against a known key but its ``exp`` has passed.
+
+    The client's remedy is to re-mint. Distinguished from a signature
+    failure so an operator reading the rejection is not sent to check
+    key wiring for what is simply a stale token.
+    """
+
+
+class CoordTokenNotYetValidError(CoordTokenInvalidError):
+    """The token verified against a known key but is not valid YET.
+
+    ``nbf`` / ``iat`` sit beyond ``_CLOCK_SKEW_LEEWAY_S`` in the future.
+    This module's own leeway comment records why that is a live risk
+    rather than a theoretical one: coord truncates ``iat`` to whole
+    seconds and web may run on a different clock. The remedy is to fix
+    clock drift, so it must not be reported as a bad signature — that
+    would send the reader to check key wiring, the exact misdirection
+    this split exists to remove.
+    """
+
+
+class CoordTokenForeignIssuerError(CoordTokenInvalidError):
+    """No key in the configured coord's JWKS carries the token's ``kid``.
+
+    Called out separately because the historical failure was the
+    opposite — coord stamped one hardcoded ``kid`` on every deployment's
+    distinct signing key, so the lookup matched, the wrong key reached
+    the crypto, and a foreign-but-genuine token was reported as a bad
+    signature (i.e. as a forgery). See plan
+    ``2026-08-25-coord-jwt-kid-collides-across-environments``.
+
+    **Not inherently a fault.** For a caller that treats a rejection as
+    terminal (``deps``, ``devices_ws``) this arm means the token was
+    minted by a different coord than ``settings.COORD_URL`` points at —
+    a deployment-wiring bug worth an alarm. But ``memory`` verifies every
+    bearer here purely to decide whether it is coord-signed at all, and a
+    Cognito token legitimately lands in this arm on the way to a
+    SUCCESSFUL request. So this class carries the facts (``coord_url`` /
+    ``served_kids``) and the terminal callers decide whether to raise the
+    alarm — logging at the raise site would fire on routine successful
+    traffic and bury the one line that matters.
+    """
+
+    def __init__(
+        self, message: str, *, coord_url: str, token_kid: str, served_kids: list[str]
+    ) -> None:
+        super().__init__(message)
+        self.coord_url = coord_url
+        self.token_kid = token_kid
+        self.served_kids = served_kids
+
+
+def describe_token_rejection(exc: CoordTokenInvalidError) -> str:
+    """Short, honest, presenter-facing reason for a rejected device token.
+
+    Every caller used to render the single string ``"Invalid or expired
+    device token."`` for all three failures below. When the real fault was
+    a cross-coord ``kid`` collision that sentence was false in both of its
+    terms, and it sent readers to check pairing state and token TTL —
+    neither of which was wrong. Each arm now says only what is true.
+
+    Kept under the RFC 6455 close-reason budget (123 bytes) so a WebSocket
+    caller can pass the result straight through as a close reason.
+    """
+    if isinstance(exc, CoordTokenForeignIssuerError):
+        return "Device token was issued by a different coord than this backend verifies against."
+    if isinstance(exc, CoordTokenExpiredError):
+        return "Device token has expired."
+    if isinstance(exc, CoordTokenNotYetValidError):
+        return "Device token is not valid yet — check clock drift."
+    # Deliberately does NOT name the signature. This arm is the residue:
+    # a malformed token, an unusable JWK, a missing kid, a non-integer
+    # exp. Claiming "the signature is invalid" for those would trade a
+    # vague message for a confidently wrong one, which is the failure
+    # this whole function exists to stop.
+    return "Device token failed verification."
 
 
 class CoordJWKSClient:
@@ -165,13 +257,27 @@ class CoordJWKSClient:
         kid = header.get("kid")
         if not kid:
             raise CoordTokenInvalidError("token header missing 'kid'")
+        # The kid is attacker-supplied (read from an UNVERIFIED header) and
+        # otherwise unbounded, and it flows into an exception message that
+        # callers log. Coerce and cap it so a caller cannot turn a rejection
+        # into a log-write amplifier with content of its own choosing.
+        kid = str(kid)[:_MAX_KID_CHARS]
 
         jwk_dict = next(
             (k for k in jwks.get("keys", []) if k.get("kid") == kid),
             None,
         )
         if jwk_dict is None:
-            raise CoordTokenInvalidError(f"no JWK with kid={kid!r} in coord JWKS")
+            served = [str(k.get("kid")) for k in jwks.get("keys", []) if k.get("kid")]
+            raise CoordTokenForeignIssuerError(
+                f"no JWK with kid={kid!r} in the JWKS served by "
+                f"{self._coord_url} (it serves {served!r}) — the token was "
+                f"minted by a different coord than this backend verifies "
+                f"against",
+                coord_url=self._coord_url,
+                token_kid=kid,
+                served_kids=served,
+            )
 
         # Materialize the JWK into a key object PyJWT can use. PyJWK
         # accepts our dict shape directly (``kty``/``crv``/``x``/``alg``)
@@ -194,6 +300,15 @@ class CoordJWKSClient:
                 options={"verify_aud": False},
                 leeway=_CLOCK_SKEW_LEEWAY_S,
             )
+        except ImmatureSignatureError as exc:
+            # nbf/iat beyond the leeway. The signature DID verify, so this
+            # is clock drift, not a key problem.
+            raise CoordTokenNotYetValidError(f"token not yet valid: {exc}") from exc
+        except ExpiredSignatureError as exc:
+            # Verified against a key we know — it is simply stale. Kept
+            # distinct from the signature arm so "expired" is only ever
+            # claimed when the token really did expire.
+            raise CoordTokenExpiredError(f"token expired: {exc}") from exc
         except PyJWTError as exc:
             raise CoordTokenInvalidError(f"token verification failed: {exc}") from exc
 
