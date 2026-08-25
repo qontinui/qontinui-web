@@ -26,6 +26,15 @@ import { SpawnModal } from "./SpawnModal";
  *   2. a manual device-id entry path EXISTS (the roster is a convenience,
  *      never the only way to name a `target_device_id`).
  *
+ * The third describe below covers the UNANCHORED spawn added by plan
+ * `2026-08-25-general-purpose-session-spawn-machine-account-prompt` Phase 1:
+ * the modal now opens with no plan at all, and `canSubmit` requires only the
+ * three fields coord actually rejects a body without. That relaxation is
+ * exactly the kind of change that can silently take the device guard down
+ * with it, so the guard's own case fills the OTHER requirements first —
+ * otherwise "submit is disabled" is true for unrelated reasons and asserts
+ * nothing.
+ *
  * NOTE ON PROPS: `SpawnModalProps` requires `onClose`. `tsconfig.json`
  * EXCLUDES every `.test.tsx` file from the program, so nothing typechecks
  * this one — a wrong prop name is silently destructured away and every test
@@ -45,6 +54,18 @@ function renderModal() {
       initialPhase="1"
     />
   );
+}
+
+/** Satisfy everything `canSubmit` needs EXCEPT the device.
+ *
+ *  Without this, a "submit is disabled" assertion passes because the repos
+ *  list is empty and the prompt is blank — it would stay green with the
+ *  device guard deleted, which is the one thing it is meant to pin. */
+async function fillNonDeviceRequirements(
+  user: ReturnType<typeof userEvent.setup>
+) {
+  await user.click(screen.getByTestId("coord-spawn-repo-qontinui-web"));
+  await user.type(screen.getByTestId("coord-spawn-initial-prompt"), "go");
 }
 
 function rosterOf(devices: unknown[]) {
@@ -174,13 +195,25 @@ describe("SpawnModal manual device entry", () => {
     const user = userEvent.setup();
 
     renderModal();
-    const input = await screen.findByTestId("coord-spawn-device-input");
+    const input = (await screen.findByTestId(
+      "coord-spawn-device-input"
+    )) as HTMLInputElement;
+    // Everything else canSubmit wants, so the button below is about the
+    // device id and nothing else.
+    await fillNonDeviceRequirements(user);
+    const submit = screen.getByTestId(
+      "coord-spawn-submit"
+    ) as HTMLButtonElement;
 
     await user.type(input, "not-a-uuid");
     expect(screen.getByTestId("coord-spawn-device-invalid")).toBeTruthy();
-    expect(
-      (screen.getByTestId("coord-spawn-submit") as HTMLButtonElement).disabled
-    ).toBe(true);
+    expect(submit.disabled).toBe(true);
+
+    // ...and the guard is the ONLY thing holding it: a valid id releases it.
+    await user.clear(input);
+    await user.type(input, DEVICE);
+    expect(screen.queryByTestId("coord-spawn-device-invalid")).toBeNull();
+    expect(submit.disabled).toBe(false);
   });
 
   it("accepts both uuid spellings coord's deserializer takes", async () => {
@@ -221,5 +254,48 @@ describe("SpawnModal manual device entry", () => {
     // ...and leading/trailing whitespace still validates, because the guard
     // tests the trimmed value.
     expect(screen.queryByTestId("coord-spawn-device-invalid")).toBeNull();
+  });
+});
+
+describe("SpawnModal unanchored spawn", () => {
+  it("submits with only a device, a repo and a prompt when no plan is seeded", async () => {
+    fetchMock.mockResolvedValue(rosterOf([]));
+    const user = userEvent.setup();
+
+    // No `planSlug` at all — the "New session" entry point.
+    render(<SpawnModal open onClose={() => {}} />);
+
+    const input = await screen.findByTestId("coord-spawn-device-input");
+    // A disabled, empty "Plan" field would be a lie about what this spawn
+    // is; the modal names the state instead.
+    expect(screen.queryByTestId("coord-spawn-plan-slug")).toBeNull();
+    expect(screen.getByTestId("coord-spawn-unanchored-notice")).toBeTruthy();
+
+    const submit = screen.getByTestId(
+      "coord-spawn-submit"
+    ) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    await user.type(input, DEVICE);
+    await fillNonDeviceRequirements(user);
+
+    // The whole point of Phase 1: no plan slug, no phase and no intent were
+    // typed, and the spawn is still submittable — those three are
+    // `Option<..>` on coord's SpawnRequest, so requiring them was a
+    // frontend invention.
+    expect(submit.disabled).toBe(false);
+  });
+
+  it("still shows the plan field when a plan IS seeded", async () => {
+    fetchMock.mockResolvedValue(rosterOf([]));
+
+    renderModal();
+    await screen.findByTestId("coord-spawn-device-input");
+
+    // The relaxation must not have deleted the anchored shape.
+    expect(
+      (screen.getByTestId("coord-spawn-plan-slug") as HTMLInputElement).value
+    ).toBe("2026-08-25-example-plan");
+    expect(screen.queryByTestId("coord-spawn-unanchored-notice")).toBeNull();
   });
 });

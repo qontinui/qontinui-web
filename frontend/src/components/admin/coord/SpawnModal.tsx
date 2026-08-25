@@ -5,21 +5,37 @@
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 4 (Wave 4).
  *
- * Inputs:
- *   - work_unit_slug (preset by parent — disabled, contextual). Sent under
- *     the `work_unit_slug` wire key since Stage 4a of plan
+ * The modal serves BOTH spawn shapes (plan
+ * `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
+ * Phase 1):
+ *
+ *   - **anchored** — opened from a plan row, `planSlug` seeded, work-unit
+ *     anchor + phase + intent on the wire;
+ *   - **unanchored** — opened from the page's "New session" action with no
+ *     plan at all. The anchor keys are then OMITTED from the body, never
+ *     sent as `""`; see `buildSpawnRequestBody`.
+ *
+ * Inputs — only the last three are REQUIRED, because only those three are
+ * required by coord (`agents_spawn.rs:228,235`):
+ *   - work_unit_slug (OPTIONAL; preset by parent — disabled, contextual).
+ *     Sent under the `work_unit_slug` wire key since Stage 4a of plan
  *     `2026-07-28-coord-post-plan-slug-surfaces-rename`; the value always
  *     named a work-unit slug. See the wire-key note on `handleSubmit`.
- *   - plan_phase  (free-text input; the leading integer is extracted and sent
- *     as `plan_phase`, which coord types `Option<u32>`. A phase with no
- *     digits is omitted from the body rather than sent as a string.)
- *   - device_id   (dropdown, sourced from /operations/fleet/health) — sent
- *     as `target_device_id`, the name coord requires
- *   - repos       (multi-select checkbox list of known repos) — sent as
- *     `[{ repo }]` objects, not bare strings
- *   - intent      (short free-text description)
- *   - declared_overlap_paths (newline-delimited list, optional)
- *   - initial_prompt (the agent's first-tick prompt body)
+ *   - plan_phase  (OPTIONAL free-text input; the leading integer is extracted
+ *     and sent as `plan_phase`, which coord types `Option<u32>`. A phase with
+ *     no digits is omitted from the body rather than sent as a string.)
+ *   - intent      (OPTIONAL short free-text description)
+ *   - declared_overlap_paths (OPTIONAL newline-delimited list)
+ *   - device_id   (REQUIRED; dropdown sourced from /operations/fleet/health,
+ *     or typed directly when that roster is empty or unreachable) — sent as
+ *     `target_device_id`, the name coord requires. A typed id is validated
+ *     against coord's `Uuid` before submit rather than after a 422.
+ *   - repos       (REQUIRED, ≥1; multi-select checkbox list of known repos) —
+ *     sent as `[{ repo }]` objects, not bare strings. Required even for an
+ *     unanchored spawn: coord 400s on an empty list, and the session's TENANT
+ *     is derived from `repos[]` (name-normalized `tenant_repos` owners ∩
+ *     device bindings) before any worktree is allocated.
+ *   - initial_prompt (REQUIRED; the agent's first-tick prompt body)
  *
  * Submit → POST /api/v1/operations/agents/spawn. On success: toast + the
  * coord-side agent_id is surfaced; the parent decides whether to
@@ -125,26 +141,49 @@ export function parsePlanPhase(phase: string): number | undefined {
  *  `651c4e78`). Send exactly ONE of the two spellings, never both:
  *  serde's derive treats an alias as the SAME field, so a body carrying
  *  `plan_slug` AND `work_unit_slug` is rejected outright as a
- *  `duplicate field` error rather than resolved last-one-wins. */
+ *  `duplicate field` error rather than resolved last-one-wins.
+ *
+ *  ⚠️ **Empty string is ABSENCE only if we omit the key — coord will not
+ *  save us.** `work_unit_slug`, `intent` and `declared_overlap_paths` are
+ *  `Option<…>` on `SpawnRequest`, so `""` deserializes as `Some("")`, not
+ *  `None`. An empty slug then flows into `derive_intent`
+ *  (`agents_spawn.rs:830-834`), which matches `Some(slug)` and synthesizes
+ *  the literal intent `"plan:"`; into the prompt-injection audit as
+ *  `trigger_text: "spawn for plan "`; and into `LaunchPayload.work_unit_slug`
+ *  and on to the runner's session registration — manufacturing a phantom
+ *  work-unit row on the plans page for a session that has no plan. So every
+ *  optional is TRIMMED FIRST and then OMITTED when empty, exactly as
+ *  `plan_phase` already was. */
 export function buildSpawnRequestBody(input: {
-  workUnitSlug: string;
-  phase: string;
+  /** Optional — omitted from the body when blank (an unanchored spawn). */
+  workUnitSlug?: string;
+  /** Optional free text; only its leading integer reaches the wire. */
+  phase?: string;
   deviceId: string;
   repos: string[];
-  intent: string;
-  declaredOverlapPaths: string[];
+  /** Optional — omitted from the body when blank. */
+  intent?: string;
+  /** Optional — omitted from the body when empty. */
+  declaredOverlapPaths?: string[];
   initialPrompt: string;
 }): Record<string, unknown> {
-  const planPhase = parsePlanPhase(input.phase);
+  const planPhase = parsePlanPhase(input.phase ?? "");
+  const workUnitSlug = (input.workUnitSlug ?? "").trim();
+  const intent = (input.intent ?? "").trim();
+  const overlapPaths = input.declaredOverlapPaths ?? [];
   return {
-    work_unit_slug: input.workUnitSlug,
+    // Omitted — never `""` — when the spawn is unanchored. See the
+    // empty-string note above: `""` here manufactures a phantom plan.
+    ...(workUnitSlug === "" ? {} : { work_unit_slug: workUnitSlug }),
     // Omitted entirely when the operator's free-text phase carries no
     // digits — the field is optional, and sending a string 422s.
     ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
     target_device_id: input.deviceId.trim(),
     repos: input.repos.map((repo) => ({ repo })),
-    intent: input.intent.trim(),
-    declared_overlap_paths: input.declaredOverlapPaths,
+    ...(intent === "" ? {} : { intent }),
+    ...(overlapPaths.length === 0
+      ? {}
+      : { declared_overlap_paths: overlapPaths }),
     initial_prompt: input.initialPrompt.trim(),
   };
 }
@@ -160,8 +199,14 @@ export interface SpawnModalProps {
   open: boolean;
   /** Called when the user dismisses the modal. */
   onClose: () => void;
-  /** Plan slug to spawn for (set by the parent page row). */
-  planSlug: string;
+  /**
+   * Work-unit slug to anchor the spawn to, set by the parent page row.
+   *
+   * OPTIONAL: the "New session" entry point opens the modal with no plan
+   * seeded, which is a supported (unanchored) spawn — coord requires only
+   * a device, one repo and a prompt.
+   */
+  planSlug?: string;
   /** Plan phase pre-seed; the user can override before submitting. */
   initialPhase?: string;
   /** Called after a successful spawn with the coord response body. */
@@ -171,7 +216,7 @@ export interface SpawnModalProps {
 export function SpawnModal({
   open,
   onClose,
-  planSlug,
+  planSlug = "",
   initialPhase,
   onSuccess,
 }: SpawnModalProps) {
@@ -281,9 +326,7 @@ export function SpawnModal({
 
   const toggleRepo = useCallback((repo: string) => {
     setSelectedRepos((prev) =>
-      prev.includes(repo)
-        ? prev.filter((r) => r !== repo)
-        : [...prev, repo]
+      prev.includes(repo) ? prev.filter((r) => r !== repo) : [...prev, repo]
     );
   }, []);
 
@@ -310,13 +353,29 @@ export function SpawnModal({
    *  so an obviously-bad id costs a hint rather than a round trip to a 422. */
   const deviceIdValid = UUID_RE.test(deviceIdValue);
 
+  /** An unanchored spawn is one with no work-unit slug. It is a normal
+   *  state, not an error: `coord.sessions.work_unit_slug` is nullable and
+   *  the sessions list carries no work-unit predicate. What it gives up is
+   *  the advance declared-overlap signal, not claims or tenant scoping. */
+  const anchored = planSlug.trim().length > 0;
+
+  /** Exactly what coord requires — nothing more.
+   *
+   *  `target_device_id`, a non-empty `repos[]` and `initial_prompt` are the
+   *  three fields `POST /agents/spawn` rejects the body without
+   *  (`agents_spawn.rs:228,235`). Slug / phase / intent / overlap paths are
+   *  all `Option<…>` there, so requiring them here was a frontend
+   *  invention that made "run this prompt on that machine" inexpressible
+   *  without inventing a plan to carry it.
+   *
+   *  The device predicate stays `deviceIdValid`, NOT `length > 0`: coord
+   *  types `target_device_id` as `Uuid`, so a typed non-uuid is a 422 either
+   *  way — catching it here is strictly cheaper, and relaxing the anchor
+   *  fields is no reason to give that back. */
   const canSubmit =
     !submitting &&
-    planSlug.length > 0 &&
-    phase.trim().length > 0 &&
     deviceIdValid &&
     allRepos.length > 0 &&
-    intent.trim().length > 0 &&
     initialPrompt.trim().length > 0;
 
   const handleSubmit = useCallback(async () => {
@@ -347,10 +406,16 @@ export function SpawnModal({
         agent_id?: string;
         [k: string]: unknown;
       };
+      // Label the spawn shape in the confirmation: an unanchored session
+      // is legitimate, but the operator should never have to guess which
+      // one they just created.
+      const label = anchored
+        ? `for ${planSlug}`
+        : "(unanchored — no plan anchor)";
       toast.success(
         result.agent_id
-          ? `Spawned agent ${result.agent_id}`
-          : "Agent spawned"
+          ? `Spawned agent ${result.agent_id} ${label}`
+          : `Agent spawned ${label}`
       );
       onSuccess?.(result);
       onClose();
@@ -363,6 +428,7 @@ export function SpawnModal({
     }
   }, [
     planSlug,
+    anchored,
     phase,
     deviceId,
     allRepos,
@@ -382,30 +448,49 @@ export function SpawnModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Rocket className="h-4 w-4" />
-            Spawn agent from plan
+            {anchored ? "Spawn agent from plan" : "New session"}
           </DialogTitle>
           <DialogDescription>
-            Mint a coord agent pinned to a device. Coord acquires
-            claims, allocates the device, and delivers your initial
-            prompt on first tick.
+            Mint a coord agent pinned to a device. Coord acquires claims,
+            allocates the device, and delivers your initial prompt on first
+            tick.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="spawn-plan-slug">Plan</Label>
-            <Input
-              id="spawn-plan-slug"
-              value={planSlug}
-              readOnly
-              disabled
-              className="font-mono text-xs"
-              data-testid="coord-spawn-plan-slug"
-            />
-          </div>
+          {anchored ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="spawn-plan-slug">Plan</Label>
+              <Input
+                id="spawn-plan-slug"
+                value={planSlug}
+                readOnly
+                disabled
+                className="font-mono text-xs"
+                data-testid="coord-spawn-plan-slug"
+              />
+            </div>
+          ) : (
+            <p
+              className="rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground"
+              data-testid="coord-spawn-unanchored-notice"
+            >
+              <span className="font-medium text-foreground">
+                Unanchored session
+              </span>{" "}
+              — no plan, phase or intent. The session is listed on{" "}
+              <span className="font-mono">/sessions</span> like any other and
+              appears under no plan. What it gives up is the <em>advance</em>{" "}
+              overlap signal from declared paths; file claims, tenant scoping
+              and worktree allocation are unchanged.
+            </p>
+          )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="spawn-plan-phase">Phase</Label>
+            <Label htmlFor="spawn-plan-phase">
+              Phase{" "}
+              <span className="text-xs text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="spawn-plan-phase"
               value={phase}
@@ -514,6 +599,14 @@ export function SpawnModal({
 
           <div className="space-y-1.5">
             <Label>Repos</Label>
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="coord-spawn-repos-rationale"
+            >
+              At least one is required even without a plan: coord derives the
+              session&apos;s tenant from the repo list before anything else, and
+              allocates the agent&apos;s worktree from it.
+            </p>
             <div
               className="grid grid-cols-2 gap-1.5 rounded-md border border-border p-2"
               data-testid="coord-spawn-repos"
@@ -548,7 +641,10 @@ export function SpawnModal({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="spawn-intent">Intent</Label>
+            <Label htmlFor="spawn-intent">
+              Intent{" "}
+              <span className="text-xs text-muted-foreground">(optional)</span>
+            </Label>
             <Input
               id="spawn-intent"
               value={intent}
@@ -567,7 +663,9 @@ export function SpawnModal({
               rows={3}
               value={overlapPaths}
               onChange={(e) => setOverlapPaths(e.target.value)}
-              placeholder={"backend/app/api/v1/endpoints/operations.py\nfrontend/src/app/(app)/admin/coord/spawn/page.tsx"}
+              placeholder={
+                "backend/app/api/v1/endpoints/operations.py\nfrontend/src/app/(app)/admin/coord/spawn/page.tsx"
+              }
               className="font-mono text-xs"
               data-testid="coord-spawn-overlap-paths"
             />
@@ -586,7 +684,10 @@ export function SpawnModal({
           </div>
 
           {error && (
-            <p className="text-sm text-destructive" data-testid="coord-spawn-error">
+            <p
+              className="text-sm text-destructive"
+              data-testid="coord-spawn-error"
+            >
               {error}
             </p>
           )}
@@ -606,7 +707,11 @@ export function SpawnModal({
             disabled={!canSubmit}
             data-testid="coord-spawn-submit"
           >
-            {submitting ? "Spawning..." : "Spawn"}
+            {submitting
+              ? "Spawning..."
+              : anchored
+                ? "Spawn"
+                : "Spawn unanchored"}
           </Button>
         </DialogFooter>
       </DialogContent>
