@@ -937,6 +937,24 @@ export function pickActiveProposal(
 const TERMINAL: ReadonlySet<ProposalStatus> = new Set(["merged", "cancelled"]);
 
 /**
+ * Is a proposal status still LIVE — i.e. coord may still act on this attempt?
+ *
+ * Reads the same `TERMINAL` set the pipeline rows use, so the two can never
+ * disagree about what "active" means. Deliberately treats `conflict` as ACTIVE:
+ * a conflict row still occupies the head and still blocks a re-enqueue, so from
+ * the operator's point of view the attempt has not gone away.
+ *
+ * Exported for callers that only have a bare status string — `PrRow` carries
+ * `proposal_status` but no `ProposalDetail` — notably `PrDraftStateControl`,
+ * which must warn that drafting a PR does NOT stop a live merge attempt.
+ * A null/absent status means no proposal at all, which is not active.
+ */
+export function proposalIsActive(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return !TERMINAL.has(status as ProposalStatus);
+}
+
+/**
  * The land time for a row, or null when it has not landed / no source carries
  * one. Two independent sources, because the two land paths stamp different
  * tables: coord's own fast-forward land stamps `merge_proposals.merged_at`,

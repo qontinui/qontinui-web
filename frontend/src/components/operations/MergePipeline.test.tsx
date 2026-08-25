@@ -69,6 +69,14 @@ vi.mock("sonner", () => ({
   }),
 }));
 
+// The draft-state toggle now lives in the shared `PrDraftStateControl`, which
+// wraps itself in `CoordAdminOnly` — a Developer-tier member must not see a
+// control that 403s. These tests exercise the control, so they authenticate as
+// a coord admin (same shape as MergeTrainActivity.test.tsx / the settings test).
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: true }),
+}));
+
 import {
   AUTHOR_GLYPH_KINDS,
   MergePipeline,
