@@ -15,9 +15,18 @@
  *                                                   ← direct, daily
  *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
  *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
- *   Infra ▾°  Trees / Spawn / Deploys / Git Ops / Federation / Memory /
- *             Onboarding / Onboarding Status
+ *   Dev Ops ▾ Overview / Trees° / Spawn° / Deploys° / Releases° / Git Ops° /
+ *             Federation° / Memory° / Onboarding° / Onboarding Status°
  *   Access ▾  Members / Claims↗ / Sessions↗          (° = operator-only)
+ *
+ * `Dev Ops ▾` is the one group whose TRIGGER is member-visible while almost
+ * every member of it is not: `Overview` (`/admin/coord/devops` — how the
+ * system is functioning) is tenant-visible, everything else stays
+ * operator-only. Plan
+ * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1, resolved Q3
+ * — coord moved the CI-node write off the admin role precisely so a member
+ * who OWNS a device can configure it, and gating this page on `is_superuser`
+ * would rebuild that mistake in the console.
  *
  * Wayfinding contract: when the current page lives inside a group, the
  * group trigger highlights and appends the page name ("Work · Lands"). The
@@ -137,7 +146,19 @@ interface NavGroup {
   label: string;
   icon: typeof Activity;
   items: NavLeaf[];
-  /** Group hidden entirely for non-operators (every item is operator-only). */
+  /**
+   * Group hidden entirely for non-operators — trigger and all.
+   *
+   * This is NOT "every item is operator-only", and has not been since
+   * `Dev Ops ▾` (resolved Q3 of
+   * `2026-08-25-coord-console-intent-and-devops-sections`): that group drops
+   * this flag and marks every member except `Overview` instead, so a plain
+   * member sees the trigger with one entry under it. The two flags are
+   * independent by construction — `renderGroup` drops the group on THIS flag
+   * and filters items on `NavLeaf.operatorOnly` separately — so set this one
+   * only when the group has nothing a member may reach, and never as a
+   * shorthand for "most of its items are operator-only".
+   */
   operatorOnly?: boolean;
 }
 
@@ -293,58 +314,77 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "infra",
-    label: "Infra",
+    // Everything about the hardware the fleet runs on: whose machines they
+    // are, what they are doing, and how much they will take. The GROUP is
+    // member-visible and its members are not — see `NavGroup.operatorOnly`.
+    id: "devops",
+    label: "Dev Ops",
     icon: Server,
-    operatorOnly: true,
     items: [
+      {
+        // The only tenant-visible member, and the reason the group flag is
+        // gone: "how is the system functioning" is a question a developer
+        // asks about their own machines.
+        href: "/admin/coord/devops",
+        label: "Overview",
+        icon: Gauge,
+        testId: "coord-nav-devops-overview",
+      },
       {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
         testId: "coord-nav-trees",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/spawn",
         label: "Spawn",
         icon: Rocket,
         testId: "coord-nav-spawn",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/deploys",
         label: "Deploys",
         icon: Rocket,
         testId: "coord-nav-deploys",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/releases",
         label: "Releases",
         icon: Package,
         testId: "coord-nav-releases",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/git-ops",
         label: "Git Ops",
         icon: GitBranch,
         testId: "coord-nav-git-ops",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/federation",
         label: "Federation",
         icon: GitMerge,
         testId: "coord-nav-federation",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/memory",
         label: "Memory",
         icon: BookOpen,
         testId: "coord-nav-memory",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/onboarding",
         label: "Onboarding",
         icon: Plug,
         testId: "coord-nav-onboarding",
+        operatorOnly: true,
       },
       {
         // Zero-touch onboarding status (P4) — per-repo doctor checklist. Also
@@ -355,6 +395,7 @@ const GROUPS: NavGroup[] = [
         label: "Onboarding Status",
         icon: Stethoscope,
         testId: "coord-nav-onboarding-status",
+        operatorOnly: true,
       },
     ],
   },

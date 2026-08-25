@@ -12,16 +12,26 @@
  * established the shape — the owner holds the stream, the panels take it as a
  * prop.
  *
- * This component is mounted INSIDE the page's collapsed "System details"
- * section, so it unmounts while collapsed. Its POLL does not stop with it,
- * though — the page owns the poll and passes it down, because the
- * saturated-lane alarm has to keep counting on the collapsed header. That is
- * a deliberate trade: one lightweight 30 s GET on every visit to this page,
- * bought so a machine that is out of memory cannot hide behind a click.
+ * ## Where it is mounted, and who owns the poll
  *
- * It adds **no nav entry** (`[policy: ux-priorities#discoverability]`) and no
- * `/coord/status` poll to `MachineCard` — that shipped as Phase 1.3 and was
- * deliberately deleted.
+ * Two mounts today, and they answer the ownership question differently.
+ *
+ * On **`/admin/coord/devops`** (the Dev Ops Overview, plan
+ * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1) this section
+ * is a first-class part of the page and nothing above it needs the count, so
+ * it opens the poll itself.
+ *
+ * On **`/admin/coord/fleet`** it is inside the collapsed "System details"
+ * section and unmounts while collapsed, so the PAGE owns the poll and passes
+ * it down: the saturated-lane alarm has to keep counting on the collapsed
+ * header, bought at one lightweight 30 s GET per visit so a machine that is
+ * out of memory cannot hide behind a click. Phase 4 deletes that section and
+ * that poll — the alarm moves to the `Dev Ops ▾` nav trigger, where it is
+ * visible from every console page rather than from one, and this section is
+ * then left with the single owner it has on Dev Ops today.
+ *
+ * It adds no `/coord/status` poll to `MachineCard` — that shipped as Phase
+ * 1.3 and was deliberately deleted.
  */
 
 import { useEffect, useState } from "react";
@@ -37,15 +47,16 @@ export interface FleetResourcesSectionProps {
   /**
    * The shared poll, when the page already holds one.
    *
-   * The page DOES hold one: it hoists the saturated-lane count onto the
-   * collapsed "System details" header, exactly as it already hoists the
-   * unhealthy-machine count, so a red machine cannot hide behind a click.
-   * That alarm has to keep counting while this section is unmounted, which
-   * means the poll has to live above it. Passing the same result down keeps
-   * it to ONE poll rather than two views of the fleet that can disagree.
+   * The PIPELINE page holds one, because it hoists the saturated-lane count
+   * onto the collapsed "System details" header (exactly as it hoists the
+   * unhealthy-machine count) and that alarm has to keep counting while this
+   * section is unmounted — so the poll has to live above it. Passing the same
+   * result down keeps it to ONE poll rather than two views of the fleet that
+   * can disagree, which is the whole reason the strip and the CI panel take
+   * their rows as props.
    *
-   * Omitted, the section opens its own — which is what makes it usable
-   * standalone and testable without a page.
+   * Omitted — the Dev Ops Overview mount, and any test — the section opens its
+   * own. Nothing above it there needs the count, so there is nothing to hoist.
    */
   resources?: UseFleetResourceSamplesResult;
 }
