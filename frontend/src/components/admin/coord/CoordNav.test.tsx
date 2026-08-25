@@ -56,7 +56,6 @@ describe("CoordNav", () => {
     expect(notifications).toHaveAttribute("href", "/admin/coord/notifications");
 
     expect(screen.getByTestId("coord-nav-group-work")).toBeInTheDocument();
-    expect(screen.getByTestId("coord-nav-group-intent")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-merge")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-access")).toBeInTheDocument();
     // Operator-infra group hidden for members.
@@ -70,85 +69,10 @@ describe("CoordNav", () => {
     render(<CoordNav />);
 
     await user.click(screen.getByTestId("coord-nav-group-merge"));
-    expect(await screen.findByTestId("coord-nav-pull-decisions")).toBeVisible();
-    expect(screen.getByTestId("coord-nav-automation-rules")).toBeVisible();
+    expect(await screen.findByTestId("coord-nav-policies")).toBeVisible();
+    expect(screen.getByTestId("coord-nav-pull-decisions")).toBeVisible();
     expect(
       screen.queryByTestId("coord-nav-merge-settings")
-    ).not.toBeInTheDocument();
-  });
-
-  // --------------------------------------------------------------------------
-  // `Intent ▾` — the three documents surfaces, out of the merge chain.
-  //
-  // Prompt Documents, Policies and Policy Edit Review used to live in
-  // `Merge ▾`. The prompt-document store now serves six INTENT kinds (what we
-  // are building, for whom, what "better" means) beside the behavioural ones,
-  // and filing those under a group named for how a PR lands re-conflates
-  // exactly what the plan's § "Naming constraint" separates. These assertions
-  // pin the split, not just the presence of a group.
-  // --------------------------------------------------------------------------
-
-  it("groups the three documents surfaces under Intent", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    const trigger = screen.getByTestId("coord-nav-group-intent");
-    expect(trigger).toHaveTextContent("Intent");
-    await user.click(trigger);
-
-    const promptDocs = await screen.findByTestId("coord-nav-prompt-documents");
-    expect(promptDocs).toHaveAttribute("href", "/admin/coord/prompt-documents");
-    expect(screen.getByTestId("coord-nav-policies")).toHaveAttribute(
-      "href",
-      "/admin/coord/policies"
-    );
-    // Distinct path, deliberately not /prompt-documents/proposals, so the
-    // Prompt Documents item's startsWith active-match cannot double-highlight.
-    expect(
-      screen.getByTestId("coord-nav-prompt-document-proposals")
-    ).toHaveAttribute("href", "/admin/coord/prompt-document-proposals");
-  });
-
-  it("leaves the merge chain to Merge — no documents surfaces in it", async () => {
-    const user = userEvent.setup();
-    render(<CoordNav />);
-
-    await user.click(screen.getByTestId("coord-nav-group-merge"));
-    expect(await screen.findByTestId("coord-nav-pull-decisions")).toBeVisible();
-    expect(screen.queryByTestId("coord-nav-policies")).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("coord-nav-prompt-documents")
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId("coord-nav-prompt-document-proposals")
-    ).not.toBeInTheDocument();
-  });
-
-  it("crumbs an active documents page onto the Intent trigger, not Merge", () => {
-    pathname = "/admin/coord/prompt-documents";
-    render(<CoordNav />);
-
-    const intent = screen.getByTestId("coord-nav-group-intent");
-    const crumb = screen.getByTestId("coord-nav-prompt-documents-active");
-    expect(crumb).toHaveTextContent("Prompt Documents");
-    expect(intent).toContainElement(crumb);
-    expect(screen.getByTestId("coord-nav-group-merge")).toHaveTextContent(
-      /^Merge$/
-    );
-  });
-
-  it("does not double-highlight Prompt Documents from the review page", () => {
-    // `/admin/coord/prompt-document-proposals` must not match the Prompt
-    // Documents item's `startsWith(href + "/")` test — the property the two
-    // distinct paths exist to preserve, which survived the group move.
-    pathname = "/admin/coord/prompt-document-proposals";
-    render(<CoordNav />);
-
-    expect(
-      screen.getByTestId("coord-nav-prompt-document-proposals-active")
-    ).toHaveTextContent("Policy Edit Review");
-    expect(
-      screen.queryByTestId("coord-nav-prompt-documents-active")
     ).not.toBeInTheDocument();
   });
 
