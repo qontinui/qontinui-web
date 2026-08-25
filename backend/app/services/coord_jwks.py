@@ -63,6 +63,20 @@ _CLOCK_SKEW_LEEWAY_S = 30
 # (``coord-ed25519-`` plus a 16-hex thumbprint); Cognito's are ~44.
 _MAX_KID_CHARS = 64
 
+# Minimum interval between FORCED (kid-miss-driven) JWKS re-fetches.
+#
+# A kid miss triggers a live re-fetch so a key-id change is picked up in
+# seconds instead of at the next TTL expiry. But `kid` is attacker-supplied,
+# so an unbounded stream of unknown-kid bearers would otherwise let anyone
+# drive one coord round-trip per request. The cooldown collapses that to at
+# most one forced fetch per window, at the cost of at most one window of
+# kid-miss rejections in the pathological single-key-swap case.
+#
+# 30s mirrors coord's own `auth_sso::FORCED_REFRESH_COOLDOWN`, which exists
+# for exactly this reason. NOTE the sibling `cognito_jwks` force-refreshes
+# with NO cooldown — copy the semantics here, not those.
+_FORCED_REFRESH_COOLDOWN_S = 30
+
 
 class CoordJWKSUnavailableError(RuntimeError):
     """Raised when coord's JWKS cannot be fetched (cold-start failure)."""
@@ -173,12 +187,15 @@ class CoordJWKSClient:
         *,
         ttl_s: int = _JWKS_TTL_S,
         http_timeout_s: float = 10.0,
+        forced_cooldown_s: float = _FORCED_REFRESH_COOLDOWN_S,
     ) -> None:
         self._coord_url = coord_url.rstrip("/")
         self._ttl_s = ttl_s
         self._http_timeout_s = http_timeout_s
+        self._forced_cooldown_s = forced_cooldown_s
         self._jwks: dict[str, Any] | None = None
         self._fetched_at: float = 0.0
+        self._forced_at: float = 0.0
         self._lock = asyncio.Lock()
 
     async def _fetch_jwks(self) -> dict[str, Any]:
@@ -211,11 +228,31 @@ class CoordJWKSClient:
 
         return body
 
-    async def get_jwks(self) -> dict[str, Any]:
-        """Return the cached JWKS, refetching when expired or absent."""
+    async def get_jwks(self, *, force_refresh: bool = False) -> dict[str, Any]:
+        """Return the cached JWKS, refetching when expired, absent, or forced.
+
+        ``force_refresh`` is the kid-miss path: the presented token names a
+        key this cache has never seen, which is exactly what a coord key-id
+        change looks like from here. Without it, a verifier holding a cache
+        from before the change rejects every legitimately-issued token until
+        the TTL expires — up to an hour of ``1008 "Invalid or expired device
+        token."``, textually indistinguishable from the incident this module's
+        error split exists to diagnose. Rate-limited by
+        ``_FORCED_REFRESH_COOLDOWN_S``; when the cooldown is in force the
+        cached copy is served and the caller's lookup fails as it would have.
+        """
         async with self._lock:
             now = time.time()
-            if self._jwks is not None and (now - self._fetched_at) < self._ttl_s:
+            if force_refresh:
+                if self._jwks is not None and (now - self._forced_at) < (
+                    self._forced_cooldown_s
+                ):
+                    # Already refetched recently: serve the cache rather than
+                    # letting a stream of unknown kids drive one coord
+                    # round-trip per request.
+                    return self._jwks
+                self._forced_at = now
+            elif self._jwks is not None and (now - self._fetched_at) < self._ttl_s:
                 return self._jwks
 
             jwks = await self._fetch_jwks()
@@ -224,6 +261,7 @@ class CoordJWKSClient:
             logger.info(
                 "coord_jwks_fetched",
                 coord_url=self._coord_url,
+                forced=force_refresh,
                 key_count=len(jwks.get("keys", [])),
                 ttl_s=self._ttl_s,
             )
@@ -267,6 +305,17 @@ class CoordJWKSClient:
             (k for k in jwks.get("keys", []) if k.get("kid") == kid),
             None,
         )
+        if jwk_dict is None:
+            # A kid we have never seen is what a coord key-id change looks
+            # like from here, so re-fetch ONCE and re-check before declaring
+            # the token foreign. Without this, a cache populated before the
+            # change rejects every legitimate token until the TTL expires.
+            jwks = await self.get_jwks(force_refresh=True)
+            jwk_dict = next(
+                (k for k in jwks.get("keys", []) if k.get("kid") == kid),
+                None,
+            )
+
         if jwk_dict is None:
             served = [str(k.get("kid")) for k in jwks.get("keys", []) if k.get("kid")]
             raise CoordTokenForeignIssuerError(

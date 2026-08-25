@@ -541,3 +541,109 @@ async def test_verify_token_does_not_raise_the_identity_alarm_itself() -> None:
     assert "coord_identity_mismatch" not in emitted, (
         f"verify_token must not raise the alarm itself; emitted={emitted}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Forced re-fetch on a kid miss.
+#
+# Without this, a verifier holding a JWKS cached BEFORE a coord key-id change
+# rejects every legitimately-issued token until the 1h TTL expires — emitting
+# the very string this module's error split exists to make trustworthy
+# (`1008 "Invalid or expired device token."`). There is no operator action
+# that shortens that window: no admin route, no cache-invalidate method, no
+# TTL override. Only a process restart or waiting it out.
+# ---------------------------------------------------------------------------
+
+
+class _RotatingClient(CoordJWKSClient):
+    """Serves `first`, then `second` on every subsequent fetch."""
+
+    def __init__(
+        self, first: dict[str, Any], second: dict[str, Any], **kw: Any
+    ) -> None:
+        super().__init__(coord_url="http://test", **kw)
+        self._first = first
+        self._second = second
+        self.fetches = 0
+
+    async def _fetch_jwks(self) -> dict[str, Any]:
+        self.fetches += 1
+        return self._first if self.fetches == 1 else self._second
+
+
+@pytest.mark.asyncio
+async def test_kid_miss_refetches_and_recovers_within_the_ttl() -> None:
+    """A key-id change is picked up in one round-trip, not in an hour."""
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("00ff00ff00ff00ff")
+
+    client = _RotatingClient({"keys": [old_jwk]}, {"keys": [new_jwk]})
+
+    # Warm the cache on the pre-change JWKS, as a live backend would have.
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+    assert client.fetches == 1
+
+    # Now a token signed under the NEW kid arrives. The cache does not know
+    # it, and the TTL has not expired.
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+    claims = await client.verify_token(token)
+
+    assert claims["iss"] == "qontinui-coord"
+    assert client.fetches == 2, "the kid miss must force exactly one re-fetch"
+
+
+@pytest.mark.asyncio
+async def test_forced_refetch_is_rate_limited() -> None:
+    """`kid` is attacker-supplied, so it must not drive unbounded fetches.
+
+    Without a cooldown, any caller could force one coord round-trip per
+    request just by presenting an unknown kid. The sibling `cognito_jwks`
+    force-refreshes with no cooldown; this deliberately follows coord's own
+    Rust `FORCED_REFRESH_COOLDOWN` instead.
+    """
+    _, jwk = _ed25519_keypair()
+    private, _ = _ed25519_keypair()
+
+    client = _RotatingClient({"keys": [jwk]}, {"keys": [jwk]}, forced_cooldown_s=300)
+
+    unknown = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": _thumbprint_kid("aaaabbbbccccdddd"), "typ": "JWT"},
+    )
+
+    for _ in range(5):
+        with pytest.raises(CoordTokenForeignIssuerError):
+            await client.verify_token(unknown)
+
+    # 1 warm-up fetch + exactly 1 forced fetch, not 5.
+    assert client.fetches == 2, f"expected 2 fetches, got {client.fetches}"
+
+
+@pytest.mark.asyncio
+async def test_forced_refetch_cooldown_expires() -> None:
+    """The cooldown throttles; it must not permanently disable recovery."""
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("1234123412341234")
+
+    # Zero cooldown = every miss may refetch, which is the boundary case.
+    client = _RotatingClient(
+        {"keys": [old_jwk]}, {"keys": [new_jwk]}, forced_cooldown_s=0
+    )
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+    assert (await client.verify_token(token))["iss"] == "qontinui-coord"
