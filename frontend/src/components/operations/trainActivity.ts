@@ -350,6 +350,44 @@ function shortRepo(repo: string): string {
   return i === -1 ? repo : repo.slice(i + 1);
 }
 
+/**
+ * The per-repo in-flight cap coord's dequeue is ACTUALLY enforcing for a repo,
+ * and whether it has been narrowed below the configured one.
+ *
+ * Since coord #1550 the A2 candidate-CI distress term temporarily reduces one
+ * repo's cap while its candidate CI keeps failing, and `at_repo_cap` /
+ * `repos_at_cap` are derived against that reduced value. Printing either beside
+ * `slots.per_repo_cap` therefore states a threshold the dequeue is not
+ * applying — "at its per-repo cap (1/2 in flight)" is the visible symptom — and
+ * points at the wrong remedy: a narrowed repo widens again when its candidate
+ * CI goes green, NOT when its in-flight proposals finish. Every render site
+ * that quotes a per-repo cap goes through here.
+ *
+ * `narrowed` is keyed off the field's PRESENCE, not a comparison: coord omits
+ * `narrowed_repo_cap` rather than emitting a value equal to the configured cap,
+ * so a present value is itself the signal. The `< configured` guard is belt and
+ * braces against a future producer that stops honouring that.
+ */
+function effectiveRepoCap(
+  repoSlots: RepoSlotSaturation | null | undefined,
+  slots: SlotSaturation
+): { cap: number; narrowed: boolean } {
+  const n = repoSlots?.narrowed_repo_cap;
+  if (typeof n === "number" && n < slots.per_repo_cap) {
+    return { cap: n, narrowed: true };
+  }
+  return { cap: slots.per_repo_cap, narrowed: false };
+}
+
+/** The trailing clause that explains a narrowed cap, or "" when it is not. */
+function narrowedCapNote(narrowed: boolean, configured: number): string {
+  return narrowed
+    ? ` — TEMPORARILY narrowed from ${configured} because this repo's recent ` +
+        `candidate CI has been failing repeatedly; it widens again on its own as ` +
+        `candidate CI recovers, not when its in-flight proposals finish`
+    : "";
+}
+
 function secsSince(iso: string | null | undefined, now: number): number | null {
   if (!iso) return null;
   const t = new Date(iso).getTime();
@@ -636,6 +674,33 @@ export function buildTrainSummary(
       slots.repos_at_cap ??
       (slots.repos ?? []).filter((r) => r.at_repo_cap).map((r) => r.repo);
     if (atCap.length > 0 && slots.available > 0) {
+      // Both sources of `atCap` are derived against each repo's EFFECTIVE cap,
+      // so a repo coord's A2 term has narrowed appears here BELOW the configured
+      // cap. Naming COORD_MERGE_PER_REPO_CAP as the count they "already hold" is
+      // then wrong twice over: wrong threshold, and it credits the fairness
+      // filter for a candidate-CI hold whose remedy is a green run, not patience.
+      const narrowed = (slots.repos ?? []).filter(
+        (r) =>
+          atCap.includes(r.repo) &&
+          typeof r.narrowed_repo_cap === "number" &&
+          r.narrowed_repo_cap < slots.per_repo_cap
+      );
+      const capClause =
+        narrowed.length > 0 && narrowed.length === atCap.length
+          ? `already hold the reduced cap coord is enforcing for them`
+          : `already hold COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals`;
+      const only = narrowed.length === 1 ? narrowed[0] : undefined;
+      const a2Clause =
+        narrowed.length === 0
+          ? ` Fairness filter, by design — it stops one busy repo monopolising the train.`
+          : only
+            ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
+              `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
+              `been failing repeatedly; that cap widens again on its own as candidate ` +
+              `CI recovers.`
+            : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
+              `because their recent candidate CI has been failing repeatedly; those ` +
+              `caps widen again on their own as candidate CI recovers.`;
       banners.push({
         code: "repo-cap-starved",
         severity: "waiting",
@@ -643,10 +708,8 @@ export function buildTrainSummary(
         detail:
           `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
           `free, but ${atCap.length} repo${atCap.length === 1 ? "" : "s"} ` +
-          `(${atCap.map(shortRepo).join(", ")}) already hold ` +
-          `COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals, ` +
-          `so the dequeue skips their queued work. Fairness filter, by design — ` +
-          `it stops one busy repo monopolising the train.`,
+          `(${atCap.map(shortRepo).join(", ")}) ${capClause}, ` +
+          `so the dequeue skips their queued work.${a2Clause}`,
       });
     }
   }
@@ -981,10 +1044,12 @@ function deriveActivity(
       // have completely different fixes (raise the cap vs wait for this repo's
       // own in-flight work to finish).
       if (repoSlots?.at_repo_cap && slots) {
+        const eff = effectiveRepoCap(repoSlots, slots);
         detail =
           `Accepted, but skipped by the dequeue: this repo is at its ` +
-          `per-repo cap (${repoSlots.in_flight}/${slots.per_repo_cap} in flight)` +
-          `${slots.available > 0 ? `, despite ${slots.available} free global slot${slots.available === 1 ? "" : "s"}` : ""}`;
+          `per-repo cap (${repoSlots.in_flight}/${eff.cap} in flight)` +
+          `${slots.available > 0 ? `, despite ${slots.available} free global slot${slots.available === 1 ? "" : "s"}` : ""}` +
+          narrowedCapNote(eff.narrowed, slots.per_repo_cap);
       } else if (slots?.saturated) {
         detail =
           `Accepted, waiting for a merge slot — all ${slots.effective_cap} ` +
@@ -1069,21 +1134,34 @@ function deriveReasons(args: {
   // Capacity first — when the train has no room for this repo, the per-PR
   // states below are not what is holding it up.
   if (repoSlots?.at_repo_cap && slots) {
+    const eff = effectiveRepoCap(repoSlots, slots);
     reasons.push({
       code: "repo-cap-starved",
       severity: "waiting",
-      label: "At per-repo cap",
+      label: eff.narrowed ? "At narrowed per-repo cap" : "At per-repo cap",
       detail:
         `This repo already holds ${repoSlots.in_flight} in-flight proposal` +
         `${repoSlots.in_flight === 1 ? "" : "s"}, its cap ` +
-        `(COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap}). The dequeue SKIPS ` +
+        `${
+          eff.narrowed
+            ? `(${eff.cap}, narrowed from COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`
+            : `(COORD_MERGE_PER_REPO_CAP=${eff.cap})`
+        }. The dequeue SKIPS ` +
         `its remaining ${repoSlots.queued} queued proposal` +
-        `${repoSlots.queued === 1 ? "" : "s"} until one finishes — ` +
+        `${repoSlots.queued === 1 ? "" : "s"} ` +
+        `${eff.narrowed ? "until its candidate CI recovers" : "until one finishes"} — ` +
         `${
           slots.available > 0
             ? `even though ${slots.available} global slot` +
-              `${slots.available === 1 ? " is" : "s are"} free. This is the ` +
-              `fairness filter working as designed, not a fault.`
+              `${slots.available === 1 ? " is" : "s are"} free. ` +
+              `${
+                eff.narrowed
+                  ? `coord has TEMPORARILY narrowed this repo's cap because its ` +
+                    `recent candidate CI has been failing repeatedly; it widens ` +
+                    `again on its own as candidate CI recovers. Not the fairness ` +
+                    `filter, and not a fault.`
+                  : `This is the fairness filter working as designed, not a fault.`
+              }`
             : `and every global slot is busy too.`
         }`,
       prCount: repoSlots.queued,
