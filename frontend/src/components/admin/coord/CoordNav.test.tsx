@@ -3,8 +3,12 @@
  *
  * Contracts under test (nav redesign):
  *  - five direct tabs; everything else inside persona dropdown groups
- *  - operator gating: the Infra group and operator-only items (Merge
- *    Settings) never render for a plain member
+ *  - operator gating: operator-only items (Merge Settings, and every `Dev Ops`
+ *    member except `Overview`) never render for a plain member. The GROUP
+ *    flag and the ITEM flag are independent: `Dev Ops ▾` opens for a member
+ *    carrying exactly one entry, which is the regression test for the
+ *    resolved Q3 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`
  *  - wayfinding crumb: the group trigger of the active page highlights and
  *    exposes `<testid>-active`
  *  - live Alerts badge from the unresolved-alerts rollup
@@ -14,7 +18,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 let pathname = "/admin/coord/fleet";
@@ -44,7 +48,8 @@ describe("CoordNav", () => {
     isSuperuser = false;
   });
 
-  it("renders five direct tabs and the member groups (no Infra)", () => {
+  it("renders five direct tabs and every member group, Dev Ops included", async () => {
+    const user = userEvent.setup();
     render(<CoordNav />);
 
     expect(screen.getByTestId("coord-nav-fleet")).toHaveTextContent("Pipeline");
@@ -58,10 +63,23 @@ describe("CoordNav", () => {
     expect(screen.getByTestId("coord-nav-group-work")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-merge")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-access")).toBeInTheDocument();
-    // Operator-infra group hidden for members.
+
+    // `Infra ▾` is gone, and the group that replaced it is NOT hidden from a
+    // member: the group flag moved onto the items (resolved Q3). This test
+    // used to assert the opposite — a plain member seeing no infra group at
+    // all — which is exactly what the rename changes.
     expect(
       screen.queryByTestId("coord-nav-group-infra")
     ).not.toBeInTheDocument();
+    const devops = screen.getByTestId("coord-nav-group-devops");
+    expect(devops).toHaveTextContent("Dev Ops");
+
+    // …and it carries EXACTLY one entry for a member.
+    await user.click(devops);
+    const overview = await screen.findByTestId("coord-nav-devops-overview");
+    expect(overview).toBeVisible();
+    expect(overview).toHaveAttribute("href", "/admin/coord/devops");
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
   });
 
   it("hides operator-only items inside member-visible groups", async () => {
@@ -86,22 +104,72 @@ describe("CoordNav", () => {
     expect(item).toHaveAttribute("href", "/admin/coord/gate-clearance");
   });
 
-  it("shows the Infra group with its items for operators", async () => {
+  it("shows the Dev Ops group with all its items for operators", async () => {
     isSuperuser = true;
     const user = userEvent.setup();
     render(<CoordNav />);
 
-    await user.click(screen.getByTestId("coord-nav-group-infra"));
-    expect(await screen.findByTestId("coord-nav-trees")).toBeVisible();
+    const trigger = screen.getByTestId("coord-nav-group-devops");
+    await user.click(trigger);
+    expect(
+      await screen.findByTestId("coord-nav-devops-overview")
+    ).toBeVisible();
+    expect(screen.getByTestId("coord-nav-trees")).toBeVisible();
     expect(screen.getByTestId("coord-nav-git-ops")).toBeVisible();
     expect(screen.getByTestId("coord-nav-onboarding-status")).toBeVisible();
-    // Runner releases dashboard lives beside Deploys in the operator-infra group.
+    // Runner releases dashboard lives beside Deploys in the Dev Ops group.
     expect(screen.getByTestId("coord-nav-releases")).toBeVisible();
+    // Overview, then the nine operator-only members.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(10);
   });
 
-  it("hides the Releases infra tab from a plain member", () => {
+  it("puts Overview first in the Dev Ops group", async () => {
+    isSuperuser = true;
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-devops"));
+    await screen.findByTestId("coord-nav-devops-overview");
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0]).toHaveTextContent("Overview");
+    expect(items[1]).toHaveTextContent("Trees");
+  });
+
+  it("hides the Releases Dev Ops tab from a plain member", () => {
+    // Unchanged in meaning by the rename: `Releases` keeps `operatorOnly`.
+    // Paired with the member seeing `Dev Ops ▾` above, this IS the Q3
+    // regression test — the group opens, the cross-tenant members do not.
     render(<CoordNav />);
     expect(screen.queryByTestId("coord-nav-releases")).not.toBeInTheDocument();
+  });
+
+  it("keeps the wayfinding crumb contract for every moved Dev Ops leaf", () => {
+    // The crumb is a nav-level contract, not a menu-open one: every assertion
+    // below holds with the dropdown closed, which is the point — Spec-CI's
+    // "active section" selectors match `coord-nav-<x>-active` on the trigger.
+    isSuperuser = true;
+    for (const [path, testId, label] of [
+      ["/admin/coord/devops", "coord-nav-devops-overview", "Overview"],
+      ["/admin/coord/trees", "coord-nav-trees", "Trees"],
+      ["/admin/coord/releases", "coord-nav-releases", "Releases"],
+      ["/admin/coord/git-ops", "coord-nav-git-ops", "Git Ops"],
+      ["/admin/coord/memory", "coord-nav-memory", "Memory"],
+      [
+        "/admin/coord/onboarding-status",
+        "coord-nav-onboarding-status",
+        "Onboarding Status",
+      ],
+    ] as const) {
+      pathname = path;
+      const view = render(<CoordNav />);
+      const trigger = within(view.container).getByTestId(
+        "coord-nav-group-devops"
+      );
+      const crumb = within(view.container).getByTestId(`${testId}-active`);
+      expect(crumb).toHaveTextContent(label);
+      expect(trigger).toContainElement(crumb);
+      view.unmount();
+    }
   });
 
   it("surfaces the active page as a crumb on its group trigger", () => {
@@ -207,7 +275,9 @@ describe("CoordNav", () => {
     // An un-upgraded coord silently drops `limit`/`severity` and answers with
     // the old shape. Its length is a FLOOR — say so rather than presenting a
     // truncated count as the real one.
-    const window = { alerts: [{ severity: "critical" }, { severity: "warning" }] };
+    const window = {
+      alerts: [{ severity: "critical" }, { severity: "warning" }],
+    };
     mockTotals(window, window);
     render(<CoordNav />);
 

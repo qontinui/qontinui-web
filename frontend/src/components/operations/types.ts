@@ -713,7 +713,41 @@ export interface MachineGroup {
    * so those groups carry real telemetry rather than being exempted.
    */
   volumes: MachineVolumes;
+  /**
+   * coord's `/operations/fleet/health` view of this machine — present ONLY on
+   * a list built with that read merged in (the Dev Ops Overview mount).
+   *
+   * `undefined` means the list was built WITHOUT the coord health read at all
+   * (the pipeline page's `FleetOverview`), which is an absence of the READ and
+   * says nothing about the machine. `{ matched: false }` is the different
+   * fact: the read happened and carries no device row for this hostname. Both
+   * render as `unknown`; only the second is a claim.
+   */
+  coordHealth?: CoordHealthJoin;
+  /**
+   * True when this machine reached the list ONLY through coord's health read
+   * — no runner, no Claude session, no device-status row and no CI runner
+   * names it. Its runner-side facts are UNKNOWN, not zero: rendering "0 of 0
+   * healthy" for such a machine would read as an all-clear about a machine
+   * nothing has measured.
+   */
+  coordHealthOnly?: boolean;
 }
+
+/**
+ * The coord health join for one machine. Deliberately a discriminated union
+ * rather than an optional `state?: string`: "coord reports no state for this
+ * device" and "coord's health read carries no row for this host" are
+ * different facts and are worded differently on the card.
+ */
+export type CoordHealthJoin =
+  | {
+      matched: true;
+      device_id: string;
+      /** Coord `DeviceState`, serde-lowercase. Absent => `unknown`. */
+      state?: string;
+    }
+  | { matched: false };
 
 // ============================================================================
 // Migration reservation queue

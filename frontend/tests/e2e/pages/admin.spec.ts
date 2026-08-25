@@ -321,9 +321,10 @@ test.describe("Admin - Coord operator console", () => {
       await expect(page.getByTestId("coord-nav-history")).toBeVisible();
       await page.keyboard.press("Escape");
 
-      // Infra group is operator-only (this test path runs as superuser
-      // when the heading rendered).
-      await page.getByTestId("coord-nav-group-infra").click();
+      // The Dev Ops group's members are operator-only (this test path runs
+      // as superuser when the heading rendered); the group trigger itself is
+      // member-visible and carries `Overview`.
+      await page.getByTestId("coord-nav-group-devops").click();
       await expect(page.getByTestId("coord-nav-trees")).toBeVisible();
       await page.keyboard.press("Escape");
 
@@ -642,7 +643,7 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
     }
 
     await expect(page.getByTestId("coord-memory-page")).toBeVisible();
-    // Memory lives in the Infra group; the active page surfaces as the
+    // Memory lives in the Dev Ops group; the active page surfaces as the
     // group trigger's wayfinding crumb.
     await expect(page.getByTestId("coord-nav-memory-active")).toBeVisible();
 
