@@ -48,6 +48,13 @@ FLAG = "is_superuser"
 # list is a security decision: the new entry must not be reachable from an
 # HTTP handler without a superuser dependency.
 ALLOWED = {
+    # NOTE: the detector never actually flags this file. Its write is
+    # ``setattr(user, field, value)`` with a VARIABLE attribute name
+    # (``app/crud/user.py`` ~L47), and the ``setattr`` arm below only matches an
+    # ``ast.Constant`` name. The entry is kept deliberately: the write is real,
+    # so the file belongs on a security allow-list even though this particular
+    # scanner cannot see it. Do not read its presence as "the scanner cleared
+    # this file".
     "app/crud/user.py",
     "app/db/init_db.py",
     "app/services/cognito_provision.py",
