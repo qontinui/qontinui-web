@@ -287,18 +287,44 @@ export interface ReadyUnmergedPr {
  * (`COORD_MERGE_PER_REPO_CAP`, default 2).
  *
  * This cap is why "free slots + a green PR + nothing happening" is possible: a
- * repo already holding `per_repo_cap` in-flight proposals is SKIPPED by the
+ * repo already holding its cap in in-flight proposals is SKIPPED by the
  * dequeue even when a global slot is free. It was added by the 2026-07-04
  * awaiting-ci churn fix, after six qontinui-runner proposals held the whole
  * queue while other repos' green PRs starved.
+ *
+ * **The cap is per repo and not always the configured one.** coord's A2
+ * candidate-CI distress term temporarily REDUCES one repo's cap while its
+ * candidate CI keeps failing (floored at 1, never widening past the configured
+ * value). Since coord #1550 the derived flags here are computed against that
+ * narrowed cap, so {@link RepoSlotSaturation.narrowed_repo_cap} — not
+ * {@link SlotSaturation.per_repo_cap} — is the threshold they were measured
+ * against whenever it is present.
  */
 export interface RepoSlotSaturation {
   repo: string;
   /** Proposals in `dry-rebasing` / `awaiting-ci` / `landing` for this repo. */
   in_flight: number;
   queued: number;
-  /** `in_flight >= per_repo_cap` — the dequeue skips this repo's next proposal. */
+  /**
+   * `in_flight >= the cap IN FORCE` — the dequeue skips this repo's next
+   * proposal.
+   *
+   * Measured against {@link narrowed_repo_cap} when that is present and against
+   * `per_repo_cap` otherwise. Rendering this flag beside `per_repo_cap`
+   * unconditionally prints a self-contradicting pair ("at cap (1/2 in flight)")
+   * for any narrowed repo — use {@link effectiveRepoCap}.
+   */
   at_repo_cap: boolean;
+  /**
+   * The A2 candidate-CI distress cap in force for this repo, when coord has
+   * narrowed it below `per_repo_cap`. Absent — the overwhelmingly common case —
+   * means the configured cap applies unchanged.
+   *
+   * Never a copy of `per_repo_cap`: coord omits the key rather than emit a
+   * value equal to the configured cap, so `narrowed_repo_cap != null` is by
+   * itself proof that this repo is being held below its normal cap.
+   */
+  narrowed_repo_cap?: number | null;
   oldest_queued_wait_seconds?: number | null;
 }
 

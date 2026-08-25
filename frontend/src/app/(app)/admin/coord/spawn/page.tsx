@@ -1,14 +1,27 @@
 "use client";
 
 /**
- * /admin/coord/spawn — spawn-from-plan operator surface.
+ * /admin/coord/spawn — the operator's spawn surface. TWO entry points:
  *
- * Plan `2026-05-19-coordinator-production-readiness.md` Phase 4 (Wave 4).
+ *  1. **New session** (unanchored) — the header button opens `SpawnModal`
+ *     with NO plan seeded. The operator picks a machine, names at least one
+ *     repo, writes a prompt, and submits. Nothing invents a plan slug: the
+ *     anchor keys are omitted from the wire body entirely, so the resulting
+ *     `coord.sessions` row has a NULL `work_unit_slug` and appears under no
+ *     plan. Plan
+ *     `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
+ *     Phase 1.
+ *  2. **Spawn from plan** (anchored) — the per-row button below, which
+ *     opens the same modal pre-seeded with that plan's slug +
+ *     current_phase.
  *
- * Mirrors `/admin/coord/plans` (the canonical plan registry) and adds a
- * "Spawn" button per row. Clicking it opens the SpawnModal pre-seeded
- * with the plan's slug + current_phase so the operator only types the
- * variable inputs (device + repos + intent + initial prompt).
+ * Plan `2026-05-19-coordinator-production-readiness.md` Phase 4 (Wave 4)
+ * built the anchored half; the plan list below mirrors
+ * `/admin/coord/plans` (the canonical plan registry).
+ *
+ * The two lists are deliberately independent — a plan can exist with no
+ * session and a session can run with no plan — so the unanchored spawn is a
+ * normal state here, not an exception.
  *
  * The plans list is read-only here (cross-link to /admin/coord/plans
  * for transition / history actions). This page exists to make the
@@ -30,7 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ExternalLink, Filter, RefreshCw, Rocket } from "lucide-react";
+import { ExternalLink, Filter, Plus, RefreshCw, Rocket } from "lucide-react";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
@@ -79,6 +92,10 @@ export default function CoordSpawnPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [spawnTarget, setSpawnTarget] = useState<CoordPlanRow | null>(null);
+  /** Unanchored spawn — the modal opens with no plan seeded at all. Kept
+   *  as its own flag rather than a sentinel `spawnTarget`, so nothing can
+   *  mistake it for a plan row with an empty slug. */
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -118,13 +135,30 @@ export default function CoordSpawnPage() {
                 {plans.length}
               </Badge>
             )}
+            <CoordAdminOnly>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => setNewSessionOpen(true)}
+                data-testid="coord-spawn-new-session-button"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                New session
+              </Button>
+            </CoordAdminOnly>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Pick a plan, hit Spawn, fill in device + repos + intent + the
-            initial prompt. Coord acquires claims and ships the prompt on
-            first tick.
+            Pick a plan, hit Spawn, fill in device + repos + the initial prompt.
+            Coord acquires claims and ships the prompt on first tick.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            No plan? <span className="font-medium">New session</span> spawns an
+            unanchored agent — a machine, at least one repo (coord derives the
+            tenant and the worktree from it) and a prompt. It is listed on{" "}
+            <span className="font-mono">/sessions</span> and under no plan.
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -227,6 +261,16 @@ export default function CoordSpawnPage() {
           onClose={() => setSpawnTarget(null)}
           planSlug={spawnTarget.slug}
           initialPhase={spawnTarget.current_phase ?? ""}
+        />
+      )}
+
+      {newSessionOpen && (
+        // No `planSlug` — the prop is optional and its absence is what makes
+        // the spawn unanchored. Passing `""` would be the same thing to the
+        // modal, but naming the omission keeps the intent readable.
+        <SpawnModal
+          open={newSessionOpen}
+          onClose={() => setNewSessionOpen(false)}
         />
       )}
     </div>
