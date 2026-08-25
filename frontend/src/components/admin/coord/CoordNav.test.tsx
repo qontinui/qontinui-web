@@ -9,8 +9,14 @@
  *    carrying exactly one entry, which is the regression test for the
  *    resolved Q3 of
  *    `2026-08-25-coord-console-intent-and-devops-sections`
+ *  - `Intent ▾` holds the prompt-document cluster (Prompt Documents /
+ *    Policies / Policy Edit Review), member-visible trigger and items alike,
+ *    and `Merge ▾` no longer does — while `Gate Clearance` stays in `Merge`,
+ *    because a gate is merge-chain machinery (Phase 3 / resolved Q2 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`)
  *  - wayfinding crumb: the group trigger of the active page highlights and
- *    exposes `<testid>-active`
+ *    exposes `<testid>-active` — asserted for every leaf that changed groups,
+ *    since the testids are unchanged and Spec-CI keys on them
  *  - live Alerts badge from the unresolved-alerts rollup
  *  - live Notifications badge from the server's `unread_count` SCALAR —
  *    never the returned page length (plan
@@ -62,6 +68,7 @@ describe("CoordNav", () => {
 
     expect(screen.getByTestId("coord-nav-group-work")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-merge")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-nav-group-intent")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-access")).toBeInTheDocument();
 
     // `Infra ▾` is gone, and the group that replaced it is NOT hidden from a
@@ -87,11 +94,123 @@ describe("CoordNav", () => {
     render(<CoordNav />);
 
     await user.click(screen.getByTestId("coord-nav-group-merge"));
-    expect(await screen.findByTestId("coord-nav-policies")).toBeVisible();
+    expect(
+      await screen.findByTestId("coord-nav-automation-rules")
+    ).toBeVisible();
     expect(screen.getByTestId("coord-nav-pull-decisions")).toBeVisible();
     expect(
       screen.queryByTestId("coord-nav-merge-settings")
     ).not.toBeInTheDocument();
+  });
+
+  // --------------------------------------------------------------------------
+  // `Intent ▾` — the prompt-document cluster, moved out of `Merge ▾`
+  // (`2026-08-25-coord-console-intent-and-devops-sections` Phase 3, Gap 1).
+  // None of the three is read by the merge train, gates a PR, or appears in a
+  // merge decision; `Gate Clearance` is the one that stayed, because what it
+  // authors rows about is who may clear a GATE (resolved Q2).
+  // --------------------------------------------------------------------------
+
+  it("shows the Intent group to a plain member with exactly its three entries", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    const trigger = screen.getByTestId("coord-nav-group-intent");
+    expect(trigger).toHaveTextContent("Intent");
+
+    await user.click(trigger);
+    const promptDocuments = await screen.findByTestId(
+      "coord-nav-prompt-documents"
+    );
+    expect(promptDocuments).toBeVisible();
+    expect(promptDocuments).toHaveAttribute(
+      "href",
+      "/admin/coord/prompt-documents"
+    );
+    expect(screen.getByTestId("coord-nav-policies")).toHaveAttribute(
+      "href",
+      "/admin/coord/policies"
+    );
+    expect(
+      screen.getByTestId("coord-nav-prompt-document-proposals")
+    ).toHaveAttribute("href", "/admin/coord/prompt-document-proposals");
+
+    // Exactly three — nothing else drifted in, and none of them is
+    // operator-gated, so the member sees the whole group.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+  });
+
+  it("sits Intent between Merge and Dev Ops", () => {
+    render(<CoordNav />);
+
+    const triggers = Array.from(
+      screen
+        .getByTestId("coord-nav")
+        .querySelectorAll("[data-testid^='coord-nav-group-']")
+    ).map((el) => el.getAttribute("data-testid"));
+    expect(triggers).toEqual([
+      "coord-nav-group-work",
+      "coord-nav-group-merge",
+      "coord-nav-group-intent",
+      "coord-nav-group-devops",
+      "coord-nav-group-access",
+    ]);
+  });
+
+  it("leaves Merge with the merge chain only — the three moved out, Gate Clearance stayed", async () => {
+    isSuperuser = true;
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-merge"));
+    await screen.findByTestId("coord-nav-pull-decisions");
+
+    const menu = screen.getByRole("menu");
+    for (const moved of [
+      "coord-nav-prompt-documents",
+      "coord-nav-policies",
+      "coord-nav-prompt-document-proposals",
+    ]) {
+      expect(within(menu).queryByTestId(moved)).not.toBeInTheDocument();
+    }
+    expect(within(menu).getByTestId("coord-nav-gate-clearance")).toBeVisible();
+
+    // Pull Decisions · Automation Rules · Gate Clearance · Merge Settings°.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
+  });
+
+  it("keeps the wayfinding crumb contract for every moved Intent leaf", () => {
+    // Same nav-level contract as the Dev Ops sweep below: the crumb has to
+    // hold with the dropdown CLOSED, because the menu items unmount and
+    // Spec-CI's "active section" selectors match `coord-nav-<x>-active` on
+    // the group trigger. Every leaf that changed groups is asserted here.
+    for (const [path, testId, label] of [
+      [
+        "/admin/coord/prompt-documents",
+        "coord-nav-prompt-documents",
+        "Prompt Documents",
+      ],
+      ["/admin/coord/policies", "coord-nav-policies", "Policies"],
+      [
+        "/admin/coord/prompt-document-proposals",
+        "coord-nav-prompt-document-proposals",
+        "Policy Edit Review",
+      ],
+    ] as const) {
+      pathname = path;
+      const view = render(<CoordNav />);
+      const trigger = within(view.container).getByTestId(
+        "coord-nav-group-intent"
+      );
+      const crumb = within(view.container).getByTestId(`${testId}-active`);
+      expect(crumb).toHaveTextContent(label);
+      expect(trigger).toContainElement(crumb);
+      // …and the group they left does not claim them.
+      expect(
+        within(view.container).getByTestId("coord-nav-group-merge")
+      ).toHaveTextContent(/^Merge$/);
+      view.unmount();
+    }
   });
 
   it("offers Gate Clearance in the Merge group and links it", async () => {
