@@ -9,6 +9,13 @@
 //     measured the key) → LEFT ALONE. "We could not measure this" is not "you
 //     are missing this", and acting on it would install a version that may
 //     already be correct.
+//   - `unverified` deltas (the capture's own value says the fact was never
+//     measured, or the two captures were taken over environments that are not
+//     comparable) → LEFT ALONE for the same reason: there is nothing to
+//     reconcile toward. Unlike `unknown` it DOES count against in_sync, but
+//     that is the report's verdict, not a remediation instruction.
+//   - `observation_only` keys (a package count, a sha256 digest) → LEFT ALONE:
+//     real drift, but not settable. Skipped by the flag below, not the status.
 //
 // The status filter below is ALLOW-listed on purpose. It used to skip only
 // `added`, which meant every future status fell straight through into a
@@ -79,6 +86,15 @@ export function buildRemediation(report: MachineDriftReport): Remediation {
       // binary, so "set runner_crate_version to 1.0.5" is not an instruction
       // anyone can carry out — it converges by pulling the repo.
       if (delta.derived) continue;
+      // Observation-only keys are the box's own state and DO count as drift —
+      // they are dropped here and nowhere else. `python_installed_digest` is a
+      // sha256 over the installed distributions, so "set the digest to X" is
+      // not an instruction either; the box converges by installing packages and
+      // the digest follows. Skipping them here rather than marking them
+      // `derived` server-side is deliberate: derived would also drop them out
+      // of `in_sync`, which is the "reports clean while measuring nothing"
+      // failure the installed-inventory capture exists to remove.
+      if (delta.observation_only) continue;
       items.push({
         key: delta.key,
         // `expected` is the canonical value (present for changed/removed).

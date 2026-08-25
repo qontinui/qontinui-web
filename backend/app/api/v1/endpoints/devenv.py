@@ -1462,7 +1462,15 @@ async def get_config_history_diff(
     if to_row is None:
         raise _not_found("config_history_entry")
 
-    report = devenv_drift.diff_envelopes(from_row.config, to_row.config)
+    # ``temporal``: these two envelopes are two captures of the SAME machine, so
+    # ``in_sync`` here means "nothing changed between them" — a different
+    # question from the vs-canonical endpoints' "do these two boxes agree?". The
+    # installed-inventory rules are only valid for the second one: they exist so
+    # two boxes that both measured nothing cannot be called equal, but two
+    # captures of one box that measured nothing genuinely ARE unchanged, and
+    # asserting otherwise badges every consecutive pair on a box with a broken
+    # Python (and would do it for ``from_id == to_id``).
+    report = devenv_drift.diff_envelopes(from_row.config, to_row.config, temporal=True)
     report = _attach_machine_identity(report, machine)
     return ConfigHistoryDiffResponse(
         **report.model_dump(),

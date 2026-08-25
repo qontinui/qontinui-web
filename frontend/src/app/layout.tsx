@@ -13,21 +13,10 @@ import { SpecCiInit } from "@/lib/ui-bridge/spec-ci-init";
 import { ClientOverlays } from "@/components/ClientOverlays";
 import { WorkflowUIProvider } from "@/lib/providers/workflow-ui-provider";
 import { BuildRefreshBanner } from "@/components/BuildRefreshBanner";
+import { CloudExtensionsBoot } from "@/components/cloud-extensions-boot";
 import { BUILD_ID } from "@/generated/build-id";
 import "./globals.css";
 import "@/styles/tutorial.css";
-
-// Cloud-control side-effect import. The package isn't part of the OSS
-// dependency graph — it's only present when a sibling install of
-// `@qontinui/cloud-control` is linked into node_modules (the composed
-// deployment shape). The string-literal-via-variable trick keeps webpack
-// from statically resolving the module and emitting a build-time error;
-// `.catch()` then silently no-ops the runtime ImportError on OSS-only
-// installs.
-const CLOUD_CONTROL_PKG = "@qontinui/cloud-control";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore  -- intentional dynamic-import; module may or may not exist
-import(/* webpackIgnore: true */ CLOUD_CONTROL_PKG).catch(() => {});
 
 export const dynamic = "force-dynamic";
 export const dynamicParams = true;
@@ -72,6 +61,14 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {/* Registers @qontinui/cloud-control's services and components into
+            `@/lib/extension-slots` in the composed cloud build, and does
+            nothing in OSS-only builds. This layout is a Server Component, so
+            the registration CANNOT live in this module — the boot module
+            carries "use client" precisely so the import evaluates in the
+            browser graph that every slot consumer reads. See
+            `docs/composed-cloud-build.md`. */}
+        <CloudExtensionsBoot />
         <DevDebugInit />
         {/* Ξ_ClientTelemetry beacon. Pure no-op unless
             NEXT_PUBLIC_TELEMETRY_BEACON_ENABLED==="1" (counsel-review gate —

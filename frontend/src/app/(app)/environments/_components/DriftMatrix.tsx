@@ -70,6 +70,13 @@ function statusLabel(status: KeyDelta["status"]): string {
       // Deliberately NOT phrased as a difference: the capturing box's probe
       // exceeded its budget, so nothing was observed about this key at all.
       return "Not measured";
+    case "unverified":
+      // Also not a difference — but not the same thing as `unknown` either.
+      // The key WAS reported; either its value says the fact behind it was
+      // never measured, or the two captures were never comparable. Matching
+      // proves nothing and differing proves nothing. This one counts against
+      // in_sync, hence a label that reads as a finding.
+      return "Unverified";
     default: {
       // The `default` this replaced returned "Changed", so a status nobody had
       // handled rendered as a confirmed difference — exactly the false claim
@@ -256,7 +263,10 @@ function MachineDriftCard({
 function SectionRow({ section }: { section: SectionDrift }) {
   const [open, setOpen] = useState(false);
   // Unmeasured keys are listed but are NOT drift — counting them here would
-  // let a slow capture probe inflate a machine's delta count.
+  // let a slow capture probe inflate a machine's delta count. `unverified` is
+  // deliberately NOT in this bucket: it does count against in_sync, so hiding
+  // it from the delta count would leave a machine badged out-of-sync with a row
+  // reading "0 deltas".
   const unknownCount = section.deltas.filter(
     (d) => d.status === "unknown"
   ).length;
@@ -316,8 +326,13 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
   // never measured the key. Name it rather than showing a bare dash; the other
   // side's value is real and still worth showing.
   const unmeasured = delta.status === "unknown";
+  // Both sides are usually present here — the values are the box's stated
+  // reason it could not measure, or two readings taken over environments that
+  // were never comparable — so this needs its own prose rather than the
+  // empty-side labelling above.
+  const unverified = delta.status === "unverified";
   const side = (value: string | null) =>
-    value ?? (unmeasured ? "not measured" : "—");
+    value ?? (unmeasured || unverified ? "not measured" : "—");
 
   return (
     <div className="rounded-sm bg-muted/30 px-2 py-1.5">
@@ -330,6 +345,14 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
               title="Read from the repo the capturing binary was built from, not from this machine — it converges by pulling the repo, never by an apply."
             >
               (repo-derived)
+            </span>
+          )}
+          {delta.observation_only && !delta.derived && (
+            <span
+              className="ml-1.5 font-sans font-normal text-muted-foreground"
+              title="Real drift on this machine, but not a key anyone can set — it is a measurement of the installed environment. The box converges by installing packages; this value follows. Deliberately absent from the copy-remediation plan."
+            >
+              (measured, not settable)
             </span>
           )}
         </span>
@@ -357,9 +380,22 @@ function DeltaRow({ delta }: { delta: KeyDelta }) {
       </div>
       {unmeasured && (
         <p className="mt-1 text-[11px] text-muted-foreground">
-          A capture probe for this key exceeded its budget, so it was never
-          measured. That is not the same as the key being absent — it is not
-          counted as drift and nothing here is safe to apply.
+          One of the two captures never measured this key — its probe exceeded
+          the budget, or that runner does not report this key at all. Either
+          way it is not the same as the key being absent from the machine: it is
+          not counted as drift and nothing here is safe to apply.
+        </p>
+      )}
+      {unverified && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          These two captures cannot answer for this key — either one of them
+          reports WHY it could not read the environment (so the values above are
+          reasons, not measurements) or they measured different environments, in
+          which case their numbers were never comparable. Matching values would
+          not prove the machines match and differing ones would not prove they
+          drifted, so it is counted against in sync until a comparable pair of
+          captures exists. Fix the stated reason, or align how the two runners
+          resolve their interpreter, and re-capture.
         </p>
       )}
     </div>

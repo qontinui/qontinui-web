@@ -167,6 +167,64 @@ describe("buildRemediation", () => {
     expect(rem.itemCount).toBe(1);
   });
 
+  it("skips observation-only keys — measured, but not settable", () => {
+    // `versions` is an `applyable` section and these deltas are `changed`, so
+    // without the flag they walk straight into the plan as "set
+    // python_installed_digest to sha256:abc123" — an instruction nobody can
+    // carry out. They are NOT marked `derived` server-side on purpose: derived
+    // would also drop them out of `in_sync`, which is exactly the "clean while
+    // measuring nothing" failure the installed-inventory capture removes.
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          {
+            key: "python_installed_digest",
+            status: "changed",
+            expected: "sha256:abc123",
+            actual: "sha256:def456",
+            severity: "critical",
+            observation_only: true,
+          },
+          {
+            key: "python_installed_count",
+            status: "changed",
+            expected: "214",
+            actual: "197",
+            severity: "critical",
+            observation_only: true,
+          },
+          { key: "python", status: "changed", expected: "3.13", actual: "3.12", severity: "critical" },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([
+      { section: "versions", items: [{ key: "python", value: "3.13", secret: false }] },
+    ]);
+    expect(rem.itemCount).toBe(1);
+  });
+
+  it("leaves an `unverified` delta out of the plan", () => {
+    // It DOES count against in_sync (unlike `unknown`), but there is nothing to
+    // reconcile toward: the values are the box's stated reason it could not
+    // read its environment, not a version to install.
+    const rem = buildRemediation(
+      report([
+        section("versions", [
+          {
+            key: "python_installed_probe",
+            status: "unverified",
+            expected: "python_absent",
+            actual: "python_absent",
+            severity: "warning",
+            observation_only: true,
+          },
+        ]),
+      ])
+    );
+    expect(rem.sections).toEqual([]);
+    expect(rem.inSync).toBe(true);
+  });
+
   it("drops a section whose only drift is repo-derived", () => {
     const rem = buildRemediation(
       report([

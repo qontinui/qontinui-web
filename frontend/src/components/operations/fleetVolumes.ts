@@ -427,3 +427,136 @@ export function tightestVolume(fetched: VolumesFetch): VolumeReading | null {
   }
   return worst;
 }
+
+// ---------------------------------------------------------------------------
+// Per-device sibling — `GET /operations/devices/{device_id}/volumes`
+//
+// Plan `2026-08-07-product-disk-monitoring-and-cleanup.md` Phase 2 step 4.
+// Phase 1 shipped the route and `deviceVolumesUrl()` with NO caller; the Disk
+// section of `/settings/storage` is the first consumer.
+//
+// This needs its OWN parser rather than reusing `parseFleetVolumes`. The
+// per-device envelope is `{device_id, volumes: [{volume, ...}]}` — its rows
+// carry no `device_id` of their own, so the fleet parser's flat-row grouper
+// rejects every one of them and reports `unparseable`. Feeding a valid
+// per-device response through the fleet parser would therefore render a
+// working device as "could not read" forever.
+// ---------------------------------------------------------------------------
+
+/** What a per-device volumes read produced. */
+export type DeviceVolumesFetch =
+  | {
+      state: "ok";
+      /** `device_id` the response named, or `null` when it named none. */
+      deviceId: string | null;
+      volumes: VolumeReading[];
+      /** Rows this device named that could not be read. */
+      skippedRows: number;
+    }
+  | { state: "unavailable"; reason: string };
+
+/** The pre-first-read state. Deliberately `unavailable`, not an empty "ok". */
+export const DEVICE_VOLUMES_NOT_YET_READ: DeviceVolumesFetch = {
+  state: "unavailable",
+  reason:
+    "This device's disk telemetry has not been read yet -- the first " +
+    "per-device volumes request has not completed.",
+};
+
+export type DeviceVolumesParse =
+  | {
+      state: "parsed";
+      deviceId: string | null;
+      volumes: VolumeReading[];
+      skippedRows: number;
+    }
+  | { state: "unparseable"; reason: string };
+
+/**
+ * Normalize the per-device volumes payload.
+ *
+ * A response with a `volumes` array is READABLE even when the array is empty —
+ * that is the documented shape for a device that has never reported, and the
+ * caller renders it as `never_reported` (a fact about the device). A response
+ * WITHOUT a `volumes` array is unreadable, which is a fact about the read.
+ *
+ * Rows that carry no usable volume identity are counted, never dropped
+ * silently: a device whose every row was unreadable arrives here with an empty
+ * `volumes` list, and without the count it is indistinguishable from a device
+ * that never reported at all.
+ */
+export function parseDeviceVolumes(payload: unknown): DeviceVolumesParse {
+  if (!isRecord(payload)) {
+    return {
+      state: "unparseable",
+      reason:
+        "The per-device volumes response was not a JSON object, so no " +
+        "reading could be taken from it.",
+    };
+  }
+  if (!Array.isArray(payload.volumes)) {
+    return {
+      state: "unparseable",
+      reason:
+        "The per-device volumes response carried no `volumes` array " +
+        "(expected `{device_id, volumes: [...]}`). That is an unreadable " +
+        "answer, not an empty one -- it says nothing about this disk.",
+    };
+  }
+  const rows = payload.volumes as unknown[];
+  const volumes = rows
+    .map(toVolumeReading)
+    .filter((v): v is VolumeReading => v !== null);
+  return {
+    state: "parsed",
+    deviceId: typeof payload.device_id === "string" ? payload.device_id : null,
+    volumes,
+    skippedRows: rows.length - volumes.length,
+  };
+}
+
+/**
+ * Resolve ONE device's telemetry into the same three-state union the fleet
+ * cards use, so both surfaces render absence identically.
+ *
+ * `requestedDeviceId` is the device we ASKED about. When the response names a
+ * different one, the answer is UNKNOWN rather than being attributed to this
+ * machine — a mismatched row is somebody else's disk, and showing it here
+ * would be a fabricated reading with the wrong provenance.
+ */
+export function resolveDeviceVolumes(
+  fetched: DeviceVolumesFetch,
+  requestedDeviceId: string
+): MachineVolumes {
+  if (fetched.state !== "ok") {
+    return { state: "unknown", reason: fetched.reason };
+  }
+  if (fetched.deviceId !== null && fetched.deviceId !== requestedDeviceId) {
+    return {
+      state: "unknown",
+      reason:
+        `The volumes read answered for device ${fetched.deviceId}, but this ` +
+        `machine is ${requestedDeviceId}. Nothing here describes THIS ` +
+        `machine's disk, so no reading is shown.`,
+    };
+  }
+  if (fetched.volumes.length > 0) {
+    return {
+      state: "reported",
+      deviceId: requestedDeviceId,
+      volumes: fetched.volumes,
+    };
+  }
+  if (fetched.skippedRows > 0) {
+    return {
+      state: "unknown",
+      reason:
+        `Coord returned ${fetched.skippedRows} volume row` +
+        `${fetched.skippedRows === 1 ? "" : "s"} for this device that could ` +
+        `not be read, and no readable row survived. The device DID report -- ` +
+        `we could not parse what it reported -- so this is not "never ` +
+        `reported" and not zero.`,
+    };
+  }
+  return { state: "never_reported", deviceId: requestedDeviceId };
+}
