@@ -54,7 +54,7 @@ describe("parsePlanPhase", () => {
 });
 
 describe("buildSpawnRequestBody", () => {
-  it("matches coord's SpawnRequest shape", () => {
+  it("matches coord's SpawnRequest shape when the spawn is anchored", () => {
     expect(buildSpawnRequestBody(base)).toEqual({
       work_unit_slug: "2026-07-28-coord-post-plan-slug-surfaces-rename",
       plan_phase: 4,
@@ -64,6 +64,51 @@ describe("buildSpawnRequestBody", () => {
       declared_overlap_paths: ["backend/app/api/v1/endpoints/operations.py"],
       initial_prompt: "You are Stage 4a.",
     });
+  });
+
+  it("omits every anchor key when the spawn is unanchored", () => {
+    // The "New session" entry point: a machine, a repo, a prompt — no plan.
+    const body = buildSpawnRequestBody({
+      deviceId: base.deviceId,
+      repos: base.repos,
+      initialPrompt: base.initialPrompt,
+    });
+    // ABSENT, not `""` / `[]`. Coord types all three `Option<…>`, so an
+    // empty string deserializes as `Some("")`: `derive_intent` would then
+    // synthesize the literal intent `"plan:"` and the empty slug would ride
+    // `LaunchPayload` into the runner's session registration, putting a
+    // phantom work-unit row on the plans page for a session with no plan.
+    expect(body).not.toHaveProperty("work_unit_slug");
+    expect(body).not.toHaveProperty("plan_phase");
+    expect(body).not.toHaveProperty("intent");
+    expect(body).not.toHaveProperty("declared_overlap_paths");
+    // The three coord actually requires are still there and nothing else is.
+    expect(body).toEqual({
+      target_device_id: base.deviceId,
+      repos: [{ repo: "qontinui-web" }, { repo: "qontinui-coord" }],
+      initial_prompt: "You are Stage 4a.",
+    });
+  });
+
+  it('omits — never sends `""` for — a whitespace-only slug or intent', () => {
+    const body = buildSpawnRequestBody({
+      ...base,
+      workUnitSlug: "   ",
+      intent: "\t\n ",
+    });
+    expect(body).not.toHaveProperty("work_unit_slug");
+    expect(body).not.toHaveProperty("intent");
+    // Guard the exact wrong value directly: a trimmed-to-empty string that
+    // is still SENT is the phantom-plan bug, not a cosmetic one.
+    expect(body.work_unit_slug).toBeUndefined();
+    expect(body.intent).toBeUndefined();
+  });
+
+  it("omits declared_overlap_paths when no paths were declared", () => {
+    const body = buildSpawnRequestBody({ ...base, declaredOverlapPaths: [] });
+    // `[]` is a declaration of "I checked, there are none"; absence is
+    // "I did not declare". Coord distinguishes them, so we must too.
+    expect(body).not.toHaveProperty("declared_overlap_paths");
   });
 
   it("sends target_device_id, never the silently-ignored device_id", () => {

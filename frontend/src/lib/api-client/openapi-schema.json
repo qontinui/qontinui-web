@@ -77465,6 +77465,61 @@
         ]
       }
     },
+    "/api/v1/operations/claude-accounts": {
+      "get": {
+        "description": "Return the per-device Claude account roster from coord (tenant-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage``. Response envelope::\n\n    {\n      \"accounts\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"account_label\": \".claude-gmail\",\n          \"weekly_utilization\": 0.34,\n          \"weekly_resets_at\": \"<iso8601|null>\",\n          \"session_utilization\": 0.11,\n          \"session_resets_at\": \"<iso8601|null>\",\n          \"model_limits\": [{\"model\": \"...\", \"utilization\": 0.2, ...}],\n          \"exhausted\": false,\n          \"source\": \"...\",\n          \"error\": false,\n          \"stale\": false,\n          \"is_active\": true,       // null until the device's runner reports it\n          \"account_selection_mode\": \"least_usage\"  // manual | least_usage | null\n        }\n      ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**An absent roster is UNKNOWN, not \"no accounts\".** Three distinct\nstates have to stay distinguishable, because a false \"this machine has\nno Claude accounts\" is worse than an honest unknown \u2014 it would tell an\noperator a machine cannot run an agent when it can:\n\n* ``table_provisioned: false`` \u2014 coord's ``coord.claude_account_usage``\n  does not exist yet on that deployment. Nothing has been observed.\n* ``columns_provisioned: false`` \u2014 the table exists but predates the\n  ``is_active`` / ``account_selection_mode`` columns (alembic\n  ``coord_claude_acct_usage_02``). Usage is real; the *selection* half is\n  unknown, and ``is_active`` / ``account_selection_mode`` will be null.\n* both true with ``accounts: []`` \u2014 genuinely no account has reported\n  for this tenant.\n\nSo the two flags are passed THROUGH rather than flattened into an empty\nlist. When coord omits them entirely (a build predating its own read\nroute's flags) they are surfaced as ``None`` \u2014 unknown \u2014 and never\ndefaulted to ``true``, which would assert provisioning we did not observe.\nConsumers must render null as \"unknown\", not as ``false`` and not as the\n``least_usage`` default.\n\n``stale`` is coord's own computed freshness verdict (30 minutes since the\nlast report); it is forwarded untouched, not recomputed here.",
+        "operationId": "api_v1_operations_claude_accounts_get",
+        "parameters": [
+          {
+            "description": "Narrow the roster to one device. Applied HERE, client-side, on top of coord's tenant scoping \u2014 coord's read route is tenant-scoped and takes no device filter, so forwarding an unknown query parameter would be a guess about its behaviour.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow the roster to one device. Applied HERE, client-side, on top of coord's tenant scoping \u2014 coord's read route is tenant-scoped and takes no device filter, so forwarding an unknown query parameter would be a guess about its behaviour.",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Claude Accounts Api V1 Operations Claude Accounts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Claude Accounts",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/claude-sessions": {
       "post": {
         "description": "Receive Claude Code session report from a machine.",
