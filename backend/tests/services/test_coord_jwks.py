@@ -23,13 +23,18 @@ from typing import Any
 
 import jwt as pyjwt
 import pytest
+import structlog
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
 )
 
 from app.services.coord_jwks import (
     CoordJWKSClient,
+    CoordTokenExpiredError,
+    CoordTokenForeignIssuerError,
     CoordTokenInvalidError,
+    CoordTokenNotYetValidError,
+    describe_token_rejection,
 )
 
 # ---------------------------------------------------------------------------
@@ -59,6 +64,15 @@ def _ed25519_keypair() -> tuple[Ed25519PrivateKey, dict[str, Any]]:
         "x": _b64url_no_pad(public_bytes),
     }
     return private, jwk
+
+
+def _thumbprint_kid(thumbprint: str) -> str:
+    """Build a coord thumbprint-style kid from its hex half.
+
+    Split so no test carries the full id as one literal — see the note at
+    the foreign-issuer test for why.
+    """
+    return "coord-ed25519-" + thumbprint
 
 
 def _mint_jwt(private: Ed25519PrivateKey, claims: dict[str, Any]) -> str:
@@ -256,3 +270,380 @@ async def test_jwks_cached_within_ttl() -> None:
     await client.verify_token(token)
 
     assert fetch_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Failure CLASSIFICATION — plan
+# 2026-08-25-coord-jwt-kid-collides-across-environments, Phase 2.
+#
+# All three failures below used to collapse into one
+# ``CoordTokenInvalidError`` that every caller rendered as "Invalid or
+# expired device token." These pin that they stay distinguishable, so a
+# reader is never told "expired" about a token that is not.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_unknown_kid_raises_foreign_issuer_error() -> None:
+    """A kid absent from the JWKS means a DIFFERENT coord minted the token.
+
+    That is a deployment-wiring fault, not a bad client, so it gets its
+    own type carrying the coord URL and the kids actually served.
+    """
+    private, jwk = _ed25519_keypair()  # JWKS serves kid=coord-ed25519-v1
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    # Bound to a name rather than repeated inline: a coord thumbprint kid is
+    # PUBLIC by construction (it is served on the unauthenticated JWKS
+    # route), but `assert exc.token_kid == "<32 chars>"` puts the substring
+    # "token" next to a long literal, which is exactly what gitleaks'
+    # generic-api-key rule looks for. Naming it keeps the scanner honest
+    # instead of allowlisting a pattern that could hide a real secret later.
+    foreign = _thumbprint_kid("0011223344556677")
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": foreign, "typ": "JWT"},
+    )
+
+    with pytest.raises(CoordTokenForeignIssuerError) as exc_info:
+        await client.verify_token(token)
+
+    exc = exc_info.value
+    assert exc.token_kid == foreign
+    assert exc.served_kids == ["coord-ed25519-v1"]
+    assert exc.coord_url == "http://test"
+    # The message must name the mismatch, not merely describe a symptom.
+    assert "http://test" in str(exc)
+    # Still a CoordTokenInvalidError, so existing broad handlers keep working.
+    assert isinstance(exc, CoordTokenInvalidError)
+
+
+@pytest.mark.asyncio
+async def test_expired_token_raises_expired_subclass() -> None:
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    token = _mint_jwt(private, _coord_claims(iat_offset=-3600, exp_in=3000))
+
+    with pytest.raises(CoordTokenExpiredError) as exc_info:
+        await client.verify_token(token)
+    assert isinstance(exc_info.value, CoordTokenInvalidError)
+
+
+@pytest.mark.asyncio
+async def test_same_kid_different_key_is_not_classified_as_foreign() -> None:
+    """The incident itself, pinned as a test.
+
+    Two coord deployments both stamp the hardcoded ``coord-ed25519-v1``
+    on their own distinct signing keys. The kid lookup therefore SUCCEEDS
+    and the wrong key reaches the crypto, so a foreign-but-genuine token
+    is reported as a bad signature — i.e. as a forgery.
+
+    Phase 2 alone cannot classify this correctly; only distinct kids
+    (Phase 1, coord-side) can. This test exists to pin that limit
+    honestly rather than imply Phase 2 closed it, and should be updated
+    to expect ``CoordTokenForeignIssuerError`` once every coord in the
+    fleet serves a thumbprint kid.
+    """
+    prod_private, _ = _ed25519_keypair()
+    _, local_jwk = _ed25519_keypair()  # different key, SAME kid
+    assert local_jwk["kid"] == "coord-ed25519-v1"
+
+    client = _FakeClient(jwks={"keys": [local_jwk]})
+    token = _mint_jwt(prod_private, _coord_claims())
+
+    with pytest.raises(CoordTokenInvalidError) as exc_info:
+        await client.verify_token(token)
+    # Exactly the base class: not foreign-issuer (the colliding kid hides
+    # the real cause), and not any other subclass either — a looser
+    # `not isinstance(..., ForeignIssuer)` would also pass on a wrong
+    # classification.
+    assert type(exc_info.value) is CoordTokenInvalidError
+    # And this is the user-visible residue Phase 1 has to remove: a
+    # genuine token from another coord still reads as a verification
+    # failure rather than as "a different coord issued this".
+    assert "different coord" not in describe_token_rejection(exc_info.value)
+
+
+def test_describe_token_rejection_says_only_what_is_true() -> None:
+    """Each arm gets its own sentence, and none claims the others' fault."""
+    foreign = CoordTokenForeignIssuerError(
+        "x", coord_url="http://test", token_kid="a", served_kids=["b"]
+    )
+    expired = CoordTokenExpiredError("x")
+    bad_sig = CoordTokenInvalidError("x")
+
+    foreign_msg = describe_token_rejection(foreign)
+    expired_msg = describe_token_rejection(expired)
+    bad_sig_msg = describe_token_rejection(bad_sig)
+
+    assert len({foreign_msg, expired_msg, bad_sig_msg}) == 3
+    assert "different coord" in foreign_msg
+    assert "expired" in expired_msg.lower()
+    # The historical catch-all claimed two causes at once; no arm may do
+    # that, in either direction.
+    assert "expired" not in foreign_msg.lower()
+    assert "expired" not in bad_sig_msg.lower()
+    assert "different coord" not in bad_sig_msg.lower()
+    assert "signature" not in foreign_msg.lower()
+    # The generic arm must NOT name the signature: it is the residue arm
+    # (malformed token, unusable JWK, missing kid), and naming a specific
+    # cause there trades a vague message for a confidently wrong one.
+    assert "signature" not in bad_sig_msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_rejection_text_never_leaks_deployment_internals() -> None:
+    """The presenter-facing string stays coarser than the log.
+
+    ``str(exc)`` carries COORD_URL, the token kid and the served kids, and
+    both call sites pass it to the logger one line above passing
+    ``describe_token_rejection(exc)`` into the response. Nothing stops a
+    future edit from conflating the two, so pin the separation as an
+    invariant rather than a convention.
+    """
+    # Raised for real, so the message under test is the one the call sites
+    # actually log rather than a placeholder a test invented.
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+    token = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": _thumbprint_kid("deadbeefdeadbeef"), "typ": "JWT"},
+    )
+
+    with pytest.raises(CoordTokenForeignIssuerError) as exc_info:
+        await client.verify_token(token)
+    exc = exc_info.value
+    msg = describe_token_rejection(exc)
+
+    assert exc.coord_url not in msg
+    assert exc.token_kid not in msg
+    for served in exc.served_kids:
+        assert served not in msg
+    # ...and the detail really does carry them, or the log is the one lying.
+    assert exc.coord_url in str(exc)
+    assert exc.token_kid in str(exc)
+
+
+def test_rejection_reasons_fit_the_websocket_close_budget() -> None:
+    """RFC 6455 caps a close reason at 123 bytes.
+
+    ``devices_ws`` passes these straight through as the close reason, and
+    an over-long reason would be truncated or refused by the WS layer —
+    turning the honest message back into an unreadable one.
+    """
+    built = {
+        CoordTokenForeignIssuerError: CoordTokenForeignIssuerError(
+            "x", coord_url="http://test", token_kid="a", served_kids=["b"]
+        ),
+    }
+    # Derived from the hierarchy, not a hardcoded list: a subclass added
+    # later must not escape the budget check by simply not being listed.
+    subclasses = CoordTokenInvalidError.__subclasses__()
+    assert CoordTokenNotYetValidError in subclasses, (
+        "sanity: the hierarchy walk must actually see the subclasses"
+    )
+    for cls in [CoordTokenInvalidError, *subclasses]:
+        exc = built.get(cls) or cls("x")
+        assert len(describe_token_rejection(exc).encode("utf-8")) <= 123, cls
+
+
+@pytest.mark.asyncio
+async def test_clock_skew_beyond_leeway_is_not_reported_as_a_bad_signature() -> None:
+    """``iat``/``nbf`` in the future is drift, not a key problem.
+
+    This module's own leeway comment records why that is a live risk:
+    coord truncates ``iat`` to whole seconds and web may run on another
+    clock. Reporting it as a signature failure would send the reader to
+    check key wiring — the misdirection this whole split exists to remove.
+    """
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    # Well beyond the 30s leeway floor.
+    token = _mint_jwt(private, _coord_claims(iat_offset=3600))
+
+    with pytest.raises(CoordTokenNotYetValidError) as exc_info:
+        await client.verify_token(token)
+    msg = describe_token_rejection(exc_info.value)
+    assert "signature" not in msg.lower()
+    assert "clock" in msg.lower()
+
+
+@pytest.mark.asyncio
+async def test_oversized_kid_is_truncated_before_it_reaches_a_message() -> None:
+    """The kid is attacker-supplied and otherwise unbounded.
+
+    It reaches an exception message that both terminal callers log, so an
+    unauthenticated caller could otherwise write a log line of its own
+    size and content on every request.
+    """
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": "A" * 4000, "typ": "JWT"},
+    )
+
+    with pytest.raises(CoordTokenForeignIssuerError) as exc_info:
+        await client.verify_token(token)
+
+    assert len(exc_info.value.token_kid) <= 64
+    assert len(str(exc_info.value)) < 500
+
+
+@pytest.mark.asyncio
+async def test_verify_token_does_not_raise_the_identity_alarm_itself() -> None:
+    """``coord_identity_mismatch`` belongs to the TERMINAL callers only.
+
+    ``app.api.v1.endpoints.memory`` runs every bearer through
+    ``verify_token`` purely to decide whether it is coord-signed, and
+    falls through to Cognito on ``CoordTokenInvalidError`` — see
+    ``tests/test_memory_auth.py``. A Cognito token carries a Cognito kid,
+    so it lands in the foreign-issuer arm on the way to a SUCCESSFUL
+    request. Logging the alarm at the raise site therefore fired at
+    WARNING on routine successful traffic, which buries the one line the
+    alarm exists to surface. ``deps`` and ``devices_ws`` raise it instead,
+    because for them a rejection really is terminal.
+    """
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    # A Cognito-shaped kid: well-formed, simply not coord's.
+    token = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": "abc123XYZ/Example=", "typ": "JWT"},
+    )
+
+    emitted: list[str] = []
+
+    def _capture(logger, method_name, event_dict):
+        emitted.append(str(event_dict.get("event", "")))
+        raise structlog.DropEvent
+
+    structlog.configure(processors=[_capture])
+    try:
+        with pytest.raises(CoordTokenForeignIssuerError):
+            await client.verify_token(token)
+    finally:
+        structlog.reset_defaults()
+
+    assert "coord_identity_mismatch" not in emitted, (
+        f"verify_token must not raise the alarm itself; emitted={emitted}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Forced re-fetch on a kid miss.
+#
+# Without this, a verifier holding a JWKS cached BEFORE a coord key-id change
+# rejects every legitimately-issued token until the 1h TTL expires — emitting
+# the very string this module's error split exists to make trustworthy
+# (`1008 "Invalid or expired device token."`). There is no operator action
+# that shortens that window: no admin route, no cache-invalidate method, no
+# TTL override. Only a process restart or waiting it out.
+# ---------------------------------------------------------------------------
+
+
+class _RotatingClient(CoordJWKSClient):
+    """Serves `first`, then `second` on every subsequent fetch."""
+
+    def __init__(
+        self, first: dict[str, Any], second: dict[str, Any], **kw: Any
+    ) -> None:
+        super().__init__(coord_url="http://test", **kw)
+        self._first = first
+        self._second = second
+        self.fetches = 0
+
+    async def _fetch_jwks(self) -> dict[str, Any]:
+        self.fetches += 1
+        return self._first if self.fetches == 1 else self._second
+
+
+@pytest.mark.asyncio
+async def test_kid_miss_refetches_and_recovers_within_the_ttl() -> None:
+    """A key-id change is picked up in one round-trip, not in an hour."""
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("00ff00ff00ff00ff")
+
+    client = _RotatingClient({"keys": [old_jwk]}, {"keys": [new_jwk]})
+
+    # Warm the cache on the pre-change JWKS, as a live backend would have.
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+    assert client.fetches == 1
+
+    # Now a token signed under the NEW kid arrives. The cache does not know
+    # it, and the TTL has not expired.
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+    claims = await client.verify_token(token)
+
+    assert claims["iss"] == "qontinui-coord"
+    assert client.fetches == 2, "the kid miss must force exactly one re-fetch"
+
+
+@pytest.mark.asyncio
+async def test_forced_refetch_is_rate_limited() -> None:
+    """`kid` is attacker-supplied, so it must not drive unbounded fetches.
+
+    Without a cooldown, any caller could force one coord round-trip per
+    request just by presenting an unknown kid. The sibling `cognito_jwks`
+    force-refreshes with no cooldown; this deliberately follows coord's own
+    Rust `FORCED_REFRESH_COOLDOWN` instead.
+    """
+    _, jwk = _ed25519_keypair()
+    private, _ = _ed25519_keypair()
+
+    client = _RotatingClient({"keys": [jwk]}, {"keys": [jwk]}, forced_cooldown_s=300)
+
+    unknown = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": _thumbprint_kid("aaaabbbbccccdddd"), "typ": "JWT"},
+    )
+
+    for _ in range(5):
+        with pytest.raises(CoordTokenForeignIssuerError):
+            await client.verify_token(unknown)
+
+    # 1 warm-up fetch + exactly 1 forced fetch, not 5.
+    assert client.fetches == 2, f"expected 2 fetches, got {client.fetches}"
+
+
+@pytest.mark.asyncio
+async def test_forced_refetch_cooldown_expires() -> None:
+    """The cooldown throttles; it must not permanently disable recovery."""
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("1234123412341234")
+
+    # Zero cooldown = every miss may refetch, which is the boundary case.
+    client = _RotatingClient(
+        {"keys": [old_jwk]}, {"keys": [new_jwk]}, forced_cooldown_s=0
+    )
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+    assert (await client.verify_token(token))["iss"] == "qontinui-coord"
