@@ -40,6 +40,7 @@ import {
   type VolumesFetch,
 } from "./fleetVolumes";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
+import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -293,9 +294,20 @@ export interface FleetOverviewProps {
    * mount, and with it this prop's optionality.
    */
   health?: UseFleetHealthResult;
+  /**
+   * The devenv machine roster (`useDevenvMachines`), supplied by the Dev Ops
+   * Overview so each row can resolve its CI-capacity join and mount the shared
+   * `CiNodeConfigPanel` behind a collapsed disclosure.
+   *
+   * This component neither reads it nor caches it: the page owns the one read
+   * and this passes the resolved join down. Omitted — the pipeline page's mount
+   * — no row renders a CI-capacity block at all, because a page that never
+   * looked must not report on the join.
+   */
+  ciMachines?: DevenvMachinesRead;
 }
 
-export function FleetOverview({ health }: FleetOverviewProps = {}) {
+export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -626,6 +638,20 @@ export function FleetOverview({ health }: FleetOverviewProps = {}) {
                     key={group.hostname}
                     machine={group}
                     onRenamed={fetchData}
+                    // The join is resolved here, per row, from the page's one
+                    // read — never fetched per card. A row coord's health read
+                    // does not name has no `device_id` to match on, and says
+                    // so rather than claiming no machine is linked.
+                    ciCapacity={
+                      ciMachines
+                        ? resolveCiCapacity(
+                            ciMachines,
+                            group.coordHealth?.matched
+                              ? group.coordHealth.device_id
+                              : undefined
+                          )
+                        : undefined
+                    }
                   />
                 ))}
               </div>

@@ -19,6 +19,10 @@
  *  2. **Resources** — will it take work? One row per `(device, lane,
  *     lane_instance)`, tone from coord's `headroom` verdict.
  *  3. **CI occupancy** — is it taking work right now?
+ *  4. **CI capacity** — how much is it ALLOWED to take? Phase 2 mounts the
+ *     shared `CiNodeConfigPanel` as a per-row disclosure on the machine list,
+ *     collapsed, rather than as a fourth section: the knob and the telemetry
+ *     that says what to set it to belong in one viewport.
  *
  * ## What this page does NOT do
  *
@@ -28,16 +32,27 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It also opens exactly TWO reads: `/fleet/health` here, and
+ * It opens exactly TWO POLLS: `/fleet/health` here, and
  * `/fleet/resource-samples` inside `FleetResourcesSection`, which passes the
  * same rows to both the strip and the CI panel. Two polls of one route would
  * be two chances to disagree about what the fleet looks like right now.
+ *
+ * The third read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
+ * not polled: it carries the CI-capacity JOIN, and the roster it indexes
+ * changes on an operator's enrolment, not on a telemetry cadence. It carries
+ * no CI-node configuration — each disclosure's own `CiNodeConfigPanel` reads
+ * and writes that through `getCiNodeConfig` / `setCiNodeConfig`, the same two
+ * functions `/environments/machines` calls, which is what makes the two mount
+ * points one implementation instead of a fork.
  */
 
 import { useMemo } from "react";
+import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 
@@ -47,6 +62,10 @@ const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
 export default function CoordDevOpsPage() {
   const fleet = useFleetHealth();
+  // The CI-capacity join (Phase 2). One read, owned here, passed down —
+  // never a fetch per machine row. It carries no CI-node configuration of its
+  // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
+  const ciMachines = useDevenvMachines();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
 
   // R1: derived from data already on the page, never a second fetch. The
@@ -118,24 +137,43 @@ export default function CoordDevOpsPage() {
         ]}
       />
 
+      {/* The join this page is keyed on, stated once, before the list it
+          shapes. Rows here come from coord's device registry, and the bridge
+          to a machine record is `Machine.coord_device_id` — a soft, nullable
+          pointer. So a machine with no such link is not on this page at all,
+          and saying so is the difference between a reader knowing where it is
+          and a reader concluding it does not exist. */}
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="coord-devops-join-note"
+      >
+        Every row below is a machine coord has a device record for. A machine
+        enrolled under Environments that carries no coord device link does not
+        appear here at all — it is reachable, and its CI configurable, only
+        under{" "}
+        <Link
+          href="/environments/machines"
+          className="inline-flex items-center gap-0.5 font-medium text-foreground underline underline-offset-2 hover:no-underline"
+          data-testid="coord-devops-machines-link"
+        >
+          Environments → Machines
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+        . This list is not a count of your machines.
+      </p>
+
       {/* 1. Machines — coord's device liveness merged INTO the machine list,
           not beside it. `health` is what makes this the one list on the page:
           a coord device with no runner inventory gets a row whose runner-side
-          facts read `unknown`, rather than vanishing or rendering as zero. */}
-      <FleetOverview health={fleet} />
+          facts read `unknown`, rather than vanishing or rendering as zero.
+          4. CI capacity rides on each row as a collapsed disclosure, resolved
+          from `ciMachines` — one read, no per-row fetch. */}
+      <FleetOverview health={fleet} ciMachines={ciMachines} />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
-
-      {/* 4. CI capacity — Phase 2 of
-          `2026-08-25-coord-console-intent-and-devops-sections` mounts
-          `CiNodeConfigPanel` here, as a per-row disclosure on the machine
-          list above rather than a fourth section: the knob and the telemetry
-          that says what to set it to belong in one viewport. Nothing is
-          stubbed for it — this seam is a comment, and the control stays
-          reachable under Environments -> Machines until that phase lands. */}
     </div>
   );
 }

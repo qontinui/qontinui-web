@@ -14,6 +14,15 @@
  *     client-side threshold constant.
  *  4. **The page-locals really were extracted**, not copied: the pipeline
  *     page no longer declares them.
+ *
+ * Phase 2 adds the CI-capacity join (verification items 4 and 5). Its rules
+ * are asserted at the bottom of this file: a linked device gets the collapsed
+ * disclosure, an unlinked one gets an explanation and a way out — never a
+ * disabled toggle — and a machine with no coord device link does not appear
+ * here at all, which the page states in prose rather than leaving to be
+ * noticed. The disclosure's own behaviour (one shared panel, one shared pair
+ * of API calls, consent UX unchanged) is asserted in
+ * `components/operations/CiCapacityDisclosure.test.tsx`.
  */
 
 import { readFileSync } from "node:fs";
@@ -78,6 +87,24 @@ function runner(hostname: string) {
   };
 }
 
+/** A devenv machine row as `GET /devenv/machines` serves it. */
+function devenvMachine(id: string, name: string, coordDeviceId: string | null) {
+  return {
+    id,
+    name,
+    hostname: name,
+    description: null,
+    key_prefix: "mk_abc",
+    enrolled: true,
+    last_seen_at: null,
+    revoked: false,
+    environment_id: null,
+    coord_device_id: coordDeviceId,
+    created_at: "2026-08-01T10:00:00Z",
+    updated_at: "2026-08-01T10:00:00Z",
+  };
+}
+
 function hostSample(
   deviceId: string,
   headroom: "ok" | "warn" | "breach" | "unknown"
@@ -121,6 +148,8 @@ interface Fixture {
   devices: ReturnType<typeof coordDevice>[];
   runners: ReturnType<typeof runner>[];
   samples: unknown[];
+  /** The devenv machine roster backing the Phase 2 CI-capacity join. */
+  machines?: ReturnType<typeof devenvMachine>[];
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -136,20 +165,22 @@ function mockRoutes(fixture: Fixture) {
   });
   httpFetch.mockImplementation((url: unknown) => {
     const u = String(url);
-    const json = u.includes("/fleet/tasks")
-      ? { task_runs: [], total: 0 }
-      : u.includes("/fleet/volumes")
-        ? { devices: [] }
-        : u.endsWith("/fleet")
-          ? {
-              runners: fixture.runners,
-              claude_sessions: {},
-              total_runners: fixture.runners.length,
-              total_healthy: fixture.runners.length,
-              total_running_tasks: 0,
-              total_claude_sessions: 0,
-            }
-          : {};
+    const json = u.includes("/devenv/machines")
+      ? (fixture.machines ?? [])
+      : u.includes("/fleet/tasks")
+        ? { task_runs: [], total: 0 }
+        : u.includes("/fleet/volumes")
+          ? { devices: [] }
+          : u.endsWith("/fleet")
+            ? {
+                runners: fixture.runners,
+                claude_sessions: {},
+                total_runners: fixture.runners.length,
+                total_healthy: fixture.runners.length,
+                total_running_tasks: 0,
+                total_claude_sessions: 0,
+              }
+            : {};
     return Promise.resolve({
       ok: true,
       status: 200,
@@ -423,5 +454,190 @@ describe("the fleet page's page-locals were extracted, not copied", () => {
     // It imports them instead.
     expect(pipelinePage).toContain("FleetHealthSummary");
     expect(pipelinePage).toContain("useFleetHealth");
+  });
+});
+
+/**
+ * Phase 2 — CI capacity, and the soft-pointer join it rides on.
+ *
+ * Verification items 4 and 5. The join is `Machine.coord_device_id`: nullable,
+ * optional, and set by two different writers. Every way it can miss is a
+ * different fact, and the page's job is to say which one — never to render an
+ * absent control, and never a disabled toggle that reads as "CI is off".
+ */
+describe("/admin/coord/devops — CI capacity", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    window.localStorage.clear();
+  });
+
+  it("gives a linked device the disclosure, collapsed", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      machines: [devenvMachine("m-1", "msi", "d-1")],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-hostname="msi"]')).not.toBeNull()
+    );
+    const card = document.querySelector('[data-hostname="msi"]') as HTMLElement;
+    await waitFor(() =>
+      expect(card.querySelector('[data-ci-capacity="linked"]')).not.toBeNull()
+    );
+    expect(card.querySelector('[data-machine-id="m-1"]')).not.toBeNull();
+    // Collapsed: the panel is not mounted, so the row costs no
+    // `GET /machines/{id}/ci-node` until an operator opens it.
+    expect(within(card).queryByTestId("ci-node-panel")).toBeNull();
+    expect(
+      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/ci-node"))
+    ).toHaveLength(0);
+  });
+
+  it("explains a coord device with no machine record, and links to Environments", async () => {
+    // `ghost` is a coord device the tenant has no machine record for. The row
+    // must say so and point at the place to fix it.
+    mockRoutes({
+      devices: [
+        coordDevice("d-1", "msi", "healthy"),
+        coordDevice("d-2", "ghost", "healthy"),
+      ],
+      runners: [runner("msi")],
+      samples: [],
+      machines: [devenvMachine("m-1", "msi", "d-1")],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-hostname="ghost"]')).not.toBeNull()
+    );
+    const ghost = document.querySelector(
+      '[data-hostname="ghost"]'
+    ) as HTMLElement;
+    await waitFor(() =>
+      expect(
+        ghost.querySelector('[data-ci-capacity="no_machine"]')
+      ).not.toBeNull()
+    );
+    const notice = ghost.querySelector(
+      '[data-ci-capacity="no_machine"]'
+    ) as HTMLElement;
+    expect(notice.textContent).toMatch(/no machine record/i);
+    expect(within(notice).getByRole("link")).toHaveAttribute(
+      "href",
+      "/environments/machines"
+    );
+    // NOT a disabled toggle: that reads as "CI is off on this machine", which
+    // is a claim about the machine where the truth is a gap in the join.
+    expect(within(ghost).queryByRole("switch")).toBeNull();
+    expect(ghost.querySelector("[disabled]")).toBeNull();
+    // ...and the linked machine on the same page is unaffected.
+    expect(
+      document
+        .querySelector('[data-hostname="msi"]')
+        ?.querySelector('[data-ci-capacity="linked"]')
+    ).not.toBeNull();
+  });
+
+  it("does not show a machine that carries no coord device link, and says the list can be short", async () => {
+    // The other direction, and the honest consequence of keying rows on coord
+    // devices: `laptop` is enrolled under Environments with no
+    // `coord_device_id`, so it is in neither read that builds this page.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      machines: [
+        devenvMachine("m-1", "msi", "d-1"),
+        devenvMachine("m-2", "laptop", null),
+      ],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(document.querySelector('[data-hostname="msi"]')).not.toBeNull()
+    );
+    expect(document.querySelector('[data-hostname="laptop"]')).toBeNull();
+    expect(screen.queryByText("laptop")).toBeNull();
+    expect(
+      document.querySelectorAll("[data-operations-machine-card]")
+    ).toHaveLength(1);
+
+    // Stated once on the page, so a missing machine reads as "it is over
+    // there" rather than "it does not exist".
+    const note = screen.getByTestId("coord-devops-join-note");
+    expect(note.textContent).toMatch(/does not appear here at all/i);
+    expect(note.textContent).toMatch(/not a count of your machines/i);
+    expect(screen.getByTestId("coord-devops-machines-link")).toHaveAttribute(
+      "href",
+      "/environments/machines"
+    );
+  });
+
+  it("reports a failed machine read as unknown, not as 'no machine linked'", async () => {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+    });
+    const routed = httpFetch.getMockImplementation()!;
+    httpFetch.mockImplementation((url: unknown, init?: unknown) =>
+      String(url).includes("/devenv/machines")
+        ? Promise.resolve({
+            ok: false,
+            status: 502,
+            json: () =>
+              Promise.resolve({
+                detail: { code: "upstream", message: "coord is not reachable" },
+              }),
+          })
+        : routed(url, init)
+    );
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-ci-capacity="unknown"]')
+      ).not.toBeNull()
+    );
+    const notice = document.querySelector(
+      '[data-ci-capacity="unknown"]'
+    ) as HTMLElement;
+    expect(notice.textContent).toMatch(/not that none is/i);
+    // The read failed; nothing here may state that the tenant has no record.
+    expect(
+      document.querySelector('[data-ci-capacity="no_machine"]')
+    ).toBeNull();
+  });
+
+  it("reads the machine roster once, and reads no CI config from the page", async () => {
+    // The join is a page-level read; the CI config belongs to the panel inside
+    // each disclosure and is not fetched until one is opened.
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [],
+      machines: [devenvMachine("m-1", "msi", "d-1")],
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await waitFor(() =>
+      expect(
+        httpFetch.mock.calls.filter((c) =>
+          String(c[0]).includes("/devenv/machines")
+        )
+      ).toHaveLength(1)
+    );
+    expect(
+      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/ci-node"))
+    ).toHaveLength(0);
   });
 });
