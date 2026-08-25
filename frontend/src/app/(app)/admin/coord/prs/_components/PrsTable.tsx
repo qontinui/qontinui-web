@@ -110,6 +110,11 @@ const MERGE_STATUS_TONE: Record<PrMergeStatus, BadgeTone> = {
   conflicts: "warning",
   "behind-base": "warning",
   "review-required": "warning",
+  // Same tone as `review-required`, which it was split out of — the badge's
+  // job here is "a concrete blocker someone can act on", and that has not
+  // changed; only WHO acts has. The badge text comes from `mergeStatusLabel`,
+  // so no label entry is needed.
+  "required-checks-missing": "warning",
   "blast-radius-block": "warning",
   // In-progress / calm.
   "ci-pending": "info",

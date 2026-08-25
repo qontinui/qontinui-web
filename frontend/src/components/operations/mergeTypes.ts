@@ -216,9 +216,20 @@ export type MergeStatusToken =
   | "conflicts"
   | "behind-base"
   | "review-required"
+  /** A REQUIRED status context is unsatisfied on this head — a CI-dimension
+   *  block with no reviewer in it. Split out of `review-required`, which used
+   *  to cover both causes and so named a human that was never coming. The
+   *  string is coord's own `BlockReason::RequiredChecksMissing` wire code, so
+   *  the verdict surface and this one tell ONE story about a PR. */
+  | "required-checks-missing"
   | "blast-radius-block"
   | "ready"
   | "queued"
+  /** coord cannot clone the repo (deleted/renamed, or the GitHub App's access
+   *  was revoked). Emitted since the 2026-07-16 unclonable-proposal work; this
+   *  union silently lacked it for over a month and no build ever broke, which
+   *  is why consumers carry a runtime fallback and not just this type. */
+  | "repo-unreachable"
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
