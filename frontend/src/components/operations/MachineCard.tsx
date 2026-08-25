@@ -36,6 +36,8 @@ import {
   DeviceCrossLinks,
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
+import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+import type { CiCapacityJoin } from "./ciCapacity";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 interface MachineCardProps {
@@ -46,6 +48,18 @@ interface MachineCardProps {
    * when absent, the optimistic local name + the 10s poll keep the card honest.
    */
   onRenamed?: () => void;
+  /**
+   * This row's CI-capacity join (plan
+   * `2026-08-25-coord-console-intent-and-devops-sections` Phase 2), resolved by
+   * `resolveCiCapacity` from the page's one read of the devenv machine roster.
+   *
+   * Present ONLY on a list built with that read — the Dev Ops Overview mount.
+   * `undefined` means this list was built WITHOUT it (the pipeline page), so
+   * the card renders no CI-capacity block at all: an absence of the READ is not
+   * a fact about the machine, and a "no machine record linked" notice on a page
+   * that never looked would be one.
+   */
+  ciCapacity?: CiCapacityJoin;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -318,7 +332,11 @@ function DiskSection({ volumes }: { volumes: MachineVolumes }) {
  * this component just no longer renders them. Phase 9 cleanup deletes
  * those fields entirely.
  */
-export function MachineCard({ machine, onRenamed }: MachineCardProps) {
+export function MachineCard({
+  machine,
+  onRenamed,
+  ciCapacity,
+}: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
   // The shown title: an operator alias when set, otherwise the raw hostname.
@@ -716,6 +734,13 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
             <CiRunnerBadge ciRunner={machine.ciRunner} />
           </div>
         )}
+
+        {/* CI capacity — how much CI this machine is ALLOWED to take, next to
+            the telemetry that says what to set it to. Deliberately adjacent to
+            the CI-runner badge above, which says what it is taking right now:
+            the knob and its evidence in one viewport is the whole reason this
+            page exists. Collapsed, so opening it is a deliberate act. */}
+        {ciCapacity && <CiCapacityDisclosure join={ciCapacity} />}
 
         {/* Summary footer */}
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">

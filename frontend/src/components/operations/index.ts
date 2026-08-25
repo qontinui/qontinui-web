@@ -24,6 +24,11 @@ export type {
   StatusPalette,
 } from "@/components/console/statusRow";
 
+export { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+export type { CiCapacityDisclosureProps } from "./CiCapacityDisclosure";
+export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
+export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
+export { useDevenvMachines } from "./useDevenvMachines";
 export { CiStatusPanel } from "./CiStatusPanel";
 export { GatesPanel } from "./GatesPanel";
 export { FleetOverview } from "./FleetOverview";
