@@ -6989,14 +6989,21 @@ async def restore_coord_policy_default(
 # former ``coord.policy_documents`` (this proxy set replaces the
 # ``/coord/policy-documents`` surface it superseded; those rows migrated in as
 # ``kind='policy'``). ONE versioned store for every prompt-shaped document coord
-# serves, addressed by ``(kind, name)`` over seven kinds: ``policy`` (the
-# meta-answer's ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A
-# meta-answer template), ``continuation_rules`` (the Stop-hook continuation
-# umbrella prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
+# serves, addressed by ``(kind, name)`` over thirteen kinds in two families.
+#
+# BEHAVIOR — how a session must act: ``policy`` (the meta-answer's
+# ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A meta-answer
+# template), ``continuation_rules`` (the Stop-hook continuation umbrella
+# prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
 # ``prompt_template`` (the runner terminal ``/prompt`` library),
 # ``session_briefing`` (the briefing the runner appends to the system prompt of
 # every session it hosts), and ``claude_settings`` (the fleet's Claude Code
 # settings baseline a machine renders into its own ``.claude/settings.json``).
+#
+# INTENT — what the TENANT'S OWN product is for, added by plan
+# ``2026-08-21-project-intent-documents-and-the-selection-loop``:
+# ``product_intent``, ``initiative``, ``success_metric``, ``domain_spec``,
+# ``audience_profile`` and ``decision_record``.
 #
 # The forwarders below are deliberately kind-GENERIC — every one takes
 # ``kind: str`` with no enum or allowlist, so coord's own ``unknown kind`` 400 is

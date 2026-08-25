@@ -14,10 +14,28 @@
  *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
  *                                                   ← direct, daily
  *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
- *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
+ *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
+ *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
+ *             Merge Settings°
  *   Infra ▾°  Trees / Spawn / Deploys / Git Ops / Federation / Memory /
  *             Onboarding / Onboarding Status
  *   Access ▾  Members / Claims↗ / Sessions↗          (° = operator-only)
+ *
+ * `Intent ▾` exists because the three documents surfaces it holds were filed
+ * under `Merge ▾` — a group named for the merge chain — while what they
+ * actually carry is what the fleet is FOR: the prompt-document store now
+ * serves six intent kinds (product intent, initiatives, success metrics,
+ * domain specs, audience profiles, decision records) alongside the
+ * behavioral ones (plan
+ * `2026-08-21-project-intent-documents-and-the-selection-loop`). Filing
+ * intent under the merge chain re-conflates exactly what that plan's
+ * § "Naming constraint" separates — *policy = how to act, intent = what to
+ * build* — at the one altitude every reader passes through.
+ *
+ * The label is deliberately NOT `Digital Twin` (the app sidebar already means
+ * the observed-system twin by that name), and deliberately not a
+ * behavior-flavoured word (`Policy`, `Rules`, `Guidance`), which would re-file
+ * the intent kinds under conduct — the same constraint, one altitude up.
  *
  * Wayfinding contract: when the current page lives inside a group, the
  * group trigger highlights and appends the page name ("Work · Lands"). The
@@ -61,6 +79,7 @@ import {
   Bot,
   Boxes,
   ChevronDown,
+  Compass,
   ExternalLink,
   FileText,
   Gauge,
@@ -235,6 +254,42 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    // What the fleet is FOR, and the rules it acts under — not how a PR lands.
+    // See the header note for why these three left `Merge ▾` and why the group
+    // is named `Intent` rather than `Digital Twin` or anything behaviour-shaped.
+    id: "intent",
+    label: "Intent",
+    icon: Compass,
+    items: [
+      {
+        // The whole prompt-document store, both bands: the six INTENT kinds
+        // (what we are building, for whom, what "better" means) and the
+        // behavioural ones (how a session must act while building it).
+        href: "/admin/coord/prompt-documents",
+        label: "Prompt Documents",
+        icon: NotebookText,
+        testId: "coord-nav-prompt-documents",
+      },
+      {
+        href: "/admin/coord/policies",
+        label: "Policies",
+        icon: Scale,
+        testId: "coord-nav-policies",
+      },
+      {
+        // In this group with Prompt Documents deliberately: it reviews edits TO
+        // those documents. Distinct path (not /prompt-documents/proposals) so
+        // the Prompt Documents item's startsWith active-match doesn't
+        // double-highlight, matching the Onboarding / Onboarding Status pair —
+        // that property is a fact about the HREFS and survives the move.
+        href: "/admin/coord/prompt-document-proposals",
+        label: "Policy Edit Review",
+        icon: Gavel,
+        testId: "coord-nav-prompt-document-proposals",
+      },
+    ],
+  },
+  {
     id: "merge",
     label: "Merge",
     icon: GitMerge,
@@ -246,42 +301,21 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-pull-decisions",
       },
       {
-        href: "/admin/coord/policies",
-        label: "Policies",
-        icon: Scale,
-        testId: "coord-nav-policies",
-      },
-      {
         href: "/admin/coord/automation-rules",
         label: "Automation Rules",
         icon: Workflow,
         testId: "coord-nav-automation-rules",
       },
       {
-        // Sits with the other coord policy-authoring surfaces (it authors
-        // `coord.policy_rules` rows like Policies and Automation Rules do),
-        // and the Gates page links across to it from the gate context — the
-        // direct row is already at its five-tab cap, see the header note.
+        // Sits with Automation Rules: both author `coord.policy_rules` rows,
+        // and both decide how a PR moves through the chain — which is what
+        // keeps them here now that Policies has moved to `Intent ▾`. The Gates
+        // page links across to this from the gate context; the direct row is
+        // already at its five-tab cap, see the header note.
         href: "/admin/coord/gate-clearance",
         label: "Gate Clearance",
         icon: ShieldCheck,
         testId: "coord-nav-gate-clearance",
-      },
-      {
-        href: "/admin/coord/prompt-documents",
-        label: "Prompt Documents",
-        icon: NotebookText,
-        testId: "coord-nav-prompt-documents",
-      },
-      {
-        // Sits beside Prompt Documents deliberately: it reviews edits TO those
-        // documents. Distinct path (not /prompt-documents/proposals) so the
-        // Prompt Documents item's startsWith active-match doesn't
-        // double-highlight, matching the Onboarding / Onboarding Status pair.
-        href: "/admin/coord/prompt-document-proposals",
-        label: "Policy Edit Review",
-        icon: Gavel,
-        testId: "coord-nav-prompt-document-proposals",
       },
       {
         href: "/admin/coord/merge-settings",

@@ -5,17 +5,25 @@
  * document coord serves the fleet (plan
  * `2026-07-17-session-autonomy-fabric.md`, Phase 9).
  *
- * One editor over all seven kinds — `session_briefing` (the text appended to the
- * system prompt of every session the runner hosts), `claude_settings` (the
- * fleet's Claude Code settings baseline a machine renders into its own
- * `.claude/settings.json`), `policy` (the canonical
- * prose the agent Q&A meta-answer composes in via `{{policy:<name>}}`),
- * `response_prompt` (the meta-answer template itself), `continuation_rules` (the
- * Stop-hook umbrella prompt), `agent_playbook` (e.g. the merge-shepherd
- * playbook), and `prompt_template` (the runner terminal `/prompt` library) —
- * replacing the kind-specific `/admin/coord/policy-documents` page it
- * supersedes. Coord seeds each document, versions every edit, and serves it per
- * tenant.
+ * One editor over all thirteen kinds, grouped into two bands (see
+ * `PromptDocumentList`), replacing the kind-specific
+ * `/admin/coord/policy-documents` page it supersedes. Coord seeds each
+ * document, versions every edit, and serves it per tenant.
+ *
+ * **Behavior** — how a session must act: `session_briefing` (the text appended
+ * to the system prompt of every session the runner hosts), `claude_settings`
+ * (the fleet's Claude Code settings baseline a machine renders into its own
+ * `.claude/settings.json`), `policy` (the canonical prose the agent Q&A
+ * meta-answer composes in via `{{policy:<name>}}`), `response_prompt` (the
+ * meta-answer template itself), `continuation_rules` (the Stop-hook umbrella
+ * prompt), `agent_playbook` (e.g. the merge-shepherd playbook), and
+ * `prompt_template` (the runner terminal `/prompt` library).
+ *
+ * **Intent** — what the tenant is building, for whom, and what "better" means
+ * (plan `2026-08-21-project-intent-documents-and-the-selection-loop`):
+ * `product_intent`, `initiative`, `success_metric`, `domain_spec`,
+ * `audience_profile` and `decision_record`. The subject of these six is the
+ * tenant's OWN product, not this platform.
  *
  * Reads are visible to any tenant member; edits + restore are re-checked as
  * tenant-admin by coord.
@@ -47,9 +55,12 @@ export default function PromptDocumentsPage() {
         <div>
           <h1 className="text-lg font-semibold">Prompt Documents</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            The prompt-shaped content coord serves your fleet: session
-            briefings, policy prose, response templates, continuation rules,
-            agent playbooks, and prompt templates. Every edit is saved as a new
+            The prompt-shaped content coord serves your fleet, in two halves:
+            how a session must act (session briefings, policy prose, response
+            templates, continuation rules, agent playbooks, prompt templates,
+            the Claude Code settings baseline) and what you are building
+            (product intent, initiatives, success metrics, domain specs,
+            audience profiles, decision records). Every edit is saved as a new
             version — prior wordings stay readable and restorable, and seeded
             documents can be reset to their shipped default.
           </p>
