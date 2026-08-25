@@ -14,14 +14,18 @@ import { httpClient } from "@/services/service-factory";
 // ----------------------------------------------------------------------------
 // Demo intent catalog — the 3 deterministic features per
 // `plans/2026-05-18-coordination-layer-demos-feature-{1,2,3}-*.md`.
-// Mirrors the catalog in `operations/mergeTypes.ts:DEMO_FEATURES` so
-// the LandedFeaturesPanel can match `events.merge.landed.*` events to
-// the right card. Kept inline here to avoid a cross-PR dependency
-// during the initial substrate land.
+//
+// This used to be described as mirroring `operations/mergeTypes.ts:DEMO_FEATURES`
+// so `LandedFeaturesPanel` could match `events.merge.landed.*` events to the
+// right card. Both are DELETED — Phase 4 of
+// `2026-08-25-coord-console-intent-and-devops-sections` removed the panel (three
+// hardcoded `qontinui.io/demo/*` iframes on a 2.5 s poll, inside a production
+// operator console) and the catalog with it. This copy was always private to
+// this route and imported nothing, so it is now the only catalog there is.
 // ----------------------------------------------------------------------------
 
 interface DemoIntent {
-  /** Feature slug; matches `DEMO_FEATURES[].slug` in mergeTypes. */
+  /** Feature slug; the branch below is what coord's merge events carry. */
   slug: string;
   title: string;
   /** Branch name the agent ships its work on. */

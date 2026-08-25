@@ -204,10 +204,15 @@ export function TreeRow({
                 <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </Link>
+            {/* The machine this tree is on. Retargeted from the old
+                `/admin/coord/fleet` by Phase 4 of
+                `2026-08-25-coord-console-intent-and-devops-sections`: that
+                route is the merge PIPELINE now and carries no machine facts at
+                all, while the Dev Ops Overview is the one machine list. */}
             {tree.device_id && (
-              <Link href="/admin/coord/fleet">
+              <Link href="/admin/coord/devops">
                 <Button variant="ghost" size="sm">
-                  Fleet
+                  Dev Ops
                   <ExternalLink className="h-3 w-3 ml-1" />
                 </Button>
               </Link>

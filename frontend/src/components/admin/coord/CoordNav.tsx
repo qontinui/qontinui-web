@@ -17,8 +17,9 @@
  *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
- *   Dev Ops ▾ Overview / Trees° / Spawn° / Deploys° / Releases° / Git Ops° /
- *             Federation° / Memory° / Onboarding° / Onboarding Status°
+ *   Dev Ops ▾ Overview / Trees° / Spawn° / Test Targets° / Migrations° /
+ *             Deploys° / Releases° / Git Ops° / Federation° / Memory° /
+ *             Onboarding° / Onboarding Status°
  *   Access ▾  Members / Claims↗ / Sessions↗          (° = operator-only)
  *
  * `Dev Ops ▾` is the one group whose TRIGGER is member-visible while almost
@@ -84,6 +85,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  Layers,
   Library,
   MessageSquare,
   NotebookText,
@@ -110,6 +112,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
+import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
 
@@ -165,15 +169,18 @@ interface NavGroup {
   operatorOnly?: boolean;
 }
 
-// The redesigned /admin/coord/fleet page is the developer's merge-pipeline
-// view (one row per PR), so the tab is member-visible and named for what a
-// developer comes for — the pipeline — rather than the machine fleet.
+// The redesigned merge-pipeline view (one row per PR) is member-visible and
+// named for what a developer comes for. The ROUTE now says so too:
+// `/admin/coord/fleet` became `/admin/coord/pipeline` in Phase 4 of
+// `2026-08-25-coord-console-intent-and-devops-sections`, because after that
+// phase "fleet" means Dev Ops and one word cannot mean two things in one
+// console. `next.config.mjs` 308s the old path.
 const DIRECT_TABS: NavLeaf[] = [
   {
-    href: "/admin/coord/fleet",
+    href: "/admin/coord/pipeline",
     label: "Pipeline",
     icon: Activity,
-    testId: "coord-nav-fleet",
+    testId: "coord-nav-pipeline",
   },
   {
     href: "/admin/coord/prs",
@@ -392,6 +399,29 @@ const GROUPS: NavGroup[] = [
         operatorOnly: true,
       },
       {
+        // Its own route since Phase 4, not a disclosure two levels deep inside
+        // the pipeline page: it is a config editor with four write paths
+        // (`PATCH /fleet/apps/{id}`, `PUT`/`DELETE
+        // /fleet/test-targets/{device}/{app}`, `POST /dispatch/fresh-host`),
+        // and a config editor buried inside another domain's page is a defect.
+        href: "/admin/coord/test-targets",
+        label: "Test Targets",
+        icon: Rocket,
+        testId: "coord-nav-test-targets",
+        operatorOnly: true,
+      },
+      {
+        // Dev Ops rather than Merge (resolved Q4): the alembic reservation
+        // queue is a shared RESOURCE, and blocking a PR is a consequence of
+        // contention on it, not what it is. The merge-side need is carried by
+        // a cross-link from a waiting `MergePipeline` row.
+        href: "/admin/coord/migrations",
+        label: "Migrations",
+        icon: Layers,
+        testId: "coord-nav-migrations",
+        operatorOnly: true,
+      },
+      {
         href: "/admin/coord/deploys",
         label: "Deploys",
         icon: Rocket,
@@ -536,9 +566,7 @@ function useAlertsBadge(): {
       // severity-filtered total for the red flag. The flag cannot come from
       // the returned rows — that is precisely the truncated-slice bug.
       const [all, criticals] = await Promise.all([
-        httpClient.get<unknown>(
-          `${ALERTS_API}?include_resolved=false&limit=1`
-        ),
+        httpClient.get<unknown>(`${ALERTS_API}?include_resolved=false&limit=1`),
         httpClient.get<unknown>(
           `${ALERTS_API}?include_resolved=false&severity=critical&limit=1`
         ),
@@ -633,6 +661,103 @@ function useNotificationsBadge(): { count: number } {
   return { count };
 }
 
+/**
+ * The fleet alarm, on the `Dev Ops ▾` trigger.
+ *
+ * Moved here from the pipeline page's collapsed `System details` header by
+ * Phase 4 of `2026-08-25-coord-console-intent-and-devops-sections`, along with
+ * the two polls that fed it. A count of zero renders nothing at all — an
+ * all-clear fleet should look like an all-clear, not like a surface reporting
+ * "0".
+ *
+ * ⚠️ **`unknown` is not optional and is not red.** It is rendered even though
+ * nothing is wrong-coloured about it, because a fleet whose telemetry has gone
+ * entirely dark publishes no samples: a trigger that showed only breaches
+ * would render that fleet exactly like a healthy one. That is a false-safe of
+ * the same class as `[policy: silent-empty-is-unknown]`. Do not "tidy" this
+ * badge away as noise; it is the one that says *we do not know*.
+ *
+ * The counts come straight from coord's own admission verdict (`headroom`) via
+ * `summarizeFleetAdmission` — there is no client-side band here that could put
+ * a machine in the red badge while the dispatcher is still happily electing
+ * it.
+ */
+function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
+  const badges: Array<{
+    key: string;
+    testId: string;
+    count: number;
+    label: string;
+    tone: "critical" | "attention" | "muted";
+    title: string;
+  }> = [
+    {
+      key: "unhealthy",
+      testId: "coord-nav-devops-unhealthy-badge",
+      count: counts.unhealthy,
+      label: "unhealthy",
+      tone: "critical",
+      title: "machines coord reports in a state other than healthy",
+    },
+    {
+      key: "breach",
+      testId: "coord-nav-devops-breach-badge",
+      count: counts.breach,
+      label: "refusing work",
+      tone: "critical",
+      title: "lanes below the floor coord's admission actually enforces",
+    },
+    {
+      key: "warn",
+      testId: "coord-nav-devops-warn-badge",
+      count: counts.warn,
+      label: "delaying work",
+      tone: "attention",
+      title: "lanes inside coord's amber band — work is deferred, not rejected",
+    },
+    {
+      key: "stale",
+      testId: "coord-nav-devops-stale-badge",
+      count: counts.stale,
+      label: "stale",
+      tone: "muted",
+      title: "lanes whose last sample is too old to be a claim about now",
+    },
+    {
+      key: "unknown",
+      testId: "coord-nav-devops-unknown-badge",
+      count: counts.unknown,
+      label: "unknown",
+      tone: "muted",
+      title:
+        "lanes coord reports no admission verdict for — not healthy, not red",
+    },
+  ];
+  return (
+    <>
+      {badges
+        .filter((b) => b.count > 0)
+        .map((b) => (
+          <span
+            key={b.key}
+            data-testid={b.testId}
+            title={b.title}
+            className={cn(
+              "rounded-full px-1.5 text-[10px] font-bold leading-4 whitespace-nowrap",
+              b.tone === "critical"
+                ? "bg-red-500/25 text-red-200"
+                : b.tone === "attention"
+                  ? "bg-amber-500/25 text-amber-200"
+                  : "bg-muted text-foreground"
+            )}
+          >
+            {b.count} {b.label}
+          </span>
+        ))}
+    </>
+  );
+}
+
 const TAB_BASE =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors whitespace-nowrap";
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
@@ -643,6 +768,12 @@ export default function CoordNav() {
   const { user } = useAuth();
   const alertsBadge = useAlertsBadge();
   const notificationsBadge = useNotificationsBadge();
+  // The fleet alarm that used to live on the pipeline page's collapsed
+  // `System details` header. It is read here, on the nav, so a red fleet is
+  // visible from every console page instead of from one — and so the pipeline
+  // page can stop polling `/fleet/health` and `/fleet/resource-samples`
+  // altogether.
+  const fleetAlarm = useFleetAlarmBadge();
 
   // Operator-infra entries are cross-tenant/fleet-wide surfaces — gate them on
   // `is_superuser` (the operator axis), matching the other operator-only admin
@@ -731,6 +862,7 @@ export default function CoordNav() {
         >
           <GroupIcon className="h-3.5 w-3.5" />
           {group.label}
+          {group.id === "devops" && <FleetAlarmBadges counts={fleetAlarm} />}
           {activeItem && (
             <>
               <span className="opacity-60">·</span>

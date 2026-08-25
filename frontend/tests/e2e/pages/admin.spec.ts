@@ -287,10 +287,11 @@ test.describe("Admin - Coord operator console", () => {
   test("should render coord nav shell with five primary tabs", async ({
     page,
   }) => {
-    // The landing page redirects to /admin/coord/fleet. After redirect,
-    // both layout + nav render, and the user (if superuser) can see the
-    // 5 primary tabs + cross-links.
-    await page.goto("/admin/coord/fleet");
+    // The landing page redirects to /admin/coord/pipeline (renamed from
+    // /admin/coord/fleet by 2026-08-25-…-devops-sections Phase 4; the old
+    // path 308s here). After redirect, both layout + nav render, and the
+    // user (if superuser) can see the 5 primary tabs + cross-links.
+    await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2500);
 
@@ -308,7 +309,7 @@ test.describe("Admin - Coord operator console", () => {
       await expect(page.getByTestId("coord-nav")).toBeVisible();
       // Nav redesign: four direct tabs + persona dropdown groups. Direct
       // tabs render always; grouped pages surface once their menu opens.
-      await expect(page.getByTestId("coord-nav-fleet")).toBeVisible();
+      await expect(page.getByTestId("coord-nav-pipeline")).toBeVisible();
       await expect(page.getByTestId("coord-nav-prs")).toBeVisible();
       await expect(page.getByTestId("coord-nav-gates")).toBeVisible();
       await expect(page.getByTestId("coord-nav-alerts")).toBeVisible();
@@ -337,7 +338,7 @@ test.describe("Admin - Coord operator console", () => {
   });
 
   for (const { path, testId } of [
-    { path: "/admin/coord/fleet", testId: "coord-fleet-page" },
+    { path: "/admin/coord/pipeline", testId: "coord-pipeline-page" },
     { path: "/admin/coord/trees", testId: "coord-trees-page" },
     { path: "/admin/coord/plans", testId: "coord-plans-page" },
     { path: "/admin/coord/questions", testId: "coord-questions-page" },
@@ -372,7 +373,7 @@ test.describe("Admin - Coord operator console", () => {
   }
 
   test("nav link click navigates between coord pages", async ({ page }) => {
-    await page.goto("/admin/coord/fleet");
+    await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 

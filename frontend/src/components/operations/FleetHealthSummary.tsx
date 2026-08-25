@@ -1,14 +1,21 @@
 "use client";
 
 /**
- * The coord device-liveness card, its state→badge mapping, and the per-device
- * cross-links — lifted verbatim out of `admin/coord/fleet/page.tsx` by plan
- * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1.
+ * The coord `DeviceState` → badge mapping and the per-device cross-links.
  *
- * All three were page-locals, so nothing outside that one page could render a
- * coord `DeviceState`. The Dev Ops Overview needs the state mapping and the
- * cross-links to build ONE merged machine list, so they move here; the card
- * itself stays mounted on the pipeline page until Phase 4 relocates it.
+ * Both were page-locals on `admin/coord/fleet/page.tsx`, so nothing outside
+ * that one page could render a coord `DeviceState`. Plan
+ * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1 lifted them
+ * here, along with the `HealthSummaryCard` that used to render them as a
+ * SECOND machine list beside `FleetOverview`'s.
+ *
+ * **That card is gone.** Phase 1 merged its content into the Dev Ops
+ * Overview's one machine list — coord's `DeviceState` on each `MachineCard`
+ * row, with these cross-links riding along — precisely because two lists with
+ * two notions of "healthy" on one page is a correctness defect. Phase 4 then
+ * deleted its last mount (the pipeline page's `System details` drawer), which
+ * left the component with no caller at all, so it was deleted rather than
+ * parked. What survives here is what the merged list actually renders through.
  *
  * `deviceStateBadgeVariant` renders an unrecognised or MISSING state as
  * `outline` and the label as `unknown`. That is the honesty rule the whole
@@ -17,12 +24,7 @@
  */
 
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
-import { ExternalLink, HeartPulse, RefreshCw } from "lucide-react";
-import { CollapsiblePanel } from "@/components/console";
-import type { FleetHealthPayload } from "./useFleetHealth";
+import { ExternalLink } from "lucide-react";
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
@@ -71,89 +73,5 @@ export function DeviceCrossLinks({ deviceId }: { deviceId: string }) {
         sessions <ExternalLink className="h-3 w-3" />
       </Link>
     </div>
-  );
-}
-
-export interface HealthSummaryCardProps {
-  data: FleetHealthPayload | null;
-  loading: boolean;
-  error: string | null;
-  onRefresh: () => void;
-}
-
-export function HealthSummaryCard({
-  data,
-  loading,
-  error,
-  onRefresh,
-}: HealthSummaryCardProps) {
-  const devices = data?.devices ?? [];
-  const unhealthy = devices.filter(
-    (d) => d.state && d.state !== "healthy"
-  ).length;
-
-  return (
-    <CollapsiblePanel
-      data-testid="coord-fleet-health"
-      storageKey="fleet:health"
-      icon={<HeartPulse className="h-4 w-4" />}
-      title="Fleet health"
-      contentClassName="space-y-2"
-      summary={
-        <>
-          <Badge variant="outline" className="ml-2">
-            {devices.length}
-          </Badge>
-          {unhealthy > 0 && (
-            <Badge variant="destructive" className="ml-1">
-              {unhealthy} unhealthy
-            </Badge>
-          )}
-        </>
-      }
-      headerActions={
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRefresh}
-          data-testid="coord-fleet-health-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
-      }
-    >
-      {error && (
-        <p className="text-sm text-destructive">
-          Failed to load fleet/health: {error}
-        </p>
-      )}
-      {loading && !data ? (
-        <Skeleton className="h-20 w-full" />
-      ) : devices.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">
-          No devices reporting health.
-        </p>
-      ) : (
-        <ul className="space-y-1">
-          {devices.map((d) => (
-            <li
-              key={d.device_id}
-              data-testid="coord-fleet-health-row"
-              className="flex items-center justify-between gap-2 text-sm"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="font-mono text-xs truncate">
-                  {d.hostname || d.device_id}
-                </span>
-                <Badge variant={deviceStateBadgeVariant(d.state)}>
-                  {d.state ?? "unknown"}
-                </Badge>
-              </div>
-              <DeviceCrossLinks deviceId={d.device_id} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </CollapsiblePanel>
   );
 }

@@ -64,8 +64,8 @@ vi.mock("@/components/operations/useSymbolClaimsStream", () => ({
 import CoordDevOpsPage from "./page";
 import * as fleetResources from "@/components/operations/fleetResources";
 import {
+  DeviceCrossLinks,
   deviceStateBadgeVariant,
-  HealthSummaryCard,
 } from "@/components/operations/FleetHealthSummary";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 
@@ -214,6 +214,9 @@ describe("/admin/coord/devops", () => {
       document.querySelectorAll("[data-operations-machine-card]")
     ).toHaveLength(1);
     // And the second list this page's merge replaced is NOT mounted here.
+    // `HealthSummaryCard` rendered it; Phase 4 deleted the component outright
+    // once its last mount (the pipeline page's drawer) went, so these ids
+    // cannot appear anywhere in the app any more.
     expect(screen.queryByTestId("coord-fleet-health")).not.toBeInTheDocument();
     expect(screen.queryAllByTestId("coord-fleet-health-row")).toHaveLength(0);
   });
@@ -235,7 +238,8 @@ describe("/admin/coord/devops", () => {
     // them, and not a second list.
     expect(card.querySelector('[data-coord-state="degraded"]')).not.toBeNull();
     expect(card).toHaveAttribute("data-runner-inventory", "present");
-    // The cross-links HealthSummaryCard carried per device came with it.
+    // The cross-links the deleted `HealthSummaryCard` carried per device came
+    // across with the merge.
     expect(within(card).getByText("trees")).toBeInTheDocument();
     expect(within(card).getByText("claims")).toBeInTheDocument();
     expect(within(card).getByText("sessions")).toBeInTheDocument();
@@ -427,33 +431,40 @@ describe("/admin/coord/devops", () => {
 
 /**
  * Phase 1 §0 — the page-locals had to be lifted before anything else could be
- * written. Assert both halves: they are importable from a shared module, and
- * the pipeline page no longer DECLARES them (a copy would satisfy the first
- * half alone, and then drift).
+ * written, and Phase 4 then took the last consumer off the pipeline page
+ * entirely. Both halves still hold, in their Phase 4 form: the survivors are
+ * importable from a shared module, and the pipeline page neither declares NOR
+ * imports any of them (a copy would satisfy the first half alone, and drift).
+ *
+ * `HealthSummaryCard` is deliberately absent from this list. Phase 1 merged its
+ * content into the ONE machine list asserted above rather than mounting it
+ * here, so when Phase 4 deleted the pipeline drawer the component had no caller
+ * left and was deleted rather than parked as an unmounted export.
  */
-describe("the fleet page's page-locals were extracted, not copied", () => {
+describe("the fleet page's page-locals were extracted, then outgrown", () => {
   const pipelinePage = readFileSync(
-    join(__dirname, "..", "fleet", "page.tsx"),
+    join(__dirname, "..", "pipeline", "page.tsx"),
     "utf8"
   );
 
-  it("exports them from shared modules", () => {
+  it("exports the survivors from shared modules", () => {
     expect(typeof useFleetHealth).toBe("function");
-    expect(typeof HealthSummaryCard).toBe("function");
+    expect(typeof DeviceCrossLinks).toBe("function");
     expect(deviceStateBadgeVariant("healthy")).toBe("default");
     // The honesty rule the mapping carries: an absent state is not healthy.
     expect(deviceStateBadgeVariant(undefined)).toBe("outline");
     expect(deviceStateBadgeVariant("something-new")).toBe("outline");
   });
 
-  it("leaves no declaration behind on the pipeline page", () => {
+  it("leaves neither a declaration nor a mount behind on the pipeline page", () => {
     expect(pipelinePage).not.toMatch(/function\s+HealthSummaryCard/);
     expect(pipelinePage).not.toMatch(/function\s+useFleetHealth/);
     expect(pipelinePage).not.toMatch(/function\s+deviceStateBadgeVariant/);
     expect(pipelinePage).not.toMatch(/interface\s+HealthSummaryCardProps/);
-    // It imports them instead.
-    expect(pipelinePage).toContain("FleetHealthSummary");
-    expect(pipelinePage).toContain("useFleetHealth");
+    // Phase 4 goes further than Phase 1 did: the page does not import them
+    // either. Machine liveness is not that page's subject any more.
+    expect(pipelinePage).not.toMatch(/^import .*FleetHealthSummary/m);
+    expect(pipelinePage).not.toMatch(/^import .*useFleetHealth/m);
   });
 });
 

@@ -19,6 +19,38 @@
  * in-flight ref gates re-entry). Auto-poll reads through the backend's ~30s
  * cache; manual Refresh passes `refresh:true` (`?refresh=1`) to bypass it.
  *
+ * ## The one gates surface (Phase 4, 2026-08-25)
+ *
+ * `components/operations/GatesPanel` — the second gate UI, mounted in the
+ * pipeline page's `System details` drawer — is DELETED, and this page did not
+ * have to grow anything to absorb it. The two never had different action sets:
+ * both already mutated through the same helpers in
+ * `components/operations/utils.ts` onto the same
+ * `/api/v1/operations/gates/{id}/*` routes, and this page held a strict
+ * SUPERSET — it alone has reject, force-clear, continuation-cancel and
+ * change-clearance-audience (`git grep -c force GatesPanel.tsx` was 0). What
+ * genuinely diverged was the LIST read, and the surviving one is this page's.
+ *
+ * ## What WAS lost, said out loud: the `exclude_orphans` filter
+ *
+ * `GatesPanel` had one control this page does not: a "Show orphaned gates"
+ * toggle that flipped `?exclude_orphans=1` on `GET /operations/gates/list`.
+ * It is **unportable**, not merely unported. Verified against `qontinui-coord`
+ * `origin/main` @ `e40b28a7`: `DevOverviewQuery`
+ * (`crates/coord/src/api/dev_overview.rs:316-333`) accepts exactly `limit`,
+ * `verdict`, `include_archived` and `would_reap`; `exclude_orphans` exists only
+ * on `ListGatesQuery` (`gate_routes.rs:338`), which backs the retired read.
+ * Nor can it be reconstructed client-side: the filter hides a `pr_merged` gate
+ * on a known-closed PR and a `commit_live` gate on a dead SHA, and
+ * `GateOverviewRow` carries neither piece of repo state.
+ *
+ * So orphaned gate residue is now VISIBLE here, and the page says so where the
+ * toggle used to be (`gates-orphans-note`). Keeping a whole duplicate panel
+ * alive to preserve one filter was the alternative, and dropping the filter
+ * silently was the other; both are worse than a sentence. Adding the param to
+ * `/coord/dev-overview` is a coord change, out of scope for a frontend-only
+ * plan, and is recorded as that plan's follow-up.
+ *
  * Deploy resilience (stale-while-revalidate): a coord rolling deploy causes a
  * seconds-long leader failover during which a coord read can time out. The
  * backend then serves the last-known-good envelope flagged `coord_reconnecting`
@@ -124,27 +156,30 @@ export default function CoordGatesPage() {
   // Guards against overlapping fetches (a slow request + a fired interval).
   const inFlight = useRef(false);
 
-  const load = useCallback(async (isRefresh: boolean) => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    if (isRefresh) setRefreshing(true);
-    try {
-      const data = await adminDevService.getOverview({
-        refresh: isRefresh,
-        includeArchived,
-        wouldReap,
-      });
-      setOverview(data);
-      setError(null);
-      setUpdatedAt(Date.now());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      inFlight.current = false;
-    }
-  }, [includeArchived, wouldReap]);
+  const load = useCallback(
+    async (isRefresh: boolean) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      if (isRefresh) setRefreshing(true);
+      try {
+        const data = await adminDevService.getOverview({
+          refresh: isRefresh,
+          includeArchived,
+          wouldReap,
+        });
+        setOverview(data);
+        setError(null);
+        setUpdatedAt(Date.now());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        inFlight.current = false;
+      }
+    },
+    [includeArchived, wouldReap]
+  );
 
   // Initial load.
   useEffect(() => {
@@ -178,14 +213,44 @@ export default function CoordGatesPage() {
         <div className="flex items-center gap-2 min-w-0">
           <Gauge className="h-5 w-5 text-muted-foreground shrink-0" />
           <div className="min-w-0">
-            <h2 className="text-base font-semibold">Gates &amp; rollout</h2>
+            {/* data-content-role + data-content-id anchor this heading in the
+                UI-Bridge content registry with a stable, text-independent id.
+                Ported verbatim from the deleted `GatesPanel`, which is where
+                Spec-CI's operations spec asserted `heading-gates`; the anchor
+                had to land wherever the surviving gates surface is. */}
+            <h2
+              className="text-base font-semibold"
+              data-content-role="heading"
+              data-content-id="heading-gates"
+            >
+              Gates &amp; rollout
+            </h2>
             <p className="text-xs text-muted-foreground">
               Gate progress, verdicts, continuation state, and the auto-merge /
               feature-enablement rollout tiers.
             </p>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2 sm:gap-3">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          {/* Exactly where the deleted panel's "Show orphaned gates" checkbox
+              sat, in the filter-control row. A capability that goes away is
+              stated, not quietly dropped — see the docblock for why it cannot
+              be ported.
+
+              Never `hidden` at any breakpoint: it wraps to its own line on a
+              narrow viewport instead. A statement of what this list now
+              contains is not chrome, and hiding it on small screens would be
+              the silent drop this note exists to avoid. */}
+          <span
+            className="text-xs text-muted-foreground max-w-[22rem] basis-full sm:basis-auto"
+            data-ui-bridge-id="coord.gates-orphans-note"
+            data-testid="gates-orphans-note"
+            title="coord's /coord/dev-overview read accepts limit, verdict, include_archived and would_reap — there is no exclude_orphans param, and the filter needs repo state this page does not have."
+          >
+            Orphaned gates are shown. The <code>exclude_orphans</code> filter is
+            gone with the old gates panel and cannot be rebuilt here — gates on
+            a closed PR or a dead SHA stay in this list.
+          </span>
           {updatedAt !== null && !reconnecting && (
             <span
               className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
@@ -298,7 +363,7 @@ export default function CoordGatesPage() {
             Reconnecting to coord — showing data from{" "}
             {isoAgoLabel(
               overview.last_good_generated_at ?? overview.generated_at,
-              now,
+              now
             )}
             . This recovers automatically.
           </span>
@@ -336,6 +401,7 @@ export default function CoordGatesPage() {
             <div
               className="rounded-md border border-border px-3 py-8 text-center text-sm text-muted-foreground italic"
               data-testid="gates-empty"
+              data-content-id="gates-empty-state"
             >
               No gates registered.
             </div>

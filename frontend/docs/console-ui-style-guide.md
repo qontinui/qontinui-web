@@ -4,9 +4,19 @@
 **Last Updated:** 2026-08-24
 **Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`
 
-The style of `/admin/coord/fleet` — the merge Pipeline tab — written down, so the
-other 29 console routes can be moved onto it and the next operator surface can be
-built on it instead of inventing a third shape.
+The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
+the other 29 console routes can be moved onto it and the next operator surface can
+be built on it instead of inventing a third shape.
+
+> **Route note.** That tab lived at `/admin/coord/fleet` when this guide was
+> written, and every `fleet/page.tsx` citation below was verified there. Plan
+> `2026-08-25-coord-console-intent-and-devops-sections` Phase 4 renamed it to
+> `/admin/coord/pipeline` (308 from the old path in `next.config.mjs`) and moved
+> the machine/CI/resource half onto `/admin/coord/devops`, so "fleet" now means
+> Dev Ops and only Dev Ops. Line citations into that file are therefore against
+> the PRE-rename page unless they say otherwise; where the example itself was
+> changed by that phase, the text below says so rather than pointing at markup
+> that no longer exists.
 
 Citations below were verified against `origin/main` at
 `859d8286fe611408b929c89b5e95ebf5a39e9c50`, **except in [§3](#3-the-primitive-catalogue)
@@ -564,21 +574,33 @@ own module doc, and the two properties are structural:
 </CollapsibleContent>
 ```
 
-✅ `src/app/(app)/admin/coord/fleet/page.tsx:281-310` is the pattern in use, and the
-comment above it says why:
+✅ The pattern in use was `fleet/page.tsx:281-310`, whose own comment said why:
 
 ```tsx
-// fleet/page.tsx:281-283
+// fleet/page.tsx:281-283 — DELETED by 2026-08-25-…-devops-sections Phase 4
 {/* Everything infrastructural, one click away. Children unmount while
     collapsed, so their pollers only run when an operator opens this. */}
 <CollapsiblePanel
 ```
 
-...with the alarm counts hoisted into `summary` so the red state survives the
-collapse (`fleet/page.tsx:289-310`: `{unhealthy} unhealthy`,
-`{admission.breach} refusing work`). The health hook itself is hoisted to the page
-(`useFleetHealth`, `fleet/page.tsx:86`, called at `:222`) precisely so the collapse
-cannot take the signal with it.
+...with the alarm counts hoisted into `summary` so the red state survived the
+collapse (`{unhealthy} unhealthy`, `{admission.breach} refusing work`), and the
+health hook hoisted to the PAGE precisely so the collapse could not take the
+signal with it.
+
+**That drawer is gone, and the rule is what survived it.** Phase 4 deleted the
+`System details` section — its contents had homes of their own — and the signal
+did not go with it: the same five counts now ride the `Dev Ops ▾` nav trigger
+(`CoordNav`'s `FleetAlarmBadges` / `useFleetAlarmBadge`), where they are visible
+from every console route instead of from one, and the two page polls that existed
+only to feed a collapsed header were deleted rather than moved. Read that as R7's
+strongest form: when secondary material earns a destination, give it the
+destination and put its signal where the reader already is. Hoisting a count onto
+a collapsed header is the fallback for material that has nowhere else to live.
+
+The live worked example of the hoist itself is now
+`MergePipeline`'s `Merge internals` panel (`MergePipeline.tsx`), which keeps its
+proposal count in `summary` while collapsed.
 
 ❌ `src/app/(app)/admin/coord/lands/page.tsx:337` — **FIXED in Phase 3 Wave 2**;
 kept here because it is the clearest worked example this rule has, and because
@@ -677,17 +699,17 @@ The page body is `p-3 sm:p-6 space-y-4`, plus `overflow-x-auto` where wide panel
 would otherwise strand action buttons off-screen. Vertical scroll comes from the
 layout's `<main>`.
 
-✅ `src/app/(app)/admin/coord/fleet/page.tsx:263-270` — no `<h1>`, no page-level
+✅ `src/app/(app)/admin/coord/pipeline/page.tsx` — no `<h1>`, no page-level
 `<Card>`, and the reason for `overflow-x-auto` written down:
 
 ```tsx
-// fleet/page.tsx:263-270
-// `overflow-x-auto`: wide panels (the merge dependency graph, train rows)
+// pipeline/page.tsx
+// `overflow-x-auto`: wide panels (the train rows, a row's dependency DAG)
 // scroll instead of stranding action buttons off-screen. Vertical scroll
 // comes from the coord layout's <main overflow-y-auto>.
 <div
   className="p-3 sm:p-6 space-y-4 overflow-x-auto"
-  data-testid="coord-fleet-page"
+  data-testid="coord-pipeline-page"
 >
 ```
 

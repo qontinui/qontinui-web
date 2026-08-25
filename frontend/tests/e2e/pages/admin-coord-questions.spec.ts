@@ -109,8 +109,8 @@ test.describe("Admin - Coord questions inbox", () => {
     // coord fixture would assert submit + redirect.
   });
 
-  test("nav-link click routes from fleet to questions", async ({ page }) => {
-    await page.goto("/admin/coord/fleet");
+  test("nav-link click routes from pipeline to questions", async ({ page }) => {
+    await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 

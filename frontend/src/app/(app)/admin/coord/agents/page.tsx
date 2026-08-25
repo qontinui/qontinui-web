@@ -50,6 +50,7 @@ import {
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
+import { DevActionsTile } from "@/components/operations";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import { cn } from "@/lib/utils";
@@ -152,7 +153,7 @@ export default function CoordAgentsRecentPage() {
   const [error, setError] = useState<string | null>(null);
   // Level multi-select. Empty == "all".
   const [selectedLevels, setSelectedLevels] = useState<Set<LevelKey>>(
-    () => new Set(),
+    () => new Set()
   );
   const [eventFilter, setEventFilter] = useState("");
 
@@ -223,7 +224,7 @@ export default function CoordAgentsRecentPage() {
     (agentId: string) => {
       router.push(`/admin/coord/agents/${encodeURIComponent(agentId)}`);
     },
-    [router],
+    [router]
   );
 
   const health = useMemo(
@@ -262,7 +263,7 @@ export default function CoordAgentsRecentPage() {
                   "transition-colors inline-flex items-center gap-1",
                   active
                     ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border text-muted-foreground hover:bg-muted",
+                    : "border-border text-muted-foreground hover:bg-muted"
                 )}
               >
                 {lvl}
@@ -301,7 +302,11 @@ export default function CoordAgentsRecentPage() {
       <div data-testid="coord-agents-recent-list">
         <RecordList
           items={filtered}
-          itemKey={(row) => String(row.log_id ?? `${row.agent_id}-${row.occurred_at ?? row.ts ?? ""}`)}
+          itemKey={(row) =>
+            String(
+              row.log_id ?? `${row.agent_id}-${row.occurred_at ?? row.ts ?? ""}`
+            )
+          }
           loaded={!(loading && !data)}
           skeletonRows={8}
           renderRow={(row, ctx) => (
@@ -327,6 +332,19 @@ export default function CoordAgentsRecentPage() {
           }
         />
       </div>
+
+      {/* The dev-action ledger, re-homed from the pipeline page's deleted
+          `System details` drawer (plan
+          `2026-08-25-coord-console-intent-and-devops-sections` Phase 4). It is
+          structurally the same surface as the timeline above — a recent-activity
+          ledger over coord's own record of what the fleet did — and it was in
+          the merge-pipeline drawer only because the drawer was where narrow
+          lists went. It sits BELOW the timeline, not above it: the log stream
+          is what this route is for. The tile owns its own poll, which starts on
+          mount and keeps running while its panel is collapsed (the panel
+          unmounts its children, not the tile), exactly as it did on the
+          pipeline page. */}
+      <DevActionsTile />
     </div>
   );
 }
