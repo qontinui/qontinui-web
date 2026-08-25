@@ -299,10 +299,10 @@ export class TenantCreateError extends Error {
  * FastAPI 422 validation list all degrade to "no code, here is the text".
  * Exported for unit tests — the parsing, not the copy, is where this breaks.
  */
-export function parseTenantCreateError(
-  status: number,
-  rawBody: string
-): { code: string | null; detail: string } {
+export function parseTenantCreateError(rawBody: string): {
+  code: string | null;
+  detail: string;
+} {
   let detail: unknown = rawBody;
   try {
     const outer: unknown = JSON.parse(rawBody);
@@ -357,7 +357,7 @@ export async function createTenant(
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
-    const { code, detail } = parseTenantCreateError(res.status, raw);
+    const { code, detail } = parseTenantCreateError(raw);
     throw new TenantCreateError(res.status, code, detail);
   }
   return (await res.json()) as TenantCreateResponse;

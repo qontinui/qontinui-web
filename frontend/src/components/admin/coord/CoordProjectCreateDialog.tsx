@@ -86,10 +86,38 @@ export function projectCreateErrorMessage(err: unknown): string {
   if (code === "invalid_name") {
     return "That name can't be used — try letters and numbers.";
   }
-  // The per-operator creation cap (`COORD_SELF_SERVICE_TENANT_CAP`). Coord's
-  // exact token for it is matched loosely on purpose: a miss here costs
-  // nothing, because the fall-through below still shows coord's own text.
-  if (err.status === 429 || /cap|quota|limit/i.test(code)) {
+  // `reserved_name` is the DENYLIST rejection, and it is the security-relevant
+  // one: coord reserves the `personal-` namespace and any slug a group mapping
+  // already points at precisely because both SSO auto-provision paths JOIN an
+  // existing slug rather than rejecting it, so a squatted slug would capture
+  // the tenant a victim's first login (or an admin's mapping) lands in. The
+  // user does not need any of that — they need to know the name is unavailable
+  // and that trying another one is the fix. Coord's machine-readable `reason`
+  // arrives as the detail (`parseTenantCreateError` reads `obj.reason`); an
+  // unrecognized one falls through to the verbatim branch rather than being
+  // flattened, so a reason added coord-side later is still legible here.
+  if (code === "reserved_name") {
+    switch (err.detail) {
+      case "personal_namespace":
+        return "Names starting with \u201cpersonal\u201d are reserved. Pick a different one.";
+      case "group_mapped":
+        return "That name is already reserved for a group. Pick a different one.";
+      case "configured_default_tenant":
+      case "fleet_reserved":
+        return "That name is reserved. Pick a different one.";
+      default:
+        return `That name is reserved (${err.detail}). Pick a different one.`;
+    }
+  }
+  // The per-operator creation cap (`COORD_SELF_SERVICE_TENANT_CAP`), which
+  // coord answers as `403 tenant_cap_reached`. The loose match is kept as a
+  // backstop, and a miss still costs nothing: the fall-through below shows
+  // coord's own text.
+  if (
+    code === "tenant_cap_reached" ||
+    err.status === 429 ||
+    /cap|quota|limit/i.test(code)
+  ) {
     return "You've reached the limit on how many projects you can create.";
   }
   return err.detail

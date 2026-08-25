@@ -21,7 +21,7 @@ describe("parseTenantCreateError", () => {
     const body = JSON.stringify({
       detail: '{"error":"slug_taken","slug":"my-pizzeria"}',
     });
-    expect(parseTenantCreateError(409, body)).toEqual({
+    expect(parseTenantCreateError(body)).toEqual({
       code: "slug_taken",
       detail: "slug_taken",
     });
@@ -32,7 +32,7 @@ describe("parseTenantCreateError", () => {
       detail:
         '{"error":"invalid_name","message":"name has no usable characters"}',
     });
-    expect(parseTenantCreateError(400, body)).toEqual({
+    expect(parseTenantCreateError(body)).toEqual({
       code: "invalid_name",
       detail: "name has no usable characters",
     });
@@ -40,14 +40,14 @@ describe("parseTenantCreateError", () => {
 
   it("degrades to the raw text when coord answered plain text", () => {
     const body = JSON.stringify({ detail: "coord is not reachable" });
-    expect(parseTenantCreateError(502, body)).toEqual({
+    expect(parseTenantCreateError(body)).toEqual({
       code: null,
       detail: "coord is not reachable",
     });
   });
 
   it("degrades to the whole body when nothing is JSON at all", () => {
-    expect(parseTenantCreateError(500, "<html>502 Bad Gateway</html>")).toEqual(
+    expect(parseTenantCreateError("<html>502 Bad Gateway</html>")).toEqual(
       {
         code: null,
         detail: "<html>502 Bad Gateway</html>",
@@ -59,7 +59,7 @@ describe("parseTenantCreateError", () => {
     const body = JSON.stringify({
       detail: [{ loc: ["body", "display_name"], msg: "too short" }],
     });
-    const parsed = parseTenantCreateError(422, body);
+    const parsed = parseTenantCreateError(body);
     expect(parsed.code).toBeNull();
     expect(parsed.detail).toContain("too short");
   });
@@ -96,6 +96,50 @@ describe("projectCreateErrorMessage", () => {
     expect(projectCreateErrorMessage(byStatus)).toBe(
       "You've reached the limit on how many projects you can create."
     );
+  });
+
+  it("names every denylist reason coord can answer with", () => {
+    // Coord's `reserved_name` reasons (`tenant_self_service::ReservedSlugReason`).
+    // The `personal-` one is the security-relevant rejection: both SSO
+    // auto-provision paths JOIN an existing slug, so a squatted
+    // `personal-<sub>` would capture the tenant a victim's first login
+    // lands in.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(400, "reserved_name", "personal_namespace")
+      )
+    ).toBe(
+      "Names starting with \u201cpersonal\u201d are reserved. Pick a different one."
+    );
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(400, "reserved_name", "group_mapped")
+      )
+    ).toBe("That name is already reserved for a group. Pick a different one.");
+    for (const reason of ["configured_default_tenant", "fleet_reserved"]) {
+      expect(
+        projectCreateErrorMessage(
+          new TenantCreateError(400, "reserved_name", reason)
+        )
+      ).toBe("That name is reserved. Pick a different one.");
+    }
+  });
+
+  it("keeps an UNKNOWN denylist reason legible instead of flattening it", () => {
+    // A reason added coord-side after this ships must still reach the user.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(400, "reserved_name", "some_future_reason")
+      )
+    ).toBe("That name is reserved (some_future_reason). Pick a different one.");
+  });
+
+  it("recognizes coord's exact cap token, not just the loose match", () => {
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, "tenant_cap_reached", "tenant_cap_reached")
+      )
+    ).toBe("You've reached the limit on how many projects you can create.");
   });
 
   it("surfaces an unrecognized failure VERBATIM rather than guessing", () => {
