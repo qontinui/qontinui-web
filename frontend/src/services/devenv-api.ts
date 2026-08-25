@@ -40,8 +40,25 @@ export type Severity = "info" | "warning" | "critical";
  *   declined to claim it measured the key. Reported so the gap stays visible,
  *   always at `info` severity, and never counted as drift or as something to
  *   apply — "we could not measure this" is not "you are missing this".
+ * - `unverified` — both sides reported the key, but comparing them proves
+ *   nothing. Either the value itself says the fact was never measured
+ *   (`python_installed_probe` carrying a failure reason instead of `measured`),
+ *   or the two captures are not comparable at all (their
+ *   `python_installed_env_kind` / `..._scope_kind` / `..._interpreter`
+ *   markers disagree, so the digests were taken over different environments). The OPPOSITE verdict to
+ *   `unknown` despite the family resemblance: this one DOES break `in_sync`,
+ *   because two boxes that both failed to measure agree on every installed key
+ *   and would otherwise be reported clean on the strength of two identical
+ *   notes saying nobody looked. It equally must not read as drift — an
+ *   incomparable digest pair is not evidence the machines differ. Never an
+ *   apply action either way: there is nothing to reconcile toward.
  */
-export type DeltaStatus = "added" | "removed" | "changed" | "unknown";
+export type DeltaStatus =
+  | "added"
+  | "removed"
+  | "changed"
+  | "unknown"
+  | "unverified";
 
 // ---------------------------------------------------------------------------
 // Applications
@@ -275,6 +292,20 @@ export interface KeyDelta {
    * frontend released ahead of the backend must tolerate its absence.
    */
   derived?: boolean;
+  /**
+   * Whether this key is a MEASUREMENT that no apply action can set
+   * (`python_installed_*`: a package count, a sha256 over the installed
+   * distributions, the probe that produced them).
+   *
+   * Not a softer `derived`: this IS the box's state, so a difference here is
+   * real drift at full severity and it does count against `in_sync`. It is only
+   * excluded from the remediation plan, because "set python_installed_digest to
+   * sha256:abc…" is not an instruction anyone can carry out — the box converges
+   * by installing packages and the digest follows.
+   *
+   * Optional for the same deploy-skew reason as {@link KeyDelta.derived}.
+   */
+  observation_only?: boolean;
 }
 
 export interface SectionDrift {
