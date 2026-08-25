@@ -49,7 +49,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Rocket } from "lucide-react";
 import { ApiConfig } from "@/services/api-config";
 
@@ -142,13 +141,19 @@ export function buildSpawnRequestBody(input: {
     // Omitted entirely when the operator's free-text phase carries no
     // digits — the field is optional, and sending a string 422s.
     ...(planPhase === undefined ? {} : { plan_phase: planPhase }),
-    target_device_id: input.deviceId,
+    target_device_id: input.deviceId.trim(),
     repos: input.repos.map((repo) => ({ repo })),
     intent: input.intent.trim(),
     declared_overlap_paths: input.declaredOverlapPaths,
     initial_prompt: input.initialPrompt.trim(),
   };
 }
+
+/** Coord types `target_device_id` as `Uuid`, whose deserializer accepts the
+ *  hyphenated form AND the simple 32-hex form — so a hyphens-only guard would
+ *  reject input coord would happily take. */
+const UUID_RE =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{32})$/i;
 
 export interface SpawnModalProps {
   /** Whether the modal is open. */
@@ -182,14 +187,22 @@ export function SpawnModal({
 
   const [devices, setDevices] = useState<FleetHealthDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
-  /** Why the roster is unusable, when it is. `null` = the fetch succeeded.
+  /** Why the roster is unusable, when it is. `null` = a usable roster.
    *
    *  An empty roster and a FAILED roster fetch used to render identically
    *  ("No devices reporting"), because the catch below only reached
    *  `console.warn`. They have opposite fixes — one is a coord-side
    *  liveness question, the other an auth/proxy fault — so the operator
-   *  has to be able to tell them apart without opening devtools. */
-  const [devicesError, setDevicesError] = useState<string | null>(null);
+   *  has to be able to tell them apart without opening devtools.
+   *
+   *  `kind` is carried as DATA rather than inferred from the message text:
+   *  `empty` is information (coord answered, honestly, with nothing), while
+   *  `fault` is an error, and they are styled differently. Sniffing the
+   *  prose to tell them apart later is exactly the bug this shape avoids. */
+  const [devicesError, setDevicesError] = useState<{
+    kind: "empty" | "fault";
+    message: string;
+  } | null>(null);
   /** Type a device id instead of picking one. Auto-armed whenever the
    *  roster comes back unusable, so an empty dropdown is never a dead end
    *  (the roster is a CONVENIENCE — `target_device_id` is just a uuid). */
@@ -203,6 +216,7 @@ export function SpawnModal({
     setDeviceId("");
     setManualDevice(false);
     setDevicesError(null);
+    setDevices([]);
     setSelectedRepos([]);
     setOtherRepos("");
     setIntent("");
@@ -234,12 +248,14 @@ export function SpawnModal({
         // health_url. Say so, rather than leaving a blank dropdown to be
         // read as "the fleet is down".
         if (roster.length === 0) {
-          setDevicesError(
-            "Coord reported 0 live devices for this tenant. A device is listed " +
+          setDevicesError({
+            kind: "empty",
+            message:
+              "Coord reported 0 live devices for this tenant. A device is listed " +
               "only while its last heartbeat is inside coord's liveness window, " +
               "so a healthy machine can be absent between heartbeats. Enter the " +
-              "device id directly if you know it."
-          );
+              "device id directly if you know it.",
+          });
           setManualDevice(true);
         }
       })
@@ -248,7 +264,10 @@ export function SpawnModal({
         const detail = e instanceof Error ? e.message : String(e);
         console.warn("[SpawnModal] fleet/health fetch failed", e);
         setDevices([]);
-        setDevicesError(`Could not load the device roster — ${detail}.`);
+        setDevicesError({
+          kind: "fault",
+          message: `Could not load the device roster — ${detail}.`,
+        });
         setManualDevice(true);
       })
       .finally(() => {
@@ -285,11 +304,17 @@ export function SpawnModal({
     [overlapPaths]
   );
 
+  /** The typed value, normalized the same way the wire body normalizes it. */
+  const deviceIdValue = deviceId.trim();
+  /** A roster pick is a uuid by construction; a TYPED one is not. Guard here
+   *  so an obviously-bad id costs a hint rather than a round trip to a 422. */
+  const deviceIdValid = UUID_RE.test(deviceIdValue);
+
   const canSubmit =
     !submitting &&
     planSlug.length > 0 &&
     phase.trim().length > 0 &&
-    deviceId.length > 0 &&
+    deviceIdValid &&
     allRepos.length > 0 &&
     intent.trim().length > 0 &&
     initialPrompt.trim().length > 0;
@@ -393,22 +418,37 @@ export function SpawnModal({
           <div className="space-y-1.5">
             <Label htmlFor="spawn-device">Device</Label>
             {devicesLoading ? (
-              <Skeleton className="h-9 w-full" />
+              // Not a Skeleton: <Label htmlFor="spawn-device"> needs a real
+              // labelable control in EVERY branch, and a <div> cannot be one.
+              <Input
+                id="spawn-device"
+                disabled
+                placeholder="Loading devices…"
+                className="font-mono text-xs"
+                data-testid="coord-spawn-device-loading"
+              />
             ) : manualDevice ? (
               <Input
                 id="spawn-device"
                 data-testid="coord-spawn-device-input"
                 value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value.trim())}
+                onChange={(e) => setDeviceId(e.target.value)}
                 placeholder="target device id (uuid)"
                 className="font-mono text-xs"
                 spellCheck={false}
+                aria-invalid={deviceIdValue.length > 0 && !deviceIdValid}
+                aria-describedby={
+                  devicesError ? "spawn-device-notice" : undefined
+                }
               />
             ) : (
               <Select value={deviceId} onValueChange={setDeviceId}>
                 <SelectTrigger
                   id="spawn-device"
                   data-testid="coord-spawn-device-select"
+                  aria-describedby={
+                    devicesError ? "spawn-device-notice" : undefined
+                  }
                 >
                   <SelectValue placeholder="Choose a device" />
                 </SelectTrigger>
@@ -430,13 +470,32 @@ export function SpawnModal({
             )}
             {devicesError && (
               <p
-                className="text-xs text-muted-foreground"
+                id="spawn-device-notice"
+                role="status"
+                aria-live="polite"
+                className={
+                  devicesError.kind === "fault"
+                    ? "text-xs text-destructive"
+                    : "text-xs text-muted-foreground"
+                }
                 data-testid="coord-spawn-device-notice"
               >
-                {devicesError}
+                {devicesError.message}
               </p>
             )}
-            {!devicesLoading && (
+            {manualDevice && deviceIdValue.length > 0 && !deviceIdValid && (
+              <p
+                className="text-xs text-destructive"
+                data-testid="coord-spawn-device-invalid"
+              >
+                Not a uuid — coord types `target_device_id` as `Uuid` and
+                rejects the body with 422.
+              </p>
+            )}
+            {/* Only offer the return trip when there is something to return
+                to: switching back to a zero-item Select is the dead end this
+                change exists to remove. */}
+            {!devicesLoading && (!manualDevice || devices.length > 0) && (
               <button
                 type="button"
                 className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
@@ -447,9 +506,7 @@ export function SpawnModal({
                 }}
               >
                 {manualDevice
-                  ? `Choose from the roster${
-                      devices.length > 0 ? ` (${devices.length})` : ""
-                    }`
+                  ? `Choose from the roster (${devices.length})`
                   : "Enter a device id instead"}
               </button>
             )}
