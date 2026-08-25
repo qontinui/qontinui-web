@@ -14,7 +14,9 @@
  *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
  *                                                   ← direct, daily
  *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
- *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
+ *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
+ *             Merge Settings°
+ *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
  *   Dev Ops ▾ Overview / Trees° / Spawn° / Deploys° / Releases° / Git Ops° /
  *             Federation° / Memory° / Onboarding° / Onboarding Status°
  *   Access ▾  Members / Claims↗ / Sessions↗          (° = operator-only)
@@ -70,6 +72,7 @@ import {
   Bot,
   Boxes,
   ChevronDown,
+  Compass,
   ExternalLink,
   FileText,
   Gauge,
@@ -267,32 +270,83 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-pull-decisions",
       },
       {
-        href: "/admin/coord/policies",
-        label: "Policies",
-        icon: Scale,
-        testId: "coord-nav-policies",
-      },
-      {
         href: "/admin/coord/automation-rules",
         label: "Automation Rules",
         icon: Workflow,
         testId: "coord-nav-automation-rules",
       },
       {
-        // Sits with the other coord policy-authoring surfaces (it authors
-        // `coord.policy_rules` rows like Policies and Automation Rules do),
-        // and the Gates page links across to it from the gate context — the
-        // direct row is already at its five-tab cap, see the header note.
+        // STAYS in Merge, and that is a decision rather than an oversight
+        // (`2026-08-25-coord-console-intent-and-devops-sections` Phase 3,
+        // resolved Q2). It shares the one coord-policy CRUD chain with
+        // Automation Rules — both `gate-clearance/_hooks/useGateClearanceRules`
+        // and `automation-rules/_hooks/useAutomationRules` build on
+        // `_shared/useCoordPolicies` — so it authors `coord.policy_rules` rows
+        // the way Automation Rules does. But what it authors rows ABOUT is who
+        // may clear a **gate**, and a gate is merge-chain machinery: filing it
+        // under `Intent ▾` on the strength of the word "policy" would be the
+        // very conflation that moved Prompt Documents / Policies / Policy Edit
+        // Review OUT of this group, run in reverse. The Gates page also links
+        // across to it from the gate context — the direct row is already at its
+        // five-tab cap, see the header note.
         href: "/admin/coord/gate-clearance",
         label: "Gate Clearance",
         icon: ShieldCheck,
         testId: "coord-nav-gate-clearance",
       },
       {
+        href: "/admin/coord/merge-settings",
+        label: "Merge Settings",
+        icon: GitMerge,
+        testId: "coord-nav-merge-settings",
+        operatorOnly: true,
+      },
+    ],
+  },
+  {
+    // What the tenant is BUILDING and the standing guidance agents read while
+    // building it — the prompt-shaped document cluster that used to sit under
+    // `Merge ▾` for no recorded reason. None of these three is read by the
+    // merge train, gates a PR, or appears in a merge decision. Moved here by
+    // `2026-08-25-coord-console-intent-and-devops-sections` Phase 3 (Gap 1).
+    //
+    // On the label — three names were rejected and one tiebreak was decided:
+    //  - NOT `Digital Twin`, despite that being the operator's framing: the
+    //    app sidebar already uses that name for the *observed-system* twin
+    //    (`navigation/sidebar/nav-items.ts` — CI state, routing, dependencies,
+    //    health, deploy freshness), and reusing it collides with a large
+    //    shipped subsystem.
+    //  - NOT `Policies` / `Rules` / `Guidance`: plan
+    //    `2026-08-21-project-intent-documents-and-the-selection-loop`
+    //    §"Naming constraint" forbids those for these documents, and `/policy`
+    //    already means agent-behaviour rules fleet-wide.
+    //  - `Intent` over `Direction` (both were live): `Intent` is the vocabulary
+    //    of the plan that FILLS this section — `policy = how to act, intent =
+    //    what to build`. Two plans, one word.
+    //
+    // Ownership: `2026-08-21-project-intent-documents-and-the-selection-loop`
+    // §3c describes this same edit and is also VETTED. The nav section landed
+    // HERE, because Phase 1 of the sections plan had already rewritten this
+    // file — two PRs editing `GROUPS` with no shared base is a conflict by
+    // construction. Do not implement it a second time from that plan.
+    //
+    // Member-visible, trigger and items alike: every one of the three is a
+    // tenant-scoped surface today and none carries `operatorOnly`.
+    id: "intent",
+    label: "Intent",
+    icon: Compass,
+    items: [
+      {
         href: "/admin/coord/prompt-documents",
         label: "Prompt Documents",
         icon: NotebookText,
         testId: "coord-nav-prompt-documents",
+      },
+      {
+        href: "/admin/coord/policies",
+        label: "Policies",
+        icon: Scale,
+        testId: "coord-nav-policies",
       },
       {
         // Sits beside Prompt Documents deliberately: it reviews edits TO those
@@ -303,13 +357,6 @@ const GROUPS: NavGroup[] = [
         label: "Policy Edit Review",
         icon: Gavel,
         testId: "coord-nav-prompt-document-proposals",
-      },
-      {
-        href: "/admin/coord/merge-settings",
-        label: "Merge Settings",
-        icon: GitMerge,
-        testId: "coord-nav-merge-settings",
-        operatorOnly: true,
       },
     ],
   },
