@@ -11,17 +11,18 @@
  *
  * A prompt document is any prompt-shaped content coord serves the fleet,
  * addressed by `(kind, name)`. This generalizes the former `policy_documents`
- * store (whose rows migrated in as `kind: "policy"`) to six kinds — one editor
- * for all of them, rather than six unrelated homes.
+ * store (whose rows migrated in as `kind: "policy"`) to seven kinds — one editor
+ * for all of them, rather than seven unrelated homes.
  *
  * Versioning is the core contract: coord snapshots an immutable version on EVERY
  * edit and bumps `current_version` in the same transaction. Nothing is
  * overwritten in place, so every prior wording stays readable and restorable.
  */
 
-/** The six content families (coord `KINDS`, mirroring the DB CHECK). */
+/** The seven content families (coord `KINDS`, mirroring the DB CHECK). */
 export type PromptDocumentKind =
   | "session_briefing"
+  | "claude_settings"
   | "policy"
   | "response_prompt"
   | "continuation_rules"
@@ -33,6 +34,10 @@ export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
   // First on purpose: this is the most consequential document in the store —
   // it is appended to the system prompt of every session the runner hosts.
   "session_briefing",
+  // Second on purpose, for the same reason: this is the fleet's permission
+  // baseline — what a machine's `.claude/settings.json` is rendered from — so
+  // an edit here changes what every session on that machine is allowed to do.
+  "claude_settings",
   "policy",
   "response_prompt",
   "continuation_rules",
@@ -101,6 +106,11 @@ export const KIND_META: Record<
     // the create dialog's inert-name check have to agree, and a prose copy is
     // the half that goes stale.
     description: `Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — ${SESSION_BRIEFING_DOCUMENT_NAMES.join(", ")}; any other document under this kind is stored and versioned but inert.`,
+  },
+  claude_settings: {
+    label: "Claude Code Settings",
+    description:
+      "The fleet's Claude Code settings BASELINE — a versioned document a machine copies into its own `.claude/settings.json`, not live configuration. `hooks` are deliberately excluded (a served shell command is remote code execution by configuration) and travel via `scripts/install-guard-hooks.sh`.",
   },
   policy: {
     label: "Policy",
