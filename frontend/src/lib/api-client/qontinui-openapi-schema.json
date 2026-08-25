@@ -589,27 +589,6 @@
         "security": [{ "OAuth2PasswordBearer": [] }]
       }
     },
-    "/api/v1/users/me/claim-admin": {
-      "post": {
-        "tags": ["users"],
-        "summary": "Claim Admin",
-        "description": "Allow user to claim admin if no admin exists. Remove after first use!",
-        "operationId": "claim_admin_api_v1_users_me_claim_admin_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Claim Admin Api V1 Users Me Claim Admin Post"
-                }
-              }
-            }
-          }
-        },
-        "security": [{ "OAuth2PasswordBearer": [] }]
-      }
-    },
     "/api/v1/users/": {
       "get": {
         "tags": ["users"],
@@ -1830,42 +1809,6 @@
           "200": {
             "description": "Successful Response",
             "content": { "application/json": { "schema": {} } }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/bootstrap-first-admin": {
-      "post": {
-        "tags": ["admin"],
-        "summary": "Bootstrap First Admin",
-        "description": "One-time endpoint to create the first admin. Remove after use!",
-        "operationId": "bootstrap_first_admin_api_v1_admin_bootstrap_first_admin_post",
-        "parameters": [
-          {
-            "name": "email",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string", "title": "Email" }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Bootstrap First Admin Api V1 Admin Bootstrap First Admin Post"
-                }
-              }
-            }
           },
           "422": {
             "description": "Validation Error",

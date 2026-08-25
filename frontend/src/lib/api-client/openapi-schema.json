@@ -56160,50 +56160,6 @@
         ]
       }
     },
-    "/api/v1/auth/bootstrap-first-admin": {
-      "post": {
-        "description": "One-time endpoint to create the first admin. Remove after use!",
-        "operationId": "api_v1_auth_bootstrap_first_admin_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "email",
-            "required": true,
-            "schema": {
-              "title": "Email",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Bootstrap First Admin Api V1 Auth Bootstrap First Admin Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Bootstrap First Admin",
-        "tags": [
-          "auth",
-          "auth-bootstrap"
-        ]
-      }
-    },
     "/api/v1/auth/devices": {
       "get": {
         "description": "Get all devices associated with the current user.\n\nReturns a list of device sessions showing:\n- Device information (User-Agent, IP addresses)\n- Trust status\n- First and last seen timestamps",
@@ -108878,33 +108834,6 @@
           }
         ],
         "summary": "Upload Avatar",
-        "tags": [
-          "users"
-        ]
-      }
-    },
-    "/api/v1/users/me/claim-admin": {
-      "post": {
-        "description": "Allow user to claim admin if no admin exists. Remove after first use!",
-        "operationId": "api_v1_users_me_claim_admin_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Claim Admin Api V1 Users Me Claim Admin Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Claim Admin",
         "tags": [
           "users"
         ]

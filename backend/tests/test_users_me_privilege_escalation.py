@@ -601,3 +601,88 @@ class TestFastAPIUsersPatchMe:
         # zero coord traffic on the self-service arm.
         instance.get.assert_not_called()
         instance.post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The two raw ``is_superuser`` writers that bypassed the CRUD layer entirely
+# ---------------------------------------------------------------------------
+
+
+class TestBootstrapRoutesAreGone:
+    """``bootstrap-first-admin`` and ``claim-admin`` must not be routable.
+
+    Plan: ``2026-08-01-web-bootstrap-superuser-routes-are-live-http-surface``.
+    PR #900 closed the CRUD path; these two wrote ``is_superuser = True``
+    directly on the ORM object, so they were never covered by it.
+
+    * ``POST /api/v1/auth/bootstrap-first-admin`` had **no auth dependency at
+      all** and a read-only probe of ``https://api.qontinui.io`` returned 405
+      (route exists, POST-only) against 404 for a control path — it was
+      mounted and reachable from the public internet, unauthenticated. Its
+      always-taken arm echoed an existing admin's email address
+      (``f"Admin already exists: {existing_admin.email}"``) to any caller.
+    * ``POST /api/v1/users/me/claim-admin`` was gated on
+      ``get_current_active_user_async`` — any authenticated user — and shared
+      that email leak.
+
+    **These assertions must not be vacuous.** The rest of this file mounts
+    only ``users.py`` under ``/api/v1/users``, so a 404 on an ``/auth/...``
+    path there would prove nothing. This class mounts the REAL
+    ``app.api.v1.api.api_router`` (the same object ``main.py`` mounts, at the
+    same ``/api/v1`` prefix), and every test pairs the deleted path with a
+    live sibling on the same router — so the mount is proven by a non-404
+    control before any 404 is believed.
+    """
+
+    @staticmethod
+    def _real_app():
+        from app.api.v1.api import api_router
+
+        app = FastAPI()
+        app.include_router(api_router, prefix="/api/v1")
+        return app
+
+    def test_the_router_mount_is_real(self):
+        """Control: the sibling routes of BOTH deleted paths are mounted."""
+        paths = {getattr(r, "path", None) for r in self._real_app().routes}
+        # Live siblings on the two routers the deleted routes lived on.
+        assert "/api/v1/auth/devices" in paths
+        assert "/api/v1/users/me" in paths
+        # A real API surface, not a stub app.
+        assert len(paths) > 100, f"only {len(paths)} routes mounted"
+
+    def test_the_deleted_paths_are_absent_from_the_route_table(self):
+        paths = {getattr(r, "path", None) for r in self._real_app().routes}
+        assert "/api/v1/auth/bootstrap-first-admin" not in paths
+        assert "/api/v1/users/me/claim-admin" not in paths
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/v1/auth/bootstrap-first-admin",
+            "/api/v1/users/me/claim-admin",
+        ],
+    )
+    def test_post_to_a_deleted_route_is_404(self, path):
+        """404 (route gone) — not 401/405, which would mean still mounted."""
+        client = TestClient(self._real_app(), raise_server_exceptions=False)
+
+        resp = client.post(path, json={}, params={"email": "victim@example.com"})
+
+        assert resp.status_code == 404, (
+            f"{path} answered {resp.status_code}, so it is still routable: "
+            f"{resp.text[:200]}"
+        )
+        # And no admin address leaked on the way out.
+        assert "already exists" not in resp.text
+
+    def test_the_bootstrap_router_symbol_is_gone(self):
+        """The module must not come back as an unmounted import either."""
+        import importlib
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("app.api.v1.endpoints.auth.bootstrap")
+
+        from app.api.v1.endpoints import auth as auth_pkg
+
+        assert not hasattr(auth_pkg, "bootstrap_router")
