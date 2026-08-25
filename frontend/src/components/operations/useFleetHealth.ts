@@ -8,8 +8,11 @@
  * `useFleetHealth`) by plan
  * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1: the Dev Ops
  * Overview is the surface that OWNS this read now, and a hook declared inside
- * one page cannot be imported by another. The pipeline page keeps calling it
- * until Phase 4 moves the last consumer off that page.
+ * one page cannot be imported by another. Phase 4 then removed the pipeline
+ * page's own call entirely — that page makes zero requests to this route —
+ * leaving two callers: `/admin/coord/devops` at the 10 s foreground cadence
+ * below, and `CoordNav`'s `useFleetAlarmBadge`, which reads the same URL on
+ * the 60 s nav cadence for the `Dev Ops ▾` alarm.
  *
  * The devices this returns are the SPINE of every fleet surface built on it:
  * a device that reports health but publishes no resource sample, and a device
@@ -23,7 +26,7 @@ import { httpClient } from "@/services/service-factory";
 /**
  * A SAME-ORIGIN literal, deliberately, and not `OPERATIONS_API` from
  * `./utils` (which prefixes `ApiConfig.API_BASE_URL`). This is the exact
- * string the pipeline page has been polling; the lift is a move, not a
+ * string the pipeline page used to poll; the lift was a move, not a
  * behaviour change, and the console has both conventions in it today
  * (`CoordNav`'s alerts and notifications badges are literals too). Reconcile
  * them deliberately, in a change that is about that — not as a side effect of

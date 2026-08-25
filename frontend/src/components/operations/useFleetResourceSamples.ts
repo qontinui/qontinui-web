@@ -63,10 +63,8 @@ export interface UseFleetResourceSamplesResult {
 
 export function useFleetResourceSamples(options?: {
   windowSecs?: number;
-  enabled?: boolean;
 }): UseFleetResourceSamplesResult {
   const windowSecs = options?.windowSecs ?? DEFAULT_WINDOW_SECS;
-  const enabled = options?.enabled ?? true;
 
   const [data, setData] = useState<ResourceSamplesResponse | null>(null);
   const [fetchedAtMs, setFetchedAtMs] = useState<number | null>(null);
@@ -97,21 +95,22 @@ export function useFleetResourceSamples(options?: {
   }, [windowSecs]);
 
   useEffect(() => {
-    // Reset on EVERY run, including the disabled one: leaving the ref `true`
-    // from a prior cleanup would make a later manual refresh() silently
-    // discard its own response.
+    // Reset on every run: leaving the ref `true` from a prior cleanup would
+    // make a later manual refresh() silently discard its own response.
+    //
+    // There is no `enabled` switch here any more. It existed so
+    // `FleetResourcesSection` could stand down while the pipeline page
+    // injected its own poll from above; Phase 4 of
+    // `2026-08-25-coord-console-intent-and-devops-sections` deleted that page
+    // poll, and with it the only caller that ever passed `false`.
     cancelledRef.current = false;
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
     refresh();
     const id = setInterval(refresh, RESOURCE_POLL_INTERVAL_MS);
     return () => {
       cancelledRef.current = true;
       clearInterval(id);
     };
-  }, [refresh, enabled]);
+  }, [refresh]);
 
   return { data, loading, error, fetchedAtMs, refresh };
 }

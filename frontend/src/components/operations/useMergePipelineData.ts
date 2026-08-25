@@ -21,7 +21,7 @@
 // `mergeDataOwner.test.ts` pins the property at the source level, because a
 // render test cannot see a component that never mounts. Note the guard's own
 // scope: `/merge/queue` and `/pr-merge/prs` are legitimately read by other
-// SURFACES too (LandedFeaturesPanel, StuckPrRecoveryPanel, usePrCheckDetails)
+// SURFACES too (StuckPrRecoveryPanel, usePrCheckDetails)
 // — what may not happen again is the hero fetching them a second time.
 //
 // Load discipline (2026-07-21 prod incident): every request in a batch pins

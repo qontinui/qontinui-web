@@ -21,13 +21,18 @@
  *  - live Notifications badge from the server's `unread_count` SCALAR —
  *    never the returned page length (plan
  *    `2026-08-05-coord-notifications-type-and-tab.md`, Change 4)
+ *  - the FLEET ALARM on the `Dev Ops ▾` trigger (Verification 7 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`), including the
+ *    `unknown` count, which is the one that must survive: a trigger that
+ *    showed only breaches would render a fleet whose telemetry has gone dark
+ *    exactly like a healthy one
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-let pathname = "/admin/coord/fleet";
+let pathname = "/admin/coord/pipeline";
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
 }));
@@ -50,7 +55,7 @@ describe("CoordNav", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpGet.mockResolvedValue({ alerts: [], total_count: 0 });
-    pathname = "/admin/coord/fleet";
+    pathname = "/admin/coord/pipeline";
     isSuperuser = false;
   });
 
@@ -58,7 +63,14 @@ describe("CoordNav", () => {
     const user = userEvent.setup();
     render(<CoordNav />);
 
-    expect(screen.getByTestId("coord-nav-fleet")).toHaveTextContent("Pipeline");
+    // The tab has read "Pipeline" since 2026-07-14; Phase 4 of
+    // `2026-08-25-coord-console-intent-and-devops-sections` finally made the
+    // route and the testid say so too (`coord-nav-fleet` →
+    // `coord-nav-pipeline`, `/admin/coord/fleet` → `/admin/coord/pipeline`).
+    const pipeline = screen.getByTestId("coord-nav-pipeline");
+    expect(pipeline).toHaveTextContent("Pipeline");
+    expect(pipeline).toHaveAttribute("href", "/admin/coord/pipeline");
+    expect(screen.queryByTestId("coord-nav-fleet")).not.toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-prs")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-gates")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-alerts")).toBeInTheDocument();
@@ -238,11 +250,21 @@ describe("CoordNav", () => {
     expect(screen.getByTestId("coord-nav-onboarding-status")).toBeVisible();
     // Runner releases dashboard lives beside Deploys in the Dev Ops group.
     expect(screen.getByTestId("coord-nav-releases")).toBeVisible();
-    // Overview, then the nine operator-only members.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(10);
+    // The two routes Phase 4 created out of panels that were buried two
+    // disclosures deep inside the pipeline page.
+    expect(screen.getByTestId("coord-nav-test-targets")).toHaveAttribute(
+      "href",
+      "/admin/coord/test-targets"
+    );
+    expect(screen.getByTestId("coord-nav-migrations")).toHaveAttribute(
+      "href",
+      "/admin/coord/migrations"
+    );
+    // Overview, then the eleven operator-only members.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(12);
   });
 
-  it("puts Overview first in the Dev Ops group", async () => {
+  it("orders the Dev Ops group Overview · Trees · Spawn · Test Targets · Migrations", async () => {
     isSuperuser = true;
     const user = userEvent.setup();
     render(<CoordNav />);
@@ -250,8 +272,13 @@ describe("CoordNav", () => {
     await user.click(screen.getByTestId("coord-nav-group-devops"));
     await screen.findByTestId("coord-nav-devops-overview");
     const items = screen.getAllByRole("menuitem");
-    expect(items[0]).toHaveTextContent("Overview");
-    expect(items[1]).toHaveTextContent("Trees");
+    expect(items.slice(0, 5).map((el) => el.textContent)).toEqual([
+      "Overview",
+      "Trees",
+      "Spawn",
+      "Test Targets",
+      "Migrations",
+    ]);
   });
 
   it("hides the Releases Dev Ops tab from a plain member", () => {
@@ -270,6 +297,8 @@ describe("CoordNav", () => {
     for (const [path, testId, label] of [
       ["/admin/coord/devops", "coord-nav-devops-overview", "Overview"],
       ["/admin/coord/trees", "coord-nav-trees", "Trees"],
+      ["/admin/coord/test-targets", "coord-nav-test-targets", "Test Targets"],
+      ["/admin/coord/migrations", "coord-nav-migrations", "Migrations"],
       ["/admin/coord/releases", "coord-nav-releases", "Releases"],
       ["/admin/coord/git-ops", "coord-nav-git-ops", "Git Ops"],
       ["/admin/coord/memory", "coord-nav-memory", "Memory"],
@@ -531,6 +560,196 @@ describe("CoordNav", () => {
       ).not.toBeInTheDocument();
       // The sibling Alerts badge is unaffected by the notifications failure.
       expect(screen.getByTestId("coord-nav-alerts")).toBeInTheDocument();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // The fleet alarm on the `Dev Ops ▾` trigger — Verification 7.
+  //
+  // These five counts used to live on the pipeline page's collapsed
+  // `System details` header, kept alive by two page polls that ran whether or
+  // not the drawer was open. Phase 4 deleted the drawer AND the polls; the
+  // alarm reads here instead, on the nav cadence, visible from every console
+  // page.
+  //
+  // The `unknown` case is the load-bearing one and has its own test below.
+  // --------------------------------------------------------------------------
+
+  describe("Dev Ops fleet alarm", () => {
+    /** Coord wire shape — `DeviceHealthSnapshot` (fleet_health.rs). */
+    function coordDevice(id: string, hostname: string, state?: string) {
+      return { device_id: id, hostname, state };
+    }
+
+    /**
+     * One resource-sample row. `headroom` is coord's OWN admission verdict —
+     * there is no client-side band anywhere in this path, which is why a high
+     * pressure ratio with `headroom: "ok"` must raise nothing.
+     */
+    function sample(
+      deviceId: string,
+      laneInstance: string | null,
+      headroom: "ok" | "warn" | "breach" | undefined,
+      ageSecs = 15
+    ) {
+      const row: Record<string, unknown> = {
+        device_id: deviceId,
+        lane: "host",
+        lane_instance: laneInstance,
+        sampled_at: "2026-08-25T12:00:00Z",
+        age_secs: ageSecs,
+        mem_total_bytes: 1,
+        mem_available_bytes: 1,
+        commit_total_bytes: 1,
+        commit_available_bytes: 1,
+        disk_total_bytes: 1,
+        disk_free_bytes: 1,
+        source: "supervisor",
+        pressure: { ratio: 0.4, basis: "commit" },
+        headroom,
+      };
+      if (headroom === undefined) delete row.headroom;
+      return row;
+    }
+
+    /** Route the nav's four reads: alerts, notifications, health, samples. */
+    function routeFleet(health: unknown, samples: unknown) {
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples"))
+          return Promise.resolve(samples);
+        if (u.includes("fleet/health")) return Promise.resolve(health);
+        if (u.startsWith("/api/v1/operations/notifications")) {
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        }
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+    }
+
+    it("surfaces breach, warn, stale and unknown together on the trigger", async () => {
+      // Four lanes on one machine, one per class. `d-2` is reported by coord's
+      // health read in a non-healthy state, which is the fifth count.
+      routeFleet(
+        {
+          devices: [
+            coordDevice("d-1", "msi", "healthy"),
+            coordDevice("d-2", "nuc", "degraded"),
+          ],
+        },
+        {
+          latest: [
+            sample("d-1", "a", "breach"),
+            sample("d-1", "b", "warn"),
+            // Far older than the staleness threshold: its last verdict was a
+            // breach, but a stale sample is not a claim about now.
+            sample("d-1", "c", "breach", 4000),
+            // An older coord that reports no admission verdict at all.
+            sample("d-1", "d", undefined),
+            // `nuc` publishes normally — its contribution to the alarm is the
+            // `unhealthy` count from coord's health read, not a lane verdict.
+            // Without this row it would ALSO count as `unknown`, which is
+            // correct behaviour but would make the assertion below ambiguous
+            // about which absence produced the count.
+            sample("d-2", null, "ok"),
+          ],
+          history: [],
+        }
+      );
+      render(<CoordNav />);
+
+      const trigger = screen.getByTestId("coord-nav-group-devops");
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-breach-badge")
+        ).toHaveTextContent("1 refusing work")
+      );
+      expect(
+        screen.getByTestId("coord-nav-devops-warn-badge")
+      ).toHaveTextContent("1 delaying work");
+      expect(
+        screen.getByTestId("coord-nav-devops-stale-badge")
+      ).toHaveTextContent("1 stale");
+      expect(
+        screen.getByTestId("coord-nav-devops-unknown-badge")
+      ).toHaveTextContent("1 unknown");
+      expect(
+        screen.getByTestId("coord-nav-devops-unhealthy-badge")
+      ).toHaveTextContent("1 unhealthy");
+      // All of them ride the group TRIGGER, so they are readable without
+      // opening the menu — that is the whole point of moving them here.
+      for (const id of [
+        "coord-nav-devops-breach-badge",
+        "coord-nav-devops-warn-badge",
+        "coord-nav-devops-stale-badge",
+        "coord-nav-devops-unknown-badge",
+        "coord-nav-devops-unhealthy-badge",
+      ]) {
+        expect(trigger).toContainElement(screen.getByTestId(id));
+      }
+    });
+
+    it("shows `unknown`, not silence, when the fleet's telemetry has gone dark", async () => {
+      // The false-safe this badge exists to prevent: machines are registered,
+      // nothing is publishing samples. A breach-only badge would render this
+      // identically to an all-clear.
+      routeFleet(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [], history: [] }
+      );
+      render(<CoordNav />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-unknown-badge")
+        ).toHaveTextContent("1 unknown")
+      );
+      // …and it is NOT dressed as an alarm. Unknown is not red.
+      expect(
+        screen.getByTestId("coord-nav-devops-unknown-badge").className
+      ).not.toContain("text-red-200");
+      expect(
+        screen.queryByTestId("coord-nav-devops-breach-badge")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("coord-nav-devops-stale-badge")
+      ).not.toBeInTheDocument();
+    });
+
+    it("raises nothing when coord is still electing every lane", async () => {
+      routeFleet(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [sample("d-1", null, "ok")], history: [] }
+      );
+      render(<CoordNav />);
+
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      const trigger = screen.getByTestId("coord-nav-group-devops");
+      expect(trigger).toHaveTextContent(/^Dev Ops$/);
+      for (const id of [
+        "coord-nav-devops-breach-badge",
+        "coord-nav-devops-warn-badge",
+        "coord-nav-devops-stale-badge",
+        "coord-nav-devops-unknown-badge",
+        "coord-nav-devops-unhealthy-badge",
+      ]) {
+        expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+      }
+    });
+
+    it("renders no alarm at all when the fleet reads fail", async () => {
+      // A failed poll is evidence about the network, not about the fleet. The
+      // trigger stays quiet rather than inventing either an alarm or an
+      // all-clear count.
+      httpGet.mockRejectedValue(new Error("boom"));
+      render(<CoordNav />);
+
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      expect(
+        screen.queryByTestId("coord-nav-devops-unknown-badge")
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("coord-nav-group-devops")).toHaveTextContent(
+        /^Dev Ops$/
+      );
     });
   });
 });

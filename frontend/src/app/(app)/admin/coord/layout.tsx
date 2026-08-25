@@ -11,7 +11,7 @@
  * distinction is load-bearing for the connect-flow security reasoning in
  * `onboarding-status/page.tsx`, so do not restate it as "admin-gated".
  * Five primary pages:
- *  - /admin/coord/fleet
+ *  - /admin/coord/pipeline
  *  - /admin/coord/trees
  *  - /admin/coord/plans (+ /admin/coord/plans/[slug])
  *  - /admin/coord/alerts

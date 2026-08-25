@@ -30,15 +30,12 @@ export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
 export { CiStatusPanel } from "./CiStatusPanel";
-export { GatesPanel } from "./GatesPanel";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";
 export {
   DeviceCrossLinks,
-  HealthSummaryCard,
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
-export type { HealthSummaryCardProps } from "./FleetHealthSummary";
 export { FLEET_HEALTH_API, useFleetHealth } from "./useFleetHealth";
 export type {
   FleetHealthDevice,
@@ -49,7 +46,6 @@ export { summarizeFleetLiveness } from "./fleetLiveness";
 export type { FleetLivenessLevel, FleetLivenessSummary } from "./fleetLiveness";
 export { FleetResourcesSection } from "./FleetResourcesSection";
 export { FleetTestTargetsPanel } from "./FleetTestTargetsPanel";
-export { LandedFeaturesPanel } from "./LandedFeaturesPanel";
 export { MachineCard } from "./MachineCard";
 export { DeviceStatusTile } from "./DeviceStatusTile";
 export { DevActionsTile } from "./DevActionsTile";

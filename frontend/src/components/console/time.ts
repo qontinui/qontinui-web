@@ -6,7 +6,7 @@
  *
  * These lived in `components/operations/utils.ts`. That module is 730 lines and
  * is NOT a neutral util bag: it is the merge-train ROUTE CATALOGUE
- * (`OPERATIONS_API`, `GATES_LIST_API`, `SYMBOL_CLAIMS_API`, ~30 URL builders,
+ * (`OPERATIONS_API`, `SYMBOL_CLAIMS_API`, ~30 URL builders,
  * the poll-cadence constants) with a runtime dependency on
  * `@/services/api-config`. Importing it from `console/statusRow.tsx` was a
  * runtime edge from the base layer into a feature layer, and it made the

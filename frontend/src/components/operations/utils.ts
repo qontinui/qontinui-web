@@ -209,13 +209,26 @@ export const STUCK_PR_MAX_CARDS = 6;
 export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
 
 /**
- * REST + action endpoints for the gates panel (plan
+ * Gate ACTION endpoints (plan
  * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
  * tenant-scoped server-side via the operator → tenant_id resolver (coord
  * derives the tenant from the forwarded bearer); the caller never passes a
  * tenant_id.
  *
- * - `GATES_LIST_API`         — GET list of the tenant's gates.
+ * **There is no gates LIST url here any more.** `GATES_LIST_API` /
+ * `gatesListUrl` backed `GatesPanel`'s own read of
+ * `GET /operations/gates/list`; Phase 4 of
+ * `2026-08-25-coord-console-intent-and-devops-sections` deleted that panel, so
+ * the console has exactly ONE gates list read left —
+ * `/admin/coord/gates` → `adminDevService.getOverview()` →
+ * `/api/v1/admin-dev/overview` → coord `GET /coord/dev-overview`. Do not
+ * reintroduce a second one; two list reads over two backends is what that
+ * phase removed.
+ *
+ * These builders are shared by `/admin/coord/gates` (`GateActions.tsx`) and
+ * by any future gate surface — the action layer was already unified on them
+ * before the panel was deleted, which is why the delete cost no capability.
+ *
  * - `gateApproveUrl(id)`     — POST clear an `operator_approval` gate.
  * - `gateReopenUrl(id)`      — POST clone a cleared/failed gate into a new
  *                              open gate (undo-by-reopen).
@@ -224,21 +237,6 @@ export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
  * - `gateMuteUrl(id)` / `gateUnmuteUrl(id)` — POST reversible mute toggle.
  * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
  */
-export const GATES_LIST_API = `${OPERATIONS_API}/gates/list`;
-/**
- * Gates-list URL with optional filters. `excludeOrphans` appends
- * `?exclude_orphans=1`, asking coord to hide ORPHANED gates — `pr_merged`
- * gates whose PR is known-closed and `ci_green` gates on superseded SHAs
- * (no longer any open PR's head); neither can ever clear. Coord treats the
- * param as a truthy string; omitting it returns the raw, unfiltered list —
- * so the bare `GATES_LIST_API` constant above stays byte-identical for
- * existing callers.
- */
-export function gatesListUrl(opts: { excludeOrphans?: boolean }): string {
-  return opts.excludeOrphans
-    ? `${GATES_LIST_API}?exclude_orphans=1`
-    : GATES_LIST_API;
-}
 export function gateApproveUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
 }
@@ -275,13 +273,6 @@ export function gateForceClearUrl(gateId: string): string {
 export function gateContinuationCancelUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/continuation-cancel`;
 }
-
-/**
- * Polling interval for the gates panel (ms). Gates evaluate at coord's
- * sweep cadence (10s default) and verdicts flip slowly; 15s polling
- * surfaces a flip within ~2 sweeps without hot-looping the proxy.
- */
-export const GATES_POLL_MS = 15_000;
 
 /**
  * POST endpoint that sets a PR's GitHub draft state (plan

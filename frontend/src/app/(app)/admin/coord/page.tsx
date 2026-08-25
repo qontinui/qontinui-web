@@ -3,7 +3,7 @@
 /**
  * /admin/coord — landing page.
  *
- * Redirects to /admin/coord/fleet. The layout already gates non-admins
+ * Redirects to /admin/coord/pipeline. The layout already gates non-admins
  * and renders the nav, so this is purely a default-route convenience.
  */
 
@@ -14,7 +14,7 @@ export default function CoordLandingPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/admin/coord/fleet");
+    router.replace("/admin/coord/pipeline");
   }, [router]);
 
   return (

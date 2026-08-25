@@ -198,7 +198,7 @@ describe("the Dev Ops mount is a mount, not a fork", () => {
 
   it("mounts the same component `/environments/machines` mounts", () => {
     // The plan's distinction, guarded: this is ONE implementation with two
-    // mount points, unlike the `GatesPanel` / `/admin/coord/gates` pair, which
+    // mount points, unlike the former `GatesPanel` / `/admin/coord/gates` pair, which
     // is two implementations over two backends. A second copy of the panel
     // would satisfy every behavioural test above and still be the fork.
     const root = join(__dirname, "..", "..");

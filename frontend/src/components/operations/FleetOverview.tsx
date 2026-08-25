@@ -74,12 +74,16 @@ function buildMachineGroups(
   symbolClaimsByMachine: Map<string, SymbolClaim[]>,
   volumesFetch: VolumesFetch,
   /**
-   * Coord's `/operations/fleet/health` devices, or `null` when this list is
-   * built WITHOUT that read (the pipeline page). `null` leaves every group's
-   * `coordHealth` undefined — an absence of the read, which is a different
-   * thing from coord having no row for a host.
+   * Coord's `/operations/fleet/health` devices.
+   *
+   * Always an array now: the mount that built this list WITHOUT the coord read
+   * (the pipeline page) is gone as of Phase 4 of
+   * `2026-08-25-coord-console-intent-and-devops-sections`, so every group ends
+   * up with a `coordHealth` — `{matched: true, …}` or `{matched: false}`. An
+   * EMPTY array is still a read that happened and found nothing, which is why
+   * it is not the same as the old `null`.
    */
-  coordDevices: FleetHealthDevice[] | null
+  coordDevices: FleetHealthDevice[]
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
   const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
@@ -203,36 +207,34 @@ function buildMachineGroups(
   // whose runner-side facts are UNKNOWN (`coordHealthOnly`). A group that
   // matches no coord device gets `{matched: false}`, which renders `unknown`
   // too, and says why.
-  if (coordDevices) {
-    for (const device of coordDevices) {
-      const hostname = device.hostname ?? device.device_id;
-      const group = byHost.get(hostname);
-      const join = {
-        matched: true as const,
-        device_id: device.device_id,
-        state: device.state,
-      };
-      if (group) {
-        group.coordHealth = join;
-        continue;
-      }
-      const activity = deviceStatusByHost.get(hostname);
-      byHost.set(hostname, {
-        hostname,
-        displayName: displayNames[hostname],
-        runners: [],
-        claudeSessions: [],
-        currentActivity: activity,
-        currentlyEditing: resolveClaims(activity),
-        ciRunner: resolveCiRunner(hostname),
-        volumes: resolveVolumes(hostname, activity, device.device_id),
-        coordHealth: join,
-        coordHealthOnly: true,
-      });
+  for (const device of coordDevices) {
+    const hostname = device.hostname ?? device.device_id;
+    const group = byHost.get(hostname);
+    const join = {
+      matched: true as const,
+      device_id: device.device_id,
+      state: device.state,
+    };
+    if (group) {
+      group.coordHealth = join;
+      continue;
     }
-    for (const group of byHost.values()) {
-      if (!group.coordHealth) group.coordHealth = { matched: false };
-    }
+    const activity = deviceStatusByHost.get(hostname);
+    byHost.set(hostname, {
+      hostname,
+      displayName: displayNames[hostname],
+      runners: [],
+      claudeSessions: [],
+      currentActivity: activity,
+      currentlyEditing: resolveClaims(activity),
+      ciRunner: resolveCiRunner(hostname),
+      volumes: resolveVolumes(hostname, activity, device.device_id),
+      coordHealth: join,
+      coordHealthOnly: true,
+    });
+  }
+  for (const group of byHost.values()) {
+    if (!group.coordHealth) group.coordHealth = { matched: false };
   }
 
   // Sort: healthy machines first, then alphabetically
@@ -282,32 +284,35 @@ export interface FleetOverviewProps {
   /**
    * Coord's device-liveness read (`useFleetHealth`).
    *
-   * Supplied, this list becomes THE machine list: coord's `DeviceState` is
-   * merged onto each row, the per-device cross-links ride along, and a coord
-   * device that appears in no runner inventory gets a row of its own rather
-   * than disappearing. That is the Dev Ops Overview mount, and it is why that
-   * page has exactly ONE machine list.
+   * REQUIRED since Phase 4 of
+   * `2026-08-25-coord-console-intent-and-devops-sections`, which deleted the
+   * pipeline page's mount — the only caller that ever omitted it. This list IS
+   * the machine list: coord's `DeviceState` is merged onto each row, the
+   * per-device cross-links ride along, and a coord device that appears in no
+   * runner inventory gets a row of its own rather than disappearing. That is
+   * why the Dev Ops Overview has exactly ONE machine list and no separate
+   * health card.
    *
-   * Omitted, this renders the runner-inventory view alone — the pipeline
-   * page's mount, which still carries `HealthSummaryCard` separately. Phase 4
-   * of `2026-08-25-coord-console-intent-and-devops-sections` removes that
-   * mount, and with it this prop's optionality.
+   * Do not make this optional again to serve a second mount. The optional arm
+   * was a SECOND definition of "healthy" rendered beside this one, and two
+   * notions of healthy on one console is a correctness defect, not a layout
+   * preference.
    */
-  health?: UseFleetHealthResult;
+  health: UseFleetHealthResult;
   /**
    * The devenv machine roster (`useDevenvMachines`), supplied by the Dev Ops
    * Overview so each row can resolve its CI-capacity join and mount the shared
    * `CiNodeConfigPanel` behind a collapsed disclosure.
    *
    * This component neither reads it nor caches it: the page owns the one read
-   * and this passes the resolved join down. Omitted — the pipeline page's mount
-   * — no row renders a CI-capacity block at all, because a page that never
-   * looked must not report on the join.
+   * and this passes the resolved join down. Required for the same reason
+   * `health` is — the mount that omitted it is gone, and a row that resolves
+   * the join from nothing would be reporting on a read nobody made.
    */
-  ciMachines?: DevenvMachinesRead;
+  ciMachines: DevenvMachinesRead;
 }
 
-export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
+export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -425,7 +430,7 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
 
   // Stable identity: `?? []` would allocate a fresh array every render and
   // defeat the memo below.
-  const coordDevices = health ? (health.data?.devices ?? EMPTY_DEVICES) : null;
+  const coordDevices = health.data?.devices ?? EMPTY_DEVICES;
 
   const machineGroups = useMemo(
     () =>
@@ -437,19 +442,17 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
             volumes,
             coordDevices
           )
-        : coordDevices
-          ? // The runner-inventory read failed or has not landed, but coord's
-            // device list has. Those machines still exist — render them with
-            // their runner-side facts UNKNOWN rather than showing nothing,
-            // which would read as an empty fleet.
-            buildMachineGroups(
-              EMPTY_FLEET,
-              deviceStatus.byHostname,
-              symbolClaims.byMachine,
-              volumes,
-              coordDevices
-            )
-          : [],
+        : // The runner-inventory read failed or has not landed, but coord's
+          // device list may have. Those machines still exist — render them
+          // with their runner-side facts UNKNOWN rather than showing nothing,
+          // which would read as an empty fleet.
+          buildMachineGroups(
+            EMPTY_FLEET,
+            deviceStatus.byHostname,
+            symbolClaims.byMachine,
+            volumes,
+            coordDevices
+          ),
     [
       fleet,
       deviceStatus.byHostname,
@@ -529,7 +532,7 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
   // path (the coord proxy + WS bridge), so it may still have data — render
   // the tile alongside the fleet-error notice rather than short-circuiting
   // it out.
-  if (error && !fleet && !coordDevices?.length) {
+  if (error && !fleet && coordDevices.length === 0) {
     return (
       <TooltipProvider delayDuration={200}>
         <div className="space-y-6">
@@ -558,13 +561,13 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
   return (
     <TooltipProvider delayDuration={200}>
       <CollapsiblePanel
-        data-testid={health ? "coord-devops-machines" : "coord-fleet-overview"}
-        storageKey={health ? "devops:machines" : "fleet:overview"}
+        data-testid="coord-devops-machines"
+        storageKey="devops:machines"
         icon={<Server className="h-4 w-4" />}
         // Merged, this is not "an overview of the fleet" beside a second
         // machine list — it IS the machine list, so it is named for what its
         // rows are.
-        title={health ? "Machines" : "Fleet overview"}
+        title="Machines"
         summary={
           <Badge variant="outline" className="text-[10px]">
             {machineGroups.length}
@@ -597,7 +600,7 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps = {}) {
           {/* The coord health read's own failure. Reported next to the rows it
               affects rather than swallowed: with the read down, every row's
               coord state below is the LAST one seen, not a current one. */}
-          {health?.error && (
+          {health.error && (
             <div
               className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
               role="status"

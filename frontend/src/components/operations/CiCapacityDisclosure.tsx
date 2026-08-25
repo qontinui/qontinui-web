@@ -16,7 +16,7 @@
  * — if this file ever grows a config fetch, a draft config, or a friendlier
  * default, the phase has failed and that test fails with it.
  *
- * It is deliberately unlike the `GatesPanel` / `/admin/coord/gates` pair
+ * It is deliberately unlike the former `GatesPanel` / `/admin/coord/gates` pair
  * elsewhere in the same plan, which is two implementations over two different
  * backend reads.
  *
