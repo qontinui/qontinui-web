@@ -226,8 +226,7 @@ export function PromptDocumentList() {
         </div>
       )}
 
-      {!initialLoading &&
-        (documents.length > 0 || canAssertEmpty) &&
+      {(documents.length > 0 || canAssertEmpty) &&
         PROMPT_DOCUMENT_BANDS.map((band) => {
           // Authority order is `PROMPT_DOCUMENT_KINDS`', preserved within the
           // band — the band regroups the list, it does not re-rank it.
@@ -250,15 +249,23 @@ export function PromptDocumentList() {
               </div>
 
               {populated.length === 0 ? (
-                // Reached only when emptiness is KNOWN (`canAssertEmpty`), so
-                // this says "nobody has authored one", never "we couldn't see".
-                <p
-                  className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
-                  data-testid={`kind-band-empty-${band}`}
-                >
-                  No {BAND_META[band].label.toLowerCase()} documents yet —
-                  nothing here says {BAND_META[band].question}.
-                </p>
+                // `canAssertEmpty` is re-checked HERE, not just on the outer
+                // gate. The outer gate passes on `documents.length > 0` alone,
+                // and a failed refetch KEEPS the last-good list on screen
+                // (`usePromptDocuments`, deliberately) — so a stale list with
+                // an error banner would otherwise reach this branch and state
+                // "nobody has authored one" on no evidence. Emptiness is a fact
+                // only when coord actually answered; otherwise render nothing
+                // and let the banner above say the view is stale.
+                canAssertEmpty ? (
+                  <p
+                    className="rounded-lg border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground"
+                    data-testid={`kind-band-empty-${band}`}
+                  >
+                    No {BAND_META[band].label.toLowerCase()} documents yet —
+                    nothing here says {BAND_META[band].question}.
+                  </p>
+                ) : null
               ) : (
                 populated.map((kind) => {
                   const group = documents.filter((d) => d.kind === kind);

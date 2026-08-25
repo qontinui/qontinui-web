@@ -57,7 +57,6 @@ function summary(
 ): PromptDocumentSummary {
   return {
     id: `doc-${kind}-${name}`,
-    tenant_id: "tenant-1",
     kind,
     name,
     description: null,
@@ -66,7 +65,6 @@ function summary(
     current_version: 2,
     updated_by: "someone@example.com",
     updated_at: "2026-08-20T10:00:00Z",
-    attrs: null,
   };
 }
 
