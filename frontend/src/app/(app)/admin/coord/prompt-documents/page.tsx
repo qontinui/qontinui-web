@@ -5,8 +5,10 @@
  * document coord serves the fleet (plan
  * `2026-07-17-session-autonomy-fabric.md`, Phase 9).
  *
- * One editor over all six kinds — `session_briefing` (the text appended to the
- * system prompt of every session the runner hosts), `policy` (the canonical
+ * One editor over all seven kinds — `session_briefing` (the text appended to the
+ * system prompt of every session the runner hosts), `claude_settings` (the
+ * fleet's Claude Code settings baseline a machine renders into its own
+ * `.claude/settings.json`), `policy` (the canonical
  * prose the agent Q&A meta-answer composes in via `{{policy:<name>}}`),
  * `response_prompt` (the meta-answer template itself), `continuation_rules` (the
  * Stop-hook umbrella prompt), `agent_playbook` (e.g. the merge-shepherd
