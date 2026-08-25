@@ -41,7 +41,7 @@
 import { chromium, type Page } from "@playwright/test";
 import { classifyConsole, type ConsoleErrorEntry, type ConsoleLevel } from "./console-policy";
 
-const DEFAULT_ROUTES = ["/operations", "/sessions", "/admin/coord/fleet"];
+const DEFAULT_ROUTES = ["/operations", "/sessions", "/admin/coord/pipeline"];
 
 /**
  * Generic landmark: the route rendered real chrome (a top-level <h1> or an

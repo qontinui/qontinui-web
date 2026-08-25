@@ -39,7 +39,7 @@ import httpx
 import structlog
 from fastapi import HTTPException, Request
 
-from app.core.config import settings
+from app.core.config import coord_device_base
 
 logger = structlog.get_logger(__name__)
 
@@ -86,7 +86,7 @@ async def _get(
     ownership-miss signal) instead of raising; callers that want to
     surface coord's 404 verbatim leave it False.
     """
-    url = f"{settings.COORD_URL}{path}"
+    url = f"{coord_device_base()}{path}"
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, headers=_headers(bearer, user_id))

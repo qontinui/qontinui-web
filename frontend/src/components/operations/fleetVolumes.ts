@@ -351,12 +351,21 @@ export function volumesReliabilityWarning(
 export function resolveMachineVolumes(
   hostname: string,
   activity: DeviceStatus | undefined,
-  fetched: VolumesFetch
+  fetched: VolumesFetch,
+  /**
+   * A device id learned from somewhere OTHER than `device_status` — coord's
+   * `/fleet/health` row for this machine, on a list built with that read
+   * merged in. Used only when `activity` carries none: a machine coord names
+   * but that has posted no device-status row could otherwise be looked up by
+   * hostname alone, and reported as "no coord device row in view" when there
+   * plainly is one.
+   */
+  fallbackDeviceId?: string | null
 ): MachineVolumes {
   if (fetched.state !== "ok") {
     return { state: "unknown", reason: fetched.reason };
   }
-  const deviceId = activity?.device_id ?? null;
+  const deviceId = activity?.device_id ?? fallbackDeviceId ?? null;
   const entry =
     (deviceId ? fetched.byDevice.get(deviceId) : undefined) ??
     fetched.byHostname.get(hostname);

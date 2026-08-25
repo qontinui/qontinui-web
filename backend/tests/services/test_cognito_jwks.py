@@ -281,3 +281,69 @@ async def test_unknown_kid_after_refresh_rejected() -> None:
     assert "never-present" in str(exc.value) or "no jwk" in str(exc.value).lower()
     # Cold fetch + one forced refresh = 2.
     assert client.fetch_count == 2
+
+
+@pytest.mark.asyncio
+async def test_forced_refetch_is_rate_limited() -> None:
+    """`kid` is attacker-controlled, so a miss must not drive a fetch each time.
+
+    It is read from an UNVERIFIED header on an unauthenticated path, so
+    without a cooldown any caller could force one outbound Cognito
+    round-trip per request — an amplification vector that also stalls
+    every concurrent verification behind the client's lock for the
+    duration of each fetch.
+
+    Matches the throttle coord's `auth_sso::FORCED_REFRESH_COOLDOWN` and
+    the sibling `coord_jwks` client already apply.
+    """
+    private, jwk = _rsa_keypair(kid="present")
+
+    class _CountingClient(CognitoJWKSClient):
+        def __init__(self) -> None:
+            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            self.fetch_count = 0
+
+        async def _fetch_jwks(self) -> dict[str, Any]:
+            self.fetch_count += 1
+            return {"keys": [jwk]}
+
+    client = _CountingClient()
+    unknown = _mint(private, _id_token_claims(), kid="never-in-this-set")
+
+    for _ in range(6):
+        with pytest.raises(CognitoTokenInvalidError):
+            await client.verify_token(unknown)
+
+    # 1 cold fetch + exactly 1 forced refetch — not 6.
+    assert client.fetch_count == 2, f"expected 2 fetches, got {client.fetch_count}"
+
+
+@pytest.mark.asyncio
+async def test_cooldown_does_not_block_the_cold_fetch_or_real_rotation() -> None:
+    """Throttling must not disable recovery, only bound its rate.
+
+    The cooldown is skipped entirely when there is no cache yet (a cold
+    start must always fetch), and a zero window still absorbs a genuine
+    key rotation on the next miss.
+    """
+    new_private, new_jwk = _rsa_keypair(kid="rotated-key")
+    _, old_jwk = _rsa_keypair(kid="old-key")
+    sets = [{"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}]
+
+    class _ZeroCooldownClient(CognitoJWKSClient):
+        def __init__(self) -> None:
+            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            self.fetch_count = 0
+
+        async def _fetch_jwks(self) -> dict[str, Any]:
+            idx = min(self.fetch_count, len(sets) - 1)
+            self.fetch_count += 1
+            return sets[idx]
+
+    client = _ZeroCooldownClient()
+    # Force the window open so this asserts recovery, not the throttle.
+    client._forced_at = -1e9
+    token = _mint(new_private, _id_token_claims(), kid="rotated-key")
+
+    assert (await client.verify_token(token))["iss"] == _ISSUER
+    assert client.fetch_count == 2

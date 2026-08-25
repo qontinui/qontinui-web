@@ -205,10 +205,14 @@ function armDetail(
  *  marked with `data-arm-tone` so a test (and the UI Bridge) can assert
  *  that a gate which will never fire is not shown as a success.
  *
- *  The gate id rides `data-arm-gate-id`, NOT `data-gate-id`: GatesPanel
- *  and GateActions already use the latter for gate ROWS, and both render
- *  on this same dashboard, so a bare `[data-gate-id=...]` selector would
- *  match this chip too. */
+ *  The gate id rides `data-arm-gate-id`, NOT `data-gate-id`: `data-gate-id`
+ *  is the console's id for a gate ROW (`GatesTable` / `GateActions` on
+ *  `/admin/coord/gates`, and `GatesPanel` before Phase 4 of
+ *  `2026-08-25-coord-console-intent-and-devops-sections` deleted it), so a
+ *  bare `[data-gate-id=...]` selector must never match this chip. The
+ *  namespace is what keeps a gate ROW selector and an ARM chip selector from
+ *  colliding — that is still true with one fewer gate surface, and it is why
+ *  this note is rewritten rather than removed. */
 function ArmOutcomeChip({
   arm,
 }: {

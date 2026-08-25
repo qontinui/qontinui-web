@@ -101,7 +101,7 @@ const CONSOLE_PALETTES: ReadonlyArray<{
   perRowKinds?: ReadonlySet<string>;
 }> = [
   {
-    surface: "merge pipeline (/admin/coord/fleet)",
+    surface: "merge pipeline (/admin/coord/pipeline)",
     attentionByKind: PIPELINE_ATTENTION,
     palette: {
       badgeClass: STATUS_BADGE_CLASS,

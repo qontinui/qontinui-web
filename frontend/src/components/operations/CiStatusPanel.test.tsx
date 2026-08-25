@@ -97,8 +97,8 @@ describe("CiStatusPanel notify-when-green arm outcome", () => {
     const chip = await clickNotify(container);
     expect(chip.getAttribute("data-arm-tone")).toBe("armed");
     expect(chip.textContent).toContain("gate armed");
-    // Namespaced away from GatesPanel/GateActions' `data-gate-id` gate rows,
-    // which render on this same dashboard.
+    // Namespaced away from `data-gate-id`, which the console uses for gate
+    // ROWS (`GatesTable` / `GateActions`).
     expect(chip.getAttribute("data-arm-gate-id")).toBe(GATE_ID);
     expect(chip.getAttribute("data-gate-id")).toBeNull();
   });

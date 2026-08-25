@@ -207,6 +207,17 @@ const nextConfig = {
         destination: '/operations',
         permanent: true,
       },
+      // Plan 2026-08-25-coord-console-intent-and-devops-sections Phase 4:
+      // /admin/coord/fleet became /admin/coord/pipeline. The tab has been
+      // labelled "Pipeline" since the 2026-07-14 redesign, and after that
+      // phase "fleet" means Dev Ops — two meanings for one word in one
+      // console is the predictability cost the console style guide exists to
+      // prevent. Bookmarks and older Spec-CI targets land on the new path.
+      {
+        source: '/admin/coord/fleet',
+        destination: '/admin/coord/pipeline',
+        permanent: true,
+      },
       // NOTE: `/admin` -> `/admin/architecture` used to live here. A
       // `redirects()` entry is matched before the filesystem, so it shadowed
       // any page mounted at `/admin` — including cloud-control's admin

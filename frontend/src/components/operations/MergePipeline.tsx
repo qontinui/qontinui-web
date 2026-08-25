@@ -33,6 +33,7 @@ import {
 import {
   AlertTriangle,
   ExternalLink,
+  GitBranch,
   GitMerge,
   GitPullRequest,
   PenLine,
@@ -75,6 +76,7 @@ import {
   SuggestionCard,
 } from "./MergeTrain";
 import { MergeTrainActivity } from "./MergeTrainActivity";
+import { MergeDependencyGraph } from "./MergeDependencyGraph";
 import { prDraftStateUrl, relativeTime } from "./utils";
 import {
   MERGED_LOOKBACK_HOURS,
@@ -141,7 +143,9 @@ function PipelineRowTime({ row }: { row: PipelineRow }) {
       at={isMerged ? row.mergedAt : row.updatedAt}
       verb={isMerged ? "Merged" : "Updated"}
       prefix={
-        isMerged ? <span className="text-green-300/80">merged </span> : undefined
+        isMerged ? (
+          <span className="text-green-300/80">merged </span>
+        ) : undefined
       }
       absent={
         isMerged
@@ -565,6 +569,56 @@ function RowDetail({
 
           {/* which checks failed, with links to the runs */}
           <FailingChecks row={row} />
+
+          {/* The cross-repo dependency DAG for THIS PR, keyed on the row —
+              no repo field, no PR field, nothing to re-type.
+
+              The collapse lives HERE rather than inside the graph component,
+              and that placement is the whole point: `CollapsiblePanel`
+              unmounts its children, so while this is closed the graph
+              component does not exist and its fetch never fires. When the
+              graph owned its own panel, its mount effect sat ABOVE the
+              collapsed content and every expanded row cost a request. Only one
+              row expands at a time (`expandedKey`), so at most one graph is
+              ever mounted. */}
+          {row.prNumber !== null && (
+            <CollapsiblePanel
+              titleAs="h3"
+              data-testid="merge-dep-graph"
+              storageKey="pipeline:dep-graph"
+              defaultOpen={false}
+              icon={<GitBranch className="h-4 w-4" />}
+              title="Cross-repo PR dependency graph"
+            >
+              <MergeDependencyGraph repo={row.repo} pr={row.prNumber} />
+            </CollapsiblePanel>
+          )}
+
+          {/* The merge-side half of resolved Q4: the alembic reservation queue
+              is a Dev Ops resource, and this is the link that carries the need
+              back here. Deliberately worded as a place to look rather than a
+              claim about this PR — coord's queue read
+              (`GET /coord/migrations/queue?repo=`) carries no PR number, so
+              nothing on this surface can join a reservation to a row. Saying
+              "this PR is waiting on a migration slot" would be fabricating the
+              join. */}
+          {(row.status.kind === "queued" || row.status.kind === "blocked") && (
+            <p
+              className="text-[11px] text-muted-foreground m-0"
+              data-testid="pipeline-migration-queue-link"
+            >
+              A PR carrying an alembic migration also waits for a reservation
+              slot, and coord&rsquo;s queue carries no PR number — so this is a
+              place to look, not a verdict on this PR:{" "}
+              <Link
+                href="/admin/coord/migrations"
+                className="underline hover:text-foreground"
+              >
+                migration queue
+              </Link>
+              .
+            </p>
+          )}
         </>
       }
       actions={
@@ -1032,16 +1086,16 @@ export function MergePipeline() {
           )
         }
       >
+        {/* The cross-repo dependency DAG used to be linked from here by a
+            `#merge-dep-graph` anchor into a standalone panel that then asked
+            for the repo and PR number by hand. It lives in each row's own
+            expansion now, keyed on that row (Phase 4 of
+            `2026-08-25-coord-console-intent-and-devops-sections`). */}
         <p className="text-[11px] text-muted-foreground mb-2">
           Raw scheduler proposals, one per attempt (the unified list above
-          collapses these per PR). Cross-repo dependency DAG:{" "}
-          <a
-            href="#merge-dep-graph"
-            className="underline hover:text-foreground"
-          >
-            dependency graph
-          </a>
-          .
+          collapses these per PR). A PR&rsquo;s cross-repo dependency DAG is in
+          that PR&rsquo;s own row — expand the row and open &ldquo;Cross-repo PR
+          dependency graph&rdquo;.
         </p>
         {proposals && proposals.length > 0 ? (
           <div className="space-y-2">
