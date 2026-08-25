@@ -680,7 +680,10 @@ class TestBootstrapRoutesAreGone:
         """The module must not come back as an unmounted import either."""
         import importlib
 
-        with pytest.raises(ModuleNotFoundError):
+        # Match the module name: a bare ``pytest.raises(ModuleNotFoundError)``
+        # also passes when some UNRELATED dependency deeper in the import chain
+        # is missing, which would make this assertion silently vacuous.
+        with pytest.raises(ModuleNotFoundError, match=r"auth\.bootstrap"):
             importlib.import_module("app.api.v1.endpoints.auth.bootstrap")
 
         from app.api.v1.endpoints import auth as auth_pkg
