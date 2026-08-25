@@ -79,7 +79,7 @@ test.describe("Admin - Coord spawn-from-plan", () => {
       return;
     }
 
-    // Spawn page renders; the Infra group trigger surfaces Spawn as its
+    // Spawn page renders; the Dev Ops group trigger surfaces Spawn as its
     // wayfinding crumb (nav redesign — grouped menus).
     await expect(page.getByTestId("coord-spawn-page")).toBeVisible();
     await expect(page.getByTestId("coord-nav-spawn-active")).toBeVisible();
