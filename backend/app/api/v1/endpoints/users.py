@@ -123,32 +123,16 @@ async def get_runner_connection_info(
     return connection_info
 
 
-@router.post("/me/claim-admin")
-async def claim_admin(
-    *,
-    db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(get_current_active_user_async),
-) -> Any:
-    """Allow user to claim admin if no admin exists. Remove after first use!"""
-    from sqlalchemy import select
-
-    # Check if any admin exists
-    result = await db.execute(select(UserModel).filter(UserModel.is_superuser))  # type: ignore[arg-type]
-    existing_admin = result.scalar_one_or_none()
-    if existing_admin:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Admin already exists: {existing_admin.email}",
-        )
-
-    # Make current user admin
-    current_user.is_superuser = True
-    await db.commit()
-    await db.refresh(current_user)
-
-    return {"success": True, "message": f"{current_user.email} is now an admin"}
-
-
+# There is deliberately NO ``POST /me/claim-admin``. It was gated only on
+# ``get_current_active_user_async`` — any authenticated user — and wrote
+# ``is_superuser = True`` straight through the session, bypassing the CRUD
+# layer PR #900 hardened; its zero-admin guard also echoed the existing
+# admin's email to the caller and 500'd (``MultipleResultsFound``) once a
+# second superuser existed. The first superuser is seeded off the HTTP
+# surface by ``app.db.init_db.init_db``. Plan:
+# 2026-08-01-web-bootstrap-superuser-routes-are-live-http-surface.
+# ``tests/test_no_raw_is_superuser_writer.py`` pins that no route may
+# reintroduce a raw writer.
 @router.put("/me", response_model=User)
 @user_limiter.limit("30 per minute")
 async def update_user_me(
