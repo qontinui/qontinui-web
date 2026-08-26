@@ -21,16 +21,35 @@
  * other field passes through (the Rust `Element` has no `deny_unknown_fields`
  * and only `id` is required). See that function for the full rationale.
  *
- * AUTHED-ONLY: every seed route is authenticated (`public: false`). The relay
- * snapshot route requires the in-page `CommandRelayListener`, which never
- * mounts without a resolved `{userId, sessionId}` (provider.tsx's
- * `commandRelayRegistrationMetadata` returns null otherwise) — so a public
- * route can't be captured via the relay. This spec runs under the single
- * `style-gate` Playwright project (authed, setup-minted storageState). The
- * `public` field is still honored as a filter so a future relay-independent
- * public-capture path can coexist, but no public routes exist today.
+ * TWO CAPTURE LANES, selected per route by the manifest's `public` field (the
+ * one interpreter is `capturePathFor` in `./manifest`):
  *
- * RELAY PREREQUISITE — three gates the `CommandRelayListener` (which makes
+ *   `public: false` -> RELAY lane (unchanged, the original path). The route is
+ *     rendered on the project's authed `page` fixture (setup-minted
+ *     storageState) and the snapshot is read through the same-origin relay
+ *     proxy. The relay snapshot route requires the in-page
+ *     `CommandRelayListener`, which never mounts without a resolved
+ *     `{userId, sessionId}` (provider.tsx's `commandRelayRegistrationMetadata`
+ *     returns null otherwise) — hence the auth gates + relay-attach poll below.
+ *
+ *   `public: true` -> INJECTED lane (relay-independent). The route is rendered
+ *     in a FRESH, UNAUTHENTICATED browser context (no storageState, no auth/
+ *     consent seeding, no login guard) and the snapshot is read IN-PAGE from UI
+ *     Bridge's shipped injected runtime — the same mechanism `ui-bridge-inject`
+ *     and `@qontinui/ui-bridge-wrapper`'s `InjectedTransport` drive: the
+ *     `@qontinui/ui-bridge/injected/bundle.global.js` IIFE added as a
+ *     pre-first-paint init script, then
+ *     `window.__uiBridgeInjected.execute('getControlSnapshot', {})`. No relay
+ *     proxy, no listener, no session — so an unauthenticated surface (and, more
+ *     generally, ANY page, including one shipping zero UI Bridge code) is
+ *     capturable. See `captureInjectedSnapshot` below.
+ *
+ * Both lanes run under the single `style-gate` Playwright project and emit the
+ * SAME artifact shapes through the same `normalizeSnapshotForAnalyzer`, so the
+ * downstream analyzer cannot tell them apart.
+ *
+ * RELAY PREREQUISITE (RELAY LANE ONLY — the injected lane needs none of it) —
+ * three gates the `CommandRelayListener` (which makes
  * `/control/snapshot` return elements instead of `503 NO_BROWSER_CONNECTED`)
  * requires, all of which must be true:
  *   (1) env gate — dev server (NODE_ENV=development) OR a prod build with
@@ -49,26 +68,24 @@
 import {
   test,
   expect,
+  type BrowserContext,
   type Page,
   type APIRequestContext,
 } from "@playwright/test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { enrichElements, normalizeBboxes } from "./normalize";
+import {
+  parseRoutesManifest,
+  partitionRoutesByCapturePath,
+  type StyleGateRoute,
+} from "./manifest";
 import { STORAGE_STATE_PATH } from "../auth.constants";
-
-/** A single gated route as declared in `routes.json`. */
-interface StyleGateRoute {
-  id: string;
-  path: string;
-  public: boolean;
-  settleMs: number;
-  description?: string;
-}
-
-interface RoutesManifest {
-  routes: StyleGateRoute[];
-}
+// Type-only: pulls in `@qontinui/ui-bridge/injected`'s `declare global` so
+// `window.__uiBridgeInjected` is typed inside `page.evaluate` callbacks from
+// the SHIPPED contract rather than a hand-rolled local shape.
+import type {} from "@qontinui/ui-bridge/injected";
 
 const STYLE_GATE_DIR = __dirname;
 const ARTIFACTS_DIR = join(STYLE_GATE_DIR, ".artifacts");
@@ -129,21 +146,17 @@ function resolveApiBase(): string {
 /** Load + parse the committed routes manifest. */
 function loadRoutes(): StyleGateRoute[] {
   const raw = readFileSync(join(STYLE_GATE_DIR, "routes.json"), "utf8");
-  const parsed = JSON.parse(raw) as RoutesManifest;
-  if (!parsed || !Array.isArray(parsed.routes)) {
-    throw new Error(
-      `style-gate routes.json is malformed: expected { routes: [...] }`
-    );
-  }
-  return parsed.routes;
+  return parseRoutesManifest(raw);
 }
 
 const ALL_ROUTES = loadRoutes();
 
-// Authed-only seed set (every route is `public: false`). The `public` filter is
-// retained for a future relay-independent public-capture path; today it leaves
-// the set unchanged.
-const AUTHED_ROUTES = ALL_ROUTES.filter((r) => r.public === false);
+// The manifest's `public` field selects the lane (see `capturePathFor`):
+//   relay    <- public: false — authed storageState + /control/snapshot proxy.
+//   injected <- public: true  — fresh unauthenticated context + the in-page
+//                              injected runtime. Relay-independent.
+const { relay: AUTHED_ROUTES, injected: PUBLIC_ROUTES } =
+  partitionRoutesByCapturePath(ALL_ROUTES);
 
 /** Shape of the relay snapshot response we care about for validation. */
 interface SnapshotResponse {
@@ -787,15 +800,32 @@ test.beforeAll(async ({ request, browser }) => {
   // starving the relay poll.
   test.setTimeout(180_000);
 
+  // Everything in this hook exists to serve the RELAY lane (gate 2 + the
+  // cold-start warmup). With no relay-lane routes there is nothing to enable
+  // and nothing to warm, and the injected lane must not be gated on a backend
+  // PUT it never uses. Inert today (the manifest has 3 relay routes), so the
+  // relay lane's behaviour is unchanged; it keeps a public-only manifest from
+  // failing the whole file in `enableCoPilotPreference`.
+  if (AUTHED_ROUTES.length === 0) return;
+
   await enableCoPilotPreference(request);
 
-  const context = await browser.newContext({
-    storageState: STORAGE_STATE_PATH,
-    viewport: VIEWPORT,
-  });
+  let context: BrowserContext | undefined;
   let attached = false;
   let lastStatus = -1;
   try {
+    // Inside the try (not above it) so a warmup that cannot even BUILD its
+    // context — e.g. `storageState` missing because the `setup` project didn't
+    // mint it — is caught and logged like every other warmup miss, per this
+    // hook's own contract ("a warmup miss must not fail the suite ... but we
+    // log loudly"). Thrown here, it aborted the whole FILE, taking the
+    // relay-independent public-lane tests (which touch no storageState) down
+    // with it. Inert whenever the state exists, which is every CI run: the
+    // project declares `dependencies: ["setup"]`.
+    context = await browser.newContext({
+      storageState: STORAGE_STATE_PATH,
+      viewport: VIEWPORT,
+    });
     const page = await context.newPage();
     await seedAuthAndConsentInitScript(page);
     // Warm the historically-cold path end to end. /co-pilot is first in
@@ -818,7 +848,7 @@ test.beforeAll(async ({ request, browser }) => {
       `[style-gate] warmup threw before the relay attached: ${String(err)}`
     );
   } finally {
-    await context.close();
+    await context?.close();
   }
 
   if (attached) {
@@ -943,5 +973,361 @@ for (const route of AUTHED_ROUTES) {
       path: join(FRAMES_DIR, `${route.id}.png`),
       fullPage: false,
     });
+  });
+}
+
+// ===========================================================================
+// INJECTED LANE — relay-independent capture for `public: true` routes
+// ===========================================================================
+//
+// Everything above this line is the RELAY lane and is untouched by the public
+// route support. Nothing below runs for a `public: false` route.
+//
+// WHY A SECOND LANE AT ALL. `/control/snapshot` is served by the in-page
+// `CommandRelayListener`, which returns null from
+// `commandRelayRegistrationMetadata` without a resolved `{userId, sessionId}`.
+// On an unauthenticated tab it therefore never mounts and every snapshot fetch
+// 503s `NO_BROWSER_CONNECTED`. That is a property of the RELAY, not of UI
+// Bridge: the SDK already ships a relay-independent transport — the "injected"
+// one used by `ui-bridge-inject` / `@qontinui/ui-bridge-wrapper`'s
+// `InjectedTransport` to drive pages that ship ZERO UI Bridge code.
+//
+// WHAT WE REUSE, AND WHAT WE DON'T. `InjectedTransport`'s own doc comment says
+// it differs from the plain headless transport in exactly two ways: (1) it adds
+// `@qontinui/ui-bridge`'s `dist/injected/bundle.global.js` as an init-script
+// BEFORE first paint, and (2) it drives the in-page runtime through
+// `page.evaluate`. This lane does exactly those two things against the browser
+// PLAYWRIGHT ALREADY OWNS. We deliberately do NOT construct the transport
+// itself: it subclasses `HeadlessTransport`, whose only other job is launching
+// and closing a Chromium — which would mean a SECOND browser inside a
+// Playwright test, outside the project's `use` config, and a frame captured
+// from a page the project never configured. The shipped artifact (the exact
+// bundle bytes) and the shipped in-page contract (`ready` / `settled` /
+// `execute`, see `@qontinui/ui-bridge/injected`'s `InjectedRuntimeApi`) are
+// reused verbatim; only the browser lifecycle is Playwright's instead of the
+// transport's. Nothing is re-implemented and no CLI is shelled out to (the
+// published `ui-bridge-inject` bin is a silent no-op through its bin symlink —
+// an in-process import sidesteps that entirely).
+//
+// NOTHING SHIPS TO PRODUCTION. The bundle is injected into the automation
+// browser only; the served page is byte-identical to what a user gets.
+
+/** Subpath export of the shipped injected-runtime IIFE. */
+const INJECTED_BUNDLE_SPECIFIER =
+  "@qontinui/ui-bridge/injected/bundle.global.js";
+
+/**
+ * Resolve the shipped injected-runtime bundle on disk, mirroring
+ * `loadInjectedBundle()` in `@qontinui/ui-bridge-wrapper`'s injected transport
+ * (that function is not exported, so the two-step resolution is repeated —
+ * NOT the runtime): the `./injected/bundle.global.js` subpath export first,
+ * then the package.json + dist-path fallback for resolvers that don't honor
+ * subpath exports. Throws a loud, actionable error rather than letting
+ * Playwright fail on a missing init-script path.
+ */
+function resolveInjectedBundlePath(): string {
+  const req = createRequire(__filename);
+  let bundlePath: string;
+  try {
+    bundlePath = req.resolve(INJECTED_BUNDLE_SPECIFIER);
+  } catch {
+    const pkgJson = req.resolve("@qontinui/ui-bridge/package.json");
+    bundlePath = pkgJson.replace(
+      /package\.json$/,
+      "dist/injected/bundle.global.js"
+    );
+  }
+  if (!existsSync(bundlePath)) {
+    throw new Error(
+      `[style-gate] Could not locate the UI Bridge injected runtime bundle ` +
+        `(${INJECTED_BUNDLE_SPECIFIER}); resolved to '${bundlePath}', which ` +
+        `does not exist. The public/injected capture lane needs it. Ensure ` +
+        `@qontinui/ui-bridge is installed and its dist/ is present (the IIFE ` +
+        `is emitted by that package's tsup build).`
+    );
+  }
+  return bundlePath;
+}
+
+/**
+ * Settle tuning handed to the in-page runtime via
+ * `window.__uiBridgeInjectedConfig` (the same shape `InjectedTransport`
+ * builds). SDK defaults are quiet=500ms / cap=10s; both are raised here.
+ *
+ * The QUIET window is the one that matters for a style capture, and 500ms is
+ * measurably too tight: on a local probe page whose last control mounted at
+ * 900ms, the runtime settled at ~500ms and the snapshot came back with 4 of 5
+ * elements — a silently INCOMPLETE capture, which for this gate means a
+ * baseline that omits a control and an analyzer that never sees it. 1000ms
+ * covers a second hydration burst; the CAP still bounds the total. This is the
+ * injected lane's version of the relay lane's whole flake history ("content
+ * mounted after we looked" — see `waitForAppShellSidebar`).
+ *
+ * The CAP is raised because CI runners are loaded and a Next dev-server route
+ * hydrates slower than a static page; it is a bound, not a wait.
+ *
+ * `expectSelector` is deliberately NOT set: the gate is "any interactive
+ * element registered", which is the right generic condition for a style
+ * capture (we want whatever the page renders, not one named control).
+ *
+ * NOTE the deliberate asymmetry with the relay lane: there, readiness is
+ * signal-driven (relay attach + sidebar) and `routes.json`'s `settleMs` is
+ * unused. Here the SDK's own settle machinery IS the signal, and these are its
+ * knobs — a quiet window that RESETS on every re-seed, not a fixed sleep.
+ */
+const INJECTED_SETTLE_QUIET_MS = 1_000;
+const INJECTED_SETTLE_TIMEOUT_MS = 20_000;
+
+/** Bound on the in-page `ready` / `settled` gates (per route). */
+const INJECTED_READY_TIMEOUT_MS = 30_000;
+
+/** In-page settle state read back from the runtime, for diagnostics + gating. */
+interface InjectedSettleState {
+  settled: boolean;
+  settledByTimeout: boolean;
+  expectSatisfied: boolean;
+  elementCount: number;
+}
+
+/**
+ * Install the injected runtime on a context so it is live BEFORE first paint on
+ * every navigation (`addInitScript` re-runs per document). Config first, bundle
+ * second — the bundle reads `window.__uiBridgeInjectedConfig` at evaluation
+ * time, so the ordering is load-bearing (same ordering as
+ * `InjectedTransport.buildInitScripts`).
+ *
+ * The config carries NO `uiBridgeBase`, which is what keeps this Variant A
+ * (direct-drive): with no relay base the bundle never starts a relay client, so
+ * this lane cannot accidentally depend on the relay it exists to avoid.
+ */
+async function installInjectedRuntime(
+  context: BrowserContext,
+  bundlePath: string
+): Promise<void> {
+  await context.addInitScript(
+    ({ quietMs, timeoutMs }) => {
+      window.__uiBridgeInjectedConfig = {
+        settleQuietMs: quietMs,
+        settleTimeoutMs: timeoutMs,
+      };
+    },
+    {
+      quietMs: INJECTED_SETTLE_QUIET_MS,
+      timeoutMs: INJECTED_SETTLE_TIMEOUT_MS,
+    }
+  );
+  await context.addInitScript({ path: bundlePath });
+}
+
+/**
+ * Wait for the in-page runtime's `ready` then `settled` gates and return the
+ * settle state. Mirrors `InjectedTransport.afterLaunch`, including its
+ * BLOCKED classification: a runtime that settled only because its hard cap
+ * fired while the gating condition was still unmet
+ * (`settledByTimeout && !expectSatisfied`) means the page never rendered
+ * interactive content — that is NOT a clean page, and capturing it would emit
+ * a plausible-looking empty snapshot. We throw instead, which yields no
+ * artifacts for the route and is scored CAPTURE-UNAVAILABLE.
+ */
+async function waitForInjectedRuntime(
+  page: Page,
+  route: StyleGateRoute
+): Promise<InjectedSettleState> {
+  try {
+    await page.waitForFunction(
+      () => window.__uiBridgeInjected?.ready === true,
+      undefined,
+      { timeout: INJECTED_READY_TIMEOUT_MS }
+    );
+  } catch (cause) {
+    throw new Error(
+      `[style-gate] CAPTURE-UNAVAILABLE — route "${route.id}" (${route.path}): ` +
+        `the injected UI Bridge runtime never reported ready within ` +
+        `${INJECTED_READY_TIMEOUT_MS}ms. The bundle failed to evaluate (check ` +
+        `the page console / a Content-Security-Policy that blocks injected ` +
+        `script) or the page never reached DOMContentLoaded. Cause: ${String(
+          cause
+        )}`
+    );
+  }
+
+  try {
+    await page.waitForFunction(
+      () => window.__uiBridgeInjected?.settled === true,
+      undefined,
+      { timeout: INJECTED_READY_TIMEOUT_MS }
+    );
+  } catch (cause) {
+    throw new Error(
+      `[style-gate] CAPTURE-UNAVAILABLE — route "${route.id}" (${route.path}): ` +
+        `the injected runtime never reported settled within ` +
+        `${INJECTED_READY_TIMEOUT_MS}ms (its own hard cap is ` +
+        `${INJECTED_SETTLE_TIMEOUT_MS}ms, so this means the page realm wedged ` +
+        `or was torn down). Cause: ${String(cause)}`
+    );
+  }
+
+  const state = await page.evaluate<InjectedSettleState>(() => {
+    const api = window.__uiBridgeInjected;
+    return {
+      settled: api?.settled === true,
+      settledByTimeout: api?.settledByTimeout === true,
+      expectSatisfied: api?.expectSatisfied === true,
+      elementCount: api?.elementCount ?? 0,
+    };
+  });
+
+  if (state.settledByTimeout && !state.expectSatisfied) {
+    throw new Error(
+      `[style-gate] CAPTURE-UNAVAILABLE — route "${route.id}" (${route.path}): ` +
+        `the injected runtime settled at its ${INJECTED_SETTLE_TIMEOUT_MS}ms cap ` +
+        `with an EMPTY registry (0 interactive elements registered). The page ` +
+        `never rendered interactive content in time, or the inject failed. ` +
+        `Treated as BLOCKED rather than captured — an empty snapshot is worse ` +
+        `than a loud failure. Raise INJECTED_SETTLE_TIMEOUT_MS for a genuinely ` +
+        `slow surface.`
+    );
+  }
+
+  return state;
+}
+
+/**
+ * Read the control snapshot IN-PAGE — the relay-independent equivalent of
+ * `captureSnapshot`. `execute('getControlSnapshot', {})` dispatches through the
+ * SAME `executeCommand` dispatcher the relay proxy calls on the far side, so
+ * the returned envelope is the same runner-native `{ elements: [...] }` shape
+ * `locateElements` / `countElements` / `normalizeSnapshotForAnalyzer` already
+ * handle. Nothing here is snapshot-shape-specific to this lane.
+ */
+async function captureInjectedSnapshot(
+  page: Page,
+  route: StyleGateRoute
+): Promise<{ raw: string; body: SnapshotResponse }> {
+  const snapshot = await page.evaluate(
+    () =>
+      window.__uiBridgeInjected!.execute(
+        "getControlSnapshot",
+        {}
+      ) as Promise<unknown>
+  );
+  if (!snapshot || typeof snapshot !== "object") {
+    throw new Error(
+      `[style-gate] CAPTURE-UNAVAILABLE — route "${route.id}" (${route.path}): ` +
+        `the in-page getControlSnapshot returned ${JSON.stringify(snapshot)} ` +
+        `instead of a snapshot object.`
+    );
+  }
+  const body = snapshot as SnapshotResponse;
+  // `raw` exists only as the "couldn't locate elements" passthrough inside
+  // `normalizeSnapshotForAnalyzer`; re-serializing the evaluated object is the
+  // faithful equivalent of the relay lane's response text.
+  return { raw: JSON.stringify(body), body };
+}
+
+/**
+ * Public-lane diagnostic, mirroring `recordAuthDiagnostics`'s role for the
+ * relay lane: enough to tell, from the uploaded artifacts alone, WHICH lane ran
+ * and whether the page actually rendered. Deliberately does NOT probe
+ * `/api/v1/users/me` — this lane is unauthenticated by construction and a 401
+ * here would be the expected result, not a signal. Never throws.
+ */
+function recordInjectedDiagnostics(
+  route: StyleGateRoute,
+  finalUrl: string,
+  state: InjectedSettleState,
+  elementCount: number
+): void {
+  try {
+    mkdirSync(DIAG_DIR, { recursive: true });
+    writeFileSync(
+      join(DIAG_DIR, `${route.id}.json`),
+      JSON.stringify(
+        {
+          route: route.id,
+          requestedPath: route.path,
+          capturePath: "injected",
+          finalUrl,
+          redirectedAwayFromRoute: !finalUrl.endsWith(route.path),
+          settled: state.settled,
+          settledByTimeout: state.settledByTimeout,
+          expectSatisfied: state.expectSatisfied,
+          registeredElementCount: state.elementCount,
+          snapshotElementCount: elementCount,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    console.warn(
+      `[style-gate diag] ${route.id}: capturePath=injected finalUrl=${finalUrl} ` +
+        `elements=${elementCount} settledByTimeout=${state.settledByTimeout}`
+    );
+  } catch {
+    // Diagnostics are best-effort; never break the capture.
+  }
+}
+
+// One test per public route. Each runs in its OWN browser context created from
+// the worker's `browser` fixture — NOT the project's `page` fixture — so it
+// inherits none of the project's `storageState`. That is the point: the capture
+// must prove an UNAUTHENTICATED visitor's view of the surface. Consequently the
+// file-level `beforeEach` (which seeds `is_authenticated` + relay consent onto
+// the fixture page) cannot reach this context, and `assertNotLoginSurface` is
+// deliberately NOT called — on a public route the login surface is the subject,
+// not a failure.
+for (const route of PUBLIC_ROUTES) {
+  test(`capture ${route.id} (${route.path}) [public/injected]`, async ({
+    browser,
+  }) => {
+    mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+    mkdirSync(FRAMES_DIR, { recursive: true });
+
+    const bundlePath = resolveInjectedBundlePath();
+    // No storageState => no cookies, no localStorage, no session. A genuinely
+    // signed-out tab.
+    const context = await browser.newContext({ viewport: VIEWPORT });
+    try {
+      await installInjectedRuntime(context, bundlePath);
+      const page = await context.newPage();
+
+      await page.goto(route.path, { waitUntil: "domcontentloaded" });
+      // Best-effort networkidle for parity with the relay lane; Next dev mode
+      // keeps an HMR socket open, so it may never fire. The authoritative
+      // readiness signal is the runtime's own settle gate below.
+      await page
+        .waitForLoadState("networkidle", { timeout: 5_000 })
+        .catch(() => undefined);
+
+      const state = await waitForInjectedRuntime(page, route);
+      const { raw, body } = await captureInjectedSnapshot(page, route);
+
+      const elementCount = countElements(body);
+      recordInjectedDiagnostics(route, page.url(), state, elementCount);
+      expect(
+        elementCount,
+        `[style-gate] Route "${route.id}" returned a snapshot with 0 elements ` +
+          `via the injected runtime — an empty snapshot is worse than a loud ` +
+          `failure. The runtime registered ${state.elementCount} element(s) at ` +
+          `settle, so either the page is genuinely empty or the registry was ` +
+          `torn down between settle and the snapshot read.`
+      ).toBeGreaterThan(0);
+
+      // IDENTICAL normalization to the relay lane — same functions, same order.
+      // The analyzer must not be able to tell which lane produced a snapshot.
+      writeFileSync(
+        join(SNAPSHOTS_DIR, `${route.id}.json`),
+        normalizeSnapshotForAnalyzer(raw, body),
+        "utf8"
+      );
+
+      await page.screenshot({
+        path: join(FRAMES_DIR, `${route.id}.png`),
+        fullPage: false,
+      });
+    } finally {
+      await context.close();
+    }
   });
 }
