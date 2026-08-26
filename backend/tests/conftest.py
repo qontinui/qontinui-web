@@ -60,11 +60,14 @@ os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 
 # Keep the REAL cron-dispatch sweeper out of the test session.
 #
-# `test_client` below is session-scoped and enters `TestClient(app)` as a
-# context manager, which runs the lifespan — and the lifespan calls
+# `booted_app` below is session-scoped AND autouse: it enters `TestClient(app)`
+# as a context manager, which runs the lifespan — and the lifespan calls
 # `scheduler.start()` on the module-level singleton in `app.core.scheduler`.
-# Once ANY test touches that fixture, the app's background scheduler is live
-# for the REST of the session, ticking every 30s.
+# So the app's background scheduler is live from the start of EVERY session,
+# ticking every 30s. (It used to boot only when some test pulled the old lazy
+# `test_client` fixture, which made "is the scheduler running?" depend on the
+# collected file set — that is exactly what the autouse fixture removes, and it
+# makes disabling the dispatch task below mandatory rather than incidental.)
 #
 # Its `scheduled_dispatch` task calls `poll_and_dispatch_due()`, which claims
 # due rows `FOR UPDATE SKIP LOCKED` against whatever
@@ -73,9 +76,10 @@ os.environ["REDIS_ENABLED"] = "false"  # Disable Redis for tests
 # `tests/test_scheduler_db.py::sched_db`), so the real sweeper races them for
 # their own seeded rows: it claims a row and advances `next_fire_at`, and the
 # test's own `poll_and_dispatch_due()` then reports `due: 0` instead of
-# `due: 1`. That is timing-dependent (does a 30s tick land inside the test?)
-# and order-dependent (did a `test_client` test run earlier?), which is why it
-# never reproduces when the file is run on its own. It has reddened unrelated
+# `due: 1`. That is timing-dependent (does a 30s tick land inside the test?),
+# which is why it never reproduces when the file is run on its own — and it used
+# to be order-dependent too (did a `test_client` test run earlier?). It has
+# reddened unrelated
 # PRs on `TestDispatchFailure` and `TestNextFireAdvance` while `main` was green.
 #
 # Disable ONLY that task, via the per-task switch — NOT the global
@@ -109,16 +113,49 @@ except ImportError:
         raise
 
 
-@pytest.fixture(scope="session")
-def test_client() -> Generator[TestClient, None, None]:
-    """
-    Create a test client for the FastAPI application.
-    Session-scoped to reuse across all tests.
+@pytest.fixture(scope="session", autouse=True)
+def booted_app() -> Generator[TestClient, None, None]:
+    """Boot the FastAPI app ONCE, at a fixed point in every session.
+
+    `autouse` is the whole point. `TestClient(app)` used as a context manager
+    runs the app's lifespan, so while this was a lazily-pulled fixture, *when the
+    app booted* was a hidden global decided by which collected file happened to
+    request it first — i.e. by the file set, not by anything a test declares.
+    Measured: adding one new file that pulled the old `test_client` fixture made
+    `test_memory_api_db.py` fail a varying 1-5 tests per run, a different set
+    each time, with the code under test untouched.
+
+    Session-scoped + autouse makes boot happen once, before any test, in the same
+    place for every run — including runs of a single file. The other half of the
+    fix is that startup itself is now inert under tests: `app/main.py`'s
+    `_boot_side_effects_disabled()` gates `init_db`, the wrapper-registry sync
+    loop, the strategy service-account mint and the recording-pipeline recovery
+    UPDATE on `TESTING=1` (set at the top of this file). `scheduler.start()` is
+    deliberately still live — see the comment on
+    QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED above.
+
+    Being autouse, this is the FIRST session fixture set up and therefore the
+    LAST torn down, so it now boots BEFORE `test_engine` creates the tables and
+    shuts down AFTER `test_engine` drops them. Both directions are safe only
+    because of those gates: nothing in boot or shutdown queries a table
+    (shutdown's `metrics_service.force_flush` returns immediately on an empty
+    buffer and swallows anything else).
     """
     from app.main import app
 
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def test_client(booted_app: TestClient) -> TestClient:
+    """The session's HTTP client against the booted app.
+
+    Kept as a name for the tests that request one (`test_file_execution_e2e.py`),
+    but it no longer OWNS the lifespan — `booted_app` does, unconditionally. So
+    requesting this fixture can no longer move when the app boots.
+    """
+    return booted_app
 
 
 @pytest.fixture(scope="function")
