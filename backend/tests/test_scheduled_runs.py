@@ -200,7 +200,13 @@ class TestCrud:
         _workflow: UnifiedWorkflow,
     ):
         """Changing the cron moves the pending fire to the new cron's next slot."""
-        row = await _make_run(async_db_session, test_user, _workflow, cron="0 9 * * *")
+        # The starting cron must fire at a minute that `*/15` NEVER hits, or
+        # the `!=` assertion below is a daily time bomb. With "0 9 * * *" both
+        # crons resolve to 09:00 for the whole 08:45–09:00 UTC window, so the
+        # two next-fire values are equal and this test fails deterministically
+        # once a day — observed 2026-08-26 at 08:53 UTC on an unrelated PR.
+        # Minute 7 is not a multiple of 15, so the two can never coincide.
+        row = await _make_run(async_db_session, test_user, _workflow, cron="7 9 * * *")
         original = row.next_fire_at
         assert original is not None
 
