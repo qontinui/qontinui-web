@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { FLEET_POLICY_API } from "../../_shared/fleetPolicy";
 import {
   PLAN_CAPTURE_DOMAIN,
   type FleetPolicyView,
   type FleetPolicyWriteResult,
   type PlanCaptureLevel,
 } from "../types";
-
-const API = "/api/v1/operations/fleet-policy";
 
 function message(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -63,7 +62,7 @@ export function usePlanCapturePolicy() {
     try {
       setLoading(true);
       const view = await httpClient.get<FleetPolicyView>(
-        `${API}?domain=${encodeURIComponent(PLAN_CAPTURE_DOMAIN)}`
+        `${FLEET_POLICY_API}?domain=${encodeURIComponent(PLAN_CAPTURE_DOMAIN)}`
       );
       setPolicy(view);
       setError(null);
@@ -96,15 +95,18 @@ export function usePlanCapturePolicy() {
     async (level: PlanCaptureLevel, changeNote?: string): Promise<boolean> => {
       try {
         setSaving(true);
-        const result = await httpClient.put<FleetPolicyWriteResult>(API, {
-          domain: PLAN_CAPTURE_DOMAIN,
-          scope_band: "tenant",
-          scope_key: null,
-          level,
-          master_enabled: true,
-          change_note:
-            changeNote ?? `Set plan capture to "${level}" from the console`,
-        });
+        const result = await httpClient.put<FleetPolicyWriteResult>(
+          FLEET_POLICY_API,
+          {
+            domain: PLAN_CAPTURE_DOMAIN,
+            scope_band: "tenant",
+            scope_key: null,
+            level,
+            master_enabled: true,
+            change_note:
+              changeNote ?? `Set plan capture to "${level}" from the console`,
+          }
+        );
         setLastWrite(result);
 
         if (result.effective) {

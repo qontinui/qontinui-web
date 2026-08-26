@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 const hooks = vi.hoisted(() => ({
   updateRule: vi.fn(),
@@ -30,7 +30,9 @@ const hooks = vi.hoisted(() => ({
   revertOverride: vi.fn(),
   restoreDefault: vi.fn(),
   createRule: vi.fn(),
+  reload: vi.fn(),
   rules: [] as unknown[],
+  loadFailed: false,
 }));
 
 vi.mock("../_hooks/useAutomationRules", () => ({
@@ -38,7 +40,8 @@ vi.mock("../_hooks/useAutomationRules", () => ({
     rules: hooks.rules,
     loading: false,
     saving: false,
-    reload: vi.fn(),
+    loadFailed: hooks.loadFailed,
+    reload: hooks.reload,
     createRule: hooks.createRule,
     updateRule: hooks.updateRule,
     restoreDefault: hooks.restoreDefault,
@@ -85,7 +88,10 @@ beforeEach(() => {
   hooks.deleteRule.mockReset();
   hooks.overrideRule.mockReset();
   hooks.revertOverride.mockReset();
+  hooks.reload.mockReset();
+  hooks.reload.mockResolvedValue(undefined);
   hooks.rules = [];
+  hooks.loadFailed = false;
 });
 
 describe("workspace rule off-switch", () => {
@@ -110,6 +116,30 @@ describe("workspace rule off-switch", () => {
     const text = screen.getByTestId("automation-disable-confirm").textContent;
     expect(text).toContain("no reversible");
     expect(text).toContain("same soft delete");
+  });
+
+  /*
+    The ON position is unreachable today — a listed workspace row is always
+    enabled — so it can only be pinned by constructing the future that would
+    make it reachable: coord gaining a tombstone, and this console listing the
+    disabled arm. Both wrong answers are live in that future and neither is
+    hypothetical, so both are pinned here rather than argued in a comment.
+  */
+  it("answers a disabled workspace row's ON with nothing at all", () => {
+    hooks.rules = [rule({ enabled: false })];
+    render(<RuleList />);
+
+    const toggle = screen.getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(toggle);
+
+    // Not a PATCH: `enabled` is the column coord's soft DELETE writes.
+    expect(hooks.updateRule).not.toHaveBeenCalled();
+    // And emphatically not a fall-through to the OFF path, which would answer
+    // "turn this on" by deleting the rule.
+    expect(hooks.deleteRule).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("automation-disable-confirm")).toBeNull();
   });
 
   it("routes the confirmed OFF to deleteRule, not to a PATCH", () => {
@@ -167,5 +197,160 @@ describe("built-in off-switch is untouched", () => {
 
     expect(hooks.revertOverride).toHaveBeenCalledWith("sys-1");
     expect(hooks.updateRule).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A failed list read and an empty workspace are DIFFERENT facts, and this
+ * surface used to render them identically: `useCoordPolicies` leaves `rules`
+ * as `[]` when the call throws, and `useAutomationRules` did not re-export
+ * `loadFailed` at all, so the "No automation rules yet / Create your first
+ * rule" card claimed a workspace had no rules on the strength of an outage.
+ *
+ * That is the wrong claim on any page. It is a worse one HERE, because the
+ * off-switch above is a soft delete: "all my rules are gone" is a state an
+ * operator can now cause on this very screen, so a false empty reads as a
+ * confirmation of the mistake they most fear having made.
+ */
+describe("failed read is UNKNOWN, not an empty workspace", () => {
+  it("shows the load-failure panel instead of the empty-state card", () => {
+    hooks.loadFailed = true;
+    hooks.rules = [];
+    render(<RuleList />);
+
+    expect(screen.getByTestId("automation-rules-load-failed")).toBeTruthy();
+    // The exact claim that must not be made from a failed read.
+    expect(screen.queryByText("No automation rules yet.")).toBeNull();
+    expect(screen.queryByText("Create your first rule")).toBeNull();
+  });
+
+  it("says the rules are unknown rather than absent", () => {
+    hooks.loadFailed = true;
+    render(<RuleList />);
+
+    const text = screen.getByTestId("automation-rules-load-failed").textContent;
+    expect(text).toContain("not the same as having none");
+    expect(text).toContain("unknown");
+  });
+
+  it("retries in place instead of asking for a browser reload", async () => {
+    hooks.loadFailed = true;
+    hooks.reload.mockResolvedValue(undefined);
+    render(<RuleList />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("automation-rules-retry"));
+    });
+
+    expect(hooks.reload).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+    A refetch never raises the hook's `loading` flag (that is first-load only),
+    so without a local in-flight flag the Retry button is indistinguishable
+    from a dead one against a coord that hangs — and the operator presses it
+    again, which is how two overlapping reads get started.
+  */
+  it("holds the retry button while the refetch is in flight", async () => {
+    hooks.loadFailed = true;
+    let settle: () => void = () => {};
+    hooks.reload.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        })
+    );
+    render(<RuleList />);
+
+    const button = screen.getByTestId("automation-rules-retry");
+    fireEvent.click(button);
+
+    expect(button).toHaveProperty("disabled", true);
+    expect(button.textContent).toContain("Retrying");
+
+    fireEvent.click(button);
+    expect(hooks.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle();
+    });
+
+    expect(screen.getByTestId("automation-rules-retry")).toHaveProperty(
+      "disabled",
+      false
+    );
+  });
+
+  it("renders the panel inside the surface wrapper, not in place of it", () => {
+    // Placement is the observable half of "the dialogs stay mounted": an early
+    // return would make the panel the root and tear down an open Radix dialog
+    // from the parent rather than closing it. (Radix renders nothing while
+    // `open={false}`, so the mounting itself is not assertable from the DOM.)
+    hooks.loadFailed = true;
+    hooks.rules = [];
+    const { container } = render(<RuleList />);
+
+    expect(screen.getByTestId("automation-rules-load-failed")).toBeTruthy();
+    expect(container.firstElementChild?.className).toContain("space-y-4");
+  });
+
+  it("announces the panel to assistive tech", () => {
+    hooks.loadFailed = true;
+    hooks.rules = [rule()];
+    render(<RuleList />);
+
+    // The failed-refetch panel appears inline in an already-rendered list:
+    // no route change, no focus move, no heading. Nothing else signals it.
+    expect(screen.getByRole("alert")).toBe(
+      screen.getByTestId("automation-rules-load-failed")
+    );
+  });
+
+  it("still renders the empty-state card for a genuinely empty workspace", () => {
+    hooks.loadFailed = false;
+    hooks.rules = [];
+    render(<RuleList />);
+
+    expect(screen.getByText("No automation rules yet.")).toBeTruthy();
+    expect(screen.queryByTestId("automation-rules-load-failed")).toBeNull();
+  });
+
+  it("does not hide a loaded list behind the panel", () => {
+    hooks.loadFailed = false;
+    hooks.rules = [rule()];
+    render(<RuleList />);
+
+    expect(screen.queryByTestId("automation-rules-load-failed")).toBeNull();
+    expect(screen.getByRole("switch")).toBeTruthy();
+  });
+
+  it("withholds New Rule when there is nothing to author against", () => {
+    hooks.loadFailed = true;
+    hooks.rules = [];
+    render(<RuleList />);
+
+    // Creating blind against a list that failed to load is how a duplicate of
+    // a live rule gets made.
+    expect(screen.queryByTestId("new-rule")).toBeNull();
+  });
+
+  /*
+    A failed REFETCH is a different fact from a failed first load:
+    `useCoordPolicies` does not clear `rules` on error, so the last good list is
+    still in hand. Reporting the failure must not cost the reader that list.
+  */
+  it("keeps a retained list and marks it as the last successful read", () => {
+    hooks.loadFailed = true;
+    hooks.rules = [rule()];
+    render(<RuleList />);
+
+    expect(screen.getByTestId("automation-rules-load-failed")).toBeTruthy();
+    // The rule is still listed and still operable.
+    expect(screen.getByRole("switch")).toBeTruthy();
+    expect(screen.getByTestId("new-rule")).toBeTruthy();
+
+    const text = screen.getByTestId("automation-rules-load-failed").textContent;
+    expect(text).toContain("last successful read");
+    expect(text).not.toContain("not the same as having none");
   });
 });

@@ -216,9 +216,20 @@ export type MergeStatusToken =
   | "conflicts"
   | "behind-base"
   | "review-required"
+  /** A REQUIRED status context is unsatisfied on this head — a CI-dimension
+   *  block with no reviewer in it. Split out of `review-required`, which used
+   *  to cover both causes and so named a human that was never coming. The
+   *  string is coord's own `BlockReason::RequiredChecksMissing` wire code, so
+   *  the verdict surface and this one tell ONE story about a PR. */
+  | "required-checks-missing"
   | "blast-radius-block"
   | "ready"
   | "queued"
+  /** coord cannot clone the repo (deleted/renamed, or the GitHub App's access
+   *  was revoked). Emitted since the 2026-07-16 unclonable-proposal work; this
+   *  union silently lacked it for over a month and no build ever broke, which
+   *  is why consumers carry a runtime fallback and not just this type. */
+  | "repo-unreachable"
   /** Green + CLEAN + open, but no fresh proposal — the orchestrator is
    *  stalled. The single highest-signal token for "why the pause". */
   | "ready-but-unlanded"
@@ -276,18 +287,44 @@ export interface ReadyUnmergedPr {
  * (`COORD_MERGE_PER_REPO_CAP`, default 2).
  *
  * This cap is why "free slots + a green PR + nothing happening" is possible: a
- * repo already holding `per_repo_cap` in-flight proposals is SKIPPED by the
+ * repo already holding its cap in in-flight proposals is SKIPPED by the
  * dequeue even when a global slot is free. It was added by the 2026-07-04
  * awaiting-ci churn fix, after six qontinui-runner proposals held the whole
  * queue while other repos' green PRs starved.
+ *
+ * **The cap is per repo and not always the configured one.** coord's A2
+ * candidate-CI distress term temporarily REDUCES one repo's cap while its
+ * candidate CI keeps failing (floored at 1, never widening past the configured
+ * value). Since coord #1550 the derived flags here are computed against that
+ * narrowed cap, so {@link RepoSlotSaturation.narrowed_repo_cap} — not
+ * {@link SlotSaturation.per_repo_cap} — is the threshold they were measured
+ * against whenever it is present.
  */
 export interface RepoSlotSaturation {
   repo: string;
   /** Proposals in `dry-rebasing` / `awaiting-ci` / `landing` for this repo. */
   in_flight: number;
   queued: number;
-  /** `in_flight >= per_repo_cap` — the dequeue skips this repo's next proposal. */
+  /**
+   * `in_flight >= the cap IN FORCE` — the dequeue skips this repo's next
+   * proposal.
+   *
+   * Measured against {@link narrowed_repo_cap} when that is present and against
+   * `per_repo_cap` otherwise. Rendering this flag beside `per_repo_cap`
+   * unconditionally prints a self-contradicting pair ("at cap (1/2 in flight)")
+   * for any narrowed repo — use {@link effectiveRepoCap}.
+   */
   at_repo_cap: boolean;
+  /**
+   * The A2 candidate-CI distress cap in force for this repo, when coord has
+   * narrowed it below `per_repo_cap`. Absent — the overwhelmingly common case —
+   * means the configured cap applies unchanged.
+   *
+   * Never a copy of `per_repo_cap`: coord omits the key rather than emit a
+   * value equal to the configured cap, so `narrowed_repo_cap != null` is by
+   * itself proof that this repo is being held below its normal cap.
+   */
+  narrowed_repo_cap?: number | null;
   oldest_queued_wait_seconds?: number | null;
 }
 
@@ -688,48 +725,3 @@ export interface BlastRadiusBlocksResponse {
   returned: number;
   blocks: BlastRadiusBlock[];
 }
-
-// ----------------------------------------------------------------------------
-// Demo-feature catalog
-// ----------------------------------------------------------------------------
-//
-// The three deterministic features the agents ship during the demo's
-// headline run. The names match the branches authored in
-// `plans/2026-05-18-coordination-layer-demos-feature-{1,2,3}-*.md`.
-// LandedFeaturesPanel uses this list to render the iframe stack
-// regardless of arrival order.
-
-export interface DemoFeature {
-  /** Stable slug used in the route + branch name. */
-  slug: string;
-  /** Human-readable title shown in the iframe panel header. */
-  title: string;
-  /** Agent branch name prefix — used to match `events.merge.landed.<repo>` payloads. */
-  branch: string;
-  /** Public-facing URL the iframe loads when the feature lands. */
-  url: string;
-}
-
-const DEMO_FRONTEND_URL =
-  process.env.NEXT_PUBLIC_DEMO_FRONTEND_URL || "https://qontinui.io";
-
-export const DEMO_FEATURES: ReadonlyArray<DemoFeature> = [
-  {
-    slug: "profile",
-    title: "Profile",
-    branch: "demo-feature-profile",
-    url: `${DEMO_FRONTEND_URL}/demo/profile`,
-  },
-  {
-    slug: "fleet-pulse",
-    title: "Fleet Pulse",
-    branch: "demo-feature-fleet-pulse",
-    url: `${DEMO_FRONTEND_URL}/demo/fleet-pulse`,
-  },
-  {
-    slug: "clock",
-    title: "Clock",
-    branch: "demo-feature-clock",
-    url: `${DEMO_FRONTEND_URL}/demo/clock`,
-  },
-];

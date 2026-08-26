@@ -462,3 +462,40 @@ describe("MachineCard — HealthDot third state", () => {
     ).toBe("unknown");
   });
 });
+
+/**
+ * Phase 2 of `2026-08-25-coord-console-intent-and-devops-sections` gave this
+ * card an optional CI-capacity block. The prop is optional because only ONE
+ * list supplies it — the Dev Ops Overview, which reads the devenv machine
+ * roster. The pipeline page's `FleetOverview` does not, and a card built
+ * without that read must render nothing about the join: an absence of the READ
+ * is not a fact about the machine, and "no machine record linked" on a page
+ * that never looked would be a fabricated one.
+ */
+describe("MachineCard — CI capacity", () => {
+  it("renders no CI-capacity block when the list was built without the read", () => {
+    const { container } = renderCard(
+      baseGroup({ coordHealth: { matched: true, device_id: "d-1" } })
+    );
+    expect(container.querySelector("[data-ci-capacity]")).toBeNull();
+    expect(container.querySelector("[data-testid='ci-node-panel']")).toBeNull();
+  });
+
+  it("renders the join it is given, and nothing it had to guess", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <MachineCard
+          machine={baseGroup({
+            coordHealth: { matched: true, device_id: "d-1" },
+          })}
+          ciCapacity={{ state: "no_machine", deviceId: "d-1" }}
+        />
+      </TooltipProvider>
+    );
+    const notice = container.querySelector('[data-ci-capacity="no_machine"]');
+    expect(notice).not.toBeNull();
+    // Prose and a way out — not a greyed-out control that reads as "CI is off".
+    expect(notice?.textContent ?? "").toMatch(/enrol it under/i);
+    expect(container.querySelector("[disabled]")).toBeNull();
+  });
+});

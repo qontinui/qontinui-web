@@ -14,10 +14,22 @@
  *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
  *                                                   ← direct, daily
  *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
- *   Merge ▾   Pull Decisions / Policies / Automation Rules / Merge Settings°
- *   Infra ▾°  Trees / Spawn / Deploys / Git Ops / Federation / Memory /
- *             Onboarding / Onboarding Status
+ *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
+ *             Merge Settings°
+ *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
+ *   Dev Ops ▾ Overview / Trees° / Spawn° / Test Targets° / Migrations° /
+ *             Deploys° / Releases° / Git Ops° / Federation° / Memory° /
+ *             Onboarding° / Onboarding Status°
  *   Access ▾  Members / Claims↗ / Sessions↗          (° = operator-only)
+ *
+ * `Dev Ops ▾` is the one group whose TRIGGER is member-visible while almost
+ * every member of it is not: `Overview` (`/admin/coord/devops` — how the
+ * system is functioning) is tenant-visible, everything else stays
+ * operator-only. Plan
+ * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1, resolved Q3
+ * — coord moved the CI-node write off the admin role precisely so a member
+ * who OWNS a device can configure it, and gating this page on `is_superuser`
+ * would rebuild that mistake in the console.
  *
  * Wayfinding contract: when the current page lives inside a group, the
  * group trigger highlights and appends the page name ("Work · Lands"). The
@@ -58,8 +70,10 @@ import {
   Anchor,
   Bell,
   BookOpen,
+  Bot,
   Boxes,
   ChevronDown,
+  Compass,
   ExternalLink,
   FileText,
   Gauge,
@@ -71,6 +85,7 @@ import {
   History as HistoryIcon,
   Inbox,
   KeyRound,
+  Layers,
   Library,
   MessageSquare,
   NotebookText,
@@ -97,6 +112,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
+import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
 
@@ -136,19 +153,34 @@ interface NavGroup {
   label: string;
   icon: typeof Activity;
   items: NavLeaf[];
-  /** Group hidden entirely for non-operators (every item is operator-only). */
+  /**
+   * Group hidden entirely for non-operators — trigger and all.
+   *
+   * This is NOT "every item is operator-only", and has not been since
+   * `Dev Ops ▾` (resolved Q3 of
+   * `2026-08-25-coord-console-intent-and-devops-sections`): that group drops
+   * this flag and marks every member except `Overview` instead, so a plain
+   * member sees the trigger with one entry under it. The two flags are
+   * independent by construction — `renderGroup` drops the group on THIS flag
+   * and filters items on `NavLeaf.operatorOnly` separately — so set this one
+   * only when the group has nothing a member may reach, and never as a
+   * shorthand for "most of its items are operator-only".
+   */
   operatorOnly?: boolean;
 }
 
-// The redesigned /admin/coord/fleet page is the developer's merge-pipeline
-// view (one row per PR), so the tab is member-visible and named for what a
-// developer comes for — the pipeline — rather than the machine fleet.
+// The redesigned merge-pipeline view (one row per PR) is member-visible and
+// named for what a developer comes for. The ROUTE now says so too:
+// `/admin/coord/fleet` became `/admin/coord/pipeline` in Phase 4 of
+// `2026-08-25-coord-console-intent-and-devops-sections`, because after that
+// phase "fleet" means Dev Ops and one word cannot mean two things in one
+// console. `next.config.mjs` 308s the old path.
 const DIRECT_TABS: NavLeaf[] = [
   {
-    href: "/admin/coord/fleet",
+    href: "/admin/coord/pipeline",
     label: "Pipeline",
     icon: Activity,
-    testId: "coord-nav-fleet",
+    testId: "coord-nav-pipeline",
   },
   {
     href: "/admin/coord/prs",
@@ -245,42 +277,29 @@ const GROUPS: NavGroup[] = [
         testId: "coord-nav-pull-decisions",
       },
       {
-        href: "/admin/coord/policies",
-        label: "Policies",
-        icon: Scale,
-        testId: "coord-nav-policies",
-      },
-      {
         href: "/admin/coord/automation-rules",
         label: "Automation Rules",
         icon: Workflow,
         testId: "coord-nav-automation-rules",
       },
       {
-        // Sits with the other coord policy-authoring surfaces (it authors
-        // `coord.policy_rules` rows like Policies and Automation Rules do),
-        // and the Gates page links across to it from the gate context — the
-        // direct row is already at its five-tab cap, see the header note.
+        // STAYS in Merge, and that is a decision rather than an oversight
+        // (`2026-08-25-coord-console-intent-and-devops-sections` Phase 3,
+        // resolved Q2). It shares the one coord-policy CRUD chain with
+        // Automation Rules — both `gate-clearance/_hooks/useGateClearanceRules`
+        // and `automation-rules/_hooks/useAutomationRules` build on
+        // `_shared/useCoordPolicies` — so it authors `coord.policy_rules` rows
+        // the way Automation Rules does. But what it authors rows ABOUT is who
+        // may clear a **gate**, and a gate is merge-chain machinery: filing it
+        // under `Intent ▾` on the strength of the word "policy" would be the
+        // very conflation that moved Prompt Documents / Policies / Policy Edit
+        // Review OUT of this group, run in reverse. The Gates page also links
+        // across to it from the gate context — the direct row is already at its
+        // five-tab cap, see the header note.
         href: "/admin/coord/gate-clearance",
         label: "Gate Clearance",
         icon: ShieldCheck,
         testId: "coord-nav-gate-clearance",
-      },
-      {
-        href: "/admin/coord/prompt-documents",
-        label: "Prompt Documents",
-        icon: NotebookText,
-        testId: "coord-nav-prompt-documents",
-      },
-      {
-        // Sits beside Prompt Documents deliberately: it reviews edits TO those
-        // documents. Distinct path (not /prompt-documents/proposals) so the
-        // Prompt Documents item's startsWith active-match doesn't
-        // double-highlight, matching the Onboarding / Onboarding Status pair.
-        href: "/admin/coord/prompt-document-proposals",
-        label: "Policy Edit Review",
-        icon: Gavel,
-        testId: "coord-nav-prompt-document-proposals",
       },
       {
         href: "/admin/coord/merge-settings",
@@ -292,58 +311,157 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: "infra",
-    label: "Infra",
-    icon: Server,
-    operatorOnly: true,
+    // What the tenant is BUILDING and the standing guidance agents read while
+    // building it — the prompt-shaped document cluster that used to sit under
+    // `Merge ▾` for no recorded reason. None of these three is read by the
+    // merge train, gates a PR, or appears in a merge decision. Moved here by
+    // `2026-08-25-coord-console-intent-and-devops-sections` Phase 3 (Gap 1).
+    //
+    // On the label — three names were rejected and one tiebreak was decided:
+    //  - NOT `Digital Twin`, despite that being the operator's framing: the
+    //    app sidebar already uses that name for the *observed-system* twin
+    //    (`navigation/sidebar/nav-items.ts` — CI state, routing, dependencies,
+    //    health, deploy freshness), and reusing it collides with a large
+    //    shipped subsystem.
+    //  - NOT `Policies` / `Rules` / `Guidance`: plan
+    //    `2026-08-21-project-intent-documents-and-the-selection-loop`
+    //    §"Naming constraint" forbids those for these documents, and `/policy`
+    //    already means agent-behaviour rules fleet-wide.
+    //  - `Intent` over `Direction` (both were live): `Intent` is the vocabulary
+    //    of the plan that FILLS this section — `policy = how to act, intent =
+    //    what to build`. Two plans, one word.
+    //
+    // Ownership: `2026-08-21-project-intent-documents-and-the-selection-loop`
+    // §3c describes this same edit and is also VETTED. The nav section landed
+    // HERE, because Phase 1 of the sections plan had already rewritten this
+    // file — two PRs editing `GROUPS` with no shared base is a conflict by
+    // construction. Do not implement it a second time from that plan.
+    //
+    // Member-visible, trigger and items alike: every one of the three is a
+    // tenant-scoped surface today and none carries `operatorOnly`.
+    id: "intent",
+    label: "Intent",
+    icon: Compass,
     items: [
+      {
+        href: "/admin/coord/prompt-documents",
+        label: "Prompt Documents",
+        icon: NotebookText,
+        testId: "coord-nav-prompt-documents",
+      },
+      {
+        href: "/admin/coord/policies",
+        label: "Policies",
+        icon: Scale,
+        testId: "coord-nav-policies",
+      },
+      {
+        // Sits beside Prompt Documents deliberately: it reviews edits TO those
+        // documents. Distinct path (not /prompt-documents/proposals) so the
+        // Prompt Documents item's startsWith active-match doesn't
+        // double-highlight, matching the Onboarding / Onboarding Status pair.
+        href: "/admin/coord/prompt-document-proposals",
+        label: "Policy Edit Review",
+        icon: Gavel,
+        testId: "coord-nav-prompt-document-proposals",
+      },
+    ],
+  },
+  {
+    // Everything about the hardware the fleet runs on: whose machines they
+    // are, what they are doing, and how much they will take. The GROUP is
+    // member-visible and its members are not — see `NavGroup.operatorOnly`.
+    id: "devops",
+    label: "Dev Ops",
+    icon: Server,
+    items: [
+      {
+        // The only tenant-visible member, and the reason the group flag is
+        // gone: "how is the system functioning" is a question a developer
+        // asks about their own machines.
+        href: "/admin/coord/devops",
+        label: "Overview",
+        icon: Gauge,
+        testId: "coord-nav-devops-overview",
+      },
       {
         href: "/admin/coord/trees",
         label: "Trees",
         icon: Boxes,
         testId: "coord-nav-trees",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/spawn",
         label: "Spawn",
         icon: Rocket,
         testId: "coord-nav-spawn",
+        operatorOnly: true,
+      },
+      {
+        // Its own route since Phase 4, not a disclosure two levels deep inside
+        // the pipeline page: it is a config editor with four write paths
+        // (`PATCH /fleet/apps/{id}`, `PUT`/`DELETE
+        // /fleet/test-targets/{device}/{app}`, `POST /dispatch/fresh-host`),
+        // and a config editor buried inside another domain's page is a defect.
+        href: "/admin/coord/test-targets",
+        label: "Test Targets",
+        icon: Rocket,
+        testId: "coord-nav-test-targets",
+        operatorOnly: true,
+      },
+      {
+        // Dev Ops rather than Merge (resolved Q4): the alembic reservation
+        // queue is a shared RESOURCE, and blocking a PR is a consequence of
+        // contention on it, not what it is. The merge-side need is carried by
+        // a cross-link from a waiting `MergePipeline` row.
+        href: "/admin/coord/migrations",
+        label: "Migrations",
+        icon: Layers,
+        testId: "coord-nav-migrations",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/deploys",
         label: "Deploys",
         icon: Rocket,
         testId: "coord-nav-deploys",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/releases",
         label: "Releases",
         icon: Package,
         testId: "coord-nav-releases",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/git-ops",
         label: "Git Ops",
         icon: GitBranch,
         testId: "coord-nav-git-ops",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/federation",
         label: "Federation",
         icon: GitMerge,
         testId: "coord-nav-federation",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/memory",
         label: "Memory",
         icon: BookOpen,
         testId: "coord-nav-memory",
+        operatorOnly: true,
       },
       {
         href: "/admin/coord/onboarding",
         label: "Onboarding",
         icon: Plug,
         testId: "coord-nav-onboarding",
+        operatorOnly: true,
       },
       {
         // Zero-touch onboarding status (P4) — per-repo doctor checklist. Also
@@ -354,6 +472,7 @@ const GROUPS: NavGroup[] = [
         label: "Onboarding Status",
         icon: Stethoscope,
         testId: "coord-nav-onboarding-status",
+        operatorOnly: true,
       },
     ],
   },
@@ -367,6 +486,15 @@ const GROUPS: NavGroup[] = [
         label: "Members",
         icon: UserCog,
         testId: "coord-nav-members",
+      },
+      {
+        // The tenant DEFAULT for each agent — what a member with no recorded
+        // preference gets. A member's own preference lives at
+        // /settings/agents, which is not a console surface.
+        href: "/admin/coord/agent-registry",
+        label: "Agent Registry",
+        icon: Bot,
+        testId: "coord-nav-agent-registry",
       },
       {
         href: "/admin/agent-claims",
@@ -438,9 +566,7 @@ function useAlertsBadge(): {
       // severity-filtered total for the red flag. The flag cannot come from
       // the returned rows — that is precisely the truncated-slice bug.
       const [all, criticals] = await Promise.all([
-        httpClient.get<unknown>(
-          `${ALERTS_API}?include_resolved=false&limit=1`
-        ),
+        httpClient.get<unknown>(`${ALERTS_API}?include_resolved=false&limit=1`),
         httpClient.get<unknown>(
           `${ALERTS_API}?include_resolved=false&severity=critical&limit=1`
         ),
@@ -535,6 +661,103 @@ function useNotificationsBadge(): { count: number } {
   return { count };
 }
 
+/**
+ * The fleet alarm, on the `Dev Ops ▾` trigger.
+ *
+ * Moved here from the pipeline page's collapsed `System details` header by
+ * Phase 4 of `2026-08-25-coord-console-intent-and-devops-sections`, along with
+ * the two polls that fed it. A count of zero renders nothing at all — an
+ * all-clear fleet should look like an all-clear, not like a surface reporting
+ * "0".
+ *
+ * ⚠️ **`unknown` is not optional and is not red.** It is rendered even though
+ * nothing is wrong-coloured about it, because a fleet whose telemetry has gone
+ * entirely dark publishes no samples: a trigger that showed only breaches
+ * would render that fleet exactly like a healthy one. That is a false-safe of
+ * the same class as `[policy: silent-empty-is-unknown]`. Do not "tidy" this
+ * badge away as noise; it is the one that says *we do not know*.
+ *
+ * The counts come straight from coord's own admission verdict (`headroom`) via
+ * `summarizeFleetAdmission` — there is no client-side band here that could put
+ * a machine in the red badge while the dispatcher is still happily electing
+ * it.
+ */
+function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
+  const badges: Array<{
+    key: string;
+    testId: string;
+    count: number;
+    label: string;
+    tone: "critical" | "attention" | "muted";
+    title: string;
+  }> = [
+    {
+      key: "unhealthy",
+      testId: "coord-nav-devops-unhealthy-badge",
+      count: counts.unhealthy,
+      label: "unhealthy",
+      tone: "critical",
+      title: "machines coord reports in a state other than healthy",
+    },
+    {
+      key: "breach",
+      testId: "coord-nav-devops-breach-badge",
+      count: counts.breach,
+      label: "refusing work",
+      tone: "critical",
+      title: "lanes below the floor coord's admission actually enforces",
+    },
+    {
+      key: "warn",
+      testId: "coord-nav-devops-warn-badge",
+      count: counts.warn,
+      label: "delaying work",
+      tone: "attention",
+      title: "lanes inside coord's amber band — work is deferred, not rejected",
+    },
+    {
+      key: "stale",
+      testId: "coord-nav-devops-stale-badge",
+      count: counts.stale,
+      label: "stale",
+      tone: "muted",
+      title: "lanes whose last sample is too old to be a claim about now",
+    },
+    {
+      key: "unknown",
+      testId: "coord-nav-devops-unknown-badge",
+      count: counts.unknown,
+      label: "unknown",
+      tone: "muted",
+      title:
+        "lanes coord reports no admission verdict for — not healthy, not red",
+    },
+  ];
+  return (
+    <>
+      {badges
+        .filter((b) => b.count > 0)
+        .map((b) => (
+          <span
+            key={b.key}
+            data-testid={b.testId}
+            title={b.title}
+            className={cn(
+              "rounded-full px-1.5 text-[10px] font-bold leading-4 whitespace-nowrap",
+              b.tone === "critical"
+                ? "bg-red-500/25 text-red-200"
+                : b.tone === "attention"
+                  ? "bg-amber-500/25 text-amber-200"
+                  : "bg-muted text-foreground"
+            )}
+          >
+            {b.count} {b.label}
+          </span>
+        ))}
+    </>
+  );
+}
+
 const TAB_BASE =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors whitespace-nowrap";
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
@@ -545,6 +768,12 @@ export default function CoordNav() {
   const { user } = useAuth();
   const alertsBadge = useAlertsBadge();
   const notificationsBadge = useNotificationsBadge();
+  // The fleet alarm that used to live on the pipeline page's collapsed
+  // `System details` header. It is read here, on the nav, so a red fleet is
+  // visible from every console page instead of from one — and so the pipeline
+  // page can stop polling `/fleet/health` and `/fleet/resource-samples`
+  // altogether.
+  const fleetAlarm = useFleetAlarmBadge();
 
   // Operator-infra entries are cross-tenant/fleet-wide surfaces — gate them on
   // `is_superuser` (the operator axis), matching the other operator-only admin
@@ -633,6 +862,7 @@ export default function CoordNav() {
         >
           <GroupIcon className="h-3.5 w-3.5" />
           {group.label}
+          {group.id === "devops" && <FleetAlarmBadges counts={fleetAlarm} />}
           {activeItem && (
             <>
               <span className="opacity-60">·</span>

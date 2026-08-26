@@ -3262,6 +3262,8 @@ async def get_dev_action_detail(
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/claude-accounts                   — per-device Claude
+#                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
 # - GET    /operations/devices/{device_id}/volumes       — free space, one device
 # - GET    /operations/agent-questions/pending           — Wave-3 prep
@@ -3752,6 +3754,117 @@ async def get_fleet_health(
 ) -> Any:
     """Return the fleet-health rollup from coord (tenant-scoped)."""
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
+
+
+# ---- Claude account roster (per device) ---------------------------------
+#
+# Plan `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
+# Phase 2: before an operator can PICK an account for a spawn, they have to
+# be able to SEE what the machine has and which rule it uses.
+#
+# The feed itself already ships end to end and is NOT built here: every
+# runner device-auth-POSTs a per-account snapshot to coord's
+# `POST /coord/claude-accounts/usage` on its ~10-minute usage refresh, one
+# row per (tenant, device, account_label), read back with a computed
+# `stale` flag. The gap this route closes is that coord's read side was
+# reachable ONLY through the MCP tool `coord_query_account_usage` — and
+# qontinui-web's frontend reaches coord over HTTP through `/operations/*`,
+# so the spawn modal could not see the roster at all.
+#
+# Account identity on the wire is the config-dir BASENAME (`.claude-gmail`),
+# never a full local path. That is a deliberate contract of the ingest side;
+# nothing here should ever surface a path.
+
+COORD_CLAUDE_ACCOUNTS_PATH = "/coord/claude-accounts/usage"
+
+
+@router.get("/claude-accounts")
+async def get_claude_accounts(
+    device_id: UUID | None = Query(
+        default=None,
+        description=(
+            "Narrow the roster to one device. Applied HERE, client-side, on "
+            "top of coord's tenant scoping — coord's read route is "
+            "tenant-scoped and takes no device filter, so forwarding an "
+            "unknown query parameter would be a guess about its behaviour."
+        ),
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> dict[str, Any]:
+    """Return the per-device Claude account roster from coord (tenant-scoped).
+
+    Proxies coord ``GET /coord/claude-accounts/usage``. Response envelope::
+
+        {
+          "accounts": [
+            {
+              "device_id": "<uuid>",
+              "account_label": ".claude-gmail",
+              "weekly_utilization": 0.34,
+              "weekly_resets_at": "<iso8601|null>",
+              "session_utilization": 0.11,
+              "session_resets_at": "<iso8601|null>",
+              "model_limits": [{"model": "...", "utilization": 0.2, ...}],
+              "exhausted": false,
+              "source": "...",
+              "error": false,
+              "stale": false,
+              "is_active": true,       // null until the device's runner reports it
+              "account_selection_mode": "least_usage"  // manual | least_usage | null
+            }
+          ],
+          "table_provisioned": true,
+          "columns_provisioned": true
+        }
+
+    **An absent roster is UNKNOWN, not "no accounts".** Three distinct
+    states have to stay distinguishable, because a false "this machine has
+    no Claude accounts" is worse than an honest unknown — it would tell an
+    operator a machine cannot run an agent when it can:
+
+    * ``table_provisioned: false`` — coord's ``coord.claude_account_usage``
+      does not exist yet on that deployment. Nothing has been observed.
+    * ``columns_provisioned: false`` — the table exists but predates the
+      ``is_active`` / ``account_selection_mode`` columns (alembic
+      ``coord_claude_acct_usage_02``). Usage is real; the *selection* half is
+      unknown, and ``is_active`` / ``account_selection_mode`` will be null.
+    * both true with ``accounts: []`` — genuinely no account has reported
+      for this tenant.
+
+    So the two flags are passed THROUGH rather than flattened into an empty
+    list. When coord omits them entirely (a build predating its own read
+    route's flags) they are surfaced as ``None`` — unknown — and never
+    defaulted to ``true``, which would assert provisioning we did not observe.
+    Consumers must render null as "unknown", not as ``false`` and not as the
+    ``least_usage`` default.
+
+    ``stale`` is coord's own computed freshness verdict (30 minutes since the
+    last report); it is forwarded untouched, not recomputed here.
+    """
+    payload = await _proxy_coord_get(COORD_CLAUDE_ACCOUNTS_PATH, tenant_id=tenant_id)
+    if not isinstance(payload, dict):
+        # A non-object body is a coord contract break, not an empty roster.
+        raise HTTPException(
+            status_code=502,
+            detail="coord returned an unexpected claude-accounts payload",
+        )
+
+    accounts = payload.get("accounts")
+    accounts = list(accounts) if isinstance(accounts, list) else []
+    if device_id is not None:
+        wanted = str(device_id)
+        accounts = [
+            row
+            for row in accounts
+            if isinstance(row, dict) and str(row.get("device_id")) == wanted
+        ]
+
+    return {
+        "accounts": accounts,
+        # `.get` with no default: absent stays None (unknown), never True.
+        "table_provisioned": payload.get("table_provisioned"),
+        "columns_provisioned": payload.get("columns_provisioned"),
+    }
 
 
 # ---- Fleet resource samples (§C0/§C2) -----------------------------------
@@ -6876,13 +6989,21 @@ async def restore_coord_policy_default(
 # former ``coord.policy_documents`` (this proxy set replaces the
 # ``/coord/policy-documents`` surface it superseded; those rows migrated in as
 # ``kind='policy'``). ONE versioned store for every prompt-shaped document coord
-# serves, addressed by ``(kind, name)`` over six kinds: ``policy`` (the
-# meta-answer's ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A
-# meta-answer template), ``continuation_rules`` (the Stop-hook continuation
-# umbrella prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
-# ``prompt_template`` (the runner terminal ``/prompt`` library), and
+# serves, addressed by ``(kind, name)`` over thirteen kinds in two families.
+#
+# BEHAVIOR — how a session must act: ``policy`` (the meta-answer's
+# ``{{policy:<name>}}`` bodies), ``response_prompt`` (the agent Q&A meta-answer
+# template), ``continuation_rules`` (the Stop-hook continuation umbrella
+# prompt), ``agent_playbook`` (e.g. the merge-shepherd playbook),
+# ``prompt_template`` (the runner terminal ``/prompt`` library),
 # ``session_briefing`` (the briefing the runner appends to the system prompt of
-# every session it hosts).
+# every session it hosts), and ``claude_settings`` (the fleet's Claude Code
+# settings baseline a machine renders into its own ``.claude/settings.json``).
+#
+# INTENT — what the TENANT'S OWN product is for, added by plan
+# ``2026-08-21-project-intent-documents-and-the-selection-loop``:
+# ``product_intent``, ``initiative``, ``success_metric``, ``domain_spec``,
+# ``audience_profile`` and ``decision_record``.
 #
 # The forwarders below are deliberately kind-GENERIC — every one takes
 # ``kind: str`` with no enum or allowlist, so coord's own ``unknown kind`` 400 is

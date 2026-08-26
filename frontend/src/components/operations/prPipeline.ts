@@ -13,6 +13,7 @@
 // Everything here is pure and side-effect free (timestamps are passed in),
 // so the status table and health heuristics are unit-testable without a DOM.
 
+import type { Attention } from "@/components/console/attention";
 import { redactSecrets } from "./mergeTypes";
 import type {
   MergeEconomics,
@@ -64,8 +65,15 @@ export type UnifiedStatusKind =
   | "draft"
   | "unknown";
 
-/** Who (if anyone) the status is waiting on — drives the row accent. */
-export type Attention = "author" | "waiting" | "none";
+/**
+ * Who (if anyone) the status is waiting on — drives the row accent.
+ *
+ * Declared in `@/components/console/attention` (the console's base layer) and
+ * re-exported here so this module's long-standing importers do not move. The
+ * vocabulary is shared with every other console surface by construction, not
+ * by two identical unions that can drift.
+ */
+export type { Attention } from "@/components/console/attention";
 
 /**
  * Whether a still-`waiting` row's DWELL CLOCK exists at all.
@@ -927,6 +935,24 @@ export function pickActiveProposal(
 }
 
 const TERMINAL: ReadonlySet<ProposalStatus> = new Set(["merged", "cancelled"]);
+
+/**
+ * Is a proposal status still LIVE — i.e. coord may still act on this attempt?
+ *
+ * Reads the same `TERMINAL` set the pipeline rows use, so the two can never
+ * disagree about what "active" means. Deliberately treats `conflict` as ACTIVE:
+ * a conflict row still occupies the head and still blocks a re-enqueue, so from
+ * the operator's point of view the attempt has not gone away.
+ *
+ * Exported for callers that only have a bare status string — `PrRow` carries
+ * `proposal_status` but no `ProposalDetail` — notably `PrDraftStateControl`,
+ * which must warn that drafting a PR does NOT stop a live merge attempt.
+ * A null/absent status means no proposal at all, which is not active.
+ */
+export function proposalIsActive(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return !TERMINAL.has(status as ProposalStatus);
+}
 
 /**
  * The land time for a row, or null when it has not landed / no source carries

@@ -15,14 +15,33 @@
  * in ``frontend/package.json`` from prior work — no new deps for
  * Phase 5.
  *
- * Composition: this is a *standalone* surface (the operator types
- * a repo + PR number into a small input and the DAG renders below)
- * meant to be reachable from the ``MergeTrain.tsx`` "Cross-repo
- * dependencies" section's inline link. See the parent integration
- * comment in MergeTrain.tsx for the wiring.
+ * Composition: **one PR's graph, keyed on that PR.** It takes ``repo`` and
+ * ``pr`` as required props and fetches on mount.
+ *
+ * It used to be a standalone surface behind a ``#merge-dep-graph`` anchor,
+ * with a repo input and a PR-number input the operator had to fill in by hand.
+ * Phase 4 of ``2026-08-25-coord-console-intent-and-devops-sections`` deleted
+ * the form and the anchor and moved it into the ``MergePipeline`` row
+ * expansion: the row already knows its own repo and PR number, so asking the
+ * operator to re-type them was asking for the one thing the surface already
+ * had. Nothing seeds a repo any more either — there is no "some repo" state
+ * left for a tenant default to fill.
+ *
+ * **It owns no collapse of its own, deliberately.** It used to render its own
+ * ``CollapsiblePanel``, and that was wrong the moment it moved into a row: the
+ * panel gates its CHILDREN, while this component's fetch effect sits above
+ * them — so a collapsed panel still cost a request and a mount for every row
+ * an operator expanded. The caller wraps it instead, which makes "collapsed"
+ * mean *not mounted, not fetched*.
+ *
+ * The honest cost of that: while it is collapsed there is no cycle badge on
+ * the header, because nothing has been read. R7 asks a collapsed panel to keep
+ * its signal, and a signal that cannot exist without the request the collapse
+ * exists to avoid is one this surface simply does not have. An invented
+ * "no cycles" would be worse than an absent badge.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dagre from "dagre";
 import {
   Background,
@@ -55,15 +74,11 @@ type PrNodeData = {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, GitBranch, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "./utils";
-import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
-import { CollapsiblePanel } from "./CollapsiblePanel";
 
 const log = createLogger("MergeDependencyGraph");
 
@@ -252,51 +267,23 @@ const nodeTypes = { pr: PrNodeComponent };
 // ---------------------------------------------------------------------------
 
 export interface MergeDependencyGraphProps {
-  /** Initial repo to query — usually first repo with a multi-PR
-   * chain. Optional; user can edit. */
-  initialRepo?: string;
-  /** Initial PR number. */
-  initialPr?: number;
+  /** The repo this graph is for — `owner/name`. Required: this renders one
+   *  KNOWN PR's connected component, never "whichever repo you type". */
+  repo: string;
+  /** The PR number this graph is for. Required, for the same reason. */
+  pr: number;
 }
 
-export function MergeDependencyGraph({
-  initialRepo = "",
-  initialPr,
-}: MergeDependencyGraphProps) {
-  const [repo, setRepo] = useState<string>(initialRepo);
-  const [prInput, setPrInput] = useState<string>(
-    initialPr ? String(initialPr) : ""
-  );
+export function MergeDependencyGraph({ repo, pr }: MergeDependencyGraphProps) {
   const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // Seed the repo input from the ACTIVE tenant's first registered repo when
-  // no explicit `initialRepo` was supplied — never a hardcoded operator repo.
-  // This only pre-fills the input; the graph still requires a PR number + an
-  // explicit "Load graph" click (or `initialRepo`+`initialPr` props) to fetch,
-  // so seeding never triggers a request against a repo the tenant doesn't own.
-  const { defaultRepo } = useTenantDefaultRepo();
-  const seededRepoRef = useRef(false);
-  useEffect(() => {
-    if (seededRepoRef.current) return;
-    if (initialRepo || repo) return;
-    if (defaultRepo) {
-      seededRepoRef.current = true;
-      setRepo(defaultRepo);
-    }
-  }, [defaultRepo, initialRepo, repo]);
-
   const fetchGraph = useCallback(async () => {
-    const prNum = Number(prInput);
-    if (!repo || !Number.isInteger(prNum) || prNum <= 0) {
-      setError("Enter a repo (owner/name) and a positive PR number");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ repo, pr: String(prNum) });
+      const params = new URLSearchParams({ repo, pr: String(pr) });
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/graph?${params.toString()}`
       );
@@ -310,15 +297,13 @@ export function MergeDependencyGraph({
     } finally {
       setLoading(false);
     }
-  }, [repo, prInput]);
+  }, [repo, pr]);
 
-  // Auto-fetch when initial values are provided.
+  // The identifiers are props, so there is nothing to wait for: fetch on mount
+  // and whenever the row this is mounted under changes.
   useEffect(() => {
-    if (initialRepo && initialPr) {
-      void fetchGraph();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void fetchGraph();
+  }, [fetchGraph]);
 
   // Build the laid-out node + edge lists.
   const laidOut = useMemo(() => {
@@ -356,52 +341,19 @@ export function MergeDependencyGraph({
   }, [graph]);
 
   return (
-    <CollapsiblePanel
-      storageKey="fleet:dep-graph"
-      icon={<GitBranch className="h-4 w-4" />}
-      title="Cross-repo PR dependency graph"
-      summary={
-        graph?.cycle_detected ? (
-          <Badge variant="destructive" className="ml-2 font-mono text-xs">
-            cycle
-          </Badge>
-        ) : null
-      }
-    >
-      <div className="flex items-end gap-2 mb-4 flex-wrap">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="dep-graph-repo" className="text-xs">
-            Repo (owner/name)
-          </Label>
-          <Input
-            id="dep-graph-repo"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="qontinui/qontinui-coord"
-            className="w-64 font-mono text-xs"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="dep-graph-pr" className="text-xs">
-            PR #
-          </Label>
-          <Input
-            id="dep-graph-pr"
-            value={prInput}
-            onChange={(e) => setPrInput(e.target.value.replace(/[^0-9]/g, ""))}
-            placeholder="42"
-            className="w-24 font-mono text-xs"
-          />
-        </div>
+    <div className="space-y-2" data-testid="merge-dep-graph-body">
+      <div className="flex items-center justify-end">
         <Button
           onClick={() => void fetchGraph()}
-          disabled={loading || !repo || !prInput}
+          disabled={loading}
           size="sm"
+          variant="outline"
+          data-testid="merge-dep-graph-refresh"
+          aria-label="Reload dependency graph"
         >
           <RefreshCw
-            className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`}
+            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
           />
-          Load graph
         </Button>
       </div>
       {error && (
@@ -485,6 +437,6 @@ export function MergeDependencyGraph({
           This PR has no cross-repo dependencies — single-node component.
         </p>
       )}
-    </CollapsiblePanel>
+    </div>
   );
 }

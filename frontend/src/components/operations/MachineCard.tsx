@@ -32,6 +32,12 @@ import {
   volumeSeverity,
 } from "./utils";
 import { CiRunnerBadge } from "./CiRunnerBadge";
+import {
+  DeviceCrossLinks,
+  deviceStateBadgeVariant,
+} from "./FleetHealthSummary";
+import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+import type { CiCapacityJoin } from "./ciCapacity";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
 interface MachineCardProps {
@@ -42,6 +48,18 @@ interface MachineCardProps {
    * when absent, the optimistic local name + the 10s poll keep the card honest.
    */
   onRenamed?: () => void;
+  /**
+   * This row's CI-capacity join (plan
+   * `2026-08-25-coord-console-intent-and-devops-sections` Phase 2), resolved by
+   * `resolveCiCapacity` from the page's one read of the devenv machine roster.
+   *
+   * Present ONLY on a list built with that read — the Dev Ops Overview mount.
+   * `undefined` means this list was built WITHOUT it (the pipeline page), so
+   * the card renders no CI-capacity block at all: an absence of the READ is not
+   * a fact about the machine, and a "no machine record linked" notice on a page
+   * that never looked would be one.
+   */
+  ciCapacity?: CiCapacityJoin;
 }
 
 function OsIcon({ os }: { os: string }) {
@@ -314,7 +332,11 @@ function DiskSection({ volumes }: { volumes: MachineVolumes }) {
  * this component just no longer renders them. Phase 9 cleanup deletes
  * those fields entirely.
  */
-export function MachineCard({ machine, onRenamed }: MachineCardProps) {
+export function MachineCard({
+  machine,
+  onRenamed,
+  ciCapacity,
+}: MachineCardProps) {
   const { hostname, displayName, runners, claudeSessions } = machine;
 
   // The shown title: an operator alias when set, otherwise the raw hostname.
@@ -416,16 +438,22 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
   // evidence is not evidence of a problem, so this is muted, never red.
   const allUnknown = runners.length > 0 && !someHealthy && unhealthyCount === 0;
 
+  // A machine that reached this list only through coord's health read has NO
+  // runner inventory to classify — that is `unknown`, and deliberately not the
+  // "empty" state a machine with a read but no runners lands in. Absent
+  // evidence and measured absence are different facts.
   const headerHealth: RunnerHealthState | "empty" | "mixed" =
-    runners.length === 0
-      ? "empty"
-      : allHealthy
-        ? "healthy"
-        : someHealthy
-          ? "mixed"
-          : allUnknown
-            ? "unknown"
-            : "unhealthy";
+    machine.coordHealthOnly
+      ? "unknown"
+      : runners.length === 0
+        ? "empty"
+        : allHealthy
+          ? "healthy"
+          : someHealthy
+            ? "mixed"
+            : allUnknown
+              ? "unknown"
+              : "unhealthy";
 
   const headerHealthClass =
     headerHealth === "healthy"
@@ -436,8 +464,11 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
           ? "bg-red-500"
           : "bg-muted-foreground/40";
 
-  const headerHealthLabel =
-    headerHealth === "empty"
+  const headerHealthLabel = machine.coordHealthOnly
+    ? `Health unknown -- this device reports to coord, but appears in no ` +
+      `runner, session, device-status or CI record. Nothing has been ` +
+      `measured about what runs on it.`
+    : headerHealth === "empty"
       ? "No runners reporting on this machine -- health unknown"
       : headerHealth === "healthy"
         ? "All runners healthy"
@@ -452,6 +483,33 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
                 `unhealthy, the rest have never reported`
               : "No runners healthy";
 
+  /**
+   * coord's own liveness verdict for this machine, rendered BESIDE the runner
+   * health rather than folded into it. They answer different questions —
+   * "does coord still reach this device?" and "are the runners on it healthy?"
+   * — and one list that silently picked whichever was worse would be the
+   * two-definitions-of-healthy defect the merge exists to remove.
+   *
+   * Absent state and an unmatched host both render `unknown`; the tooltip is
+   * what tells them apart.
+   */
+  const coordState = machine.coordHealth
+    ? machine.coordHealth.matched
+      ? (machine.coordHealth.state ?? "unknown")
+      : "unknown"
+    : null;
+  const coordStateLabel = !machine.coordHealth
+    ? ""
+    : !machine.coordHealth.matched
+      ? `Coord's fleet-health read carries no device row for this host, so ` +
+        `its liveness state is UNKNOWN. That is a gap in the join, not a ` +
+        `verdict about the machine.`
+      : machine.coordHealth.state
+        ? `Coord device state: ${machine.coordHealth.state} ` +
+          `(device ${machine.coordHealth.device_id}).`
+        : `Coord knows this device (${machine.coordHealth.device_id}) but ` +
+          `reports no state for it. Unknown, not healthy.`;
+
   // Pick OS from first runner
   const os = runners[0]?.os ?? "unknown";
   const osVersion = runners[0]?.osVersion ?? null;
@@ -461,6 +519,7 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
       className="gap-3 py-4 transition-shadow"
       data-operations-machine-card
       data-hostname={hostname}
+      data-runner-inventory={machine.coordHealthOnly ? "absent" : "present"}
     >
       <CardHeader className="pb-0 py-0">
         <div className="flex items-center justify-between gap-2">
@@ -520,6 +579,26 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
               </Tooltip>
             )}
 
+            {coordState && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant={deviceStateBadgeVariant(
+                      machine.coordHealth?.matched
+                        ? machine.coordHealth.state
+                        : undefined
+                    )}
+                    data-coord-state={coordState}
+                  >
+                    {coordState}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  {coordStateLabel}
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             <Badge variant={osBadgeVariant(os)} className="gap-1">
               <OsIcon os={os} />
               {os}
@@ -535,84 +614,116 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
       </CardHeader>
 
       <CardContent className="space-y-3 pb-0">
+        {/* A device coord reports on that appears in NO runner, session,
+            device-status or CI record. It must not render as a machine with
+            zero of everything — that reads as an all-clear about a machine
+            nothing has measured. The counts below are shown as unknown. */}
+        {machine.coordHealthOnly && (
+          <div
+            className="rounded-md border border-dashed border-amber-500/50 bg-amber-500/5 px-2 py-1.5"
+            role="status"
+            data-operations-machine-inventory-unknown
+          >
+            <div className="flex items-center gap-1.5">
+              <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500" />
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-500">
+                Runner inventory unknown
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              This device reports to coord, but the fleet inventory names no
+              runner, Claude Code session or CI runner on it. Nothing below is a
+              count of zero -- nothing has been measured.
+            </p>
+          </div>
+        )}
+
         {/* Free disk space (disk-monitoring Phase 1). Deliberately the FIRST
             section on the card: Phase 0 measured 3.57 TB of reclaimable cargo
             targets on a single box that had previously hit 0 bytes free, so
             this is the headline number, not a footnote. */}
         <DiskSection volumes={machine.volumes} />
 
-        {/* Runner instances */}
-        <div>
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-            Runners ({runners.length})
-          </h4>
-          <div className="space-y-1.5">
-            {runners.map((runner) => {
-              const health = runnerHealthState(runner);
-              return (
-                <div
-                  key={runner.id}
-                  className="flex items-center justify-between text-sm px-2 py-1.5 rounded-md bg-muted/40"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <HealthDot
-                      state={health}
-                      heartbeat={runner.lastHeartbeat ?? null}
-                    />
-                    {runner.port ? (
-                      <span className="font-mono text-xs">:{runner.port}</span>
-                    ) : null}
-                    <span className="text-muted-foreground text-xs truncate">
-                      {runner.name}
-                    </span>
+        {/* Runner instances. Suppressed entirely when the runner inventory
+            is UNKNOWN: "Runners (0)" there is a fabricated zero, and the
+            notice above says what is actually true instead. */}
+        {!machine.coordHealthOnly && (
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+              Runners ({runners.length})
+            </h4>
+            <div className="space-y-1.5">
+              {runners.map((runner) => {
+                const health = runnerHealthState(runner);
+                return (
+                  <div
+                    key={runner.id}
+                    className="flex items-center justify-between text-sm px-2 py-1.5 rounded-md bg-muted/40"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <HealthDot
+                        state={health}
+                        heartbeat={runner.lastHeartbeat ?? null}
+                      />
+                      {runner.port ? (
+                        <span className="font-mono text-xs">
+                          :{runner.port}
+                        </span>
+                      ) : null}
+                      <span className="text-muted-foreground text-xs truncate">
+                        {runner.name}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0"
+                      >
+                        {runner.derivedStatus ?? "unknown"}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground">
+                        {relativeTime(runner.lastHeartbeat ?? null)}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] px-1.5 py-0"
-                    >
-                      {runner.derivedStatus ?? "unknown"}
-                    </Badge>
-                    <span className="text-[10px] text-muted-foreground">
-                      {relativeTime(runner.lastHeartbeat ?? null)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Claude Code sessions */}
-        <div>
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-            Claude Code Sessions ({claudeSessions.length})
-          </h4>
-          {claudeSessions.length === 0 ? (
-            <p className="text-xs text-muted-foreground/60 italic">
-              No active sessions
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {claudeSessions.map((session) => (
-                <div
-                  key={session.pid}
-                  className="flex items-center justify-between text-xs px-2 py-1 rounded-md bg-muted/40"
-                >
-                  <span className="font-mono">PID {session.pid}</span>
-                  <span className="text-muted-foreground truncate max-w-[200px]">
-                    {session.working_directory
-                      ? session.working_directory
-                          .split(/[/\\]/)
-                          .slice(-2)
-                          .join("/")
-                      : "--"}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Claude Code sessions — same rule as the runner list above. */}
+        {!machine.coordHealthOnly && (
+          <div>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
+              Claude Code Sessions ({claudeSessions.length})
+            </h4>
+            {claudeSessions.length === 0 ? (
+              <p className="text-xs text-muted-foreground/60 italic">
+                No active sessions
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {claudeSessions.map((session) => (
+                  <div
+                    key={session.pid}
+                    className="flex items-center justify-between text-xs px-2 py-1 rounded-md bg-muted/40"
+                  >
+                    <span className="font-mono">PID {session.pid}</span>
+                    <span className="text-muted-foreground truncate max-w-[200px]">
+                      {session.working_directory
+                        ? session.working_directory
+                            .split(/[/\\]/)
+                            .slice(-2)
+                            .join("/")
+                        : "--"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* CI Runner */}
         {machine.ciRunner && (
@@ -624,17 +735,40 @@ export function MachineCard({ machine, onRenamed }: MachineCardProps) {
           </div>
         )}
 
+        {/* CI capacity — how much CI this machine is ALLOWED to take, next to
+            the telemetry that says what to set it to. Deliberately adjacent to
+            the CI-runner badge above, which says what it is taking right now:
+            the knob and its evidence in one viewport is the whole reason this
+            page exists. Collapsed, so opening it is a deliberate act. */}
+        {ciCapacity && <CiCapacityDisclosure join={ciCapacity} />}
+
         {/* Summary footer */}
-        <div className="flex items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
-          <span>
-            {healthyRunners.length} of {runners.length} healthy
-          </span>
-          <span>
-            {claudeSessions.length} CC session
-            {claudeSessions.length !== 1 ? "s" : ""}
-          </span>
+        <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
+          {machine.coordHealthOnly ? (
+            <span data-operations-machine-counts="unknown">
+              runners: unknown &middot; CC sessions: unknown
+            </span>
+          ) : (
+            <>
+              <span>
+                {healthyRunners.length} of {runners.length} healthy
+              </span>
+              <span>
+                {claudeSessions.length} CC session
+                {claudeSessions.length !== 1 ? "s" : ""}
+              </span>
+            </>
+          )}
           {machine.ciRunner && machine.ciRunner.status !== "offline" && (
             <span>CI runner active</span>
+          )}
+          {/* The cross-links HealthSummaryCard carried per device. They only
+              resolve for a matched coord device — the trees view is keyed on
+              `device_id`. */}
+          {machine.coordHealth?.matched && (
+            <span className="ml-auto">
+              <DeviceCrossLinks deviceId={machine.coordHealth.device_id} />
+            </span>
           )}
         </div>
       </CardContent>

@@ -17,38 +17,35 @@
 //   - the actionable side-channels (suggestions, gate decisions) and the raw
 //     proposal stream demoted to a collapsed "Merge internals" section.
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
   ExternalLink,
+  GitBranch,
   GitMerge,
   GitPullRequest,
-  PenLine,
   RotateCcw,
-  Send,
   ShieldAlert,
   ShieldQuestion,
 } from "lucide-react";
 import Link from "next/link";
-import { toast } from "sonner";
-import { createLogger } from "@/lib/logger";
-import { httpClient } from "@/services/service-factory";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+// The console primitives (plan
+// `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1). This
+// surface is where the Pipeline style was invented, so it is also the
+// reference consumer: every rule R1-R7 it demonstrates now goes through the
+// primitive that owns that rule, and `MergePipeline.test.tsx` — unmodified —
+// is the proof the extraction changed nothing.
+import {
+  CollapsiblePanel,
+  FilterTabs,
+  HealthStrip,
+  RecordDetail,
+  RecordList,
+  RecordRow,
+  type HealthBadge,
+} from "@/components/console";
 import {
   AUTHOR_GLYPH_KINDS,
   RowTime,
@@ -56,15 +53,17 @@ import {
   StatusBadge,
   STATUS_BADGE_CLASS,
   type StatusPalette,
-} from "./statusRow";
+} from "@/components/console/statusRow";
 import {
   GateDecisionCounts,
   GateDecisionRow,
   MergeTrainRow,
   SuggestionCard,
 } from "./MergeTrain";
+import { PrDraftStateControl } from "./PrDraftStateControl";
 import { MergeTrainActivity } from "./MergeTrainActivity";
-import { prDraftStateUrl, relativeTime } from "./utils";
+import { MergeDependencyGraph } from "./MergeDependencyGraph";
+import { relativeTime } from "./utils";
 import {
   MERGED_LOOKBACK_HOURS,
   useMergePipelineData,
@@ -91,15 +90,18 @@ import {
 // Status visuals.
 //
 // The palette rule, the colour families, the badge and the row timestamp all
-// live in `./statusRow` now — they are shared with the coord Alerts tab, which
-// renders the same "one row per entity, ONE plain-language status" shape.
-// `STATUS_BADGE_CLASS` and `AUTHOR_GLYPH_KINDS` are re-exported here because
-// they are this surface's palette and its callers (and tests) address them by
-// this module; the implementation is single-sourced so the two surfaces cannot
-// drift.
+// live in `@/components/console/statusRow` now — they are shared with the
+// coord Alerts tab, which renders the same "one row per entity, ONE
+// plain-language status" shape. `STATUS_BADGE_CLASS` and `AUTHOR_GLYPH_KINDS`
+// are re-exported here because they are this surface's palette and its callers
+// (and tests) address them by this module; the implementation is
+// single-sourced so the two surfaces cannot drift.
 // ----------------------------------------------------------------------------
 
-export { AUTHOR_GLYPH_KINDS, STATUS_BADGE_CLASS } from "./statusRow";
+export {
+  AUTHOR_GLYPH_KINDS,
+  STATUS_BADGE_CLASS,
+} from "@/components/console/statusRow";
 
 /**
  * This surface's palette. `ATTENTION_BY_KIND` (prPipeline.ts) is the shared
@@ -127,7 +129,9 @@ function PipelineRowTime({ row }: { row: PipelineRow }) {
       at={isMerged ? row.mergedAt : row.updatedAt}
       verb={isMerged ? "Merged" : "Updated"}
       prefix={
-        isMerged ? <span className="text-green-300/80">merged </span> : undefined
+        isMerged ? (
+          <span className="text-green-300/80">merged </span>
+        ) : undefined
       }
       absent={
         isMerged
@@ -152,165 +156,21 @@ function commitHref(repo: string, sha: string): string {
 /** The coord close_cause of a rebase fast-forward land. */
 const FF_LAND_CLOSE_CAUSE = "commits_landed_via_other_pr";
 
-const log = createLogger("MergePipeline");
 
-/**
- * Split a row's full `owner/name` repo string into `[owner, name]`.
- * The draft-state coord route addresses the repo by owner + name segments,
- * but the pipeline row carries them joined. Returns null when the string
- * isn't `owner/name` shaped, so the caller can hide the control rather than
- * POST a malformed path.
- */
-function splitOwnerRepo(repo: string): [string, string] | null {
-  const slash = repo.indexOf("/");
-  if (slash <= 0 || slash >= repo.length - 1) return null;
-  return [repo.slice(0, slash), repo.slice(slash + 1)];
-}
 
-/**
- * Operator draft-state toggle for a single PR row.
- *
- * Gated on the PR's `pr_state`:
- *   - `draft` → "Ready for review" (POST `{draft:false}`), which RELEASES the
- *     PR to coord's merge train. Because that consequence is a surprise for a
- *     draft-required (security-surface) PR, it's behind a confirm dialog that
- *     names the release-to-train outcome.
- *   - `open`  → "Convert to draft" (POST `{draft:true}`), the safe hold; no
- *     confirm needed.
- *   - anything else (merged / closed / unknown) → the control renders nothing.
- *
- * On success it fires a debounced `onActed` refetch so the row's status
- * follows the twin once the `ready_for_review` / `converted_to_draft` webhook
- * reconciles `pr_state`.
- */
-function DraftStateButton({
-  row,
-  onActed,
-}: {
-  row: PipelineRow;
-  onActed: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  const prState = row.pr?.pr_state;
-  const owner = splitOwnerRepo(row.repo);
-
-  const submit = useCallback(
-    async (draft: boolean) => {
-      if (row.prNumber === null || owner === null) return;
-      const [ownerName, repoName] = owner;
-      setBusy(true);
-      try {
-        const res = await httpClient.fetch(
-          prDraftStateUrl(ownerName, repoName, row.prNumber),
-          { method: "POST", body: JSON.stringify({ draft }) }
-        );
-        if (!res.ok) {
-          const text = await res.text();
-          log.warn("draft-state action failed", res.status, text);
-          toast.error(
-            draft
-              ? `Couldn't convert #${row.prNumber} to draft (HTTP ${res.status})`
-              : `Couldn't release #${row.prNumber} (HTTP ${res.status})`
-          );
-          return;
-        }
-        toast.success(
-          draft
-            ? `#${row.prNumber} converted to draft — held out of the merge train.`
-            : `#${row.prNumber} marked ready for review — coord will land it once CI is green.`
-        );
-        onActed();
-      } catch (err) {
-        log.warn("draft-state action threw", err);
-        toast.error(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [row.prNumber, owner, onActed]
-  );
-
-  // Only surface the toggle when we can act: a real PR number, a splittable
-  // `owner/name`, and a draft/open state (never merged/closed).
-  if (row.prNumber === null || owner === null) return null;
-
-  if (prState === "draft") {
-    return (
-      <>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={busy}
-          onClick={() => setConfirmOpen(true)}
-          data-testid="pr-ready-for-review"
-        >
-          <Send className="h-3.5 w-3.5" />
-          Ready for review
-        </Button>
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                Release #{row.prNumber} to the merge train?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Marking {row.repoShort}#{row.prNumber} ready for review removes
-                the draft hold. Once CI is green, coord will land it
-                automatically — there is no further review step.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={busy}
-                onClick={() => void submit(false)}
-              >
-                Release to merge train
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </>
-    );
-  }
-
-  if (prState === "open") {
-    return (
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={busy}
-        onClick={() => void submit(true)}
-        data-testid="pr-convert-to-draft"
-      >
-        <PenLine className="h-3.5 w-3.5" />
-        Convert to draft
-      </Button>
-    );
-  }
-
-  return null;
-}
 
 // ----------------------------------------------------------------------------
 // Health strip
 // ----------------------------------------------------------------------------
 
-const LIGHT_CLASS = {
-  green: "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse",
-  amber: "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]",
-  red: "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.9)]",
-} as const;
-
-const HEADLINE_CLASS = {
-  green: "text-foreground",
-  amber: "text-amber-200",
-  red: "text-red-200",
-} as const;
-
-function HealthStrip({
+/**
+ * This surface's R1 health strip: derive the verdict from the rows already on
+ * the page (never a second fetch), then hand `{level, headline, detail,
+ * badges}` to the shared `<HealthStrip>`. The derivation is what is specific
+ * to the merge pipeline; the strip itself is not, so only the derivation lives
+ * here.
+ */
+function PipelineHealthStrip({
   rows,
   economicsByRepo,
   loaded,
@@ -325,55 +185,32 @@ function HealthStrip({
     () => derivePipelineHealth(rows, Date.now(), economicsByRepo),
     [rows, economicsByRepo]
   );
+  const badges: HealthBadge[] = [
+    { key: "queue", label: `queue ${health.queueDepth}` },
+    { key: "in-flight", label: `in flight ${health.inFlight}` },
+  ];
+  if (health.needsAttention > 0) {
+    badges.push({
+      key: "needs-attention",
+      label: `needs attention ${health.needsAttention}`,
+      tone: "attention",
+      onClick: onShowAttention,
+    });
+  }
+  badges.push({
+    key: "last-merged",
+    label: `last merged ${relativeTime(health.lastMergedAt)}`,
+    tone: "muted",
+  });
+
   return (
-    <div
-      className={`flex items-center gap-3 rounded-lg border bg-card/30 px-4 py-2.5 flex-wrap ${
-        health.level === "red"
-          ? "border-red-500/40"
-          : health.level === "amber"
-            ? "border-amber-500/35"
-            : "border-border"
-      }`}
+    <HealthStrip
       data-testid="pipeline-health"
-      data-health-level={health.level}
-    >
-      <span
-        className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${LIGHT_CLASS[health.level]}`}
-        aria-hidden
-      />
-      <span
-        className={`text-[13px] font-semibold ${HEADLINE_CLASS[health.level]}`}
-      >
-        {loaded ? health.headline : "Connecting…"}
-      </span>
-      {health.detail && (
-        <span className="text-xs text-muted-foreground">{health.detail}</span>
-      )}
-      <span className="ml-auto flex items-center gap-2">
-        <Badge variant="outline" className="font-mono text-[11px]">
-          queue {health.queueDepth}
-        </Badge>
-        <Badge variant="outline" className="font-mono text-[11px]">
-          in flight {health.inFlight}
-        </Badge>
-        {health.needsAttention > 0 && (
-          <button type="button" onClick={onShowAttention} className="contents">
-            <Badge
-              variant="outline"
-              className="font-mono text-[11px] text-red-200 border-red-500/35 cursor-pointer"
-            >
-              needs attention {health.needsAttention}
-            </Badge>
-          </button>
-        )}
-        <Badge
-          variant="outline"
-          className="font-mono text-[11px] text-muted-foreground"
-        >
-          last merged {relativeTime(health.lastMergedAt)}
-        </Badge>
-      </span>
-    </div>
+      level={health.level}
+      headline={loaded ? health.headline : "Connecting…"}
+      detail={health.detail}
+      badges={badges}
+    />
   );
 }
 
@@ -538,124 +375,201 @@ function RowDetail({
   const earlier = row.attempts.filter(
     (a) => a.proposal_id !== active?.proposal_id
   );
+  // The five R5 slots, in the order `<RecordDetail>` fixes them: why →
+  // problems → actions → history → raw. Each slot is a fragment, so the
+  // panel's `space-y-3` spaces the real content nodes exactly as it did when
+  // this markup was one inline <div>.
   return (
-    <div className="border border-t-0 border-border rounded-b-md bg-card px-4 py-3 space-y-3 text-sm">
-      {/* why, in plain language */}
-      {row.status.reason && (
-        <p className="text-[13px] text-foreground/85 m-0">
-          {row.status.reason}
-        </p>
-      )}
-      {/* The four-word inline marker, spelled out. The glyph is what survives
-          the scan; this is what the operator reads once it has earned a
-          click. Muted, not red — an unknown age accuses nobody. */}
-      {row.status.dwellEvidence === "unknown" && (
-        <p
-          className="text-xs text-muted-foreground flex items-center gap-1 m-0"
-          data-testid="unknown-dwell-note"
-        >
-          <ShieldQuestion className="h-3 w-3 shrink-0" />
-          {UNKNOWN_DWELL_NOTE}
-        </p>
-      )}
-      {active?.error && active.error !== row.status.reason && (
-        <p className="text-xs text-red-300 flex items-center gap-1 m-0">
-          <AlertTriangle className="h-3 w-3 shrink-0" />
-          {redactSecrets(active.error)}
-        </p>
-      )}
-
-      {/* how a landed PR reached its base branch (explains ff-land closes) */}
-      <LandedDetail row={row} />
-
-      {/* which checks failed, with links to the runs */}
-      <FailingChecks row={row} />
-
-      {/* what you can do / where to look */}
-      <div className="flex flex-wrap items-center gap-2">
-        {row.prNumber !== null && (
-          <Button asChild size="sm" variant="outline">
-            <a
-              href={prHref(row.repo, row.prNumber)}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <GitPullRequest className="h-3.5 w-3.5" />
-              GitHub PR
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </Button>
-        )}
-        {row.ciRunUrl && (
-          <Button asChild size="sm" variant="outline">
-            <a href={row.ciRunUrl} target="_blank" rel="noopener noreferrer">
-              Candidate CI run
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </Button>
-        )}
-        {row.agentId && (
-          <Button asChild size="sm" variant="outline">
-            <Link href="/admin/agent-sessions">
-              Agent {row.agentId.slice(0, 8)}
-            </Link>
-          </Button>
-        )}
-        <DraftStateButton row={row} onActed={onActed} />
-      </div>
-
-      {/* CI-on-candidate education — the #1 recurring confusion */}
-      {row.status.kind === "awaiting-ci" && (
-        <p className="text-[11px] text-muted-foreground m-0">
-          Checks run on coord&rsquo;s merge candidate, not on your branch — your
-          PR&rsquo;s own green checkmarks can be stale.
-          {row.ciRunUrl
-            ? " The candidate run linked above is the one that counts."
-            : ""}
-        </p>
-      )}
-
-      {/* attempt history */}
-      {active && (
-        <div className="text-[11px] text-muted-foreground space-y-0.5">
-          <p className="m-0">
-            Attempt started {relativeTime(active.created_at)}
-            {typeof active.requeue_count === "number" &&
-              active.requeue_count > 0 && (
-                <span className="text-orange-200">
-                  {" "}
-                  <RotateCcw className="inline h-3 w-3" /> requeued ×
-                  {active.requeue_count}
-                </span>
-              )}
-          </p>
-          {earlier.length > 0 && (
-            <p className="m-0">
-              {earlier.length} earlier attempt{earlier.length === 1 ? "" : "s"}:{" "}
-              {earlier.map((a) => a.status).join(", ")}
+    <RecordDetail
+      why={
+        <>
+          {/* why, in plain language */}
+          {row.status.reason && (
+            <p className="text-[13px] text-foreground/85 m-0">
+              {row.status.reason}
             </p>
           )}
-        </div>
-      )}
+          {/* The four-word inline marker, spelled out. The glyph is what
+              survives the scan; this is what the operator reads once it has
+              earned a click. Muted, not red — an unknown age accuses nobody. */}
+          {row.status.dwellEvidence === "unknown" && (
+            <p
+              className="text-xs text-muted-foreground flex items-center gap-1 m-0"
+              data-testid="unknown-dwell-note"
+            >
+              <ShieldQuestion className="h-3 w-3 shrink-0" />
+              {UNKNOWN_DWELL_NOTE}
+            </p>
+          )}
+          {active?.error && active.error !== row.status.reason && (
+            <p className="text-xs text-red-300 flex items-center gap-1 m-0">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              {redactSecrets(active.error)}
+            </p>
+          )}
+        </>
+      }
+      problems={
+        <>
+          {/* how a landed PR reached its base branch (explains ff-land closes) */}
+          <LandedDetail row={row} />
 
-      {/* raw state for support/debugging — the ONLY place internals show */}
-      <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
-        {active && (
-          <>
-            proposal {active.proposal_id} · {active.status}
-          </>
-        )}
-        {row.pr && (
-          <>
-            {active && " · "}
-            {row.pr.merge_state_status ?? "?"} · mergeable=
-            {String(row.pr.mergeable)} · {row.pr.review_decision ?? "no review"}{" "}
-            · CI {row.pr.ci_lifecycle ?? "?"}
-            {row.pr.ci_conclusion ? `/${row.pr.ci_conclusion}` : ""}
-          </>
-        )}
-      </p>
-    </div>
+          {/* which checks failed, with links to the runs */}
+          <FailingChecks row={row} />
+
+          {/* The cross-repo dependency DAG for THIS PR, keyed on the row —
+              no repo field, no PR field, nothing to re-type.
+
+              The collapse lives HERE rather than inside the graph component,
+              and that placement is the whole point: `CollapsiblePanel`
+              unmounts its children, so while this is closed the graph
+              component does not exist and its fetch never fires. When the
+              graph owned its own panel, its mount effect sat ABOVE the
+              collapsed content and every expanded row cost a request. Only one
+              row expands at a time (`expandedKey`), so at most one graph is
+              ever mounted. */}
+          {row.prNumber !== null && (
+            <CollapsiblePanel
+              titleAs="h3"
+              data-testid="merge-dep-graph"
+              storageKey="pipeline:dep-graph"
+              defaultOpen={false}
+              icon={<GitBranch className="h-4 w-4" />}
+              title="Cross-repo PR dependency graph"
+            >
+              <MergeDependencyGraph repo={row.repo} pr={row.prNumber} />
+            </CollapsiblePanel>
+          )}
+
+          {/* The merge-side half of resolved Q4: the alembic reservation queue
+              is a Dev Ops resource, and this is the link that carries the need
+              back here. Deliberately worded as a place to look rather than a
+              claim about this PR — coord's queue read
+              (`GET /coord/migrations/queue?repo=`) carries no PR number, so
+              nothing on this surface can join a reservation to a row. Saying
+              "this PR is waiting on a migration slot" would be fabricating the
+              join. */}
+          {(row.status.kind === "queued" || row.status.kind === "blocked") && (
+            <p
+              className="text-[11px] text-muted-foreground m-0"
+              data-testid="pipeline-migration-queue-link"
+            >
+              A PR carrying an alembic migration also waits for a reservation
+              slot, and coord&rsquo;s queue carries no PR number — so this is a
+              place to look, not a verdict on this PR:{" "}
+              <Link
+                href="/admin/coord/migrations"
+                className="underline hover:text-foreground"
+              >
+                migration queue
+              </Link>
+              .
+            </p>
+          )}
+        </>
+      }
+      actions={
+        <>
+          {/* what you can do / where to look */}
+          <div className="flex flex-wrap items-center gap-2">
+            {row.prNumber !== null && (
+              <Button asChild size="sm" variant="outline">
+                <a
+                  href={prHref(row.repo, row.prNumber)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <GitPullRequest className="h-3.5 w-3.5" />
+                  GitHub PR
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </Button>
+            )}
+            {row.ciRunUrl && (
+              <Button asChild size="sm" variant="outline">
+                <a
+                  href={row.ciRunUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Candidate CI run
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </Button>
+            )}
+            {row.agentId && (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/admin/agent-sessions">
+                  Agent {row.agentId.slice(0, 8)}
+                </Link>
+              </Button>
+            )}
+            <PrDraftStateControl
+              repo={row.repo}
+              prNumber={row.prNumber}
+              prState={row.pr?.pr_state}
+              hasActiveProposal={row.activeProposal !== null}
+              onActed={onActed}
+            />
+          </div>
+
+          {/* CI-on-candidate education — the #1 recurring confusion */}
+          {row.status.kind === "awaiting-ci" && (
+            <p className="text-[11px] text-muted-foreground m-0">
+              Checks run on coord&rsquo;s merge candidate, not on your branch —
+              your PR&rsquo;s own green checkmarks can be stale.
+              {row.ciRunUrl
+                ? " The candidate run linked above is the one that counts."
+                : ""}
+            </p>
+          )}
+        </>
+      }
+      history={
+        active ? (
+          <div className="text-[11px] text-muted-foreground space-y-0.5">
+            <p className="m-0">
+              Attempt started {relativeTime(active.created_at)}
+              {typeof active.requeue_count === "number" &&
+                active.requeue_count > 0 && (
+                  <span className="text-orange-200">
+                    {" "}
+                    <RotateCcw className="inline h-3 w-3" /> requeued ×
+                    {active.requeue_count}
+                  </span>
+                )}
+            </p>
+            {earlier.length > 0 && (
+              <p className="m-0">
+                {earlier.length} earlier attempt
+                {earlier.length === 1 ? "" : "s"}:{" "}
+                {earlier.map((a) => a.status).join(", ")}
+              </p>
+            )}
+          </div>
+        ) : null
+      }
+      raw={
+        /* raw state for support/debugging — the ONLY place internals show */
+        <p className="m-0 font-mono text-[10px] text-muted-foreground/60 break-all">
+          {active && (
+            <>
+              proposal {active.proposal_id} · {active.status}
+            </>
+          )}
+          {row.pr && (
+            <>
+              {active && " · "}
+              {row.pr.merge_state_status ?? "?"} · mergeable=
+              {String(row.pr.mergeable)} ·{" "}
+              {row.pr.review_decision ?? "no review"} · CI{" "}
+              {row.pr.ci_lifecycle ?? "?"}
+              {row.pr.ci_conclusion ? `/${row.pr.ci_conclusion}` : ""}
+            </>
+          )}
+        </p>
+      }
+    />
   );
 }
 
@@ -703,25 +617,22 @@ function PipelineRowDisplay({
   onToggle: () => void;
   onActed: () => void;
 }) {
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
-    <div data-testid="pipeline-row" data-row-key={row.key}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className={`w-full flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left ${rowAccentClass(
-          row.status
-        )} ${expanded ? "rounded-b-none bg-accent/60" : ""}`}
-        aria-expanded={expanded}
-      >
-        <Badge variant="outline" className="font-mono text-xs shrink-0">
-          {row.members
-            ? `${row.members.length}-repo change`
-            : row.prNumber !== null
-              ? `${row.repoShort}#${row.prNumber}`
-              : row.repoShort}
-        </Badge>
-        <span className="min-w-0 flex-1 truncate text-sm">
+    <RecordRow
+      data-testid="pipeline-row"
+      rowKey={row.key}
+      expanded={expanded}
+      onToggle={onToggle}
+      accent={rowAccentClass(row.status)}
+      identity={
+        row.members
+          ? `${row.members.length}-repo change`
+          : row.prNumber !== null
+            ? `${row.repoShort}#${row.prNumber}`
+            : row.repoShort
+      }
+      label={
+        <>
           <span className="text-foreground/90">{row.branch}</span>
           {row.baseBranch && (
             <span className="text-muted-foreground"> → {row.baseBranch}</span>
@@ -733,31 +644,15 @@ function PipelineRowDisplay({
               {row.members.map((m) => m.repo.repo.split("/").pop()).join(" + ")}
             </span>
           )}
-        </span>
-        <StatusBadge status={row.status} palette={PIPELINE_PALETTE} />
-        {row.status.reason && !expanded && (
-          // The reason rides beside the badge from `sm` up (it used to appear
-          // only at `lg`, which hid the answer to "why?" on most laptops).
-          // Below that, and whenever it truncates, the badge's title carries
-          // the full text.
-          <span
-            className="hidden sm:inline text-xs text-muted-foreground truncate max-w-[22ch] lg:max-w-[40ch]"
-            title={row.status.reason}
-            data-testid="row-reason"
-          >
-            {row.status.reason}
-          </span>
-        )}
-        <PipelineRowTime row={row} />
-        <Chevron className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      </button>
-      {expanded && (
-        <>
-          <RowDetail row={row} onActed={onActed} />
-          <GroupMembers row={row} />
         </>
-      )}
-    </div>
+      }
+      status={<StatusBadge status={row.status} palette={PIPELINE_PALETTE} />}
+      reason={row.status.reason}
+      time={<PipelineRowTime row={row} />}
+    >
+      <RowDetail row={row} onActed={onActed} />
+      <GroupMembers row={row} />
+    </RecordRow>
   );
 }
 
@@ -878,59 +773,47 @@ export function MergePipeline() {
 
   return (
     <section className="space-y-3" data-testid="merge-pipeline">
-      <HealthStrip
+      <PipelineHealthStrip
         rows={rows}
         economicsByRepo={economicsByRepo}
         loaded={loaded}
         onShowAttention={() => setFilter("attention")}
       />
 
-      {/* tabs + search */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {FILTERS.map((f) => (
-          <Button
-            key={f.id}
-            size="sm"
-            variant={filter === f.id ? "secondary" : "ghost"}
-            onClick={() => setFilter(f.id)}
-            data-testid={`pipeline-filter-${f.id}`}
-          >
-            {f.label}
-            <span
-              className={`font-mono text-[11px] ${
-                f.id === "attention" && counts[f.id] > 0
-                  ? "text-red-300"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {/* The merged ROWS are only fetched while this tab is open, so
-                  until then `counts.merged` is 0 for want of looking, not
-                  because nothing landed. coord answers the cheap half —
-                  `merged_recent_count` — on the hot poll, so the label is a
-                  real number from the first render. A dash remains for the
-                  genuinely unknown case: coord too old to answer, or its
-                  count failed.
+      {/* tabs + search (R6). The `–`-not-`0` rule lives in `<FilterTabs>`:
+          pass `null` for a count nobody has fetched and the primitive renders
+          the dash.
 
-                  The two numbers count the same landings but not the same
-                  things: coord counts landed PRs, `counts.merged` counts
-                  RENDERED rows, and a landed MULTI-REPO proposal renders a
-                  summary row on top of its member PR rows. So opening the tab
-                  can nudge the number up by the number of such groups —
-                  pre-existing row-model behavior, not a stale count. */}
-              {f.id === "merged" && mergedPrs === null
-                ? (mergedCount ?? "–")
-                : counts[f.id]}
-            </span>
-          </Button>
-        ))}
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="filter: repo, branch, #number…"
-          className="ml-auto w-56 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          data-testid="pipeline-search"
-        />
-      </div>
+          The merged ROWS are only fetched while that tab is open, so until
+          then `counts.merged` would be 0 for want of looking, not because
+          nothing landed. coord answers the cheap half — `merged_recent_count`
+          — on the hot poll, so the label is a real number from the first
+          render; `null` (coord too old to answer, or its count failed) is the
+          genuinely unknown case and becomes the dash.
+
+          The two numbers count the same landings but not the same things:
+          coord counts landed PRs, `counts.merged` counts RENDERED rows, and a
+          landed MULTI-REPO proposal renders a summary row on top of its member
+          PR rows. So opening the tab can nudge the number up by the number of
+          such groups — pre-existing row-model behavior, not a stale count. */}
+      <FilterTabs<PipelineFilter>
+        tabs={FILTERS.map((f) => ({
+          id: f.id,
+          label: f.label,
+          count:
+            f.id === "merged" && mergedPrs === null
+              ? mergedCount
+              : counts[f.id],
+          attention: f.id === "attention" && counts[f.id] > 0,
+        }))}
+        active={filter}
+        onChange={setFilter}
+        testIdPrefix="pipeline-filter"
+        query={query}
+        onQueryChange={setQuery}
+        queryPlaceholder="filter: repo, branch, #number…"
+        queryTestId="pipeline-search"
+      />
 
       {error && <p className="text-xs text-red-300">{error}</p>}
 
@@ -945,37 +828,41 @@ export function MergePipeline() {
           query={query}
           onActed={refetch}
         />
-      ) : !loaded ? (
-        <div className="space-y-2">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
-      ) : visible.length === 0 ? (
-        <p
-          className="text-sm text-muted-foreground italic py-4 text-center"
-          data-testid="pipeline-empty"
-        >
-          {filter === "merged"
-            ? `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
-            : rows.length === 0
-              ? "No open PRs or merge activity."
-              : "No PRs match this filter."}
-        </p>
       ) : (
-        <div className="space-y-1.5">
-          {visible.map((row) => (
+        <RecordList
+          items={visible}
+          itemKey={(row) => row.key}
+          loaded={loaded}
+          // The empty state names WHICH question came back empty — "nothing
+          // landed in the window" is a different claim from "nothing matches
+          // your filter", and from "there is no pipeline". The primitive
+          // cannot know that, so the surface supplies it.
+          empty={
+            <p
+              className="text-sm text-muted-foreground italic py-4 text-center"
+              data-testid="pipeline-empty"
+            >
+              {filter === "merged"
+                ? `Nothing merged in the last ${MERGED_LOOKBACK_HOURS} hours.`
+                : rows.length === 0
+                  ? "No open PRs or merge activity."
+                  : "No PRs match this filter."}
+            </p>
+          }
+          // Hoisted rather than left internal: the Train tab REPLACES the
+          // list, so an internally-held key would be lost on every visit to
+          // it and the operator's open row would silently close.
+          expandedKey={expandedKey}
+          onExpandedKeyChange={setExpandedKey}
+          renderRow={(row, { expanded, onToggle }) => (
             <PipelineRowDisplay
-              key={row.key}
               row={row}
-              expanded={expandedKey === row.key}
-              onToggle={() =>
-                setExpandedKey((k) => (k === row.key ? null : row.key))
-              }
+              expanded={expanded}
+              onToggle={onToggle}
               onActed={refetch}
             />
-          ))}
-        </div>
+          )}
+        />
       )}
 
       {/* actionable side-channels — visible only when non-empty */}
@@ -1052,16 +939,16 @@ export function MergePipeline() {
           )
         }
       >
+        {/* The cross-repo dependency DAG used to be linked from here by a
+            `#merge-dep-graph` anchor into a standalone panel that then asked
+            for the repo and PR number by hand. It lives in each row's own
+            expansion now, keyed on that row (Phase 4 of
+            `2026-08-25-coord-console-intent-and-devops-sections`). */}
         <p className="text-[11px] text-muted-foreground mb-2">
           Raw scheduler proposals, one per attempt (the unified list above
-          collapses these per PR). Cross-repo dependency DAG:{" "}
-          <a
-            href="#merge-dep-graph"
-            className="underline hover:text-foreground"
-          >
-            dependency graph
-          </a>
-          .
+          collapses these per PR). A PR&rsquo;s cross-repo dependency DAG is in
+          that PR&rsquo;s own row — expand the row and open &ldquo;Cross-repo PR
+          dependency graph&rdquo;.
         </p>
         {proposals && proposals.length > 0 ? (
           <div className="space-y-2">

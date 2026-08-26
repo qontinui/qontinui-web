@@ -21,8 +21,8 @@
  * nothing — so this asserts the property at the source level.
  *
  * SCOPE, deliberately narrow. "One fetch site in the repo" is NOT true of
- * `/merge/queue` or `/pr-merge/prs`: `LandedFeaturesPanel`,
- * `StuckPrRecoveryPanel`, `usePrCheckDetails` and `utils` read them for their
+ * `/merge/queue` or `/pr-merge/prs`: `StuckPrRecoveryPanel`,
+ * `usePrCheckDetails` and `utils` read them for their
  * own surfaces, and that is legitimate — they are separate views with separate
  * lifecycles, not duplicate copies of the hero. What must stay single is (a)
  * the two side-channels nothing else consumes, and (b) the hero's own module

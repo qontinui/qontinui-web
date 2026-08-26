@@ -38,7 +38,6 @@ export const PUBLIC_PREFIXES = [
   "/api",
   "/coord-api",
   "/__ui-bridge__",
-  "/setup-admin",
 ];
 
 export function isPublic(pathname: string): boolean {

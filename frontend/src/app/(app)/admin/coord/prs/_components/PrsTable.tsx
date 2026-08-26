@@ -34,8 +34,10 @@ import type {
 } from "@/services/admin-dev-service";
 import {
   formatContextNames,
+  proposalIsActive,
   unstableHasFailure,
 } from "@/components/operations/prPipeline";
+import { PrDraftStateControl } from "@/components/operations/PrDraftStateControl";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -110,6 +112,11 @@ const MERGE_STATUS_TONE: Record<PrMergeStatus, BadgeTone> = {
   conflicts: "warning",
   "behind-base": "warning",
   "review-required": "warning",
+  // Same tone as `review-required`, which it was split out of — the badge's
+  // job here is "a concrete blocker someone can act on", and that has not
+  // changed; only WHO acts has. The badge text comes from `mergeStatusLabel`,
+  // so no label entry is needed.
+  "required-checks-missing": "warning",
   "blast-radius-block": "warning",
   // In-progress / calm.
   "ci-pending": "info",
@@ -449,10 +456,19 @@ function prGithubUrl(pr: PrRow): string {
 export function PrsTable({
   prs,
   merged = false,
+  onActed,
 }: {
   prs: PrRow[];
   /** When true (the "Recently merged" tab) show the Deploy + Merged columns. */
   merged?: boolean;
+  /**
+   * FORCED refetch after a row action (the draft-state toggle) succeeds.
+   * Must be a forced (`?refresh=1`) reload, not the plain auto-refresh:
+   * coord's cached `pr_state` only reconciles when the `ready_for_review` /
+   * `converted_to_draft` webhook lands, so an unforced poll can keep serving
+   * the pre-flip state. Omitted on the merged tab, where no action renders.
+   */
+  onActed?: () => void;
 }) {
   const [repoFilter, setRepoFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
@@ -537,13 +553,18 @@ export function PrsTable({
               {merged && <TableHead>Deploy</TableHead>}
               {merged && <TableHead>Merged</TableHead>}
               <TableHead>Age</TableHead>
+              {!merged && (
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={merged ? 10 : 8}
+                  colSpan={merged ? 10 : 9}
                   className="text-center text-sm text-muted-foreground italic py-6"
                 >
                   No PRs match the current filters.
@@ -625,6 +646,17 @@ export function PrsTable({
                       {formatRelative(p.last_refreshed_at)}
                     </span>
                   </TableCell>
+                  {!merged && (
+                    <TableCell className="whitespace-nowrap text-right">
+                      <PrDraftStateControl
+                        repo={p.repo}
+                        prNumber={p.pr_number}
+                        prState={p.pr_state}
+                        hasActiveProposal={proposalIsActive(p.proposal_status)}
+                        onActed={onActed}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))
             )}

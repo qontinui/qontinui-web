@@ -18,9 +18,29 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | string;
 interface LevelBadgeProps {
   level: LogLevel | undefined | null;
   className?: string;
+  /**
+   * Render a bare `<span>` rather than a `<Badge>`.
+   *
+   * `<RecordRow>` already wraps its `identity` slot in an outline `<Badge>`
+   * (that IS the mono identity chip, R2), so a `<Badge>` inside it draws two
+   * borders around one word. Added in Phase 3 Wave 2 so `<LogRow>` can put the
+   * level in that slot and keep `log-level-*` — which
+   * `tests/e2e/pages/admin.spec.ts` asserts is VISIBLE — on the same element,
+   * with the same colour, in both forms.
+   */
+  inline?: boolean;
 }
 
-function normalize(level: LogLevel | undefined | null): string {
+/**
+ * The canonical level for a raw `coord.agent_logs.level` value.
+ *
+ * EXPORTED in Phase 3 Wave 2 because `/admin/coord/agents` was applying its own
+ * un-normalised `toLowerCase()` to the same field, so a row coord stamped
+ * `"warning"` rendered a WARN badge (through this function) while the page's
+ * `warn` filter chip did not match it and its health strip did not count it —
+ * one field, two vocabularies. There is only one now.
+ */
+export function normalizeLevel(level: LogLevel | undefined | null): string {
   if (!level) return "info";
   const lower = String(level).toLowerCase();
   // Tolerate common synonyms emitted by structured loggers.
@@ -28,6 +48,8 @@ function normalize(level: LogLevel | undefined | null): string {
   if (lower === "err") return "error";
   return lower;
 }
+
+const normalize = normalizeLevel;
 
 function styleFor(level: string): string {
   switch (level) {
@@ -46,9 +68,26 @@ function styleFor(level: string): string {
   }
 }
 
-export function LevelBadge({ level, className }: LevelBadgeProps) {
+export function LevelBadge({ level, className, inline }: LevelBadgeProps) {
   const normalized = normalize(level);
   const style = styleFor(normalized);
+  if (inline) {
+    return (
+      <span
+        data-testid={`log-level-${normalized}`}
+        data-log-level={normalized}
+        className={cn(
+          "font-mono uppercase text-[10px] tracking-wide",
+          // Colour ONLY — the surrounding chip supplies the border and the
+          // background, so the `bg-*`/`border-*` half of `styleFor` is dropped.
+          style.replace(/(bg|border)-[^\s]+/g, "").trim(),
+          className,
+        )}
+      >
+        {normalized}
+      </span>
+    );
+  }
   return (
     <Badge
       variant="outline"

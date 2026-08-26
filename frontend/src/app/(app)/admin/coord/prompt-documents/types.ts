@@ -11,34 +11,165 @@
  *
  * A prompt document is any prompt-shaped content coord serves the fleet,
  * addressed by `(kind, name)`. This generalizes the former `policy_documents`
- * store (whose rows migrated in as `kind: "policy"`) to six kinds — one editor
- * for all of them, rather than six unrelated homes.
+ * store (whose rows migrated in as `kind: "policy"`) to thirteen kinds — one
+ * editor for all of them, rather than thirteen unrelated homes.
+ *
+ * The thirteen split cleanly in two, and the split is the point (plan
+ * `2026-08-21-project-intent-documents-and-the-selection-loop`, § "Naming
+ * constraint"): **policy = how to act, intent = what to build.** The seven
+ * BEHAVIOR kinds are normative — each tells a session how to conduct itself.
+ * The six INTENT kinds describe the product the tenant is *building*: what it
+ * is for, for whom, and what "better" means. Filing a behavioral rule under an
+ * intent kind is the one thing that erodes the design, so the bands below are
+ * rendered, not implied — see `KIND_BAND`.
  *
  * Versioning is the core contract: coord snapshots an immutable version on EVERY
  * edit and bumps `current_version` in the same transaction. Nothing is
  * overwritten in place, so every prior wording stays readable and restorable.
  */
 
-/** The six content families (coord `KINDS`, mirroring the DB CHECK). */
+/** The thirteen content families (coord `KINDS`, mirroring the DB CHECK). */
 export type PromptDocumentKind =
   | "session_briefing"
+  // ── intent: what we are building, for whom, and what "better" means ──
+  | "product_intent"
+  | "initiative"
+  | "success_metric"
+  | "domain_spec"
+  | "audience_profile"
+  | "decision_record"
+  // ── behavior: how a session must act while building it ──
   | "policy"
   | "response_prompt"
   | "continuation_rules"
   | "agent_playbook"
-  | "prompt_template";
+  | "prompt_template"
+  | "claude_settings";
 
-/** Every kind, in the order the page renders its groups. */
+/**
+ * Every kind, in the order the page renders its groups — ordered by AUTHORITY,
+ * not alphabetically and not by when the kind shipped.
+ *
+ * This order is preserved WITHIN each band (see `KIND_BAND` / `kindsInBand`),
+ * so a kind's position here is what decides where it sits among its band-mates.
+ */
 export const PROMPT_DOCUMENT_KINDS: readonly PromptDocumentKind[] = [
   // First on purpose: this is the most consequential document in the store —
   // it is appended to the system prompt of every session the runner hosts.
   "session_briefing",
+
+  // The intent layer, most-general first: vision tie-breaks, the cycle-scoped
+  // initiative is what actually ranks near-term work, and the rest qualify it.
+  "product_intent",
+  "initiative",
+  "success_metric",
+  "domain_spec",
+  "audience_profile",
+  "decision_record",
+
+  // The remaining behavioral kinds.
   "policy",
   "response_prompt",
   "continuation_rules",
   "agent_playbook",
   "prompt_template",
+  // Last of the behavioral run rather than second overall, which is where it
+  // landed when it was one of seven kinds: the band split now carries the
+  // "an edit here changes what every session on this machine may do" weight
+  // that its position used to, and it renders inside Behavior — the band that
+  // is rendered FIRST precisely so nothing normative is pushed below an
+  // unedited intent skeleton.
+  "claude_settings",
 ] as const;
+
+/**
+ * The two halves of the store. Presentational ONLY — a band is a heading, not
+ * a permission and not an address: no filter defaults to one, no route names
+ * one, and the create dialog offers all thirteen kinds regardless.
+ */
+export type PromptDocumentBand = "behavior" | "intent";
+
+/**
+ * Which band each kind belongs to.
+ *
+ * **Exhaustive `Record` on purpose.** A kind added to `PromptDocumentKind`
+ * without an entry here is a TYPE ERROR, not a bandless group quietly rendered
+ * at the bottom of whichever half the code happened to reach first. The
+ * alternative — testing the kind name for a substring, or reading a band off a
+ * new DB column — would let kind fourteen ship into the wrong half silently,
+ * which is the failure this constant exists to make impossible.
+ */
+export const KIND_BAND: Record<PromptDocumentKind, PromptDocumentBand> = {
+  session_briefing: "behavior",
+  policy: "behavior",
+  response_prompt: "behavior",
+  continuation_rules: "behavior",
+  agent_playbook: "behavior",
+  prompt_template: "behavior",
+  claude_settings: "behavior",
+  product_intent: "intent",
+  initiative: "intent",
+  success_metric: "intent",
+  domain_spec: "intent",
+  audience_profile: "intent",
+  decision_record: "intent",
+};
+
+/**
+ * The bands in render order — **Behavior first**, and that is load-bearing.
+ *
+ * `session_briefing` is the most consequential document in the store and it
+ * lives in Behavior. Rendering Intent first would push it below whatever
+ * `product_intent` rows exist — including an unedited shipped skeleton, which
+ * is UNKNOWN rather than intent. The band split must not demote the fleet's
+ * system prompt beneath a placeholder.
+ *
+ * That is the same false-signal class the selection loop's step-1 skeleton rule
+ * exists to prevent (`current_version === 1 && default_source !== null` ⇒ never
+ * edited ⇒ do not rank against it). Fixing it in the ranking and reintroducing
+ * it in the layout would be incoherent.
+ *
+ * **Do not flip this to put Intent first.** It looks like the obvious tidy-up —
+ * the nav section is called `Intent ▾`, so Intent-first reads more consistent —
+ * and it was considered and rejected on 2026-08-25 by the two sessions that own
+ * the two halves (this plan, and
+ * `2026-08-25-coord-console-intent-and-devops-sections`, which owns the nav
+ * section). The section label was chosen KNOWING it names only half of what the
+ * section holds; the honesty comes from the bands being visible and LABELLED,
+ * not from their order. The section-level wobble is answered by the page's
+ * intro copy, which names both halves — not by reordering these.
+ */
+export const PROMPT_DOCUMENT_BANDS: readonly PromptDocumentBand[] = [
+  "behavior",
+  "intent",
+] as const;
+
+/**
+ * Operator-facing heading per band: the label, and the question the kinds
+ * underneath it answer. The question is the whole reason the bands exist —
+ * thirteen kind groups in one flat run makes the reader re-derive, per group,
+ * which question that kind is for.
+ */
+export const BAND_META: Record<
+  PromptDocumentBand,
+  { label: string; question: string }
+> = {
+  behavior: {
+    label: "Behavior",
+    question: "how a session must act while building it",
+  },
+  intent: {
+    label: "Intent",
+    question: 'what we are building, for whom, and what "better" means',
+  },
+};
+
+/** The kinds in one band, in `PROMPT_DOCUMENT_KINDS`' authority order. */
+export function kindsInBand(
+  band: PromptDocumentBand
+): readonly PromptDocumentKind[] {
+  return PROMPT_DOCUMENT_KINDS.filter((kind) => KIND_BAND[kind] === band);
+}
 
 /**
  * The three `session_briefing` names the runner actually resolves — coord
@@ -63,6 +194,33 @@ export const SESSION_BRIEFING_DOCUMENT_NAMES: readonly string[] = [
   "ai-session-rules",
 ];
 
+/**
+ * True for a `session_briefing` row the runner will never read.
+ *
+ * The membership test itself is one line; what earns it a name is that TWO
+ * surfaces have to agree on it and they answer different questions with it.
+ * The create dialog asks "is the address the operator is about to take a trap?"
+ * — a question about a name being typed. The list asks "is this stored row one
+ * of the live three?" — a question about a row that already exists, which is
+ * the case the create-time warning cannot reach: a row seeded before that
+ * warning shipped, or one an agent created through
+ * `coord_write_prompt_document` (coord's `AGENT_UNWRITABLE_DOCUMENTS` covers
+ * the three canonical `(kind, name)` pairs, so any OTHER briefing name is
+ * agent-writable by default).
+ *
+ * `name` is trimmed because the create dialog checks a live input value; a
+ * stored row's name is already normalized by coord.
+ */
+export function isInertSessionBriefing(
+  kind: PromptDocumentKind,
+  name: string
+): boolean {
+  return (
+    kind === "session_briefing" &&
+    !SESSION_BRIEFING_DOCUMENT_NAMES.includes(name.trim())
+  );
+}
+
 /** Operator-facing label + one-line explanation per kind. */
 export const KIND_META: Record<
   PromptDocumentKind,
@@ -74,6 +232,47 @@ export const KIND_META: Record<
     // the create dialog's inert-name check have to agree, and a prose copy is
     // the half that goes stale.
     description: `Appended to the system prompt of every session the runner hosts. The runner reads exactly three names — ${SESSION_BRIEFING_DOCUMENT_NAMES.join(", ")}; any other document under this kind is stored and versioned but inert.`,
+  },
+  // ───────────────────────────── the intent band ─────────────────────────────
+  // Each description leads with the VERB — what a reader DOES with the kind —
+  // because this is the only place that verb is written down, and "what the
+  // kind is called" tells an operator nothing about when to reach for it. The
+  // subject of all six is the product YOU are building, not the tooling.
+  product_intent: {
+    label: "Product Intent",
+    description:
+      "Justify a direction, and break ties between work that all looks reasonable: why this product exists, where it ends up, and what it will never be. Too general to rank near-term work on its own — that is what an initiative is for.",
+  },
+  initiative: {
+    label: "Initiative",
+    description:
+      "Rank near-term work: one time-boxed push, with what is explicitly in and out of scope for this cycle, and the bar new work must clear before it is worth authoring instead of picking something up. With no live initiative there is no bar, and nothing should be authored.",
+  },
+  success_metric: {
+    label: "Success Metric",
+    description:
+      "Measure whether the product got better: what is counted, where the number comes from, the current baseline, the target, and which direction is good. A goal nobody can count is a preference.",
+  },
+  domain_spec: {
+    label: "Domain Spec",
+    description:
+      "Diff intent against reality: what a subsystem is SUPPOSED to do, written independently of what it currently does. Every line the implementation fails to match is a candidate piece of work.",
+  },
+  audience_profile: {
+    label: "Audience Profile",
+    description:
+      "Justify work for whom: who uses this product, what they are trying to get done, and what they will not tolerate — including AI agents where they are consumers of it too.",
+  },
+  decision_record: {
+    label: "Decision Record",
+    description:
+      "Refuse to re-litigate: a settled choice, why it was made, and explicitly what new evidence would reopen it. Without this a goal-driven session eventually 'fixes' a deliberate design.",
+  },
+  // ──────────────────────────── the behavior band ────────────────────────────
+  claude_settings: {
+    label: "Claude Code Settings",
+    description:
+      "The fleet's Claude Code settings BASELINE — a versioned document a machine copies into its own `.claude/settings.json`, not live configuration. `hooks` are deliberately excluded (a served shell command is remote code execution by configuration) and travel via `scripts/install-guard-hooks.sh`.",
   },
   policy: {
     label: "Policy",
@@ -431,21 +630,81 @@ export type PolicyWriteLevel = (typeof POLICY_WRITE_LEVELS)[number];
 export const POLICY_WRITE_DEFAULT_LEVEL: PolicyWriteLevel = "tightening_only";
 
 /**
- * Levels an operator may currently select.
+ * Whether a string coord returned is a level this console can interpret.
  *
- * `full` is absent, and that is a shipping decision rather than an oversight:
- * its entire safety story is that the operator is notified after a loosening
- * lands, and nothing emits that notification yet (the notification substrate
- * landed; the policy-change emitter did not). Coord clamps `full` to
- * `tightening_only` server-side regardless of what this list says —
- * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` — so hiding it here is the honest
- * presentation of a restriction that is really enforced, not the enforcement
- * itself.
+ * Nothing validates `level` anywhere on the way in — coord's PUT takes it as
+ * free text by design ("a new domain and its levels are data, not schema") and a
+ * row can be written by hand — so a typo like `tightening-only` reaches the
+ * read path verbatim. Coord's ENFORCEMENT path already handles that:
+ * `PolicyWriteLevel::parse_fail_closed` resolves an unrecognized level to `off`,
+ * the most restrictive level, because "an unreadable authority setting is not
+ * permission".
+ *
+ * The generic `GET /coord/fleet-policy` does NOT run that parse — it is
+ * domain-agnostic and answers with the raw stored string. So a console that
+ * renders `effective_level` unconditionally shows a typo'd row as the level in
+ * force while agents are in fact being refused outright, which is the widest
+ * possible gap between what the operator reads and what the fleet does.
+ */
+export function isPolicyWriteLevel(value: string): value is PolicyWriteLevel {
+  return (POLICY_WRITE_LEVELS as readonly string[]).includes(value);
+}
+
+/**
+ * What coord ENFORCES for a level it cannot parse — the most restrictive one,
+ * not [`POLICY_WRITE_DEFAULT_LEVEL`].
+ *
+ * The asymmetry is coord's and is deliberate: *no row* means nobody expressed an
+ * opinion, so today's shipped behaviour applies; an *unparseable row* means
+ * somebody expressed an opinion coord cannot read, which is a different and more
+ * alarming fact. Mirrors `PolicyWriteLevel::parse_fail_closed`.
+ */
+export const POLICY_WRITE_FAIL_CLOSED_LEVEL: PolicyWriteLevel = "off";
+
+/**
+ * Levels an operator may select.
+ *
+ * **`full` became selectable when coord retired its clamp** (`7708317c`,
+ * 2026-08-23). It was withheld for as long as `full`'s only safety property —
+ * that the operator is told after a loosening lands — was unbacked: the
+ * notification substrate had shipped but nothing emitted
+ * `NotificationKind::PolicyDocumentChanged`, so
+ * `FULL_REQUIRES_POLICY_CHANGE_EMITTER` clamped `full` to `tightening_only` on
+ * every enforcement read. The emitter landed (coord#1517 + restack #1542) and,
+ * crucially, coord pinned the property rather than inspecting it once:
+ * `every_committing_version_bump_emits` fails if any committing version bump
+ * loses its emit again. Hiding `full` after that stopped describing a
+ * restriction and started being one, imposed by a console with no authority to
+ * impose it.
+ *
+ * **This list is deliberately NOT derived from coord's flag**, which is not on
+ * the wire. If the clamp is ever re-armed, an operator selecting `full` gets the
+ * honest answer from the mechanism that already exists for it: the write lands,
+ * the read-back reports `tightening_only`, and the control says devices resolve
+ * something other than what was written. A console that guessed at the flag
+ * could be wrong in the other direction — hiding a level that works.
  */
 export const POLICY_WRITE_SELECTABLE_LEVELS: readonly PolicyWriteLevel[] = [
   "off",
   "propose_only",
   "tightening_only",
+  "full",
+];
+
+/**
+ * Levels whose selection is confirmed before it is written.
+ *
+ * `full` is the only level at which an agent may land a change the operator
+ * never reviewed. Every other level either refuses the write or queues it as a
+ * proposal, so selecting them cannot widen anything by accident.
+ *
+ * The page already holds this convention: `AgentWriteAccessControl` confirms
+ * overriding a built-in protection because "a control that made it one click
+ * would make the fleet's most consequential setting its least deliberate". The
+ * same sentence applies here, and the two controls sit inches apart.
+ */
+export const POLICY_WRITE_CONFIRMED_LEVELS: readonly PolicyWriteLevel[] = [
+  "full",
 ];
 
 /** One-line description per level, for the control's help text. */
@@ -455,5 +714,5 @@ export const POLICY_WRITE_LEVEL_HELP: Record<PolicyWriteLevel, string> = {
     "Agents write nothing directly; every operation becomes a pending proposal for you to approve.",
   tightening_only:
     "Agents may land a provable tightening or no-op; anything else becomes a pending proposal. This is coord's built-in default.",
-  full: "Agents may also land a classified loosening, with a notification instead of a proposal. Not selectable until policy-change notifications ship.",
+  full: "Agents may also land a classified loosening directly, with a notification afterwards instead of a proposal to approve. The only level at which a policy change reaches the fleet without your review.",
 };

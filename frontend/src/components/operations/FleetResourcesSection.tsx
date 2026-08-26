@@ -12,52 +12,43 @@
  * established the shape — the owner holds the stream, the panels take it as a
  * prop.
  *
- * This component is mounted INSIDE the page's collapsed "System details"
- * section, so it unmounts while collapsed. Its POLL does not stop with it,
- * though — the page owns the poll and passes it down, because the
- * saturated-lane alarm has to keep counting on the collapsed header. That is
- * a deliberate trade: one lightweight 30 s GET on every visit to this page,
- * bought so a machine that is out of memory cannot hide behind a click.
+ * ## Where it is mounted, and who owns the poll
  *
- * It adds **no nav entry** (`[policy: ux-priorities#discoverability]`) and no
- * `/coord/status` poll to `MachineCard` — that shipped as Phase 1.3 and was
- * deliberately deleted.
+ * ONE mount: `/admin/coord/devops`, the Dev Ops Overview (plan
+ * `2026-08-25-coord-console-intent-and-devops-sections` Phase 1). This section
+ * is a first-class part of that page and nothing above it needs the count, so
+ * it simply opens the poll itself.
+ *
+ * It used to have a second mount inside the pipeline page's collapsed "System
+ * details" section, which unmounted while collapsed — so that PAGE owned the
+ * poll and injected it here, because the saturated-lane alarm had to keep
+ * counting on the collapsed header. Phase 4 deleted the section, the page
+ * poll and the injection prop together: the alarm now rides the `Dev Ops ▾`
+ * nav trigger (`CoordNav`'s `useFleetAlarmBadge`), where it is visible from
+ * every console page rather than from one.
+ *
+ * It adds no `/coord/status` poll to `MachineCard` — that shipped as Phase
+ * 1.3 and was deliberately deleted.
  */
 
 import { useEffect, useState } from "react";
 import { CiRunPanel } from "./CiRunPanel";
 import { FleetResourceStrip } from "./FleetResourceStrip";
 import { useFleetResourceSamples } from "./useFleetResourceSamples";
-import type { UseFleetResourceSamplesResult } from "./useFleetResourceSamples";
 import type { FleetDeviceRef } from "./fleetResources";
 
 export interface FleetResourcesSectionProps {
   /** Coord's device list, from the page's existing `/fleet/health` poll. */
   devices: FleetDeviceRef[];
-  /**
-   * The shared poll, when the page already holds one.
-   *
-   * The page DOES hold one: it hoists the saturated-lane count onto the
-   * collapsed "System details" header, exactly as it already hoists the
-   * unhealthy-machine count, so a red machine cannot hide behind a click.
-   * That alarm has to keep counting while this section is unmounted, which
-   * means the poll has to live above it. Passing the same result down keeps
-   * it to ONE poll rather than two views of the fleet that can disagree.
-   *
-   * Omitted, the section opens its own — which is what makes it usable
-   * standalone and testable without a page.
-   */
-  resources?: UseFleetResourceSamplesResult;
 }
 
 export function FleetResourcesSection({
   devices,
-  resources: injected,
 }: FleetResourcesSectionProps) {
-  // Hooks cannot be conditional; the own poll is disabled when the page
-  // supplied one, so nothing double-fetches.
-  const own = useFleetResourceSamples({ enabled: !injected });
-  const resources = injected ?? own;
+  // This section owns the one poll and passes the SAME rows to both children.
+  // Two polls of one route would be two chances to disagree about what the
+  // fleet looks like right now.
+  const resources = useFleetResourceSamples();
 
   // Same ticking clock the strip keeps: without it the CI panel's freshness
   // would only advance when a poll SUCCEEDS, so an outage would pin every row

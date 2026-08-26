@@ -156,9 +156,17 @@ export type PauseReasonCode =
   | "conflicts"
   | "behind-base"
   | "review-required"
+  /** A REQUIRED status context is unsatisfied. Split out of `review-required`,
+   *  which used to name a reviewer for a block no reviewer can clear. */
+  | "required-checks-missing"
   | "blast-radius-block"
   | "draft"
   | "hydration-stale"
+  /** A coord `merge_status` this bundle has no mapping for. Not a state coord
+   *  emits — it is the catch-all that keeps such a PR IN the breakdown instead
+   *  of dropping it, so a newer coord degrades to a vague reason rather than to
+   *  a train that reads stalled for no stated reason at all. */
+  | "unrecognized-status"
   | "no-candidates";
 
 export interface PauseReason {
@@ -188,13 +196,23 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   "slots-saturated": 6,
   "conflict-strand": 7,
   "ci-failed": 8,
-  conflicts: 9,
-  "blast-radius-block": 10,
-  "review-required": 11,
-  "behind-base": 12,
-  "ci-pending": 13,
-  draft: 14,
-  "no-candidates": 15,
+  // Sits with the CI-dimension reasons rather than beside `review-required`,
+  // matching coord's own dimension mapping for this code
+  // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
+  // point of the split is that this block belongs to CI, not to a reviewer, so
+  // ranking it next to `review-required` would re-tell the story we removed.
+  "required-checks-missing": 9,
+  conflicts: 10,
+  "blast-radius-block": 11,
+  "review-required": 12,
+  "behind-base": 13,
+  "ci-pending": 14,
+  draft: 15,
+  // Last before `no-candidates`: a token we cannot name explains less than any
+  // reason we CAN name, so it never outranks a real diagnosis — but it still
+  // sorts above "nothing to do", which would be a false all-clear.
+  "unrecognized-status": 16,
+  "no-candidates": 17,
 };
 
 const REASON_META: Record<
@@ -207,11 +225,24 @@ const REASON_META: Record<
     | "hydration-stale"
     | "repo-cap-starved"
     | "slots-saturated"
+    // Its label is derived from the raw coord token, so it cannot be a static
+    // row here; `deriveReasons` synthesizes the meta inline, the way
+    // `orchestrator-stalled` already does.
+    | "unrecognized-status"
   >,
   { label: string; severity: PauseSeverity }
 > = {
   "conflict-strand": { label: "Stranded in conflict", severity: "blocking" },
   "ci-failed": { label: "CI red", severity: "blocking" },
+  // `blocking`, not `waiting`. coord reconciles `required_checks_satisfied`
+  // against GitHub's own aggregate at hydration, so a surviving `false` is a
+  // genuine unsatisfied requirement — it may never clear on its own. Its
+  // sibling is `ci-failed`, not `behind-base`; softening it to a wait would
+  // trade one dishonest rendering ("a reviewer will fix this") for another.
+  "required-checks-missing": {
+    label: "Required checks missing",
+    severity: "blocking",
+  },
   conflicts: { label: "Needs rebase", severity: "blocking" },
   "blast-radius-block": { label: "Blast-radius gate", severity: "blocking" },
   "review-required": { label: "Review required", severity: "blocking" },
@@ -228,12 +259,23 @@ const STATUS_TO_REASON: Partial<Record<string, PauseReasonCode>> = {
   conflicts: "conflicts",
   "behind-base": "behind-base",
   "review-required": "review-required",
+  "required-checks-missing": "required-checks-missing",
   "blast-radius-block": "blast-radius-block",
   draft: "draft",
   "ready-but-unlanded": "orchestrator-stalled",
   // `ready` and `queued` mean the train HAS accepted the PR — they are
   // progress, not a pause, so they intentionally have no reason mapping.
 };
+
+/**
+ * The tokens whose absence from {@link STATUS_TO_REASON} is DELIBERATE.
+ *
+ * Everything else missing from that map is a token we simply do not know, and
+ * `deriveReasons` reports those rather than dropping the PR. Without this set
+ * the two cases are indistinguishable, and the fallback would invent a pause
+ * reason for PRs the train is actively carrying.
+ */
+const PROGRESS_STATUSES = new Set<string>(["ready", "queued"]);
 
 // ----------------------------------------------------------------------------
 // Rows
@@ -306,6 +348,44 @@ export interface TrainSummary {
 function shortRepo(repo: string): string {
   const i = repo.indexOf("/");
   return i === -1 ? repo : repo.slice(i + 1);
+}
+
+/**
+ * The per-repo in-flight cap coord's dequeue is ACTUALLY enforcing for a repo,
+ * and whether it has been narrowed below the configured one.
+ *
+ * Since coord #1550 the A2 candidate-CI distress term temporarily reduces one
+ * repo's cap while its candidate CI keeps failing, and `at_repo_cap` /
+ * `repos_at_cap` are derived against that reduced value. Printing either beside
+ * `slots.per_repo_cap` therefore states a threshold the dequeue is not
+ * applying — "at its per-repo cap (1/2 in flight)" is the visible symptom — and
+ * points at the wrong remedy: a narrowed repo widens again when its candidate
+ * CI goes green, NOT when its in-flight proposals finish. Every render site
+ * that quotes a per-repo cap goes through here.
+ *
+ * `narrowed` is keyed off the field's PRESENCE, not a comparison: coord omits
+ * `narrowed_repo_cap` rather than emitting a value equal to the configured cap,
+ * so a present value is itself the signal. The `< configured` guard is belt and
+ * braces against a future producer that stops honouring that.
+ */
+function effectiveRepoCap(
+  repoSlots: RepoSlotSaturation | null | undefined,
+  slots: SlotSaturation
+): { cap: number; narrowed: boolean } {
+  const n = repoSlots?.narrowed_repo_cap;
+  if (typeof n === "number" && n < slots.per_repo_cap) {
+    return { cap: n, narrowed: true };
+  }
+  return { cap: slots.per_repo_cap, narrowed: false };
+}
+
+/** The trailing clause that explains a narrowed cap, or "" when it is not. */
+function narrowedCapNote(narrowed: boolean, configured: number): string {
+  return narrowed
+    ? ` — TEMPORARILY narrowed from ${configured} because this repo's recent ` +
+        `candidate CI has been failing repeatedly; it widens again on its own as ` +
+        `candidate CI recovers, not when its in-flight proposals finish`
+    : "";
 }
 
 function secsSince(iso: string | null | undefined, now: number): number | null {
@@ -432,11 +512,22 @@ export function fallbackMergeStatus(
   if (pr.merge_state_status === "DIRTY" || pr.mergeable === false)
     return "conflicts";
   if (pr.merge_state_status === "BEHIND") return "behind-base";
-  if (
-    pr.review_decision === "REVIEW_REQUIRED" ||
-    pr.required_checks_satisfied === false
-  )
-    return "review-required";
+  // Mirrors coord's arm 6, which was SPLIT in two: the old single arm OR-ed a
+  // human approval gate together with an unsatisfied REQUIRED status context —
+  // two unrelated states, one blocked on a person and one on CI, both labelled
+  // "review required". Review is tested first because a human is the longer
+  // pole when both are true. `required_checks_satisfied === false` and nothing
+  // looser: `null`/`undefined` mean coord could not PROVE the required
+  // contexts (no rollup yet, no required contexts published, or a truncated
+  // page), and must fall through, or every PR on a repo with no required
+  // contexts would read as permanently blocked.
+  //
+  // These two arms and coord's must stay in lockstep. Whichever surface stamps
+  // a given row decides its token — coord when `merge_status` is present, this
+  // function otherwise — so a divergence would make the token's meaning depend
+  // on WHO classified the PR, which is exactly the ambiguity the split removes.
+  if (pr.review_decision === "REVIEW_REQUIRED") return "review-required";
+  if (pr.required_checks_satisfied === false) return "required-checks-missing";
   if (pr.mergeable === true) {
     // Mirrors coord's `fresh_in_flight`: in-flight status AND younger than the
     // landed timeout. An unknown age fails the gate (coord's `_ => false`),
@@ -583,6 +674,33 @@ export function buildTrainSummary(
       slots.repos_at_cap ??
       (slots.repos ?? []).filter((r) => r.at_repo_cap).map((r) => r.repo);
     if (atCap.length > 0 && slots.available > 0) {
+      // Both sources of `atCap` are derived against each repo's EFFECTIVE cap,
+      // so a repo coord's A2 term has narrowed appears here BELOW the configured
+      // cap. Naming COORD_MERGE_PER_REPO_CAP as the count they "already hold" is
+      // then wrong twice over: wrong threshold, and it credits the fairness
+      // filter for a candidate-CI hold whose remedy is a green run, not patience.
+      const narrowed = (slots.repos ?? []).filter(
+        (r) =>
+          atCap.includes(r.repo) &&
+          typeof r.narrowed_repo_cap === "number" &&
+          r.narrowed_repo_cap < slots.per_repo_cap
+      );
+      const capClause =
+        narrowed.length > 0 && narrowed.length === atCap.length
+          ? `already hold the reduced cap coord is enforcing for them`
+          : `already hold COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals`;
+      const only = narrowed.length === 1 ? narrowed[0] : undefined;
+      const a2Clause =
+        narrowed.length === 0
+          ? ` Fairness filter, by design — it stops one busy repo monopolising the train.`
+          : only
+            ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
+              `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
+              `been failing repeatedly; that cap widens again on its own as candidate ` +
+              `CI recovers.`
+            : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
+              `because their recent candidate CI has been failing repeatedly; those ` +
+              `caps widen again on their own as candidate CI recovers.`;
       banners.push({
         code: "repo-cap-starved",
         severity: "waiting",
@@ -590,10 +708,8 @@ export function buildTrainSummary(
         detail:
           `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
           `free, but ${atCap.length} repo${atCap.length === 1 ? "" : "s"} ` +
-          `(${atCap.map(shortRepo).join(", ")}) already hold ` +
-          `COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals, ` +
-          `so the dequeue skips their queued work. Fairness filter, by design — ` +
-          `it stops one busy repo monopolising the train.`,
+          `(${atCap.map(shortRepo).join(", ")}) ${capClause}, ` +
+          `so the dequeue skips their queued work.${a2Clause}`,
       });
     }
   }
@@ -928,10 +1044,12 @@ function deriveActivity(
       // have completely different fixes (raise the cap vs wait for this repo's
       // own in-flight work to finish).
       if (repoSlots?.at_repo_cap && slots) {
+        const eff = effectiveRepoCap(repoSlots, slots);
         detail =
           `Accepted, but skipped by the dequeue: this repo is at its ` +
-          `per-repo cap (${repoSlots.in_flight}/${slots.per_repo_cap} in flight)` +
-          `${slots.available > 0 ? `, despite ${slots.available} free global slot${slots.available === 1 ? "" : "s"}` : ""}`;
+          `per-repo cap (${repoSlots.in_flight}/${eff.cap} in flight)` +
+          `${slots.available > 0 ? `, despite ${slots.available} free global slot${slots.available === 1 ? "" : "s"}` : ""}` +
+          narrowedCapNote(eff.narrowed, slots.per_repo_cap);
       } else if (slots?.saturated) {
         detail =
           `Accepted, waiting for a merge slot — all ${slots.effective_cap} ` +
@@ -970,6 +1088,18 @@ function deriveActivity(
  */
 const STRAND_SECS = 24 * 60 * 60;
 
+/**
+ * Best-effort label for a coord token this bundle has no copy for: kebab-case
+ * to a sentence, matching how `PrsTable`'s `mergeStatusLabel` already renders
+ * an unknown badge. Deliberately mechanical — inventing prose for a token
+ * whose meaning we do not know would be a guess presented as a diagnosis.
+ */
+function humanizeToken(status: string): string {
+  const words = status.replace(/[-_]+/g, " ").trim();
+  if (!words) return "Unknown status";
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function deriveReasons(args: {
   repoPrs: PrRow[];
   parked: Leg[];
@@ -1004,21 +1134,34 @@ function deriveReasons(args: {
   // Capacity first — when the train has no room for this repo, the per-PR
   // states below are not what is holding it up.
   if (repoSlots?.at_repo_cap && slots) {
+    const eff = effectiveRepoCap(repoSlots, slots);
     reasons.push({
       code: "repo-cap-starved",
       severity: "waiting",
-      label: "At per-repo cap",
+      label: eff.narrowed ? "At narrowed per-repo cap" : "At per-repo cap",
       detail:
         `This repo already holds ${repoSlots.in_flight} in-flight proposal` +
         `${repoSlots.in_flight === 1 ? "" : "s"}, its cap ` +
-        `(COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap}). The dequeue SKIPS ` +
+        `${
+          eff.narrowed
+            ? `(${eff.cap}, narrowed from COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`
+            : `(COORD_MERGE_PER_REPO_CAP=${eff.cap})`
+        }. The dequeue SKIPS ` +
         `its remaining ${repoSlots.queued} queued proposal` +
-        `${repoSlots.queued === 1 ? "" : "s"} until one finishes — ` +
+        `${repoSlots.queued === 1 ? "" : "s"} ` +
+        `${eff.narrowed ? "until its candidate CI recovers" : "until one finishes"} — ` +
         `${
           slots.available > 0
             ? `even though ${slots.available} global slot` +
-              `${slots.available === 1 ? " is" : "s are"} free. This is the ` +
-              `fairness filter working as designed, not a fault.`
+              `${slots.available === 1 ? " is" : "s are"} free. ` +
+              `${
+                eff.narrowed
+                  ? `coord has TEMPORARILY narrowed this repo's cap because its ` +
+                    `recent candidate CI has been failing repeatedly; it widens ` +
+                    `again on its own as candidate CI recovers. Not the fairness ` +
+                    `filter, and not a fault.`
+                  : `This is the fairness filter working as designed, not a fault.`
+              }`
             : `and every global slot is busy too.`
         }`,
       prCount: repoSlots.queued,
@@ -1060,6 +1203,10 @@ function deriveReasons(args: {
 
   // Bucket open PRs by verdict.
   const buckets = new Map<PauseReasonCode, PrRow[]>();
+  // Verdicts this bundle has no mapping for, keyed by the RAW coord token so
+  // two different unknown tokens stay two distinguishable rows rather than
+  // collapsing into one uninterpretable pile.
+  const unmapped = new Map<string, PrRow[]>();
   for (const pr of repoPrs) {
     // Prefer coord's own `proposal_status`; fall back to the queue join on
     // `(repo, head_sha)` for coord deploys that emit neither verdict field.
@@ -1068,7 +1215,20 @@ function deriveReasons(args: {
       : (proposalByHead.get(`${pr.repo}@${pr.head_sha}`) ?? null);
     const status = effectiveMergeStatus(pr, linked);
     let code = STATUS_TO_REASON[status];
-    if (!code) continue;
+    if (!code) {
+      // NOT `continue`. `STATUS_TO_REASON` is keyed on bare `string` and
+      // explicitly partial, so nothing makes it complete against a coord newer
+      // than this bundle — `MergeStatusToken` went over a month without
+      // `repo-unreachable` and no build ever broke over it. Dropping the PR
+      // here would erase it from the breakdown entirely, leaving the operator
+      // a train that is visibly stalled with no reason stated at all: strictly
+      // worse than a vague reason, because there is nothing to chase.
+      //
+      // `ready`/`queued` are absent from the map on purpose (they are
+      // progress, not a pause) and must not be swept in here.
+      if (!PROGRESS_STATUSES.has(status)) push(unmapped, status, pr);
+      continue;
+    }
     // Promote a long-lived conflict to a strand — a different problem with a
     // different fix (the PR needs a human, not another rebase attempt).
     if (
@@ -1121,6 +1281,30 @@ function deriveReasons(args: {
       prCount: prsIn.length,
       oldestSecs: ages.length ? Math.max(...ages) : null,
       prNumbers: prsIn.map((p) => p.pr_number).sort((a, b) => a - b),
+    });
+  }
+
+  // One row per unrecognised token. The label and detail are derived from the
+  // token itself — all the meaning we actually have — rather than from
+  // `REASON_META`, which cannot hold a row for a string that did not exist
+  // when this bundle was built. Severity is `blocking`: coord emits a verdict
+  // token to explain why a PR is NOT landing, so "we cannot read it" is a
+  // block we cannot characterise, not a wait we can promise will end.
+  for (const [status, statusPrs] of unmapped) {
+    const n = statusPrs.length;
+    const plural = n === 1 ? "" : "s";
+    reasons.push({
+      code: "unrecognized-status",
+      severity: "blocking",
+      label: humanizeToken(status),
+      detail:
+        `${n} PR${plural} reported by coord as "${status}", a merge status ` +
+        `this dashboard does not know. coord is likely newer than this ` +
+        `frontend build — read the PR${plural} in the PRs tab for the ` +
+        `blocking summary coord itself gives.`,
+      prCount: n,
+      oldestSecs: null,
+      prNumbers: statusPrs.map((p) => p.pr_number).sort((a, b) => a - b),
     });
   }
 
@@ -1217,8 +1401,20 @@ function detailFor(code: PauseReasonCode, prs: PrRow[]): string {
     }
     case "behind-base":
       return `${n} PR${plural} behind base — needs an update before landing.`;
+    // The "or a required check" hedge this copy used to carry was the
+    // conflation showing through the prose. The token now separates the two
+    // causes, so the copy can name one actor each.
     case "review-required":
-      return `${n} PR${plural} awaiting review approval or a required check.`;
+      return (
+        `${n} PR${plural} awaiting approval from a reviewer — no amount of ` +
+        `CI will clear ${n === 1 ? "it" : "them"}.`
+      );
+    case "required-checks-missing":
+      return (
+        `${n} PR${plural} with a REQUIRED status check that is not ` +
+        `satisfied. No review is required — chase the check (a re-run left ` +
+        `pending, or a required context that never ran).`
+      );
     case "blast-radius-block":
       return (
         `${n} PR${plural} blocked by the blast-radius gate (removes a ` +

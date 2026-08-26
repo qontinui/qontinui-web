@@ -176,8 +176,10 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     from app.db.session import AsyncSessionLocal
     from app.services.coord_jwks import (
         CoordJWKSUnavailableError,
+        CoordTokenForeignIssuerError,
         CoordTokenInvalidError,
         coord_jwks_client,
+        describe_token_rejection,
     )
 
     try:
@@ -189,9 +191,31 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
             detail="Device authentication temporarily unavailable.",
         ) from exc
     except CoordTokenInvalidError as exc:
+        # Same honesty rule as the WS handshake: report which failure
+        # occurred. Calling a foreign-issuer rejection "expired" costs the
+        # reader the one clue that would resolve it.
+        logger.warning(
+            "device_token_rejected",
+            error=str(exc),
+            failure=type(exc).__name__,
+        )
+        # Terminal caller, so this arm is a real wiring bug — see the same
+        # alarm in `devices_ws` for why it does not live in `verify_token`.
+        if isinstance(exc, CoordTokenForeignIssuerError):
+            logger.warning(
+                "coord_identity_mismatch",
+                coord_url=exc.coord_url,
+                token_kid=exc.token_kid,
+                served_kids=exc.served_kids,
+                note=(
+                    "caller presented a token minted by a different coord "
+                    "than COORD_URL points at; check which coord this "
+                    "backend verifies against"
+                ),
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired device token.",
+            detail=describe_token_rejection(exc),
         ) from exc
 
     raw_user_id = claims.get("user_id")

@@ -83,8 +83,9 @@ export const devNavItems: NavItem[] = [
   },
 
   // NOTE: there is no top-level "Operations" item. The cross-machine fleet
-  // view + operations panels were merged into the Coord Console's Fleet tab
-  // (/admin/coord/fleet); /operations redirects there.
+  // view + operations panels were merged into the Coord Console; /operations
+  // redirects to its Pipeline tab (/admin/coord/pipeline), and the machine
+  // half now lives on the console's Dev Ops Overview (/admin/coord/devops).
   {
     id: "commits",
     label: "Commits",

@@ -35,6 +35,7 @@ import {
   resolveEffectiveAuthority,
   resolveWithout,
   type ClearanceAuthority,
+  type GateClearanceUpdate,
 } from "../gateClearance";
 import type { ClearanceRuleInput } from "../_hooks/useGateClearanceRules";
 import { EffectiveAuthorityCell } from "./EffectiveAuthorityMatrix";
@@ -55,12 +56,16 @@ export interface ClearanceRuleEditorDialogProps {
   rules: readonly CoordPolicyRow[];
   saving: boolean;
   onCreate: (input: ClearanceRuleInput) => Promise<boolean>;
-  /** Name / priority / rationale only — coord cannot PATCH a rule's payload. */
+  /** Name / priority / rationale only — coord cannot PATCH a rule's payload.
+   *  Typed by reference, not by a copy of the shape: `GateClearanceUpdate`
+   *  carries the ⚠️ on why it has no `enabled`, and a hand-duplicated literal
+   *  here would hide that from the one place a field gets added. */
   onPatch: (
     policyId: string,
-    body: { name?: string; priority?: number; rationale?: string }
+    body: GateClearanceUpdate
   ) => Promise<boolean>;
-  /** Class or authority changed: replace the row (create → disable → delete). */
+  /** Class or authority changed: replace the row (create → delete; there is no
+   *  disable step, and `useGateClearanceRules.replaceRule` says why). */
   onReplace: (
     previous: CoordPolicyRow,
     input: ClearanceRuleInput

@@ -221,6 +221,27 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 _wrapper_sync_task: asyncio.Task | None = None
 
 
+def _boot_side_effects_disabled() -> bool:
+    """True when this process is a test run, so boot-time side effects skip.
+
+    ``TESTING=1`` is exported by ``backend/tests/conftest.py`` before any app
+    module is imported (and by the ``backend-ci.yml`` test steps), so reading
+    the environment is the same idiom ``app/core/sentry_config.py`` already
+    uses to go inert under pytest. There is no ``settings.TESTING`` field to
+    read instead.
+
+    Why app startup must be inert under tests: ``TestClient(app)`` used as a
+    context manager runs the lifespan, so *when* the app boots inside a pytest
+    session is decided by which collected file first pulls the client fixture.
+    Any boot step that writes shared rows, touches the network, or spawns a
+    session-long background loop therefore leaks into unrelated tests, and the
+    blast radius changes with the collected file set. Each call site guarded by
+    this predicate documents why it is safe to skip; ``scheduler.start()`` is
+    deliberately NOT guarded (see its own comment).
+    """
+    return os.getenv("TESTING") == "1"
+
+
 def _suppress_proactor_connection_lost(loop, context):
     exc = context.get("exception")
     transport = context.get("transport")
@@ -237,11 +258,16 @@ def _suppress_proactor_connection_lost(loop, context):
 
 @app.on_event("startup")
 async def startup_event():
+    # Test runs skip the boot steps that mutate shared rows, reach the network,
+    # or spawn session-long background loops — see _boot_side_effects_disabled.
+    skip_side_effects = _boot_side_effects_disabled()
+
     logger.info(
         "application_starting",
         version=settings.VERSION,
         environment=settings.ENVIRONMENT,
         project=settings.PROJECT_NAME,
+        boot_side_effects_skipped=skip_side_effects,
     )
 
     # Suppress the benign Windows-Proactor ConnectionResetError raised when a
@@ -249,9 +275,10 @@ async def startup_event():
     # since the transport type won't match there.
     asyncio.get_running_loop().set_exception_handler(_suppress_proactor_connection_lost)
 
-    # Initialize Sentry for error tracking
-    import os
-
+    # Initialize Sentry for error tracking. (`os` is imported at module scope;
+    # the redundant function-local `import os` that used to sit here made `os` a
+    # function-local name, so any earlier use in this function raised
+    # UnboundLocalError.)
     from app.core.sentry_config import configure_sentry
 
     sentry_dsn = os.getenv("SENTRY_DSN")
@@ -284,29 +311,48 @@ async def startup_event():
     else:
         logger.info("redis_disabled", note="Redis is disabled via configuration")
 
-    # Initialize database
-    try:
-        async with AsyncSessionLocal() as db:
-            await init_db(db)
-        logger.info("database_initialized", status="success")
-    except (ConnectionRefusedError, TimeoutError) as e:
-        logger.error(
-            "database_connection_failed",
-            error=str(e),
-            error_type=type(e).__name__,
-            exc_info=True,
-        )
-        # Re-raise to prevent app from starting with broken DB
-        raise
-    except Exception as e:
-        logger.error(
-            "database_initialization_failed",
-            error=str(e),
-            error_type=type(e).__name__,
-            exc_info=True,
-        )
-        # Re-raise to prevent app from starting with broken DB
-        raise
+    # Initialize database (seed the FIRST_SUPERUSER shell row).
+    #
+    # Skipped under tests. `init_db` does exactly one thing: if
+    # `settings.FIRST_SUPERUSER_EMAIL` is set, SELECT `auth.users` for it and
+    # INSERT+commit a shell superuser row when absent (tables themselves come
+    # from alembic, not from here). Nothing in the suite needs that row — the
+    # only file that pulls the app fixture, `tests/test_file_execution_e2e.py`,
+    # overrides `current_active_user` with a MagicMock — and neither
+    # `tests/conftest.py` nor `.github/workflows/backend-ci.yml` sets
+    # FIRST_SUPERUSER_EMAIL, so in CI this block is ALREADY a no-op.
+    #
+    # It is gated anyway because when the var IS set (a dev box with a local
+    # `.env`) it becomes a boot-time write into the very database the tests use
+    # (conftest points DATABASE_URL at `qontinui_test`), and its SELECT requires
+    # `auth.users` to exist — which couples app boot to the `test_engine`
+    # fixture's create_all/drop_all ordering. A raise here aborts startup, so a
+    # boot pinned ahead of `test_engine` would take the whole session down.
+    if skip_side_effects:
+        logger.info("database_init_skipped", reason="TESTING=1")
+    else:
+        try:
+            async with AsyncSessionLocal() as db:
+                await init_db(db)
+            logger.info("database_initialized", status="success")
+        except (ConnectionRefusedError, TimeoutError) as e:
+            logger.error(
+                "database_connection_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
+            # Re-raise to prevent app from starting with broken DB
+            raise
+        except Exception as e:
+            logger.error(
+                "database_initialization_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
+            # Re-raise to prevent app from starting with broken DB
+            raise
 
     # Initialize database query timing
     if settings.ENABLE_QUERY_LOGGING:
@@ -345,6 +391,16 @@ async def startup_event():
     # stale-connection / clipboard / file cleanups (formerly three ad-hoc
     # asyncio.create_task loops right here). Every tick is gated on a Postgres
     # advisory lock, so N replicas run exactly one executor per task.
+    #
+    # DELIBERATELY NOT gated on `skip_side_effects`. Killing the scheduler under
+    # tests also stops `memory_reindex` / `memory_consolidate` /
+    # `memory_bridge_sync`, and `tests/test_memory_api_db.py`'s hybrid-query
+    # tests depend on those having run — with the scheduler off that file fails a
+    # varying 1-5 tests per run. The one dangerous task, `scheduled_dispatch`, is
+    # already switched off for the suite by
+    # `tests/conftest.py`'s QONTINUI_SCHEDULER_SCHEDULED_DISPATCH_ENABLED=0 (see
+    # tests/test_scheduler_dispatch_sweeper_off_in_tests.py). Keep the blast
+    # radius at that one task.
     try:
         from app.core.scheduler import scheduler
 
@@ -361,19 +417,30 @@ async def startup_event():
     # registry.json from github.com/qontinui/wrappers-registry on startup
     # and every hour thereafter, upserting wrapper_entries. Failures are
     # logged inside the loop and never propagate.
-    try:
-        from app.services.wrapper_sync_service import start_sync_job
+    #
+    # Skipped under tests: `_sync_loop` fetches registry.json over the NETWORK
+    # and `commit()`s `wrapper_entries` immediately, then hourly, for the rest of
+    # the process's life. It is not a scheduler task, so no
+    # QONTINUI_SCHEDULER_* switch reaches it and `scheduler.status()` cannot even
+    # show it — an unobservable session-long writer against the test database.
+    # Nothing in the suite touches `start_sync_job` / `sync_registry` or asserts
+    # on registry-synced `wrapper_entries` rows.
+    if skip_side_effects:
+        logger.info("wrapper_registry_sync_skipped", reason="TESTING=1")
+    else:
+        try:
+            from app.services.wrapper_sync_service import start_sync_job
 
-        global _wrapper_sync_task
-        _wrapper_sync_task = start_sync_job()
-        logger.info("wrapper_registry_sync_started", interval_seconds=3600)
-    except (ImportError, RuntimeError) as e:
-        logger.warning(
-            "wrapper_registry_sync_failed_to_start",
-            error=str(e),
-            error_type=type(e).__name__,
-            note="Continuing without wrapper registry sync",
-        )
+            global _wrapper_sync_task
+            _wrapper_sync_task = start_sync_job()
+            logger.info("wrapper_registry_sync_started", interval_seconds=3600)
+        except (ImportError, RuntimeError) as e:
+            logger.warning(
+                "wrapper_registry_sync_failed_to_start",
+                error=str(e),
+                error_type=type(e).__name__,
+                note="Continuing without wrapper registry sync",
+            )
 
     # (The Phase 3D redbeat startup-resync lived here. It is gone with RedBeat:
     # schedule state is now a Postgres column — `scheduled_workflow_runs.
@@ -382,26 +449,48 @@ async def startup_event():
 
     # Strategy Collaboration (Phase 1) service-account bridge. No-op
     # until COORD_ADMIN_SECRET is set; fail-fast when set-but-misconfig.
-    from app.services.strategy import strategy_client
+    #
+    # Skipped under tests because "no-op unless COORD_ADMIN_SECRET is set" is
+    # NOT reliable here: the secret is a plain settings field, and an operator
+    # box that exports it for coord work would have the test process mint a real
+    # token against coord over the network at boot (fail-fast → raises and kills
+    # the whole session) and then keep a `_refresh_loop` task alive for the rest
+    # of it. `/strategy` route tests build their own client and mock the mint;
+    # the live-coord ones live under tests/integration/, which conftest ignores.
+    if skip_side_effects:
+        logger.info("strategy_client_startup_skipped", reason="TESTING=1")
+    else:
+        from app.services.strategy import strategy_client
 
-    await strategy_client.startup()
+        await strategy_client.startup()
 
     # Recording-pipeline async-run recovery (Phase 4 of plan
     # 2026-05-17-web-runner-ws-bridge-plan-b.md). Flips stale
     # in-flight rows to ``timed_out`` so polling clients see a
     # terminal state after a web restart.
-    try:
-        from app.services.recording_pipeline_subscriber import (
-            recover_running_runs_on_boot,
-        )
+    #
+    # Skipped under tests: it is a boot-time bulk `UPDATE ... SET
+    # status='timed_out'` + commit over every `queued`/`running`
+    # recording_pipeline_runs row, on the real engine — i.e. it rewrites rows
+    # other tests may have seeded, at a moment decided by collection order. This
+    # is the side effect originally measured perturbing unrelated tests. No test
+    # depends on it today, and one that wants the sweep can await
+    # `recover_running_runs_on_boot()` itself.
+    if skip_side_effects:
+        logger.info("recording_pipeline_recovery_skipped", reason="TESTING=1")
+    else:
+        try:
+            from app.services.recording_pipeline_subscriber import (
+                recover_running_runs_on_boot,
+            )
 
-        await recover_running_runs_on_boot()
-        logger.info("recording_pipeline_recovery_complete")
-    except Exception as exc:  # noqa: BLE001 - non-fatal at boot
-        logger.error(
-            "recording_pipeline_recovery_failed",
-            error=str(exc),
-        )
+            await recover_running_runs_on_boot()
+            logger.info("recording_pipeline_recovery_complete")
+        except Exception as exc:  # noqa: BLE001 - non-fatal at boot
+            logger.error(
+                "recording_pipeline_recovery_failed",
+                error=str(exc),
+            )
 
 
 @app.on_event("shutdown")
