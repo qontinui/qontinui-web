@@ -43665,6 +43665,22 @@
         "title": "TemplateCandidateUpdate",
         "type": "object"
       },
+      "TenantCreateIn": {
+        "description": "Body for ``POST /operations/tenants`` \u2014 the user-typed project name.\n\nOnly the display name crosses the wire: coord derives the slug itself\n(``slugify_user_tenant_name``) and REJECTS a name that does not survive\nslugification rather than mangling it, so web must not pre-slugify or\npre-sanitize here \u2014 doing so would silently change what the user typed\nand hide coord's ``invalid_name`` answer.\n\nThe bounds below are a cheap client-side courtesy, not the security\ncontrol: coord validates the name, enforces the reserved-slug denylist\nand the per-operator creation cap. They are deliberately WIDER than\ncoord's 3..=63 *slug* bound, since a display name of \"Joe's Caf\u00e9 \u2615\"\nslugifies shorter than it reads.",
+        "properties": {
+          "display_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "TenantCreateIn",
+        "type": "object"
+      },
       "TestRunComplete": {
         "description": "Request schema for completing a test run.",
         "properties": {
@@ -86214,7 +86230,7 @@
     },
     "/api/v1/operations/tenants": {
       "get": {
-        "description": "Return the tenants the current operator belongs to.\n\nSourced from coord's ``GET /admin/coord/me`` over the HTTP boundary\n(no cross-schema read): an operator with rows in N tenants comes back\nwith N entries; single-tenant operators come back with one. The\n``active_tenant_id`` field is the operator's home tenant \u2014 the natural\ndefault for first-load selection; the frontend persists subsequent\nswitches in localStorage (`tenant-context.tsx`).\n\nCoord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);\n``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so\nthe first entry is the active default. A coord 403 for an unlinked\noperator propagates as ``tenant_not_resolved``.\n\nThe per-tenant ``name`` field is not in the ``/me`` payload (coord\nreturns ``{tenant_id, slug, roles}``); the dashboard tenant chip\nrenders the slug, so ``name`` falls back to the slug.\n\nWire shape::\n\n    { \"tenants\": [ { \"id\": \"<uuid>\", \"slug\": \"<str>\", \"name\": \"<str>\" } ],\n      \"active_tenant_id\": \"<uuid>\" }",
+        "description": "Return the tenants the current operator belongs to.\n\nSourced from coord's ``GET /admin/coord/me`` over the HTTP boundary\n(no cross-schema read): an operator with rows in N tenants comes back\nwith N entries; single-tenant operators come back with one. The\n``active_tenant_id`` field is the operator's home tenant \u2014 the natural\ndefault for first-load selection; the frontend persists subsequent\nswitches in localStorage (`tenant-context.tsx`).\n\nCoord returns ``tenants[]`` home-tenant-first (slug-asc otherwise);\n``CoordIdentity.tenant_ids()`` re-confirms the home-first ordering so\nthe first entry is the active default. A coord 403 for an unlinked\noperator propagates as ``tenant_not_resolved``.\n\nThe per-tenant ``name`` is coord's ``display_name`` \u2014 the human-chosen\n\"Project\" name a user typed into ``POST /tenants``. It is optional on\nthe ``/me`` wire (absent on a coord that predates it, and null for the\nSSO auto-provisioned tenants that only ever got a slug), so ``name``\nfalls back to the slug. The dashboard tenant chip renders whichever\nit gets.\n\nWire shape::\n\n    { \"tenants\": [ { \"id\": \"<uuid>\", \"slug\": \"<str>\", \"name\": \"<str>\" } ],\n      \"active_tenant_id\": \"<uuid>\" }",
         "operationId": "api_v1_operations_tenants_get",
         "responses": {
           "200": {
@@ -86236,6 +86252,51 @@
           }
         ],
         "summary": "List User Tenants",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Create a new tenant (\"Project\") owned by the calling operator.\n\nA thin authenticated proxy to coord's ``POST /coord/tenants`` (plan\n``2026-08-25-self-service-tenant-project-creation`` Phase 1). Coord\ncreates the tenant, seeds its ``tenant_policies`` row, and grants the\ncaller ``admin`` in it \u2014 all in one transaction \u2014 then returns::\n\n    { \"tenant_id\": \"<uuid>\", \"slug\": \"<str>\", \"display_name\": \"<str>\" }\n\nThat body is forwarded VERBATIM rather than through a ``response_model``:\ncoord's create is the transaction of record, so re-validating its answer\nweb-side could only turn a tenant that WAS created into a 500 the caller\nreads as failure \u2014 and then retries into a ``409``.\n\n``forward_bearer=True`` forwards the caller's Cognito bearer WITHOUT\nresolving a tenant: this call creates one, so there is nothing to\nresolve, and authorization is coord's (``require_sso`` +\n``require_role(\"operator\")``, the role floor \u2014 any authenticated\noperator). Web adds no auth logic of its own beyond requiring a\nlogged-in user.\n\nCoord's 4xx answers propagate verbatim through ``_proxy_coord_post``\n(see its ``raise HTTPException(status_code=resp.status_code, ...)``),\nso the browser sees the real reason rather than a generic 500:\n\n- ``400 invalid_name`` \u2014 the name does not slugify to a usable slug,\n  or hits the reserved-slug denylist;\n- ``409 slug_taken`` \u2014 the derived slug already exists. Deliberately a\n  rejection, never a join: attaching a caller to a stranger's tenant on\n  a name collision is the hijack vector coord's plain-INSERT closes;\n- ``429``/``403`` \u2014 the per-operator creation cap\n  (``COORD_SELF_SERVICE_TENANT_CAP``).\n\nNOTE (plan Q5, out of scope here): the new tenant is an ADDITIONAL\nmembership, not the creator's home tenant, and ``mint_pair_code_endpoint``\ncan only mint pair codes for the caller's home \u2014 so no runner can be\npaired to a self-service project until that endpoint is generalized.\nThe create dialog states this.",
+        "operationId": "api_v1_operations_tenants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Create User Tenant Api V1 Operations Tenants Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create User Tenant",
         "tags": [
           "operations"
         ]
