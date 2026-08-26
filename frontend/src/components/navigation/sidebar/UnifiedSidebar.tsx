@@ -11,6 +11,7 @@ import { useProductMode } from "@/contexts/product-mode-context";
 import { STORAGE_KEYS } from "@qontinui/navigation";
 import { toast } from "sonner";
 import { getComponent } from "@/lib/extension-slots";
+import { ErrorBoundary } from "@/components/error-boundary";
 import type { CreateOrganizationDialogProps } from "@/lib/cloud-component-slots";
 import { useSidebarNavigation } from "./_hooks/use-sidebar-navigation";
 import { useSidebarProjects } from "./_hooks/use-sidebar-projects";
@@ -165,10 +166,36 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
  * nothing in OSS-only mode. Resolved via the slot registry on every
  * render so cloud-control's `registerCloudExtensions` call can land
  * after the OSS app shell mounts (no module-load-order coupling).
+ *
+ * Two guards, both load-bearing — a slot component is FOREIGN code that
+ * the host cannot typecheck against its own provider tree:
+ *
+ * 1. Mount only while `open`. A dialog that isn't on screen has no
+ *    business running its hooks, and cloud-control's dialog calls
+ *    `useOrganization()` unconditionally at the top of its body.
+ * 2. Fault-isolate behind an ErrorBoundary with an empty fallback. The
+ *    extension registry transports components and services but NOT
+ *    providers, so a slot component that reads its own package's React
+ *    context finds no Provider and throws — as cloud-control's
+ *    `useOrganization` does (it throws rather than returning the OSS
+ *    stub's safe default). Unguarded, that throw propagates to the root
+ *    boundary in `app/layout.tsx` and white-screens every authenticated
+ *    page, which is exactly what it did in production. Degrading one
+ *    optional dialog to nothing is always preferable to losing the app.
  */
-function CreateOrganizationDialogSlot(props: CreateOrganizationDialogProps) {
+export function CreateOrganizationDialogSlot(
+  props: CreateOrganizationDialogProps
+) {
   const Slot = getComponent<CreateOrganizationDialogProps>(
     "createOrganizationDialog",
   );
-  return Slot ? <Slot {...props} /> : null;
+  if (!Slot || !props.open) return null;
+  return (
+    // NOTE: the fallback must be a truthy node — ErrorBoundary tests
+    // `if (this.props.fallback)`, so `null` would fall through to its
+    // full-page error card. An empty fragment renders nothing.
+    <ErrorBoundary fallback={<></>}>
+      <Slot {...props} />
+    </ErrorBoundary>
+  );
 }
