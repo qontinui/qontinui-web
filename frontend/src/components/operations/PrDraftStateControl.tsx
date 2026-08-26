@@ -4,8 +4,8 @@
  * PrDraftStateControl — the operator's draft/ready toggle for a single PR.
  *
  * Shared by both admin surfaces that render a PR's draft state:
- *   - `/admin/coord/fleet`  → `MergePipeline`'s per-row action group
- *   - `/admin/coord/prs`    → `PrsTable`'s actions cell
+ *   - `/admin/coord/pipeline` → `MergePipeline`'s per-row action group
+ *   - `/admin/coord/prs`      → `PrsTable`'s actions cell
  *
  * Extracted from `MergePipeline.tsx` (plan
  * `2026-08-01-admin-ui-pr-draft-state-control`) so the second consumer reuses
@@ -282,8 +282,8 @@ export function PrDraftStateControl({
               <br />
               To actually stop the in-flight attempt, cancel the proposal from
               the{" "}
-              <Link href="/admin/coord/fleet" className="underline">
-                fleet page
+              <Link href="/admin/coord/pipeline" className="underline">
+                pipeline page
               </Link>{" "}
               — its recovery card carries the proposal id the cancel needs.
             </AlertDialogDescription>
