@@ -22,6 +22,27 @@ ARG SCHEMAS_SHA=main
 RUN git clone https://github.com/qontinui/qontinui-schemas.git \
     && git -C qontinui-schemas checkout "$SCHEMAS_SHA"
 
+# qontinui-cloud-control — the BACKEND half of the composed cloud build.
+#
+# qontinui.io's FRONTEND is enforced-composed: `frontend/scripts/vercel-install.sh`
+# links the overlay and exits non-zero if it did not land, so the deployed app
+# always ships cloud-control's admin/billing/organization pages. The backend
+# half was never wired, so those pages called routes this image does not serve:
+# measured 2026-08-26 against production, /api/v1/admin/{stats,users,projects},
+# /api/v1/billing/subscription and /api/v1/pricing/plans ALL returned 404 while
+# OSS protected routes returned 401 — the discriminator that separates "route
+# absent" from "route present but unauthenticated". Those routes moved here-to-
+# there in the 2026-04-30 carve-out (03b28e0e) and nothing replaced them.
+#
+# Same pin as the frontend (`frontend/cloud-control.pin`), passed in by
+# deploy-web.yml, so BOTH halves of one deployment are the same cloud-control
+# commit. A second pin would be a new silent-drift axis between them.
+# Defaults to `main` so a plain local `docker build` still produces an image.
+# The repo is public (AGPL-3.0) — no credential needed, same as CI.
+ARG CLOUD_CONTROL_SHA=main
+RUN git clone https://github.com/qontinui/qontinui-cloud-control.git \
+    && git -C qontinui-cloud-control checkout "$CLOUD_CONTROL_SHA"
+
 
 # Stage 2: runtime image
 FROM python:3.12-slim
@@ -50,11 +71,37 @@ RUN pip install --no-cache-dir poetry==2.3.2
 # web's runtime has no business importing it.
 COPY --from=sibling-deps /src/qontinui-schemas /qontinui-schemas
 
+COPY --from=sibling-deps /src/qontinui-cloud-control /qontinui-cloud-control
+
 COPY pyproject.toml poetry.lock ./
 RUN poetry install --only main --no-root --no-interaction --no-ansi \
     && rm -rf /tmp/poetry-cache
 
+# Install cloud-control AFTER poetry so the lock resolves first, exactly as
+# backend-ci.yml does it (`pip install -e` into the same environment). It is a
+# separate step rather than a poetry dependency for the same reason the
+# frontend overlay is not a `file:` dep: an OSS install must stay clean, and a
+# path dep in the committed manifest would break every build without the
+# sibling present.
 COPY . .
+
+RUN pip install --no-cache-dir -e /qontinui-cloud-control
+
+# COMPOSE-OR-FAIL. The frontend install script refuses to exit 0 unless the
+# overlay landed, and this is the backend's half of that guarantee. Without it
+# a clone or install failure would produce a GREEN deploy of an image serving
+# none of cloud-control's routes — which is precisely the state production was
+# in, undetected, and it is indistinguishable from a correct OSS build from the
+# outside. An import alone is not enough: the package registers its routers via
+# `add_route_registrar` at import time, so assert a registrar actually landed.
+# Docker keeps the previous image serving when a build fails, so failing loud
+# here costs no availability.
+RUN python -c "\
+import qontinui_cloud_control;\
+import app.extensions as ext;\
+n = len(ext._route_registrars);\
+assert n > 0, 'cloud-control imported but registered no route registrars';\
+print(f'composed backend OK: {n} cloud-control route registrar(s)')"
 
 RUN mkdir -p /app/uploads
 
