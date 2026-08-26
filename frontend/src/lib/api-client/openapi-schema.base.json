@@ -1148,6 +1148,113 @@
         "title": "ActiveLockInfo",
         "type": "object"
       },
+      "AdminAgentRegistryResponse": {
+        "description": "Response envelope for ``GET /api/v1/agent-registry/admin/registry``.",
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AdminAgentRegistryRow"
+            },
+            "title": "Agents",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "title": "AdminAgentRegistryResponse",
+        "type": "object"
+      },
+      "AdminAgentRegistryRow": {
+        "description": "One raw ``coord.agent_registry`` row, plus its pref-override counts.",
+        "properties": {
+          "agent_name": {
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "allowed_dispositions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Dispositions",
+            "type": "array"
+          },
+          "default_enabled": {
+            "title": "Default Enabled",
+            "type": "boolean"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
+          },
+          "fanout_bound": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fanout Bound"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "policy_required": {
+            "title": "Policy Required",
+            "type": "boolean"
+          },
+          "pref_count": {
+            "title": "Pref Count",
+            "type": "integer"
+          },
+          "pref_differs_from_default_count": {
+            "title": "Pref Differs From Default Count",
+            "type": "integer"
+          },
+          "purpose": {
+            "default": "",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "spawn_path": {
+            "default": "",
+            "title": "Spawn Path",
+            "type": "string"
+          },
+          "trigger_condition": {
+            "default": "",
+            "title": "Trigger Condition",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_name",
+          "default_enabled",
+          "policy_required",
+          "pref_count",
+          "pref_differs_from_default_count"
+        ],
+        "title": "AdminAgentRegistryRow",
+        "type": "object"
+      },
       "AgentCommandCreate": {
         "description": "Request to create (or replace) an account's override of a command.",
         "properties": {
@@ -1450,6 +1557,31 @@
           "enabled"
         ],
         "title": "AgentPrefUpdateRequest",
+        "type": "object"
+      },
+      "AgentRegistryDefaultsRequest": {
+        "description": "Client body for the tenant-default edit.\n\nOnly the two fields the admin page edits. ``default_enabled`` is REQUIRED\nbecause coord requires it (it is the lever itself, and defaulting it would\nlet a typo flip a tenant's autonomy) \u2014 so editing ``policy_required``\nalone still means sending the agent's current ``default_enabled`` back.",
+        "properties": {
+          "default_enabled": {
+            "title": "Default Enabled",
+            "type": "boolean"
+          },
+          "policy_required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Required"
+          }
+        },
+        "required": [
+          "default_enabled"
+        ],
+        "title": "AgentRegistryDefaultsRequest",
         "type": "object"
       },
       "AgentRegistryEntry": {
@@ -52776,9 +52908,96 @@
         ]
       }
     },
+    "/api/v1/agent-registry/admin/registry": {
+      "get": {
+        "description": "ADMIN: the tenant's raw agent-registry rows and their override counts.\n\nProxies coord ``GET /coord/agent-registry`` \u2014 the raw ``AgentRegistryRow``\ndoor (``default_enabled`` / ``policy_required``), NOT the effective fold.\nEvery pref row it returns is folded into two per-agent COUNTS; no other\nmember's ``user_id`` reaches the browser.",
+        "operationId": "api_v1_agent_registry_admin_registry_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAgentRegistryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Admin Agent Registry",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-registry/admin/registry/{agent_name}": {
+      "put": {
+        "description": "ADMIN: set one agent's tenant default.\n\nProxies coord ``PUT /coord/agent-registry/{agent_name}`` with a MINIMAL\nbody. Coord's upsert is ``COALESCE``-preserving, so every field this omits\nkeeps its stored value.",
+        "operationId": "api_v1_agent_registry_admin_registry_agent_name_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_name",
+            "required": true,
+            "schema": {
+              "title": "Agent Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRegistryDefaultsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Admin Agent Registry Row Api V1 Agent Registry Admin Registry  Agent Name  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Put Admin Agent Registry Row",
+        "tags": [
+          "agent-registry"
+        ]
+      }
+    },
     "/api/v1/agent-registry/prefs/{agent_name}": {
       "put": {
-        "description": "Upsert the caller's pref for one agent.\n\nProxies coord ``PUT /coord/agent-registry/prefs/{agent_name}`` with\n``user_id`` set from the AUTHENTICATED user (never the client body).\nCoord's 422 error codes pass through as structured detail.",
+        "description": "Upsert the caller's OWN pref for one agent.\n\nProxies coord's SELF door ``PUT /coord/agent-registry/prefs/me/{agent_name}``.\nCoord's 403s and 422 error codes pass through as structured detail.",
         "operationId": "api_v1_agent_registry_prefs_agent_name_put",
         "parameters": [
           {
@@ -54008,50 +54227,6 @@
         "summary": "Export Annotation Set Multi",
         "tags": [
           "annotations"
-        ]
-      }
-    },
-    "/api/v1/auth/bootstrap-first-admin": {
-      "post": {
-        "description": "One-time endpoint to create the first admin. Remove after use!",
-        "operationId": "api_v1_auth_bootstrap_first_admin_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "email",
-            "required": true,
-            "schema": {
-              "title": "Email",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Bootstrap First Admin Api V1 Auth Bootstrap First Admin Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Bootstrap First Admin",
-        "tags": [
-          "auth",
-          "auth-bootstrap"
         ]
       }
     },
@@ -75077,6 +75252,61 @@
           }
         },
         "summary": "Get Claims Steals",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/claude-accounts": {
+      "get": {
+        "description": "Return the per-device Claude account roster from coord (tenant-scoped).\n\nProxies coord ``GET /coord/claude-accounts/usage``. Response envelope::\n\n    {\n      \"accounts\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"account_label\": \".claude-gmail\",\n          \"weekly_utilization\": 0.34,\n          \"weekly_resets_at\": \"<iso8601|null>\",\n          \"session_utilization\": 0.11,\n          \"session_resets_at\": \"<iso8601|null>\",\n          \"model_limits\": [{\"model\": \"...\", \"utilization\": 0.2, ...}],\n          \"exhausted\": false,\n          \"source\": \"...\",\n          \"error\": false,\n          \"stale\": false,\n          \"is_active\": true,       // null until the device's runner reports it\n          \"account_selection_mode\": \"least_usage\"  // manual | least_usage | null\n        }\n      ],\n      \"table_provisioned\": true,\n      \"columns_provisioned\": true\n    }\n\n**An absent roster is UNKNOWN, not \"no accounts\".** Three distinct\nstates have to stay distinguishable, because a false \"this machine has\nno Claude accounts\" is worse than an honest unknown \u2014 it would tell an\noperator a machine cannot run an agent when it can:\n\n* ``table_provisioned: false`` \u2014 coord's ``coord.claude_account_usage``\n  does not exist yet on that deployment. Nothing has been observed.\n* ``columns_provisioned: false`` \u2014 the table exists but predates the\n  ``is_active`` / ``account_selection_mode`` columns (alembic\n  ``coord_claude_acct_usage_02``). Usage is real; the *selection* half is\n  unknown, and ``is_active`` / ``account_selection_mode`` will be null.\n* both true with ``accounts: []`` \u2014 genuinely no account has reported\n  for this tenant.\n\nSo the two flags are passed THROUGH rather than flattened into an empty\nlist. When coord omits them entirely (a build predating its own read\nroute's flags) they are surfaced as ``None`` \u2014 unknown \u2014 and never\ndefaulted to ``true``, which would assert provisioning we did not observe.\nConsumers must render null as \"unknown\", not as ``false`` and not as the\n``least_usage`` default.\n\n``stale`` is coord's own computed freshness verdict (30 minutes since the\nlast report); it is forwarded untouched, not recomputed here.",
+        "operationId": "api_v1_operations_claude_accounts_get",
+        "parameters": [
+          {
+            "description": "Narrow the roster to one device. Applied HERE, client-side, on top of coord's tenant scoping \u2014 coord's read route is tenant-scoped and takes no device filter, so forwarding an unknown query parameter would be a guess about its behaviour.",
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Narrow the roster to one device. Applied HERE, client-side, on top of coord's tenant scoping \u2014 coord's read route is tenant-scoped and takes no device filter, so forwarding an unknown query parameter would be a guess about its behaviour.",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Claude Accounts Api V1 Operations Claude Accounts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Claude Accounts",
         "tags": [
           "operations"
         ]
@@ -106315,33 +106545,6 @@
           }
         ],
         "summary": "Upload Avatar",
-        "tags": [
-          "users"
-        ]
-      }
-    },
-    "/api/v1/users/me/claim-admin": {
-      "post": {
-        "description": "Allow user to claim admin if no admin exists. Remove after first use!",
-        "operationId": "api_v1_users_me_claim_admin_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Claim Admin Api V1 Users Me Claim Admin Post"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "CookieOrBearerScheme": []
-          }
-        ],
-        "summary": "Claim Admin",
         "tags": [
           "users"
         ]

@@ -74,6 +74,50 @@ describe("summarizeVerdict — delivery instance", () => {
     expect(prose).toContain("all merged");
   });
 
+  // Coord plan `2026-08-18-closed-unmerged-citation-pins-shipped-forever`
+  // retires a closed-never-merged citation from the delivery predicate and
+  // widened `all_merged` to carry that predicate. A unit can therefore deliver
+  // while a cited PR still reads `merged: false`.
+  it("never says 'all merged' when a citation was retired unlanded", () => {
+    const v = deliveryVerdict("none", {
+      status: "shipped",
+      all_merged: true, // the DELIVERY PREDICATE, not the literal
+      prs: [
+        { repo: "qontinui-coord", pr: 249, merged: true },
+        {
+          repo: "qontinui-claude-config",
+          pr: 257,
+          merged: false,
+          terminal_unlanded: true,
+        },
+      ],
+      unmerged_prs: [], // #257 does not block
+      terminal_unlanded_count: 1,
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    expect(prose).toContain("2 cited PRs");
+    expect(prose).toContain("delivered");
+    expect(prose).toContain("1 closed without landing");
+    // The regression this test exists for: reporting a dead duplicate as merged.
+    expect(prose).not.toContain("all merged");
+  });
+
+  it("says nothing landed when every citation closed unlanded", () => {
+    const v = deliveryVerdict("active_negation", {
+      status: "shipped",
+      all_merged: false,
+      prs: [
+        { repo: "qontinui-web", pr: 11, merged: false, terminal_unlanded: true },
+      ],
+      unmerged_prs: [],
+      terminal_unlanded_count: 1,
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    expect(prose).toContain("none landed");
+    // The old fallback understated this as an unremarkable "merge state mixed".
+    expect(prose).not.toContain("merge state mixed");
+  });
+
   it("falls back to plan wording when no anchor_kind is present", () => {
     const v = deliveryVerdict("none", {
       status: "shipped",

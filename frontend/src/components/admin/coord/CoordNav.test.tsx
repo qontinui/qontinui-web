@@ -3,21 +3,36 @@
  *
  * Contracts under test (nav redesign):
  *  - five direct tabs; everything else inside persona dropdown groups
- *  - operator gating: the Infra group and operator-only items (Merge
- *    Settings) never render for a plain member
+ *  - operator gating: operator-only items (Merge Settings, and every `Dev Ops`
+ *    member except `Overview`) never render for a plain member. The GROUP
+ *    flag and the ITEM flag are independent: `Dev Ops ▾` opens for a member
+ *    carrying exactly one entry, which is the regression test for the
+ *    resolved Q3 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`
+ *  - `Intent ▾` holds the prompt-document cluster (Prompt Documents /
+ *    Policies / Policy Edit Review), member-visible trigger and items alike,
+ *    and `Merge ▾` no longer does — while `Gate Clearance` stays in `Merge`,
+ *    because a gate is merge-chain machinery (Phase 3 / resolved Q2 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`)
  *  - wayfinding crumb: the group trigger of the active page highlights and
- *    exposes `<testid>-active`
+ *    exposes `<testid>-active` — asserted for every leaf that changed groups,
+ *    since the testids are unchanged and Spec-CI keys on them
  *  - live Alerts badge from the unresolved-alerts rollup
  *  - live Notifications badge from the server's `unread_count` SCALAR —
  *    never the returned page length (plan
  *    `2026-08-05-coord-notifications-type-and-tab.md`, Change 4)
+ *  - the FLEET ALARM on the `Dev Ops ▾` trigger (Verification 7 of
+ *    `2026-08-25-coord-console-intent-and-devops-sections`), including the
+ *    `unknown` count, which is the one that must survive: a trigger that
+ *    showed only breaches would render a fleet whose telemetry has gone dark
+ *    exactly like a healthy one
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-let pathname = "/admin/coord/fleet";
+let pathname = "/admin/coord/pipeline";
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
 }));
@@ -40,14 +55,22 @@ describe("CoordNav", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpGet.mockResolvedValue({ alerts: [], total_count: 0 });
-    pathname = "/admin/coord/fleet";
+    pathname = "/admin/coord/pipeline";
     isSuperuser = false;
   });
 
-  it("renders five direct tabs and the member groups (no Infra)", () => {
+  it("renders five direct tabs and every member group, Dev Ops included", async () => {
+    const user = userEvent.setup();
     render(<CoordNav />);
 
-    expect(screen.getByTestId("coord-nav-fleet")).toHaveTextContent("Pipeline");
+    // The tab has read "Pipeline" since 2026-07-14; Phase 4 of
+    // `2026-08-25-coord-console-intent-and-devops-sections` finally made the
+    // route and the testid say so too (`coord-nav-fleet` →
+    // `coord-nav-pipeline`, `/admin/coord/fleet` → `/admin/coord/pipeline`).
+    const pipeline = screen.getByTestId("coord-nav-pipeline");
+    expect(pipeline).toHaveTextContent("Pipeline");
+    expect(pipeline).toHaveAttribute("href", "/admin/coord/pipeline");
+    expect(screen.queryByTestId("coord-nav-fleet")).not.toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-prs")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-gates")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-alerts")).toBeInTheDocument();
@@ -57,11 +80,25 @@ describe("CoordNav", () => {
 
     expect(screen.getByTestId("coord-nav-group-work")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-merge")).toBeInTheDocument();
+    expect(screen.getByTestId("coord-nav-group-intent")).toBeInTheDocument();
     expect(screen.getByTestId("coord-nav-group-access")).toBeInTheDocument();
-    // Operator-infra group hidden for members.
+
+    // `Infra ▾` is gone, and the group that replaced it is NOT hidden from a
+    // member: the group flag moved onto the items (resolved Q3). This test
+    // used to assert the opposite — a plain member seeing no infra group at
+    // all — which is exactly what the rename changes.
     expect(
       screen.queryByTestId("coord-nav-group-infra")
     ).not.toBeInTheDocument();
+    const devops = screen.getByTestId("coord-nav-group-devops");
+    expect(devops).toHaveTextContent("Dev Ops");
+
+    // …and it carries EXACTLY one entry for a member.
+    await user.click(devops);
+    const overview = await screen.findByTestId("coord-nav-devops-overview");
+    expect(overview).toBeVisible();
+    expect(overview).toHaveAttribute("href", "/admin/coord/devops");
+    expect(screen.getAllByRole("menuitem")).toHaveLength(1);
   });
 
   it("hides operator-only items inside member-visible groups", async () => {
@@ -69,11 +106,123 @@ describe("CoordNav", () => {
     render(<CoordNav />);
 
     await user.click(screen.getByTestId("coord-nav-group-merge"));
-    expect(await screen.findByTestId("coord-nav-policies")).toBeVisible();
+    expect(
+      await screen.findByTestId("coord-nav-automation-rules")
+    ).toBeVisible();
     expect(screen.getByTestId("coord-nav-pull-decisions")).toBeVisible();
     expect(
       screen.queryByTestId("coord-nav-merge-settings")
     ).not.toBeInTheDocument();
+  });
+
+  // --------------------------------------------------------------------------
+  // `Intent ▾` — the prompt-document cluster, moved out of `Merge ▾`
+  // (`2026-08-25-coord-console-intent-and-devops-sections` Phase 3, Gap 1).
+  // None of the three is read by the merge train, gates a PR, or appears in a
+  // merge decision; `Gate Clearance` is the one that stayed, because what it
+  // authors rows about is who may clear a GATE (resolved Q2).
+  // --------------------------------------------------------------------------
+
+  it("shows the Intent group to a plain member with exactly its three entries", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    const trigger = screen.getByTestId("coord-nav-group-intent");
+    expect(trigger).toHaveTextContent("Intent");
+
+    await user.click(trigger);
+    const promptDocuments = await screen.findByTestId(
+      "coord-nav-prompt-documents"
+    );
+    expect(promptDocuments).toBeVisible();
+    expect(promptDocuments).toHaveAttribute(
+      "href",
+      "/admin/coord/prompt-documents"
+    );
+    expect(screen.getByTestId("coord-nav-policies")).toHaveAttribute(
+      "href",
+      "/admin/coord/policies"
+    );
+    expect(
+      screen.getByTestId("coord-nav-prompt-document-proposals")
+    ).toHaveAttribute("href", "/admin/coord/prompt-document-proposals");
+
+    // Exactly three — nothing else drifted in, and none of them is
+    // operator-gated, so the member sees the whole group.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+  });
+
+  it("sits Intent between Merge and Dev Ops", () => {
+    render(<CoordNav />);
+
+    const triggers = Array.from(
+      screen
+        .getByTestId("coord-nav")
+        .querySelectorAll("[data-testid^='coord-nav-group-']")
+    ).map((el) => el.getAttribute("data-testid"));
+    expect(triggers).toEqual([
+      "coord-nav-group-work",
+      "coord-nav-group-merge",
+      "coord-nav-group-intent",
+      "coord-nav-group-devops",
+      "coord-nav-group-access",
+    ]);
+  });
+
+  it("leaves Merge with the merge chain only — the three moved out, Gate Clearance stayed", async () => {
+    isSuperuser = true;
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-merge"));
+    await screen.findByTestId("coord-nav-pull-decisions");
+
+    const menu = screen.getByRole("menu");
+    for (const moved of [
+      "coord-nav-prompt-documents",
+      "coord-nav-policies",
+      "coord-nav-prompt-document-proposals",
+    ]) {
+      expect(within(menu).queryByTestId(moved)).not.toBeInTheDocument();
+    }
+    expect(within(menu).getByTestId("coord-nav-gate-clearance")).toBeVisible();
+
+    // Pull Decisions · Automation Rules · Gate Clearance · Merge Settings°.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
+  });
+
+  it("keeps the wayfinding crumb contract for every moved Intent leaf", () => {
+    // Same nav-level contract as the Dev Ops sweep below: the crumb has to
+    // hold with the dropdown CLOSED, because the menu items unmount and
+    // Spec-CI's "active section" selectors match `coord-nav-<x>-active` on
+    // the group trigger. Every leaf that changed groups is asserted here.
+    for (const [path, testId, label] of [
+      [
+        "/admin/coord/prompt-documents",
+        "coord-nav-prompt-documents",
+        "Prompt Documents",
+      ],
+      ["/admin/coord/policies", "coord-nav-policies", "Policies"],
+      [
+        "/admin/coord/prompt-document-proposals",
+        "coord-nav-prompt-document-proposals",
+        "Policy Edit Review",
+      ],
+    ] as const) {
+      pathname = path;
+      const view = render(<CoordNav />);
+      const trigger = within(view.container).getByTestId(
+        "coord-nav-group-intent"
+      );
+      const crumb = within(view.container).getByTestId(`${testId}-active`);
+      expect(crumb).toHaveTextContent(label);
+      expect(trigger).toContainElement(crumb);
+      // …and the group they left does not claim them.
+      expect(
+        within(view.container).getByTestId("coord-nav-group-merge")
+      ).toHaveTextContent(/^Merge$/);
+      view.unmount();
+    }
   });
 
   it("offers Gate Clearance in the Merge group and links it", async () => {
@@ -86,22 +235,89 @@ describe("CoordNav", () => {
     expect(item).toHaveAttribute("href", "/admin/coord/gate-clearance");
   });
 
-  it("shows the Infra group with its items for operators", async () => {
+  it("shows the Dev Ops group with all its items for operators", async () => {
     isSuperuser = true;
     const user = userEvent.setup();
     render(<CoordNav />);
 
-    await user.click(screen.getByTestId("coord-nav-group-infra"));
-    expect(await screen.findByTestId("coord-nav-trees")).toBeVisible();
+    const trigger = screen.getByTestId("coord-nav-group-devops");
+    await user.click(trigger);
+    expect(
+      await screen.findByTestId("coord-nav-devops-overview")
+    ).toBeVisible();
+    expect(screen.getByTestId("coord-nav-trees")).toBeVisible();
     expect(screen.getByTestId("coord-nav-git-ops")).toBeVisible();
     expect(screen.getByTestId("coord-nav-onboarding-status")).toBeVisible();
-    // Runner releases dashboard lives beside Deploys in the operator-infra group.
+    // Runner releases dashboard lives beside Deploys in the Dev Ops group.
     expect(screen.getByTestId("coord-nav-releases")).toBeVisible();
+    // The two routes Phase 4 created out of panels that were buried two
+    // disclosures deep inside the pipeline page.
+    expect(screen.getByTestId("coord-nav-test-targets")).toHaveAttribute(
+      "href",
+      "/admin/coord/test-targets"
+    );
+    expect(screen.getByTestId("coord-nav-migrations")).toHaveAttribute(
+      "href",
+      "/admin/coord/migrations"
+    );
+    // Overview, then the eleven operator-only members.
+    expect(screen.getAllByRole("menuitem")).toHaveLength(12);
   });
 
-  it("hides the Releases infra tab from a plain member", () => {
+  it("orders the Dev Ops group Overview · Trees · Spawn · Test Targets · Migrations", async () => {
+    isSuperuser = true;
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-devops"));
+    await screen.findByTestId("coord-nav-devops-overview");
+    const items = screen.getAllByRole("menuitem");
+    expect(items.slice(0, 5).map((el) => el.textContent)).toEqual([
+      "Overview",
+      "Trees",
+      "Spawn",
+      "Test Targets",
+      "Migrations",
+    ]);
+  });
+
+  it("hides the Releases Dev Ops tab from a plain member", () => {
+    // Unchanged in meaning by the rename: `Releases` keeps `operatorOnly`.
+    // Paired with the member seeing `Dev Ops ▾` above, this IS the Q3
+    // regression test — the group opens, the cross-tenant members do not.
     render(<CoordNav />);
     expect(screen.queryByTestId("coord-nav-releases")).not.toBeInTheDocument();
+  });
+
+  it("keeps the wayfinding crumb contract for every moved Dev Ops leaf", () => {
+    // The crumb is a nav-level contract, not a menu-open one: every assertion
+    // below holds with the dropdown closed, which is the point — Spec-CI's
+    // "active section" selectors match `coord-nav-<x>-active` on the trigger.
+    isSuperuser = true;
+    for (const [path, testId, label] of [
+      ["/admin/coord/devops", "coord-nav-devops-overview", "Overview"],
+      ["/admin/coord/trees", "coord-nav-trees", "Trees"],
+      ["/admin/coord/test-targets", "coord-nav-test-targets", "Test Targets"],
+      ["/admin/coord/migrations", "coord-nav-migrations", "Migrations"],
+      ["/admin/coord/releases", "coord-nav-releases", "Releases"],
+      ["/admin/coord/git-ops", "coord-nav-git-ops", "Git Ops"],
+      ["/admin/coord/memory", "coord-nav-memory", "Memory"],
+      [
+        "/admin/coord/onboarding-status",
+        "coord-nav-onboarding-status",
+        "Onboarding Status",
+      ],
+    ] as const) {
+      pathname = path;
+      const view = render(<CoordNav />);
+      const trigger = within(view.container).getByTestId(
+        "coord-nav-group-devops"
+      );
+      const crumb = within(view.container).getByTestId(`${testId}-active`);
+      expect(crumb).toHaveTextContent(label);
+      expect(trigger).toContainElement(crumb);
+      view.unmount();
+    }
   });
 
   it("surfaces the active page as a crumb on its group trigger", () => {
@@ -207,7 +423,9 @@ describe("CoordNav", () => {
     // An un-upgraded coord silently drops `limit`/`severity` and answers with
     // the old shape. Its length is a FLOOR — say so rather than presenting a
     // truncated count as the real one.
-    const window = { alerts: [{ severity: "critical" }, { severity: "warning" }] };
+    const window = {
+      alerts: [{ severity: "critical" }, { severity: "warning" }],
+    };
     mockTotals(window, window);
     render(<CoordNav />);
 
@@ -342,6 +560,196 @@ describe("CoordNav", () => {
       ).not.toBeInTheDocument();
       // The sibling Alerts badge is unaffected by the notifications failure.
       expect(screen.getByTestId("coord-nav-alerts")).toBeInTheDocument();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // The fleet alarm on the `Dev Ops ▾` trigger — Verification 7.
+  //
+  // These five counts used to live on the pipeline page's collapsed
+  // `System details` header, kept alive by two page polls that ran whether or
+  // not the drawer was open. Phase 4 deleted the drawer AND the polls; the
+  // alarm reads here instead, on the nav cadence, visible from every console
+  // page.
+  //
+  // The `unknown` case is the load-bearing one and has its own test below.
+  // --------------------------------------------------------------------------
+
+  describe("Dev Ops fleet alarm", () => {
+    /** Coord wire shape — `DeviceHealthSnapshot` (fleet_health.rs). */
+    function coordDevice(id: string, hostname: string, state?: string) {
+      return { device_id: id, hostname, state };
+    }
+
+    /**
+     * One resource-sample row. `headroom` is coord's OWN admission verdict —
+     * there is no client-side band anywhere in this path, which is why a high
+     * pressure ratio with `headroom: "ok"` must raise nothing.
+     */
+    function sample(
+      deviceId: string,
+      laneInstance: string | null,
+      headroom: "ok" | "warn" | "breach" | undefined,
+      ageSecs = 15
+    ) {
+      const row: Record<string, unknown> = {
+        device_id: deviceId,
+        lane: "host",
+        lane_instance: laneInstance,
+        sampled_at: "2026-08-25T12:00:00Z",
+        age_secs: ageSecs,
+        mem_total_bytes: 1,
+        mem_available_bytes: 1,
+        commit_total_bytes: 1,
+        commit_available_bytes: 1,
+        disk_total_bytes: 1,
+        disk_free_bytes: 1,
+        source: "supervisor",
+        pressure: { ratio: 0.4, basis: "commit" },
+        headroom,
+      };
+      if (headroom === undefined) delete row.headroom;
+      return row;
+    }
+
+    /** Route the nav's four reads: alerts, notifications, health, samples. */
+    function routeFleet(health: unknown, samples: unknown) {
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples"))
+          return Promise.resolve(samples);
+        if (u.includes("fleet/health")) return Promise.resolve(health);
+        if (u.startsWith("/api/v1/operations/notifications")) {
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        }
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+    }
+
+    it("surfaces breach, warn, stale and unknown together on the trigger", async () => {
+      // Four lanes on one machine, one per class. `d-2` is reported by coord's
+      // health read in a non-healthy state, which is the fifth count.
+      routeFleet(
+        {
+          devices: [
+            coordDevice("d-1", "msi", "healthy"),
+            coordDevice("d-2", "nuc", "degraded"),
+          ],
+        },
+        {
+          latest: [
+            sample("d-1", "a", "breach"),
+            sample("d-1", "b", "warn"),
+            // Far older than the staleness threshold: its last verdict was a
+            // breach, but a stale sample is not a claim about now.
+            sample("d-1", "c", "breach", 4000),
+            // An older coord that reports no admission verdict at all.
+            sample("d-1", "d", undefined),
+            // `nuc` publishes normally — its contribution to the alarm is the
+            // `unhealthy` count from coord's health read, not a lane verdict.
+            // Without this row it would ALSO count as `unknown`, which is
+            // correct behaviour but would make the assertion below ambiguous
+            // about which absence produced the count.
+            sample("d-2", null, "ok"),
+          ],
+          history: [],
+        }
+      );
+      render(<CoordNav />);
+
+      const trigger = screen.getByTestId("coord-nav-group-devops");
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-breach-badge")
+        ).toHaveTextContent("1 refusing work")
+      );
+      expect(
+        screen.getByTestId("coord-nav-devops-warn-badge")
+      ).toHaveTextContent("1 delaying work");
+      expect(
+        screen.getByTestId("coord-nav-devops-stale-badge")
+      ).toHaveTextContent("1 stale");
+      expect(
+        screen.getByTestId("coord-nav-devops-unknown-badge")
+      ).toHaveTextContent("1 unknown");
+      expect(
+        screen.getByTestId("coord-nav-devops-unhealthy-badge")
+      ).toHaveTextContent("1 unhealthy");
+      // All of them ride the group TRIGGER, so they are readable without
+      // opening the menu — that is the whole point of moving them here.
+      for (const id of [
+        "coord-nav-devops-breach-badge",
+        "coord-nav-devops-warn-badge",
+        "coord-nav-devops-stale-badge",
+        "coord-nav-devops-unknown-badge",
+        "coord-nav-devops-unhealthy-badge",
+      ]) {
+        expect(trigger).toContainElement(screen.getByTestId(id));
+      }
+    });
+
+    it("shows `unknown`, not silence, when the fleet's telemetry has gone dark", async () => {
+      // The false-safe this badge exists to prevent: machines are registered,
+      // nothing is publishing samples. A breach-only badge would render this
+      // identically to an all-clear.
+      routeFleet(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [], history: [] }
+      );
+      render(<CoordNav />);
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-nav-devops-unknown-badge")
+        ).toHaveTextContent("1 unknown")
+      );
+      // …and it is NOT dressed as an alarm. Unknown is not red.
+      expect(
+        screen.getByTestId("coord-nav-devops-unknown-badge").className
+      ).not.toContain("text-red-200");
+      expect(
+        screen.queryByTestId("coord-nav-devops-breach-badge")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByTestId("coord-nav-devops-stale-badge")
+      ).not.toBeInTheDocument();
+    });
+
+    it("raises nothing when coord is still electing every lane", async () => {
+      routeFleet(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [sample("d-1", null, "ok")], history: [] }
+      );
+      render(<CoordNav />);
+
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      const trigger = screen.getByTestId("coord-nav-group-devops");
+      expect(trigger).toHaveTextContent(/^Dev Ops$/);
+      for (const id of [
+        "coord-nav-devops-breach-badge",
+        "coord-nav-devops-warn-badge",
+        "coord-nav-devops-stale-badge",
+        "coord-nav-devops-unknown-badge",
+        "coord-nav-devops-unhealthy-badge",
+      ]) {
+        expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+      }
+    });
+
+    it("renders no alarm at all when the fleet reads fail", async () => {
+      // A failed poll is evidence about the network, not about the fleet. The
+      // trigger stays quiet rather than inventing either an alarm or an
+      // all-clear count.
+      httpGet.mockRejectedValue(new Error("boom"));
+      render(<CoordNav />);
+
+      await waitFor(() => expect(httpGet).toHaveBeenCalled());
+      expect(
+        screen.queryByTestId("coord-nav-devops-unknown-badge")
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("coord-nav-group-devops")).toHaveTextContent(
+        /^Dev Ops$/
+      );
     });
   });
 });

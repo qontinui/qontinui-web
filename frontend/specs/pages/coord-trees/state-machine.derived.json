@@ -104,7 +104,7 @@
         },
         {
           "id": "coord-trees-shell-elem-2",
-          "description": "'Trees' wayfinding crumb (data-testid coord-nav-trees-active) on the Infra group trigger — the grouped nav surfaces the active section on its group button.",
+          "description": "'Trees' wayfinding crumb (data-testid coord-nav-trees-active) on the Dev Ops group trigger — the grouped nav surfaces the active section on its group button.",
           "category": "navigation",
           "severity": "warning",
           "assertionType": "exists",

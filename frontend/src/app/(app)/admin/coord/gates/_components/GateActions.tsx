@@ -8,8 +8,15 @@
  * POSTs/PATCHes the EXISTING web-backend coord proxies under
  * `/api/v1/operations/gates/{id}/*` via the shared `httpClient` — the same
  * bearer-forwarding + tenant-switcher (`X-Qontinui-Active-Tenant`) plumbing the
- * read side (`admin-dev-service`) and the operations `GatesPanel` already use.
- * The frontend never talks to coord directly.
+ * read side (`admin-dev-service`) already uses. The frontend never talks to
+ * coord directly.
+ *
+ * These builders were shared with `components/operations/GatesPanel` until
+ * Phase 4 of `2026-08-25-coord-console-intent-and-devops-sections` deleted it.
+ * That the two surfaces already mutated through ONE set of helpers is why the
+ * delete cost no capability: this page's action set was a strict superset
+ * (reject, force-clear, continuation-cancel and change-audience are here and
+ * were never there).
  *
  * State → visible actions (task spec):
  *   - open + operator_approval → Approve, Reject…
@@ -70,7 +77,8 @@ import type { GateOverviewRow } from "@/services/admin-dev-service";
 
 const log = createLogger("GateActions");
 
-// Snooze presets — mirror the operations GatesPanel.
+// Snooze presets. These were mirrored from the operations `GatesPanel`, which
+// no longer exists — this is now the only place they are defined.
 const SNOOZE_PRESETS: { label: string; secs: number }[] = [
   { label: "1 hour", secs: 3_600 },
   { label: "1 day", secs: 86_400 },

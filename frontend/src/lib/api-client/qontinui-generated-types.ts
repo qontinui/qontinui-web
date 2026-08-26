@@ -203,26 +203,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/users/me/claim-admin": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Claim Admin
-     * @description Allow user to claim admin if no admin exists. Remove after first use!
-     */
-    post: operations["claim_admin_api_v1_users_me_claim_admin_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/users/": {
     parameters: {
       query?: never;
@@ -919,26 +899,6 @@ export interface paths {
      * @description Handle Stripe webhook events
      */
     post: operations["stripe_webhook_api_v1_billing_webhook_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/admin/bootstrap-first-admin": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Bootstrap First Admin
-     * @description One-time endpoint to create the first admin. Remove after use!
-     */
-    post: operations["bootstrap_first_admin_api_v1_admin_bootstrap_first_admin_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2646,26 +2606,6 @@ export interface operations {
       };
     };
   };
-  claim_admin_api_v1_users_me_claim_admin_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": unknown;
-        };
-      };
-    };
-  };
   read_users_api_v1_users__get: {
     parameters: {
       query?: {
@@ -3752,37 +3692,6 @@ export interface operations {
       header?: {
         "stripe-signature"?: string | null;
       };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HTTPValidationError"];
-        };
-      };
-    };
-  };
-  bootstrap_first_admin_api_v1_admin_bootstrap_first_admin_post: {
-    parameters: {
-      query: {
-        email: string;
-      };
-      header?: never;
       path?: never;
       cookie?: never;
     };

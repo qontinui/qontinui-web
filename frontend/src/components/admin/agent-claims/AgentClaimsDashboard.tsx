@@ -217,7 +217,7 @@ function verdictVariant(
     case "failed":
       return "destructive"; // red
     // `withdrawn` (registrant cancelled its own request) tones like `failed`
-    // — consistent with GatesPanel / the admin GatesTable — but keeps its own
+    // — consistent with the coord console's GatesTable — but keeps its own
     // label (the badge renders the verdict text verbatim).
     case "withdrawn":
       return "destructive";

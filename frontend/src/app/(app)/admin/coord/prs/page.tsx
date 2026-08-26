@@ -375,7 +375,14 @@ export default function CoordPrsPage() {
                   : "No open PRs."}
               </div>
             ) : (
-              <PrsTable prs={data.prs} merged={tab === "merged"} />
+              <PrsTable
+                prs={data.prs}
+                merged={tab === "merged"}
+                // FORCED reload (`?refresh=1`): a draft-state flip only reaches
+                // coord's `pr_state` via the GitHub webhook, so the cached
+                // `load(false)` path can keep serving the pre-flip row.
+                onActed={() => load(true)}
+              />
             )
           ) : (
             !error && (

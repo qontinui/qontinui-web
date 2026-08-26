@@ -162,6 +162,32 @@ describe("fallbackMergeStatus", () => {
     expect(fallbackMergeStatus(pr())).toBe("ready-but-unlanded");
   });
 
+  // The arm this exercises used to share `review-required` with the review
+  // decision above, so a PR blocked purely on CI was labelled with a human's
+  // name. The `pr()` baseline is otherwise clean and green, so nothing earlier
+  // in the cascade can absorb these cases.
+  it("separates an unsatisfied required check from a review block", () => {
+    expect(fallbackMergeStatus(pr({ required_checks_satisfied: false }))).toBe(
+      "required-checks-missing"
+    );
+    // Both true: review wins — a human is the longer pole.
+    expect(
+      fallbackMergeStatus(
+        pr({
+          review_decision: "REVIEW_REQUIRED",
+          required_checks_satisfied: false,
+        })
+      )
+    ).toBe("review-required");
+    // `null` is "coord could not prove it" (no rollup, no required contexts
+    // published, or a truncated page), NOT "unsatisfied". It must fall through
+    // to the later arms, or every PR on a repo with no required contexts reads
+    // as permanently blocked.
+    expect(fallbackMergeStatus(pr({ required_checks_satisfied: null }))).toBe(
+      "ready-but-unlanded"
+    );
+  });
+
   it("prefers coord's own verdict when present", () => {
     expect(
       effectiveMergeStatus(pr({ merge_status: "blast-radius-block" }))
@@ -578,6 +604,67 @@ describe("regressions found in review", () => {
     expect(rows[0]!.inFlightCount).toBe(1);
   });
 
+  it("still explains a PR whose merge_status we do not recognise", () => {
+    // `STATUS_TO_REASON` is keyed on bare `string` and explicitly partial, so
+    // a coord newer than this bundle emits tokens the map has no row for.
+    // Dropping those PRs made them VANISH from the breakdown — a train visibly
+    // stalled with no reason stated at all. `MergeStatusToken` silently lacked
+    // `repo-unreachable` for over a month without a build error, so the
+    // compiler is not the net here; this fallback is.
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 9, merge_status: "some-future-token" })],
+      null,
+      NOW
+    );
+    const reason = rows[0]!.reasons.find(
+      (r) => r.code === "unrecognized-status"
+    )!;
+    expect(reason).toBeDefined();
+    expect(reason.prNumbers).toEqual([9]);
+    expect(reason.prCount).toBe(1);
+    expect(reason.severity).toBe("blocking");
+    // The label is derived from the raw token — all the meaning we have.
+    expect(reason.label).toBe("Some future token");
+    expect(reason.detail).toContain("some-future-token");
+  });
+
+  it("does not invent a pause reason for train-accepted PRs", () => {
+    // `ready`/`queued` are absent from `STATUS_TO_REASON` DELIBERATELY (they
+    // are progress). The unrecognised-token fallback must not sweep them up.
+    const rows = buildRepoTrainRows(
+      [],
+      [
+        pr({ pr_number: 10, merge_status: "ready" }),
+        pr({ pr_number: 11, merge_status: "queued" }),
+      ],
+      null,
+      NOW
+    );
+    expect(rows[0]!.reasons.map((r) => r.code)).not.toContain(
+      "unrecognized-status"
+    );
+  });
+
+  it("reports an unsatisfied required check without naming a reviewer", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [pr({ pr_number: 12, merge_status: "required-checks-missing" })],
+      null,
+      NOW
+    );
+    const reason = rows[0]!.reasons.find(
+      (r) => r.code === "required-checks-missing"
+    )!;
+    expect(reason).toBeDefined();
+    expect(reason.label).toBe("Required checks missing");
+    // A surviving `required_checks_satisfied === false` is a genuine block per
+    // coord's own post-reconciliation invariant, so this is not a `waiting`.
+    expect(reason.severity).toBe("blocking");
+    expect(reason.detail).toContain("No review is required");
+    expect(reason.prNumbers).toEqual([12]);
+  });
+
   it("does not report a hydration timestamp as a blocked-for age", () => {
     // `last_refreshed_at` is when coord re-read the row (minutes), not how
     // long CI has been red (days). No age beats a wrong age.
@@ -818,6 +905,139 @@ describe("slot-cap saturation", () => {
     expect(rows[0]!.activity.kind).toBe("queued");
     expect(rows[0]!.activity.detail).toContain("per-repo cap (2/2 in flight)");
     expect(rows[0]!.activity.detail).toContain("1 free global slot");
+  });
+
+  // --- A2 candidate-CI distress narrowing (coord #1550 / #1614). ----------
+  // `at_repo_cap` and `repos_at_cap` are derived by coord against each repo's
+  // EFFECTIVE cap, which A2 temporarily reduces while a repo's candidate CI
+  // keeps failing. Quoting `per_repo_cap` beside them states a threshold the
+  // dequeue is not applying AND names the wrong remedy, so every site that
+  // prints a per-repo cap must read `narrowed_repo_cap` first.
+
+  it("quotes the narrowed cap, not the configured one, on a queued proposal", () => {
+    const rows = buildRepoTrainRows(
+      [proposal({ status: "queued" })],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 3,
+              at_repo_cap: true,
+              narrowed_repo_cap: 1,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      NOW
+    );
+    const detail = rows[0]!.activity.detail;
+    // The pre-fix bug printed "(1/2 in flight)" — a pair that cannot both be
+    // true, since at_repo_cap was derived against 1.
+    expect(detail).toContain("per-repo cap (1/1 in flight)");
+    expect(detail).not.toContain("1/2 in flight");
+    expect(detail).toContain("TEMPORARILY narrowed from 2");
+    expect(detail).toContain("candidate CI");
+  });
+
+  it("names candidate CI, not the fairness filter, as the hold on a narrowed repo", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: true,
+              narrowed_repo_cap: 1,
+              oldest_queued_wait_seconds: 900,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      NOW
+    );
+    const reason = rows[0]!.reasons[0]!;
+    expect(reason.code).toBe("repo-cap-starved");
+    expect(reason.label).toBe("At narrowed per-repo cap");
+    expect(reason.detail).toContain("narrowed from COORD_MERGE_PER_REPO_CAP=2");
+    expect(reason.detail).toContain("until its candidate CI recovers");
+    // The remedy must NOT be "wait for one to finish", and the fairness filter
+    // must not be credited for an A2 hold.
+    expect(reason.detail).not.toContain("until one finishes");
+    expect(reason.detail).not.toContain("fairness filter working as designed");
+  });
+
+  it("explains a narrowed repo in the fleet banner", () => {
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: true,
+              narrowed_repo_cap: 1,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b?.detail).toContain("narrowed cap of 1");
+    expect(b?.detail).toContain("candidate CI");
+    expect(b?.detail).not.toContain("COORD_MERGE_PER_REPO_CAP=2");
+    expect(b?.detail).not.toContain("by design");
+  });
+
+  it("leaves an un-narrowed repo's prose byte-identical", () => {
+    // A term that is narrowing nothing must change nothing, prose included.
+    const rows = buildRepoTrainRows(
+      [proposal({ status: "queued" })],
+      [],
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 1,
+              at_repo_cap: true,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      NOW
+    );
+    expect(rows[0]!.activity.detail).toContain("per-repo cap (2/2 in flight)");
+    expect(rows[0]!.activity.detail).not.toContain("TEMPORARILY narrowed");
+    expect(rows[0]!.reasons[0]!.label).toBe("At per-repo cap");
+    expect(rows[0]!.reasons[0]!.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
+    expect(rows[0]!.reasons[0]!.detail).toContain("until one finishes");
   });
 
   it("shows a starved repo even when it has no in-flight leg or PR row", () => {

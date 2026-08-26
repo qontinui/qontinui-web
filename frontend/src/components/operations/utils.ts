@@ -209,13 +209,26 @@ export const STUCK_PR_MAX_CARDS = 6;
 export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
 
 /**
- * REST + action endpoints for the gates panel (plan
+ * Gate ACTION endpoints (plan
  * `2026-06-05-plan-gate-web-surface-and-productization` Phase 2). All
  * tenant-scoped server-side via the operator → tenant_id resolver (coord
  * derives the tenant from the forwarded bearer); the caller never passes a
  * tenant_id.
  *
- * - `GATES_LIST_API`         — GET list of the tenant's gates.
+ * **There is no gates LIST url here any more.** `GATES_LIST_API` /
+ * `gatesListUrl` backed `GatesPanel`'s own read of
+ * `GET /operations/gates/list`; Phase 4 of
+ * `2026-08-25-coord-console-intent-and-devops-sections` deleted that panel, so
+ * the console has exactly ONE gates list read left —
+ * `/admin/coord/gates` → `adminDevService.getOverview()` →
+ * `/api/v1/admin-dev/overview` → coord `GET /coord/dev-overview`. Do not
+ * reintroduce a second one; two list reads over two backends is what that
+ * phase removed.
+ *
+ * These builders are shared by `/admin/coord/gates` (`GateActions.tsx`) and
+ * by any future gate surface — the action layer was already unified on them
+ * before the panel was deleted, which is why the delete cost no capability.
+ *
  * - `gateApproveUrl(id)`     — POST clear an `operator_approval` gate.
  * - `gateReopenUrl(id)`      — POST clone a cleared/failed gate into a new
  *                              open gate (undo-by-reopen).
@@ -224,21 +237,6 @@ export const STUCK_PR_MAX_VERDICT_READS = STUCK_PR_MAX_CARDS + 4;
  * - `gateMuteUrl(id)` / `gateUnmuteUrl(id)` — POST reversible mute toggle.
  * - `gateSnoozeUrl(id)`      — POST snooze until `{until: <rfc3339>}`.
  */
-export const GATES_LIST_API = `${OPERATIONS_API}/gates/list`;
-/**
- * Gates-list URL with optional filters. `excludeOrphans` appends
- * `?exclude_orphans=1`, asking coord to hide ORPHANED gates — `pr_merged`
- * gates whose PR is known-closed and `ci_green` gates on superseded SHAs
- * (no longer any open PR's head); neither can ever clear. Coord treats the
- * param as a truthy string; omitting it returns the raw, unfiltered list —
- * so the bare `GATES_LIST_API` constant above stays byte-identical for
- * existing callers.
- */
-export function gatesListUrl(opts: { excludeOrphans?: boolean }): string {
-  return opts.excludeOrphans
-    ? `${GATES_LIST_API}?exclude_orphans=1`
-    : GATES_LIST_API;
-}
 export function gateApproveUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/approve`;
 }
@@ -275,13 +273,6 @@ export function gateForceClearUrl(gateId: string): string {
 export function gateContinuationCancelUrl(gateId: string): string {
   return `${OPERATIONS_API}/gates/${encodeURIComponent(gateId)}/continuation-cancel`;
 }
-
-/**
- * Polling interval for the gates panel (ms). Gates evaluate at coord's
- * sweep cadence (10s default) and verdicts flip slowly; 15s polling
- * surfaces a flip within ~2 sweeps without hot-looping the proxy.
- */
-export const GATES_POLL_MS = 15_000;
 
 /**
  * POST endpoint that sets a PR's GitHub draft state (plan
@@ -426,28 +417,20 @@ export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
 /**
  * Convert an ISO timestamp to a human-friendly relative string.
  * e.g. "3s ago", "2m ago", "1h ago", "3d ago"
+ *
+ * MOVED to `@/components/console/time` by plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1, and
+ * re-exported here so all **23** existing importers are untouched (13 via
+ * `@/components/operations/utils`, 10 via `./utils`). It moved because the
+ * console primitives need it and this module is the merge-train route
+ * catalogue — a `console/` → `operations/` runtime edge for one pure 28-line
+ * formatter. NEW code imports it from `@/components/console`.
+ *
+ * Six further files declare their own `relativeTime` rather than importing
+ * one, so they are NOT in that 23 and were not touched; see
+ * `console/time.ts`'s module doc for the list. They are later-wave debt.
  */
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "never";
-
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-
-  if (Number.isNaN(diffMs) || diffMs < 0) return "just now";
-
-  const seconds = Math.floor(diffMs / 1_000);
-  if (seconds < 60) return `${seconds}s ago`;
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
+export { relativeTime } from "@/components/console/time";
 
 /**
  * Format a stall age (seconds) as a compact human label, e.g. "45s", "12m",

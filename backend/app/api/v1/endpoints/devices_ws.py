@@ -48,8 +48,10 @@ from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
+    CoordTokenForeignIssuerError,
     CoordTokenInvalidError,
     coord_jwks_client,
+    describe_token_rejection,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
@@ -108,8 +110,40 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         )
         return
     except CoordTokenInvalidError as exc:
-        logger.warning("devices_ws_token_invalid", error=str(exc))
-        await reject(websocket, "Invalid or expired device token.")
+        # The message is what the runner records as `last_error`, so it is
+        # the whole diagnostic surface for an operator reading runner logs.
+        # Say which failure it actually was rather than the historical
+        # catch-all, which claimed "invalid or expired" even for a token
+        # that was neither.
+        #
+        # NOTE: `reject`'s second positional is `message`, not `reason`;
+        # it becomes the close reason via `reject`'s own default. Passing
+        # this as `reason=` instead would blank the error frame.
+        message = describe_token_rejection(exc)
+        logger.warning(
+            "devices_ws_token_invalid",
+            error=str(exc),
+            failure=type(exc).__name__,
+        )
+        # A device WS handshake is terminal: nothing downstream reinterprets
+        # this rejection, so a foreign-issuer arm here really is a
+        # deployment-wiring bug and earns its own alarm. (The same arm is a
+        # routine non-event in `memory`, which uses a rejection merely to
+        # discriminate Cognito bearers — which is why this alarm lives at
+        # the terminal callers and not inside `verify_token`.)
+        if isinstance(exc, CoordTokenForeignIssuerError):
+            logger.warning(
+                "coord_identity_mismatch",
+                coord_url=exc.coord_url,
+                token_kid=exc.token_kid,
+                served_kids=exc.served_kids,
+                note=(
+                    "runner presented a token minted by a different coord "
+                    "than COORD_URL points at; check which coord this "
+                    "backend verifies against"
+                ),
+            )
+        await reject(websocket, message)
         return
 
     # Coord-issued device-token claims:

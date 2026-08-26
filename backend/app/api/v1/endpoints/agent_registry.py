@@ -15,26 +15,52 @@ Routes:
   and the ``source`` stamp) happens in coord and nowhere else — see
   :func:`get_agent_registry` for why re-deriving it here was a live bug.
 - ``PUT  /api/v1/agent-registry/prefs/{agent_name}`` — upsert the caller's
-  pref. ``user_id`` is taken from the AUTHENTICATED user server-side and
-  is never accepted from the client body. Coord's 422 validation errors
-  (``disposition_required`` — disabling a policy-required agent without
-  choosing a disposition — and ``invalid_disposition``) are forwarded
-  verbatim as structured JSON so the frontend can render the forced
-  disposition choice inline.
+  OWN pref, proxied to coord's SELF door
+  ``PUT /coord/agent-registry/prefs/me/{agent_name}``. The acting user is
+  derived inside coord from the verified operator token; the forwarded body
+  carries **no** ``user_id`` (coord's self-route body is
+  ``deny_unknown_fields``, so sending one is a 422). Coord's 422 validation
+  errors (``disposition_required`` — disabling a policy-required agent
+  without choosing a disposition — and ``invalid_disposition``) are
+  forwarded verbatim as structured JSON so the frontend can render the
+  forced disposition choice inline, as are its two 403s (a plain
+  authorization denial, and ``operator_not_provisioned_in_web`` — a coord
+  operator whose verified email matches no ``auth.users`` row, which is an
+  account-linking problem rather than a permissions one).
+- ``GET  /api/v1/agent-registry/admin/registry`` — ADMIN: the raw
+  ``coord.agent_registry`` rows (tenant defaults), each carrying a count of
+  how many tenant members have a pref row overriding it.
+- ``PUT  /api/v1/agent-registry/admin/registry/{agent_name}`` — ADMIN: edit
+  one row's ``default_enabled`` / ``policy_required``. The forwarded body is
+  MINIMAL (never a full row): coord's upsert is ``COALESCE``-preserving, and
+  an earlier full-row shape is what once reset a seeded row's ``purpose``
+  and ``fanout_bound``.
 
 DB-session posture (the ``/operations/*`` pinned-connection hazard): the
 request-scoped fastapi-users dependency keeps its session-generator open
-for the whole request — including any outbound coord HTTP call. These
-routes instead authenticate via :func:`get_registry_user`, which verifies
-the Cognito bearer in a dedicated short-lived session that is committed
-and CLOSED before the handler's coord call runs. No DB connection is held
-across the coord round-trip.
+for the whole request — including any outbound coord HTTP call. The two
+per-user routes therefore authenticate via :func:`get_registry_user`, which
+verifies the Cognito bearer in a dedicated short-lived session that is
+committed and CLOSED before the handler's coord call runs. No DB connection
+is held across the coord round-trip.
+
+The two ``/admin/registry`` routes are the declared exception: they gate on
+the shared :func:`require_coord_tenant_admin`, which resolves the operator's
+coord role over HTTP and *does* depend on the request-scoped fastapi-users
+session. That is the same posture every other admin-gated coord proxy in
+``operations.py`` already has, and the alternative — a second, private
+admin-resolution path so these two routes could keep the unpinned posture —
+would be a third copy of the role check on the one surface whose whole job
+is spawn authorization. Correctness of the gate beats connection economy on
+a low-traffic operator surface; the per-user routes, which every session
+hits, keep the unpinned posture.
 """
 
 from __future__ import annotations
 
 from typing import Any
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 import structlog
@@ -47,6 +73,7 @@ from app.api.coord_proxy import (
     _caller_bearer,
     _extract_caller_token,
     _tenant_headers,
+    require_coord_tenant_admin,
 )
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
@@ -151,6 +178,48 @@ async def _coord_request(
             detail = resp.text
         raise HTTPException(status_code=resp.status_code, detail=detail)
     return resp.json()
+
+
+async def _coord_request_deploy_order_aware(
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | None = None,
+    coord_route: str,
+    log_event: str,
+    addendum: str = "",
+) -> Any:
+    """:func:`_coord_request`, with a coord that is BEHIND made self-diagnosing.
+
+    Every route this module proxies is newer than some deployed coord, so a
+    coord that has not yet shipped one answers **404** — and coord registers
+    no axum fallback, so that body is EMPTY. Passed through unchanged it
+    surfaces as web's own 404 with a blank reason, which reads as "this web
+    route is missing" rather than "coord is behind". Re-shape it into the 502
+    it actually is, naming the route and the remedy.
+
+    **The empty body is the discriminator, and it is load-bearing.** These
+    same coord routes answer 404 for an APPLICATION reason too — the pref
+    doors return ``{"error": "unknown_agent", ...}`` when no registry row
+    exists for the named agent. Translating that into "deploy qontinui-coord
+    first" would be a confident misdiagnosis of a routine typo. A route-absent
+    404 has no body at all; an application 404 always carries structured JSON.
+    So only an EMPTY detail is re-shaped, and everything else — including the
+    403s and 422s the frontend renders inline — passes through untouched.
+    """
+    try:
+        return await _coord_request(method, path, json_body=json_body)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_404_NOT_FOUND or exc.detail:
+            raise
+        logger.error(log_event)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"coord does not serve {coord_route} yet — deploy "
+                f"qontinui-coord first{addendum}"
+            ),
+        ) from exc
 
 
 # ── Why the four authorization fields below carry NO default ──────────────
@@ -467,29 +536,20 @@ async def get_agent_registry(
     # cost decision and keeps the gate"). Web defaulted to `block`,
     # misreporting the gate as hard-stopping work.
     user_id = str(user.id)
-    try:
-        payload = await _coord_request(
-            "GET",
-            f"/coord/agent-registry/effective-for?user_id={quote(user_id, safe='')}",
-        )
-    except HTTPException as exc:
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
-        # DEPLOY ORDER, made self-diagnosing. `/effective-for` is newer than
-        # this caller, so a coord that has not yet deployed it answers 404 —
-        # and coord registers no axum fallback, so the body is EMPTY. Passed
-        # through unchanged that surfaces as web's own 404 with a blank
-        # reason, which reads as "this web route is missing" rather than
-        # "coord is behind". Re-shape it into the 502 it actually is.
-        logger.error("agent_registry_effective_for_route_absent_on_coord")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "coord does not serve GET /coord/agent-registry/effective-for "
-                "yet — deploy qontinui-coord first; this endpoint will not "
-                "fall back to re-deriving the effective view web-side"
-            ),
-        ) from exc
+    # DEPLOY ORDER, made self-diagnosing — see
+    # `_coord_request_deploy_order_aware`, which this route's own 404→502
+    # block was extracted into so the newer `/prefs/me` door gets the
+    # identical treatment instead of a second copy that can drift.
+    payload = await _coord_request_deploy_order_aware(
+        "GET",
+        f"/coord/agent-registry/effective-for?user_id={quote(user_id, safe='')}",
+        coord_route="GET /coord/agent-registry/effective-for",
+        log_event="agent_registry_effective_for_route_absent_on_coord",
+        addendum=(
+            "; this endpoint will not fall back to re-deriving the effective "
+            "view web-side"
+        ),
+    )
     return AgentRegistryResponse(
         agents=_render_effective(_effective_rows(payload, user_id))
     )
@@ -501,22 +561,335 @@ async def put_agent_pref(
     body: AgentPrefUpdateRequest,
     user: User = Depends(get_registry_user),
 ) -> dict[str, Any]:
-    """Upsert the caller's pref for one agent.
+    """Upsert the caller's OWN pref for one agent.
 
-    Proxies coord ``PUT /coord/agent-registry/prefs/{agent_name}`` with
-    ``user_id`` set from the AUTHENTICATED user (never the client body).
-    Coord's 422 error codes pass through as structured detail.
+    Proxies coord's SELF door ``PUT /coord/agent-registry/prefs/me/{agent_name}``.
+    Coord's 403s and 422 error codes pass through as structured detail.
     """
-    coord_body: dict[str, Any] = {
-        "user_id": str(user.id),
-        "enabled": body.enabled,
-    }
+    # ── Why this targets `/prefs/me` and sends no `user_id` ─────────────────
+    # Deliberately a comment, not docstring prose: this text would otherwise
+    # ship verbatim as the route `description` in the committed OpenAPI
+    # snapshot, which coord's route-serving observer reads as the web
+    # backend's declared external surface.
+    #
+    # The admin door `PUT /coord/agent-registry/prefs/:agent_name` names the
+    # `user_id` it writes, so coord keeps it on the ADMIN router — any tenant
+    # member could otherwise rewrite any other member's prefs. That made
+    # `/settings/agents` a page every member can open and no non-admin can
+    # use: the toggle 403'd for exactly the population it exists for.
+    #
+    # The self door takes the acting user from the verified operator token
+    # instead of the body, so it needs no admin gate. Its request struct is
+    # `deny_unknown_fields` — a leftover `user_id` is a 422, not a harmless
+    # extra — so dropping the field is part of the repoint, not tidying. The
+    # authorization posture is UNCHANGED either way: the acting user was
+    # already server-derived here and is now server-derived one hop further
+    # in, where the identity is actually verified.
+    #
+    # `user` stays in the signature: `get_registry_user` is what captures the
+    # caller's bearer into the ContextVar `_tenant_headers` forwards, so
+    # dropping the dependency would send coord an unauthenticated request.
+    del user
+    coord_body: dict[str, Any] = {"enabled": body.enabled}
     if body.disposition is not None:
         coord_body["disposition"] = body.disposition
-    result = await _coord_request(
+    result = await _coord_request_deploy_order_aware(
         "PUT",
-        f"/coord/agent-registry/prefs/{quote(agent_name, safe='')}",
+        f"/coord/agent-registry/prefs/me/{quote(agent_name, safe='')}",
         json_body=coord_body,
+        coord_route="PUT /coord/agent-registry/prefs/me/{agent_name}",
+        log_event="agent_registry_prefs_me_route_absent_on_coord",
+        addendum=(
+            "; this endpoint will not fall back to the admin prefs door, "
+            "which 403s every non-admin member"
+        ),
+    )
+    if isinstance(result, dict):
+        return result
+    return {"result": result}
+
+
+# ── The tenant-default admin surface ──────────────────────────────────────
+#
+# Deliberately a comment, not docstring prose (same OpenAPI-snapshot reason as
+# above). Both routes below are gated with `require_coord_tenant_admin` even
+# though coord's own gate would 403 a non-admin anyway. Failing in the WEB
+# tier is what makes the denial RENDERABLE: a coord 403 arrives as an opaque
+# passed-through body, while this gate's `not_coord_tenant_admin` is the same
+# code every other admin console surface already renders.
+#
+# The pair is deliberately asymmetric with coord's own posture, and that is
+# not an oversight. Coord serves `GET /coord/agent-registry` to any tenant
+# member (`TenantId`), because `effective-for`'s "this discloses strictly
+# less" argument rests on it. Narrowing the WEB proxy does not narrow coord's
+# route, so that argument is untouched; it only keeps the tenant-default
+# EDITING page — where a read that a non-admin cannot act on is just a broken
+# page — behind the same gate as its writes.
+
+
+class AdminAgentRegistryRow(BaseModel):
+    """One raw ``coord.agent_registry`` row, plus its pref-override counts."""
+
+    agent_name: str
+    purpose: str = ""
+    trigger_condition: str = ""
+    spawn_path: str = ""
+    model: str | None = None
+    effort: str | None = None
+    # Strict for the same reason `_AUTHZ_FIELDS` are on the read path: these
+    # two ASSERT SOMETHING ABOUT AUTHORIZATION, and a default here would let a
+    # future construction path publish a wrong one silently.
+    default_enabled: bool
+    policy_required: bool
+    allowed_dispositions: list[str] = []
+    fanout_bound: int | None = None
+    #: Tenant members with a recorded pref row for this agent. They are exactly
+    #: the population a change to ``default_enabled`` does NOT reach.
+    pref_count: int
+    #: Of those, the ones whose recorded ``enabled`` differs from the current
+    #: ``default_enabled`` — i.e. members actively contradicting the default.
+    pref_differs_from_default_count: int
+
+
+class AdminAgentRegistryResponse(BaseModel):
+    """Response envelope for ``GET /api/v1/agent-registry/admin/registry``."""
+
+    agents: list[AdminAgentRegistryRow]
+
+
+class AgentRegistryDefaultsRequest(BaseModel):
+    """Client body for the tenant-default edit.
+
+    Only the two fields the admin page edits. ``default_enabled`` is REQUIRED
+    because coord requires it (it is the lever itself, and defaulting it would
+    let a typo flip a tenant's autonomy) — so editing ``policy_required``
+    alone still means sending the agent's current ``default_enabled`` back.
+    """
+
+    default_enabled: bool
+    policy_required: bool | None = None
+
+
+def _admin_registry_rows(
+    payload: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Pull both lists out of coord's raw ``{"agents": [...], "prefs": [...]}``.
+
+    Read under the same rule :func:`_effective_rows` applies: a missing key, a
+    non-list, or a non-object row is coord failing to answer, not a tenant
+    with no agents — and collapsing any of them to ``[]`` would put "no agents
+    registered" (or "nobody has overridden this") on a page whose whole job is
+    a tenant-wide consent decision. Both are claims, not shrugs.
+    """
+    if not isinstance(payload, dict):
+        logger.error(
+            "agent_registry_admin_unexpected_payload",
+            payload_type=type(payload).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="coord returned an unrecognized agent-registry payload",
+        )
+    out: list[list[dict[str, Any]]] = []
+    for key in ("agents", "prefs"):
+        raw = payload.get(key)
+        if not isinstance(raw, list):
+            logger.error(
+                "agent_registry_admin_key_not_a_list",
+                key=key,
+                value_type=type(raw).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    f"coord returned a non-list `{key}` on the raw agent "
+                    f"registry ({type(raw).__name__}); refusing to render it "
+                    "as an empty one"
+                ),
+            )
+        for index, row in enumerate(raw):
+            if not isinstance(row, dict):
+                logger.error(
+                    "agent_registry_admin_row_not_an_object",
+                    key=key,
+                    index=index,
+                    row_type=type(row).__name__,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=(
+                        f"coord returned a non-object `{key}` row at index "
+                        f"{index} ({type(row).__name__}); refusing to render "
+                        "a registry with rows silently dropped from it"
+                    ),
+                )
+        out.append(raw)
+    agents, prefs = out
+    return agents, prefs
+
+
+def _render_admin_rows(
+    agents: list[dict[str, Any]], prefs: list[dict[str, Any]]
+) -> list[AdminAgentRegistryRow]:
+    """Render the raw rows, folding the tenant's pref rows into two counts.
+
+    The counts are the only derivation on this path, and they are an
+    AGGREGATE — not a re-derivation of the effective view, which stays coord's
+    alone (see :func:`_render_effective`). Coord serves no such aggregate, and
+    counting web-side is also what keeps every other member's ``user_id`` off
+    the wire: the page needs "how many", never "who".
+
+    ``pref_count`` is deliberately every recorded pref row, not only the ones
+    that disagree. A member who explicitly recorded the current default is
+    still immune to a change of it, which is precisely the question the admin
+    is asking. ``pref_differs_from_default_count`` is the narrower reading,
+    reported beside it rather than instead of it.
+    """
+    by_agent: dict[str, list[dict[str, Any]]] = {}
+    for pref in prefs:
+        name = pref.get("agent_name")
+        if isinstance(name, str) and name:
+            by_agent.setdefault(name, []).append(pref)
+
+    entries: list[AdminAgentRegistryRow] = []
+    for index, row in enumerate(agents):
+        name = row.get("agent_name")
+        if not isinstance(name, str) or not name:
+            logger.error(
+                "agent_registry_admin_row_missing_agent_name",
+                index=index,
+                agent_name_type=type(name).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned a registry row with no usable "
+                    f"`agent_name` at index {index}; refusing to render a "
+                    "registry with agents silently dropped from it"
+                ),
+            )
+        missing = [
+            k for k in ("default_enabled", "policy_required") if row.get(k) is None
+        ]
+        if missing:
+            logger.error(
+                "agent_registry_admin_row_missing_authz_fields",
+                agent_name=name,
+                missing=missing,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned an off-contract agent registry row "
+                    f"(agent {name!r} missing or null: {missing}); refusing to "
+                    "render an authorization state that is not the system's"
+                ),
+            )
+        default_enabled = bool(row["default_enabled"])
+        rows_for_agent = by_agent.get(name, [])
+        dispositions = row.get("allowed_dispositions")
+        entries.append(
+            AdminAgentRegistryRow(
+                agent_name=name,
+                purpose=str(row.get("purpose") or ""),
+                trigger_condition=str(row.get("trigger_condition") or ""),
+                spawn_path=str(row.get("spawn_path") or ""),
+                model=row.get("model"),
+                effort=row.get("effort"),
+                default_enabled=default_enabled,
+                policy_required=bool(row["policy_required"]),
+                allowed_dispositions=(
+                    [str(d) for d in dispositions]
+                    if isinstance(dispositions, list)
+                    else []
+                ),
+                # `not isinstance(..., bool)` is load-bearing: `bool` IS a
+                # subclass of `int` in Python, but pydantic v2 refuses a bool
+                # for an `int` field — so an off-contract `fanout_bound: true`
+                # would 500 the whole page instead of degrading to "unknown"
+                # on one descriptive field.
+                fanout_bound=(
+                    row["fanout_bound"]
+                    if isinstance(row.get("fanout_bound"), int)
+                    and not isinstance(row.get("fanout_bound"), bool)
+                    else None
+                ),
+                pref_count=len(rows_for_agent),
+                pref_differs_from_default_count=sum(
+                    1
+                    for p in rows_for_agent
+                    # `enabled` absent is NOT counted as agreeing: a pref row
+                    # coord could not serve is unknown, and the honest place
+                    # for that is the smaller (more conservative) of the two
+                    # counts, never a fabricated disagreement.
+                    if isinstance(p.get("enabled"), bool)
+                    and bool(p["enabled"]) != default_enabled
+                ),
+            )
+        )
+    return entries
+
+
+@router.get("/admin/registry", response_model=AdminAgentRegistryResponse)
+async def get_admin_agent_registry(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> AdminAgentRegistryResponse:
+    """ADMIN: the tenant's raw agent-registry rows and their override counts.
+
+    Proxies coord ``GET /coord/agent-registry`` — the raw ``AgentRegistryRow``
+    door (``default_enabled`` / ``policy_required``), NOT the effective fold.
+    Every pref row it returns is folded into two per-agent COUNTS; no other
+    member's ``user_id`` reaches the browser.
+    """
+    del tenant_id  # gate only — coord resolves the tenant from the bearer
+    payload = await _coord_request_deploy_order_aware(
+        "GET",
+        "/coord/agent-registry",
+        coord_route="GET /coord/agent-registry",
+        log_event="agent_registry_raw_route_absent_on_coord",
+    )
+    agents, prefs = _admin_registry_rows(payload)
+    return AdminAgentRegistryResponse(agents=_render_admin_rows(agents, prefs))
+
+
+@router.put("/admin/registry/{agent_name}")
+async def put_admin_agent_registry_row(
+    agent_name: str,
+    body: AgentRegistryDefaultsRequest,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> dict[str, Any]:
+    """ADMIN: set one agent's tenant default.
+
+    Proxies coord ``PUT /coord/agent-registry/{agent_name}`` with a MINIMAL
+    body. Coord's upsert is ``COALESCE``-preserving, so every field this omits
+    keeps its stored value.
+    """
+    # ── Why the body is minimal, and why that is a safety property ──────────
+    # Deliberately a comment, not docstring prose (OpenAPI-snapshot reason as
+    # above). Coord's `UpsertRegistryRequest` makes `default_enabled` the ONLY
+    # required field and every other field optional-and-preserving. An earlier
+    # shape did the opposite — it required `spawn_path` and REPLACED every
+    # column the request did not name — and that is how following the
+    # documented re-enable lever once reset a seeded row's `purpose` and
+    # dropped its `fanout_bound` from 1 to 15. Sending a full row back would
+    # reintroduce exactly that: this page reads `purpose`, `spawn_path`,
+    # `model`, `effort` and `allowed_dispositions` for DISPLAY, and echoing
+    # them on save would make every render-side normalisation (a `None` shown
+    # as "", a list re-ordered) a silent write.
+    #
+    # The struct is also `deny_unknown_fields`, so this body may only ever
+    # carry names coord declares — a misspelling is a 422 rather than a
+    # silently-dropped field answering 200 with the unchanged row.
+    del tenant_id  # gate only — coord resolves the tenant from the bearer
+    coord_body: dict[str, Any] = {"default_enabled": body.default_enabled}
+    if body.policy_required is not None:
+        coord_body["policy_required"] = body.policy_required
+    result = await _coord_request_deploy_order_aware(
+        "PUT",
+        f"/coord/agent-registry/{quote(agent_name, safe='')}",
+        json_body=coord_body,
+        coord_route="PUT /coord/agent-registry/{agent_name}",
+        log_event="agent_registry_upsert_route_absent_on_coord",
     )
     if isinstance(result, dict):
         return result

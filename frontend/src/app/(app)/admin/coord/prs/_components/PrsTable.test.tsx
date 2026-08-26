@@ -1,5 +1,21 @@
-import { describe, it, expect } from "vitest";
-import { render, within } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+
+// Every open row now renders `PrDraftStateControl`, which gates itself on
+// `useAuth().isCoordAdmin` — and the real `useAuth` THROWS outside an
+// AuthProvider. Mock it (same shape as MergeTrainActivity.test.tsx) and let a
+// test flip the flag to assert the non-admin surface.
+const authState = { isCoordAdmin: true };
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: authState.isCoordAdmin }),
+}));
+
+// The control POSTs through httpClient on click; no test here clicks it, but
+// the import must resolve without a real service factory.
+vi.mock("@/services/service-factory", () => ({
+  httpClient: { fetch: vi.fn() },
+}));
+
 import { PrsTable, MERGE_STATE_LEGEND } from "./PrsTable";
 import type { PrRow } from "@/services/admin-dev-service";
 
@@ -129,5 +145,45 @@ describe("merge-state legend (the operator's contract)", () => {
   it("BLOCKED legend hint names rulesets", () => {
     const blocked = MERGE_STATE_LEGEND.find((e) => e.key === "BLOCKED");
     expect(blocked?.hint).toContain("ruleset/branch-protection");
+  });
+});
+
+/**
+ * The draft-state control on the PRs page (plan
+ * 2026-08-01-admin-ui-pr-draft-state-control). `/admin/coord/prs` is where the
+ * "PR is a draft — not mergeable until marked ready" diagnosis is rendered, so
+ * it is where the fix for it belongs; before this it dead-ended there while the
+ * fleet page could already act.
+ */
+describe("draft-state control", () => {
+  it("offers 'Ready for review' on a draft row", () => {
+    render(<PrsTable prs={[pr({ pr_state: "draft" })]} />);
+    expect(screen.getByTestId("pr-ready-for-review")).toBeInTheDocument();
+  });
+
+  it("offers 'Convert to draft' on an open row", () => {
+    render(<PrsTable prs={[pr({ pr_state: "open" })]} />);
+    expect(screen.getByTestId("pr-convert-to-draft")).toBeInTheDocument();
+  });
+
+  it("renders no control on the merged tab", () => {
+    render(
+      <PrsTable prs={[pr({ pr_state: "open" })]} merged />
+    );
+    expect(
+      screen.queryByTestId("pr-convert-to-draft")
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the control from a non-admin operator", () => {
+    authState.isCoordAdmin = false;
+    try {
+      render(<PrsTable prs={[pr({ pr_state: "draft" })]} />);
+      expect(
+        screen.queryByTestId("pr-ready-for-review")
+      ).not.toBeInTheDocument();
+    } finally {
+      authState.isCoordAdmin = true;
+    }
   });
 });

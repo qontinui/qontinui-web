@@ -14,11 +14,19 @@ These need a real Postgres (they use the shared ``test_engine`` fixture from
    missed slot would leave ``next_fire_at`` in the past after any downtime, so
    the row would re-fire on every 30s tick until it caught up (a backlog storm).
 
-The job modules reach the DB through a *lazy* ``from app.db.session import
-async_engine``, so pointing that module attribute at ``test_engine`` routes them
-at the test database. Rows are therefore seeded on **committed** sessions (the
-transactional ``async_db_session`` fixture is invisible to another connection)
-and cleaned up in the fixture teardown.
+Both job entry points take an explicit ``engine`` keyword, so these tests hand
+them ``test_engine`` directly. They deliberately do NOT rebind
+``app.db.session.async_engine``: that is a process global, and repointing it
+aimed the app's own live cron sweeper at the test database (web#901), where it
+raced these tests for their own seeded rows. Rows are still seeded on
+**committed** sessions (the transactional ``async_db_session`` fixture is
+invisible to another connection) and cleaned up in the fixture teardown.
+
+``poll_and_dispatch_due`` has no user filter — it claims *every* due row in the
+table — so its ``stats`` dict is a whole-table count by construction. Assertions
+here therefore key off **this fixture's own rows** (reload by id, or filter the
+patched dispatcher's awaits by ``workflow_id``) and never compare ``stats`` to a
+literal histogram, which any concurrently-seeded row would break.
 
 The dispatcher is always patched — these tests never touch a real runner.
 """
@@ -130,22 +138,15 @@ class _FakeDispatchResponse:
 
 
 @pytest_asyncio.fixture
-async def sched_db(test_engine, monkeypatch):
-    """A committed user + workflow, with the job module pointed at the test DB.
+async def sched_db(test_engine):
+    """A committed user + workflow, plus the engine to hand the job under test.
 
-    ``poll_and_dispatch_due`` / ``fire_scheduled_run`` open their OWN sessions
-    over ``app.db.session.async_engine``, so their rows must be committed and
-    that engine must be the test engine.
+    ``poll_and_dispatch_due`` / ``fire_scheduled_run`` open their OWN sessions,
+    so these rows must be committed. The engine is passed to them explicitly
+    (``engine=sched_db.engine``) rather than monkeypatched onto
+    ``app.db.session``, so nothing outside the call under test is redirected.
     """
-    monkeypatch.setattr("app.db.session.async_engine", test_engine)
-
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-
-    # The poll is global (it has no user filter), so start from a clean slate to
-    # keep the `due` count deterministic.
-    async with maker() as session:
-        await session.execute(delete(ScheduledWorkflowRun))
-        await session.commit()
 
     async with maker() as session:
         user = User(
@@ -164,10 +165,16 @@ async def sched_db(test_engine, monkeypatch):
         await session.commit()
         await session.refresh(workflow)
 
-    yield SimpleNamespace(maker=maker, user=user, workflow=workflow)
+    yield SimpleNamespace(maker=maker, engine=test_engine, user=user, workflow=workflow)
 
+    # Scoped to rows this fixture owns. An unfiltered DELETE here would wipe the
+    # schedule rows of every other test sharing this database.
     async with maker() as session:
-        await session.execute(delete(ScheduledWorkflowRun))
+        await session.execute(
+            delete(ScheduledWorkflowRun).where(
+                ScheduledWorkflowRun.workflow_id == workflow.id
+            )
+        )
         await session.execute(
             delete(UnifiedWorkflow).where(UnifiedWorkflow.id == workflow.id)
         )
@@ -222,6 +229,19 @@ def _patch_dispatcher(monkeypatch, *, raises: Exception | None = None) -> AsyncM
     return mock
 
 
+def _own_dispatches(dispatch: AsyncMock, sched_db) -> list:
+    """The patched dispatcher's awaits for THIS fixture's workflow only.
+
+    The poll has no user filter, so a row seeded by another test can be claimed
+    in the same sweep and would inflate a bare ``await_count``.
+    """
+    return [
+        call
+        for call in dispatch.await_args_list
+        if call.kwargs.get("workflow_id") == sched_db.workflow.id
+    ]
+
+
 # ---------------------------------------------------------------------------
 # poll_and_dispatch_due — row selection
 # ---------------------------------------------------------------------------
@@ -246,12 +266,14 @@ class TestDueRowSelection:
         )
         never = await _seed(sched_db, next_fire_at=None, name="null")
 
-        stats = await poll_and_dispatch_due(now=now)
+        stats = await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
-        assert stats == {"due": 1, "dispatched": 1, "failed": 0, "skipped": 0}
-        assert dispatch.await_count == 1
-        assert dispatch.await_args is not None
-        assert dispatch.await_args.kwargs["workflow_id"] == sched_db.workflow.id
+        # `stats` counts the whole table, so assert on OUR rows: of the four
+        # seeded, exactly one — the due, enabled one — reached the dispatcher.
+        assert stats["dispatched"] >= 1
+        own = _own_dispatches(dispatch, sched_db)
+        assert len(own) == 1
+        assert own[0].kwargs["workflow_id"] == sched_db.workflow.id
 
         # Only the due row moved.
         fired = await _reload(sched_db, due.id)
@@ -281,12 +303,19 @@ class TestDueRowSelection:
     async def test_no_due_rows_is_a_no_op(self, sched_db, monkeypatch):
         dispatch = _patch_dispatcher(monkeypatch)
         now = datetime.now(UTC)
-        await _seed(sched_db, next_fire_at=now + timedelta(hours=1))
+        future = now + timedelta(hours=1)
+        row = await _seed(sched_db, next_fire_at=future)
 
-        stats = await poll_and_dispatch_due(now=now)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
-        assert stats == {"due": 0, "dispatched": 0, "failed": 0, "skipped": 0}
-        dispatch.assert_not_awaited()
+        # Nothing of OURS was due, so the sweep left the row completely alone —
+        # not dispatched, and `next_fire_at` not advanced. (A bare
+        # `stats == {"due": 0, ...}` asserted that about the whole table.)
+        assert _own_dispatches(dispatch, sched_db) == []
+        fresh = await _reload(sched_db, row.id)
+        assert fresh.last_status is None
+        assert fresh.last_fired_at is None
+        assert fresh.next_fire_at == future
 
 
 # ---------------------------------------------------------------------------
@@ -305,14 +334,14 @@ class TestNextFireAdvance:
         ``next_fire_at`` still hours in the past, so the row would re-fire on
         every 30s tick until it had replayed every missed window.
         """
-        _patch_dispatcher(monkeypatch)
+        dispatch = _patch_dispatcher(monkeypatch)
         now = datetime.now(UTC)
         missed = now - timedelta(hours=3)
 
         row = await _seed(sched_db, cron="*/15 * * * *", next_fire_at=missed)
 
-        stats = await poll_and_dispatch_due(now=now)
-        assert stats["due"] == 1
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
+        assert len(_own_dispatches(dispatch, sched_db)) == 1
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.next_fire_at is not None
@@ -322,8 +351,12 @@ class TestNextFireAdvance:
         assert fresh.next_fire_at <= now + timedelta(minutes=15)
         assert fresh.next_fire_at > missed + timedelta(hours=2)
 
-        # A second poll at the same instant finds nothing — at most once per window.
-        assert (await poll_and_dispatch_due(now=now))["due"] == 0
+        # A second poll at the same instant does not re-claim OUR row — at most
+        # once per window. (`stats["due"]` counts the whole table, so a foreign
+        # due row would break an `== 0` here without saying anything about us.)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
+        assert len(_own_dispatches(dispatch, sched_db)) == 1
+        assert (await _reload(sched_db, row.id)).next_fire_at == fresh.next_fire_at
 
     @pytest.mark.asyncio
     async def test_corrupt_cron_is_disabled_not_fired_and_never_loop_fires(
@@ -341,11 +374,10 @@ class TestNextFireAdvance:
             sched_db, cron="not a cron", next_fire_at=now - timedelta(minutes=1)
         )
 
-        stats = await poll_and_dispatch_due(now=now)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
         # Not claimed, not dispatched — we cannot know when it should have run.
-        assert stats["due"] == 0
-        assert dispatch.await_count == 0
+        assert _own_dispatches(dispatch, sched_db) == []
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.enabled is False
@@ -353,7 +385,11 @@ class TestNextFireAdvance:
         assert fresh.last_error is not None
 
         # It is now inert — no infinite re-fire loop.
-        assert (await poll_and_dispatch_due(now=now))["due"] == 0
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
+        assert _own_dispatches(dispatch, sched_db) == []
+        again = await _reload(sched_db, row.id)
+        assert again.enabled is False
+        assert again.next_fire_at is None
 
 
 # ---------------------------------------------------------------------------
@@ -385,9 +421,14 @@ class TestDispatchFailure:
             sched_db, cron="*/15 * * * *", next_fire_at=now - timedelta(minutes=1)
         )
 
-        stats = await poll_and_dispatch_due(now=now)
+        stats = await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
-        assert stats == {"due": 1, "dispatched": 0, "failed": 1, "skipped": 0}
+        # A failure was counted, and the row assertions below prove it was OURS —
+        # recorded as `failed`, not swallowed as `skipped` and not raised.
+        # (`stats` is a whole-table histogram: a concurrently-seeded row would
+        # break an equality against a literal without changing this test's
+        # meaning, so only the lower bound is asserted here.)
+        assert stats["failed"] >= 1
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.last_status == "failed"
@@ -417,22 +458,32 @@ class TestDispatchFailure:
         )
 
         # Disable the row *after* the poll claims it but *before* it fires.
+        # Only OUR row: a concurrently-seeded row from another test must not be
+        # disabled as a side effect of this one.
         real_fire = scheduled_dispatch_mod.fire_scheduled_run
+        outcomes: dict[str, dict] = {}
 
-        async def _disable_then_fire(run_id: str):
-            async with sched_db.maker() as other:
-                target = await other.get(ScheduledWorkflowRun, UUID(run_id))
-                target.enabled = False
-                await other.commit()
-            return await real_fire(run_id)
+        async def _disable_then_fire(run_id: str, **kwargs):
+            if run_id == str(row.id):
+                async with sched_db.maker() as other:
+                    target = await other.get(ScheduledWorkflowRun, UUID(run_id))
+                    target.enabled = False
+                    await other.commit()
+            result = await real_fire(run_id, **kwargs)
+            outcomes[run_id] = result
+            return result
 
         monkeypatch.setattr(
             scheduled_dispatch_mod, "fire_scheduled_run", _disable_then_fire
         )
 
-        stats = await poll_and_dispatch_due(now=now)
+        stats = await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
-        assert stats == {"due": 1, "dispatched": 0, "failed": 0, "skipped": 1}
+        # OUR row landed in the `skipped` bucket — the bucket, and the reason,
+        # are read off its own fire result rather than off a whole-table
+        # histogram equality that a foreign due row would break.
+        assert outcomes[str(row.id)] == {"status": "skipped", "reason": "disabled"}
+        assert stats["skipped"] >= 1
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.last_status is None  # never actually fired
@@ -451,7 +502,7 @@ class TestDispatchFailure:
         )
         row = await _seed(sched_db, next_fire_at=datetime.now(UTC))
 
-        result = await fire_scheduled_run(str(row.id))
+        result = await fire_scheduled_run(str(row.id), engine=sched_db.engine)
 
         assert result["status"] == "failed"
         assert result["reason"] == "dispatch_error"
@@ -473,7 +524,7 @@ class TestFireGuards:
         """Row deleted since it was claimed → skip, don't crash."""
         dispatch = _patch_dispatcher(monkeypatch)
 
-        result = await fire_scheduled_run(str(uuid4()))
+        result = await fire_scheduled_run(str(uuid4()), engine=sched_db.engine)
 
         assert result == {"status": "skipped", "reason": "row_missing"}
         dispatch.assert_not_awaited()
@@ -484,7 +535,7 @@ class TestFireGuards:
         dispatch = _patch_dispatcher(monkeypatch)
         row = await _seed(sched_db, enabled=False, next_fire_at=None)
 
-        result = await fire_scheduled_run(str(row.id))
+        result = await fire_scheduled_run(str(row.id), engine=sched_db.engine)
 
         assert result == {"status": "skipped", "reason": "disabled"}
         dispatch.assert_not_awaited()
@@ -494,7 +545,7 @@ class TestFireGuards:
         dispatch = _patch_dispatcher(monkeypatch)
         row = await _seed(sched_db, next_fire_at=datetime.now(UTC))
 
-        result = await fire_scheduled_run(str(row.id))
+        result = await fire_scheduled_run(str(row.id), engine=sched_db.engine)
 
         assert result["status"] == "dispatched"
         expected = dispatch.return_value
@@ -512,7 +563,7 @@ class TestFireGuards:
         pinned = datetime.now(UTC) + timedelta(hours=2)
         row = await _seed(sched_db, next_fire_at=pinned)
 
-        await fire_scheduled_run(str(row.id))
+        await fire_scheduled_run(str(row.id), engine=sched_db.engine)
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.next_fire_at == pinned
@@ -541,11 +592,10 @@ class TestAnchoring:
         # A legacy row as the migration leaves it: enabled, never scheduled.
         row = await _seed(sched_db, cron="0 3 * * *", next_fire_at=None)
 
-        stats = await poll_and_dispatch_due(now=now)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
         # Anchored onto its cron — and emphatically NOT dispatched.
-        assert stats["due"] == 0
-        assert dispatch.await_count == 0
+        assert _own_dispatches(dispatch, sched_db) == []
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.next_fire_at is not None
@@ -559,7 +609,7 @@ class TestAnchoring:
         _patch_dispatcher(monkeypatch)
         row = await _seed(sched_db, cron="0 3 * * *", enabled=False, next_fire_at=None)
 
-        await poll_and_dispatch_due(now=datetime.now(UTC))
+        await poll_and_dispatch_due(now=datetime.now(UTC), engine=sched_db.engine)
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.next_fire_at is None
@@ -583,7 +633,7 @@ class TestAnchoring:
             sched_db, cron="0 0 30 2 *", next_fire_at=now - timedelta(minutes=1)
         )
 
-        await poll_and_dispatch_due(now=now)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
 
         fresh = await _reload(sched_db, row.id)
         assert fresh.enabled is False  # visibly dead, not silently
@@ -593,7 +643,62 @@ class TestAnchoring:
         assert "0 0 30 2 *" in fresh.last_error
 
         # And being disabled, it is not re-anchored on the next tick either.
-        await poll_and_dispatch_due(now=now)
+        await poll_and_dispatch_due(now=now, engine=sched_db.engine)
         again = await _reload(sched_db, row.id)
         assert again.enabled is False
         assert again.next_fire_at is None
+
+
+# ---------------------------------------------------------------------------
+# The engine seam — no process-global rebinding
+# ---------------------------------------------------------------------------
+
+
+class TestEngineInjection:
+    @pytest.mark.asyncio
+    async def test_both_halves_of_the_poll_use_the_injected_engine(
+        self, sched_db, monkeypatch
+    ):
+        """The claim AND the fire run on the engine handed in, not the global one.
+
+        ``poll_and_dispatch_due`` claims rows on one session, then fires each
+        claimed row through ``fire_scheduled_run``, which opens a session of its
+        OWN. Threading the engine into the claim but not the fire would be worse
+        than not threading it at all: the claim would hit the test database while
+        the fire hit the process-global engine, where this row does not exist —
+        so the fire would return ``skipped``/``row_missing`` and never write
+        ``last_status``.
+
+        Reading the dispatch back OFF the row THROUGH the test engine is
+        therefore the proof that both halves landed on the injected engine, and
+        nothing rebound ``app.db.session.async_engine`` to get there.
+        """
+        dispatch = _patch_dispatcher(monkeypatch)
+        now = datetime.now(UTC)
+        row = await _seed(sched_db, next_fire_at=now - timedelta(minutes=1))
+
+        stats = await poll_and_dispatch_due(now=now, engine=sched_db.engine)
+
+        # The CLAIM half saw the row on the injected engine...
+        assert stats["dispatched"] >= 1
+        assert len(_own_dispatches(dispatch, sched_db)) == 1
+
+        fresh = await _reload(sched_db, row.id)
+        assert fresh.next_fire_at is not None and fresh.next_fire_at > now
+
+        # ...and the FIRE half wrote its outcome there too.
+        assert fresh.last_status == "dispatched"
+        assert fresh.last_fired_at is not None
+        assert fresh.last_execution_id == dispatch.return_value.execution_id
+        assert fresh.last_error is None
+
+    @pytest.mark.asyncio
+    async def test_fixture_leaves_the_process_global_engine_alone(self, sched_db):
+        """The fixture must not repoint ``app.db.session.async_engine``.
+
+        Rebinding it is what aimed the app's own live cron sweeper at the test
+        database (web#901). This asserts the seam is the ONLY mechanism in play.
+        """
+        from app.db import session as db_session
+
+        assert db_session.async_engine is not sched_db.engine

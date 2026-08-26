@@ -10,14 +10,20 @@ Remaining endpoints:
 - ``/users/me`` override (enriches the user with coord tenant identity)
 - fastapi-users user-management router (profile read/update)
 - Device management + DEVICE verification (NOT email verification)
-- Bootstrap-first-admin (promote an existing user to superuser)
+
+There is deliberately NO bootstrap/first-admin route. ``POST
+/bootstrap-first-admin`` took no authentication at all and promoted an
+attacker-supplied ``?email=`` to superuser, leaking the existing admin's
+address on the guarded arm. The first superuser is seeded off the HTTP
+surface by :func:`app.db.init_db.init_db` from ``FIRST_SUPERUSER_EMAIL``
+and linked on first Cognito login by ``app.services.cognito_provision``.
+Plan: ``2026-08-01-web-bootstrap-superuser-routes-are-live-http-surface``.
 """
 
 # Import sub-routers
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import get_current_active_user_async
-from app.api.v1.endpoints.auth.bootstrap import router as bootstrap_router
 from app.api.v1.endpoints.auth.devices import router as devices_router
 from app.api.v1.endpoints.auth.identities import router as identities_router
 from app.api.v1.endpoints.auth.verification import router as verification_router
@@ -110,6 +116,5 @@ router.include_router(
 # Include custom auth sub-routers (device management + device verification).
 router.include_router(devices_router, tags=["auth"])
 router.include_router(verification_router, tags=["auth"])
-router.include_router(bootstrap_router, tags=["auth-bootstrap"])
 # Cross-IdP account linking (paths: /api/v1/auth/identities*).
 router.include_router(identities_router, tags=["auth-identities"])

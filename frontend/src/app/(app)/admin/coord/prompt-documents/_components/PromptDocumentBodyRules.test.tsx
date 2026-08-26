@@ -210,6 +210,34 @@ describe("create dialog — the create door", () => {
   });
 
   /**
+   * The size ceiling is the one rule a well-meaning operator breaches by
+   * accident, and the create dialog is where a briefing's FIRST body is
+   * written — so the budget belongs at this door too, not only at the editor
+   * the operator reaches afterwards. Bytes, not characters, for the reason
+   * `sessionBriefingByteLength` exists.
+   */
+  it("shows the byte budget for a briefing and counts UTF-8 bytes", async () => {
+    const user = userEvent.setup();
+    renderCreate();
+    await pickBriefing(user);
+    await user.click(screen.getByTestId("create-body"));
+    await user.paste("—"); // one character, three UTF-8 bytes
+
+    expect(screen.getByTestId("create-body-budget")).toHaveTextContent(
+      `${(3).toLocaleString()} / ${SESSION_BRIEFING_MAX_BYTES.toLocaleString()} bytes`
+    );
+  });
+
+  it("shows no budget for a kind that has no ceiling", async () => {
+    const user = userEvent.setup();
+    renderCreate();
+    await user.click(screen.getByTestId("create-body"));
+    await user.paste("Some prose.");
+
+    expect(screen.queryByTestId("create-body-budget")).not.toBeInTheDocument();
+  });
+
+  /**
    * The inert-name warning WARNS and does not block: coord accepts the row, so
    * refusing it here would be the form inventing a rule. What the operator must
    * not do is create it believing it will be read — or believing it inherits
@@ -263,7 +291,10 @@ describe("history dialog — the restore-version door", () => {
   function renderHistory(
     snapshotBody: string,
     kind: PromptDocumentKind,
-    { readOnly = false }: { readOnly?: boolean } = {}
+    {
+      readOnly = false,
+      hasDefault = true,
+    }: { readOnly?: boolean; hasDefault?: boolean } = {}
   ) {
     const onRestoreVersion = vi.fn().mockResolvedValue(true);
     const version: PromptDocumentVersion = {
@@ -275,7 +306,12 @@ describe("history dialog — the restore-version door", () => {
       <PromptDocumentHistoryDialog
         open
         onOpenChange={vi.fn()}
-        target={{ kind, name: "runner-session", label: "the briefing" }}
+        target={{
+          kind,
+          name: "runner-session",
+          label: "the briefing",
+          hasDefault,
+        }}
         currentBody="Current body."
         currentVersion={2}
         fetchVersions={vi.fn().mockResolvedValue({
@@ -307,6 +343,24 @@ describe("history dialog — the restore-version door", () => {
     const reason = await screen.findByTestId("restore-blocked-reason");
     expect(reason).toHaveTextContent("9c9c5219-afcc-42e0-9ed9-888a9d0dbbaa");
     expect(screen.queryByTestId("restore-version")).not.toBeInTheDocument();
+  });
+
+  /**
+   * A refusal that names no remaining door is a dead end, and coord leaves one
+   * open on purpose: `post_restore_default` is the single write path it does
+   * NOT content-check, because the body it re-seeds is coord's own.
+   */
+  it("names restore-to-default as the way out when the document has one", async () => {
+    renderHistory(WITH_IDENTITY, "session_briefing");
+    const reason = await screen.findByTestId("restore-blocked-reason");
+    expect(reason).toHaveTextContent("Restore to default");
+  });
+
+  it("does not name it for a document with no built-in default", async () => {
+    renderHistory(WITH_IDENTITY, "session_briefing", { hasDefault: false });
+    const reason = await screen.findByTestId("restore-blocked-reason");
+    expect(reason).toHaveTextContent("no longer passes");
+    expect(reason).not.toHaveTextContent("Restore to default");
   });
 
   it("applies no content rule to another kind's snapshot", async () => {

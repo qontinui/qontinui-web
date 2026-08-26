@@ -24,14 +24,20 @@ import {
  *  - `filter` — which rows belong to its surface (kind set, or decision domain)
  *  - `sort` — the caller's presentation order
  *  - `noun` — the word used in toasts ("rule", "clearance rule", …)
- * NOTE on DISABLED rows: coord's list route takes an `enabled` filter
- * (defaulting to enabled-only for the tenant's own rows), but the web
- * backend's proxy — `GET /api/v1/operations/coord/policies` in
- * `operations.py` — calls `_proxy_coord_get("/coord/policies", ...)` with NO
- * `params`, so no query string reaches coord. A tenant's DISABLED own rules
- * are therefore not listable from the console at all. Do not add an
- * `?enabled=` argument here expecting it to work; the fix belongs in the
- * proxy.
+ * NOTE on DISABLED rows: this hook always takes coord's `enabled = true`
+ * default, and that is now a CHOICE rather than a limitation. The proxy no
+ * longer drops the query string — `GET /api/v1/operations/coord/policies`
+ * forwards coord's `kind` / `repo` / `enabled` — so `?enabled=false` is
+ * reachable and must still not be asked for.
+ *
+ * The reason moved, so read the current one: coord's
+ * `DELETE /coord/policies/:id` is a SOFT delete onto that same column
+ * (`policies/routes.rs::delete_soft` — `SET enabled = false`) and
+ * `coord.policy_rules` has no tombstone, so `enabled = false` means "turned
+ * off" and "deleted" indistinguishably. Listing that arm would resurrect every
+ * rule the tenant has ever deleted and offer to switch each back on. The
+ * distinction has to come from coord first; `coordPolicyApi.listCoordPolicies`
+ * carries the full note and the fix that would unblock it.
  *
  * The create/update bodies are generic: v1 surfaces post `{kind, condition,
  * action}`, v2 surfaces post `{decision_domain, mode, payload}`. Coord
@@ -99,16 +105,35 @@ export function useCoordPolicies<TCreate, TUpdate>(
   const firstLoadDone = useRef(false);
   const [saving, setSaving] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  /**
+   * Which list call owns the result. Bumped on entry; a response whose
+   * generation is no longer current is DROPPED — state, toast and all.
+   *
+   * Concurrent loads are not hypothetical: `step()` refetches after every
+   * mutation, and `reload` is now on a Retry button an operator can press
+   * while an earlier attempt is still hanging. Without this, a slow FAILURE
+   * that lands after a fast success sets `loadFailed` back to true and the
+   * surface reports an outage it has just recovered from — pointing at rules
+   * it did successfully read. Last-write-wins is the wrong rule for a read
+   * whose freshness is the whole point; last-ASKED-wins is the right one.
+   */
+  const loadGeneration = useRef(0);
 
   const loadRules = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    const current = () => generation === loadGeneration.current;
     try {
       if (!firstLoadDone.current) setLoading(true);
       const res = await listCoordPolicies();
+      if (!current()) return;
       const items = (res.policies ?? []).filter((r) => filter(r));
       if (sort) items.sort(sort);
       setRules(items);
       setLoadFailed(false);
     } catch (err) {
+      // A superseded failure is not news — and its toast would contradict the
+      // list the user is looking at.
+      if (!current()) return;
       setLoadFailed(true);
       // The headline names WHAT failed (an `httpClient` error message alone
       // often does not); the error text is appended, never swallowed.
@@ -117,8 +142,12 @@ export function useCoordPolicies<TCreate, TUpdate>(
         err instanceof Error ? `${headline}: ${err.message}` : headline
       );
     } finally {
-      firstLoadDone.current = true;
-      setLoading(false);
+      // `finally` runs on the superseded path too; only the owning call may
+      // retire the first-load spinner.
+      if (current()) {
+        firstLoadDone.current = true;
+        setLoading(false);
+      }
     }
   }, [filter, sort, noun, loadFailMessage]);
 

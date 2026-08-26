@@ -222,6 +222,9 @@ export type PrMergeStatus =
   | "conflicts"
   | "behind-base"
   | "review-required"
+  // a REQUIRED status context is unsatisfied — CI's problem, not a reviewer's.
+  // Reuses coord's `BlockReason::RequiredChecksMissing` wire code verbatim.
+  | "required-checks-missing"
   | "blast-radius-block"
   | "awaiting-specialist-review"
   | "ready"

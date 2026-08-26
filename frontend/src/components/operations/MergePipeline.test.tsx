@@ -69,6 +69,14 @@ vi.mock("sonner", () => ({
   }),
 }));
 
+// The draft-state toggle now lives in the shared `PrDraftStateControl`, which
+// wraps itself in `CoordAdminOnly` — a Developer-tier member must not see a
+// control that 403s. These tests exercise the control, so they authenticate as
+// a coord admin (same shape as MergeTrainActivity.test.tsx / the settings test).
+vi.mock("@/contexts/auth-context", () => ({
+  useAuth: () => ({ isCoordAdmin: true }),
+}));
+
 import {
   AUTHOR_GLYPH_KINDS,
   MergePipeline,
@@ -230,6 +238,103 @@ describe("MergePipeline", () => {
     expect(screen.getByText(/not on your branch/i)).toBeInTheDocument();
     // Raw ids stay available for support, in the debug footer only.
     expect(screen.getByText(/proposal p-1/)).toBeInTheDocument();
+  });
+
+  // --------------------------------------------------------------------------
+  // The cross-repo dependency DAG, and the migration-queue cross-link.
+  //
+  // Phase 4 of `2026-08-25-coord-console-intent-and-devops-sections`. The DAG
+  // used to be a standalone panel behind a `#merge-dep-graph` anchor that then
+  // asked the operator to type in the repo and PR number the row it was linked
+  // from already knew. It is keyed on the row now.
+  // --------------------------------------------------------------------------
+
+  it("offers the dependency DAG inside the row, keyed on that row, with no input form", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+
+    render(<MergePipeline />);
+    // Not present until the row is expanded — one row expands at a time, so
+    // at most one graph is ever mounted.
+    expect(screen.queryByTestId("merge-dep-graph")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Awaiting CI"));
+    expect(screen.getByTestId("merge-dep-graph")).toBeInTheDocument();
+
+    // The form is gone: no repo field, no PR field, nothing to re-type.
+    expect(document.getElementById("dep-graph-repo")).toBeNull();
+    expect(document.getElementById("dep-graph-pr")).toBeNull();
+    expect(screen.queryByText("Load graph")).not.toBeInTheDocument();
+    // And so is the anchor the old link jumped to.
+    expect(document.getElementById("merge-dep-graph")).toBeNull();
+    expect(document.querySelector('a[href="#merge-dep-graph"]')).toBeNull();
+  });
+
+  it("fetches the graph for the row's own repo and PR once opened", async () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        nodes: [],
+        edges: [],
+        topo_order: [],
+        cycle_detected: false,
+        cycle_members: [],
+      }),
+    });
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Awaiting CI"));
+    // Collapsed by default — `CollapsiblePanel` unmounts its children, so the
+    // 420px canvas and its read cost nothing until asked for.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("pr-merge/graph")
+      )
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByText("Cross-repo PR dependency graph"));
+
+    await waitFor(() => {
+      const graphCalls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.includes("pr-merge/graph"));
+      expect(graphCalls).toHaveLength(1);
+      // Both identifiers come from the row, never from an operator's typing.
+      expect(graphCalls[0]).toContain("repo=qontinui%2Fqontinui-web");
+      expect(graphCalls[0]).toContain("pr=761");
+    });
+  });
+
+  it("cross-links a waiting row to the migration queue without claiming it is blocked on one", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "queued" })];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Queued"));
+
+    const note = screen.getByTestId("pipeline-migration-queue-link");
+    expect(note.querySelector("a")).toHaveAttribute(
+      "href",
+      "/admin/coord/migrations"
+    );
+    // coord's queue read carries no PR number, so the copy must offer a place
+    // to look rather than assert a join this surface cannot make.
+    expect(note.textContent).toMatch(/place to look/i);
+    expect(note.textContent).not.toMatch(/this PR is waiting on/i);
+  });
+
+  it("shows no migration cross-link on a row that is not waiting", () => {
+    hookData.current.prs = [pr()];
+    hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
+
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByText("Awaiting CI"));
+
+    expect(
+      screen.queryByTestId("pipeline-migration-queue-link")
+    ).not.toBeInTheDocument();
   });
 
   it("renders the empty state once loaded with nothing to show", () => {
@@ -855,7 +960,11 @@ describe("MergePipeline", () => {
 
   it("still renders the train view when the health read is unavailable", async () => {
     // coord deploy predating /pr-merge/health, or a transient outage.
-    fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({}),
+    });
     hookData.current.proposals = [proposal({ status: "awaiting-ci" })];
 
     render(<MergePipeline />);

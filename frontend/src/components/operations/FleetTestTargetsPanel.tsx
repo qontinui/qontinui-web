@@ -4,7 +4,10 @@
  * FleetTestTargetsPanel — fleet-fresh test-target routing (plan
  * `2026-06-20-fleet-fresh-test-target-routing.md`, phase P5).
  *
- * One panel on /admin/coord/fleet that ties together the three P5 surfaces:
+ * The whole of `/admin/coord/test-targets` (its own route since Phase 4 of
+ * `2026-08-25-coord-console-intent-and-devops-sections`; before that, a panel
+ * two disclosures deep inside the pipeline page). It ties together the three
+ * P5 surfaces:
  *  - App config editor: update_strategy (pull_only | pull_build) + build/start
  *    commands (PATCH /api/v1/fleet/apps/{app_id}).
  *  - Per-device/per-app freshness badges (fresh | building | failed | unknown),
