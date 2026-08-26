@@ -7,4 +7,4 @@
 # review and its `composed-cloud-build` CI job, which builds the two repos
 # together. A floating `main` would let a cloud-control push change what
 # qontinui.io serves with no qontinui-web commit at all.
-119379a4e61bf74e9506315ba303fc3ca0c0a805
+1cfb5a2adf94d4a00bf682faa89ba15a9daab946
