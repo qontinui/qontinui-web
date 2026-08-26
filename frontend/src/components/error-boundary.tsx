@@ -76,12 +76,30 @@ export class ErrorBoundary extends Component<Props, State> {
       });
     }
 
-    // Log to error reporting service (e.g., Sentry)
-    if (
-      typeof window !== "undefined" &&
-      process.env.NODE_ENV === "production"
-    ) {
-      // Example: window.Sentry?.captureException(error, { extra: errorInfo });
+    // Report to the client-telemetry beacon.
+    //
+    // This branch used to be an empty block holding a commented-out `// Example:
+    // window.Sentry?.captureException(...)`, so EVERY production error caught
+    // here was silently swallowed — the boundary rendered its card and nothing
+    // was ever reported. On 2026-08-26 a throw in a cloud-control slot
+    // white-screened every authenticated page on qontinui.io and produced no
+    // telemetry at all; the cause had to be read out of a user's console.
+    //
+    // Routed through the beacon rather than a direct Sentry call so React
+    // errors inherit the same scrubbing, sampling, rate limit and circuit
+    // breaker as every other incident. `captureReactError` is a no-op when the
+    // beacon is not installed, so this is safe to call unconditionally — no
+    // NODE_ENV check, which also means the path is exercised in tests and dev
+    // instead of only ever running in production.
+    if (typeof window !== "undefined") {
+      import("@/lib/telemetry/beacon")
+        .then(({ captureReactError }) => {
+          captureReactError(error, errorInfo.componentStack ?? undefined);
+        })
+        .catch(() => {
+          // Never let the reporter break the boundary that is already handling
+          // an error.
+        });
     }
 
     this.setState({
