@@ -23,7 +23,8 @@ export type ClientTelemetryKind =
   | "csp_violation"
   | "auth_callback_failure"
   | "resource_error"
-  | "hydration_error";
+  | "hydration_error"
+  | "react_error";
 
 /** The network failure classification (plan §3.1 ``failure_class`` enum). */
 export type ClientTelemetryFailureClass =
