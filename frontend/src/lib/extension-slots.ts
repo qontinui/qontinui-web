@@ -62,7 +62,13 @@
  */
 
 import { useCallback, useSyncExternalStore } from "react";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
+
+/**
+ * A cloud-contributed context provider: a component that wraps `children`
+ * and supplies its OWN package's React context to them.
+ */
+export type CloudProvider = ComponentType<{ children: ReactNode }>;
 
 export interface ExtensionSlots {
   /**
@@ -84,12 +90,44 @@ export interface ExtensionSlots {
    * `<Slot {...props} />` rather than calling methods.
    */
   components: Map<string, ComponentType<unknown>>;
+  /**
+   * Context providers the cloud package needs mounted around the
+   * authenticated tree, keyed by name (e.g. "organizationProvider").
+   *
+   * WHY THIS SLOT KIND EXISTS. A component slot carries a component, but
+   * NOT the React context that component reads. Cloud-control's
+   * `CreateOrganizationDialog` calls its own package's `useOrganization()`,
+   * which THROWS when its Provider is absent — and until this slot existed
+   * there was no way for cloud-control to get that Provider mounted at all.
+   * The registry transported the component and silently dropped its
+   * dependency, so the composed build shipped a component that could only
+   * ever throw. On 2026-08-26 that took down every authenticated page on
+   * qontinui.io (the root ErrorBoundary in `app/layout.tsx` caught it and
+   * rendered its full-page card); see `CloudProviders`.
+   *
+   * Distinct from `components` because these are never rendered into a
+   * position — they WRAP the tree, are mounted exactly once, and take only
+   * `children`. Nesting order is the registration (Map insertion) order.
+   */
+  providers: Map<string, CloudProvider>;
 }
 
 const slots: ExtensionSlots = {
   services: new Map(),
   components: new Map(),
+  providers: new Map(),
 };
+
+/**
+ * Stable array snapshot of `slots.providers`, rebuilt ONLY inside
+ * `registerCloudExtensions`.
+ *
+ * `useSyncExternalStore` requires a snapshot that is reference-stable
+ * between notifications; `[...map.values()]` allocates a fresh array on
+ * every call and makes React re-render forever. So the array is built once
+ * per registration and handed out by reference.
+ */
+let providersSnapshot: readonly CloudProvider[] = Object.freeze([]);
 
 /**
  * Listeners notified after every `registerCloudExtensions` call. Module-level
@@ -130,6 +168,7 @@ export function registerCloudExtensions(
   partial: Partial<{
     services: Record<string, unknown>;
     components: Record<string, ComponentType<unknown>>;
+    providers: Record<string, CloudProvider>;
   }>
 ): void {
   if (partial.services) {
@@ -141,6 +180,13 @@ export function registerCloudExtensions(
     for (const [k, v] of Object.entries(partial.components)) {
       slots.components.set(k, v);
     }
+  }
+  if (partial.providers) {
+    for (const [k, v] of Object.entries(partial.providers)) {
+      slots.providers.set(k, v);
+    }
+    // Rebuild the stable snapshot ONCE per registration, never per read.
+    providersSnapshot = Object.freeze([...slots.providers.values()]);
   }
 
   // Notify AFTER every mutation: subscribers re-read the registry, so a
@@ -211,6 +257,44 @@ export function getComponent<P>(name: string): ComponentType<P> | undefined {
  *   the server by construction (the cloud-control bundle only loads in the
  *   browser).
  */
+/** Stable module-level snapshot getters — see `providersSnapshot`. */
+function getProvidersSnapshot(): readonly CloudProvider[] {
+  return providersSnapshot;
+}
+/**
+ * SSR and OSS-only must agree, and the registry is empty on the server by
+ * construction (the cloud-control bundle only loads in the browser). A
+ * frozen module constant keeps the reference stable across calls.
+ */
+const SERVER_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
+function getServerProvidersSnapshot(): readonly CloudProvider[] {
+  return SERVER_PROVIDERS;
+}
+
+/**
+ * One-shot read of the registered cloud providers, in registration order.
+ * Non-React callers and tests only — React consumers want
+ * `useSlotProviders`, which subscribes.
+ */
+export function getProviders(): readonly CloudProvider[] {
+  return providersSnapshot;
+}
+
+/**
+ * Subscribed React read of the provider slots. Empty in OSS-only builds and
+ * in composed builds before cloud-control's bundle has loaded; re-renders
+ * the caller when a registration lands later.
+ *
+ * `CloudProviders` is the only intended consumer.
+ */
+export function useSlotProviders(): readonly CloudProvider[] {
+  return useSyncExternalStore(
+    subscribeToSlots,
+    getProvidersSnapshot,
+    getServerProvidersSnapshot
+  );
+}
+
 export function useSlotComponent<P>(
   name: string
 ): ComponentType<P> | undefined {
