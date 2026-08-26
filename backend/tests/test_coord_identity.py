@@ -106,6 +106,52 @@ async def test_parses_full_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parses_tenant_display_name() -> None:
+    """coord's per-tenant ``display_name`` reaches ``CoordTenant``.
+
+    Added for plan ``2026-08-25-self-service-tenant-project-creation``: the
+    name a user types into the create dialog is rendered from this field, so
+    dropping it here would silently ship the "Project" label half-done (the
+    UI would fall back to the slug forever).
+    """
+    request = _mock_request(auth="Bearer tok")
+    payload = _me_payload()
+    payload["tenants"][1]["display_name"] = "My Pizzeria"
+    resp = _httpx_response(200, json_data=payload)
+    cm, _ = _patch_client(resp)
+    with cm:
+        identity = await get_coord_identity(request)
+
+    by_id = {t.tenant_id: t for t in identity.tenants}
+    assert by_id[_OTHER].display_name == "My Pizzeria"
+    # Absent on the other entry — coord omits the key rather than sending "".
+    assert by_id[_HOME].display_name is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("absent_value", [None, "", "   "])
+async def test_display_name_absent_null_or_blank_is_none(
+    absent_value: Any,
+) -> None:
+    """Absent, null and blank all mean "no display name" — never a rendered "".
+
+    This is what makes the web half shippable BEFORE coord's half: a coord
+    that has not deployed ``display_name`` on ``/me`` omits the key entirely,
+    and every consumer falls back to the slug.
+    """
+    request = _mock_request(auth="Bearer tok")
+    payload = _me_payload()
+    payload["tenants"][0]["display_name"] = absent_value
+    resp = _httpx_response(200, json_data=payload)
+    cm, _ = _patch_client(resp)
+    with cm:
+        identity = await get_coord_identity(request)
+
+    by_id = {t.tenant_id: t for t in identity.tenants}
+    assert by_id[_HOME].display_name is None
+
+
+@pytest.mark.asyncio
 async def test_tenant_ids_home_first() -> None:
     request = _mock_request(auth="Bearer tok")
     resp = _httpx_response(200, json_data=_me_payload())

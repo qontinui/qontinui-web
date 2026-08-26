@@ -240,6 +240,27 @@ export interface TenantListResponse {
   active_tenant_id: string;
 }
 
+/**
+ * Body for `POST /api/v1/operations/tenants` — the user-typed Project name.
+ *
+ * Only the display name is sent: coord derives the slug and REJECTS a name
+ * that does not slugify rather than mangling it, so nothing here may
+ * pre-slugify the operator's input.
+ */
+export interface TenantCreateRequest {
+  display_name: string;
+}
+
+/**
+ * Success body from `POST /api/v1/operations/tenants` — coord's answer,
+ * forwarded verbatim by the web proxy.
+ */
+export interface TenantCreateResponse {
+  tenant_id: string;
+  slug: string;
+  display_name: string;
+}
+
 /** A single claim from `coord.claims`. */
 export interface SessionClaim {
   id: string;
