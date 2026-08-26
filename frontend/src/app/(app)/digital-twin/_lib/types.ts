@@ -125,6 +125,20 @@ export interface DeliveryPr {
   pr: number | null;
   merged: boolean;
   branch: string | null;
+  /**
+   * The PR is CLOSED, was never merged, and carries no land stamp of any
+   * provenance — so it can never merge and coord has RETIRED it from the
+   * delivery predicate: it neither blocks delivery nor counts toward it.
+   *
+   * Read this before rendering anything off `merged`. A retired citation reads
+   * `merged: false` permanently and is NOT a blocker, so labelling it
+   * "unmerged" beside a no-drift verdict tells the operator the opposite of
+   * what coord decided. Coord plan
+   * `2026-08-18-closed-unmerged-citation-pins-shipped-forever`.
+   *
+   * Optional: absent on a verdict served by a coord build predating that plan.
+   */
+  terminal_unlanded?: boolean;
 }
 
 /** One observed deploy/serving env in a delivery verdict's components. */
@@ -167,8 +181,26 @@ export interface DeliveryComponents {
   ingested_status?: string | null;
   registered?: boolean;
   prs?: DeliveryPr[];
+  /**
+   * **The DELIVERY PREDICATE, not the literal its name suggests**: at least one
+   * cited PR positively LANDED and none is still BLOCKING. Since coord plan
+   * `2026-08-18-closed-unmerged-citation-pins-shipped-forever` a
+   * closed-never-merged citation is retired rather than counted, so this can be
+   * `true` while some entry in `prs` reads `merged: false`. Never render it as
+   * the words "all merged" — use `landed_count` / `terminal_unlanded_count` if
+   * you need the literal breakdown.
+   */
   all_merged?: boolean;
+  /** The BLOCKING citations only — the ones that actually pin the unit. */
   unmerged_prs?: DeliveryPr[];
+  /** Citations retired as terminally unlanded (closed, never merged). */
+  terminal_unlanded_prs?: DeliveryPr[];
+  /** Numbered citations that positively landed. */
+  landed_count?: number;
+  /** Numbered citations that are neither landed nor terminally unlanded. */
+  blocking_unmerged_count?: number;
+  /** Numbered citations retired as terminally unlanded. */
+  terminal_unlanded_count?: number;
   deployed_envs?: DeliveryEnv[];
   staleness_inputs?: {
     live_refreshed?: boolean;
