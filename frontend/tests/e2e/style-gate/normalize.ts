@@ -282,6 +282,55 @@ export function enrichElement(el: Record<string, unknown>): void {
       ).trim();
       if (ff) el.font_family = ff;
     }
+
+    // z_index — the analyzer's DIRECTION. Without it the layout analyzer
+    // can see that two boxes intersect but not which one the reader
+    // actually sees, so the strongest finding it can emit is the
+    // symmetric "A and B overlap". `auto` is not 0: it means "this
+    // element establishes no stacking context of its own", which is a
+    // different claim, so it is left UNSET and the analyzer reports the
+    // pair as `occlusion_unknown` rather than inventing an order.
+    if (el.z_index === undefined) {
+      const z = parseInt(String(computed.zIndex ?? ""), 10);
+      if (Number.isFinite(z)) el.z_index = z;
+    }
+
+    // text_overflow — sharpens the wording of a truncation finding
+    // ("ellipsised" vs "clipped"). Never the verdict itself: the verdict
+    // comes from scroll_width_px below, which is a measurement, whereas
+    // this is only a declaration of what WOULD happen on overflow.
+    if (el.text_overflow === undefined && typeof computed.textOverflow === "string") {
+      const to = computed.textOverflow.trim();
+      if (to) el.text_overflow = to;
+    }
+  }
+
+  // visible / occluded_by — the SDK's own hit-test result, which is
+  // ground truth about what a reader can actually see. Carried across
+  // verbatim: it is the one signal here that geometry cannot reproduce
+  // (clip-path, transformed ancestors, scroll clipping).
+  if (state) {
+    if (el.visible === undefined && typeof state.visible === "boolean") {
+      el.visible = state.visible;
+    }
+    if (el.occluded_by === undefined && typeof state.occludedBy === "string") {
+      el.occluded_by = state.occludedBy;
+    }
+
+    // scroll_width_px — laid-out content width. This is what makes
+    // horizontal truncation measurable at all; `text_fits_container`
+    // compared only heights before it existed, so every ellipsised label
+    // passed. Emitted only when it EXCEEDS the box: an element whose
+    // content fits carries no information here, and the Rust side treats
+    // absence as "not measured", so writing equal values everywhere would
+    // bloat every snapshot for nothing.
+    if (el.scroll_width_px === undefined) {
+      const sw = typeof state.scrollWidth === "number" ? state.scrollWidth : null;
+      const cw = typeof state.clientWidth === "number" ? state.clientWidth : null;
+      if (sw !== null && cw !== null && sw > cw) {
+        el.scroll_width_px = Math.round(sw);
+      }
+    }
   }
 }
 
