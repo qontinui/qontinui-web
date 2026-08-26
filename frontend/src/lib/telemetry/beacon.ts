@@ -175,11 +175,11 @@ function buildEvent(
     Partial<ClientTelemetryEvent>
 ): ClientTelemetryEvent {
   const origin =
-    typeof window !== "undefined" ? window.location?.origin ?? "" : "";
+    typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
   const routeTemplate =
     partial.route_template ??
     scrubPathTemplate(
-      typeof window !== "undefined" ? window.location?.pathname ?? "/" : "/",
+      typeof window !== "undefined" ? (window.location?.pathname ?? "/") : "/",
       origin
     ) ??
     "/";
@@ -242,9 +242,7 @@ function transmit(event: ClientTelemetryEvent): void {
   const body = dsnMode
     ? toSentryEnvelope(event, state.dsn as string)
     : JSON.stringify(event);
-  const contentType = dsnMode
-    ? "text/plain;charset=UTF-8"
-    : "application/json";
+  const contentType = dsnMode ? "text/plain;charset=UTF-8" : "application/json";
   const url = state.transmitUrl;
 
   let ok = false;
@@ -318,10 +316,9 @@ function capture(
   // Opt-out is checked at install AND here (in case it flips mid-session).
   if (isOptedOut()) return;
 
-  const stack =
-    partial.stack_top ?? scrubStack(partial._rawStack, MAX_FRAMES);
+  const stack = partial.stack_top ?? scrubStack(partial._rawStack, MAX_FRAMES);
   const origin =
-    typeof window !== "undefined" ? window.location?.origin ?? "" : "";
+    typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
 
   // Carve-out: drop third-party / extension-injected errors (§4.1).
   if (!isOwnBundleStack(stack, origin)) return;
@@ -347,7 +344,14 @@ function handleWindowError(
   const stack = error?.stack
     ? scrubStack(error.stack, MAX_FRAMES)
     : source
-      ? [scrubFrame({ symbol: "<global>", file: source, line: lineno, column: colno })]
+      ? [
+          scrubFrame({
+            symbol: "<global>",
+            file: source,
+            line: lineno,
+            column: colno,
+          }),
+        ]
       : [];
 
   const isHydration = /hydrat/i.test(rawMessage);
@@ -395,6 +399,96 @@ function handleCspViolation(ev: SecurityPolicyViolationEvent): void {
  * fires for CORS-blocked + DNS + network-down requests. We classify by the
  * error + (when reachable) the response status.
  */
+
+/**
+ * Analytics/tag hosts whose failures are NOT incidents.
+ *
+ * WHY THIS GATE EXISTS. Measured on production 2026-08-26, a single ANONYMOUS
+ * page load emitted ~4 error events — Google Analytics CORS/opaque failures
+ * plus the expected 401s below — and the Sentry project was returning HTTP 429
+ * (quota exhausted) on every envelope. The consequence is not just noise: a
+ * full quota means REAL errors are dropped at ingest, so the signal this
+ * beacon exists to carry was crowded out by non-signal. On the same day an
+ * outage that white-screened every authenticated page produced no Sentry event
+ * at all.
+ *
+ * WHY A NARROW DENYLIST AND NOT "first-party only". Observing CROSS-ORIGIN
+ * failures is this beacon's stated purpose — a CORS block is the worked
+ * example in its own header, and `beacon.test.ts` pins that behaviour. So the
+ * rule cannot be "only our own hosts". What is actually noise is the analytics
+ * the app itself embeds (`@next/third-parties/google` in `app/layout.tsx`):
+ * those requests are blocked by ad-blockers and tracking protection on a large
+ * fraction of loads, which says nothing about this app's health.
+ *
+ * Suffix-matched so regional shards (`region1.google-analytics.com`) are
+ * covered without enumerating them. Extend per-deployment with
+ * `NEXT_PUBLIC_TELEMETRY_IGNORE_HOSTS` (comma-separated suffixes) rather than
+ * editing this list for a one-off embed.
+ */
+const DEFAULT_IGNORED_HOST_SUFFIXES = [
+  "google-analytics.com",
+  "googletagmanager.com",
+  "analytics.google.com",
+] as const;
+
+function ignoredHostSuffixes(): string[] {
+  const extra = (process.env.NEXT_PUBLIC_TELEMETRY_IGNORE_HOSTS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return [...DEFAULT_IGNORED_HOST_SUFFIXES, ...extra];
+}
+
+/** True when a failure against `host` should NOT become an incident. */
+function isIgnoredHost(host: string | undefined): boolean {
+  if (!host) return false; // relative/bundle request — ours by construction
+  const h = host.toLowerCase();
+  return ignoredHostSuffixes().some(
+    (suffix) => h === suffix || h.endsWith(`.${suffix}`)
+  );
+}
+
+/**
+ * HTTP statuses that are ANSWERS, not failures.
+ *
+ * 401 is the correct, expected reply to an unauthenticated probe: every
+ * anonymous page load asks `/auth/users/me` and `/users/me/preferences` and is
+ * told "not signed in". Recording that as an error makes the error rate a
+ * function of logged-out traffic.
+ *
+ * 403 is deliberately NOT here: "authenticated but not allowed" can be a real
+ * authorization defect, and it is not emitted on every anonymous load.
+ */
+function isExpectedStatus(status: number): boolean {
+  return status === 401;
+}
+
+/**
+ * Report a React render error caught by an ErrorBoundary.
+ *
+ * Public because `components/error-boundary.tsx` is the only caller and lives
+ * outside this module. It routes through `capture()` like every other incident
+ * so React errors inherit the same scrubbing, sampling, rate limit and circuit
+ * breaker rather than growing a second reporting path.
+ *
+ * No-op when the beacon is not installed (OSS/dev, or opted out), so the
+ * boundary can call it unconditionally.
+ */
+export function captureReactError(error: Error, componentStack?: string): void {
+  if (!state) return;
+  capture({
+    kind: "react_error",
+    error_name: error?.name ?? "Error",
+    error_message_norm: normalizeErrorMessage(
+      error?.name ?? "Error",
+      error?.message
+    ),
+    // Prefer the component stack: for a render error it names the failing
+    // component, which the JS stack (minified, framework-heavy) does not.
+    _rawStack: componentStack ?? error?.stack,
+  });
+}
+
 function installFetchWrapper(): void {
   if (!state || typeof window === "undefined") return;
   const original = window.fetch.bind(window);
@@ -409,8 +503,14 @@ function installFetchWrapper(): void {
     }
     try {
       const res = await original(input as RequestInfo, init);
-      // A successful network round-trip. Surface only error statuses.
-      if (!res.ok && (res.status >= 400)) {
+      // A successful network round-trip. Surface only error statuses, and only
+      // excluding embedded analytics — see isIgnoredHost / isExpectedStatus.
+      if (
+        !res.ok &&
+        res.status >= 400 &&
+        !isExpectedStatus(res.status) &&
+        !isIgnoredHost(host)
+      ) {
         capture({
           kind: "fetch_failure",
           error_name: "HttpError",
@@ -420,7 +520,11 @@ function installFetchWrapper(): void {
           failure_class: res.status >= 500 ? "http_5xx" : "http_4xx",
           http_status: res.status,
         });
-      } else if (res.type === "opaque" && res.status === 0) {
+      } else if (
+        res.type === "opaque" &&
+        res.status === 0 &&
+        !isIgnoredHost(host)
+      ) {
         // Opaque response — often a no-cors / blocked cross-origin read.
         capture({
           kind: "cors_failure",
@@ -442,6 +546,10 @@ function installFetchWrapper(): void {
         !!host &&
         typeof window !== "undefined" &&
         host !== window.location?.host;
+      // A thrown fetch to embedded analytics is almost always an ad-blocker or
+      // tracking-protection block, not our defect. Re-throw either way — we
+      // observe, we never swallow the app's error.
+      if (isIgnoredHost(host)) throw err;
       capture({
         kind: crossOrigin ? "cors_failure" : "fetch_failure",
         error_name: e?.name ?? "TypeError",
@@ -583,7 +691,10 @@ export function uninstallBeacon(): void {
     if (state.prevOnRejection)
       window.removeEventListener("unhandledrejection", state.prevOnRejection);
     if (state.cspListener)
-      document.removeEventListener("securitypolicyviolation", state.cspListener);
+      document.removeEventListener(
+        "securitypolicyviolation",
+        state.cspListener
+      );
     window.onerror = state.prevOnError;
   }
   state = null;
