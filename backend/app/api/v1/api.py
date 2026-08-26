@@ -110,6 +110,7 @@ from app.api.v1.endpoints import (
     screenshots,
     security_endpoints,
     semantic_search,
+    session_repository,
     settings,
     skills,
     snapshots,
@@ -224,6 +225,16 @@ api_router.include_router(operations.router, prefix="/operations", tags=["operat
 # ``2026-08-10-plan-and-prompt-library-in-web``.
 api_router.include_router(
     plan_library.router, prefix="/plan-library", tags=["plan-library"]
+)
+# Claude Code Session Repository — the permanent, queryable archive of
+# interactive Claude Code sessions (agent.session_artifacts). Phase 4 of
+# ``2026-08-26-claude-code-session-repository-in-qontinui-web``. Mounted as a
+# first-class route rather than under ``/admin`` because its primary writer is
+# the runner and its primary readers are agents, not the operator console.
+api_router.include_router(
+    session_repository.router,
+    prefix="/session-repository",
+    tags=["session-repository"],
 )
 # Helper-task portal proxy — coord-brokered human-judgment micro-tasks
 # (helper-task-queue plan Phase 1.4). Any authenticated user, incl. helpers.
