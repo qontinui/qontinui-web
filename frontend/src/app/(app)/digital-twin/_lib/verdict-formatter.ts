@@ -86,21 +86,41 @@ function instanceClause(verdict: DriftVerdict): string | null {
         anchorKind === "work_unit" ? "Unit status" : "Plan status";
       const status = comp.status;
       const prs = Array.isArray(comp.prs) ? comp.prs : [];
-      const allMerged = comp.all_merged;
+      // `all_merged` is coord's DELIVERY PREDICATE, not the literal "every
+      // citation merged" its name suggests — a closed-never-merged citation is
+      // retired rather than counted (coord plan
+      // `2026-08-18-closed-unmerged-citation-pins-shipped-forever`). Rendering
+      // it as the words "all merged" would state something false about a unit
+      // that delivered with a dead duplicate still cited, so the retired count
+      // is named separately and `unmerged_prs` — which now carries only the
+      // BLOCKING citations — is what the "still unmerged" clause counts.
+      const delivered = comp.all_merged;
       const unmerged = Array.isArray(comp.unmerged_prs)
         ? comp.unmerged_prs.length
         : 0;
+      const retired =
+        typeof comp.terminal_unlanded_count === "number"
+          ? comp.terminal_unlanded_count
+          : Array.isArray(comp.terminal_unlanded_prs)
+            ? comp.terminal_unlanded_prs.length
+            : 0;
       if (prs.length === 0) {
         return status !== undefined && status !== null
           ? `${statusLabel} “${String(status)}”; no cited PRs found.`
           : `No cited PRs found for this ${noun}.`;
       }
+      const retiredClause =
+        retired > 0 ? `, ${retired} closed without landing` : "";
       const mergeClause =
-        allMerged === true
-          ? "all merged"
+        delivered === true
+          ? retired > 0
+            ? `delivered${retiredClause}`
+            : "all merged"
           : unmerged > 0
-            ? `${unmerged} still unmerged`
-            : "merge state mixed";
+            ? `${unmerged} still unmerged${retiredClause}`
+            : retired > 0
+              ? `none landed${retiredClause}`
+              : "merge state mixed";
       const statusPart =
         status !== undefined && status !== null
           ? `${statusLabel} “${String(status)}”; `
