@@ -48,6 +48,12 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/deploy-web.yml'
+      # The composed backend is pinned by this file. Without it here, bumping
+      # the pin would redeploy the FRONTEND half (Vercel builds every push)
+      # while the backend kept serving the old cloud-control commit — the two
+      # halves of one deployment silently drifting apart, which is the failure
+      # this shared pin exists to prevent.
+      - 'frontend/cloud-control.pin'
   schedule:
     - cron: '0 3 * * *'  # daily 03:00 UTC — catches schemas-only drift
   workflow_dispatch:
@@ -196,6 +202,27 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "qontinui-schemas main = $SHA"
 
+      # The BACKEND half of the composed cloud build reads the SAME pin as the
+      # frontend half (`frontend/scripts/vercel-install.sh`), so both halves of
+      # one deployment carry the same cloud-control commit. A second pin would
+      # be a new silent-drift axis between them. The build context is `backend/`
+      # so the Dockerfile cannot COPY this file — it arrives as a build-arg.
+      # First non-comment, non-blank line, matching the frontend script's read.
+      - name: Resolve qontinui-cloud-control pin
+        id: cloudcontrol
+        if: ${{ inputs.rollback != 'true' }}
+        run: |
+          PIN_FILE=frontend/cloud-control.pin
+          if [ ! -f "$PIN_FILE" ]; then
+            echo "::error::$PIN_FILE is missing — the composed backend cannot be pinned"; exit 1
+          fi
+          SHA=$(grep -vE '^\s*(#|$)' "$PIN_FILE" | head -n1 | tr -d '[:space:]')
+          if [ -z "$SHA" ]; then
+            echo "::error::$PIN_FILE has no pin line"; exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "qontinui-cloud-control pin = $SHA"
+
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region "${AWS_REGION}" \
@@ -212,6 +239,7 @@ jobs:
             --platform linux/amd64 \
             -f backend/Dockerfile \
             --build-arg SCHEMAS_SHA=${{ steps.schemas.outputs.sha }} \
+            --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${GITHUB_SHA}" \
             -t "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:staging" \
             --load \
