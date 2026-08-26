@@ -14,6 +14,7 @@ import { TabStateProvider } from "@/contexts/tab-state-context";
 import { ProductModeProvider } from "@/contexts/product-mode-context";
 import { AdvancedAutomationProvider } from "@/contexts/advanced-automation-context";
 import { AppInitializer } from "@/components/offline/AppInitializer";
+import { CloudProviders } from "@/components/CloudProviders";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useSlotComponent } from "@/lib/extension-slots";
 import type { BetaBannerProps } from "@/lib/cloud-component-slots";
@@ -191,17 +192,24 @@ export default function AppLayout({
 }>) {
   return (
     <AppAuthGate>
-      <OrganizationProvider>
-        <RealtimeConnectionsProvider>
-          <ActiveRunnerProvider>
-            <TenantProvider>
-              <SidebarProvider>
-                <ProductModeProvider>
-                  <AdvancedAutomationProvider>
-                    <AutomationProvider>
-                      <TabStateProvider>
-                        <AppInitializer>
-                          {/* Radix Tooltip.Root (our `Tooltip`) throws
+      {/* Providers the composed cloud build contributes, mounted around the
+          whole authenticated tree. No-op in OSS-only builds. This sits OUTSIDE
+          the OSS `OrganizationProvider` because the two supply DIFFERENT
+          context objects — cloud-control's components read cloud-control's
+          context, OSS components read the stub — and both must be present in a
+          composed build. See `components/CloudProviders.tsx`. */}
+      <CloudProviders>
+        <OrganizationProvider>
+          <RealtimeConnectionsProvider>
+            <ActiveRunnerProvider>
+              <TenantProvider>
+                <SidebarProvider>
+                  <ProductModeProvider>
+                    <AdvancedAutomationProvider>
+                      <AutomationProvider>
+                        <TabStateProvider>
+                          <AppInitializer>
+                            {/* Radix Tooltip.Root (our `Tooltip`) throws
                           "must be used within TooltipProvider" at render under
                           @radix-ui/react-tooltip's Provider invariant. Mount a
                           single app-shell-level provider so every authenticated
@@ -209,19 +217,20 @@ export default function AppLayout({
                           renders a Tooltip without its own local provider (e.g.
                           /operations via CiStatusPanel/FleetOverview) crashes
                           into the ErrorBoundary and shows no content. */}
-                          <TooltipProvider>
-                            <AppLayoutContent>{children}</AppLayoutContent>
-                          </TooltipProvider>
-                        </AppInitializer>
-                      </TabStateProvider>
-                    </AutomationProvider>
-                  </AdvancedAutomationProvider>
-                </ProductModeProvider>
-              </SidebarProvider>
-            </TenantProvider>
-          </ActiveRunnerProvider>
-        </RealtimeConnectionsProvider>
-      </OrganizationProvider>
+                            <TooltipProvider>
+                              <AppLayoutContent>{children}</AppLayoutContent>
+                            </TooltipProvider>
+                          </AppInitializer>
+                        </TabStateProvider>
+                      </AutomationProvider>
+                    </AdvancedAutomationProvider>
+                  </ProductModeProvider>
+                </SidebarProvider>
+              </TenantProvider>
+            </ActiveRunnerProvider>
+          </RealtimeConnectionsProvider>
+        </OrganizationProvider>
+      </CloudProviders>
     </AppAuthGate>
   );
 }
