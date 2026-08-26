@@ -109,12 +109,22 @@ function anchorPresentation(components: DeliveryComponents | undefined): {
 
 function PrRow({ pr }: { pr: DeliveryPr }) {
   const merged = pr.merged;
+  // A RETIRED citation: closed, never merged, no land stamp. It reads
+  // `merged: false` permanently but does NOT block delivery, so the amber
+  // "unmerged" treatment would contradict the verdict beside it. Rendered as a
+  // muted, terminal state instead of a pending one (coord plan
+  // `2026-08-18-closed-unmerged-citation-pins-shipped-forever`). Absent on a
+  // verdict from an older coord build, which falls back to the old rendering.
+  const retired = !merged && pr.terminal_unlanded === true;
+  const dotClass = merged
+    ? "bg-emerald-500"
+    : retired
+      ? "bg-muted-foreground/50"
+      : "bg-amber-500";
   return (
     <li className="flex items-center justify-between gap-2 py-1 text-sm">
       <span className="flex min-w-0 items-center gap-2">
-        <span
-          className={`size-2 shrink-0 rounded-full ${merged ? "bg-emerald-500" : "bg-amber-500"}`}
-        />
+        <span className={`size-2 shrink-0 rounded-full ${dotClass}`} />
         <span className="truncate font-mono text-xs">{pr.repo}</span>
         {pr.pr !== null ? (
           <a
@@ -131,9 +141,20 @@ function PrRow({ pr }: { pr: DeliveryPr }) {
         )}
       </span>
       <span
-        className={`shrink-0 text-xs font-medium ${merged ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}
+        className={`shrink-0 text-xs font-medium ${
+          merged
+            ? "text-emerald-600 dark:text-emerald-400"
+            : retired
+              ? "text-muted-foreground"
+              : "text-amber-600 dark:text-amber-400"
+        }`}
+        title={
+          retired
+            ? "Closed without landing — retired from the delivery predicate, so it does not block this plan."
+            : undefined
+        }
       >
-        {merged ? "merged" : "unmerged"}
+        {merged ? "merged" : retired ? "closed, never landed" : "unmerged"}
       </span>
     </li>
   );
