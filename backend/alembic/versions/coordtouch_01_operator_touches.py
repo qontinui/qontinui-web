@@ -43,29 +43,66 @@ What this migration does
    touch, written best-effort off the observing path.
 2. Creates ``coord.operator_touch_classifications``: an append-only audit of
    every Phase 3 enrichment of a touch's classification.
-3. **Backfills** ``coord.operator_touches`` from the two partial ledgers that
-   already exist (``coord.agent_questions`` and the operator-cleared subset of
-   ``coord.gates``), idempotently.
+3. Writes **no rows**. The store ships **empty by design** — see *Why there is
+   no backfill* below.
 
-Why the backfill is part of this revision
-=========================================
+Why there is no backfill
+========================
 
-The plan's original premise — "the fleet records nothing" — was corrected at
-vet: it records *partially*, in two places, and has done so for months. If the
-store started empty, Phase 5's baseline would open at zero touches and then
-climb as instrumentation landed, which reads as a regression in exactly the
-metric the plan exists to improve. Worse, it would be a dishonest zero: the
-history is right there and discarding it is a choice, not a limitation.
+An earlier form of this revision backfilled the store from the two partial
+ledgers that already exist (``coord.agent_questions``, and the operator-cleared
+subset of ``coord.gates``). The premise: the fleet had months of real
+operator-touch history, starting at zero would read as a regression in exactly
+the metric the plan exists to improve, and discarding that history would be a
+choice rather than a limitation.
 
-So the backfill runs inside ``upgrade()``. It is ``ON CONFLICT
-(idempotency_key) DO NOTHING`` throughout — re-running it, or running it
-against rows a live coord has meanwhile emitted for the same events, changes
-nothing. Each half is additionally guarded on its source table (and, for
-``coord.gates``, on the clearance columns) actually existing: PL/pgSQL plans a
-statement on first execution rather than at block compile, so an early
-``RETURN`` means a missing column is never referenced. A fresh database built
-by ``alembic upgrade head`` will always have both sources — they are earlier in
-this same chain — but a partially-migrated one is not a reason to abort.
+**Phase 0 measured that premise against production, and the history does not
+exist:**
+
+* ``coord.agent_questions`` — **43 rows, ever**. Exactly **one** was answered by
+  a human operator (185.6 s). The other 42 were answered by ``auto:policy_gap``
+  — a machine; no human touched them.
+* ``coord.agent_questions`` pending — **≥1,309** (the read route caps at 500
+  with no offset, so that is a lower bound, not a count).
+* ``coord.gates`` — 3,133 live, and **495 of the newest 500 cleared on
+  "predicate satisfied"**: approximately zero operator clearances, despite 44%
+  of them carrying ``clearance_audience = 'operator'``.
+* Total confirmed operator touches recoverable from all history: **1**.
+
+The backfill's only filter was ``tenant_id IS NOT NULL``, so it would import
+**≥1,309 machine-generated rows to recover one real touch**, with the gates half
+contributing approximately nothing. That does not preserve a signal, it swamps
+the one this table exists to measure — a ``stop-short-rate`` computed over those
+rows would be noise.
+
+Filtering it instead of cutting it was considered and rejected: it keeps ~500
+lines of SQL and test alive for one row, and leaves a fragile dependency on the
+``auto:%`` prefix in ``responded_by_operator`` staying correct as that
+vocabulary evolves. The raw tables still exist, so any future query can recover
+that single row. **Phase 5 measures forward.**
+
+The touch/no-touch split — for Phase 2's emitter
+================================================
+
+The cut gates backfill carried the sharpest statement of a distinction that is
+not going away, so it is recorded here rather than deleted with the SQL. A gate
+counts as an operator touch only when ``clearance_audience = 'operator'``
+**AND** ``cleared_by_device_id IS NOT NULL``. The audience column says who the
+gate was *addressed to*; ``cleared_by_device_id`` is the only evidence a *human*
+actually did anything. An operator-audience gate cleared by an AGENT
+(``cleared_by_device_id IS NULL``) is an agent attestation — no human was
+touched — and counting it would inflate the very rate this store exists to
+measure. An agent-audience gate never involved a human at all.
+
+This now governs **live emission** rather than a reconstruction: Phase 2's
+emitter faces the identical question every time it fires, and the production
+numbers above are what the split looks like at scale — 44% of gates
+operator-addressed, near-zero operator-cleared.
+
+Its companion holds too: ``policy_authorized = 'yes'`` is honest for a gate
+touch, because a registered gate is by construction an authorized ask. The gate
+protocol IS the sanctioned way to escalate, and the plan is explicit that
+authorized escalation must not be counted as avoidable.
 
 Column contract — ``coord.operator_touches``
 ============================================
@@ -151,18 +188,21 @@ into it. The names must not drift from this list.
 
 ``source TEXT NOT NULL``
     Provenance of the ROW — not of the touch. Added at vet precisely so a
-    backfilled row can never be mistaken for an observed one:
+    reconstructed row can never be mistaken for an observed one:
 
     * ``runner_hook`` — observed live by the runner as it happened.
-    * ``agent_questions`` — reconstructed by this migration from
-      ``coord.agent_questions``.
-    * ``gates`` — reconstructed by this migration from ``coord.gates``.
+    * ``agent_questions`` — reconstructed from ``coord.agent_questions``.
+    * ``gates`` — reconstructed from ``coord.gates``.
     * ``merge_decisions`` — derived from the merge train's escalations.
     * ``enrichment`` — created by a later analysis pass rather than observed.
 
-    Any rate computed over this table should be able to say which rows it was
-    computed from, because a backfilled row's timestamps come from a store
-    built for another purpose and its fidelity is not the same.
+    The two reconstruction values are **reserved, not used**: this revision
+    writes no rows (see *Why there is no backfill*), so every row in the table
+    today came from a live emitter. They stay in the vocabulary because Phase 2
+    onwards still needs row provenance, and any rate computed over this table
+    should be able to say which rows it was computed from — a reconstructed
+    row's timestamps come from a store built for another purpose and its
+    fidelity is not the same.
 
 ``emitted_at TIMESTAMPTZ NOT NULL DEFAULT now()``
     When the touch began — when the human first had something to do. Defaulted
@@ -192,10 +232,11 @@ into it. The names must not drift from this list.
 
 ``idempotency_key TEXT NOT NULL`` + UNIQUE  ← **load-bearing**
     The plan's own Risks section names double-counting as the primary threat,
-    for two independent reasons: the runner and the agent can both observe a
-    single touch, and this migration's backfill can collide with a live coord
-    already emitting for the same events. A UNIQUE key with ``ON CONFLICT DO
-    NOTHING`` is what makes both harmless.
+    and the live reason for it survives this revision writing no rows: the
+    runner and the agent can both observe a single touch. A UNIQUE key with
+    ``ON CONFLICT DO NOTHING`` is what makes that harmless. (The second reason
+    it once carried — a backfill colliding with a live coord emitting for the
+    same events — went with the backfill.)
 
     The key must be **deterministic** — derivable from the event alone, by
     either observer, without coordination. The grammar, which the Rust side
@@ -247,7 +288,7 @@ Indexes
 Every index is tenant-first, because every read of this table is tenant-scoped.
 
 * ``uq_operator_touches_idempotency_key`` — UNIQUE on ``(idempotency_key)``.
-  The dedup contract above; also the conflict target of both backfill halves.
+  The dedup contract above, and the ``ON CONFLICT`` target every emitter names.
 * ``(tenant_id, emitted_at DESC)`` — the rate window and the operator feed.
 * ``(tenant_id, reason_code, emitted_at DESC)`` — Phase 6's ranked-by-reason
   read ("what is touching humans most this week?").
@@ -297,117 +338,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-#: Backfill half A — ``coord.agent_questions`` → ``coord.operator_touches``.
-#:
-#: Exported as a module constant rather than inlined so the behaviour test can
-#: execute the EXACT statement this migration runs when it re-checks
-#: idempotency. A paraphrased copy in the test would pass while measuring SQL
-#: nothing executes.
-#:
-#: ``resolution`` is ``'answered'`` only where ``responded_at`` is set. A
-#: pending question stays OPEN — ``resolved_at`` NULL and ``resolution`` NULL.
-#: Stamping ``'abandoned'`` on a still-pending row would be inventing a terminal
-#: state that cannot be known, which is exactly the fabrication the plan's
-#: "unknown is represented as unknown" rule forbids; some of those questions are
-#: waiting on an operator right now.
-BACKFILL_AGENT_QUESTIONS_SQL = """
-DO $$
-BEGIN
-    IF to_regclass('coord.agent_questions') IS NULL THEN
-        RETURN;
-    END IF;
-
-    INSERT INTO coord.operator_touches (
-        tenant_id, session_id, device_id, kind, reason_code,
-        policy_authorized, source, emitted_at, resolved_at, resolution,
-        idempotency_key
-    )
-    SELECT
-        q.tenant_id,
-        q.agent_session_id,
-        q.device_id,
-        'question',
-        'unclassified',
-        'unknown',
-        'agent_questions',
-        q.created_at,
-        q.responded_at,
-        CASE WHEN q.responded_at IS NOT NULL THEN 'answered' ELSE NULL END,
-        'question:' || q.question_id::text
-      FROM coord.agent_questions q
-     WHERE q.tenant_id IS NOT NULL
-    ON CONFLICT (idempotency_key) DO NOTHING;
-END
-$$;
-"""
-
-#: Backfill half B — the operator-cleared subset of ``coord.gates``.
-#:
-#: The filter is the whole point, and it is the touch/no-touch split: a gate
-#: counts only when ``clearance_audience = 'operator'`` AND
-#: ``cleared_by_device_id IS NOT NULL``. An operator-audience gate cleared by an
-#: AGENT (``cleared_by_device_id IS NULL``) is an agent attestation — no human
-#: was touched — and backfilling it would inflate the very rate this store
-#: exists to measure. An agent-audience gate never involved a human at all.
-#:
-#: ``policy_authorized = 'yes'``: a registered gate is by construction an
-#: authorized ask. The gate protocol IS the sanctioned way to escalate, and the
-#: plan is explicit that authorized escalation must not be counted as avoidable.
-#: This is the one place a backfill can honestly assert something better than
-#: ``'unknown'``.
-BACKFILL_GATES_SQL = """
-DO $$
-BEGIN
-    IF to_regclass('coord.gates') IS NULL THEN
-        RETURN;
-    END IF;
-
-    -- The three columns this half filters and projects on all arrive in
-    -- LATER revisions than the one that created coord.gates. On a fully
-    -- migrated database they are always present; on a partially migrated one,
-    -- skipping is correct and erroring is not. PL/pgSQL plans a statement on
-    -- first execution rather than at block compile, so returning here means
-    -- the INSERT below never references a column that does not exist.
-    IF (
-        SELECT COUNT(DISTINCT column_name)
-          FROM information_schema.columns
-         WHERE table_schema = 'coord'
-           AND table_name = 'gates'
-           AND column_name IN ('clearance_audience', 'cleared_by_device_id',
-                               'agent_session_id')
-    ) < 3 THEN
-        RETURN;
-    END IF;
-
-    INSERT INTO coord.operator_touches (
-        tenant_id, session_id, kind, reason_code, policy_authorized,
-        source, emitted_at, resolved_at, resolution, gate_id,
-        idempotency_key
-    )
-    SELECT
-        g.tenant_id,
-        g.agent_session_id,
-        'gate',
-        'unclassified',
-        'yes',
-        'gates',
-        g.created_at,
-        g.cleared_at,
-        CASE WHEN g.cleared_at IS NOT NULL THEN 'answered' ELSE NULL END,
-        g.gate_id,
-        'gate:' || g.gate_id::text
-      FROM coord.gates g
-     WHERE g.tenant_id IS NOT NULL
-       AND g.clearance_audience = 'operator'
-       AND g.cleared_by_device_id IS NOT NULL
-    ON CONFLICT (idempotency_key) DO NOTHING;
-END
-$$;
-"""
-
-
 def upgrade() -> None:
-    """Create both tables + indexes, then backfill from the two partial ledgers."""
+    """Create both tables + indexes. No rows — the store ships empty."""
     # Raw ``op.execute`` with IF NOT EXISTS throughout — the convention the
     # sibling coord observation tables use, and what keeps a re-run harmless.
     op.execute("CREATE SCHEMA IF NOT EXISTS coord")
@@ -449,8 +381,8 @@ def upgrade() -> None:
                               'merge_decisions', 'enrichment'))
         """
     )
-    # The dedup contract. Created BEFORE the backfill because both backfill
-    # halves name it as their ``ON CONFLICT`` target.
+    # The dedup contract: the UNIQUE index every emitter names as its
+    # ``ON CONFLICT`` target.
     op.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_operator_touches_idempotency_key
@@ -517,15 +449,16 @@ def upgrade() -> None:
     )
 
     # ------------------------------------------------------------------
-    # Backfill. Idempotent, guarded, and NOT separately reversible — the
-    # downgrade drops the table, which takes the backfilled rows with it.
+    # No backfill: the store ships EMPTY BY DESIGN. See the module docstring's
+    # "Why there is no backfill" — Phase 0 measured all of production's history
+    # at ONE confirmed operator touch, against the >=1,309 machine-generated
+    # rows the backfill would have imported to reach it. Phase 5 measures
+    # forward.
     # ------------------------------------------------------------------
-    op.execute(BACKFILL_AGENT_QUESTIONS_SQL)
-    op.execute(BACKFILL_GATES_SQL)
 
 
 def downgrade() -> None:
-    """Drop both tables + their indexes. The backfilled rows go with them."""
+    """Drop both tables + their indexes. Any emitted rows go with them."""
     op.execute("DROP INDEX IF EXISTS coord.ix_operator_touch_classifications_touch")
     # The sidecar first: it is the FK child, and dropping the parent while it
     # stands would need a CASCADE that could take an unrelated dependency too.
