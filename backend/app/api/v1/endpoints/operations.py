@@ -8413,16 +8413,42 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     ``require_admin``-gated and resolve no coord tenant of their own), so
     the caller must have run :func:`capture_caller_bearer` first.
 
-    Raises whatever ``_proxy_coord_get`` raises — a coord outage surfaces as
-    502/504 and the delete is REFUSED. That is deliberate: an unreadable
-    mapping table is UNKNOWN, not "no mappings", and the one thing this
-    endpoint must never do is treat a failed read as a clean bill of health.
+    EVERY failure of the read — transport, timeout, or a coord 4xx (the route
+    is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
+    admin role gets 403 there) — is re-raised as **502
+    ``mapping_check_unavailable``** carrying coord's own status. One code
+    path, one meaning: *the check could not be completed, so nothing was
+    deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
+    the one thing this endpoint must never do is treat a failed read as a
+    clean bill of health. Passing coord's 403 straight through would instead
+    read as "you may not delete this group", which is a different — and
+    false — claim.
     """
-    payload = await _proxy_coord_get(
-        "/admin/coord/group-tenant-roles",
-        tenant_id=None,
-        forward_bearer=True,
-    )
+    try:
+        payload = await _proxy_coord_get(
+            "/admin/coord/group-tenant-roles",
+            tenant_id=None,
+            forward_bearer=True,
+        )
+    except HTTPException as exc:
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=exc.status_code,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": exc.status_code,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read (coord answered {exc.status_code}), so there is "
+                    "no way to tell what this delete would break. Nothing was "
+                    "deleted. A 403 here means the caller holds no coord "
+                    "admin role; anything else means coord is unreachable."
+                ),
+            },
+        ) from exc
     if not isinstance(payload, dict):
         return []
     rows = payload.get("group_tenant_roles")
