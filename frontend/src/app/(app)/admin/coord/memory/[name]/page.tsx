@@ -9,6 +9,37 @@
  * LWW). Renders content as markdown with frontmatter shown in a
  * sidebar. Operator can edit (writes a new immutable version), delete
  * (soft-delete tombstone), or jump to a historical version.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * The ROUTE survives (D1 — an editor, a destructive action and a version
+ * picker make this a workspace, and it is what `<MemoryRow>`'s "Open full
+ * page" opens). What changed, per
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — five `<Card><CardHeader><CardTitle>` wrappers are gone. The body
+ *   is `p-3 sm:p-6 space-y-4` (it was a flat `p-6`), and the meta header — a
+ *   card title restating the name already in the breadcrumb above it, plus a
+ *   second card body holding the buttons — collapses into one strip.
+ * - **R3/R4** — the memory's type is now the SAME `<StatusBadge>` `/memory`
+ *   renders (`deriveMemoryStatus`), with the matching accent. It was a bare
+ *   `<Badge variant="outline">{memory.type}</Badge>`, which painted a type
+ *   this build has never heard of exactly like a known one.
+ * - **R2** — `written_at` was a raw ISO string in the frontmatter panel and in
+ *   every version-picker option. Both render through the console formatters
+ *   now: relative in the line, absolute in the title.
+ * - **R7** — `Frontmatter` and `Version history` are supporting material, so
+ *   they collapse. Both open by DEFAULT, because `admin.spec.ts:696-702`
+ *   asserts `coord-memory-frontmatter`, `coord-memory-history` and
+ *   `coord-memory-version-select` are all visible without a click.
+ *
+ * **The version picker deliberately stays a `<Select>`, not a `<RecordList>`.**
+ * It is a NAVIGATION control in a 280px sidebar — one line that lists ten
+ * versions — and expanding it into ten rows would make this page strictly less
+ * dense, which is the opposite of what R2 is for. `coord-memory-version-select`
+ * and `coord-memory-version-option-<n>` are frozen authored testids (D4a).
+ *
+ * Every authored `data-testid` is carried across unchanged (D4a).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,12 +47,6 @@ import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DestructiveButton } from "@/components/ui/destructive-button";
@@ -55,6 +80,19 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  CollapsiblePanel,
+  INERT,
+  RowTime,
+  StatusBadge,
+  absoluteTime,
+  relativeTime,
+  rowAccentClass,
+} from "@/components/console";
+import {
+  MEMORY_STATUS_PALETTE,
+  deriveMemoryStatus,
+} from "@/components/admin/coord/memoryStatus";
 import { httpClient } from "@/services/service-factory";
 import {
   CoordAdminOnly,
@@ -170,7 +208,7 @@ export default function CoordMemoryDetailPage() {
 
   return (
     <div
-      className="p-6 space-y-4 max-w-6xl mx-auto"
+      className="p-3 sm:p-6 space-y-4 max-w-6xl mx-auto"
       data-testid="coord-memory-detail-page"
     >
       <div className="flex items-center gap-2">
@@ -188,11 +226,7 @@ export default function CoordMemoryDetailPage() {
       </div>
 
       {error && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
       {loading && !memory ? (
@@ -200,252 +234,310 @@ export default function CoordMemoryDetailPage() {
       ) : memory ? (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
           <div className="space-y-4 min-w-0">
-            <Card data-testid="coord-memory-meta">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base flex-wrap">
-                  <BookOpen className="h-4 w-4" />
-                  <span className="font-mono truncate">{memory.name}</span>
-                  {memory.type && (
-                    <Badge variant="outline">{memory.type}</Badge>
-                  )}
-                  {memory.version !== null && memory.version !== undefined && (
-                    <Badge variant="secondary">v{memory.version}</Badge>
-                  )}
-                  {memory.tombstoned && (
-                    <Badge
-                      variant="destructive"
-                      data-testid="coord-memory-tombstoned-badge"
-                    >
-                      tombstoned
-                    </Badge>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-wrap items-center gap-2">
+            {/* R9/R3/R4 — one strip: identity, the same status badge `/memory`
+                renders, and the actions that used to need a second card body
+                under a ~72px card header. */}
+            <div
+              data-testid="coord-memory-meta"
+              className={[
+                "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
+                rowAccentClass(deriveMemoryStatus(memory)),
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="font-mono text-sm truncate">
+                  {memory.name}
+                </span>
+                <StatusBadge
+                  status={deriveMemoryStatus(memory)}
+                  palette={MEMORY_STATUS_PALETTE}
+                />
+                {memory.version !== null && memory.version !== undefined && (
+                  <Badge
+                    variant="secondary"
+                    className="font-mono text-[11px]"
+                    title="The monotonic version HEAD, not a count of versions."
+                  >
+                    v{memory.version}
+                  </Badge>
+                )}
+                {memory.tombstoned && (
+                  /*
+                   * R3 — this was `variant="destructive"`, i.e. RED, on a
+                   * TERMINAL state nobody must act on. Nothing clears a
+                   * tombstone and nothing decays while it sits; the operator
+                   * is reading a soft-deleted document, which is a fact about
+                   * the document, not a task. Red here is the same bug R3
+                   * opens by naming — colour encoding how alarming the WORD
+                   * sounds rather than whose move it is — and it is the more
+                   * expensive half of that bug, because a red badge nobody
+                   * must act on is what teaches the eye to skip red.
+                   *
+                   * So: calm hue, and the thing worth knowing said in WORDS
+                   * (the guide's third case). The word "tombstoned" plus this
+                   * title carry strictly more than the colour did.
+                   *
+                   * `INERT` is imported rather than spelled, and this badge is
+                   * deliberately NOT run through `MEMORY_STATUS_PALETTE`:
+                   * `memoryStatus.ts` keys its tones off the memory's TYPE and
+                   * is total over that, while tombstoning is an orthogonal
+                   * lifecycle flag. Folding a fourth tone in would make the
+                   * table non-total over the thing it claims to describe.
+                   * `paletteDisagreements` therefore does not see this line —
+                   * stated here rather than left for the next reader to
+                   * discover.
+                   */
+                  <Badge
+                    variant="outline"
+                    className={INERT}
+                    title="Soft-deleted: reads filter this memory out. The full version history is retained and any prior version can be restored — nothing is lost and nothing needs doing."
+                    data-testid="coord-memory-tombstoned-badge"
+                  >
+                    tombstoned
+                  </Badge>
+                )}
+                {memory.written_at && (
+                  <RowTime at={memory.written_at} verb="Written" />
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <CoordAdminOnly
                   fallback={
                     <ReadOnlyNotice label="Editing and deleting memories is administrator only." />
                   }
                 >
-                {!editing ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setDraft(memory.content);
-                        setEditing(true);
-                      }}
-                      data-testid="coord-memory-edit-btn"
-                    >
-                      <Edit3 className="h-3.5 w-3.5 mr-1" />
-                      Edit
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={deleting}
-                          data-testid="coord-memory-delete-btn"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" />
-                          {deleting ? "Deleting..." : "Delete"}
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent
-                        data-testid="coord-memory-delete-dialog"
+                  {!editing ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setDraft(memory.content);
+                          setEditing(true);
+                        }}
+                        data-testid="coord-memory-edit-btn"
                       >
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Tombstone this memory?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Soft-delete sets a tombstone marker so reads
-                            filter it out. The full version history is
-                            retained; you can restore from any prior version.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel
-                            data-testid="coord-memory-delete-cancel"
-                          >
-                            Cancel
-                          </AlertDialogCancel>
-                          <AlertDialogAction asChild>
-                            <DestructiveButton
-                              onClick={onDelete}
-                              data-testid="coord-memory-delete-confirm"
-                            >
-                              Tombstone
-                            </DestructiveButton>
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      size="sm"
-                      onClick={onSave}
-                      disabled={saving}
-                      data-testid="coord-memory-save-btn"
-                    >
-                      <Save className="h-3.5 w-3.5 mr-1" />
-                      {saving ? "Saving..." : "Save"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setDraft(memory.content);
-                        setEditing(false);
-                      }}
-                      data-testid="coord-memory-cancel-btn"
-                    >
-                      <X className="h-3.5 w-3.5 mr-1" />
-                      Cancel
-                    </Button>
-                  </>
-                )}
-                </CoordAdminOnly>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="coord-memory-content">
-              <CardHeader>
-                <CardTitle className="text-base">Content</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {editing ? (
-                  <Tabs defaultValue="edit">
-                    <TabsList>
-                      <TabsTrigger
-                        value="edit"
-                        data-testid="coord-memory-tab-edit"
-                      >
+                        <Edit3 className="h-3.5 w-3.5 mr-1" />
                         Edit
-                      </TabsTrigger>
-                      <TabsTrigger
-                        value="preview"
-                        data-testid="coord-memory-tab-preview"
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={deleting}
+                            data-testid="coord-memory-delete-btn"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                            {deleting ? "Deleting..." : "Delete"}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent data-testid="coord-memory-delete-dialog">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Tombstone this memory?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Soft-delete sets a tombstone marker so reads
+                              filter it out. The full version history is
+                              retained; you can restore from any prior version.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel data-testid="coord-memory-delete-cancel">
+                              Cancel
+                            </AlertDialogCancel>
+                            <AlertDialogAction asChild>
+                              <DestructiveButton
+                                onClick={onDelete}
+                                data-testid="coord-memory-delete-confirm"
+                              >
+                                Tombstone
+                              </DestructiveButton>
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        onClick={onSave}
+                        disabled={saving}
+                        data-testid="coord-memory-save-btn"
                       >
-                        Preview
-                      </TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="edit">
-                      <Textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        rows={24}
-                        className="font-mono text-sm"
-                        data-testid="coord-memory-editor"
-                      />
-                    </TabsContent>
-                    <TabsContent value="preview">
-                      <div
-                        className="prose prose-sm max-w-none dark:prose-invert"
-                        data-testid="coord-memory-editor-preview"
+                        <Save className="h-3.5 w-3.5 mr-1" />
+                        {saving ? "Saving..." : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setDraft(memory.content);
+                          setEditing(false);
+                        }}
+                        data-testid="coord-memory-cancel-btn"
                       >
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {draft}
-                        </ReactMarkdown>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-                ) : (
-                  <div
-                    className="prose prose-sm max-w-none dark:prose-invert"
-                    data-testid="coord-memory-rendered"
-                  >
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {memory.content}
-                    </ReactMarkdown>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </CoordAdminOnly>
+              </div>
+            </div>
+
+            <section
+              data-testid="coord-memory-content"
+              className="rounded-lg border border-border bg-card/30 px-4 py-3"
+            >
+              {editing ? (
+                <Tabs defaultValue="edit">
+                  <TabsList>
+                    <TabsTrigger
+                      value="edit"
+                      data-testid="coord-memory-tab-edit"
+                    >
+                      Edit
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="preview"
+                      data-testid="coord-memory-tab-preview"
+                    >
+                      Preview
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="edit">
+                    <Textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={24}
+                      className="font-mono text-sm"
+                      data-testid="coord-memory-editor"
+                    />
+                  </TabsContent>
+                  <TabsContent value="preview">
+                    <div
+                      className="prose prose-sm max-w-none dark:prose-invert"
+                      data-testid="coord-memory-editor-preview"
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {draft}
+                      </ReactMarkdown>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <div
+                  className="prose prose-sm max-w-none dark:prose-invert"
+                  data-testid="coord-memory-rendered"
+                >
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {memory.content}
+                  </ReactMarkdown>
+                </div>
+              )}
+            </section>
           </div>
 
           <aside className="space-y-4">
-            <Card data-testid="coord-memory-frontmatter">
-              <CardHeader>
-                <CardTitle className="text-sm">Frontmatter</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs">
-                {memory.description && (
-                  <div>
-                    <p className="text-muted-foreground">description</p>
-                    <p>{memory.description}</p>
-                  </div>
-                )}
+            {/* R7 — the frontmatter is support material, so it folds. It opens
+                by default: `admin.spec.ts:696` asserts this panel is visible
+                without a click, and the whole point of the sidebar is that the
+                provenance is readable at a glance. */}
+            <CollapsiblePanel
+              titleAs="h2"
+              className="p-3"
+              defaultOpen
+              storageKey="coord-memory-frontmatter"
+              title="Frontmatter"
+              data-testid="coord-memory-frontmatter"
+              contentClassName="space-y-2 text-xs"
+            >
+              {memory.description && (
                 <div>
-                  <p className="text-muted-foreground">type</p>
-                  <p>{memory.type ?? "—"}</p>
+                  <p className="text-muted-foreground">description</p>
+                  <p>{memory.description}</p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">written_by_agent</p>
-                  <p className="font-mono break-all">
-                    {memory.written_by_agent ?? "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">written_by_device</p>
-                  <p className="font-mono break-all">
-                    {memory.written_by_device ?? "—"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">written_at</p>
-                  <p className="tabular-nums">{memory.written_at ?? "—"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">version</p>
-                  <p className="tabular-nums">{memory.version ?? "—"}</p>
-                </div>
-              </CardContent>
-            </Card>
+              )}
+              <div>
+                <p className="text-muted-foreground">type</p>
+                <p>{memory.type ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">written_by_agent</p>
+                <p className="font-mono break-all">
+                  {memory.written_by_agent ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">written_by_device</p>
+                <p className="font-mono break-all">
+                  {memory.written_by_device ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">written_at</p>
+                {/* R2 — never a raw ISO string on a surface. Relative in the
+                    line, absolute in the title. */}
+                <p title={absoluteTime(memory.written_at)}>
+                  {memory.written_at ? relativeTime(memory.written_at) : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">version</p>
+                <p className="tabular-nums">{memory.version ?? "—"}</p>
+              </div>
+            </CollapsiblePanel>
 
-            <Card data-testid="coord-memory-history">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <HistoryIcon className="h-3.5 w-3.5" />
-                  Version history
-                  <Badge variant="outline" className="ml-auto">
-                    {history.length}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {top10.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic">
-                    No prior versions.
-                  </p>
-                ) : (
-                  <Select onValueChange={onJumpToVersion}>
-                    <SelectTrigger
-                      className="w-full"
-                      data-testid="coord-memory-version-select"
-                    >
-                      <SelectValue placeholder="Jump to version..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {top10.map((v) => (
-                        <SelectItem
-                          key={v.version}
-                          value={String(v.version)}
-                          data-testid={`coord-memory-version-option-${v.version}`}
-                        >
-                          v{v.version}
-                          {v.written_at ? ` — ${v.written_at}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </CardContent>
-            </Card>
+            {/* R7 — same treatment, same reason it opens by default:
+                `admin.spec.ts:699-702` asserts both this panel and the select
+                inside it are visible with no click. */}
+            <CollapsiblePanel
+              titleAs="h2"
+              className="p-3"
+              defaultOpen
+              storageKey="coord-memory-history"
+              icon={<HistoryIcon className="h-3.5 w-3.5" />}
+              title="Version history"
+              summary={
+                <Badge variant="outline" className="font-mono text-[11px]">
+                  {history.length}
+                </Badge>
+              }
+              data-testid="coord-memory-history"
+            >
+              {top10.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  No prior versions.
+                </p>
+              ) : (
+                <Select onValueChange={onJumpToVersion}>
+                  <SelectTrigger
+                    className="w-full"
+                    data-testid="coord-memory-version-select"
+                  >
+                    <SelectValue placeholder="Jump to version..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {top10.map((v) => (
+                      <SelectItem
+                        key={v.version}
+                        value={String(v.version)}
+                        data-testid={`coord-memory-version-option-${v.version}`}
+                      >
+                        v{v.version}
+                        {v.written_at ? ` — ${relativeTime(v.written_at)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </CollapsiblePanel>
           </aside>
         </div>
       ) : (
