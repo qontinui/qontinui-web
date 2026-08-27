@@ -24,6 +24,22 @@
  *
  * Talks only to the always-registered `httpClient` under `/api/v1/operations`
  * (no cloud-only extension slot), matching every sibling admin/coord page.
+ *
+ * ## Console style (Phase 3 Wave 5)
+ *
+ * This route landed after the console plan was authored and was missing from
+ * its census (§4 correction, where it is the Family-B **variant**). Migrated
+ * per `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — the body is `p-3 sm:p-6 space-y-4` (was `space-y-6 p-6`) and the
+ *   page header is one line rather than a stacked heading-plus-paragraph. The
+ *   console shell already renders the title bar, so the `<h1>` here was a
+ *   second title; the paragraph survives beside it because it says the thing
+ *   an operator needs to know before deciding anything — that nothing is
+ *   waiting on them.
+ * - **R2/R5/R3** — in `_components/ProposalCard.tsx` and
+ *   `proposalStatus.ts`; see those files for the fat-card removal and the
+ *   palette correction.
  */
 
 import { Gavel } from "lucide-react";
@@ -31,25 +47,33 @@ import { ReviewFeed } from "./_components/ReviewFeed";
 
 export default function PromptDocumentProposalsPage() {
   return (
-    <div className="space-y-6 p-6" data-testid="prompt-document-proposals-page">
-      <div className="flex items-start gap-3">
+    <div
+      className="p-3 sm:p-6 space-y-4"
+      data-testid="prompt-document-proposals-page"
+    >
+      <div className="flex flex-wrap items-baseline gap-2">
         {/* Same icon as this page's nav entry (CoordNav `Gavel`) — the two are
             the same destination and must look like it. */}
         <Gavel
-          className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+          className="size-4 shrink-0 self-center text-muted-foreground"
           aria-hidden
         />
-        <div>
-          <h1 className="text-lg font-semibold">Policy Edit Review</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Edits your agents proposed to the policies coord serves them.
-            Anything that would widen what agents may do on their own is held
-            here for you rather than applied; everything else lands immediately
-            and is listed below, undoable in one click. Nothing is waiting on
-            you to keep working — an unreviewed proposal simply hasn&apos;t been
-            applied.
-          </p>
-        </div>
+        {/* `<h2>`, not `<h1>` — `admin/coord/layout.tsx` already renders the
+            console's one `<h1>` ("Coord operator console"), which 13 Playwright
+            assertions match by role and exact name. A second `<h1>` was always
+            a document-outline defect; R9 restyling this one to `text-sm` made
+            it a VISUAL duplicate of the shell title as well, which is what
+            turned a latent nit into a real one. All seven Wave 3 routes render
+            no page heading at all; this stays because it names a surface the
+            nav crumb abbreviates. Pixel-identical either way. */}
+        <h2 className="text-sm font-semibold">Policy Edit Review</h2>
+        <p className="text-xs text-muted-foreground">
+          Edits your agents proposed to the policies coord serves them. Anything
+          that would widen what agents may do on their own is held here for you
+          rather than applied; everything else lands immediately and is listed
+          below, undoable in one click. Nothing is waiting on you to keep
+          working — an unreviewed proposal simply hasn&apos;t been applied.
+        </p>
       </div>
 
       <ReviewFeed />
