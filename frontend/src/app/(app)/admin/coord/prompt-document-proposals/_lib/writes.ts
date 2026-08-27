@@ -112,10 +112,14 @@ export function writeKey(
  * the ask written in words (the badge title, here).
  *
  * Named here rather than typed inline so the class string is one thing to
- * change and is visibly NOT a fork of a `statusRow` constant. It is spelled in
- * this route's light/dark banner dialect (`-800 dark:-200`) rather than
- * `statusRow`'s dark-only `-200` tints, because the rest of this page renders
- * in both themes and a dark-only tint would be unreadable on the light one.
+ * change and is visibly not an anonymous inline fork. The AMPLITUDES are the
+ * console's own purple — `bg-purple-500/15` over `border-purple-500/30`,
+ * matching `statusRow.tsx`'s entry for that hue; only the TEXT is spelled in
+ * this route's light/dark banner dialect (`-800 dark:-200`) instead of
+ * `statusRow`'s dark-only `-200`, because the rest of this page renders in both
+ * themes and a dark-only tint would be unreadable on the light one. Diverging
+ * on the amplitudes as well would have made it a silent fork that
+ * `paletteDisagreements` cannot see.
  */
 export const LOOSENING_BADGE_CLASS =
-  "border-purple-500/40 bg-purple-500/10 text-purple-800 dark:text-purple-200";
+  "border-purple-500/30 bg-purple-500/15 text-purple-800 dark:text-purple-200";

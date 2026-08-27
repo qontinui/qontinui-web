@@ -321,7 +321,12 @@ export function LandedWriteFeed({
                     type="button"
                     className="min-w-0 flex-1 text-left"
                     aria-expanded={expanded}
-                    aria-controls={diffPanelId(write)}
+                    // Undefined while collapsed: `WriteDiff` only mounts when
+                    // expanded, so a constant IDREF here points at nothing for
+                    // most of the row's life. axe flags that under
+                    // `aria-valid-attr-value`; jsx-a11y does not, which is why
+                    // lint stayed green on it.
+                    aria-controls={expanded ? diffPanelId(write) : undefined}
                     onClick={() => toggle(write)}
                     data-testid={`write-toggle-${write.kind}-${write.name}-${write.version_number}`}
                   >
@@ -416,8 +421,11 @@ export function LandedWriteFeed({
                   <WriteDiff
                     write={write}
                     state={diffFor(write)}
+                    // One source for both: the id and the testid ARE the same
+                    // string, and building it twice lets a future edit to
+                    // `diffPanelId` desync them silently.
                     id={diffPanelId(write)}
-                    data-testid={`write-diff-${write.kind}-${write.name}-${write.version_number}`}
+                    data-testid={diffPanelId(write)}
                   />
                 )}
               </li>
