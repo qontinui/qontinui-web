@@ -45,6 +45,44 @@ class _FakeRequest:
         return b""
 
 
+class _FakeHttpxResponse:
+    """Minimal stand-in for ``httpx.Response`` on the co-located proxy path."""
+
+    status_code = 200
+    content = b"ok"
+    headers: dict[str, str] = {}
+
+
+def _install_fake_httpx(monkeypatch) -> dict[str, str]:
+    """Replace ``httpx.AsyncClient`` so the target URL is observable.
+
+    Returns the dict the fake records the requested URL into. The co-located
+    arm of :func:`runner_proxy` now uses ``httpx.AsyncClient`` rather than the
+    event-loop-blocking ``urllib.request.urlopen`` it used to call.
+    """
+    opened: dict[str, str] = {}
+
+    class _FakeAsyncClient:
+        def __init__(self, *a, **kw) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            opened["url"] = url
+            opened["method"] = method
+            return _FakeHttpxResponse()
+
+    monkeypatch.setattr(
+        device_bridge_ws.httpx, "AsyncClient", _FakeAsyncClient, raising=True
+    )
+    return opened
+
+
 def test_runner_proxy_no_longer_reads_coord_devices_sql() -> None:
     """The runner-proxy handler must not contain ``coord.devices`` SQL.
 
@@ -88,31 +126,8 @@ async def test_runner_proxy_uses_coord_routing_port(monkeypatch):
         raising=True,
     )
 
-    # Stub the urllib path so we observe only the resolved target port.
-    opened: dict[str, str] = {}
-
-    class _FakeResp:
-        status = 200
-
-        def read(self) -> bytes:
-            return b"ok"
-
-        def getheaders(self):
-            return []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    def _fake_urlopen(req, timeout=0):
-        opened["url"] = req.full_url
-        return _FakeResp()
-
-    monkeypatch.setattr(
-        device_bridge_ws.urllib.request, "urlopen", _fake_urlopen, raising=True
-    )
+    # Stub the httpx path so we observe only the resolved target port.
+    opened = _install_fake_httpx(monkeypatch)
 
     request = _FakeRequest(headers={"Authorization": "Bearer tok-abc"})
     resp = await device_bridge_ws.runner_proxy(
@@ -141,30 +156,7 @@ async def test_runner_proxy_falls_back_to_default_port_on_none(monkeypatch):
         raising=True,
     )
 
-    opened: dict[str, str] = {}
-
-    class _FakeResp:
-        status = 200
-
-        def read(self) -> bytes:
-            return b"ok"
-
-        def getheaders(self):
-            return []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    def _fake_urlopen(req, timeout=0):
-        opened["url"] = req.full_url
-        return _FakeResp()
-
-    monkeypatch.setattr(
-        device_bridge_ws.urllib.request, "urlopen", _fake_urlopen, raising=True
-    )
+    opened = _install_fake_httpx(monkeypatch)
 
     request = _FakeRequest()
     resp = await device_bridge_ws.runner_proxy(

@@ -13,10 +13,11 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from qontinui_schemas.common import utc_now
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
+from app.models.device_connection import DeviceConnection
 
 __all__ = [
     "register_device",
@@ -24,6 +25,8 @@ __all__ = [
     "list_devices",
     "get_device",
     "delete_device",
+    "claim_ws_session",
+    "clear_ws_session_if_current",
 ]
 
 
@@ -152,6 +155,133 @@ async def heartbeat_device(
     await db.commit()
     await db.refresh(record)
     return record
+
+
+async def claim_ws_session(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+) -> bool:
+    """Point ``ws_session_id`` at ``connection_pk`` unless a NEWER one holds it.
+
+    This is the *self-healing* half of the WS-presence pointer. Registration
+    is the only other writer, so before this existed a pointer that got
+    NULLed while the socket stayed up could never recover: the runner kept
+    heartbeating every ~30s, ``last_heartbeat`` stayed fresh, and
+    ``ws_session_id`` stayed NULL forever — which is exactly what
+    ``_runner_proxy_relay`` reads to decide whether the mobile cloud relay
+    can reach the device. The observable end state was a self-contradictory
+    ``GET /api/v1/devices`` row (``wsConnected: false`` beside a 30s-old
+    ``lastHeartbeat``) and a phone stuck on "Couldn't reach the runner
+    through the cloud relay".
+
+    A NULLed pointer under a live socket has several causes beyond the
+    teardown race that :func:`clear_ws_session_if_current` closes — the
+    scheduled ``connection_cleanup`` sweep clearing on a momentary Redis
+    presence miss, a backend process restart, a failover, or an unclean
+    close whose ``finally`` never ran. Rather than enumerate them, the
+    heartbeat re-asserts ground truth: *this* socket is open, therefore the
+    device is WS-reachable through *this* connection.
+
+    Ordering rule — ``coord.device_connections.id`` is a monotonic sequence,
+    so a strictly greater id is a strictly later connection. We claim when
+    the pointer is NULL, or points at an OLDER connection, or points at a
+    connection that is already CLOSED (or gone). That makes the heal
+    monotonic — a superseded handler can never steal the pointer back from
+    the live connection that replaced it — while still being able to escape
+    a pointer stranded on a dead connection with a higher id.
+
+    That last arm is not hypothetical bookkeeping. Without it, a pointer
+    holding an id greater than ours that belongs to a DEAD connection would
+    refuse every future claim, silently and forever: exactly the shape of the
+    outage this function exists to end, reintroduced one level up. Sequence
+    resets, a restore from a dump, and the flush-vs-commit reordering of two
+    concurrent registrations can all produce it.
+
+    A pointer already equal to ours is left untouched, so the steady-state
+    heartbeat costs an UPDATE that matches no rows rather than a write.
+
+    ``ws_connected_at`` is taken from the connection row itself, NOT
+    ``utc_now()``: coord's active-device pick orders on that column
+    (``coord_device.py`` — ``... AND ws_session_id IS NOT NULL ORDER BY
+    ws_connected_at DESC``), so stamping "now" on a heal would jump the
+    device to the front of that ordering and corrupt connection-duration
+    reporting.
+
+    The compare and the write are ONE statement, so a concurrent registration
+    cannot slip between them.
+
+    Returns:
+        ``True`` when the pointer was actually (re)claimed — i.e. a heal
+        happened and is worth logging — ``False`` when it was already ours
+        or a newer LIVE connection owns it.
+    """
+    pointed_at_is_live = (
+        select(DeviceConnection.id)
+        .where(
+            DeviceConnection.id == Device.ws_session_id,
+            DeviceConnection.disconnected_at.is_(None),
+        )
+        .correlate(Device)
+        .exists()
+    )
+    its_connected_at = (
+        select(DeviceConnection.connected_at)
+        .where(DeviceConnection.id == connection_pk)
+        .scalar_subquery()
+    )
+    result = await db.execute(
+        update(Device)
+        .where(
+            Device.device_id == device_id,
+            Device.ws_session_id.is_distinct_from(connection_pk),
+            or_(
+                Device.ws_session_id.is_(None),
+                Device.ws_session_id < connection_pk,
+                ~pointed_at_is_live,
+            ),
+        )
+        .values(ws_session_id=connection_pk, ws_connected_at=its_connected_at)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return bool(result.rowcount)  # type: ignore[attr-defined]
+
+
+async def clear_ws_session_if_current(
+    db: AsyncSession,
+    *,
+    device_id: UUID,
+    connection_pk: int,
+) -> bool:
+    """Clear ``ws_session_id`` iff it still points at ``connection_pk``.
+
+    Atomic compare-and-clear. The teardown path used to do this as
+    read-modify-write in Python (``get_device`` → compare
+    ``row.ws_session_id == connection_pk`` → assign ``None`` → ``commit``),
+    which is a lost-update race under READ COMMITTED: connection A reads the
+    row while the pointer is still its own, connection B commits its
+    registration (pointer → B), and A then commits the NULL it decided on
+    from stale data. B's socket is live, but nothing will ever re-point at
+    it. Doing the compare inside the UPDATE's WHERE clause lets the database
+    serialize it against B's write instead.
+
+    Returns:
+        ``True`` if this call cleared the pointer, ``False`` if it had
+        already been superseded (or the device row is gone).
+    """
+    result = await db.execute(
+        update(Device)
+        .where(
+            Device.device_id == device_id,
+            Device.ws_session_id == connection_pk,
+        )
+        .values(ws_session_id=None, ws_connected_at=None)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return bool(result.rowcount)  # type: ignore[attr-defined]
 
 
 async def list_devices(
