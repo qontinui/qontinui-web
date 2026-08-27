@@ -1,0 +1,100 @@
+/**
+ * Ordering and marking for the landed-write feed (plan
+ * `2026-08-27-tenant-level-agent-authorable-stores.md`, Phase 4).
+ *
+ * ## The `loosening` mark, and why it is OPTIONAL all the way down
+ *
+ * Coord classifies a policy write's DIRECTION against the autonomy-tier
+ * ordering. A write that grants or widens authority is a **loosening**; under
+ * the tenant's `policy_write` dial at `full` such a write LANDS rather than
+ * being held as a proposal, notification-only. That is the write an operator
+ * most wants at the top of this list — an agent editing the rules it is judged
+ * by.
+ *
+ * The flag is served by a coord change that lands separately from this page.
+ * Until it does, `loosening` is simply **absent** from every row. Absent is not
+ * `false`: it means "this coord build does not classify landed writes", which
+ * is a statement about the server, not about the write. So:
+ *
+ * * the field is `boolean | null | undefined` — the type says it may not be there;
+ * * only an explicit `true` marks and promotes a row;
+ * * anything else — `false`, `null`, absent — renders as an unmarked ordinary
+ *   row, never as an error and never as a badge asserting "not a loosening".
+ *
+ * The distinction is preserved rather than collapsed so the surface can say
+ * "nothing on this page is flagged" only when the field was actually served.
+ */
+
+import type { PromptDocumentWrite } from "../types";
+
+/** An explicit classification arrived and said this write widened authority. */
+export function isLoosening(
+  write: Pick<PromptDocumentWrite, "loosening">
+): boolean {
+  return write.loosening === true;
+}
+
+/**
+ * True when at least one row carries the field at all — the discriminator
+ * between "coord classified these and none was a loosening" and "coord never
+ * classified them".
+ *
+ * Deliberately not `writes.some(isLoosening)`: a feed of ordinary writes from a
+ * classifier-aware coord and a feed from a coord that has never heard of the
+ * flag look identical if you only ask "is anything flagged".
+ */
+export function looseningClassificationPresent(
+  writes: ReadonlyArray<Pick<PromptDocumentWrite, "loosening">>
+): boolean {
+  return writes.some(
+    (w) => w.loosening === true || w.loosening === false
+  );
+}
+
+/**
+ * Loosenings first, everything else after, **newest-first order preserved
+ * inside each group**.
+ *
+ * A stable partition rather than a comparator: the backend already returns the
+ * feed sorted by `created_at` descending, and re-sorting on a timestamp here
+ * would silently re-derive an ordering the server owns — including for rows
+ * whose `created_at` is unparseable, which a date comparator would shuffle to
+ * an arbitrary place. Partitioning touches only the axis this function is
+ * about.
+ */
+export function sortWritesForFeed<T extends Pick<PromptDocumentWrite, "loosening">>(
+  writes: ReadonlyArray<T>
+): T[] {
+  const flagged: T[] = [];
+  const rest: T[] = [];
+  for (const write of writes) (isLoosening(write) ? flagged : rest).push(write);
+  return [...flagged, ...rest];
+}
+
+/**
+ * The console deep link that reaches a landed write's reasoning.
+ *
+ * `notification_ref` is carried into the emitted notification's payload by
+ * coord, so the operator reaches the author's stated reasoning instead of
+ * correlating two surfaces by timestamp. It points into the EXISTING
+ * `/admin/coord/notifications` feed — there is no second notification view —
+ * using the same `?<param>=<id>` deep-link shape `/admin/coord/gates?gate=<id>`
+ * already uses from the outstanding-work ledger.
+ *
+ * Returns `null` for an absent ref, which is what makes the link optional: no
+ * ref means no link, not a broken one.
+ */
+export function notificationHref(
+  ref: string | null | undefined
+): string | null {
+  const trimmed = (ref ?? "").trim();
+  if (!trimmed) return null;
+  return `/admin/coord/notifications?ref=${encodeURIComponent(trimmed)}`;
+}
+
+/** The document address, used as a stable React key and testid suffix. */
+export function writeKey(
+  write: Pick<PromptDocumentWrite, "kind" | "name" | "version_number">
+): string {
+  return `${write.kind}/${write.name}/${write.version_number}`;
+}

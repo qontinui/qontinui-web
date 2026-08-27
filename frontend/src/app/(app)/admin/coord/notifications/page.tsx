@@ -67,6 +67,7 @@ import {
   isContractError,
   isMigrationPending,
   kindOptions,
+  matchesNotificationRef,
   mergeKindVocabulary,
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
@@ -106,6 +107,29 @@ export default function CoordNotificationsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
   const [vocabulary, setVocabulary] = useState<string[]>([]);
+
+  /**
+   * `?ref=<id>` — the deep link the landed-write feed on
+   * `/admin/coord/prompt-document-proposals` uses to reach the event that
+   * announced one write, and the reasoning its author recorded (plan
+   * `2026-08-27-tenant-level-agent-authorable-stores.md`, Phase 4).
+   *
+   * Read once on mount from `window.location` rather than `useSearchParams`,
+   * which would force this client page behind a Suspense boundary for a
+   * one-shot read — the same call `/admin/coord/gates?gate=<id>` makes.
+   *
+   * It expands a row; it does NOT become a filter. `filterActive` below governs
+   * the blast radius of mark-all-read, and quietly widening what counts as a
+   * filter would change what that button does.
+   */
+  const [linkedRef, setLinkedRef] = useState<string | null>(null);
+  const linkedApplied = useRef(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const ref = new URLSearchParams(window.location.search).get("ref");
+    if (ref) setLinkedRef(ref);
+  }, []);
 
   /**
    * Generation counter for "the query currently on screen". The effect below
@@ -280,6 +304,30 @@ export default function CoordNotificationsPage() {
   );
 
   /**
+   * The linked row, if it is on the page that is loaded.
+   *
+   * `null` while a `linkedRef` is set is a real, reportable state — the event
+   * may be older than the loaded page, or excluded by the current filter — and
+   * the banner says which rather than leaving the operator on an ordinary feed
+   * wondering whether the link worked.
+   */
+  const linkedMatch = useMemo(() => {
+    if (!linkedRef) return null;
+    return (
+      rows.find((n) => matchesNotificationRef(n, linkedRef))?.notification_id ??
+      null
+    );
+  }, [rows, linkedRef]);
+
+  // One-shot: expand the linked row when it first arrives. Guarded so a later
+  // poll cannot re-open a row the operator has since collapsed.
+  useEffect(() => {
+    if (!linkedMatch || linkedApplied.current) return;
+    linkedApplied.current = true;
+    setExpanded(linkedMatch);
+  }, [linkedMatch]);
+
+  /**
    * Mark-read-in-bulk, and what it will actually do.
    *
    * `{notification_ids: null}` means "every unread row for this principal",
@@ -400,6 +448,17 @@ export default function CoordNotificationsPage() {
           {/* Callers supply the whole sentence — a mark-read rejection is not
               a "failed to load". */}
           {error && <p className="text-sm text-destructive">{error}</p>}
+
+          {linkedRef && (
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="coord-notifications-linked-ref"
+            >
+              {linkedMatch
+                ? "Showing the event this write was announced with — expanded below."
+                : "The linked event is not on the page that is loaded. It may be older than these, or excluded by the filters above — clear them or load more."}
+            </p>
+          )}
 
           {loading && rows.length === 0 ? (
             <Skeleton className="h-24 w-full" />

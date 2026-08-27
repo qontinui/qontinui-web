@@ -37,6 +37,8 @@ export function ReviewFeed() {
     writesSevere,
     writesNothingRead,
     liveVersionFor,
+    loadWriteDiff,
+    writeDiffFor,
     reload,
     decide,
     revertWrite,
@@ -167,6 +169,8 @@ export function ReviewFeed() {
         loading={loading}
         acting={acting}
         onRevert={revertWrite}
+        onLoadDiff={loadWriteDiff}
+        diffFor={writeDiffFor}
       />
     </div>
   );

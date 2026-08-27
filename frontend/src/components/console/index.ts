@@ -25,6 +25,7 @@
  * | `statusRow` atoms | R2, R3, R4 — the badge, the accent, the timestamp |
  * | `attention` | R3 — the severity vocabulary and its palette invariant |
  * | `time` | supports R2 — `relativeTime` / `absoluteTime` |
+ * | `diff` / `DiffTable` | supports R5 — the version diff a detail panel shows |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
  * route, and **no shipped module under `console/` has any runtime dependency
@@ -92,6 +93,12 @@ export type {
 } from "./statusRow";
 
 export { absoluteTime, relativeTime } from "./time";
+
+export { diffLines } from "./diff";
+export type { DiffLine, DiffResult, DiffStats } from "./diff";
+
+export { DiffTable } from "./DiffTable";
+export type { DiffTableProps } from "./DiffTable";
 
 export {
   ATTENTION_RANK,
