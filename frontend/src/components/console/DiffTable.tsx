@@ -22,6 +22,19 @@
 import { cn } from "@/lib/utils";
 import type { DiffLine } from "./diff";
 
+/**
+ * The `+n` / `−n` summary-count colours, exported so every diff header uses one
+ * spelling of "added" and "removed".
+ *
+ * Deliberately a shade lighter than the ROW tints below (`emerald-700/300`,
+ * `red-700/300`): a row's text sits on a `/10` background of its own colour and
+ * needs the extra weight, a count sits on the plain header. Same meaning, two
+ * contexts — which is why they are named here rather than typed inline at each
+ * call site, where they had already drifted.
+ */
+export const DIFF_ADDED_COUNT_CLASS = "text-emerald-600 dark:text-emerald-400";
+export const DIFF_REMOVED_COUNT_CLASS = "text-red-600 dark:text-red-400";
+
 export interface DiffTableProps {
   lines: ReadonlyArray<DiffLine>;
   className?: string;

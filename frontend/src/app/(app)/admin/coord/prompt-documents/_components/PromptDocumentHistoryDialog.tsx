@@ -13,7 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { History, Loader2, Undo2 } from "lucide-react";
-import { DiffTable, diffLines } from "@/components/console";
+import {
+  DIFF_ADDED_COUNT_CLASS,
+  DIFF_REMOVED_COUNT_CLASS,
+  DiffTable,
+  diffLines,
+} from "@/components/console";
 import { validateBodyForKind } from "../_lib/sessionBriefingBody";
 import type {
   ListVersionsResponse,
@@ -339,10 +344,10 @@ export function PromptDocumentHistoryDialog({
                     </span>
                   ) : (
                     <>
-                      <span className="text-emerald-600 dark:text-emerald-400">
+                      <span className={DIFF_ADDED_COUNT_CLASS}>
                         +{diff.stats.added}
                       </span>
-                      <span className="text-red-600 dark:text-red-400">
+                      <span className={DIFF_REMOVED_COUNT_CLASS}>
                         −{diff.stats.removed}
                       </span>
                       {diff.stats.truncated && (

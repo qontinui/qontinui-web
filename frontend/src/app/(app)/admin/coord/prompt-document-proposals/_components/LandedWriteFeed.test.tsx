@@ -94,7 +94,7 @@ describe("LandedWriteFeed — the loosening mark", () => {
 
     expect(
       within(rowFor(flagged)).getByTestId(
-        "write-loosening-policy-operating-rules"
+        "write-loosening-policy-operating-rules-6"
       )
     ).toHaveTextContent("Widens authority");
     // The unflagged row asserts nothing — no inverse badge.
@@ -227,7 +227,7 @@ describe("LandedWriteFeed — the linked reasoning", () => {
     renderFeed({
       writes: [write({ notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" })],
     });
-    const link = screen.getByTestId("write-reasoning-policy-operating-rules");
+    const link = screen.getByTestId("write-reasoning-policy-operating-rules-6");
     expect(link).toHaveAttribute(
       "href",
       "/admin/coord/notifications?ref=fec41291-67ed-4cf8-b331-888ad1126b45"
@@ -237,7 +237,7 @@ describe("LandedWriteFeed — the linked reasoning", () => {
   it("renders NO link when the ref is absent — not a dead one", () => {
     renderFeed({ writes: [write()] });
     expect(
-      screen.queryByTestId("write-reasoning-policy-operating-rules")
+      screen.queryByTestId("write-reasoning-policy-operating-rules-6")
     ).toBeNull();
   });
 });
@@ -253,6 +253,17 @@ describe("LandedWriteFeed — the diff", () => {
       screen.getByTestId("write-toggle-policy-operating-rules-6")
     );
     expect(onLoadDiff).toHaveBeenCalledWith(w);
+  });
+
+  it("renders no diff panel at all while the row is collapsed", () => {
+    renderFeed({
+      writes: [write()],
+      diffFor: () => ({ status: "ready", previous: "a\n", current: "a\nb\n" }),
+    });
+    // Not merely hidden — absent, so a collapsed row polls and renders nothing.
+    expect(
+      screen.queryByTestId("write-diff-policy-operating-rules-6")
+    ).toBeNull();
   });
 
   it("renders the previous → current line diff", () => {
@@ -315,6 +326,8 @@ describe("LandedWriteFeed — preserved behaviour", () => {
     expect(
       screen.getByTestId("revert-policy-operating-rules")
     ).toBeInTheDocument();
+    // The row must actually BE on screen, or the null below is vacuous.
+    expect(rowFor(older)).toBeInTheDocument();
     expect(screen.queryByTestId("revert-policy-git-operations")).toBeNull();
   });
 
@@ -332,5 +345,74 @@ describe("LandedWriteFeed — preserved behaviour", () => {
     expect(
       screen.getByText(/no writes could be read/i)
     ).toBeInTheDocument();
+  });
+});
+
+describe("LandedWriteFeed — two versions of the same document", () => {
+  it("gives every row its own testids, so neither is ambiguous", () => {
+    // The feed is per-WRITE, not per-document, so `policy/operating-rules` v5
+    // and v6 can both be on screen. Testids that omitted the version made
+    // `getByTestId` throw on the ambiguity.
+    const v6 = write({ version_number: 6, current_version: 6, loosening: true });
+    const v5 = write({
+      version_number: 5,
+      current_version: 6,
+      loosening: true,
+      notification_ref: "ref-5",
+    });
+    renderFeed({ writes: [v6, v5] });
+
+    expect(
+      screen.getByTestId("write-loosening-policy-operating-rules-6")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("write-loosening-policy-operating-rules-5")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("write-reasoning-policy-operating-rules-5")
+    ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-5");
+  });
+
+  it("points each row's aria-controls at its OWN diff panel", () => {
+    renderFeed({
+      writes: [write()],
+      diffFor: () => ({ status: "ready", previous: "", current: "x\n" }),
+    });
+    const toggle = screen.getByTestId(
+      "write-toggle-policy-operating-rules-6"
+    );
+    expect(toggle).toHaveAttribute(
+      "aria-controls",
+      "write-diff-policy-operating-rules-6"
+    );
+    fireEvent.click(toggle);
+    expect(
+      screen.getByTestId("write-diff-policy-operating-rules-6")
+    ).toHaveAttribute("id", "write-diff-policy-operating-rules-6");
+  });
+});
+
+describe("LandedWriteFeed — the filter and the flagged claim describe ONE set", () => {
+  it("does not say 'none flagged' from a loosening the filter hid", () => {
+    // An operator-authored loosening, hidden by the agent filter. If the
+    // "classified" precondition were computed over the unfiltered feed, the
+    // page would print a sentence about rows the operator cannot see.
+    const hiddenLoosening = write({
+      name: "engineering-priorities",
+      label: "Engineering Priorities",
+      version_number: 4,
+      current_version: 4,
+      edited_by: "operator:fb7bf946-cb46-4c38-9a1d-c7081c493b04:jspinak@gmail.com",
+      loosening: true,
+    });
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+    });
+    renderFeed({ writes: [hiddenLoosening, agentOrdinary] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    // The visible row carries NO classification, so there is no verdict to
+    // report about what is on screen.
+    expect(screen.queryByTestId("landed-writes-none-flagged")).toBeNull();
   });
 });

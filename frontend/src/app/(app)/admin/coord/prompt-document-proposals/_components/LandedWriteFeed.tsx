@@ -11,7 +11,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DiffTable, FilterTabs, diffLines } from "@/components/console";
+import {
+  DIFF_ADDED_COUNT_CLASS,
+  DIFF_REMOVED_COUNT_CLASS,
+  DiffTable,
+  FilterTabs,
+  diffLines,
+} from "@/components/console";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
@@ -25,6 +31,7 @@ import {
   tallyAuthors,
 } from "../_lib/authorship";
 import {
+  LOOSENING_BADGE_CLASS,
   isLoosening,
   looseningClassificationPresent,
   notificationHref,
@@ -57,6 +64,13 @@ const COMPLETENESS_CAVEAT =
   "alerted rather than retried, and none are sent at all while coord's " +
   "notification store is unprovisioned. Treat an absent write as unknown, not " +
   "as one that never happened.";
+
+/** DOM id of one row's diff panel — the target of the row's `aria-controls`. */
+function diffPanelId(
+  write: Pick<PromptDocumentWrite, "kind" | "name" | "version_number">
+): string {
+  return `write-diff-${write.kind}-${write.name}-${write.version_number}`;
+}
 
 /** The author filter's two positions. Off (`all`) is the default. */
 type AuthorFilter = "all" | "agent";
@@ -135,10 +149,6 @@ export function LandedWriteFeed({
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const tally = useMemo(() => tallyAuthors(writes), [writes]);
-  const classified = useMemo(
-    () => looseningClassificationPresent(writes),
-    [writes]
-  );
 
   const visible = useMemo(() => {
     const filtered =
@@ -146,6 +156,14 @@ export function LandedWriteFeed({
     return sortWritesForFeed(filtered);
   }, [writes, authorFilter]);
 
+  // Both derived from `visible`, never one from each set: the "none flagged"
+  // line below talks about what is ON SCREEN, and computing its precondition
+  // over the unfiltered feed would let a hidden operator-authored loosening
+  // license a sentence about the rows the operator can actually see.
+  const classified = useMemo(
+    () => looseningClassificationPresent(visible),
+    [visible]
+  );
   const flaggedCount = useMemo(
     () => visible.filter(isLoosening).length,
     [visible]
@@ -161,13 +179,17 @@ export function LandedWriteFeed({
 
   const toggle = (write: PromptDocumentWrite) => {
     const key = writeKey(write);
-    setExpandedKey((cur) => {
-      if (cur === key) return null;
+    // The fetch is kicked off OUTSIDE the state updater. An updater must be
+    // pure: React may run it during render (and StrictMode runs it twice on
+    // purpose), and `onLoadDiff` sets state on the parent — which from a
+    // render pass is a cross-component update React refuses.
+    const opening = expandedKey !== key;
+    setExpandedKey(opening ? key : null);
+    if (opening) {
       // Fire-and-forget: the row renders its own loading/error state from the
       // cache, so an unhandled rejection here would only duplicate that.
       void onLoadDiff(write);
-      return key;
-    });
+    }
   };
 
   return (
@@ -287,11 +309,10 @@ export function LandedWriteFeed({
             return (
               <li
                 key={key}
-                className={cn(
-                  "rounded-lg border border-border bg-card",
-                  // R4: a mark is a left-edge accent, not a coloured row.
-                  flagged && "border-l-2 border-l-amber-500/80"
-                )}
+                // No left-edge accent: R4's accent encodes ATTENTION, and a
+                // landed loosening needs none — it already landed and nothing
+                // waits on the operator. The mark is the badge and the sort.
+                className="rounded-lg border border-border bg-card"
                 data-testid={`write-${write.kind}-${write.name}-${write.version_number}`}
                 data-loosening={flagged ? "true" : undefined}
               >
@@ -300,10 +321,14 @@ export function LandedWriteFeed({
                     type="button"
                     className="min-w-0 flex-1 text-left"
                     aria-expanded={expanded}
+                    aria-controls={diffPanelId(write)}
                     onClick={() => toggle(write)}
                     data-testid={`write-toggle-${write.kind}-${write.name}-${write.version_number}`}
                   >
-                    <div className="flex flex-wrap items-center gap-2">
+                    {/* Spans, not divs/ps: a <button>'s content model is
+                        phrasing content, and flow content inside one lays out
+                        inconsistently across browsers. */}
+                    <span className="flex flex-wrap items-center gap-2">
                       {expanded ? (
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                       ) : (
@@ -323,25 +348,25 @@ export function LandedWriteFeed({
                         // give.
                         <Badge
                           variant="outline"
-                          className="bg-amber-500/15 text-[10px] text-amber-800 dark:text-amber-200 border-amber-500/40"
-                          title="Coord classified this edit as granting or widening authority. It landed rather than waiting for you — your policy-write setting allows that — so it is listed first."
-                          data-testid={`write-loosening-${write.kind}-${write.name}`}
+                          className={cn("text-[10px]", LOOSENING_BADGE_CLASS)}
+                          title="Coord classified this edit as granting or widening authority. It landed rather than waiting for you — your policy-write setting allows that — so it is listed first. Nothing is blocked; this is here to be read."
+                          data-testid={`write-loosening-${write.kind}-${write.name}-${write.version_number}`}
                         >
                           Widens authority
                         </Badge>
                       )}
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
                       {write.edited_by ?? "unknown author"}
                       {write.edited_by ? (
                         <> ({AUTHOR_CLASS_LABEL[authorClass]})</>
                       ) : null}{" "}
                       · {formatWhen(write.created_at)}
-                    </p>
+                    </span>
                     {write.change_note && (
-                      <p className="truncate text-xs italic text-muted-foreground">
+                      <span className="block truncate text-xs italic text-muted-foreground">
                         {write.change_note}
-                      </p>
+                      </span>
                     )}
                   </button>
 
@@ -358,7 +383,7 @@ export function LandedWriteFeed({
                         <Link
                           href={href}
                           title="Open the notification this write was announced with, and the reasoning its author recorded."
-                          data-testid={`write-reasoning-${write.kind}-${write.name}`}
+                          data-testid={`write-reasoning-${write.kind}-${write.name}-${write.version_number}`}
                         >
                           <MessageSquareText className="size-4" />
                           Why
@@ -391,6 +416,7 @@ export function LandedWriteFeed({
                   <WriteDiff
                     write={write}
                     state={diffFor(write)}
+                    id={diffPanelId(write)}
                     data-testid={`write-diff-${write.kind}-${write.name}-${write.version_number}`}
                   />
                 )}
@@ -427,10 +453,13 @@ export function LandedWriteFeed({
 function WriteDiff({
   write,
   state,
+  id,
   "data-testid": testId,
 }: {
   write: PromptDocumentWrite;
   state: WriteDiffState | null;
+  /** Target of the row button's `aria-controls`. */
+  id: string;
   "data-testid"?: string;
 }) {
   const diff = useMemo(
@@ -444,6 +473,7 @@ function WriteDiff({
   if (!state || state.status === "loading") {
     return (
       <p
+        id={id}
         className="border-t border-border px-3 py-3 text-xs text-muted-foreground"
         data-testid={testId}
       >
@@ -455,6 +485,7 @@ function WriteDiff({
   if (state.status === "error") {
     return (
       <p
+        id={id}
         className="border-t border-border px-3 py-3 text-xs text-muted-foreground"
         data-testid={testId}
       >
@@ -469,7 +500,7 @@ function WriteDiff({
     write.version_number > 1 ? `v${write.version_number - 1}` : "nothing";
 
   return (
-    <div className="border-t border-border" data-testid={testId}>
+    <div id={id} className="border-t border-border" data-testid={testId}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-muted/40 px-3 py-2 text-xs">
         <span className="font-medium">
           {previousLabel} → v{write.version_number}
@@ -480,10 +511,10 @@ function WriteDiff({
           </span>
         ) : (
           <>
-            <span className="text-emerald-600 dark:text-emerald-400">
+            <span className={DIFF_ADDED_COUNT_CLASS}>
               +{diff?.stats.added ?? 0}
             </span>
-            <span className="text-red-600 dark:text-red-400">
+            <span className={DIFF_REMOVED_COUNT_CLASS}>
               −{diff?.stats.removed ?? 0}
             </span>
             {diff?.stats.truncated && (

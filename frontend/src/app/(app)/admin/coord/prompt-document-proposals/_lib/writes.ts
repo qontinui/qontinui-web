@@ -98,3 +98,24 @@ export function writeKey(
 ): string {
   return `${write.kind}/${write.name}/${write.version_number}`;
 }
+
+/**
+ * The badge class for a flagged (loosening) landed write.
+ *
+ * **Purple, not amber, and that is R3 not taste.** The console's colour rule is
+ * that hue encodes WHO MUST ACT: red = the operator must act now, amber =
+ * waiting on something else (or we do not know), calm = nobody is blocked. A
+ * landed loosening blocks nobody — it already landed, and this surface's whole
+ * design target is that nothing waits on the operator. Amber would say the
+ * opposite, and `WAITING_AMBER` is reserved for exactly that meaning. R3's
+ * third case covers this one: a real decision that blocks nobody is CALM, with
+ * the ask written in words (the badge title, here).
+ *
+ * Named here rather than typed inline so the class string is one thing to
+ * change and is visibly NOT a fork of a `statusRow` constant. It is spelled in
+ * this route's light/dark banner dialect (`-800 dark:-200`) rather than
+ * `statusRow`'s dark-only `-200` tints, because the rest of this page renders
+ * in both themes and a dark-only tint would be unreadable on the light one.
+ */
+export const LOOSENING_BADGE_CLASS =
+  "border-purple-500/40 bg-purple-500/10 text-purple-800 dark:text-purple-200";

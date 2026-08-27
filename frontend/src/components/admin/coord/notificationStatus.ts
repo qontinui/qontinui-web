@@ -229,6 +229,35 @@ export function matchesNotificationRef(
 }
 
 /**
+ * What the `?ref=` banner should say, as a pure derivation of the three inputs
+ * that can be true at once.
+ *
+ * The whole point is that "not found" is the LAST arm, not the default. The
+ * operator arrives here by clicking through from a landed write, so the first
+ * render — empty rows, request in flight — would otherwise tell him the event
+ * is missing before anything had been fetched, and a failed load would tell him
+ * to clear filters when the truth is that coord did not answer. Both are the
+ * unknown-reported-as-fact failure the linking surface exists to avoid.
+ */
+export function linkedRefNotice(state: {
+  found: boolean;
+  loading: boolean;
+  error: boolean;
+}): string {
+  if (state.found) {
+    return "Showing the event this write was announced with — expanded below.";
+  }
+  if (state.loading) return "Looking for the linked event…";
+  if (state.error) {
+    return "The linked event could not be looked up — the feed above failed to load.";
+  }
+  return (
+    "The linked event is not on the page that is loaded. It may be older than " +
+    "these, or excluded by the filters above — clear them or load more."
+  );
+}
+
+/**
  * The single plain-language line for the row.
  *
  * Prefers coord's pre-rendered `summary` — coord owns the rendering, and its
