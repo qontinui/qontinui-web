@@ -33,7 +33,7 @@
  * any load/tab-switch window, so neither may describe data that isn't on screen.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -42,13 +42,19 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { GitPullRequest, Pause, Play, RefreshCw } from "lucide-react";
+import { Pause, Play, RefreshCw } from "lucide-react";
 import {
   adminDevService,
   type PrListResponse,
 } from "@/services/admin-dev-service";
 import { PrsTable, isMergeStateRecalibrating } from "./_components/PrsTable";
 import { DeployStatusStrip } from "./_components/DeployStatusStrip";
+import {
+  HealthStrip,
+  type HealthBadge,
+  type HealthStripLevel,
+} from "@/components/console";
+import { derivePrStatus } from "./prStatus";
 
 // Auto-refresh cadence — matches the gates dashboard.
 const AUTO_REFRESH_MS = 45_000;
@@ -203,6 +209,61 @@ export default function CoordPrsPage() {
     ? data.prs.filter((p) => isMergeStateRecalibrating(p)).length
     : 0;
 
+  // ---- R1: the health strip ----
+  // Derived from the rows ALREADY on the page — R1's load-bearing clause is
+  // "never a second fetch", and this reads `data.prs` and nothing else. The
+  // verdict keys off the same audited `prStatus` table the rows render from,
+  // so the strip and the badges beneath it can never disagree about how many
+  // PRs need a human.
+  const health = useMemo((): {
+    level: HealthStripLevel;
+    headline: string;
+    badges: HealthBadge[];
+  } | null => {
+    if (!data) return null;
+    let author = 0;
+    let waiting = 0;
+    for (const p of data.prs) {
+      const a = derivePrStatus(p).attention;
+      if (a === "author") author += 1;
+      else if (a === "waiting") waiting += 1;
+    }
+    const total = data.prs.length;
+    const level: HealthStripLevel =
+      author > 0 ? "red" : waiting > 0 ? "amber" : "green";
+    const headline =
+      author > 0
+        ? `${author} PR${author === 1 ? "" : "s"} need${author === 1 ? "s" : ""} a human now`
+        : waiting > 0
+          ? `Nothing needs you — ${waiting} waiting on the train`
+          : total > 0
+            ? "Every open PR is moving on its own"
+            : tab === "merged"
+              ? "No PRs merged in the last 24h"
+              : "No open PRs";
+    return {
+      level,
+      headline,
+      badges: [
+        { key: "total", label: `${tab === "merged" ? "merged" : "open"} ${total}` },
+        {
+          key: "author",
+          label: `needs you ${author}`,
+          tone: author > 0 ? "attention" : "muted",
+          title:
+            "PRs whose blocking reason nothing else will clear — see prStatus.ts for the audit.",
+        },
+        {
+          key: "waiting",
+          label: `waiting ${waiting}`,
+          tone: "muted",
+          title:
+            "Waiting on the merge train, a dispatched specialist review, or a state we cannot read yet.",
+        },
+      ],
+    };
+  }, [data, tab]);
+
   // Fast forced-refresh poll while anything is recalibrating. The normal 45s
   // auto-refresh reads coord's cache (`load(false)`), which stays UNKNOWN when
   // coord itself is stale — only a forced `load(true)` (`?refresh=1`) makes
@@ -225,71 +286,17 @@ export default function CoordPrsPage() {
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-prs-page">
-      {/* ---- Sub-header (layout owns the top console header) ---- */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <GitPullRequest className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold">Pull Requests</h2>
-            <p className="text-xs text-muted-foreground">
-              Every open PR fleet-wide with its CI / merge status and the
-              blocking reason answering &ldquo;why isn&rsquo;t this
-              merging.&rdquo;
-            </p>
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-2 sm:gap-3">
-          {updatedAt !== null && (
-            <span
-              className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
-              data-testid="prs-updated-ago"
-            >
-              {relativeAgoLabel(updatedAt, now)}
-            </span>
-          )}
-          {recalibratingCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1 text-xs text-info"
-              data-testid="prs-recalibrating"
-              title={`${recalibratingCount} PR${recalibratingCount === 1 ? "" : "s"} recalibrating — forcing a GitHub re-read until the merge state settles`}
-            >
-              <RefreshCw className="h-3 w-3 animate-spin" />
-              {recalibratingCount} recalibrating
-            </span>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setAutoRefresh((v) => !v)}
-            data-testid="prs-autorefresh-toggle"
-            aria-pressed={autoRefresh}
-            title={
-              autoRefresh
-                ? "Auto-refresh on (~45s) — click to pause"
-                : "Auto-refresh paused — click to resume"
-            }
-          >
-            {autoRefresh ? (
-              <Pause className="h-3.5 w-3.5 mr-1" />
-            ) : (
-              <Play className="h-3.5 w-3.5 mr-1" />
-            )}
-            {autoRefresh ? "Auto" : "Paused"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => load(true)}
-            disabled={loading || refreshing}
-            data-testid="prs-refresh"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      {/* ---- R1: health strip first. Gated on `!loading` for the same reason
+           the coord banners are: the skeleton owns the body during a load, and
+           a verdict describing rows that aren't on screen is a lie. ---- */}
+      {!loading && health && (
+        <HealthStrip
+          level={health.level}
+          headline={health.headline}
+          badges={health.badges}
+          data-testid="prs-health"
+        />
+      )}
 
       {/* ---- Error ---- */}
       {error && (
@@ -341,14 +348,72 @@ export default function CoordPrsPage() {
 
       {/* ---- Open vs Recently-merged tabs ---- */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as PrTab)}>
-        <TabsList data-testid="coord-prs-tabs">
-          <TabsTrigger value="open" data-testid="coord-prs-tab-open">
-            Open
-          </TabsTrigger>
-          <TabsTrigger value="merged" data-testid="coord-prs-tab-merged">
-            Recently merged (24h)
-          </TabsTrigger>
-        </TabsList>
+        {/* R9's "or absent" arm: the page carries NO dedicated chrome row at
+            all. The staleness stamp, the recalibrating hint, the auto-refresh
+            toggle and Refresh ride the tab row they used to sit above — a row
+            that has to exist anyway, and had 1400px of empty space to its
+            right at 1080p. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <TabsList data-testid="coord-prs-tabs">
+            <TabsTrigger value="open" data-testid="coord-prs-tab-open">
+              Open
+            </TabsTrigger>
+            <TabsTrigger value="merged" data-testid="coord-prs-tab-merged">
+              Recently merged (24h)
+            </TabsTrigger>
+          </TabsList>
+<div className="ml-auto flex items-center gap-2 sm:gap-3">
+          {updatedAt !== null && (
+            <span
+              className="text-xs text-muted-foreground hidden sm:inline tabular-nums"
+              data-testid="prs-updated-ago"
+            >
+              {relativeAgoLabel(updatedAt, now)}
+            </span>
+          )}
+          {recalibratingCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-info"
+              data-testid="prs-recalibrating"
+              title={`${recalibratingCount} PR${recalibratingCount === 1 ? "" : "s"} recalibrating — forcing a GitHub re-read until the merge state settles`}
+            >
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              {recalibratingCount} recalibrating
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAutoRefresh((v) => !v)}
+            data-testid="prs-autorefresh-toggle"
+            aria-pressed={autoRefresh}
+            title={
+              autoRefresh
+                ? "Auto-refresh on (~45s) — click to pause"
+                : "Auto-refresh paused — click to resume"
+            }
+          >
+            {autoRefresh ? (
+              <Pause className="h-3.5 w-3.5 mr-1" />
+            ) : (
+              <Play className="h-3.5 w-3.5 mr-1" />
+            )}
+            {autoRefresh ? "Auto" : "Paused"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => load(true)}
+            disabled={loading || refreshing}
+            data-testid="prs-refresh"
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
+        </div>
 
         {/* Both tabs share one data source (the active-tab fetch). Render the
             same body under whichever tab is active; the empty-state copy and

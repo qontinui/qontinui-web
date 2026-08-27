@@ -8,9 +8,27 @@
  * tooltip = blocking_summary) · Age (relative, from last_refreshed_at).
  *
  * Controls: filter by repo, filter by merge_status, sort by age.
+ *
+ * ## Console style (Phase 3 Wave 4) — D2, on a shadcn `<Table>`
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` keeps the
+ * table: an 8-column (10 on the merged tab) comparison is a legitimate dense
+ * form and the column comparison is the job this page exists for. What it
+ * gains is a clickable row expanding a full-width `<tr><td colSpan>`
+ * `<RecordDetail>` beneath it — the same primitive the row lists use, not a
+ * slide-over — plus the attention palette.
+ *
+ * **The one tooltip on this page STAYS.** `MergeStateHeader` is a
+ * COLUMN-HEADER LEGEND explaining what the "Merge state" column means, not
+ * per-record detail. The plan's D2 amendment is explicit that deleting it
+ * would lose information the expanded row does not carry.
+ *
+ * **The two links inside the row stop propagation.** `#123` and the blocking
+ * badge deep-link to GitHub / the alerts rollup; a click on either must
+ * navigate, not toggle the row.
  */
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,17 +45,24 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type {
-  PrRow,
-  PrMergeStatus,
-  PrDeployState,
-} from "@/services/admin-dev-service";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import type { PrRow, PrDeployState } from "@/services/admin-dev-service";
 import {
   formatContextNames,
   proposalIsActive,
   unstableHasFailure,
 } from "@/components/operations/prPipeline";
 import { PrDraftStateControl } from "@/components/operations/PrDraftStateControl";
+import {
+  RecordDetail,
+  StatusBadge,
+  rowAccentClass,
+} from "@/components/console";
+import {
+  derivePrStatus,
+  mergeStatusLabel,
+  PR_STATUS_PALETTE,
+} from "../prStatus";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -93,48 +118,15 @@ type BadgeTone =
   | "warning"
   | "info";
 
-/**
- * Severity/color map by merge_status. The "stuck" states the operator most
- * needs to see — `ready-but-unlanded`, `repo-unreachable`, and
- * `awaiting-specialist-review` — are deliberately LOUD (destructive red /
- * warning orange). Calm states
- * (`ready`/`queued`) read green/blue; `draft` and `unknown` are muted; the
- * actionable-but-not-stuck blockers (ci/conflicts/behind/review/blast-radius)
- * are warning-colored.
- */
-const MERGE_STATUS_TONE: Record<PrMergeStatus, BadgeTone> = {
-  // LOUD — genuinely stuck, needs an operator.
-  "ready-but-unlanded": "destructive",
-  "repo-unreachable": "destructive",
-  "awaiting-specialist-review": "warning",
-  // Warning — a concrete blocker the PR author can act on.
-  "ci-failed": "destructive",
-  conflicts: "warning",
-  "behind-base": "warning",
-  "review-required": "warning",
-  // Same tone as `review-required`, which it was split out of — the badge's
-  // job here is "a concrete blocker someone can act on", and that has not
-  // changed; only WHO acts has. The badge text comes from `mergeStatusLabel`,
-  // so no label entry is needed.
-  "required-checks-missing": "warning",
-  "blast-radius-block": "warning",
-  // In-progress / calm.
-  "ci-pending": "info",
-  queued: "info",
-  ready: "success",
-  // Muted.
-  draft: "secondary",
-  unknown: "outline",
-};
-
-/** Short human label for the merge_status (the badge text). */
-function mergeStatusLabel(status: PrMergeStatus): string {
-  return status.replace(/-/g, " ");
-}
-
-function badgeTone(status: string): BadgeTone {
-  return MERGE_STATUS_TONE[status as PrMergeStatus] ?? "outline";
-}
+// The merge_status severity map MOVED to `../prStatus.ts` (R8 — status
+// derivation lives in a pure, unit-tested module; R3 — one audited
+// kind→attention table decides the hue, and a unit test asserts the two agree).
+// The map that used to live here described its own picks as "deliberately
+// LOUD", i.e. chosen by how alarming the state sounds — see `prStatus.ts` for
+// the four rows that reading got wrong.
+// `required-checks-missing` post-dates this move: it reached `PrMergeStatus`
+// while Wave 4 was in flight, so `prStatus.ts` is where its row was added, not
+// here. It grades as `ci-failed`'s sibling — see that row's note.
 
 // ---- CI badge ------------------------------------------------------------
 
@@ -472,6 +464,9 @@ export function PrsTable({
 }) {
   const [repoFilter, setRepoFilter] = useState<string>(ALL);
   const [statusFilter, setStatusFilter] = useState<string>(ALL);
+  // R5 — one row open at a time, the same model `<RecordList>` holds for a row
+  // list, spelled out here because a `<TableBody>` cannot host that primitive.
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
   const repoOptions = useMemo(
     () => Array.from(new Set(prs.map((p) => p.repo))).sort(),
@@ -571,17 +566,33 @@ export function PrsTable({
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((p) => (
+              rows.map((p) => {
+                const key = `${p.repo}#${p.pr_number}`;
+                const expanded = openKey === key;
+                const status = derivePrStatus(p);
+                const Chevron = expanded ? ChevronDown : ChevronRight;
+                return (
+                  <Fragment key={key}>
                 <TableRow
-                  key={`${p.repo}#${p.pr_number}`}
                   data-testid={`pr-row-${p.repo}-${p.pr_number}`}
+                  data-expanded={expanded ? "true" : "false"}
+                  onClick={() => setOpenKey(expanded ? null : key)}
+                  // R4 — the accent is a left border; the row body stays
+                  // neutral, which is what keeps 40 rows readable when 6 are red.
+                  className={`cursor-pointer ${rowAccentClass(status)}`}
                 >
                   <TableCell className="max-w-[14rem]">
-                    <span
-                      className="text-sm text-muted-foreground truncate inline-block max-w-full align-bottom"
-                      title={p.repo}
-                    >
-                      {p.repo}
+                    <span className="inline-flex max-w-full items-center gap-1.5 align-bottom">
+                      <Chevron
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <span
+                        className="truncate text-sm text-muted-foreground"
+                        title={p.repo}
+                      >
+                        {p.repo}
+                      </span>
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
@@ -591,6 +602,9 @@ export function PrsTable({
                       rel="noopener noreferrer"
                       className="text-sm font-medium text-primary hover:underline"
                       title={`Open ${p.repo}#${p.pr_number} on GitHub`}
+                      // A deep link inside a clickable row must navigate, not
+                      // toggle the row underneath it.
+                      onClick={(e) => e.stopPropagation()}
                     >
                       #{p.pr_number}
                     </Link>
@@ -658,12 +672,106 @@ export function PrsTable({
                     </TableCell>
                   )}
                 </TableRow>
-              ))
+                {expanded && (
+                  // D2 — a full-width cell spanning every column, so it hosts
+                  // everything a fixed-width sheet could and keeps its width
+                  // as the merged tab adds two more columns.
+                  <TableRow
+                    data-testid={`pr-row-detail-${p.repo}-${p.pr_number}`}
+                    className="hover:bg-transparent"
+                  >
+                    <TableCell colSpan={merged ? 10 : 8} className="p-0">
+                      <PrDetail pr={p} />
+                    </TableCell>
+                  </TableRow>
+                )}
+                  </Fragment>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
     </div>
+  );
+}
+
+/**
+ * R5's detail, in the shared host and the fixed slot order.
+ *
+ * The material here previously existed only as `title` attributes on three
+ * different badges — invisible on touch, unselectable, and impossible to read
+ * two of at once. `why` is coord's own sentence about the row; `problems`
+ * names the failing checks; `actions` carries the deep links (D1's "Open full
+ * page ↗", in this surface's terms); `raw` carries the ids and the enum, which
+ * is the only place R8 allows them.
+ */
+function PrDetail({ pr }: { pr: PrRow }) {
+  const status = derivePrStatus(pr);
+  const failing = pr.failing_contexts ?? [];
+  const state = normalizeMergeState(pr.merge_state_status);
+  const meta =
+    state === "UNSTABLE"
+      ? unstableMeta(pr)
+      : MERGE_STATE_META[state];
+  return (
+    <RecordDetail
+      className="rounded-none border-x-0 border-b-0"
+      data-testid="pr-row-detail"
+      why={
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            {pr.blocking_summary ||
+              `coord reports this PR as “${mergeStatusLabel(pr.merge_status)}”.`}
+          </p>
+          {meta && (
+            <p className="text-xs text-muted-foreground/80">{meta.hint}</p>
+          )}
+        </div>
+      }
+      problems={
+        failing.length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">
+              Failing checks:
+            </p>
+            <p className="text-xs text-red-200">
+              {formatContextNames(failing)}
+            </p>
+          </div>
+        ) : undefined
+      }
+      actions={
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <Link
+            href={prGithubUrl(pr)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:underline"
+          >
+            Open {pr.repo}#{pr.pr_number} on GitHub ↗
+          </Link>
+          {pr.escalation_alert_id != null && (
+            <Link
+              href="/admin/coord/alerts"
+              className="font-medium text-primary hover:underline"
+            >
+              Open the escalation ↗
+            </Link>
+          )}
+        </div>
+      }
+      raw={
+        <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+          {pr.branch} → {pr.base_branch} · head {pr.head_sha.slice(0, 8)} ·
+          merge_status: {status.kind} · merge_state_status: {state} · mergeable:{" "}
+          {String(pr.mergeable)}
+          {pr.escalation_alert_id != null
+            ? ` · escalation: ${pr.escalation_alert_id}`
+            : ""}
+        </div>
+      }
+    />
   );
 }
 
@@ -678,8 +786,7 @@ export function PrsTable({
  * operator lands one click from the actual blocker.
  */
 function BlockingBadge({ pr }: { pr: PrRow }) {
-  const tone = badgeTone(pr.merge_status);
-  const label = mergeStatusLabel(pr.merge_status);
+  const status = derivePrStatus(pr);
   const href =
     pr.escalation_alert_id != null
       ? "/admin/coord/alerts"
@@ -693,15 +800,22 @@ function BlockingBadge({ pr }: { pr: PrRow }) {
       rel={isExternal ? "noopener noreferrer" : undefined}
       className="inline-block"
       data-testid="blocking-badge-link"
+      // The badge is a deep link inside a clickable row: it must navigate,
+      // not toggle the row underneath it.
+      onClick={(e) => e.stopPropagation()}
     >
-      <Badge
-        variant={tone}
-        title={pr.blocking_summary || label}
-        data-testid="blocking-badge"
-        className="cursor-pointer"
-      >
-        {label}
-      </Badge>
+      {/* R3 — the hue comes from `prStatus`'s audited table, and `StatusBadge`
+          carries the reason as a native `title` plus the colourblind-safe `✕`
+          on every author-action kind. The wrapping span keeps the authored
+          `blocking-badge` testid resolvable (D4a) without widening the shared
+          primitive's props for one surface. */}
+      <span data-testid="blocking-badge" className="contents">
+        <StatusBadge
+          status={status}
+          palette={PR_STATUS_PALETTE}
+          className="cursor-pointer"
+        />
+      </span>
     </Link>
   );
 }

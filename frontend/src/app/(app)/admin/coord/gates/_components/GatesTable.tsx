@@ -9,11 +9,33 @@
  *
  * Controls: filter by verdict, filter by progress basis (kind), sort by
  * age / fraction / eta.
+ *
+ * ## Console style (Phase 3 Wave 4) — D2, on a shadcn `<Table>`
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` keeps the
+ * table: nine columns of gate state are a legitimate dense form and the
+ * column comparison is the job this page exists for. `GatesTable` had **zero**
+ * tooltips and its only per-record affordance was the Actions column, so the
+ * gap D2 fills here is simply *absent detail*.
+ *
+ * **What moved off the row and into the expansion** — this is the density
+ * work, and it is what took a row from ~4 stacked lines to ~2:
+ *
+ * | was | now |
+ * |---|---|
+ * | `GateAnchor` — a third line under the title | `<RecordDetail>` `why` |
+ * | `ShadowReapEvidence` — a fourth line under the title | `<RecordDetail>` `problems` |
+ * | `ProgressFreshness` — an "as of Xs ago" third line in the Progress cell | `<RecordDetail>` `history` |
+ * | `ClearanceProvenanceLine` — a second line under the verdict badge | `<RecordDetail>` `history` |
+ * | the gate id, on its own line | inline beside the title (it is the SEARCH HANDLE, so it stays on the collapsed row) plus the full id in `raw` |
+ *
+ * **The Actions cell stops propagation.** Its buttons open dialogs; a click
+ * there must not toggle the row underneath.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Copy } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -38,6 +60,12 @@ import {
 } from "../../_shared/clearanceRuleBand";
 import { ShadowReapEvidence } from "./ShadowReap";
 import { GateActions } from "./GateActions";
+import {
+  RecordDetail,
+  StatusBadge,
+  rowAccentClass,
+} from "@/components/console";
+import { deriveGateStatus, GATE_STATUS_PALETTE } from "../gateStatus";
 
 // ---- formatting helpers --------------------------------------------------
 
@@ -84,27 +112,12 @@ function formatEta(g: GateOverviewRow): string {
   return eta_confidence === "estimate" ? `~${rel}` : rel;
 }
 
-type VerdictTone = "default" | "secondary" | "destructive" | "outline";
-
-function verdictTone(verdict: string): VerdictTone {
-  const v = verdict.toLowerCase();
-  if (v === "pass" || v === "passed" || v === "cleared" || v === "ready")
-    return "default";
-  // `withdrawn` (registrant cancelled its own request) tones like `failed` —
-  // destructive terminal — but keeps its own label (the badge renders the
-  // verdict text verbatim), so the two stay visually distinct.
-  if (
-    v === "fail" ||
-    v === "failed" ||
-    v === "error" ||
-    v === "veto" ||
-    v === "withdrawn"
-  )
-    return "destructive";
-  if (v === "pending" || v === "queued" || v === "evaluating")
-    return "secondary";
-  return "outline";
-}
+// The verdict→tone map MOVED to `../gateStatus.ts` (R8 — status derivation
+// lives in a pure, unit-tested module; R3 — one audited kind→attention table
+// decides the hue). Two of its readings were wrong and are corrected there:
+// `withdrawn` was destructive red (a registrant cancelling its own request
+// costs nobody anything), and `stale` was a red ornament beside a calm badge
+// rather than part of the verdict.
 
 function progressVariant(
   g: GateOverviewRow
@@ -120,27 +133,6 @@ function progressVariant(
 
 // ---- progress cell -------------------------------------------------------
 
-/**
- * "as of Xs ago" freshness sub-line, derived from `progress.computed_at` (when
- * the coord sweep last computed this gate's progress). Renders nothing when the
- * timestamp is null/absent (progress never computed / not persisted) so the
- * cell never grows a dangling line. Reuses the stale tone for a stale gate.
- */
-function ProgressFreshness({ gate }: { gate: GateOverviewRow }) {
-  const computedAt = gate.progress.computed_at ?? null;
-  if (!computedAt) return null;
-  const rel = formatRelative(computedAt);
-  if (rel === "—") return null;
-  return (
-    <div
-      className={`text-[11px] ${gate.stale ? "text-destructive" : "text-muted-foreground/70"}`}
-      title={`progress computed ${formatAbsolute(computedAt)}`}
-    >
-      as of {rel}
-    </div>
-  );
-}
-
 function ProgressCell({ gate }: { gate: GateOverviewRow }) {
   const { fraction, current, target, unit, basis } = gate.progress;
 
@@ -151,6 +143,10 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
         ? `${current}${unit ? ` ${unit}` : ""}`
         : null;
 
+  // `<ProgressFreshness>` used to render a THIRD line here on every row. It is
+  // support material — "when did coord last compute this?" — so it moved into
+  // the expansion (R5's `history` slot). Dropping it is what lets the Progress
+  // cell stop being the tallest thing in the table.
   if (fraction === null) {
     return (
       <div className="min-w-[8rem]">
@@ -158,7 +154,6 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
         <div className="text-[11px] text-muted-foreground/70">
           {basis === "indeterminate" ? "indeterminate" : detail ?? basis}
         </div>
-        <ProgressFreshness gate={gate} />
       </div>
     );
   }
@@ -176,32 +171,18 @@ function ProgressCell({ gate }: { gate: GateOverviewRow }) {
         <span>{Math.round(pct)}%</span>
         {detail && <span className="truncate">{detail}</span>}
       </div>
-      <ProgressFreshness gate={gate} />
     </div>
   );
 }
 
-// ---- anchor cell ---------------------------------------------------------
-
-/**
- * The gate's work anchor sub-line, generic over plan vs work-unit (coord
- * generalized gate predicates off the plan vocabulary). A gate may anchor to a
- * plan (`plan_slug`/`plan_id`) or a generic work unit (`work_unit_id`, with the
- * plan fields null). We show whichever identifier is present plus the shared
- * `phase_name`, and never assume a plan-specific field exists.
- */
-function GateAnchor({ gate }: { gate: GateOverviewRow }) {
-  const anchorId =
-    gate.plan_slug ?? gate.work_unit_slug ?? gate.work_unit_id ?? null;
-  if (!anchorId && !gate.phase_name) return null;
-  return (
-    <div className="text-[11px] text-muted-foreground truncate">
-      {anchorId}
-      {anchorId && gate.phase_name ? " · " : ""}
-      {gate.phase_name}
-    </div>
-  );
-}
+// ---- anchor ---------------------------------------------------------------
+//
+// `GateAnchor` (the work-anchor sub-line, generic over plan vs work-unit) is
+// gone as a component: its content is now the second line of `<GateDetail>`'s
+// `why` slot, which is where R5 puts "what is this row about". It stayed
+// generic over both anchor kinds — a gate may anchor to a plan
+// (`plan_slug`/`plan_id`) or to a generic work unit (`work_unit_id`, plan
+// fields null) — and still never assumes a plan-specific field exists.
 
 // ---- gate-id cell --------------------------------------------------------
 
@@ -213,7 +194,10 @@ function GateAnchor({ gate }: { gate: GateOverviewRow }) {
  */
 function GateIdCell({ gate }: { gate: GateOverviewRow }) {
   const short = gate.gate_id.slice(0, 8);
-  const copy = async () => {
+  const copy = async (e: React.MouseEvent) => {
+    // The copy button lives inside a clickable row: copying must not also
+    // toggle the expansion under the operator's cursor.
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(gate.gate_id);
       toast.success("Gate id copied");
@@ -223,7 +207,7 @@ function GateIdCell({ gate }: { gate: GateOverviewRow }) {
   };
   return (
     <div
-      className="flex items-center gap-1 text-[11px] text-muted-foreground/70"
+      className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/70"
       data-testid="gates-gate-id"
     >
       <span className="tabular-nums" title={gate.gate_id}>
@@ -309,6 +293,9 @@ export function GatesTable({
   clearanceRules?: readonly CoordPolicyRow[] | null;
 }) {
   const [search, setSearch] = useState("");
+  // R5 — one row open at a time, the same model `<RecordList>` holds for a row
+  // list, spelled out here because a `<TableBody>` cannot host that primitive.
+  const [openGate, setOpenGate] = useState<string | null>(null);
   const [verdictFilter, setVerdictFilter] = useState<string>(ALL);
   const [basisFilter, setBasisFilter] = useState<string>(ALL);
   const [sortKey, setSortKey] = useState<SortKey>("age");
@@ -485,96 +472,204 @@ export function GatesTable({
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((g) => (
-                <TableRow key={g.gate_id} data-testid="gates-table-row">
-                  <TableCell className="max-w-[16rem]">
-                    <div className="font-medium text-sm truncate" title={g.title}>
-                      {g.title}
-                    </div>
-                    <GateAnchor gate={g} />
-                    <GateIdCell gate={g} />
-                    <ShadowReapEvidence gate={g} />
-                  </TableCell>
-                  <TableCell className="max-w-[16rem]">
-                    <div
-                      className="text-xs text-muted-foreground truncate"
-                      title={g.measures}
+              rows.map((g) => {
+                const expanded = openGate === g.gate_id;
+                const status = deriveGateStatus(g);
+                const Chevron = expanded ? ChevronDown : ChevronRight;
+                return (
+                  <Fragment key={g.gate_id}>
+                    <TableRow
+                      data-testid="gates-table-row"
+                      data-expanded={expanded ? "true" : "false"}
+                      onClick={() =>
+                        setOpenGate(expanded ? null : g.gate_id)
+                      }
+                      // R4 — a 2px left border, not a coloured row: the body
+                      // stays neutral so 40 rows read when 6 are red.
+                      className={`cursor-pointer ${rowAccentClass(status)}`}
                     >
-                      {g.measures}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <ProgressCell gate={g} />
-                  </TableCell>
-                  <TableCell className="text-sm whitespace-nowrap">
-                    {formatEta(g)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={verdictTone(g.verdict)}
-                      title={g.verdict_reason ?? undefined}
-                    >
-                      {g.verdict}
-                    </Badge>
-                    <ClearanceProvenanceLine gate={g} bandIndex={bandIndex} />
-                  </TableCell>
-                  <TableCell className="text-sm whitespace-nowrap tabular-nums">
-                    {formatAge(g.age_secs)}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {g.evaluated_at ? (
-                      <span
-                        className="text-sm text-muted-foreground"
-                        title={formatAbsolute(g.evaluated_at)}
+                      <TableCell className="max-w-[18rem]">
+                        <div className="flex items-center gap-1.5">
+                          <Chevron
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <span
+                            className="truncate text-sm font-medium"
+                            title={g.title}
+                          >
+                            {g.title}
+                          </span>
+                          {/* The short gate id stays on the COLLAPSED row: it
+                              is the handle the search box prefix-matches on,
+                              so folding it away would hide the thing a
+                              deep-linked operator pastes. It rides inline
+                              rather than on a line of its own. */}
+                          <GateIdCell gate={g} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[16rem]">
+                        <div
+                          className="truncate text-xs text-muted-foreground"
+                          title={g.measures}
+                        >
+                          {g.measures}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <ProgressCell gate={g} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm">
+                        {formatEta(g)}
+                      </TableCell>
+                      <TableCell>
+                        {/* R3 — one audited badge where there used to be a
+                            verdict badge PLUS a separate red "stale" word in
+                            the next column. */}
+                        <StatusBadge
+                          status={status}
+                          palette={GATE_STATUS_PALETTE}
+                        />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                        {formatAge(g.age_secs)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {g.evaluated_at ? (
+                          <span
+                            className="text-sm text-muted-foreground"
+                            title={formatAbsolute(g.evaluated_at)}
+                          >
+                            {formatRelative(g.evaluated_at)}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            never
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {g.muted && <Badge variant="secondary">muted</Badge>}
+                          {g.snoozed_until && (
+                            <Badge
+                              variant="outline"
+                              title={`until ${formatAbsolute(g.snoozed_until)}`}
+                            >
+                              snoozed
+                            </Badge>
+                          )}
+                          {/* Gate-class chip — registrant self-classification
+                              (free vocabulary; NULL/absent = unclassified → no
+                              chip, identical to today). */}
+                          {g.gate_class && (
+                            <Badge
+                              variant="outline"
+                              className="font-mono"
+                              data-testid="gates-gate-class"
+                            >
+                              {g.gate_class}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        // The action buttons open dialogs; a click here must
+                        // not toggle the row underneath them.
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {formatRelative(g.evaluated_at)}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        never
-                      </span>
+                        <GateActions gate={g} onActed={onActed} />
+                      </TableCell>
+                    </TableRow>
+                    {expanded && (
+                      // D2 — a full-width cell spanning all nine columns.
+                      <TableRow
+                        data-testid="gates-table-row-detail"
+                        className="hover:bg-transparent"
+                      >
+                        <TableCell colSpan={9} className="p-0">
+                          <GateDetail gate={g} bandIndex={bandIndex} />
+                        </TableCell>
+                      </TableRow>
                     )}
-                    {g.stale && (
-                      <Badge variant="destructive" className="ml-1.5">
-                        stale
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {g.muted && <Badge variant="secondary">muted</Badge>}
-                      {g.snoozed_until && (
-                        <Badge
-                          variant="outline"
-                          title={`until ${formatAbsolute(g.snoozed_until)}`}
-                        >
-                          snoozed
-                        </Badge>
-                      )}
-                      {/* Gate-class chip — registrant self-classification
-                          (free vocabulary; NULL/absent = unclassified → no
-                          chip, identical to today). */}
-                      {g.gate_class && (
-                        <Badge
-                          variant="outline"
-                          className="font-mono"
-                          data-testid="gates-gate-class"
-                        >
-                          {g.gate_class}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <GateActions gate={g} onActed={onActed} />
-                  </TableCell>
-                </TableRow>
-              ))
+                  </Fragment>
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
     </div>
+  );
+}
+
+/**
+ * R5's detail, in the shared host and the fixed slot order.
+ *
+ * Every slot here previously rendered as an extra stacked line on the
+ * collapsed row (see the table in this file's header). `raw` carries the full
+ * gate id, the anchor ids and the audience — R8's rule that raw ids appear in
+ * the expansion and nowhere else.
+ */
+function GateDetail({
+  gate,
+  bandIndex,
+}: {
+  gate: GateOverviewRow;
+  bandIndex: ReadonlyMap<string, ClearanceRuleBand> | null;
+}) {
+  const status = deriveGateStatus(gate);
+  const anchorId =
+    gate.plan_slug ?? gate.work_unit_slug ?? gate.work_unit_id ?? null;
+  const computedAt = gate.progress.computed_at ?? null;
+  return (
+    <RecordDetail
+      className="rounded-none border-x-0 border-b-0"
+      data-testid="gates-row-detail"
+      why={
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            {status.reason ?? gate.measures}
+          </p>
+          {(anchorId || gate.phase_name) && (
+            <p className="text-xs text-muted-foreground/80">
+              Anchored to{" "}
+              <span className="font-medium text-foreground">
+                {anchorId ?? "an unnamed unit"}
+              </span>
+              {gate.phase_name ? ` · ${gate.phase_name}` : ""}
+            </p>
+          )}
+        </div>
+      }
+      problems={<ShadowReapEvidence gate={gate} />}
+      history={
+        <div className="space-y-1">
+          {computedAt && (
+            <p
+              className={`text-[11px] ${gate.stale ? "text-red-200" : "text-muted-foreground/70"}`}
+              title={`progress computed ${formatAbsolute(computedAt)}`}
+              data-testid="gates-progress-freshness"
+            >
+              Progress computed {formatRelative(computedAt)}
+              {gate.stale ? " — coord's sweep is overdue on this gate." : "."}
+            </p>
+          )}
+          <ClearanceProvenanceLine gate={gate} bandIndex={bandIndex} />
+        </div>
+      }
+      raw={
+        <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+          gate_id: {gate.gate_id} · verdict: {gate.verdict} · audience:{" "}
+          {gate.clearance_audience}
+          {gate.claim_kind ? ` · claim: ${gate.claim_kind}` : ""}
+          {gate.resource_key ? `:${gate.resource_key}` : ""}
+          {gate.plan_id ? ` · plan_id: ${gate.plan_id}` : ""}
+          {gate.work_unit_id ? ` · work_unit_id: ${gate.work_unit_id}` : ""}
+        </div>
+      }
+    />
   );
 }
 
