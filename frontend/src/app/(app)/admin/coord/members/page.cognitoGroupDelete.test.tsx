@@ -27,6 +27,15 @@
  * 5. **An unreadable member count is UNKNOWN, never 0.** A confident "0
  *    members" derived from a failed probe is the argument FOR deleting.
  *
+ * **Every test opens the "Cognito Groups" panel first.** Wave 4
+ * (`feat(console): bring /members onto the console primitives`) folded all four
+ * secondary sections into `CollapsiblePanel`s with `defaultOpen={false}`, and
+ * Radix `CollapsibleContent` UNMOUNTS its children while closed — so none of
+ * this section's rows, badges or buttons exist in the document until someone
+ * opens it. That is the real behaviour, so the tests start where an operator
+ * does rather than reaching past it: `openGroupsPanel` is a click on the
+ * section header, not a test-only escape hatch.
+ *
  * `DestructiveButton` is stubbed to a plain button here. Its real behaviour —
  * refusing clicks whose `event.isTrusted` is false — is covered by
  * `components/ui/destructive-button.test.tsx`, and jsdom cannot produce a
@@ -164,9 +173,25 @@ function user(username: string) {
   };
 }
 
+/**
+ * Open the folded "Cognito Groups" section and wait for its table to mount.
+ *
+ * The panel persists its open/closed choice to `localStorage`, so `beforeEach`
+ * clears it: without that the FIRST test's click would leave every later test
+ * pre-opened, and the day the fold changes only one test would notice.
+ */
+async function openGroupsPanel(
+  user_: ReturnType<typeof userEvent.setup>
+): Promise<void> {
+  await user_.click(
+    await screen.findByRole("button", { name: /cognito groups/i })
+  );
+}
+
 describe("/admin/coord/members — Cognito group delete", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
     deleteCalls.length = 0;
     state = {
       groups: [group("acme-devs")],
@@ -178,7 +203,9 @@ describe("/admin/coord/members — Cognito group delete", () => {
   });
 
   it("shows the member count and mapped tenants without expanding the row", async () => {
+    const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
     await waitFor(() =>
@@ -196,7 +223,9 @@ describe("/admin/coord/members — Cognito group delete", () => {
 
   it("reports an unreadable member count as unknown, never as zero", async () => {
     state.usersByGroup = { "acme-devs": "error" };
+    const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     const badge = await screen.findByTestId(
       "cognito-group-members-count-acme-devs"
@@ -205,9 +234,41 @@ describe("/admin/coord/members — Cognito group delete", () => {
     expect(badge).not.toHaveTextContent("0 members");
   });
 
+  it("spends no member probes on a panel nobody opened", async () => {
+    // Wave 4 folded this section as "the least-often-read on the page". The
+    // blast radius costs one coord read plus one AWS `list_users_in_group`
+    // PER GROUP, so firing them for a panel that is closed by default would
+    // bill every members-page load for a section nobody looked at.
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const urls = () =>
+      fetchMock.mock.calls.map((c) =>
+        String(c[0]).replace(/^https?:\/\/[^/]+/, "")
+      );
+    expect(urls().some((u) => /\/cognito\/groups\/[^/]+\/users/.test(u))).toBe(
+      false
+    );
+
+    // Opening it is what buys them — and the count still lands.
+    await openGroupsPanel(user_);
+    await waitFor(() =>
+      expect(
+        urls().some((u) => /\/cognito\/groups\/[^/]+\/users/.test(u))
+      ).toBe(true)
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("cognito-group-members-count-acme-devs")
+      ).toHaveTextContent("2 members")
+    );
+  });
+
   it("opens a confirmation instead of deleting on the first click", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
@@ -222,6 +283,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
   it("requires the group name to be typed before it will delete", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
@@ -248,6 +310,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
   it("shows the mapped tenants inside the confirmation too", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
@@ -273,6 +336,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
       },
     };
     render(<MembersPage />);
+    await openGroupsPanel(user_);
 
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
@@ -303,7 +367,9 @@ describe("/admin/coord/members — Cognito group delete", () => {
     });
 
     it("is flagged on the collapsed row as a home pin", async () => {
+      const user_ = userEvent.setup();
       render(<MembersPage />);
+      await openGroupsPanel(user_);
       expect(
         await screen.findByTestId("cognito-group-home-pin-acme-home")
       ).toHaveTextContent("acme");
@@ -312,6 +378,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     it("will not confirm until the un-pin is acknowledged, then sends the override", async () => {
       const user_ = userEvent.setup();
       render(<MembersPage />);
+      await openGroupsPanel(user_);
 
       await user_.click(
         await screen.findByTestId("cognito-delete-group-acme-home")
@@ -340,6 +407,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     it("says the effect lands at next login rather than promising a sweep", async () => {
       const user_ = userEvent.setup();
       render(<MembersPage />);
+      await openGroupsPanel(user_);
 
       await user_.click(
         await screen.findByTestId("cognito-delete-group-acme-home")
