@@ -12,17 +12,22 @@ regressions. **This directory is the capture half only** (Phase 1).
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| `routes.json` | Committed manifest of gated routes (`id`, `path`, `public`, `settleMs`). Single source of truth — expand by appending objects, no code change. |
-| `style-capture.spec.ts` | One Playwright `test()` per authed route: navigate → settle → fetch snapshot → screenshot. |
-| `.artifacts/` | **gitignored** per-run output (see below). |
+| File                    | Purpose                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `routes.json`           | Committed manifest of gated routes (`id`, `path`, `public`, `settleMs`). Single source of truth — expand by appending objects, no code change.       |
+| `manifest.ts`           | The manifest contract, pure + Playwright-free: `capturePathFor()` is the ONE place `public` is interpreted (`false` → `relay`, `true` → `injected`). |
+| `manifest.test.ts`      | vitest unit tests for that contract, including the committed `routes.json` itself.                                                                   |
+| `style-capture.spec.ts` | One Playwright `test()` per route, in one of two lanes: relay (authed) or injected (public).                                                         |
+| `.artifacts/`           | **gitignored** per-run output (see below).                                                                                                           |
 
-> **All seed routes are authenticated.** Public/unauthenticated routes need a
-> relay-independent snapshot path (a Playwright in-page UI-Bridge SDK eval, not
-> the relay proxy) — **deferred**; the relay snapshot route requires an
-> authenticated user+session (see [Relay prerequisite](#relay-prerequisite-important)).
-> The `public` field is retained in the schema for that future path.
+> **Two capture lanes, selected per route by `public`.** `public: false` takes
+> the **relay** lane (authed storageState + `/control/snapshot`); `public: true`
+> takes the **injected** lane — a fresh unauthenticated context plus UI Bridge's
+> shipped injected runtime, read in-page. The relay lane requires an
+> authenticated user+session (see
+> [Relay prerequisite](#relay-prerequisite-relay-lane-only)); the injected lane
+> requires none of it (see [Injected lane](#injected-lane-public-routes)). Both
+> emit the same artifact shapes.
 
 Phases 2/3 add assertion specs + committed baselines here; Phase 4 adds the CI
 workflow that runs the capture and feeds `.artifacts/` to the analyzer.
@@ -36,7 +41,15 @@ tests/e2e/style-gate/.artifacts/snapshots/<id>.json   # /control/snapshot body, 
 tests/e2e/style-gate/.artifacts/frames/<id>.png       # 1280x800 viewport screenshot
 ```
 
-Seed route ids (all authed): `co-pilot`, `build-workflows`, `library`.
+Seed route ids — relay lane (authed): `co-pilot`, `build-workflows`,
+`library`. Injected lane (public): `login`.
+
+> **Captured is not the same as scored.** `.github/workflows/style-gate.yml`
+> audits a HARDCODED route list (`ROUTES="co-pilot build-workflows library"`).
+> `login` is captured and uploaded with the other artifacts, but not yet run
+> through the analyzer. Adding it to that list also requires `specs/login.json` —
+> a missing spec is an INFRA error that reds the job in **both** shadow and
+> enforce — so the spec ships first.
 
 The snapshot body keeps the relay's `/control/snapshot` envelope (one of the
 shapes `parse_snapshot` accepts — `{elements:[...]}` / `{data:{elements:[...]}}`
@@ -65,27 +78,41 @@ All other SDK fields pass through (the Rust `Element` has no
 
 A single Playwright project (in `frontend/playwright.config.ts`) runs the spec:
 
-- **`style-gate`** — authed: `dependencies: ["setup"]` + `storageState`. Renders
-  the routes with `public === false` (i.e. all of them today). Pins a fixed
+- **`style-gate`** — `dependencies: ["setup"]` + `storageState`. Pins a fixed
   `1280x800` viewport for reproducible frames.
 
-There is **no** public companion project — public routes can't be captured via
-the relay (the listener needs an authenticated user+session), so a public-route
-capture path is deferred to a later phase (see below).
+There is still **no public companion project**, and none is needed. A
+`public: true` route does not use the project's `page` fixture at all: its test
+creates its own `browser.newContext({ viewport })` with **no** `storageState`,
+so it inherits none of the minted auth — a genuinely signed-out tab inside the
+same project. The `setup` dependency remains for the relay lane's sake.
 
 ## Run locally
 
 ```bash
 # Against an already-running dev server (mint auth state once via the setup project):
 SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=http://localhost:3001 \
-  npx playwright test --project=style-gate          # authed routes
+  npx playwright test --project=style-gate          # both lanes
+
+# Just the public/injected lane (needs no auth env at all):
+SKIP_WEB_SERVER=1 PLAYWRIGHT_BASE_URL=http://localhost:3001 \
+  npx playwright test --project=style-gate -g "public/injected"
+```
+
+The manifest contract itself is unit-tested without a browser:
+
+```bash
+npx vitest run tests/e2e/style-gate
 ```
 
 Auth env (for the `setup` project that mints `storageState`):
 `PLAYWRIGHT_TEST_USERNAME` / `PLAYWRIGHT_TEST_PASSWORD` (Cognito). Without
 `SKIP_WEB_SERVER`, Playwright starts `npm run dev` on port 3001 itself.
 
-## Relay prerequisite (important)
+## Relay prerequisite (RELAY LANE ONLY)
+
+Nothing in this section applies to the injected lane — that is the whole point
+of it. For `public: true` routes see [Injected lane](#injected-lane-public-routes).
 
 `/control/snapshot` is a **browser-required** UI-Bridge route — it returns
 `503 NO_BROWSER_CONNECTED` unless the in-page `CommandRelayListener` is attached
@@ -112,12 +139,55 @@ are true.
 If the relay still never attaches within the settle budget, the spec **fails
 loudly** with an actionable message rather than writing an empty snapshot.
 
-Why authed-only: the relay listener's `commandRelayRegistrationMetadata`
-returns `null` without a resolved `{userId, sessionId}` (from the access
-token), so the listener never mounts on an unauthenticated tab — a public route
-would always 503. Capturing public routes therefore requires a
-relay-independent path (a Playwright in-page UI-Bridge SDK eval), deferred to a
-later phase.
+Why this lane is authed-only: the relay listener's
+`commandRelayRegistrationMetadata` returns `null` without a resolved
+`{userId, sessionId}` (from the access token), so the listener never mounts on
+an unauthenticated tab — a public route on this lane would always 503. That is
+a property of the **relay**, not of UI Bridge, which is why the second lane
+exists.
+
+## Injected lane (`public` routes)
+
+A `public: true` route is captured **without the relay**, using the transport UI
+Bridge already ships for driving pages that have no UI-Bridge code in them at
+all — the one `ui-bridge-inject` and `@qontinui/ui-bridge-wrapper`'s
+`InjectedTransport` use. Per route:
+
+1. a fresh `browser.newContext({ viewport })` — **no `storageState`**, no
+   `is_authenticated`/`token_expiry`/consent seeding, no login-surface guard
+   (on a public route the login surface is the subject, not a failure);
+2. two `addInitScript`s, in order, so both are live before first paint:
+   `window.__uiBridgeInjectedConfig` (settle tuning only — deliberately **no**
+   `uiBridgeBase`, which is what keeps the lane from starting a relay client),
+   then the shipped IIFE resolved from
+   `@qontinui/ui-bridge/injected/bundle.global.js`;
+3. `page.goto()`, then the runtime's own gates: `window.__uiBridgeInjected.ready`
+   → `.settled`. A runtime that settled only because its hard cap fired while
+   nothing had registered (`settledByTimeout && !expectSatisfied`) is treated as
+   **BLOCKED**, not captured — the same classification
+   `InjectedTransport.afterLaunch` makes;
+4. `window.__uiBridgeInjected.execute("getControlSnapshot", {})` — the in-page
+   dispatcher the relay proxy calls on the far side, so the envelope is the same
+   runner-native `{ elements: [...] }`;
+5. the **same** `normalizeBboxes` + `enrichElements` + `page.screenshot()` as the
+   relay lane. The analyzer cannot tell the lanes apart.
+
+What is reused vs. not: the bundle bytes and the in-page contract
+(`InjectedRuntimeApi` from `@qontinui/ui-bridge/injected`) are the shipped ones,
+verbatim. `InjectedTransport` itself is **not** constructed — it subclasses
+`HeadlessTransport`, whose remaining job is launching and closing a Chromium,
+and a second browser inside a Playwright test would sit outside the project's
+`use` config and produce a frame from a page the project never configured.
+Playwright owns the browser lifecycle; UI Bridge owns everything else. No CLI is
+shelled out to either — the published `ui-bridge-inject` bin is a silent no-op
+through its bin symlink, which an in-process import sidesteps.
+
+Nothing is shipped to production: the bundle exists only inside the automation
+browser, and the served page is byte-identical to what a real visitor gets.
+
+A per-route diagnostic is written to `.artifacts/diagnostics/<id>.json` with
+`capturePath: "injected"`, the final URL, the settle state, and both element
+counts.
 
 ## CI workflow & the `STYLE_GATE_ENFORCE` flag (Phase 4)
 
@@ -172,9 +242,9 @@ normally.
 Bumping the analyzer is a deliberate, reviewable change to `style-gate.lock`
 (its own PR); the SHA is never hardcoded in the workflow.
 
-## Authenticated capture (how the gate sees the real app, not /login)
+## Authenticated capture (how the relay lane sees the real app, not /login)
 
-The gated routes are authed `(app)` surfaces. CI auth uses the same proven
+Relay-lane routes are authed `(app)` surfaces. CI auth uses the same proven
 same-origin recipe as Spec CI (`tests/spec-ci/run-spec-ci.ts`):
 
 1. `auth.setup.ts` mints a ci-bot Cognito id token and seeds it as the
