@@ -18,6 +18,7 @@ import {
   containsUuid,
   detailActor,
   humanKind,
+  matchesNotificationRef,
   isContractError,
   isMigrationPending,
   isUnread,
@@ -326,5 +327,63 @@ describe("isContractError", () => {
       false
     );
     expect(isContractError(new Error("coord is not reachable"))).toBe(false);
+  });
+});
+
+/**
+ * The `?ref=` deep link the landed-write feed uses to reach one event's
+ * reasoning (plan `2026-08-27-tenant-level-agent-authorable-stores.md`,
+ * Phase 4).
+ *
+ * The link is built by a page that cannot know which id coord's payload
+ * carries, so the matcher accepts both readings. What it must never do is
+ * match loosely — a blank ref selecting the first row would silently open an
+ * unrelated event and present it as the write's stated reasoning.
+ */
+describe("matchesNotificationRef", () => {
+  const row = (over: Partial<CoordNotificationRow> = {}): CoordNotificationRow => ({
+    notification_id: "11111111-1111-4111-8111-111111111111",
+    kind: "policy_document_changed",
+    ...over,
+  });
+
+  it("matches the notification's own id", () => {
+    expect(
+      matchesNotificationRef(row(), "11111111-1111-4111-8111-111111111111")
+    ).toBe(true);
+  });
+
+  it("matches a notification_ref carried in the payload", () => {
+    expect(
+      matchesNotificationRef(
+        row({ detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" } }),
+        "fec41291-67ed-4cf8-b331-888ad1126b45"
+      )
+    ).toBe(true);
+  });
+
+  it("matches nothing for a blank, absent or whitespace ref", () => {
+    expect(matchesNotificationRef(row(), null)).toBe(false);
+    expect(matchesNotificationRef(row(), undefined)).toBe(false);
+    expect(matchesNotificationRef(row(), "")).toBe(false);
+    expect(matchesNotificationRef(row(), "   ")).toBe(false);
+    // Including against a row whose payload has an empty ref of its own.
+    expect(matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")).toBe(
+      false
+    );
+  });
+
+  it("is exact — a prefix or a different id does not match", () => {
+    expect(matchesNotificationRef(row(), "11111111")).toBe(false);
+    expect(
+      matchesNotificationRef(row(), "22222222-2222-4222-8222-222222222222")
+    ).toBe(false);
+  });
+
+  it("ignores a non-string payload value rather than coercing it", () => {
+    expect(matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")).toBe(
+      false
+    );
+    expect(matchesNotificationRef(row({ detail: null }), "x")).toBe(false);
   });
 });

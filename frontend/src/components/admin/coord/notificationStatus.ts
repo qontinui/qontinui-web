@@ -199,6 +199,36 @@ export function detailActor(
 }
 
 /**
+ * Does this row answer a `?ref=<id>` deep link?
+ *
+ * The landed-write feed on `/admin/coord/prompt-document-proposals` links a
+ * write to the notification that announced it, so the operator reaches the
+ * author's reasoning in one click instead of correlating two surfaces by
+ * timestamp (plan `2026-08-27-tenant-level-agent-authorable-stores.md`,
+ * Phase 4). It links into THIS feed rather than building a second one.
+ *
+ * Two spellings are accepted because the reference has two honest readings and
+ * the linking side cannot know which coord sent: the notification's own id, and
+ * a `notification_ref` coord carries into the payload (Phase 2 — the id of the
+ * finding whose body holds the reasoning). Matching both means the link works
+ * whichever one the payload turns out to carry, and neither reading can produce
+ * a false positive: both are opaque ids compared for exact equality.
+ *
+ * A blank ref matches nothing — an empty query string must never select the
+ * first row on the page.
+ */
+export function matchesNotificationRef(
+  n: Pick<CoordNotificationRow, "notification_id" | "detail">,
+  ref: string | null | undefined
+): boolean {
+  const wanted = (ref ?? "").trim();
+  if (!wanted) return false;
+  if (n.notification_id === wanted) return true;
+  const carried = n.detail?.["notification_ref"];
+  return typeof carried === "string" && carried.trim() === wanted;
+}
+
+/**
  * The single plain-language line for the row.
  *
  * Prefers coord's pre-rendered `summary` — coord owns the rendering, and its
