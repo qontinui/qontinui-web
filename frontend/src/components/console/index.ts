@@ -97,7 +97,11 @@ export { absoluteTime, relativeTime } from "./time";
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";
 
-export { DiffTable } from "./DiffTable";
+export {
+  DIFF_ADDED_COUNT_CLASS,
+  DIFF_REMOVED_COUNT_CLASS,
+  DiffTable,
+} from "./DiffTable";
 export type { DiffTableProps } from "./DiffTable";
 
 export {

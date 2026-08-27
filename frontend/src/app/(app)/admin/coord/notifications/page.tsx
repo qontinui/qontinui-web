@@ -104,6 +104,7 @@ import {
   isContractError,
   isMigrationPending,
   kindOptions,
+  linkedRefNotice,
   matchesNotificationRef,
   mergeKindVocabulary,
   selectionIds,
@@ -495,9 +496,14 @@ export default function CoordNotificationsPage() {
           className="text-sm text-muted-foreground"
           data-testid="coord-notifications-linked-ref"
         >
-          {linkedMatch
-            ? "Showing the event this write was announced with — expanded below."
-            : "The linked event is not on the page that is loaded. It may be older than these, or excluded by the filters above — clear them or load more."}
+          {linkedRefNotice({
+            found: Boolean(linkedMatch),
+            // The same predicate `RecordList`'s `loaded` uses below — nothing
+            // has been read yet, so "not on this page" would be a claim
+            // rather than a fact.
+            loading: loading && rows.length === 0,
+            error: Boolean(error),
+          })}
         </p>
       )}
 
