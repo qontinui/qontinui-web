@@ -129,6 +129,11 @@ import {
   FEDERATION_AUTHOR_GLYPH_KINDS,
   FEDERATION_KIND_CLASS,
 } from "@/app/(app)/admin/coord/federation/federationStatus";
+import {
+  MEMBER_ATTENTION_BY_KIND,
+  MEMBER_AUTHOR_GLYPH_KINDS,
+  MEMBER_KIND_CLASS,
+} from "@/app/(app)/admin/coord/members/memberStatus";
 
 /**
  * Every kind→attention table in the console, paired with the palette that
@@ -285,6 +290,14 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: FEDERATION_KIND_CLASS,
       authorGlyphKinds: FEDERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "member access (/admin/coord/members)",
+    attentionByKind: MEMBER_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: MEMBER_KIND_CLASS,
+      authorGlyphKinds: MEMBER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
