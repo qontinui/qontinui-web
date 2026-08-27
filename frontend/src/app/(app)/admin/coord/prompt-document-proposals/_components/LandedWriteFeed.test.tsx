@@ -373,7 +373,7 @@ describe("LandedWriteFeed — two versions of the same document", () => {
     ).toHaveAttribute("href", "/admin/coord/notifications?ref=ref-5");
   });
 
-  it("points each row's aria-controls at its OWN diff panel", () => {
+  it("points aria-controls at its OWN panel, and only while that panel exists", () => {
     renderFeed({
       writes: [write()],
       diffFor: () => ({ status: "ready", previous: "", current: "x\n" }),
@@ -381,11 +381,16 @@ describe("LandedWriteFeed — two versions of the same document", () => {
     const toggle = screen.getByTestId(
       "write-toggle-policy-operating-rules-6"
     );
+    // Collapsed: the panel is unmounted, so a constant IDREF here would be a
+    // reference to nothing — which axe reports under `aria-valid-attr-value`.
+    expect(toggle).not.toHaveAttribute("aria-controls");
+
+    fireEvent.click(toggle);
     expect(toggle).toHaveAttribute(
       "aria-controls",
       "write-diff-policy-operating-rules-6"
     );
-    fireEvent.click(toggle);
+    // …and the target really carries that id, so the reference resolves.
     expect(
       screen.getByTestId("write-diff-policy-operating-rules-6")
     ).toHaveAttribute("id", "write-diff-policy-operating-rules-6");
