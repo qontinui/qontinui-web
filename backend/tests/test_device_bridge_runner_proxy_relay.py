@@ -5,7 +5,7 @@ relay mode to :func:`app.api.v1.endpoints.device_bridge_ws.runner_proxy`:
 when the ``X-Qontinui-Device-Id`` header is present the request is relayed
 HTTP-over-WebSocket through the runner's outbound ``/devices/ws`` connection
 (via :meth:`CommandRelayService.dispatch_and_wait`) instead of the co-located
-``127.0.0.1`` urllib path.
+``127.0.0.1`` httpx path.
 
 These tests mock the runner-websocket manager + its ``.relay`` so
 ``dispatch_and_wait`` returns a canned ``command_response``, and the device
@@ -16,8 +16,13 @@ lookup so ownership/connection state is controllable. They assert:
   forwarded;
 * the response translation (status, decoded body, hop-by-hop header
   filtering);
-* error mapping (503 on ``RunnerNotConnectedError``, 504 on
-  ``RunnerCommandTimeoutError``);
+* error mapping (504 on ``RunnerCommandTimeoutError``). NOTE: the relay's
+  ONLY 503 is the ``ws_session_id IS NULL`` branch below. A former test here
+  forced ``dispatch_and_wait`` to raise ``RunnerNotConnectedError`` and
+  asserted a 503 — an outcome unreachable in production, because the dispatch
+  passes ``require_local_connection=False`` and that is the flag the raise is
+  gated on. Both the dead handler arm and that test are deleted (W3 of
+  ``plans/2026-08-27-mobile-cloud-relay-unreachable-remediation.md``);
 * the 413 oversize-body guard;
 * the 404 when the device is not owned by the caller.
 """
@@ -31,10 +36,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.api.v1.endpoints import device_bridge_ws
-from app.services.runner import (
-    RunnerCommandTimeoutError,
-    RunnerNotConnectedError,
-)
+from app.services.runner import RunnerCommandTimeoutError
 
 DEVICE_ID = "11111111-1111-1111-1111-111111111111"
 USER_ID = "22222222-2222-2222-2222-222222222222"
@@ -217,21 +219,6 @@ async def test_relay_empty_body_envelope(monkeypatch):
     assert envelope["query"] == ""
     assert response.status_code == 200
     assert response.body == b""
-
-
-@pytest.mark.asyncio
-async def test_relay_runner_not_connected_maps_503(monkeypatch):
-    _install_device_lookup(
-        monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": 12345}
-    )
-    dispatch = AsyncMock(side_effect=RunnerNotConnectedError(DEVICE_ID))
-    _install_manager(monkeypatch, dispatch=dispatch)
-
-    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
-    response = await device_bridge_ws.runner_proxy(
-        request, "health", user=SimpleNamespace(id=USER_ID)
-    )
-    assert response.status_code == 503
 
 
 @pytest.mark.asyncio
