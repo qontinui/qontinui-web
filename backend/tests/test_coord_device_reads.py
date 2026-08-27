@@ -10,7 +10,7 @@ Plan: ``2026-05-30-web-coord-schema-boundary-decoupling.md`` Phase 3.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -206,11 +206,48 @@ def test_derive_status_from_row_stale_liveness_claims_report_offline(claim):
     assert wire.derivedStatus.value == "offline"
 
 
-def test_derive_status_from_row_fresh_healthy_reports_healthy():
+# ---- relay-unroutable gate -------------------------------------------------
+#
+# A fresh heartbeat beside a NULL ``ws_session_id`` is self-contradictory:
+# every heartbeat arrives over the device WebSocket, so a 30s-old heartbeat
+# proves a socket was live — while ``_runner_proxy_relay`` gates the mobile
+# cloud relay on ``ws_session_id IS NOT NULL`` and 503s "runner not connected".
+# Reporting that row ``healthy`` hid a ~2h prod relay outage from operators on
+# 2026-08-27 (``derivedStatus: healthy`` served beside ``wsConnected: false``),
+# so the contradiction now reports ``degraded``.
+
+
+def test_derive_status_from_row_fresh_healthy_without_ws_is_relay_unroutable():
+    """The contradiction must not be reported as ``healthy``.
+
+    This used to assert ``healthy`` — that assertion WAS the blind spot.
+    """
     wire = devices_ep._device_row_to_wire(
         _coord_row(derived_status="healthy", last_heartbeat=_fresh_iso())
     )
+    assert wire.wsConnected is False
+    assert wire.derivedStatus.value == "degraded"
+
+
+def test_derive_status_from_row_fresh_healthy_with_ws_stays_healthy():
+    """The gate must not demote a device that IS routable."""
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(
+            derived_status="healthy", last_heartbeat=_fresh_iso(), ws_session_id=42
+        )
+    )
+    assert wire.wsConnected is True
     assert wire.derivedStatus.value == "healthy"
+
+
+@pytest.mark.parametrize("claim", ["degraded", "starting"])
+def test_derive_status_from_row_only_healthy_is_demoted(claim):
+    """``degraded`` already reads honestly and ``starting`` legitimately has no
+    WS pointer yet — demoting either would erase information, not add it."""
+    wire = devices_ep._device_row_to_wire(
+        _coord_row(derived_status=claim, last_heartbeat=_fresh_iso())
+    )
+    assert wire.derivedStatus.value == claim
 
 
 def test_derive_status_from_row_ws_presence_beats_stale_heartbeat():
@@ -230,12 +267,16 @@ def test_derive_status_from_row_missing_heartbeat_is_stale():
 
 
 def test_derive_status_from_row_unparseable_heartbeat_fails_open():
-    # Format drift must degrade to the old optimistic behavior, not flip the
-    # whole fleet offline.
+    # Format drift must NOT flip the whole fleet offline. An unparseable
+    # timestamp is treated as fresh, so this row lands in the
+    # relay-unroutable gate above (fresh claim, no ws_session_id) and reports
+    # ``degraded`` — still emphatically not ``offline``, which is what
+    # "fails open" is protecting against.
     wire = devices_ep._device_row_to_wire(
         _coord_row(derived_status="healthy", last_heartbeat="not-a-date")
     )
-    assert wire.derivedStatus.value == "healthy"
+    assert wire.derivedStatus.value != "offline"
+    assert wire.derivedStatus.value == "degraded"
 
 
 def test_derive_status_from_row_stale_errored_stays_errored():
@@ -253,22 +294,61 @@ def test_derive_status_orm_twin_staleness_gate():
     )
     assert devices_ep._derive_status(stale).value == "offline"
 
+    # Fresh, but with no WS presence pointer — the relay-unroutable
+    # contradiction, so ``degraded`` rather than ``offline`` (it is NOT stale)
+    # and rather than ``healthy`` (it is NOT reachable by the cloud relay).
     fresh = SimpleNamespace(
         ws_session_id=None,
         ui_error=None,
         derived_status="healthy",
         last_heartbeat=utc_now() - timedelta(seconds=10),
     )
-    assert devices_ep._derive_status(fresh).value == "healthy"
+    assert devices_ep._derive_status(fresh).value == "degraded"
 
-    # Naive datetimes (no tzinfo) are interpreted as UTC, not rejected.
+    # Naive datetimes (no tzinfo) are interpreted as UTC, not rejected — the
+    # point of this case is that it clears the STALENESS gate.
     naive_fresh = SimpleNamespace(
         ws_session_id=None,
         ui_error=None,
         derived_status="healthy",
         last_heartbeat=(utc_now() - timedelta(seconds=10)).replace(tzinfo=None),
     )
-    assert devices_ep._derive_status(naive_fresh).value == "healthy"
+    assert devices_ep._derive_status(naive_fresh).value == "degraded"
+
+    # ...and the same row WITH a live WS session is still healthy, which is
+    # what proves the naive timestamp was accepted rather than rejected.
+    naive_fresh_ws = SimpleNamespace(
+        ws_session_id=1234,
+        ui_error=None,
+        derived_status="healthy",
+        last_heartbeat=(utc_now() - timedelta(seconds=10)).replace(tzinfo=None),
+    )
+    assert devices_ep._derive_status(naive_fresh_ws).value == "healthy"
+
+
+def test_derive_status_orm_twin_relay_unroutable_matches_row_twin():
+    """The ORM and dict twins must not disagree about one device.
+
+    ``GET /api/v1/devices`` can be served from either, so an operator
+    comparing the two views of the same device would otherwise see one call it
+    healthy and the other call it degraded.
+    """
+    fresh_iso = _fresh_iso()
+    orm = SimpleNamespace(
+        ws_session_id=None,
+        ui_error=None,
+        derived_status="healthy",
+        last_heartbeat=datetime.fromisoformat(fresh_iso),
+    )
+    row_status = devices_ep._derive_status_from_row(
+        {
+            "ws_session_id": None,
+            "ui_error": None,
+            "derived_status": "healthy",
+            "last_heartbeat": fresh_iso,
+        }
+    )
+    assert devices_ep._derive_status(orm) == row_status == "degraded"
 
 
 # ---- migrated endpoints ---------------------------------------------------

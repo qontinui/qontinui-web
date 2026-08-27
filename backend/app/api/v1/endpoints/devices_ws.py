@@ -101,7 +101,21 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     except CoordJWKSUnavailableError as exc:
         # Cold-start failure: coord unreachable. Reject all handshakes
         # rather than silently falling back to "trust the token".
-        logger.error("devices_ws_jwks_unavailable", error=str(exc))
+        #
+        # The runner records the close reason below as its `last_error`, and
+        # that reason is deliberately vague, so THIS log line is the whole
+        # diagnostic surface. Name the coord URL we actually dialled and the
+        # concrete exception class of the underlying transport fault: a
+        # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
+        # a genuinely slow coord are different incidents with different fixes,
+        # and `error=str(exc)` alone has repeatedly failed to separate them.
+        logger.error(
+            "devices_ws_jwks_unavailable",
+            error=str(exc),
+            failure=type(exc).__name__,
+            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
+            coord_url=coord_jwks_client.coord_url,
+        )
         # 1011 = internal error / service overload.
         await reject(
             websocket,
@@ -323,14 +337,15 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # GET /api/v1/devices don't see a false wsConnected:true for a device
         # whose registration never completed. Only clear if the row still
         # points at OUR connection (mirror _cleanup's superseded-session
-        # guard), and close the connection record.
+        # guard), and close the connection record. The compare lives in the
+        # UPDATE's WHERE clause so a reconnect that registered while we were
+        # failing cannot have its live pointer stomped by our rollback.
         try:
-            async with AsyncSessionLocal() as db:
-                row = await device_crud.get_device(db, device_id) if device_id else None
-                if row is not None and row.ws_session_id == connection_pk:
-                    row.ws_session_id = None
-                    row.ws_connected_at = None
-                    await db.commit()
+            if device_id is not None and connection_pk is not None:
+                async with AsyncSessionLocal() as db:
+                    await device_crud.clear_ws_session_if_current(
+                        db, device_id=device_id, connection_pk=connection_pk
+                    )
         except Exception as rollback_err:
             logger.error(
                 "devices_ws_register_failed_rollback_failed",
@@ -408,7 +423,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             if not isinstance(data, dict):
                 continue
 
-            await _route_device_message(data, device_id, user_id, manager)
+            await _route_device_message(
+                data, device_id, user_id, manager, connection_pk, websocket
+            )
 
     except BENIGN_SEND_EXCEPTIONS:
         logger.info("devices_ws_disconnected", device_id=str(device_id))
@@ -420,7 +437,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
             error_type=type(e).__name__,
         )
     finally:
-        await _cleanup(device_id, connection_pk, user_id, manager)
+        await _cleanup(device_id, connection_pk, user_id, manager, websocket)
 
 
 async def _route_device_message(
@@ -428,8 +445,17 @@ async def _route_device_message(
     device_id: Any,
     user_id: Any,
     manager: Any,
+    connection_pk: int | None = None,
+    websocket: Any = None,
 ) -> None:
-    """Dispatch a single inbound message from the device."""
+    """Dispatch a single inbound message from the device.
+
+    ``connection_pk`` identifies the ``coord.device_connections`` row for
+    THIS socket; the heartbeat handler uses it to re-assert the device's
+    WS-presence pointer (see :func:`_handle_heartbeat`). It is optional so
+    existing callers/tests that only route non-heartbeat traffic keep
+    working unchanged.
+    """
     msg_type = msg.get("type")
 
     if msg_type == "ping":
@@ -442,7 +468,7 @@ async def _route_device_message(
         return
 
     if msg_type == "heartbeat":
-        await _handle_heartbeat(msg, device_id, manager)
+        await _handle_heartbeat(msg, device_id, manager, connection_pk, websocket)
         return
 
     if msg_type in {
@@ -506,14 +532,59 @@ async def _route_device_message(
     )
 
 
-async def _handle_heartbeat(msg: dict[str, Any], device_id: Any, manager: Any) -> None:
-    """Persist a device heartbeat over WS and refresh Redis TTL."""
+async def _handle_heartbeat(
+    msg: dict[str, Any],
+    device_id: Any,
+    manager: Any,
+    connection_pk: int | None = None,
+    websocket: Any = None,
+) -> None:
+    """Persist a device heartbeat over WS, heal WS presence, refresh Redis TTL.
+
+    The heartbeat is the system's only *recurring* proof that this socket is
+    open, which makes it the only place a lost WS-presence pointer can heal.
+    Registration is otherwise the sole writer of ``ws_session_id``, so a
+    pointer NULLed while the socket stayed up stuck that way forever: the
+    runner kept heartbeating, ``last_heartbeat`` stayed fresh, and
+    ``_runner_proxy_relay`` — which gates the mobile cloud relay on
+    ``ws_session_id IS NOT NULL`` — kept returning 503 "runner not
+    connected". Re-asserting the pointer here bounds that outage to one
+    heartbeat interval (~30s) no matter what wiped it: the teardown race
+    closed by :func:`device_crud.clear_ws_session_if_current`, the scheduled
+    ``connection_cleanup`` sweep firing on a momentary Redis presence miss, a
+    backend restart or failover, or an unclean close whose ``finally`` never
+    ran.
+
+    The claim is skipped when ``connection_pk`` is unknown, and is a no-op
+    write-wise in the steady state (see
+    :func:`device_crud.claim_ws_session`), so the common path costs one
+    UPDATE that matches no rows.
+
+    **The heal is gated on the manager still holding THIS socket**, and that
+    gate is load-bearing rather than defensive. ``ws_session_id`` is the ONLY
+    thing ``_runner_proxy_relay`` consults — it is the sole 503 emitter on
+    that path, because ``dispatch_and_wait(require_local_connection=False)``
+    publishes over Redis pub/sub and cannot itself detect a missing runner.
+    So a pointer asserted for a device the manager has forgotten does not
+    restore the relay; it removes the fast, accurate
+    ``503 "runner not connected"`` and replaces it with a full-timeout hang,
+    while ``_derive_status`` goes back to reporting ``healthy`` and the
+    relay-unroutable signal stops firing. Healing a pointer we cannot
+    actually route through would trade an honest failure for a slow silent
+    one. ``manager.get_websocket`` is an in-process registry lookup, which is
+    exactly the right scope: the socket lives on one replica, and this
+    handler runs on that replica.
+    """
     ui_error = msg.get("ui_error")
     recent_crash = msg.get("recent_crash")
     derived_status = msg.get("derived_status")
 
-    try:
-        async with AsyncSessionLocal() as db:
+    # One session for both writes. This is the hottest path in the file —
+    # every device, every ~30s — and registration failures here have already
+    # been observed as connection-pool exhaustion, so it must not take two
+    # sessions to do two UPDATEs on the same row.
+    async with AsyncSessionLocal() as db:
+        try:
             await device_crud.heartbeat_device(
                 db,
                 device_id=device_id,
@@ -523,14 +594,56 @@ async def _handle_heartbeat(msg: dict[str, Any], device_id: Any, manager: Any) -
                 ui_error=ui_error,
                 recent_crash=recent_crash,
             )
-    except Exception as e:
-        logger.error(
-            "devices_ws_heartbeat_persist_failed",
-            device_id=str(device_id),
-            error=str(e),
-        )
+        except Exception as e:
+            logger.error(
+                "devices_ws_heartbeat_persist_failed",
+                device_id=str(device_id),
+                error=str(e),
+            )
+            # Leave the session usable for the heal below.
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
+        # Heal the WS-presence pointer. Separate try so a failure here does
+        # not cost us the heartbeat persisted above, and vice versa.
+        if (
+            device_id is not None
+            and connection_pk is not None
+            and websocket is not None
+            and manager.get_websocket(device_id) is websocket
+        ):
+            try:
+                healed = await device_crud.claim_ws_session(
+                    db, device_id=device_id, connection_pk=connection_pk
+                )
+                if healed:
+                    logger.warning(
+                        "devices_ws_heartbeat_healed_ws_session_id",
+                        device_id=str(device_id),
+                        connection_pk=connection_pk,
+                    )
+            except Exception as e:
+                logger.error(
+                    "devices_ws_heartbeat_heal_ws_session_failed",
+                    device_id=str(device_id),
+                    connection_pk=connection_pk,
+                    error=str(e),
+                )
+
     try:
-        await manager.refresh_ttl(device_id)
+        # A False here means the manager's Redis presence keys are GONE (they
+        # carry a TTL and ``expire`` cannot recreate a deleted key), i.e. this
+        # replica's registration has been swept out from under a socket that
+        # is still open. Log it: that state makes the device unroutable in a
+        # way only a reconnect fixes, and it was invisible before.
+        if not await manager.refresh_ttl(device_id) and websocket is not None:
+            logger.warning(
+                "devices_ws_heartbeat_presence_keys_missing",
+                device_id=str(device_id),
+                connection_pk=connection_pk,
+            )
     except Exception:
         pass
 
@@ -540,41 +653,85 @@ async def _cleanup(
     connection_pk: int | None,
     user_id: Any,
     manager: Any,
+    websocket: Any = None,
 ) -> None:
-    """Clear ws_session_id, close the connection row, unregister from manager."""
-    try:
-        await manager.unregister(device_id, user_id)
-    except Exception as e:
-        logger.error(
-            "devices_ws_unregister_failed",
+    """Tear down THIS connection's traces — and only this connection's.
+
+    A device's WS presence lives in TWO stores, and a superseded teardown can
+    corrupt either: the ``coord.devices.ws_session_id`` pointer (guarded by
+    the atomic compare in :func:`device_crud.clear_ws_session_if_current`
+    below) and the runner WS manager's registration. ``manager.unregister``
+    is keyed on ``device_id`` ALONE — it cannot tell one connection from
+    another — and it cancels the shared inbound pub/sub listener. So in the
+    A-connects / B-reconnects / A-tears-down interleave, an unguarded
+    unregister here destroys the listener belonging to B's LIVE socket.
+
+    Guarding only the database half would have produced a subtler outage than
+    the one being fixed: the pointer would correctly stay on B, the relay
+    gate (which reads only that pointer) would pass, and the dispatch would
+    then publish to a channel with no subscriber and hang until timeout —
+    while ``GET /api/v1/devices`` reported ``healthy``. So both stores get
+    the same "is it still ours?" predicate, from one identity check.
+    """
+    still_ours = websocket is None or manager.get_websocket(device_id) is websocket
+
+    if still_ours:
+        try:
+            await manager.unregister(device_id, user_id)
+        except Exception as e:
+            logger.error(
+                "devices_ws_unregister_failed",
+                device_id=str(device_id) if device_id else None,
+                error=str(e),
+            )
+    else:
+        logger.info(
+            "devices_ws_skip_unregister_superseded",
             device_id=str(device_id) if device_id else None,
-            error=str(e),
+            our_connection_pk=connection_pk,
         )
 
     try:
-        async with AsyncSessionLocal() as db:
-            row = await device_crud.get_device(db, device_id) if device_id else None
-            # Only clear ws_session_id if it still points at OUR connection.
-            # If the runner reconnected (creating a newer DeviceConnection
-            # row and overwriting ws_session_id) before this handler ran,
-            # blindly setting it to None here stomps the live session and
-            # gives every consumer of GET /api/v1/devices a false
-            # `wsConnected: false` until the runner's next reconnect cycle —
-            # observed 2026-05-22 as a runner/backend wsConnected mismatch
-            # with fresh heartbeats arriving from a session whose
-            # ws_session_id pointer had been wiped by an older finally
-            # block.
-            if row is not None and row.ws_session_id == connection_pk:
-                row.ws_session_id = None
-                row.ws_connected_at = None
-                await db.commit()
-            elif row is not None and row.ws_session_id is not None:
-                logger.info(
-                    "devices_ws_skip_clear_session_id_superseded",
-                    device_id=str(device_id),
-                    our_connection_pk=connection_pk,
-                    current_session_id=row.ws_session_id,
+        # Only clear ws_session_id if it still points at OUR connection, and
+        # do the comparing INSIDE the UPDATE so the database serializes it
+        # against a concurrent registration.
+        #
+        # If the runner reconnected (creating a newer DeviceConnection row and
+        # overwriting ws_session_id) before this handler ran, blindly setting
+        # it to None here stomps the live session and gives every consumer of
+        # GET /api/v1/devices a false `wsConnected: false` until the runner's
+        # next reconnect cycle — observed 2026-05-22 as a runner/backend
+        # wsConnected mismatch with fresh heartbeats arriving from a session
+        # whose ws_session_id pointer had been wiped by an older finally block.
+        #
+        # The guard used to be a read-modify-write in Python: `get_device`,
+        # compare in the interpreter, assign None, commit. That is a
+        # lost-update race, not a guard — under READ COMMITTED connection A
+        # can read the row while the pointer is still A's, connection B can
+        # then commit its registration (pointer -> B), and A then commits the
+        # NULL it decided on from data that is no longer true. B's socket is
+        # live and nothing re-points at it, so the device is permanently
+        # unroutable for the mobile cloud relay. Observed 2026-08-27 on prod
+        # as a ~2h `wsConnected:false` + 30s-fresh-heartbeat contradiction.
+        if device_id is not None and connection_pk is not None:
+            async with AsyncSessionLocal() as db:
+                cleared = await device_crud.clear_ws_session_if_current(
+                    db, device_id=device_id, connection_pk=connection_pk
                 )
+                if not cleared:
+                    # Read back WHO holds it. On a live incident that field is
+                    # the whole diagnostic, and this branch is cold — it only
+                    # runs when the pointer was already NULL or superseded.
+                    row = await device_crud.get_device(db, device_id)
+                    logger.info(
+                        "devices_ws_skip_clear_session_id_superseded",
+                        device_id=str(device_id),
+                        our_connection_pk=connection_pk,
+                        current_session_id=(
+                            row.ws_session_id if row is not None else None
+                        ),
+                        device_row_missing=row is None,
+                    )
     except Exception as e:
         logger.error(
             "devices_ws_clear_session_id_failed",
@@ -593,14 +750,18 @@ async def _cleanup(
                 error=str(e),
             )
 
-    try:
-        await manager.publish_runner_disconnected(device_id, user_id)
-    except Exception as e:
-        logger.error(
-            "devices_ws_publish_disconnect_failed",
-            device_id=str(device_id) if device_id else None,
-            error=str(e),
-        )
+    # Same predicate as the unregister above: announcing "runner disconnected"
+    # for a device whose replacement socket is already live would tell every
+    # mobile and frontend client the device is gone while it is serving.
+    if still_ours:
+        try:
+            await manager.publish_runner_disconnected(device_id, user_id)
+        except Exception as e:
+            logger.error(
+                "devices_ws_publish_disconnect_failed",
+                device_id=str(device_id) if device_id else None,
+                error=str(e),
+            )
 
     # `json` import-loaded for symmetry with future relay paths
     _ = json
