@@ -110,9 +110,11 @@ class _Harness:
         self,
         rows: list[dict[str, Any]] | None = None,
         coord_error: Exception | None = None,
+        coord_status: int = 200,
     ) -> None:
         self.rows = rows or []
         self.coord_error = coord_error
+        self.coord_status = coord_status
         self.deleter = _Deleter()
         self.get_calls: list[Any] = []
 
@@ -120,9 +122,9 @@ class _Harness:
         from app.services import cognito_admin
 
         resp = MagicMock(spec=httpx.Response)
-        resp.status_code = 200
+        resp.status_code = self.coord_status
         resp.json.return_value = {"group_tenant_roles": self.rows}
-        resp.text = ""
+        resp.text = '{"error":"admin_required"}'
 
         instance = MagicMock()
         if self.coord_error is not None:
@@ -244,6 +246,27 @@ class TestMappedGroupIsRefused:
         resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
 
         assert resp.status_code == 502
+        assert _detail(resp)["error"] == "mapping_check_unavailable"
+        assert h.deleter.calls == []
+
+    def test_a_coord_403_is_reported_as_an_unverifiable_check_not_as_a_denial(
+        self, admin_client: TestClient
+    ):
+        """coord's ``/admin/coord/group-tenant-roles`` is route-gated ``admin``,
+        so a qontinui superuser holding no coord admin role gets a 403 there.
+
+        Passing that through would tell the operator "you may not delete this
+        group" — a different and false claim. The honest answer is "the check
+        could not be completed, so nothing was deleted", with coord's status
+        carried so they can see WHY.
+        """
+        h = _Harness(coord_status=403)
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502
+        detail = _detail(resp)
+        assert detail["error"] == "mapping_check_unavailable"
+        assert detail["coord_status"] == 403
         assert h.deleter.calls == []
 
 
