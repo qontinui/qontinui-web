@@ -8,13 +8,20 @@
  * (`/api/v1/operations/tenants`) and exposes the active tenant + a
  * setter that persists per-browser in localStorage.
  *
- * Hybrid switcher rules per plan §D12:
+ * Hybrid switcher rules per plan §D12, as they still stand for the
+ * SESSIONS-page switcher (`TenantSwitcher.tsx`) and its tenant-breadth tab:
  *
  * - Operators in exactly 1 tenant: no switcher renders, no UX choice.
  *   `isMultiTenant` is false and `tenants` carries that single row.
- * - Operators in >1 tenant: switcher renders in the dashboard header
- *   (see `TenantSwitcher.tsx`). First load triggers a one-time
- *   selection persisted as `qontinui.active_tenant_id`.
+ * - Operators in >1 tenant: switcher renders in the dashboard header.
+ *   First load triggers a one-time selection persisted as
+ *   `qontinui.active_tenant_id`.
+ *
+ * The COORD-CONSOLE switcher (`CoordTenantSwitcher.tsx`) no longer follows
+ * that rule: it renders unconditionally, because it also carries the
+ * "+ New" project-create action, and the single-project operator is exactly
+ * the one who needs it (plan
+ * `2026-08-25-self-service-tenant-project-creation`, Phase 3).
  *
  * Sessions are tenant-pinned at start (server-side, `coord.sessions.tenant_id`)
  * and switching the active tenant in the UI does NOT migrate any
@@ -42,7 +49,9 @@ export interface Tenant {
 interface TenantContextValue {
   tenants: Tenant[];
   activeTenantId: string | null;
-  /** True when the operator belongs to >1 tenant. Drives switcher visibility. */
+  /** True when the operator belongs to >1 tenant. Drives the SESSIONS-page
+   *  switcher + tenant-breadth tab; the coord-console switcher renders
+   *  regardless (it also hosts project creation). */
   isMultiTenant: boolean;
   /** True until the first /tenants fetch completes. */
   loading: boolean;

@@ -17,9 +17,16 @@ via coord PR #212). It returns, for the bearer's operator::
       "email":           "<str>",
       "roles":           ["..."],
       "tenants": [ {"tenant_id": "<uuid>", "slug": "<str>",
+                    "display_name": "<str>|null",
                     "roles": ["..."]}, ... ],
       "is_admin":        <bool>
     }
+
+``display_name`` is OPTIONAL on the wire: it was added to ``/me`` for the
+self-service project-creation plan
+(``2026-08-25-self-service-tenant-project-creation``) and a coord
+deployment that predates it simply omits the key. Parsing treats absent,
+null and empty alike as ``None``, and callers fall back to ``slug``.
 
 Caching policy (plan Open-Q#1, resolved): cache the result **per request**
 (one coord call per request max), NOT a TTL cache — a stale tenant/role
@@ -57,11 +64,19 @@ _REQUEST_STATE_KEY = "_coord_identity"
 
 @dataclass(frozen=True)
 class CoordTenant:
-    """One tenant membership from ``/admin/coord/me``'s ``tenants[]``."""
+    """One tenant membership from ``/admin/coord/me``'s ``tenants[]``.
+
+    ``display_name`` is the tenant's human-chosen name — what the UI calls
+    the "Project" name. It is ``None`` on a coord that predates the
+    ``display_name`` field on ``/me``, and ``None`` for a tenant that never
+    got one (the SSO auto-provision paths seed a slug but no display name),
+    so every consumer must fall back to ``slug``.
+    """
 
     tenant_id: UUID
     slug: str
     roles: tuple[str, ...]
+    display_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,11 +135,21 @@ def _parse_identity(payload: dict[str, Any]) -> CoordIdentity:
         if tid is None:
             continue
         roles = entry.get("roles") or []
+        raw_display_name = entry.get("display_name")
+        # Absence-tolerant: a coord that has not shipped `display_name` on
+        # `/me`, a null, and an empty string all mean "no display name" —
+        # never a rendered "" or "None".
+        display_name = (
+            str(raw_display_name).strip() or None
+            if raw_display_name is not None
+            else None
+        )
         tenants.append(
             CoordTenant(
                 tenant_id=tid,
                 slug=str(entry.get("slug") or ""),
                 roles=tuple(str(r) for r in roles),
+                display_name=display_name,
             )
         )
     return CoordIdentity(
