@@ -180,13 +180,31 @@ export default defineConfig({
     // Renders gated routes headlessly and emits, per route, a UI-Bridge snapshot
     // JSON + a deterministic PNG to tests/e2e/style-gate/.artifacts/.
     //
-    // AUTHED-ONLY: the capture's snapshot path (/control/snapshot via the relay)
-    // requires the in-page CommandRelayListener, which never mounts without a
-    // resolved {userId, sessionId} -- so a public/unauthenticated route can't be
-    // captured via the relay (it would 503). There is therefore a single authed
-    // project (no public companion). Public/unauthenticated routes need a
-    // relay-independent capture path (a Playwright in-page SDK eval) -- deferred
-    // to a later phase. See tests/e2e/style-gate/routes.json + README.md.
+    // TWO CAPTURE LANES, one project. routes.json's `public` field selects which
+    // (capturePathFor() in tests/e2e/style-gate/manifest.ts is the one place it
+    // is interpreted):
+    //
+    //   public: false -> RELAY lane. Uses this project's `page` fixture, i.e.
+    //     the setup-minted storageState below, and snapshots through
+    //     /api/ui-bridge/control/snapshot. That route is served by the in-page
+    //     CommandRelayListener, which never mounts without a resolved
+    //     {userId, sessionId} -- so this lane REQUIRES an authed tab; an
+    //     unauthenticated route on it would only ever 503. Hence the
+    //     `dependencies: ["setup"]` + `storageState` here.
+    //
+    //   public: true -> INJECTED lane (relay-independent). Does NOT use the
+    //     `page` fixture at all: the test builds its own
+    //     browser.newContext({ viewport }) with NO storageState -- a genuinely
+    //     signed-out tab -- and reads the snapshot IN-PAGE from UI Bridge's
+    //     shipped injected runtime (the @qontinui/ui-bridge
+    //     injected/bundle.global.js IIFE as a pre-first-paint init script, then
+    //     window.__uiBridgeInjected.execute('getControlSnapshot', {})). No
+    //     relay, no listener, no session.
+    //
+    // A public companion PROJECT is therefore still unnecessary -- the lane's
+    // independence comes from the context it builds, not from project config.
+    // Both lanes emit the same artifact shapes. See
+    // tests/e2e/style-gate/routes.json + README.md.
     {
       name: "style-gate",
       testMatch: STYLE_GATE_TEST_MATCH,
