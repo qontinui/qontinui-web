@@ -1,13 +1,49 @@
 """
-Device Bridge WebSocket endpoints.
+Device Bridge endpoints — **TWO DISJOINT MECHANISMS LIVE IN THIS ONE FILE.**
 
-Provides cloud relay for physical mobile device UI Bridge connections:
-  - /ws/device-bridge/device        — mobile device registers here
-  - /ws/device-bridge/tunnel/{id}   — runner opens relay tunnel here
-  - /device-bridge/available-devices — REST list of connected devices
+They share a URL prefix and nothing else: different peers, different
+registries, different failure modes. Confusing them is the recurring cost of
+their co-location, so read this before debugging anything here.
 
-Redis pub/sub channels decouple the two WebSocket sides so the relay
-works across horizontally-scaled backend instances.
+Mechanism 1 — the PHONE bridge (this file owns both ends)
+---------------------------------------------------------
+A physical mobile device makes its UI Bridge reachable from the cloud.
+
+  - ``/ws/device-bridge/device``      — the **phone** registers here
+  - ``/ws/device-bridge/tunnel/{id}`` — a client opens a relay tunnel here
+  - ``/available-mobile-devices``     — REST list of connected **phones**
+    (alias: ``/available-devices``, the historical name)
+
+  Registry: **Redis**, written by
+  ``app/services/device_bridge_service.py::register_device``. Redis pub/sub
+  channels decouple the two WebSocket sides, so the tunnel works across
+  horizontally-scaled backend instances.
+
+Mechanism 2 — the RUNNER proxy relay (this file owns only the caller end)
+-------------------------------------------------------------------------
+A mobile client reaches a **runner** it shares no LAN with.
+
+  - ``/runner-proxy/{path}`` — see :func:`runner_proxy`. With an
+    ``X-Qontinui-Device-Id`` header it relays HTTP-over-WebSocket through the
+    runner's own outbound connection; without one it proxies to a co-located
+    runner on ``127.0.0.1``.
+
+  Registry: **``coord.devices.ws_session_id``**, which this file only ever
+  READS (via ``app/services/coord_device.py`` → coord's
+  ``GET /coord/devices/{id}/routing``). The **write** happens in a different
+  file entirely — ``app/api/v1/endpoints/devices_ws.py``, when the runner's
+  WebSocket registers at ``/api/v1/devices/ws``.
+
+Consequences worth stating outright
+-----------------------------------
+* ``/available-mobile-devices`` lists **phones, not runners**. It is NOT a
+  relay diagnostic: a runner can be perfectly registered while that list is
+  empty, and vice versa.
+* A ``503`` from ``/runner-proxy/*`` means ``coord.devices.ws_session_id IS
+  NULL`` — the *runner* never registered with *this* backend. Redis, the
+  phone bridge, and this file's WebSocket code are all uninvolved. Check the
+  runner's ``GET http://127.0.0.1:9876/web-integration/status``, not the
+  phone. See ``knowledge-base/qontinui-specific/mobile-app.md``.
 """
 
 import asyncio
@@ -16,13 +52,12 @@ import binascii
 import json
 import re
 import time
-import urllib.error
-import urllib.request
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
+import httpx
 import structlog
 from fastapi import (
     APIRouter,
@@ -86,6 +121,39 @@ _RELAY_EXCLUDED_REQUEST_HEADERS = frozenset(
 # Hop-by-hop response headers stripped before returning the runner's reply.
 _RELAY_EXCLUDED_RESPONSE_HEADERS = frozenset(
     {"transfer-encoding", "connection", "keep-alive", "content-length"}
+)
+
+# Timeout (seconds) for the co-located legacy proxy hop to 127.0.0.1:<port>.
+_LOCAL_PROXY_TIMEOUT_S = 30.0
+
+# Request headers dropped on the co-located legacy proxy path. Beyond the
+# hop-by-hop set, ``accept-encoding`` is dropped so the runner replies
+# uncompressed: httpx decodes response bodies transparently (and needs the
+# matching codec installed to do it), whereas the ``urllib`` call this
+# replaced neither negotiated nor decoded. Asking for identity is simpler
+# than re-labelling a decoded body, and this hop is loopback.
+_LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = frozenset(
+    {
+        "host",
+        "connection",
+        "transfer-encoding",
+        "content-length",
+        "accept-encoding",
+    }
+)
+
+# Response headers stripped on the co-located legacy proxy path. Beyond the
+# hop-by-hop set, ``content-encoding`` MUST go: httpx transparently decodes
+# the body, so echoing the runner's ``content-encoding: gzip`` alongside the
+# already-decoded bytes would hand the caller an undecodable response.
+_LOCAL_PROXY_EXCLUDED_RESPONSE_HEADERS = frozenset(
+    {
+        "transfer-encoding",
+        "connection",
+        "keep-alive",
+        "content-length",
+        "content-encoding",
+    }
 )
 
 
@@ -592,19 +660,29 @@ async def device_bridge_tunnel_endpoint(
 
 
 # ---------------------------------------------------------------------------
-# C. REST endpoint — list available devices for the authenticated user
+# C. REST endpoint — list available MOBILE devices for the authenticated user
 # ---------------------------------------------------------------------------
 
 
-@router.get("/available-devices")
-async def list_available_devices(
+@router.get("/available-mobile-devices")
+@router.get("/available-devices", deprecated=True)
+async def list_available_mobile_devices(
     user: Annotated[User, Depends(current_active_user)],
 ) -> JSONResponse:
     """
-    List mobile devices with active bridge connections for the current user.
+    List **mobile devices** (phones) with active bridge connections.
+
+    This reads the Redis phone registry — mechanism 1 in the module docstring.
+    It lists **phones, not runners**, so it is NOT a diagnostic for a
+    ``/runner-proxy/*`` 503: that failure lives in
+    ``coord.devices.ws_session_id`` and this list is unrelated to it.
+
+    ``/available-devices`` is the historical path, kept as a deprecated alias
+    so existing clients keep working; ``/available-mobile-devices`` is the
+    name that says which registry it reads.
 
     Returns:
-        200: List of connected device records.
+        200: List of connected mobile device records.
         503: Redis is disabled.
     """
     if not settings.REDIS_ENABLED:
@@ -669,7 +747,7 @@ async def runner_proxy(
 
     * **Co-located (legacy)** — when the ``X-Qontinui-Device-Id`` header is
       ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the
-      synchronous urllib path below. Used by the demo box where the runner is
+      async httpx path below. Used by the demo box where the runner is
       on the same host as the backend.
     * **Remote relay** — when ``X-Qontinui-Device-Id`` is PRESENT, the request
       is relayed HTTP-over-WebSocket through the runner's existing outbound
@@ -721,30 +799,41 @@ async def runner_proxy(
         headers = {
             k: v
             for k, v in request.headers.items()
-            if k.lower()
-            not in ("host", "connection", "transfer-encoding", "content-length")
+            if k.lower() not in _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
         }
-        req = urllib.request.Request(
-            target_url,
-            data=body if body else None,
-            headers=headers,
-            method=request.method,
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            resp_body = resp.read()
-            resp_headers = dict(resp.getheaders())
-            # Remove hop-by-hop headers
-            for hdr in ("transfer-encoding", "connection", "keep-alive"):
-                resp_headers.pop(hdr, None)
-            return Response(
-                content=resp_body,
-                status_code=resp.status,
-                headers=resp_headers,
+        # ``httpx.AsyncClient`` rather than ``urllib.request.urlopen``: the
+        # latter is a SYNCHRONOUS call on the event loop, so a slow or hung
+        # runner stalled EVERY other request served by this worker for up to
+        # the full timeout. ``follow_redirects`` stays at its ``False``
+        # default deliberately — a proxy passes a redirect back to its caller,
+        # and following one would let the runner's reply escape the
+        # ``_validate_runner_port`` host/port guard above.
+        async with httpx.AsyncClient(
+            timeout=_LOCAL_PROXY_TIMEOUT_S,
+            follow_redirects=False,
+        ) as client:
+            resp = await client.request(
+                request.method,
+                target_url,
+                content=body if body else None,
+                headers=headers,
             )
-    except urllib.error.HTTPError as e:
-        body_bytes = e.read() if hasattr(e, "read") else b""
-        return Response(content=body_bytes, status_code=e.code)
-    except urllib.error.URLError:
+        # Non-2xx is a normal response for httpx (no ``HTTPError`` raise), so
+        # the former ``urllib.error.HTTPError`` arm — which passed the runner's
+        # status and body straight through — is subsumed here.
+        resp_headers = {
+            k: v
+            for k, v in resp.headers.items()
+            if k.lower() not in _LOCAL_PROXY_EXCLUDED_RESPONSE_HEADERS
+        }
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            headers=resp_headers,
+        )
+    except httpx.HTTPError:
+        # Transport-level failure (connect refused, DNS, timeout, protocol
+        # error) — the ``urllib.error.URLError`` equivalent.
         return JSONResponse(
             status_code=502,
             content={"detail": f"Runner not reachable at port {runner_port}"},
@@ -790,10 +879,7 @@ async def _runner_proxy_relay(
     relay works across horizontally-scaled backend replicas.
     """
     # Lazy imports keep the module import graph light for the legacy path.
-    from app.services.runner import (
-        RunnerCommandTimeoutError,
-        RunnerNotConnectedError,
-    )
+    from app.services.runner import RunnerCommandTimeoutError
     from app.services.runner_websocket_manager import (
         get_runner_websocket_manager,
     )
@@ -901,6 +987,14 @@ async def _runner_proxy_relay(
     )
 
     # 7. Dispatch over the WS bridge and await the matching response.
+    #
+    # ``require_local_connection=False`` is what makes this relay work across
+    # horizontally-scaled replicas, and it also means ``dispatch_and_wait``
+    # cannot raise ``RunnerNotConnectedError`` here — the raise in
+    # ``app/services/runner/command_relay.py`` is gated on that same flag. So
+    # this function has exactly ONE 503 emitter: the ``ws_session_id IS NULL``
+    # branch above. Do not add an unreachable ``except`` arm back; a reader
+    # debugging a relay 503 must have one candidate cause, not two.
     try:
         reply = await manager.relay.dispatch_and_wait(
             str(device_uuid),
@@ -908,16 +1002,6 @@ async def _runner_proxy_relay(
             request_id=request_id,
             timeout_s=timeout_s,
             require_local_connection=False,
-        )
-    except RunnerNotConnectedError:
-        logger.warning(
-            "runner_proxy_relay_runner_disconnected",
-            device_id=str(device_uuid),
-            request_id=request_id,
-        )
-        return JSONResponse(
-            status_code=503,
-            content={"detail": "runner not connected"},
         )
     except RunnerCommandTimeoutError:
         elapsed_ms = (time.monotonic() - started) * 1000.0
