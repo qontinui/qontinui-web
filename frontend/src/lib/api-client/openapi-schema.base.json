@@ -62536,7 +62536,8 @@
     },
     "/api/v1/device-bridge/available-devices": {
       "get": {
-        "description": "List mobile devices with active bridge connections for the current user.\n\nReturns:\n    200: List of connected device records.\n    503: Redis is disabled.",
+        "deprecated": true,
+        "description": "List **mobile devices** (phones) with active bridge connections.\n\nThis reads the Redis phone registry \u2014 mechanism 1 in the module docstring.\nIt lists **phones, not runners**, so it is NOT a diagnostic for a\n``/runner-proxy/*`` 503: that failure lives in\n``coord.devices.ws_session_id`` and this list is unrelated to it.\n\n``/available-devices`` is the historical path, kept as a deprecated alias\nso existing clients keep working; ``/available-mobile-devices`` is the\nname that says which registry it reads.\n\nReturns:\n    200: List of connected mobile device records.\n    503: Redis is disabled.",
         "operationId": "api_v1_device_bridge_available_devices_get",
         "responses": {
           "200": {
@@ -62553,7 +62554,32 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "List Available Devices",
+        "summary": "List Available Mobile Devices",
+        "tags": [
+          "device-bridge"
+        ]
+      }
+    },
+    "/api/v1/device-bridge/available-mobile-devices": {
+      "get": {
+        "description": "List **mobile devices** (phones) with active bridge connections.\n\nThis reads the Redis phone registry \u2014 mechanism 1 in the module docstring.\nIt lists **phones, not runners**, so it is NOT a diagnostic for a\n``/runner-proxy/*`` 503: that failure lives in\n``coord.devices.ws_session_id`` and this list is unrelated to it.\n\n``/available-devices`` is the historical path, kept as a deprecated alias\nso existing clients keep working; ``/available-mobile-devices`` is the\nname that says which registry it reads.\n\nReturns:\n    200: List of connected mobile device records.\n    503: Redis is disabled.",
+        "operationId": "api_v1_device_bridge_available_mobile_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List Available Mobile Devices",
         "tags": [
           "device-bridge"
         ]
@@ -62561,7 +62587,7 @@
     },
     "/api/v1/device-bridge/runner-proxy/{path}": {
       "delete": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  synchronous urllib path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_delete",
         "parameters": [
           {
@@ -62605,7 +62631,7 @@
         ]
       },
       "get": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  synchronous urllib path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_get",
         "parameters": [
           {
@@ -62649,7 +62675,7 @@
         ]
       },
       "patch": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  synchronous urllib path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_patch",
         "parameters": [
           {
@@ -62693,7 +62719,7 @@
         ]
       },
       "post": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  synchronous urllib path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_post",
         "parameters": [
           {
@@ -62737,7 +62763,7 @@
         ]
       },
       "put": {
-        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  synchronous urllib path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
+        "description": "Proxy HTTP requests to the runner for remote mobile devices.\n\nThe phone can't reach the runner directly (it's on a different network).\nThis endpoint forwards requests through the backend which IS co-located\nwith the runner.\n\nURL mapping:\n    GET /api/v1/device-bridge/runner-proxy/health\n      -> GET http://127.0.0.1:9876/health\n\nThe runner port is looked up from the user's most recent active connection.\nFalls back to port 9876 (default runner port).\n\nTwo modes:\n\n* **Co-located (legacy)** \u2014 when the ``X-Qontinui-Device-Id`` header is\n  ABSENT, the request is forwarded to ``http://127.0.0.1:{port}`` via the\n  async httpx path below. Used by the demo box where the runner is\n  on the same host as the backend.\n* **Remote relay** \u2014 when ``X-Qontinui-Device-Id`` is PRESENT, the request\n  is relayed HTTP-over-WebSocket through the runner's existing outbound\n  ``/devices/ws`` connection. This lets a mobile client on a *different*\n  network reach a runner it doesn't share a LAN with.",
         "operationId": "api_v1_device_bridge_runner_proxy_path_put",
         "parameters": [
           {

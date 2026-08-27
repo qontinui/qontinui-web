@@ -200,32 +200,53 @@ class CoordJWKSClient:
         self._forced_at: float = 0.0
         self._lock = asyncio.Lock()
 
+    @property
+    def coord_url(self) -> str:
+        """The coord base URL this client resolved at construction time.
+
+        Exposed so a rejection handler can name the URL it actually dialled.
+        A wrong/unset ``COORD_DEVICE_URL`` and a genuinely unreachable coord
+        produce the same operator-facing message otherwise, and the first is
+        a config fix while the second is an outage.
+        """
+        return self._coord_url
+
     async def _fetch_jwks(self) -> dict[str, Any]:
-        """Fetch coord's JWKS over HTTP. Raises on any failure."""
+        """Fetch coord's JWKS over HTTP. Raises on any failure.
+
+        Every raise names the resolved URL AND, for a transport fault, the
+        underlying exception's concrete class. ``httpx.HTTPError`` covers
+        ``ConnectTimeout``, ``ReadTimeout``, ``ConnectError``,
+        ``ProxyError``… — states with completely different remedies that
+        ``str(exc)`` frequently renders as the empty string.
+        """
         url = f"{self._coord_url}/coord/auth/jwks"
         try:
             async with httpx.AsyncClient(timeout=self._http_timeout_s) as c:
                 resp = await c.get(url)
         except httpx.HTTPError as exc:
             raise CoordJWKSUnavailableError(
-                f"coord JWKS fetch failed (transport): {exc}"
+                f"coord JWKS fetch failed (transport): url={url} "
+                f"timeout_s={self._http_timeout_s} "
+                f"error_class={type(exc).__name__} error={exc}"
             ) from exc
 
         if resp.status_code != 200:
             raise CoordJWKSUnavailableError(
-                f"coord JWKS fetch failed: HTTP {resp.status_code} {resp.text[:200]}"
+                f"coord JWKS fetch failed: url={url} "
+                f"HTTP {resp.status_code} {resp.text[:200]}"
             )
 
         try:
             body = resp.json()
         except ValueError as exc:
             raise CoordJWKSUnavailableError(
-                f"coord JWKS response not JSON: {resp.text[:200]}"
+                f"coord JWKS response not JSON: url={url} {resp.text[:200]}"
             ) from exc
 
         if not isinstance(body, dict) or "keys" not in body:
             raise CoordJWKSUnavailableError(
-                f"coord JWKS missing 'keys' field: {body!r}"
+                f"coord JWKS missing 'keys' field: url={url} {body!r}"
             )
 
         return body

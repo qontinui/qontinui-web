@@ -103,6 +103,32 @@ import {
   VERIFICATION_AUTHOR_GLYPH_KINDS,
   VERIFICATION_CLASS,
 } from "@/components/admin/coord/verificationStatus";
+// Wave 4 surfaces — Family C, the tables.
+import {
+  PR_ATTENTION_BY_MERGE_STATUS,
+  PR_AUTHOR_GLYPH_STATUSES,
+  PR_MERGE_STATUS_CLASS,
+} from "@/app/(app)/admin/coord/prs/prStatus";
+import {
+  GATE_ATTENTION_BY_KIND,
+  GATE_AUTHOR_GLYPH_KINDS,
+  GATE_KIND_CLASS,
+} from "@/app/(app)/admin/coord/gates/gateStatus";
+import {
+  POLICY_ATTENTION_BY_KIND,
+  POLICY_AUTHOR_GLYPH_KINDS,
+  POLICY_KIND_CLASS,
+} from "@/app/(app)/admin/coord/policies/policyAutonomyStatus";
+import {
+  GIT_OP_ATTENTION_BY_KIND,
+  GIT_OP_AUTHOR_GLYPH_KINDS,
+  GIT_OP_KIND_CLASS,
+} from "@/app/(app)/admin/coord/git-ops/gitOpStatus";
+import {
+  FEDERATION_ATTENTION_BY_KIND,
+  FEDERATION_AUTHOR_GLYPH_KINDS,
+  FEDERATION_KIND_CLASS,
+} from "@/app/(app)/admin/coord/federation/federationStatus";
 
 /**
  * Every kind→attention table in the console, paired with the palette that
@@ -218,6 +244,47 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: CLEARANCE_RULE_CLASS,
       authorGlyphKinds: CLEARANCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
+  {
+    surface: "open PRs (/admin/coord/prs)",
+    attentionByKind: PR_ATTENTION_BY_MERGE_STATUS,
+    palette: {
+      badgeClass: PR_MERGE_STATUS_CLASS,
+      authorGlyphKinds: PR_AUTHOR_GLYPH_STATUSES as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "gates (/admin/coord/gates)",
+    attentionByKind: GATE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: GATE_KIND_CLASS,
+      authorGlyphKinds: GATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "tenant autonomy (/admin/coord/policies)",
+    attentionByKind: POLICY_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: POLICY_KIND_CLASS,
+      authorGlyphKinds: POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "git-op feed (/admin/coord/git-ops)",
+    attentionByKind: GIT_OP_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: GIT_OP_KIND_CLASS,
+      authorGlyphKinds: GIT_OP_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "memory federation (/admin/coord/federation)",
+    attentionByKind: FEDERATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: FEDERATION_KIND_CLASS,
+      authorGlyphKinds: FEDERATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];

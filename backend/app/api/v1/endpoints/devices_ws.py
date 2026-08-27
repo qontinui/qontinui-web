@@ -101,7 +101,21 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
     except CoordJWKSUnavailableError as exc:
         # Cold-start failure: coord unreachable. Reject all handshakes
         # rather than silently falling back to "trust the token".
-        logger.error("devices_ws_jwks_unavailable", error=str(exc))
+        #
+        # The runner records the close reason below as its `last_error`, and
+        # that reason is deliberately vague, so THIS log line is the whole
+        # diagnostic surface. Name the coord URL we actually dialled and the
+        # concrete exception class of the underlying transport fault: a
+        # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
+        # a genuinely slow coord are different incidents with different fixes,
+        # and `error=str(exc)` alone has repeatedly failed to separate them.
+        logger.error(
+            "devices_ws_jwks_unavailable",
+            error=str(exc),
+            failure=type(exc).__name__,
+            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
+            coord_url=coord_jwks_client.coord_url,
+        )
         # 1011 = internal error / service overload.
         await reject(
             websocket,
