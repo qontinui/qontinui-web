@@ -9,6 +9,28 @@
  * `POST /api/v1/operations/memory/{name}/restore` which copies the
  * historical version into a fresh append (new head version) per Q3's
  * event-sourced shape.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * The ROUTE survives (D1 — a read-only workspace with its own destructive
+ * action and its own deep link). What changed, per
+ * `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — three `<Card><CardHeader><CardTitle>` wrappers are gone. Two of
+ *   them cost ~72px of header each to say something the breadcrumb one line
+ *   above already said, and the third wrapped a single button in a card. The
+ *   body is `p-3 sm:p-6 space-y-4` (it was a flat `p-6`).
+ * - **R3/R4** — the memory's type is now the SAME `<StatusBadge>` `/memory`
+ *   and the detail route render (`deriveMemoryStatus`), with the matching
+ *   accent, instead of a bare outline badge that painted an unrecognised type
+ *   like a known one.
+ * - **R2** — `written_at` was a raw ISO string; it renders through `<RowTime>`
+ *   now.
+ *
+ * The restore button keeps its own container testid
+ * (`coord-memory-version-restore`) so the frozen contract survives the card
+ * being deleted. Every authored `data-testid` is carried across unchanged
+ * (D4a).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,12 +38,6 @@ import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +53,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
+import { RowTime, StatusBadge, rowAccentClass } from "@/components/console";
+import {
+  MEMORY_STATUS_PALETTE,
+  deriveMemoryStatus,
+} from "@/components/admin/coord/memoryStatus";
 import { httpClient } from "@/services/service-factory";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 
@@ -104,9 +125,7 @@ export default function CoordMemoryVersionPage() {
       toast.success(`Restored v${version} as the new head version`);
       router.push(`/admin/coord/memory/${encodeURIComponent(name)}`);
     } catch (e) {
-      toast.error(
-        e instanceof Error ? e.message : "Failed to restore version"
-      );
+      toast.error(e instanceof Error ? e.message : "Failed to restore version");
     } finally {
       setRestoring(false);
     }
@@ -114,7 +133,7 @@ export default function CoordMemoryVersionPage() {
 
   return (
     <div
-      className="p-6 space-y-4 max-w-5xl mx-auto"
+      className="p-3 sm:p-6 space-y-4 max-w-5xl mx-auto"
       data-testid="coord-memory-version-page"
     >
       <div className="flex items-center gap-2 flex-wrap">
@@ -143,41 +162,54 @@ export default function CoordMemoryVersionPage() {
       </div>
 
       {error && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
       {loading && !entry ? (
         <Skeleton className="h-32 w-full" />
       ) : entry ? (
         <>
-          <Card data-testid="coord-memory-version-meta">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base flex-wrap">
-                <BookOpen className="h-4 w-4" />
-                <span className="font-mono truncate">{entry.name}</span>
-                <Badge variant="secondary">v{entry.version}</Badge>
-                {entry.type && <Badge variant="outline">{entry.type}</Badge>}
-                <Badge variant="outline">read-only</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              {entry.written_at && <span>written {entry.written_at}</span>}
+          {/* R9/R3/R4 — one strip, carrying the same status badge and accent
+              the memory list and detail route render. */}
+          <div
+            data-testid="coord-memory-version-meta"
+            className={[
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
+              rowAccentClass(deriveMemoryStatus(entry)),
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <div className="flex items-center gap-2 flex-wrap">
+              <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="font-mono text-sm truncate">{entry.name}</span>
+              <Badge variant="secondary" className="font-mono text-[11px]">
+                v{entry.version}
+              </Badge>
+              <StatusBadge
+                status={deriveMemoryStatus(entry)}
+                palette={MEMORY_STATUS_PALETTE}
+              />
+              <Badge variant="outline" className="text-[11px]">
+                read-only
+              </Badge>
+              {entry.written_at && (
+                <RowTime at={entry.written_at} verb="Written" />
+              )}
+            </div>
+            {/* R8 — the raw provenance ids sit last, muted and mono. */}
+            <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
               {entry.written_by_agent && (
-                <span>by {entry.written_by_agent}</span>
+                <span>agent {entry.written_by_agent}</span>
               )}
               {entry.written_by_device && (
-                <span>on {entry.written_by_device}</span>
+                <span>device {entry.written_by_device}</span>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           <CoordAdminOnly>
-          <Card data-testid="coord-memory-version-restore">
-            <CardContent className="p-4">
+            <div data-testid="coord-memory-version-restore">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -189,9 +221,7 @@ export default function CoordMemoryVersionPage() {
                     {restoring ? "Restoring..." : "Restore this version"}
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent
-                  data-testid="coord-memory-restore-dialog"
-                >
+                <AlertDialogContent data-testid="coord-memory-restore-dialog">
                   <AlertDialogHeader>
                     <AlertDialogTitle>
                       Restore v{entry.version} as the new head?
@@ -203,9 +233,7 @@ export default function CoordMemoryVersionPage() {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel
-                      data-testid="coord-memory-restore-cancel"
-                    >
+                    <AlertDialogCancel data-testid="coord-memory-restore-cancel">
                       Cancel
                     </AlertDialogCancel>
                     <AlertDialogAction
@@ -217,22 +245,19 @@ export default function CoordMemoryVersionPage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            </CardContent>
-          </Card>
+            </div>
           </CoordAdminOnly>
 
-          <Card data-testid="coord-memory-version-content">
-            <CardHeader>
-              <CardTitle className="text-base">Content (read-only)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="prose prose-sm max-w-none dark:prose-invert">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {entry.content}
-                </ReactMarkdown>
-              </div>
-            </CardContent>
-          </Card>
+          <section
+            data-testid="coord-memory-version-content"
+            className="rounded-lg border border-border bg-card/30 px-4 py-3"
+          >
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {entry.content}
+              </ReactMarkdown>
+            </div>
+          </section>
         </>
       ) : (
         <p className="text-sm text-muted-foreground italic">

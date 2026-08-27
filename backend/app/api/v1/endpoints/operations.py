@@ -82,6 +82,7 @@ from app.services.cognito_admin import (
     CognitoAdminError,
     CognitoAmbiguousEmailError,
     CognitoGroupExistsError,
+    CognitoInvalidParameterError,
 )
 from app.services.coord_device_status import (
     CoordDeviceStatusDisabledError,
@@ -6318,6 +6319,7 @@ class TenantCreateIn(BaseModel):
 
 @router.post("/tenants")
 async def create_user_tenant(
+    request: Request,
     body: TenantCreateIn,
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
@@ -6360,6 +6362,16 @@ async def create_user_tenant(
     paired to a self-service project until that endpoint is generalized.
     The create dialog states this.
     """
+    # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``.
+    # ``capture_caller_bearer`` is a sync ``def``; FastAPI runs sync
+    # dependencies in a threadpool with a COPIED context, so the
+    # ``ContextVar.set()`` never propagates back to this coroutine — the
+    # forwarded headers would carry no ``Authorization`` and coord would
+    # answer ``401 missing operator Bearer token``. Measured against this
+    # project's pinned fastapi/starlette/anyio. Every other call site does
+    # the same (``get_tenant_id``, ``require_coord_tenant_admin``,
+    # ``plan_library``, ``agent_registry``) — do not "tidy" it into a Depends.
+    capture_caller_bearer(request)
     return await _proxy_coord_post(
         "/coord/tenants", body.model_dump(), forward_bearer=True
     )
@@ -8302,13 +8314,21 @@ async def create_cognito_group(
     current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
     """Create a Cognito group. 409 if a group with that name already
-    exists. Superuser-gated."""
+    exists, 400 if the name cannot satisfy Cognito's ``groupName``
+    constraint. Superuser-gated."""
     try:
         group = await asyncio.to_thread(
             cognito_admin.create_group, body.group_name, body.description
         )
     except CognitoGroupExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except CognitoInvalidParameterError as exc:
+        # A malformed name is the CALLER's error and self-explaining — it must
+        # be caught BEFORE the generic ``CognitoAdminError`` arm below, which
+        # would otherwise collapse it into a 502 that claims AWS is broken.
+        # 502 stays reserved for a genuinely broken upstream, which is the
+        # only thing that makes it a useful signal.
+        raise HTTPException(status_code=400, detail=str(exc))
     except CognitoAdminError as exc:
         logger.error(
             "cognito_group_create_failed",

@@ -39,6 +39,21 @@
  * `can_edit`. The kind correction is likewise gated by the backend's own
  * org scoping. Talks only to the always-registered `httpClient`, matching
  * every sibling admin/coord page.
+ *
+ * ## Console style (Phase 3 Wave 5)
+ *
+ * This route landed after the console plan was authored and was missing from
+ * its census (§4 correction), which files it as the closest of the five to
+ * conformant: already row-shaped, but with its detail behind a MODAL. The
+ * conversion to expand-in-place, and the one trap in it, are documented in
+ * `_components/PlanLibraryList.tsx`.
+ *
+ * **R9** here is the page body — `p-3 sm:p-6 space-y-4`, was `space-y-6 p-6`
+ * — and the header, which was a heading stacked over a five-line paragraph.
+ * The console shell already renders the title bar, so the `<h1>` was a second
+ * title. The paragraph is cut to the sentence that changes a decision — this
+ * is an INDEX, not a backup — because that is the one an operator must not
+ * miss, and the module doc above is where the rest belongs.
  */
 
 import { useState } from "react";
@@ -60,20 +75,27 @@ export default function PlanLibraryPage() {
   );
 
   return (
-    <div className="space-y-6 p-3 sm:p-6" data-testid="plan-library-page">
-      <div className="flex items-start gap-3">
-        <Library className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div>
-          <h1 className="text-lg font-semibold">Plan &amp; Prompt Library</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            The investigation prompts, plan-authoring prompts, implementation
-            prompts, findings reports, handoffs and plans the fleet produces —
-            captured, versioned, and linked to what produced them. This is a
-            searchable <em>index</em> of that work, not a backup of it: nothing
-            here restores a file, and a document deleted on disk keeps its
-            history here.
-          </p>
-        </div>
+    <div className="p-3 sm:p-6 space-y-4" data-testid="plan-library-page">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <Library
+          className="size-4 shrink-0 self-center text-muted-foreground"
+          aria-hidden
+        />
+        {/* `<h2>`, not `<h1>` — `admin/coord/layout.tsx` already renders the
+            console's one `<h1>` ("Coord operator console"), which 13 Playwright
+            assertions match by role and exact name. A second `<h1>` was always
+            a document-outline defect; R9 restyling this one to `text-sm` made
+            it a VISUAL duplicate of the shell title as well, which is what
+            turned a latent nit into a real one. All seven Wave 3 routes render
+            no page heading at all; this stays because it names a surface the
+            nav crumb abbreviates. Pixel-identical either way. */}
+        <h2 className="text-sm font-semibold">Plan &amp; Prompt Library</h2>
+        <p className="max-w-4xl text-xs text-muted-foreground">
+          A searchable <em>index</em> of the prompts, findings reports,
+          handoffs and plans the fleet produces — <strong>not a backup</strong>:
+          nothing here restores a file, and a document deleted on disk keeps its
+          history here.
+        </p>
       </div>
 
       <CapturePolicyPanel />

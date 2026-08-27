@@ -6,10 +6,16 @@
  * class with no rule must show BOTH arms of coord's audience-dependent default
  * rather than one picked answer. Asserting only that the table renders would
  * let the display and the resolver drift apart.
+ *
+ * Since Phase 3 Wave 5 the per-class description and the near-miss warning
+ * live in the row's EXPANDED `<tr><td colspan>` detail (D2), so the near-miss
+ * assertion opens the row first. What stays on the COLLAPSED row is the
+ * warning's signal — an `AlertTriangle` labelled with the class it is not —
+ * because R7 folds detail away and never the alarm; both halves are asserted.
  */
 
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { CoordPolicyRow } from "../../_shared/coordPolicies";
 import { EffectiveAuthorityMatrix } from "./EffectiveAuthorityMatrix";
 
@@ -55,6 +61,14 @@ function rule(over: {
 
 function row(gateClass: string) {
   return within(screen.getByTestId(`gate-clearance-matrix-row-${gateClass}`));
+}
+
+/** Open a class row and return a scope over its full-width detail cell. */
+function detail(gateClass: string) {
+  fireEvent.click(screen.getByTestId(`gate-clearance-matrix-row-${gateClass}`));
+  return within(
+    screen.getByTestId(`gate-clearance-matrix-detail-${gateClass}`)
+  );
 }
 
 describe("EffectiveAuthorityMatrix", () => {
@@ -133,10 +147,16 @@ describe("EffectiveAuthorityMatrix", () => {
       />
     );
     const cell = row("Security-Surface");
+    // R7 — the near-miss SIGNAL survives on the collapsed row, so folding the
+    // detail away cannot hide a class that will silently never match.
+    expect(
+      cell.getByLabelText("Not the same class as security-surface")
+    ).toBeTruthy();
     // The class is visible even though nothing resolves through it…
-    expect(cell.getByTestId("gate-clearance-near-miss").textContent).toContain(
-      "security-surface"
-    );
+    expect(
+      detail("Security-Surface").getByTestId("gate-clearance-near-miss")
+        .textContent
+    ).toContain("security-surface");
     // …and it resolves to the default, because the rule is disabled.
     expect(cell.getByTestId("gate-clearance-decided-by").textContent).toContain(
       "No rule"

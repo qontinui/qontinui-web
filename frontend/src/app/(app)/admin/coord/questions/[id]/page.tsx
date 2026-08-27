@@ -16,6 +16,34 @@
  * On success: toast + redirect back to /admin/coord/questions. Already-
  * answered questions render in a read-only mode with the prior response
  * displayed and the submit composer disabled.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * The ROUTE survives (D1 — this page is a workspace: it has its own actions,
+ * its own composer, and a deep link operators paste). What changed is chrome,
+ * per `frontend/docs/console-ui-style-guide.md`:
+ *
+ * - **R9** — the four `<Card><CardHeader><CardTitle>` section wrappers are
+ *   gone. None of them was a page title, but each cost ~72px of header to
+ *   label a section a one-line heading labels just as well, and four of them
+ *   stacked pushed the composer — the thing the operator came here to use —
+ *   below the fold on a laptop.
+ * - **R3/R4** — the question's state is now a `<StatusBadge>` off
+ *   `deriveQuestionStatus`, the SAME derivation `/questions` renders, with the
+ *   matching left-edge accent. It used to be a hand-rolled
+ *   `answered ? "secondary" : "default"` badge saying "pending", which is the
+ *   one state R3 files as red: an unanswered question is an agent that has
+ *   STOPPED, and nothing but this page clears it. The list said so; the detail
+ *   route did not.
+ * - **R7** — free-form `Context` is supporting material, so it collapses. It
+ *   opens by default (you usually need it to answer) and its open/closed
+ *   choice persists.
+ *
+ * Every authored `data-testid` is carried across unchanged (D4a):
+ * `coord-question-detail-page`, `coord-question-back-btn`,
+ * `coord-question-meta`, `coord-question-context`, `coord-question-options`,
+ * `coord-question-option-card`, `coord-question-respond`,
+ * `coord-question-response-textarea`, `coord-question-submit`.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,21 +51,23 @@ import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowLeft, FileText, Inbox } from "lucide-react";
 import {
-  ArrowLeft,
-  CheckCircle2,
-  Inbox,
-  MessageSquareWarning,
-} from "lucide-react";
+  CollapsiblePanel,
+  RowTime,
+  StatusBadge,
+  rowAccentClass,
+} from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
 import {
+  QUESTION_STATUS_PALETTE,
+  deriveQuestionStatus,
   formatRelative,
   type AgentQuestionOption,
   type AgentQuestionRow,
@@ -119,6 +149,11 @@ export default function CoordQuestionDetailPage() {
 
   const options = normalizeOptions(question?.options ?? null);
   const answered = Boolean(question?.responded_at);
+  // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
+  // disagree about whether an agent is stopped on this question. `question`
+  // may be null while the first read is in flight; the block that consumes
+  // this only renders once it is not.
+  const status = deriveQuestionStatus(question ?? {});
 
   return (
     <div
@@ -140,86 +175,76 @@ export default function CoordQuestionDetailPage() {
       </div>
 
       {error && (
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-destructive">Failed to load: {error}</p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
       {loading && !question ? (
         <Skeleton className="h-32 w-full" />
       ) : question ? (
         <>
-          <Card data-testid="coord-question-meta">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                {answered ? (
-                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <MessageSquareWarning className="h-4 w-4 text-amber-500" />
-                )}
-                <Badge variant={answered ? "secondary" : "default"}>
-                  {answered ? "answered" : "pending"}
-                </Badge>
-                {question.plan_phase && (
-                  <Badge variant="outline">{question.plan_phase}</Badge>
-                )}
-                {question.created_at && (
-                  <span className="text-xs text-muted-foreground">
-                    posted {formatRelative(question.created_at)}
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                {question.agent_id && (
-                  <span>
-                    agent <span className="font-mono">{question.agent_id}</span>
-                  </span>
-                )}
-                {question.agent_session_id && (
-                  <span>
-                    session{" "}
-                    <span className="font-mono">
-                      {question.agent_session_id}
-                    </span>
-                  </span>
-                )}
-                {question.device_id && (
-                  <span>
-                    device{" "}
-                    <span className="font-mono">{question.device_id}</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-base font-medium">{question.question}</p>
-            </CardContent>
-          </Card>
+          {/* R9/R4 — the meta block is one bordered strip, not a Card with a
+              header. `rowAccentClass` gives an unanswered question the same
+              red left edge it carries in the inbox, so the two surfaces agree
+              at a glance about whether an agent is stopped. */}
+          <div
+            data-testid="coord-question-meta"
+            className={[
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
+              rowAccentClass(status),
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />
+              {question.plan_phase && (
+                <Badge variant="outline">{question.plan_phase}</Badge>
+              )}
+              {question.created_at && (
+                <RowTime at={question.created_at} verb="Posted" />
+              )}
+            </div>
+            <p className="text-base font-medium">{question.question}</p>
+            {/* R8 — the raw coord ids live at the bottom, muted and mono, not
+                beside the question they are support material for. */}
+            <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
+              {question.agent_id && <span>agent {question.agent_id}</span>}
+              {question.agent_session_id && (
+                <span>session {question.agent_session_id}</span>
+              )}
+              {question.device_id && <span>device {question.device_id}</span>}
+            </div>
+          </div>
 
           {question.context && (
-            <Card data-testid="coord-question-context">
-              <CardHeader>
-                <CardTitle className="text-sm">Context</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {question.context}
-                  </ReactMarkdown>
-                </div>
-              </CardContent>
-            </Card>
+            /* R7 — supporting material collapses. It opens by default because
+               you usually need it to answer, and the choice persists. */
+            <CollapsiblePanel
+              titleAs="h2"
+              className="p-3"
+              defaultOpen
+              storageKey="coord-question-context"
+              icon={<FileText className="h-3.5 w-3.5" />}
+              title="Context"
+              data-testid="coord-question-context"
+            >
+              <div className="prose prose-sm max-w-none dark:prose-invert">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {question.context}
+                </ReactMarkdown>
+              </div>
+            </CollapsiblePanel>
           )}
 
           {options.length > 0 && (
-            <Card data-testid="coord-question-options">
-              <CardHeader>
-                <CardTitle className="text-sm">Suggested options</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-2 sm:grid-cols-2">
+            <section
+              data-testid="coord-question-options"
+              className="space-y-2"
+            >
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Suggested options
+              </h2>
+              <div className="grid gap-2 sm:grid-cols-2">
                   {options.map((opt, i) => {
                     const value =
                       opt.value ??
@@ -256,19 +281,18 @@ export default function CoordQuestionDetailPage() {
                       </button>
                     );
                   })}
-                </div>
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           )}
 
-          <Card data-testid="coord-question-respond">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Inbox className="h-4 w-4" />
-                {answered ? "Recorded response" : "Respond"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          <section
+            data-testid="coord-question-respond"
+            className="space-y-3 rounded-lg border border-border bg-card/30 px-4 py-3"
+          >
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+              <Inbox className="h-4 w-4" />
+              {answered ? "Recorded response" : "Respond"}
+            </h2>
               {answered ? (
                 <>
                   <p className="text-sm whitespace-pre-wrap">
@@ -308,8 +332,7 @@ export default function CoordQuestionDetailPage() {
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
+          </section>
         </>
       ) : (
         <p className="text-sm text-muted-foreground italic">

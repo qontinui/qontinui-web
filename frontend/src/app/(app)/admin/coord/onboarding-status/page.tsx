@@ -32,6 +32,31 @@
  * tenant happens to be looking at this page. The one legitimate stateless
  * arrival (an install started from GitHub's Marketplace rather than from one of
  * our links) is rendered as a restartable "start the connect again" card.
+ *
+ * ## Console style (Phase 3 Wave 3)
+ *
+ * This is one of the plan's **form/dialog routes**: no record list, so it takes
+ * **R9 (chrome) and R3 (palette) only**, per
+ * `frontend/docs/console-ui-style-guide.md`.
+ *
+ * - **R9** — the four claim-state `<Card><CardHeader><CardTitle>` banners are
+ *   now console strips (`rounded-lg border bg-card/30 px-4 py-3`). None was a
+ *   duplicated page title, but each cost a card header to carry one sentence,
+ *   and the claim banner sits directly above the doctor checklist the operator
+ *   actually came to watch.
+ * - **R3/R4** — the four phases now go through an audited kind→attention table
+ *   (`onboardingClaimStatus.ts`) instead of four hand-picked hues, and it
+ *   corrected one: **`recover` was muted**, beside a muted refresh icon, which
+ *   reads as "in progress". It is the one state where a human must start the
+ *   connect over and nothing retries for them — `author`, so red with the
+ *   matching left-edge accent. `claiming` stays calm; a spinner is not an
+ *   alarm.
+ *
+ * Every authored `data-testid` is carried across unchanged (D4a):
+ * `coord-onboarding-status-page`, `onboarding-claim-claiming`,
+ * `onboarding-claim-success`, `onboarding-claim-recover`,
+ * `onboarding-claim-recover-message`, `onboarding-claim-error`,
+ * `onboarding-claim-error-message`.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -46,8 +71,13 @@ import { InstallGitHubAppButton } from "@/components/operations/InstallGitHubApp
 import { OnboardingDoctor } from "@/components/operations/OnboardingDoctor";
 import { OPERATIONS_API } from "@/components/operations/utils";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { StatusBadge } from "@/components/console";
+import {
+  CLAIM_STATUS_PALETTE,
+  claimBannerBorder,
+  deriveClaimStatus,
+} from "@/components/admin/coord/onboardingClaimStatus";
 import { httpClient } from "@/services/service-factory";
 
 /** Coord's claim success envelope (frozen contract, coord PR #901). */
@@ -69,7 +99,41 @@ interface ClaimResponse {
  * Setup-URL redirect never passed through one of our links and so carries no
  * state at all.
  */
-type ClaimPhase = "claiming" | "success" | "error" | "recover";
+/**
+ * The claim's four states. Re-exported from `onboardingClaimStatus` rather
+ * than declared twice: that module owns the R3 attention table keyed on this
+ * union, and two copies of a union is how a phase gets added to one and not
+ * the other.
+ */
+type ClaimPhase =
+  import("@/components/admin/coord/onboardingClaimStatus").ClaimPhase;
+
+/** One console banner strip: the phase's badge, a title, and a body. */
+function ClaimBanner({
+  phase,
+  title,
+  testId,
+  children,
+}: {
+  phase: ClaimPhase;
+  title: string;
+  testId: string;
+  children?: React.ReactNode;
+}) {
+  const status = deriveClaimStatus(phase);
+  return (
+    <div
+      data-testid={testId}
+      className={`rounded-lg border bg-card/30 px-4 py-3 space-y-2 ${claimBannerBorder(phase)}`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <StatusBadge status={status} palette={CLAIM_STATUS_PALETTE} />
+        <span className="text-sm font-semibold">{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /** coord's connect-state rejection codes (plan §2 / coord `ClaimError`). */
 const RECOVERABLE_CLAIM_CODES = [
@@ -227,7 +291,7 @@ export default function OnboardingStatusPage() {
   // shipped runner's legacy value and still parses.
   const connectState = useMemo(
     () => parseConnectState(searchParams?.get("state") ?? null),
-    [searchParams],
+    [searchParams]
   );
   // The `runner-clone` flow is set by /connect-runner-github (the desktop
   // runner's clone-picker connect entry). It makes the claim bind-only: bind the
@@ -250,7 +314,7 @@ export default function OnboardingStatusPage() {
   const hasClaimParams = !!code && (!!installationIdRaw || !!stateLogin);
 
   const [phase, setPhase] = useState<ClaimPhase | null>(
-    hasClaimParams ? "claiming" : null,
+    hasClaimParams ? "claiming" : null
   );
   const [claim, setClaim] = useState<ClaimResponse | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -290,7 +354,7 @@ export default function OnboardingStatusPage() {
       setRecoverMessage(
         "This connect didn't start from Qontinui, so we can't safely finish it " +
           "here. Start the connect again below — it takes one click and GitHub " +
-          "will bring you straight back.",
+          "will bring you straight back."
       );
       setPhase("recover");
       return;
@@ -302,7 +366,7 @@ export default function OnboardingStatusPage() {
     if (!consumeNonce(connectState?.nonce ?? null)) {
       setRecoverMessage(
         "This connect link didn't originate from this browser session, so we " +
-          "stopped before using it. Start the connect again below.",
+          "stopped before using it. Start the connect again below."
       );
       setPhase("recover");
       return;
@@ -315,7 +379,7 @@ export default function OnboardingStatusPage() {
       const installationId = Number(installationIdRaw);
       if (!Number.isInteger(installationId)) {
         setClaimError(
-          "The installation id in the URL was malformed — please retry from GitHub.",
+          "The installation id in the URL was malformed — please retry from GitHub."
         );
         setPhase("error");
         return;
@@ -342,7 +406,7 @@ export default function OnboardingStatusPage() {
               // Clone-picker connect binds only — no repo enrollment / PRs.
               ...(isRunnerClone ? { bind_only: true } : {}),
             }),
-          },
+          }
         );
         const body = await res
           .json()
@@ -352,7 +416,7 @@ export default function OnboardingStatusPage() {
           if (isRecoverableClaimRejection(res.status, body)) {
             setRecoverMessage(
               "Your connect link expired or had already been used, so we " +
-                "stopped before binding anything. Start the connect again below.",
+                "stopped before binding anything. Start the connect again below."
             );
             setPhase("recover");
             return;
@@ -384,7 +448,10 @@ export default function OnboardingStatusPage() {
   ]);
 
   return (
-    <div className="p-3 sm:p-6 space-y-3" data-testid="coord-onboarding-status-page">
+    <div
+      className="p-3 sm:p-6 space-y-3"
+      data-testid="coord-onboarding-status-page"
+    >
       {/* Bare status/doctor visits (no claim params) get a subtle pointer back
           to the primary self-serve entry point. Hidden during/after a claim so
           it never competes with the claim result. */}
@@ -406,63 +473,62 @@ export default function OnboardingStatusPage() {
       {phase === null && !repo && <ConnectedOrgs />}
 
       {phase === "claiming" && (
-        <Card data-testid="onboarding-claim-claiming">
-          <CardContent className="flex items-center gap-2 py-6 text-sm">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        <ClaimBanner
+          phase="claiming"
+          title="Connecting"
+          testId="onboarding-claim-claiming"
+        >
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
             {isRunnerClone
               ? "Connecting your GitHub account…"
               : "Connecting your GitHub account and enrolling its repositories…"}
-          </CardContent>
-        </Card>
+          </p>
+        </ClaimBanner>
       )}
 
       {phase === "success" && claim && (
-        <Card data-testid="onboarding-claim-success">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500" />
-              GitHub account connected
-              <Badge variant="default" className="ml-2">
-                {claim.account_login}
-              </Badge>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              {isRunnerClone ? (
-                <>
-                  <span className="font-mono">{claim.account_login}</span> is now
-                  connected to your Qontinui workspace. Return to your runner and
-                  click <span className="font-medium">Refresh</span> to see and
-                  clone its repositories.
-                </>
-              ) : (
-                <>
-                  <span className="font-mono">{claim.account_login}</span> is now
-                  bound to your Qontinui tenant and its repositories are being
-                  enrolled. Watch them go green below — the checklist
-                  auto-refreshes as onboarding completes.
-                </>
-              )}
-            </p>
-          </CardHeader>
-        </Card>
+        <ClaimBanner
+          phase="success"
+          title="GitHub account connected"
+          testId="onboarding-claim-success"
+        >
+          <p className="text-xs text-muted-foreground">
+            <Badge variant="default" className="mr-2">
+              {claim.account_login}
+            </Badge>
+            {isRunnerClone ? (
+              <>
+                <span className="font-mono">{claim.account_login}</span> is now
+                connected to your Qontinui workspace. Return to your runner and
+                click <span className="font-medium">Refresh</span> to see and
+                clone its repositories.
+              </>
+            ) : (
+              <>
+                <span className="font-mono">{claim.account_login}</span> is now
+                bound to your Qontinui tenant and its repositories are being
+                enrolled. Watch them go green below — the checklist
+                auto-refreshes as onboarding completes.
+              </>
+            )}
+          </p>
+        </ClaimBanner>
       )}
 
       {phase === "recover" && (
-        <Card data-testid="onboarding-claim-recover">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              Start the connect again
-            </CardTitle>
-            <p
-              className="text-sm text-muted-foreground"
-              data-testid="onboarding-claim-recover-message"
-            >
-              {recoverMessage}
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/*
+        <ClaimBanner
+          phase="recover"
+          title="Start the connect again"
+          testId="onboarding-claim-recover"
+        >
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="onboarding-claim-recover-message"
+          >
+            {recoverMessage}
+          </p>
+          {/*
               The flow the user STARTED with, when the callback still told us
               (a legacy bare `runner-clone`, or a parsed-but-tokenless state).
               A stateless callback — out-of-band Marketplace install, or a
@@ -475,44 +541,41 @@ export default function OnboardingStatusPage() {
               nothing the user could not request directly. The runner-clone
               alternative stays one click away in the link below.
             */}
-            <InstallGitHubAppButton
-              flow={isRunnerClone ? "runner-clone" : "connect"}
-              label="Connect GitHub"
-              testId="onboarding-claim-recover-install"
-            />
-            <p className="text-xs text-muted-foreground">
-              Already installed the App on your organization? GitHub won&apos;t
-              send you back through the install flow —{" "}
-              <Link
-                href={
-                  isRunnerClone
-                    ? "/connect-runner-github"
-                    : "/admin/coord/onboarding"
-                }
-                className="underline underline-offset-4 hover:text-foreground"
-              >
-                authorize it here instead →
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
+          <InstallGitHubAppButton
+            flow={isRunnerClone ? "runner-clone" : "connect"}
+            label="Connect GitHub"
+            testId="onboarding-claim-recover-install"
+          />
+          <p className="text-xs text-muted-foreground">
+            Already installed the App on your organization? GitHub won&apos;t
+            send you back through the install flow —{" "}
+            <Link
+              href={
+                isRunnerClone
+                  ? "/connect-runner-github"
+                  : "/admin/coord/onboarding"
+              }
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              authorize it here instead →
+            </Link>
+          </p>
+        </ClaimBanner>
       )}
 
       {phase === "error" && (
-        <Card data-testid="onboarding-claim-error">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <XCircle className="h-4 w-4 text-destructive" />
-              Couldn&apos;t complete onboarding
-            </CardTitle>
-            <p
-              className="text-sm text-destructive"
-              data-testid="onboarding-claim-error-message"
-            >
-              {claimError}
-            </p>
-          </CardHeader>
-        </Card>
+        <ClaimBanner
+          phase="error"
+          title="Couldn't complete onboarding"
+          testId="onboarding-claim-error"
+        >
+          <p
+            className="text-sm text-destructive"
+            data-testid="onboarding-claim-error-message"
+          >
+            {claimError}
+          </p>
+        </ClaimBanner>
       )}
 
       {/*

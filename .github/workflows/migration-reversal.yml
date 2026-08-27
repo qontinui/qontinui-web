@@ -280,6 +280,28 @@ jobs:
             echo "Multiple alembic heads ($HEADS) — reversibility deferred to the alembic-heads-pr gate. Skipping (pass)."
             exit 0
           fi
+
+          # A THIRD un-consolidated shape, distinct from (a)/(b) above: exactly
+          # one head, but that head is itself a merge revision — a
+          # `down_revision` TUPLE joining two prior branches (the
+          # `merge_06_commit_effect_restack_heads` convention). `alembic
+          # upgrade head` is unambiguous there (there's only one edge forward),
+          # but `downgrade -1` is NOT: a merge point has two valid "one step
+          # back" targets and alembic refuses to guess, raising "Ambiguous
+          # walk" — a hard failure that has nothing to do with whether the
+          # merge (or the branches it joins) is actually reversible. Detect it
+          # structurally, the same way (a)/(b) do, rather than pattern-matching
+          # that error string: read the resolved head's own `down_revision`
+          # via alembic's ScriptDirectory, which is a tuple iff it is a merge
+          # point. Skip-and-pass for the same reason (b) does: a human already
+          # reviewed the merge revision's DAG shape in the diff, and there is
+          # no DDL for this test to exercise on a pure-merge file.
+          MERGE_HEAD=$(poetry run python -c "from alembic.config import Config; from alembic.script import ScriptDirectory; script = ScriptDirectory.from_config(Config('alembic.ini')); head = script.get_revision(script.get_heads()[0]); print('1' if isinstance(head.down_revision, tuple) else '0')")
+          if [ "$MERGE_HEAD" = "1" ]; then
+            echo "Single head is a merge revision (multiple down_revisions) — 'downgrade -1' is structurally ambiguous there, not a reversibility defect. Skipping (pass)."
+            exit 0
+          fi
+
           echo "== upgrade head =="
           poetry run alembic upgrade head
           echo "== downgrade -1 =="
