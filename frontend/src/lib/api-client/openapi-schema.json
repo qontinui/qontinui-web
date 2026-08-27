@@ -77640,7 +77640,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.",
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
@@ -77650,6 +77650,30 @@
             "schema": {
               "title": "Group Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Delete even though coord maps this group to one or more tenants. The last-admin guard still applies and has no override.",
+            "in": "query",
+            "name": "allow_mapped",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Delete even though coord maps this group to one or more tenants. The last-admin guard still applies and has no override.",
+              "title": "Allow Mapped",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Delete even though this is a `<slug>-home` group that pins operators' home tenant.",
+            "in": "query",
+            "name": "allow_home_group",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Delete even though this is a `<slug>-home` group that pins operators' home tenant.",
+              "title": "Allow Home Group",
+              "type": "boolean"
             }
           }
         ],
