@@ -84,6 +84,21 @@ import {
   RELEASE_STATE_CLASS,
 } from "@/components/admin/coord/releaseStatus";
 import {
+  CLEARANCE_ATTENTION_BY_KIND,
+  CLEARANCE_AUTHOR_GLYPH_KINDS,
+  CLEARANCE_RULE_CLASS,
+} from "@/app/(app)/admin/coord/gate-clearance/clearanceRuleStatus";
+import {
+  PROPOSAL_ATTENTION_BY_KIND,
+  PROPOSAL_AUTHOR_GLYPH_KINDS,
+  PROPOSAL_KIND_CLASS,
+} from "@/app/(app)/admin/coord/prompt-document-proposals/proposalStatus";
+import {
+  CLAIM_ATTENTION_BY_PHASE,
+  CLAIM_AUTHOR_GLYPH_PHASES,
+  CLAIM_PHASE_CLASS,
+} from "@/components/admin/coord/onboardingClaimStatus";
+import {
   VERIFICATION_ATTENTION_BY_KIND,
   VERIFICATION_AUTHOR_GLYPH_KINDS,
   VERIFICATION_CLASS,
@@ -177,6 +192,32 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: VERIFICATION_CLASS,
       authorGlyphKinds: VERIFICATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // --- Phase 3 Wave 3 -------------------------------------------------------
+  {
+    surface: "onboarding claim (/admin/coord/onboarding-status)",
+    attentionByKind: CLAIM_ATTENTION_BY_PHASE,
+    palette: {
+      badgeClass: CLAIM_PHASE_CLASS,
+      authorGlyphKinds: CLAIM_AUTHOR_GLYPH_PHASES as ReadonlySet<string>,
+    },
+  },
+  // --- Phase 3 Wave 5 -------------------------------------------------------
+  {
+    surface: "policy-edit proposals (/admin/coord/prompt-document-proposals)",
+    attentionByKind: PROPOSAL_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: PROPOSAL_KIND_CLASS,
+      authorGlyphKinds: PROPOSAL_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "gate-clearance rules (/admin/coord/gate-clearance)",
+    attentionByKind: CLEARANCE_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CLEARANCE_RULE_CLASS,
+      authorGlyphKinds: CLEARANCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
 ];
