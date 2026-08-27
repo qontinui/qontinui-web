@@ -77591,7 +77591,7 @@
         ]
       },
       "post": {
-        "description": "Create a Cognito group. 409 if a group with that name already\nexists. Superuser-gated.",
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated.",
         "operationId": "api_v1_operations_coord_cognito_groups_post",
         "requestBody": {
           "content": {
