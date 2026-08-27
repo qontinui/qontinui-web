@@ -24,12 +24,42 @@
  * to the API): Administrator ↔ `admin`, Developer ↔ `operator`. (A future
  * "Viewer" tier also maps to `operator` today; we keep the selector to the two
  * primary choices.)
+ *
+ * ## Console style (Phase 3 Wave 4, commit B) — D2 + D7
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` sequences
+ * this route LAST and in its own commit (D7): at 1500 lines it is the largest
+ * file in the console, and keeping it independently revertible is worth more
+ * than folding it in with the other five Family-C routes.
+ *
+ * D2 keeps the tables. What the route gains:
+ *
+ * - **R1** — a `<StatCluster>` above the members table, derived from the rows
+ *   already loaded, answering how access is distributed. Unfetched counts
+ *   render `–`, never `0` (R6's absence-is-not-zero rule).
+ * - **R5** — the members table had NO per-record detail, so the operator id,
+ *   the SSO provider and the account age were simply not on the page at all,
+ *   and the revoke controls padded every row by however many roles the member
+ *   held. A click now expands a full-width `<tr><td colSpan={5}>`
+ *   `<RecordDetail>` carrying all of it.
+ * - **R3** — `memberStatus.ts` replaces the bag of identical grey role badges
+ *   with one audited badge answering *what can this person do?* — which is the
+ *   only way the page can render "holds nothing at all" as a shape rather than
+ *   as an absence.
+ * - **R7** — this page stacked FIVE unconditional sections, four of which are
+ *   secondary to the members table an administrator came for. They now sit
+ *   BELOW it in `<CollapsiblePanel>`s that keep their signal on the header.
+ * - **R9** — the five `<Card><CardHeader><CardTitle>` wrappers are gone.
+ *
+ * `CognitoGroupItem` already did D2 before this plan reached it — a clickable
+ * row expanding a `<td colSpan>`. It keeps its behaviour and moves onto the
+ * shared `<RecordDetail>` host so the console has ONE detail presentation.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
@@ -61,7 +91,6 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
-  Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -69,6 +98,15 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
 import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
+import {
+  CollapsiblePanel,
+  RecordDetail,
+  StatCluster,
+  StatusBadge,
+  rowAccentClass,
+  type Stat,
+} from "@/components/console";
+import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
 
 const log = createLogger("CoordMembersPage");
 
@@ -224,14 +262,31 @@ function MyTenantsCard() {
   }, [load]);
 
   return (
-    <Card data-testid="coord-members-my-tenants">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="h-4 w-4" />
-          Your tenant &amp; roles
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    // R7 — secondary material collapses, but its SIGNAL does not: the home
+    // tenant's NAME stays on the header while closed, which is the one fact
+    // this section carries that an administrator might need at a glance.
+    //
+    // The section testid rides the WRAPPER, not the content: `CollapsiblePanel`
+    // unmounts its children when closed (that is the point of R7), and an
+    // authored testid that vanishes with the fold would be a testid this wave
+    // removed rather than moved.
+    <div data-testid="coord-members-my-tenants">
+    <CollapsiblePanel
+      title="Your tenant & roles"
+      icon={<Building2 className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-my-tenants"
+      summary={
+        data ? (
+          <Badge variant="outline" className="font-mono text-[11px]">
+            {homeTenantName(data)}
+          </Badge>
+        ) : undefined
+      }
+      contentClassName="space-y-3"
+    >
+      <>
         {loading ? (
           <Skeleton className="h-10 w-full" />
         ) : error ? (
@@ -276,8 +331,9 @@ function MyTenantsCard() {
             )}
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -298,6 +354,9 @@ function MembersTable({
   // Pending role selection per operator (defaults to Administrator).
   const [pendingRole, setPendingRole] = useState<Record<string, CoordRole>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // R5 — one row open at a time, the same model `<RecordList>` holds for a row
+  // list, spelled out here because a `<TableBody>` cannot host that primitive.
+  const [openMember, setOpenMember] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -377,34 +436,82 @@ function MembersTable({
     [load, onChanged]
   );
 
+  // R1 — the count cluster, derived from the rows already on the page (never a
+  // second fetch). It answers the question an administrator opens this page
+  // with, which the old header ("Members") did not: how is access distributed,
+  // and is anybody sitting here unable to do anything?
+  const stats = useMemo((): Stat[] => {
+    let admins = 0;
+    let devs = 0;
+    let none = 0;
+    for (const op of operators) {
+      const k = deriveMemberStatus(op.roles).kind;
+      if (k === "administrator") admins += 1;
+      else if (k === "developer") devs += 1;
+      else none += 1;
+    }
+    return [
+      {
+        key: "members",
+        label: "members ",
+        // `null` while the first load is in flight — R6's absence-is-not-zero
+        // rule, which `<StatCluster>` renders as `–`. Claiming "0 members"
+        // before the fetch lands would be a lie about a page whose whole
+        // subject is who exists.
+        value: loading ? null : operators.length,
+        "data-testid": "coord-members-count",
+      },
+      {
+        key: "admins",
+        label: "administrators ",
+        value: loading ? null : admins,
+        "data-testid": "coord-members-count-admins",
+      },
+      {
+        key: "devs",
+        label: "developers ",
+        value: loading ? null : devs,
+        "data-testid": "coord-members-count-developers",
+      },
+      {
+        key: "no-access",
+        label: "no access ",
+        // Muted, NOT `attention`: nobody must act now (see `memberStatus.ts`).
+        tone: "muted",
+        value: loading ? null : none,
+        title:
+          "Members holding no role in this tenant. Nothing is broken — they simply cannot reach anything until an administrator grants a tier.",
+        "data-testid": "coord-members-count-no-access",
+      },
+    ];
+  }, [operators, loading]);
+
   return (
-    <Card data-testid="coord-members-table-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="h-4 w-4" />
-          Members
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        ) : error ? (
-          <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
-          </p>
-        ) : operators.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No members yet.</p>
-        ) : (
+    // R9 — no page-level Card/CardHeader/CardTitle. "Members" duplicated the
+    // console shell's own title bar; the counts that replace it say something
+    // the word did not.
+    <div className="space-y-3" data-testid="coord-members-table-card">
+      <StatCluster stats={stats} data-testid="coord-members-summary" />
+      {loading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ) : error ? (
+        <p className="text-sm text-destructive flex items-center gap-1.5">
+          <AlertTriangle className="h-4 w-4" /> {error}
+        </p>
+      ) : operators.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No members yet.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
           <Table data-testid="coord-members-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Email</TableHead>
                 <TableHead>Display name</TableHead>
-                <TableHead>Roles</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead>Last login</TableHead>
                 <TableHead className="text-right">Grant tier</TableHead>
               </TableRow>
@@ -413,87 +520,180 @@ function MembersTable({
               {operators.map((op) => {
                 const sel = pendingRole[op.operator_id] ?? "admin";
                 const isBusy = busy === op.operator_id;
+                const expanded = openMember === op.operator_id;
+                const status = deriveMemberStatus(op.roles);
+                const Chevron = expanded ? ChevronDown : ChevronRight;
                 return (
-                  <TableRow key={op.operator_id}>
-                    <TableCell className="font-medium">{op.email}</TableCell>
-                    <TableCell>{op.display_name ?? "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {op.roles.length === 0 ? (
-                          <span className="text-muted-foreground text-xs">
-                            none
-                          </span>
-                        ) : (
-                          op.roles.map((r) => (
-                            <Badge
-                              key={r}
-                              variant="secondary"
-                              className="gap-1 pr-0.5"
-                            >
-                              {tierLabel(r)}
-                              <DestructiveButton
-                                size="icon"
-                                aria-label={`Revoke ${tierLabel(r)}`}
-                                title={`Revoke ${tierLabel(r)}`}
-                                disabled={isBusy}
-                                onClick={() => revokeRole(op.operator_id, r)}
-                                className="ml-0.5 size-4 rounded-sm bg-transparent text-muted-foreground shadow-none hover:bg-destructive hover:text-white"
-                                data-testid={`revoke-${op.operator_id}-${r}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </DestructiveButton>
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                      {relativeTime(op.last_login_at)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Select
-                          value={sel}
-                          onValueChange={(v) =>
-                            setPendingRole((p) => ({
-                              ...p,
-                              [op.operator_id]: v as CoordRole,
-                            }))
-                          }
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="w-[150px]"
-                            data-testid={`tier-select-${op.operator_id}`}
+                  <Fragment key={op.operator_id}>
+                    <TableRow
+                      data-testid={`member-row-${op.operator_id}`}
+                      data-expanded={expanded ? "true" : "false"}
+                      onClick={() =>
+                        setOpenMember(expanded ? null : op.operator_id)
+                      }
+                      className={`cursor-pointer ${rowAccentClass(status)}`}
+                    >
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Chevron
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          {op.email}
+                        </span>
+                      </TableCell>
+                      <TableCell>{op.display_name ?? "—"}</TableCell>
+                      <TableCell>
+                        {/* R3 — ONE badge answering "what can this person do?".
+                            The per-role revoke chips move into the expansion:
+                            they are an ACTION on a grant, not a description of
+                            the member, and rendering N of them made the row as
+                            tall as the number of grants. */}
+                        <StatusBadge
+                          status={status}
+                          palette={MEMBER_STATUS_PALETTE}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+                        {relativeTime(op.last_login_at)}
+                      </TableCell>
+                      <TableCell
+                        // The grant controls are a Select and a Button; a
+                        // click on either must not toggle the row under them.
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          <Select
+                            value={sel}
+                            onValueChange={(v) =>
+                              setPendingRole((p) => ({
+                                ...p,
+                                [op.operator_id]: v as CoordRole,
+                              }))
+                            }
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TIER_OPTIONS.map((t) => (
-                              <SelectItem key={t.role} value={t.role}>
-                                {t.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          size="sm"
-                          disabled={isBusy}
-                          onClick={() => grantRole(op.operator_id, sel)}
-                          data-testid={`grant-${op.operator_id}`}
-                        >
-                          Grant
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                            <SelectTrigger
+                              size="sm"
+                              className="w-[150px]"
+                              data-testid={`tier-select-${op.operator_id}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TIER_OPTIONS.map((t) => (
+                                <SelectItem key={t.role} value={t.role}>
+                                  {t.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            disabled={isBusy}
+                            onClick={() => grantRole(op.operator_id, sel)}
+                            data-testid={`grant-${op.operator_id}`}
+                          >
+                            Grant
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expanded && (
+                      // D2 — a full-width cell spanning all five columns.
+                      <TableRow
+                        data-testid={`member-row-detail-${op.operator_id}`}
+                        className="hover:bg-transparent"
+                      >
+                        <TableCell colSpan={5} className="p-0">
+                          <MemberDetail
+                            op={op}
+                            isBusy={isBusy}
+                            onRevoke={revokeRole}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })}
             </TableBody>
           </Table>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * R5's detail for one member, in the shared host and the fixed slot order.
+ *
+ * `actions` is where the per-role revoke chips live now. They were on the
+ * collapsed row, which conflated two different things — *what this member can
+ * do* (a description, one badge) and *take a grant away from them* (an action,
+ * one control per grant) — and made a row's height a function of how many
+ * roles somebody holds. `raw` carries the operator id and the SSO subject,
+ * which is the only place R8 allows them.
+ */
+function MemberDetail({
+  op,
+  isBusy,
+  onRevoke,
+}: {
+  op: OperatorRow;
+  isBusy: boolean;
+  onRevoke: (operatorId: string, role: string) => void;
+}) {
+  const status = deriveMemberStatus(op.roles);
+  return (
+    <RecordDetail
+      className="rounded-none border-x-0 border-b-0"
+      data-testid="member-row-detail"
+      why={
+        <p className="text-xs text-muted-foreground">
+          {/* §4.2 clause 4 — a calm kind that is nonetheless owed something
+              says so HERE, in words, never by borrowing amber. */}
+          {status.reason ??
+            `${op.display_name ?? op.email} holds ${op.roles.length} role${op.roles.length === 1 ? "" : "s"} in this tenant.`}
+        </p>
+      }
+      actions={
+        op.roles.length > 0 ? (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Revoke a grant:</p>
+            <div className="flex flex-wrap gap-1">
+              {op.roles.map((r) => (
+                <Badge key={r} variant="secondary" className="gap-1 pr-0.5">
+                  {tierLabel(r)}
+                  <DestructiveButton
+                    size="icon"
+                    aria-label={`Revoke ${tierLabel(r)}`}
+                    title={`Revoke ${tierLabel(r)}`}
+                    disabled={isBusy}
+                    onClick={() => onRevoke(op.operator_id, r)}
+                    className="ml-0.5 size-4 rounded-sm bg-transparent text-muted-foreground shadow-none hover:bg-destructive hover:text-white"
+                    data-testid={`revoke-${op.operator_id}-${r}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </DestructiveButton>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : undefined
+      }
+      history={
+        <p className="text-[11px] text-muted-foreground">
+          Account created {relativeTime(op.created_at)} · last login{" "}
+          {relativeTime(op.last_login_at)}
+        </p>
+      }
+      raw={
+        <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+          operator_id: {op.operator_id} · roles: [{op.roles.join(", ")}]
+          {op.sso_provider ? ` · sso: ${op.sso_provider}` : ""}
+        </div>
+      }
+    />
   );
 }
 
@@ -549,14 +749,20 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
   }, [email, displayName, ssoSubject, ssoProvider, role, onInvited]);
 
   return (
-    <Card data-testid="coord-members-invite">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UserPlus className="h-4 w-4" />
-          Invite / pre-provision a member
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — a WRITE form is the clearest case of secondary material: it
+    // is never what an administrator is reading, only what they came to
+    // do occasionally, and it cost ~330px above the group/Cognito
+    // sections on every visit. Testid on the wrapper — see MyTenantsCard.
+    <div data-testid="coord-members-invite">
+    <CollapsiblePanel
+      title="Invite / pre-provision a member"
+      icon={<UserPlus className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-invite"
+      contentClassName="space-y-4"
+    >
+      <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label htmlFor="invite-email">Email</Label>
@@ -639,8 +845,9 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
             Invite
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -808,14 +1015,25 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
   );
 
   return (
-    <Card data-testid="coord-members-group-roles">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="h-4 w-4" />
-          Group → tenant → role mappings
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — infrastructural SSO wiring, below the members table and behind a
+    // click. The mapping COUNT stays on the header while closed: an empty
+    // mapping set is the thing a reader might need to notice without opening.
+    <div data-testid="coord-members-group-roles">
+    <CollapsiblePanel
+      title="Group → tenant → role mappings"
+      icon={<ShieldCheck className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-group-roles"
+      summary={(
+        <Badge variant="outline" className="font-mono text-[11px]">
+          <span className="font-normal text-muted-foreground">mappings&nbsp;</span>
+          {loading ? "–" : rows.length}
+        </Badge>
+      )}
+      contentClassName="space-y-4"
+    >
+      <>
         <p className="text-xs text-muted-foreground">
           Binds a Cognito group to a tenant + role.{" "}
           {isSuperuser
@@ -967,8 +1185,9 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -1230,13 +1449,21 @@ function CognitoGroupItem({
         </TableCell>
       </TableRow>
       {expanded && (
+        // D2 — this row ALREADY expanded a full-width `colSpan` cell before
+        // this plan reached it. What changes is only the host: the ad-hoc
+        // `bg-muted/30` div becomes the shared `<RecordDetail>`, so a click on
+        // a record looks the same here as on every other console page.
         <TableRow data-testid={`cognito-group-detail-${group.group_name}`}>
-          <TableCell colSpan={4} className="bg-muted/30">
-            <div className="space-y-3">
-              <CognitoGroupMembers
-                key={membersKey}
-                groupName={group.group_name}
-              />
+          <TableCell colSpan={4} className="p-0">
+            <RecordDetail
+              className="rounded-none border-x-0 border-b-0"
+              why={
+                <CognitoGroupMembers
+                  key={membersKey}
+                  groupName={group.group_name}
+                />
+              }
+              actions={
               <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
                 <div className="space-y-1 flex-1 min-w-[200px]">
                   <Label htmlFor={`cognito-add-${group.group_name}`}>
@@ -1261,7 +1488,16 @@ function CognitoGroupItem({
                   Add
                 </Button>
               </div>
-            </div>
+              }
+              raw={
+                <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+                  group: {group.group_name}
+                  {group.precedence != null
+                    ? ` · precedence: ${group.precedence}`
+                    : ""}
+                </div>
+              }
+            />
           </TableCell>
         </TableRow>
       )}
@@ -1343,14 +1579,24 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   }, [newName, newDescription, load]);
 
   return (
-    <Card data-testid="coord-members-cognito-groups">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4" />
-          Cognito Groups
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — the identity-provider surface: the least-often-read section on the
+    // page and, at a table plus a create form, one of the tallest.
+    <div data-testid="coord-members-cognito-groups">
+    <CollapsiblePanel
+      title="Cognito Groups"
+      icon={<KeyRound className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-cognito-groups"
+      summary={(
+        <Badge variant="outline" className="font-mono text-[11px]">
+          <span className="font-normal text-muted-foreground">groups&nbsp;</span>
+          {loading ? "–" : groups.length}
+        </Badge>
+      )}
+      contentClassName="space-y-4"
+    >
+      <>
         {!isSuperuser ? (
           <p
             className="text-sm text-muted-foreground"
@@ -1441,8 +1687,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -1492,8 +1739,15 @@ export default function MembersPage() {
       className="p-3 sm:p-6 space-y-4 max-w-5xl"
       data-testid="coord-members-page"
     >
-      <MyTenantsCard />
+      {/* R7 — the members table FIRST and unconditional; the four secondary
+          sections below it and folded. Ordering matters as much as folding:
+          "Your tenant & roles" used to sit ABOVE the table, so an
+          administrator arriving to change somebody's access read their own
+          roles first. Each panel keeps its signal on the header while closed
+          (the home tenant's name, the mapping count, the group count), which
+          is R7's actual contract — the panel folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
+      <MyTenantsCard />
       <InviteForm onInvited={bump} />
       <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
       <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />
