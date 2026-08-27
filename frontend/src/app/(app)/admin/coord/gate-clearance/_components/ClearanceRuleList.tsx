@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  RecordDetail,
+  RecordList,
+  RecordRow,
+  RowTime,
+  StatusBadge,
+  rowAccentClass,
+} from "@/components/console";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
   AlertDialog,
@@ -14,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Pencil, Plus, ShieldOff, Trash2 } from "lucide-react";
+import { Plus, ShieldOff } from "lucide-react";
 import {
   CoordAdminOnly,
   ReadOnlyNotice,
@@ -29,6 +36,10 @@ import {
   resolveWithout,
   type ClearanceAuthority,
 } from "../gateClearance";
+import {
+  CLEARANCE_STATUS_PALETTE,
+  deriveClearanceRuleStatus,
+} from "../clearanceRuleStatus";
 import { EffectiveAuthorityCell } from "./EffectiveAuthorityMatrix";
 
 export interface ClearanceRuleListProps {
@@ -56,6 +67,35 @@ export interface ClearanceRuleListProps {
  * success while the built-in kept deciding. The working — and reversible —
  * override is a workspace rule for the same class, which outranks the system
  * band; removing that rule restores the default.
+ *
+ * ## Console style (Phase 3 Wave 5)
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` moved these
+ * rows onto `<RecordRow>` / `<RecordDetail>`. Its §4 census filed this route as
+ * a table; only the sibling `EffectiveAuthorityMatrix` is one — these rows were
+ * a Family-B fat row wearing no `<Card>` (three stacked lines at `px-3 py-3`),
+ * which is why the `<Card>`-keyed census missed them. See
+ * `../clearanceRuleStatus.ts` for that correction in full and for the R3
+ * reading of "inactive".
+ *
+ * **R3, and the split it makes.** The list painted every not-in-play rule with
+ * one amber `inactive` badge. Two of `inertReason`'s five answers are a CHOICE
+ * (`disabled`, `expired` — an off switch that is off, an expiry that lapsed as
+ * asked) and three are a DEFECT (`repo-scoped`, `no-class`,
+ * `unknown-authority` — a rule coord's resolver can never match, while the
+ * operator believes it is governing the class). Only the second group is red.
+ *
+ * **The row actions moved into the detail.** `<RecordRow>` renders the whole
+ * line as ONE `<button>` so the expand affordance is keyboard-reachable, and a
+ * button nested in a button is invalid HTML. Edit / Delete / "Override here"
+ * are one click deeper as a result, which is the right trade on a page where
+ * the destructive one is a rule deletion: they are also now beside the
+ * evidence you would want before pressing them.
+ *
+ * Every authored `data-testid` is carried across unchanged (D4a):
+ * `clearance-rule-row`, `clearance-rule-inert`, `tenant-clearance-rules`,
+ * `system-clearance-rules`, `no-system-clearance-rules`,
+ * `new-clearance-rule`, `clearance-delete-confirm`.
  */
 export function ClearanceRuleList({
   rules,
@@ -66,6 +106,13 @@ export function ClearanceRuleList({
   onDelete,
 }: ClearanceRuleListProps) {
   const [deleteTarget, setDeleteTarget] = useState<CoordPolicyRow | null>(null);
+  /**
+   * The open rule (R5 — one at a time), hoisted across BOTH bands so opening a
+   * system default closes an open workspace rule. Two independent
+   * `<RecordList>`s each keeping their own key would let two details sit open
+   * at once, which is the thing R5 exists to prevent.
+   */
+  const [openRule, setOpenRule] = useState<string | null>(null);
 
   const tenantRules = rules.filter((r) => !r.built_in);
   const systemRules = rules.filter((r) => r.built_in);
@@ -111,16 +158,23 @@ export function ClearanceRuleList({
             </CoordAdminOnly>
           </div>
         ) : (
-          <div className="space-y-2" data-testid="tenant-clearance-rules">
-            {tenantRules.map((rule) => (
-              <RuleRow
-                key={rule.policy_id}
-                rule={rule}
-                saving={saving}
-                onEdit={() => onEdit(rule)}
-                onDelete={() => setDeleteTarget(rule)}
-              />
-            ))}
+          <div data-testid="tenant-clearance-rules">
+            <RecordList
+              items={tenantRules}
+              itemKey={(r) => r.policy_id}
+              expandedKey={openRule}
+              onExpandedKeyChange={setOpenRule}
+              renderRow={(rule, ctx) => (
+                <RuleRow
+                  rule={rule}
+                  saving={saving}
+                  expanded={ctx.expanded}
+                  onToggle={ctx.onToggle}
+                  onEdit={() => onEdit(rule)}
+                  onDelete={() => setDeleteTarget(rule)}
+                />
+              )}
+            />
           </div>
         )}
       </section>
@@ -145,33 +199,40 @@ export function ClearanceRuleList({
             workspace rule fall straight to coord&apos;s audience default.
           </p>
         ) : (
-          <div className="space-y-2" data-testid="system-clearance-rules">
-            {systemRules.map((rule) => {
-              const parsed = parseGateClearancePayload(rule.payload);
-              // An unreadable built-in (unknown authority, or no payload at
-              // all) still needs an override path — it is exactly the row a
-              // user most wants to take over. Seed whatever class it names and
-              // let them choose the authority; a built-in with no class at all
-              // governs nothing, so there is nothing to override.
-              const seedClass =
-                parsed?.gate_class ?? rawGateClass(rule.payload);
-              return (
-                <RuleRow
-                  key={rule.policy_id}
-                  rule={rule}
-                  saving={saving}
-                  onOverride={
-                    seedClass
-                      ? () =>
-                          onOverrideSystemDefault({
-                            gateClass: seedClass,
-                            authority: parsed?.authority ?? "operator_only",
-                          })
-                      : undefined
-                  }
-                />
-              );
-            })}
+          <div data-testid="system-clearance-rules">
+            <RecordList
+              items={systemRules}
+              itemKey={(r) => r.policy_id}
+              expandedKey={openRule}
+              onExpandedKeyChange={setOpenRule}
+              renderRow={(rule, ctx) => {
+                const parsed = parseGateClearancePayload(rule.payload);
+                // An unreadable built-in (unknown authority, or no payload at
+                // all) still needs an override path — it is exactly the row a
+                // user most wants to take over. Seed whatever class it names
+                // and let them choose the authority; a built-in with no class
+                // at all governs nothing, so there is nothing to override.
+                const seedClass =
+                  parsed?.gate_class ?? rawGateClass(rule.payload);
+                return (
+                  <RuleRow
+                    rule={rule}
+                    saving={saving}
+                    expanded={ctx.expanded}
+                    onToggle={ctx.onToggle}
+                    onOverride={
+                      seedClass
+                        ? () =>
+                            onOverrideSystemDefault({
+                              gateClass: seedClass,
+                              authority: parsed?.authority ?? "operator_only",
+                            })
+                        : undefined
+                    }
+                  />
+                );
+              }}
+            />
           </div>
         )}
       </section>
@@ -233,85 +294,145 @@ export function ClearanceRuleList({
 interface RuleRowProps {
   rule: CoordPolicyRow;
   saving: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
   onOverride?: () => void;
 }
 
-function RuleRow({ rule, saving, onEdit, onDelete, onOverride }: RuleRowProps) {
+function RuleRow({
+  rule,
+  saving,
+  expanded,
+  onToggle,
+  onEdit,
+  onDelete,
+  onOverride,
+}: RuleRowProps) {
   const parsed = parseGateClearancePayload(rule.payload);
   const gateClass = rawGateClass(rule.payload);
   const inert = inertReason(rule);
+  const status = deriveClearanceRuleStatus(rule);
 
   return (
-    <div
-      className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
+    <RecordRow
       data-testid="clearance-rule-row"
+      rowKey={rule.policy_id}
+      expanded={expanded}
+      onToggle={onToggle}
+      accent={rowAccentClass(status)}
+      identity={gateClass ?? "no class"}
+      label={
+        <span title={rule.rationale ?? rule.name}>
+          <span className="font-medium">{rule.name}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            · {parsed ? AUTHORITY_LABELS[parsed.authority] : "unreadable rule"}
+          </span>
+        </span>
+      }
+      status={
+        // Wrapped so `clearance-rule-inert` — the frozen authored testid for
+        // "this rule is not in play" — survives the badge becoming a
+        // `<StatusBadge>`. It is emitted for exactly the rows that carried it
+        // before: any rule with an `inertReason`, choice or defect alike.
+        inert ? (
+          <span
+            className="inline-flex shrink-0"
+            data-testid="clearance-rule-inert"
+            data-inert-reason={inert}
+          >
+            <StatusBadge status={status} palette={CLEARANCE_STATUS_PALETTE} />
+          </span>
+        ) : (
+          <StatusBadge status={status} palette={CLEARANCE_STATUS_PALETTE} />
+        )
+      }
+      reason={`priority ${rule.priority}`}
+      time={
+        <RowTime
+          at={rule.updated_at ?? rule.created_at ?? null}
+          verb={rule.updated_at ? "Updated" : "Created"}
+          absent={{
+            label: "no date",
+            title: "coord recorded no timestamp for this rule.",
+          }}
+        />
+      }
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium">{rule.name}</span>
-          <Badge variant="outline" className="font-mono">
-            {gateClass ?? "no class"}
-          </Badge>
-          <Badge variant={parsed ? "secondary" : "destructive"}>
-            {parsed ? AUTHORITY_LABELS[parsed.authority] : "unreadable rule"}
-          </Badge>
-          {inert && (
-            <Badge variant="warning" data-testid="clearance-rule-inert">
-              inactive
-            </Badge>
-          )}
-        </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          priority {rule.priority}
-          {rule.rationale ? ` · ${rule.rationale}` : ""}
-        </p>
-        {inert && (
-          <p className="mt-0.5 flex items-start gap-1 text-[11px] text-warning">
-            <ShieldOff className="mt-0.5 size-3 shrink-0" aria-hidden />
-            <span>{INERT_EXPLANATIONS[inert]}</span>
-          </p>
-        )}
-      </div>
-
-      <CoordAdminOnly>
-        {onOverride && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onOverride}
-            disabled={saving}
-          >
-            Override here
-          </Button>
-        )}
-        {onEdit && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={onEdit}
-            disabled={saving}
-            title="Edit rule"
-            aria-label={`Edit ${rule.name}`}
-          >
-            <Pencil className="size-4" />
-          </Button>
-        )}
-        {onDelete && (
-          <DestructiveButton
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={onDelete}
-            disabled={saving}
-            title="Delete rule"
-            aria-label={`Delete ${rule.name}`}
-          >
-            <Trash2 className="size-4" />
-          </DestructiveButton>
-        )}
-      </CoordAdminOnly>
-    </div>
+      <RecordDetail
+        why={
+          <div className="space-y-1 text-xs">
+            <p>
+              <span className="text-muted-foreground">Authority: </span>
+              <span className="text-foreground/90">
+                {parsed
+                  ? AUTHORITY_LABELS[parsed.authority]
+                  : "unreadable — coord skips this rule"}
+              </span>
+            </p>
+            <p className="text-muted-foreground">
+              priority {rule.priority}
+              {rule.rationale ? ` · ${rule.rationale}` : ""}
+            </p>
+          </div>
+        }
+        problems={
+          inert ? (
+            <p className="flex items-start gap-1 text-[11px] text-warning">
+              <ShieldOff className="mt-0.5 size-3 shrink-0" aria-hidden />
+              <span>{INERT_EXPLANATIONS[inert]}</span>
+            </p>
+          ) : undefined
+        }
+        actions={
+          <CoordAdminOnly>
+            <div className="flex flex-wrap items-center gap-2">
+              {onOverride && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onOverride}
+                  disabled={saving}
+                >
+                  Override here
+                </Button>
+              )}
+              {onEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onEdit}
+                  disabled={saving}
+                  aria-label={`Edit ${rule.name}`}
+                >
+                  Edit rule
+                </Button>
+              )}
+              {onDelete && (
+                <DestructiveButton
+                  size="sm"
+                  onClick={onDelete}
+                  disabled={saving}
+                  aria-label={`Delete ${rule.name}`}
+                >
+                  Delete rule
+                </DestructiveButton>
+              )}
+            </div>
+          </CoordAdminOnly>
+        }
+        raw={
+          <div className="font-mono text-[10px] text-muted-foreground/60 break-all">
+            policy_id: {rule.policy_id}
+            {gateClass ? ` · gate_class: ${gateClass}` : ""}
+            {` · band: ${rule.built_in ? "system" : "tenant"}`}
+            {rule.repo ? ` · repo: ${rule.repo}` : ""}
+            {rule.expires_at ? ` · expires_at: ${rule.expires_at}` : ""}
+          </div>
+        }
+      />
+    </RecordRow>
   );
 }

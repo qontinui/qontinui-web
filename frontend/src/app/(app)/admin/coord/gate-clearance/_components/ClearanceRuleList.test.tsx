@@ -8,10 +8,19 @@
  *     what the viewer can do.
  *  2. A rule stays READABLE to a non-admin — seeing who may clear a gate is
  *     diagnostic, and hiding it would push diagnosis back to raw API calls.
+ *
+ * Since Phase 3 Wave 5 the per-rule write controls live in the row's EXPANDED
+ * detail (R5 — `<RecordRow>` renders the whole line as one `<button>`, so a
+ * nested Edit/Delete button is invalid HTML). The gating claim is unchanged and
+ * is what these tests are about, so they expand the row first rather than
+ * asserting on a control the collapsed row deliberately does not render. The
+ * `queryByLabelText(...).toBeNull()` half is therefore checked with the row
+ * OPEN too — otherwise it would pass for the wrong reason, which is exactly
+ * the vacuous-green shape this file exists to avoid.
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { CoordPolicyRow } from "../../_shared/coordPolicies";
 
 const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
@@ -72,11 +81,19 @@ function renderList(rules: CoordPolicyRow[], onDelete = vi.fn()) {
   );
 }
 
+/** Open the (single) rule row so its detail — and its actions — render. */
+function expandTheRow() {
+  fireEvent.click(
+    screen.getByTestId("clearance-rule-row").querySelector("button")!
+  );
+}
+
 describe("ClearanceRuleList write-control gating", () => {
   it("shows the write controls to a coord admin", () => {
     authState.isCoordAdmin = true;
     renderList([rule({ gate_class: "ops-confirm", authority: "agent_any" })]);
     expect(screen.getByTestId("new-clearance-rule")).toBeTruthy();
+    expandTheRow();
     expect(screen.getByLabelText("Delete rule-1")).toBeTruthy();
   });
 
@@ -84,10 +101,13 @@ describe("ClearanceRuleList write-control gating", () => {
     authState.isCoordAdmin = false;
     renderList([rule({ gate_class: "ops-confirm", authority: "agent_any" })]);
     expect(screen.queryByTestId("new-clearance-rule")).toBeNull();
-    expect(screen.queryByLabelText("Delete rule-2")).toBeNull();
-    expect(screen.getByTestId("coord-admin-only-notice")).toBeTruthy();
     // The rule itself stays readable — seeing who may clear is diagnostic.
     expect(screen.getAllByTestId("clearance-rule-row")).toHaveLength(1);
+    expandTheRow();
+    // Asserted with the row OPEN: a null here must mean "gated", never merely
+    // "collapsed".
+    expect(screen.queryByLabelText("Delete rule-2")).toBeNull();
+    expect(screen.getByTestId("coord-admin-only-notice")).toBeTruthy();
   });
 });
 
