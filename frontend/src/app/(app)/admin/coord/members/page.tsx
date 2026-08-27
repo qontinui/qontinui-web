@@ -1720,6 +1720,22 @@ function CognitoGroupItem({
 }
 
 /**
+ * Calls `onMount` once, the first time it renders. Renders nothing.
+ *
+ * `CollapsiblePanel` UNMOUNTS its children while closed (Radix
+ * `CollapsibleContent`, no `forceMount`), so a child's mount IS the "the
+ * operator opened this panel" event. The panel owns its open state and
+ * exposes no callback, and reaching for one would mean forking a shared
+ * console primitive to serve one caller.
+ */
+function MountedOnce({ onMount }: { onMount: () => void }) {
+  useEffect(() => {
+    onMount();
+  }, [onMount]);
+  return null;
+}
+
+/**
  * Pool-wide Cognito group management. Superuser-only — pool-wide Cognito ops
  * require staff/superuser access. A coord admin who is NOT a superuser sees a
  * muted note instead of the controls.
@@ -1728,16 +1744,24 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Blast-radius inputs for the collapsed rows. Both are section-level
-  // because the row that needs them is the COLLAPSED one — a per-row lazy
-  // fetch would only arrive after the operator had already expanded, which
-  // is after the decision the numbers are supposed to inform.
+  // Blast-radius inputs for the group ROWS. Section-level, not per-row,
+  // because the row that needs them is the one that has NOT been expanded —
+  // a per-row lazy fetch would arrive only after the operator had already
+  // expanded, which is after the decision the numbers exist to inform.
   const [mappings, setMappings] = useState<GroupTenantRoleRow[]>([]);
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
   // Groups whose member probe FAILED. Kept apart from `memberCounts` so a
   // failed read renders as "unknown" rather than as a confident zero.
   const [memberErrors, setMemberErrors] = useState<Record<string, true>>({});
   const [countsToken, setCountsToken] = useState(0);
+  // Wave 4 folded this section (`CollapsiblePanel defaultOpen={false}`) as
+  // "the least-often-read section on the page". The group LIST still loads
+  // eagerly, because the folded header badge counts it — but the blast-radius
+  // reads are one coord query plus one AWS `list_users_in_group` PER GROUP,
+  // and spending those on a panel nobody opened is pure waste. They wait for
+  // the first open, which is also the first moment their output can be seen.
+  const [panelOpened, setPanelOpened] = useState(false);
+  const markPanelOpened = useCallback(() => setPanelOpened(true), []);
 
   // Create-group form state.
   const [newName, setNewName] = useState("");
@@ -1770,7 +1794,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   // section above: this is the reason the backend refuses a delete, so the
   // row that offers the delete has to show it.
   useEffect(() => {
-    if (!isSuperuser) return;
+    if (!isSuperuser || !panelOpened) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -1790,11 +1814,11 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [isSuperuser, countsToken]);
+  }, [isSuperuser, panelOpened, countsToken]);
 
   // Member counts, one probe per group, in parallel.
   useEffect(() => {
-    if (!isSuperuser || groups.length === 0) return;
+    if (!isSuperuser || !panelOpened || groups.length === 0) return;
     let cancelled = false;
     void (async () => {
       const counts: Record<string, number> = {};
@@ -1824,7 +1848,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [isSuperuser, groups, countsToken]);
+  }, [isSuperuser, panelOpened, groups, countsToken]);
 
   const refreshBlastRadius = useCallback(
     () => setCountsToken((t) => t + 1),
@@ -1886,6 +1910,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       contentClassName="space-y-4"
     >
       <>
+        {/* Mounts only while the panel is open — that is the signal the
+            blast-radius probes wait on. */}
+        <MountedOnce onMount={markPanelOpened} />
         {!isSuperuser ? (
           <p
             className="text-sm text-muted-foreground"
