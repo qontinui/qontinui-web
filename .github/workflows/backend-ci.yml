@@ -6,6 +6,13 @@ on:
     paths:
       - 'backend/**'
       - '.github/workflows/backend-ci.yml'
+      # The composed backend is pinned by this file: backend/Dockerfile clones
+      # qontinui-cloud-control at the sha it names. A pin bump changes what the
+      # image contains while touching no path under backend/**, so without this
+      # entry the `Test Docker Build` job below would not run for the one change
+      # most likely to break the image — and the frontend half redeploys on
+      # every push regardless, so the two halves would drift silently.
+      - 'frontend/cloud-control.pin'
       # The frontend interfaces that tests/test_coord_down_envelope_contract.py
       # reads as the contract for the hand-written coord-down fallback
       # envelopes. A frontend-only commit adding a REQUIRED property is exactly
@@ -734,8 +741,34 @@ jobs:
           large-packages: false
           swap-storage: false
 
+      # Resolve the SAME pin deploy-web.yml passes, so this job builds the image
+      # that will actually ship. Without the build-arg the Dockerfile's
+      # CLOUD_CONTROL_SHA defaults to `main`, and the job would go green on a
+      # cloud-control commit the pin does not reference — a green build of an
+      # image nobody deploys. Path is relative to the repo root, not ./backend.
+      - name: Resolve qontinui-cloud-control pin
+        id: cloudcontrol
+        working-directory: ${{ github.workspace }}
+        run: |
+          PIN_FILE=frontend/cloud-control.pin
+          if [ ! -f "$PIN_FILE" ]; then
+            echo "::error::$PIN_FILE is missing — the composed backend cannot be pinned"; exit 1
+          fi
+          SHA=$(grep -vE '^\s*(#|$)' "$PIN_FILE" | head -n1 | tr -d '[:space:]')
+          if [ -z "$SHA" ]; then
+            echo "::error::$PIN_FILE has no pin line"; exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "qontinui-cloud-control pin = $SHA"
+
+      # The image's own compose-or-fail step (assert a cloud-control route
+      # registrar landed) runs as part of this build, so this job is what gates
+      # it on every PR.
       - name: Build Docker image
-        run: docker build -t qontinui-backend:test .
+        run: |
+          docker build \
+            --build-arg CLOUD_CONTROL_SHA=${{ steps.cloudcontrol.outputs.sha }} \
+            -t qontinui-backend:test .
 
       - name: Test Docker image
         run: |
