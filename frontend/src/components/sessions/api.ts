@@ -29,6 +29,8 @@ import type {
   SessionListResponse,
   SessionRestoreRecordResponse,
   SessionRow,
+  TenantCreateRequest,
+  TenantCreateResponse,
   TenantListResponse,
 } from "./types";
 
@@ -258,6 +260,107 @@ export async function listTenants(
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as TenantListResponse;
+}
+
+/**
+ * Error from `POST /api/v1/operations/tenants`, carrying enough for the
+ * caller to say something TRUE about what went wrong.
+ *
+ * The web proxy re-raises coord's status and puts coord's raw response text
+ * in FastAPI's `detail`, so the machine-readable reason survives the two
+ * hops — but only if we unwrap both layers. `code` is coord's own error
+ * token when one was found (`slug_taken`, `invalid_name`, …) and `null`
+ * when coord answered something we cannot parse; `detail` is always the
+ * most specific human-readable text we could recover, so an unrecognized
+ * failure is surfaced verbatim rather than as "something went wrong".
+ */
+export class TenantCreateError extends Error {
+  status: number;
+  code: string | null;
+  detail: string;
+  constructor(status: number, code: string | null, detail: string) {
+    super(detail || `POST tenants failed: ${status}`);
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+    this.name = "TenantCreateError";
+  }
+}
+
+/**
+ * Pull coord's error code + message out of the doubly-wrapped failure body.
+ *
+ * Two envelopes, because there are two hops:
+ *   1. FastAPI's `{ "detail": <x> }` from the web proxy's `HTTPException`;
+ *   2. coord's own JSON, which arrives as a STRING inside that `detail`
+ *      (`_proxy_coord_post` passes `resp.text`, not `resp.json()`).
+ *
+ * Every layer is optional: a plain-text body, a non-JSON coord answer, or a
+ * FastAPI 422 validation list all degrade to "no code, here is the text".
+ * Exported for unit tests — the parsing, not the copy, is where this breaks.
+ */
+export function parseTenantCreateError(rawBody: string): {
+  code: string | null;
+  detail: string;
+} {
+  let detail: unknown = rawBody;
+  try {
+    const outer: unknown = JSON.parse(rawBody);
+    if (outer && typeof outer === "object" && "detail" in outer) {
+      detail = (outer as { detail: unknown }).detail;
+    }
+  } catch {
+    // Not JSON at all — keep the raw text.
+  }
+
+  if (typeof detail !== "string") {
+    // A FastAPI 422 validation list, or any object body. No coord code to
+    // find; stringify so the operator still sees the real answer.
+    return { code: null, detail: JSON.stringify(detail) };
+  }
+
+  let code: string | null = null;
+  let text = detail;
+  try {
+    const inner: unknown = JSON.parse(detail);
+    if (inner && typeof inner === "object") {
+      const obj = inner as Record<string, unknown>;
+      const rawCode = obj.error ?? obj.code;
+      if (typeof rawCode === "string") code = rawCode;
+      const rawMessage = obj.message ?? obj.detail ?? obj.reason;
+      if (typeof rawMessage === "string") text = rawMessage;
+      else if (code) text = code;
+    }
+  } catch {
+    // coord answered plain text — `text` is already it.
+  }
+  return { code, detail: text };
+}
+
+/**
+ * Create a new tenant ("Project") owned by the calling operator.
+ *
+ * POSTs `/api/v1/operations/tenants`, which proxies coord's
+ * `POST /coord/tenants` (plan
+ * `2026-08-25-self-service-tenant-project-creation`). Coord creates the
+ * tenant, seeds its policy row and grants the caller `admin` in it in ONE
+ * transaction, so the membership is readable on the very next
+ * `GET /operations/tenants`.
+ */
+export async function createTenant(
+  body: TenantCreateRequest
+): Promise<TenantCreateResponse> {
+  const url = `${OPERATIONS_API}/tenants`;
+  const res = await httpClient.fetch(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    const { code, detail } = parseTenantCreateError(raw);
+    throw new TenantCreateError(res.status, code, detail);
+  }
+  return (await res.json()) as TenantCreateResponse;
 }
 
 // ---- Registered repos (module-level cache) --------------------------------
