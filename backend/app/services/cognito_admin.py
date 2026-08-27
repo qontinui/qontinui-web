@@ -25,6 +25,7 @@ IAM actions the web task role needs on the pool ARN
 from __future__ import annotations
 
 import json
+import unicodedata
 from typing import Any
 
 import boto3
@@ -52,6 +53,18 @@ class CognitoGroupExistsError(CognitoAdminError):
 
     Distinct subclass so the endpoint layer can map it to HTTP 409 without
     string-matching the boto3 error message.
+    """
+
+
+class CognitoInvalidParameterError(CognitoAdminError):
+    """Raised when Cognito rejects an argument as malformed (not a fault).
+
+    Distinct subclass so the endpoint layer can map it to HTTP 400 without
+    string-matching the boto3 error message. The canonical case is a
+    ``groupName`` that violates Cognito's own character constraint (a space,
+    say): that is a CLIENT error the caller can fix by retyping, and
+    collapsing it into a 502 would tell the operator AWS is broken when
+    nothing is.
     """
 
 
@@ -401,13 +414,42 @@ def list_groups() -> list[dict[str, Any]]:
     return groups
 
 
+def invalid_group_name_reason(name: str) -> str | None:
+    r"""Why ``name`` cannot be a Cognito group name, or None if it can.
+
+    Mirrors Cognito's ``groupName`` constraint ``[\p{L}\p{M}\p{S}\p{N}\p{P}]+``
+    without a ``regex`` dependency: the complement of that class is exactly
+    separators and control characters.
+    """
+    if not name:
+        return "must not be empty"
+    if len(name) > 128:
+        return "must be at most 128 characters"
+    if any(ch.isspace() or unicodedata.category(ch)[0] == "C" for ch in name):
+        return "must not contain spaces or control characters"
+    return None
+
+
 def create_group(group_name: str, description: str | None = None) -> dict[str, Any]:
     """Create a group; return the created group's wire dict.
 
     Raises :class:`CognitoGroupExistsError` (→ 409) when a group with that
     name already exists, so the endpoint can report a clean conflict instead
     of a generic 502.
+
+    Raises :class:`CognitoInvalidParameterError` (→ 400) when the name cannot
+    satisfy Cognito's ``groupName`` constraint. The local pre-check runs
+    FIRST so the common case (a space in the name) never spends an AWS
+    round-trip; the ``InvalidParameterException`` branch below still catches
+    any constraint we did not anticipate, so an unforeseen one surfaces as
+    the client error it is rather than as a 502.
     """
+    reason = invalid_group_name_reason(group_name)
+    if reason is not None:
+        logger.info(
+            "cognito_create_group_invalid_name", group_name=group_name, reason=reason
+        )
+        raise CognitoInvalidParameterError(f"group_name {reason}")
     client = _get_client()
     kwargs: dict[str, Any] = {"UserPoolId": _pool_id(), "GroupName": group_name}
     if description:
@@ -421,6 +463,16 @@ def create_group(group_name: str, description: str | None = None) -> dict[str, A
             raise CognitoGroupExistsError(
                 f"Group already exists: {group_name}"
             ) from exc
+        if code == "InvalidParameterException":
+            # A constraint the local pre-check does not model. Carry AWS's own
+            # message so the operator reads the real reason, not "502".
+            message = exc.response.get("Error", {}).get("Message") or str(exc)
+            logger.info(
+                "cognito_create_group_invalid_parameter",
+                group_name=group_name,
+                error=message,
+            )
+            raise CognitoInvalidParameterError(message) from exc
         logger.error(
             "cognito_create_group_failed", group_name=group_name, error=str(exc)
         )
