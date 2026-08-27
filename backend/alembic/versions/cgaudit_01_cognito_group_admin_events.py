@@ -72,11 +72,17 @@ def upgrade() -> None:
     # dependent failure without taking ownership of the schema.
     op.execute(f"CREATE SCHEMA IF NOT EXISTS {_SCHEMA}")
 
-    # Idempotent: skip if a prior partial apply already created the table.
-    if sa.inspect(op.get_bind()).has_table(_TABLE, schema=_SCHEMA):
-        return
-
+    # Idempotent: skip the table if a prior partial apply already created it.
+    # The INDEXES are created unconditionally below with IF NOT EXISTS — an
+    # apply that died between the table and the indexes would otherwise stamp
+    # as applied with the indexes permanently missing.
     action_list = ",".join(f"'{a}'" for a in _ACTIONS)
+    if not sa.inspect(op.get_bind()).has_table(_TABLE, schema=_SCHEMA):
+        _create_table(action_list)
+    _create_indexes()
+
+
+def _create_table(action_list: str) -> None:
     op.create_table(
         _TABLE,
         sa.Column(
@@ -109,24 +115,27 @@ def upgrade() -> None:
         ),
         schema=_SCHEMA,
     )
+
+
+def _create_indexes() -> None:
     # "What happened to this group?" is the question an operator arrives
     # with; "what has this admin been doing?" is the one a reviewer arrives
     # with. Both are ordered newest-first.
-    op.create_index(
-        "idx_cognito_group_admin_events_group",
-        _TABLE,
-        ["group_name", sa.text("created_at DESC")],
-        schema=_SCHEMA,
+    op.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_cognito_group_admin_events_group "
+        f"ON {_SCHEMA}.{_TABLE} (group_name, created_at DESC)"
     )
-    op.create_index(
-        "idx_cognito_group_admin_events_actor",
-        _TABLE,
-        ["actor_user_id", sa.text("created_at DESC")],
-        schema=_SCHEMA,
+    op.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_cognito_group_admin_events_actor "
+        f"ON {_SCHEMA}.{_TABLE} (actor_user_id, created_at DESC)"
     )
 
 
 def downgrade() -> None:
+    # ``IF EXISTS`` on all three, matching the idempotent upgrade: a
+    # downgrade after an upgrade that SKIPPED (table already present) must
+    # not be the thing that errors, and an unconditional DROP TABLE beside
+    # two guarded DROP INDEXes is an asymmetry waiting to bite.
     op.execute(f"DROP INDEX IF EXISTS {_SCHEMA}.idx_cognito_group_admin_events_actor")
     op.execute(f"DROP INDEX IF EXISTS {_SCHEMA}.idx_cognito_group_admin_events_group")
-    op.drop_table(_TABLE, schema=_SCHEMA)
+    op.execute(f"DROP TABLE IF EXISTS {_SCHEMA}.{_TABLE}")

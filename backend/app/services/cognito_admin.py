@@ -129,7 +129,20 @@ class CognitoThrottledError(CognitoAdminError):
     A throttle means AWS is healthy and is asking us to slow down. Reporting
     it as 502 tells the operator the upstream is broken and sends them
     debugging Cognito instead of retrying in a few seconds.
+
+    ``retry_after`` carries AWS's own ``Retry-After`` header when it sent
+    one, so the endpoint can pass the service's hint through instead of
+    inventing a number. ``None`` means AWS gave no hint, not "retry now".
     """
+
+    def __init__(
+        self,
+        *args: Any,
+        aws_error_code: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(*args, aws_error_code=aws_error_code)
+        self.retry_after = retry_after
 
 
 #: boto3 ``Error.Code`` values that mean "slow down". ``TooManyRequests-
@@ -182,6 +195,21 @@ def _names_the_user_pool(aws_message: str) -> bool:
     return "user pool" in aws_message.lower()
 
 
+def _aws_retry_after(exc: BaseException) -> str | None:
+    """AWS's ``Retry-After`` response header, when the service sent one."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return None
+    metadata = response.get("ResponseMetadata")
+    if not isinstance(metadata, dict):
+        return None
+    headers = metadata.get("HTTPHeaders")
+    if not isinstance(headers, dict):
+        return None
+    value = headers.get("retry-after") or headers.get("Retry-After")
+    return str(value) if value else None
+
+
 def _wrap_aws_error(exc: BaseException, message: str) -> CognitoAdminError:
     """Classify a boto3 failure into the subclass carrying its HTTP meaning.
 
@@ -191,13 +219,25 @@ def _wrap_aws_error(exc: BaseException, message: str) -> CognitoAdminError:
     """
     code = _aws_error_code(exc)
     if code in _THROTTLE_CODES:
-        return CognitoThrottledError(message, aws_error_code=code)
+        return CognitoThrottledError(
+            message, aws_error_code=code, retry_after=_aws_retry_after(exc)
+        )
     if code == "UserNotFoundException":
         return CognitoUserNotFoundError(message, aws_error_code=code)
     if code == "ResourceNotFoundException":
         if _names_the_user_pool(_aws_error_message(exc)):
             return CognitoConfigurationError(message, aws_error_code=code)
         return CognitoResourceNotFoundError(message, aws_error_code=code)
+    if code == "InvalidParameterException":
+        # The CALLER's error, wherever it comes from. ``create_group`` has
+        # always mapped this by hand for a malformed group name; classifying
+        # it here extends the same honesty to the membership routes, where a
+        # malformed USERNAME still reported 502 — the endpoint claiming AWS
+        # was broken over an argument it had itself rejected as bad input.
+        # AWS's own message is carried so the operator reads the real reason.
+        return CognitoInvalidParameterError(
+            _aws_error_message(exc), aws_error_code=code
+        )
     return CognitoAdminError(message, aws_error_code=code)
 
 
@@ -243,17 +283,35 @@ def _pool_id() -> str:
 #: ``ListUsers`` page size. Cognito's documented maximum is 60.
 _LIST_USERS_PAGE_SIZE = 60
 
-#: Hard stop on the paging loop. ``PaginationToken`` is supplied by AWS; a
-#: pathological pool (or an AWS bug) that kept handing one back would
-#: otherwise spin a worker thread forever. 40 pages x 60 = 2400 users
-#: scanned for a single *filtered* lookup, far past any legitimate answer —
-#: and hitting it raises rather than returning ``None``, because "I gave up"
-#: is UNKNOWN, not "no such user".
-_LIST_USERS_MAX_PAGES = 40
+#: Hard stop on the paging loop for the EMAIL lookup. ``PaginationToken`` is
+#: supplied by AWS; a pathological pool (or an AWS bug) that kept handing one
+#: back would otherwise spin a worker thread forever. 25 pages x 60 = 1500
+#: users scanned for a single *filtered* lookup on an indexed attribute, far
+#: past any legitimate answer — and hitting it raises rather than returning
+#: ``None``, because "I gave up" is UNKNOWN, not "no such user".
+_LIST_USERS_MAX_PAGES = 25
+
+#: Tighter stop for the ``sub`` lookup, and the tighter number is the point.
+#: ``resolve_username_for_sub`` runs on ``/api/v1/auth/identities`` for EVERY
+#: signed-in user, so its worst case is a latency budget, not a background
+#: job: 25 sequential AWS round-trips inside one ``asyncio.to_thread`` would
+#: make a rare miss into a very slow one, and every page is a call against
+#: the same admin-API quota that produces ``TooManyRequestsException`` —
+#: paging hard enough to cause the throttle we just learned to report.
+#:
+#: 5 is safe here because ``sub`` is UNIQUE and indexed: the match, if it
+#: exists, is not buried behind a thousand non-matches the way an arbitrary
+#: filter's could be. And it is still five times the coverage this resolver
+#: had before, which was one page — answered wrongly and silently.
+_SUB_LOOKUP_MAX_PAGES = 5
 
 
 def _iter_list_users(
-    filter_expression: str, *, log_event: str, **log_context: Any
+    filter_expression: str,
+    *,
+    log_event: str,
+    max_pages: int = _LIST_USERS_MAX_PAGES,
+    **log_context: Any,
 ) -> Iterator[list[dict[str, Any]]]:
     """Yield each ``ListUsers`` page for ``filter_expression``.
 
@@ -271,7 +329,7 @@ def _iter_list_users(
     client = _get_client()
     pool_id = _pool_id()
     token: str | None = None
-    for _ in range(_LIST_USERS_MAX_PAGES):
+    for _ in range(max_pages):
         kwargs: dict[str, Any] = {
             "UserPoolId": pool_id,
             # Cognito ListUsers Filter syntax: attribute = "value".
@@ -292,12 +350,10 @@ def _iter_list_users(
             return
     logger.error(
         "cognito_list_users_pagination_capped",
-        pages=_LIST_USERS_MAX_PAGES,
+        pages=max_pages,
         **log_context,
     )
-    raise CognitoAdminError(
-        f"ListUsers did not terminate within {_LIST_USERS_MAX_PAGES} pages"
-    )
+    raise CognitoAdminError(f"ListUsers did not terminate within {max_pages} pages")
 
 
 def resolve_username_for_sub(sub: str) -> str | None:
@@ -318,7 +374,10 @@ def resolve_username_for_sub(sub: str) -> str | None:
     if not sub:
         return None
     for users in _iter_list_users(
-        f'sub = "{sub}"', log_event="cognito_list_users_failed", sub=sub
+        f'sub = "{sub}"',
+        log_event="cognito_list_users_failed",
+        max_pages=_SUB_LOOKUP_MAX_PAGES,
+        sub=sub,
     ):
         for user in users:
             # ``sub`` is unique in a pool, so the first match is the answer.

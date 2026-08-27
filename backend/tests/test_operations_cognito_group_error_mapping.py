@@ -210,6 +210,33 @@ class TestMalformedPathGroupNameIs400:
 
         assert resp.status_code == 200, resp.text
 
+    def test_the_validator_does_not_run_before_the_admin_gate(self):
+        """Authenticate first. FastAPI solves dependencies in signature
+        order, so declaring ``validated_group_name`` before ``current_user``
+        made an UNAUTHENTICATED caller get a 400 about their group name
+        instead of a 401 — the route processing caller-controlled input on a
+        superuser-gated path before deciding whether the caller is anybody,
+        and letting the status code depend on that input pre-auth.
+
+        Nothing leaks either way (the naming rule is public); what this pins
+        is the ordering, which is not a property to rediscover per route.
+        """
+        from app.api.v1.endpoints.operations import router as operations_router
+
+        # No dependency overrides at all: nobody is authenticated.
+        anon_app = FastAPI()
+        anon_app.include_router(operations_router, prefix=API_PREFIX)
+        anon = TestClient(anon_app)
+
+        for method, path in (
+            ("DELETE", f"{_GROUPS_URL}/{_BAD_NAME}"),
+            ("GET", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
+            ("POST", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
+            ("DELETE", f"{_GROUPS_URL}/{_BAD_NAME}/users"),
+        ):
+            resp = anon.request(method, path, json={"email": "a@example.com"})
+            assert resp.status_code in (401, 403), f"{method} {path}: {resp.text}"
+
     def test_the_create_route_is_not_double_validated(self, client: TestClient):
         """``create`` takes its name in ``_CreateGroupBody`` and
         ``cognito_admin.create_group`` already applies the same rule to it.
@@ -388,6 +415,82 @@ class TestThrottleIs429:
         message = resp.json()["detail"]["message"].lower()
         assert "retry" in message
         assert "nothing was changed" in message
+
+
+class TestAwsRejectedParameterIs400:
+    """Item 11 stopped a malformed group NAME at the door. AWS can still
+    reject a different argument — a malformed username on the membership
+    routes, say — and that was reported as 502: the endpoint claiming the
+    upstream was broken over input AWS had itself called bad."""
+
+    def test_add_member_maps_it_to_400_carrying_aws_reason(self, client: TestClient):
+        exc = _wrapped(
+            "InvalidParameterException", "1 validation error detected: Username"
+        )
+        with (
+            patch.object(cognito_admin, "resolve_username_for_email", _ok_resolver()),
+            patch.object(cognito_admin, "add_user_to_group", _Boom(exc)),
+        ):
+            resp = client.post(
+                f"{_GROUPS_URL}/acme-devs/users",
+                json={"email": "a@example.com"},
+                headers=_AUTH,
+            )
+
+        assert resp.status_code == 400, resp.text
+        # AWS's own message, not a generic one — it is the only thing that
+        # tells the operator which argument was wrong.
+        assert "Username" in resp.json()["detail"]
+
+    def test_remove_member_maps_it_to_400(self, client: TestClient):
+        exc = _wrapped("InvalidParameterException", "bad username")
+        with (
+            patch.object(cognito_admin, "resolve_username_for_email", _ok_resolver()),
+            patch.object(cognito_admin, "remove_user_from_group", _Boom(exc)),
+        ):
+            resp = client.request(
+                "DELETE",
+                f"{_GROUPS_URL}/acme-devs/users",
+                json={"email": "a@example.com"},
+                headers=_AUTH,
+            )
+
+        assert resp.status_code == 400, resp.text
+
+    def test_create_group_still_maps_it_by_hand(self, client: TestClient):
+        """``create_group`` catches ``InvalidParameterException`` itself,
+        before the classifier is reached. Classifying it centrally must not
+        have changed that path."""
+        boom = _Boom(cognito_admin.CognitoInvalidParameterError("group_name bad"))
+        with patch.object(cognito_admin, "create_group", boom):
+            resp = client.post(_GROUPS_URL, json={"group_name": "x"}, headers=_AUTH)
+        assert resp.status_code == 400, resp.text
+
+
+class TestTheThrottleCarriesAwsOwnHint:
+    def test_aws_retry_after_is_passed_through(self, client: TestClient):
+        """A number we invented would be a guess presented as the service's
+        answer."""
+        raw = ClientError(
+            {
+                "Error": {"Code": "TooManyRequestsException", "Message": "Rate"},
+                "ResponseMetadata": {"HTTPHeaders": {"retry-after": "42"}},
+            },
+            "Op",
+        )
+        exc = cognito_admin._wrap_aws_error(raw, "Op failed")
+        with patch.object(cognito_admin, "delete_group", _Boom(exc)):
+            resp = client.delete(f"{_GROUPS_URL}/acme-devs", headers=_AUTH)
+
+        assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "42"
+
+    def test_absent_hint_falls_back_to_five_seconds(self, client: TestClient):
+        exc = _wrapped("TooManyRequestsException", "Rate exceeded")
+        with patch.object(cognito_admin, "delete_group", _Boom(exc)):
+            resp = client.delete(f"{_GROUPS_URL}/acme-devs", headers=_AUTH)
+
+        assert resp.headers["Retry-After"] == "5"
 
 
 # ---------------------------------------------------------------------------
