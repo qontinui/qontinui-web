@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RecordList } from "@/components/console";
 import { cn } from "@/lib/utils";
 import { usePromptDocumentProposals } from "../_hooks/usePromptDocumentProposals";
 import { isUnavailableSevere } from "../types";
@@ -25,6 +27,13 @@ import { ProposalCard } from "./ProposalCard";
  *   • genuinely empty — the only case that gets a reassuring message.
  */
 export function ReviewFeed() {
+  /**
+   * The open proposal (R5 — one at a time). Hoisted out of `<RecordList>`
+   * rather than left internal because a decision REMOVES the row it was taken
+   * on, and an internal key would then point at nothing with no way for this
+   * component to clear it.
+   */
+  const [openProposal, setOpenProposal] = useState<string | null>(null);
   const {
     proposals,
     writes,
@@ -148,16 +157,33 @@ export function ReviewFeed() {
             </p>
           </div>
         ) : (
-          proposals.map((proposal) => (
-            <ProposalCard
-              key={proposal.id}
-              proposal={proposal}
-              liveVersion={liveVersionFor(proposal.doc_kind, proposal.doc_name)}
-              loading={loading}
-              acting={acting}
-              onDecide={decide}
-            />
-          ))
+          // R2/R5 — one proposal is one line, and its seven blocks plus the
+          // decision composer expand in place. The empty node is deliberately
+          // `null`: the three not-good states above already say which question
+          // came back empty, and `trulyEmpty` is handled by the branch beside
+          // this one, so a second empty state here would be a fourth voice
+          // saying a fifth thing.
+          <RecordList
+            items={proposals}
+            itemKey={(p) => p.id}
+            expandedKey={openProposal}
+            onExpandedKeyChange={setOpenProposal}
+            empty={null}
+            renderRow={(proposal, ctx) => (
+              <ProposalCard
+                proposal={proposal}
+                liveVersion={liveVersionFor(
+                  proposal.doc_kind,
+                  proposal.doc_name
+                )}
+                loading={loading}
+                acting={acting}
+                expanded={ctx.expanded}
+                onToggle={ctx.onToggle}
+                onDecide={decide}
+              />
+            )}
+          />
         )}
       </section>
 

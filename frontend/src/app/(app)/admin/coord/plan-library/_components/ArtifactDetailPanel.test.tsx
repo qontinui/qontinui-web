@@ -1,5 +1,5 @@
 /**
- * ArtifactDetailDialog — the four coord-link states, and the both-directions
+ * ArtifactDetailPanel — the four coord-link states, and the both-directions
  * provenance render.
  *
  * The coord block is where this page can most easily lie. "No linked work
@@ -9,6 +9,28 @@
  * absence as zero. Each gets its own assertion here — as does the same
  * distinction one level down, on a single PR row's merged state, where
  * `unknown` must not read as the fact "unmerged".
+ *
+ * ## What Phase 3 Wave 5 changed here, and what it did NOT
+ *
+ * The component was a `<Dialog>` and is now an expand-in-place
+ * `<RecordDetail>` (plan
+ * `2026-08-16-coord-console-ui-unification-pipeline-style.md`, R5). Nothing in
+ * this file asserted dialog-ness — no `role="dialog"`, no focus trap, no
+ * Escape, no `onOpenChange` — so every assertion survives. Two mechanical
+ * edits: the `open` prop is gone (`artifactId === null` is now the closed
+ * state, one flag instead of two that could disagree), and the tests still
+ * render the component DIRECTLY rather than through `PlanLibraryList`.
+ *
+ * **That directness now matters more, not less.** In production the panel is
+ * mounted under the expanded row, so switching artifacts UNMOUNTS it and the
+ * `requestIdRef` guard cannot be exercised by a parent swap. The three
+ * stale-resolution tests below drive `artifactId` with `rerender` on one
+ * mounted instance, which is the only place that race is still reachable —
+ * and it is still reachable for real, on the two paths that change
+ * `artifactId` without unmounting: following a provenance edge from the pinned
+ * panel, and the post-write refresh in `handleKind`. Deleting these because
+ * "the list remounts anyway" would be trading a real guard for a vacuous
+ * green.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -25,7 +47,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
-import { ArtifactDetailDialog } from "./ArtifactDetailDialog";
+import { ArtifactDetailPanel } from "./ArtifactDetailPanel";
 import { KIND_LABELS } from "../types";
 import type { CandidateCoordLink, WorkArtifactDetail } from "../types";
 
@@ -71,10 +93,9 @@ function detail(
 
 function renderDialog(d: WorkArtifactDetail) {
   return render(
-    <ArtifactDetailDialog
-      open
-      onOpenChange={vi.fn()}
+    <ArtifactDetailPanel
       artifactId={d.id}
+      onClose={vi.fn()}
       fetchDetail={vi.fn().mockResolvedValue(d)}
       correctKind={vi.fn().mockResolvedValue(true)}
       onOpenArtifact={vi.fn()}
@@ -86,7 +107,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("ArtifactDetailDialog — the coord link is four states, not two", () => {
+describe("ArtifactDetailPanel — the coord link is four states, not two", () => {
   it("renders 'no linked work unit' as a normal state, not an error", async () => {
     renderDialog(detail());
     await waitFor(() =>
@@ -284,7 +305,7 @@ describe("ArtifactDetailDialog — the coord link is four states, not two", () =
   });
 });
 
-describe("ArtifactDetailDialog — provenance renders BOTH directions", () => {
+describe("ArtifactDetailPanel — provenance renders BOTH directions", () => {
   it("shows an empty state per direction rather than hiding the half", async () => {
     renderDialog(
       detail({
@@ -320,7 +341,7 @@ describe("ArtifactDetailDialog — provenance renders BOTH directions", () => {
   });
 });
 
-describe("ArtifactDetailDialog — the kind lock is visible", () => {
+describe("ArtifactDetailPanel — the kind lock is visible", () => {
   it("says a guessed kind is unlocked and a corrected one is locked", async () => {
     const { unmount } = renderDialog(detail({ kind_locked: false }));
     await waitFor(() =>
@@ -335,15 +356,14 @@ describe("ArtifactDetailDialog — the kind lock is visible", () => {
   });
 });
 
-describe("ArtifactDetailDialog — a failed fetch is not a loading state", () => {
+describe("ArtifactDetailPanel — a failed fetch is not a loading state", () => {
   it("shows an error with a retry instead of an eternal skeleton", async () => {
     // `fetchDetail` returns null on failure, which leaves `detail` null and
     // `loading` false — a `loading || !detail` guard would spin forever and
     // describe a dead dialog as one that is still working.
     render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={vi.fn().mockResolvedValue(null)}
         correctKind={vi.fn()}
@@ -364,9 +384,8 @@ describe("ArtifactDetailDialog — a failed fetch is not a loading state", () =>
       .mockResolvedValueOnce(detail());
 
     render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={fetchDetail}
         correctKind={vi.fn()}
@@ -388,7 +407,7 @@ describe("ArtifactDetailDialog — a failed fetch is not a loading state", () =>
   });
 });
 
-describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
+describe("ArtifactDetailPanel — a stale resolution must not paint", () => {
   it("keeps the newer artifact when an older fetch lands last", async () => {
     // Following a provenance edge switches `artifactId` while the first read
     // is still in flight. That read makes up to two 5s coord round-trips, so
@@ -407,9 +426,8 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
       .mockResolvedValueOnce(artifactB);
 
     const { rerender } = render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={fetchDetail}
         correctKind={vi.fn()}
@@ -419,9 +437,8 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
 
     // Follow the edge before A resolves.
     rerender(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-2"
         fetchDetail={fetchDetail}
         correctKind={vi.fn()}
@@ -466,9 +483,8 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
       .mockResolvedValueOnce(artifactB);
 
     const { rerender } = render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={fetchDetail}
         correctKind={vi.fn()}
@@ -477,9 +493,8 @@ describe("ArtifactDetailDialog — a stale resolution must not paint", () => {
     );
 
     rerender(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-2"
         fetchDetail={fetchDetail}
         correctKind={vi.fn()}
@@ -511,7 +526,7 @@ async function correctKindTo(label: string) {
   await user.click(await screen.findByRole("option", { name: label }));
 }
 
-describe("ArtifactDetailDialog — the kind correction obeys the same guard", () => {
+describe("ArtifactDetailPanel — the kind correction obeys the same guard", () => {
   it("does not let its refresh paint over an artifact opened since", async () => {
     // `handleKind` used to call `fetchDetail` RAW — no generation bump, no
     // generation check — so it drove straight past the guard `load` installs.
@@ -535,9 +550,8 @@ describe("ArtifactDetailDialog — the kind correction obeys the same guard", ()
     const correctKind = vi.fn().mockResolvedValue(true);
 
     const { rerender } = render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={fetchDetail}
         correctKind={correctKind}
@@ -557,9 +571,8 @@ describe("ArtifactDetailDialog — the kind correction obeys the same guard", ()
     await waitFor(() => expect(fetchDetail).toHaveBeenCalledTimes(2));
 
     rerender(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-2"
         fetchDetail={fetchDetail}
         correctKind={correctKind}
@@ -593,9 +606,8 @@ describe("ArtifactDetailDialog — the kind correction obeys the same guard", ()
     const correctKind = vi.fn().mockResolvedValue(true);
 
     render(
-      <ArtifactDetailDialog
-        open
-        onOpenChange={vi.fn()}
+      <ArtifactDetailPanel
+        onClose={vi.fn()}
         artifactId="art-1"
         fetchDetail={fetchDetail}
         correctKind={correctKind}
