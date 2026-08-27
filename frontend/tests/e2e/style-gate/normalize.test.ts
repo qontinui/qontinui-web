@@ -316,3 +316,85 @@ describe("normalizeBboxes", () => {
     expect(els[2]).toBe("nope");
   });
 });
+
+describe("enrichElement — stacking, visibility and text overflow", () => {
+  // These five fields are what let the Rust analyzer answer "is anything
+  // covering this?" and "was this label truncated?". Without them the layout
+  // analyzer can see two boxes intersect but not which one the reader sees,
+  // and text_fits_container compares only heights.
+
+  it("carries a numeric z-index through as z_index", () => {
+    const el: Record<string, unknown> = {
+      id: "overlay",
+      tagName: "div",
+      state: { computedStyles: { zIndex: "30" } },
+    };
+    enrichElement(el);
+    expect(el.z_index).toBe(30);
+  });
+
+  it("leaves z_index UNSET for `auto` rather than defaulting it to 0", () => {
+    // `auto` means "establishes no stacking context", which is a different
+    // claim from "sits at layer 0". Writing 0 would invent an ordering the
+    // browser never asserted, and the analyzer would then report a
+    // confidently wrong occlusion direction. Unset makes it report
+    // `occlusion_unknown` instead, which is the honest answer.
+    const el: Record<string, unknown> = {
+      id: "plain",
+      tagName: "div",
+      state: { computedStyles: { zIndex: "auto" } },
+    };
+    enrichElement(el);
+    expect(el.z_index).toBeUndefined();
+  });
+
+  it("carries the hit-test verdict and the occluder's identity", () => {
+    const el: Record<string, unknown> = {
+      id: "covered-label",
+      tagName: "div",
+      state: { visible: false, occludedBy: "terminal-zone-minimap" },
+    };
+    enrichElement(el);
+    expect(el.visible).toBe(false);
+    expect(el.occluded_by).toBe("terminal-zone-minimap");
+  });
+
+  it("emits scroll_width_px only when content actually exceeds the box", () => {
+    const truncated: Record<string, unknown> = {
+      id: "truncated",
+      tagName: "span",
+      state: {
+        scrollWidth: 160,
+        clientWidth: 80,
+        computedStyles: { textOverflow: "ellipsis" },
+      },
+    };
+    enrichElement(truncated);
+    expect(truncated.scroll_width_px).toBe(160);
+    expect(truncated.text_overflow).toBe("ellipsis");
+
+    // Content that fits carries no information — and the Rust side reads
+    // absence as "not measured", so writing equal values everywhere would
+    // bloat every snapshot to say nothing.
+    const fits: Record<string, unknown> = {
+      id: "fits",
+      tagName: "span",
+      state: { scrollWidth: 40, clientWidth: 80 },
+    };
+    enrichElement(fits);
+    expect(fits.scroll_width_px).toBeUndefined();
+  });
+
+  it("does not clobber fields a snapshot source already set", () => {
+    const el: Record<string, unknown> = {
+      id: "pre",
+      tagName: "div",
+      z_index: 99,
+      visible: true,
+      state: { visible: false, computedStyles: { zIndex: "1" } },
+    };
+    enrichElement(el);
+    expect(el.z_index).toBe(99);
+    expect(el.visible).toBe(true);
+  });
+});
