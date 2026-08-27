@@ -101,6 +101,12 @@ def _patch_endpoint_externals(manager: MagicMock) -> list[Any]:
     device_crud = MagicMock()
     device_crud.register_device = AsyncMock(return_value=device_row)
     device_crud.get_device = AsyncMock(return_value=device_row)
+    # The WS-presence pointer helpers are awaited by _cleanup / _handle_heartbeat.
+    # Without these the bare MagicMock return is un-awaitable and the failure is
+    # swallowed into a `devices_ws_clear_session_id_failed` log line rather than
+    # surfacing here.
+    device_crud.clear_ws_session_if_current = AsyncMock(return_value=True)
+    device_crud.claim_ws_session = AsyncMock(return_value=False)
 
     device_connection_crud = MagicMock()
     device_connection_crud.create_connection_record = AsyncMock(
@@ -123,11 +129,28 @@ def _patch_endpoint_externals(manager: MagicMock) -> list[Any]:
 
 
 def _make_manager() -> MagicMock:
+    """A manager stub that models the registry, not just the coroutines.
+
+    ``_cleanup`` only unregisters when ``get_websocket`` still returns THIS
+    handler's socket — otherwise a superseded connection's teardown would
+    cancel the inbound listener belonging to the socket that replaced it. A
+    stub whose ``get_websocket`` returns a bare MagicMock therefore reports a
+    false "superseded" and no teardown happens at all, so the registry has to
+    be modelled for these assertions to mean anything.
+    """
     manager = MagicMock()
-    manager.register = AsyncMock()
     manager.publish_runner_connected = AsyncMock()
     manager.publish_runner_disconnected = AsyncMock()
     manager.unregister = AsyncMock()
+    manager.refresh_ttl = AsyncMock(return_value=True)
+
+    registered: dict[str, Any] = {}
+
+    async def _register(**kwargs: Any) -> None:
+        registered["ws"] = kwargs.get("websocket")
+
+    manager.register = AsyncMock(side_effect=_register)
+    manager.get_websocket = MagicMock(side_effect=lambda _rid: registered.get("ws"))
     return manager
 
 

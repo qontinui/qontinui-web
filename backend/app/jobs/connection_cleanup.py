@@ -7,13 +7,15 @@ Redis registry). It closes the connection row, clears the parent
 ``ws_session_id`` pointer, and notifies the manager.
 """
 
+from uuid import UUID
+
 import structlog
 from qontinui_schemas.common import utc_now
 from sqlalchemy import select
 
 from app.config.redis_config import get_redis
+from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
-from app.models.device import Device
 from app.models.device_connection import DeviceConnection
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 
@@ -74,21 +76,32 @@ async def cleanup_stale_connections() -> dict[str, int]:
                             error=str(e),
                         )
 
-                # Clear ws_session_id on parent devices whose connection
-                # was just closed.
-                for did in set(cleaned_device_ids):
-                    device_query = select(Device).where(Device.device_id == did)
-                    device_result = await db.execute(device_query)
-                    device = device_result.scalar_one_or_none()
-                    if (
-                        device is not None
-                        and str(device.ws_session_id or "")
-                        and (device.ws_session_id in {s.id for s in stale_sessions})
-                    ):
-                        device.ws_session_id = None
-                        device.ws_connected_at = None
-
+                # Clear ws_session_id on parent devices whose connection was
+                # just closed — but ONLY where it still points at one of the
+                # sessions this pass declared stale.
+                #
+                # This used to be a read-modify-write in Python (SELECT →
+                # compare → assign → commit), the same lost-update pattern
+                # that broke the teardown path, and with a WIDER stale window:
+                # `connected_ids` is read from Redis at the top of this
+                # function, well before this commit lands. A device that
+                # reconnects anywhere in that window had its brand-new pointer
+                # NULLed by a decision made from data that was already old,
+                # and — until the heartbeat heal existed — nothing could undo
+                # it. Delegate to the atomic compare-and-clear so the database
+                # arbitrates instead.
                 await db.commit()
+
+                stale_ids_by_device: dict[str, list[int]] = {}
+                for session in stale_sessions:
+                    stale_ids_by_device.setdefault(str(session.device_id), []).append(
+                        session.id
+                    )
+                for did, stale_ids in stale_ids_by_device.items():
+                    for stale_id in stale_ids:
+                        await device_crud.clear_ws_session_if_current(
+                            db, device_id=UUID(did), connection_pk=stale_id
+                        )
 
                 # Notify the manager (best-effort) for each cleaned device.
                 for did in set(cleaned_device_ids):

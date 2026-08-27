@@ -185,7 +185,16 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     try:
         claims = await coord_jwks_client.verify_token(token)
     except CoordJWKSUnavailableError as exc:
-        logger.error("device_token_jwks_unavailable", error=str(exc))
+        # Same diagnosability rule as the WS handshake in devices_ws.py: the
+        # 503 detail is deliberately vague, so this line must name the coord
+        # URL dialled and the concrete transport exception class.
+        logger.error(
+            "device_token_jwks_unavailable",
+            error=str(exc),
+            failure=type(exc).__name__,
+            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
+            coord_url=coord_jwks_client.coord_url,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device authentication temporarily unavailable.",
