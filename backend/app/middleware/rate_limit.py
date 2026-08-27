@@ -65,6 +65,13 @@ def get_authorization_identifier(request: Request) -> str:
     Falls back to the client IP when there is no bearer — an unauthenticated
     caller never reaches these routes, so that arm only covers oddities like
     a probe.
+
+    **Do not rename the ``request`` parameter.** slowapi decides whether to
+    call a key function with the request or with no arguments by looking for
+    a parameter literally named ``"request"``
+    (``Limiter.__evaluate_limits`` -> ``inspect.signature(lim.key_func)``).
+    Renaming it would silently switch slowapi to calling this with zero args
+    and raise inside the limiter rather than here.
     """
     header = request.headers.get("authorization") or ""
     token = header[7:].strip() if header[:7].lower() == "bearer " else ""

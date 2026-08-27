@@ -8566,6 +8566,16 @@ def validated_group_name(
     mapping table first, and there is no point spending that round-trip on
     a name Cognito could never have held.
 
+    **It must be declared AFTER ``current_user`` in every signature.**
+    FastAPI solves dependencies in signature order, so declaring it first
+    made an unauthenticated caller get a 400 about their group name instead
+    of a 401 — processing caller-controlled input on a superuser-gated
+    route before deciding whether the caller is anybody at all, and letting
+    the status code depend on that input pre-authentication. Nothing leaks
+    (the rule is public), but authenticate first is not a property to
+    rediscover per route. ``test_the_validator_does_not_run_before_the_admin_gate``
+    pins it.
+
     ``create_cognito_group`` is NOT one of these four: its name arrives in
     ``_CreateGroupBody``, and ``cognito_admin.create_group`` already runs
     the same check on it. Re-validating there would be a second, drifting
@@ -8621,6 +8631,7 @@ def _cognito_http_error(
 
     * throttled          → **429**, with ``Retry-After``. AWS is healthy.
     * pool misconfigured → **500**. A server fault, never "no such group".
+    * bad parameter      → **400**. The caller's input, carrying AWS's reason.
     * user not found     → **404** naming the email, not the group.
     * group not found    → **404** naming the group.
     * anything else      → 502 with ``fallback_detail``.
@@ -8636,7 +8647,10 @@ def _cognito_http_error(
                     "was changed; retry in a few seconds."
                 ),
             },
-            headers={"Retry-After": "5"},
+            # AWS's own hint when it sent one; 5s only when it did not. A
+            # number we invented would be a guess presented as the service's
+            # answer.
+            headers={"Retry-After": exc.retry_after or "5"},
         )
     if isinstance(exc, CognitoConfigurationError):
         logger.error(
@@ -8655,6 +8669,17 @@ def _cognito_http_error(
                 ),
             },
         )
+    if isinstance(exc, CognitoInvalidParameterError):
+        # AWS rejected an argument as malformed. That is the caller's error
+        # and self-explaining, so it carries AWS's message rather than the
+        # generic 502 that would claim the upstream is broken. Item 11's
+        # validator covers the group NAME before the wire; this covers every
+        # other argument, including a malformed username on the membership
+        # routes.
+        logger.info(
+            log_event, reason="invalid_parameter", error=str(exc), **log_context
+        )
+        return HTTPException(status_code=400, detail=str(exc))
     if isinstance(exc, CognitoUserNotFoundError):
         logger.info(log_event, reason="user_not_found", error=str(exc), **log_context)
         return HTTPException(
@@ -8709,13 +8734,22 @@ async def _write_cognito_group_audit(
     undelete, so raising would report a failure that did not happen and
     invite the operator to retry a delete that already landed — strictly
     worse than an audit gap. The failure is logged at ``error`` with the
-    whole row, so it is recoverable from the application log rather than
-    silently dropped.
+    whole row (``target_email`` included: that row is the only thing the log
+    line is FOR, and a redacted one could not be replayed), so it is
+    recoverable from the application log rather than silently dropped.
 
-    A failed ``INSERT`` also poisons the session's transaction, and
-    ``get_async_db`` commits on teardown — so the rollback below is what
-    stops an audit-table problem from turning a successful mutation into a
-    500 after the fact.
+    The ``INSERT`` runs inside a **SAVEPOINT**. A failed statement otherwise
+    poisons the whole session — and ``get_async_db`` commits on teardown, so
+    an audit-table problem would turn a successful mutation into a 500 after
+    the fact. A savepoint rolls back only this statement, which also matters
+    because ``db`` is the SAME session ``require_admin`` loaded
+    ``current_user`` from: a session-wide ``rollback()`` would expire that
+    instance and make any later attribute read re-query.
+
+    What this does NOT cover, deliberately, is a failure raised by the
+    teardown ``commit()`` itself (a dropped connection, a deferred
+    constraint). Nothing at this layer can: the commit happens after the
+    response is already decided.
     """
     payload: dict[str, Any] = {
         "actor_user_id": str(actor_user_id),
@@ -8728,19 +8762,20 @@ async def _write_cognito_group_audit(
     try:
         if db is None:
             raise RuntimeError("no database session was provided")
-        await db.execute(
-            text(
-                """
-                INSERT INTO auth.cognito_group_admin_events
-                    (actor_user_id, action, group_name, target_email,
-                     target_username, details)
-                VALUES
-                    (:actor_user_id, :action, :group_name, :target_email,
-                     :target_username, CAST(:details AS JSONB))
-                """
-            ),
-            payload,
-        )
+        async with db.begin_nested():
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO auth.cognito_group_admin_events
+                        (actor_user_id, action, group_name, target_email,
+                         target_username, details)
+                    VALUES
+                        (:actor_user_id, :action, :group_name, :target_email,
+                         :target_username, CAST(:details AS JSONB))
+                    """
+                ),
+                payload,
+            )
     except Exception as exc:  # noqa: BLE001 - audit must never fail the request
         logger.error(
             "cognito_group_audit_write_failed",
@@ -8751,11 +8786,6 @@ async def _write_cognito_group_audit(
             target_email=target_email,
             target_username=target_username,
         )
-        if db is not None:
-            try:
-                await db.rollback()
-            except Exception:  # noqa: BLE001 - nothing left to salvage
-                pass
 
 
 @router.get("/coord/cognito/groups")
@@ -8789,8 +8819,8 @@ async def list_cognito_groups(
 async def create_cognito_group(
     request: Request,
     body: _CreateGroupBody,
-    db: AsyncSession = Depends(get_async_db),
     current_user: UserModel = Depends(require_admin),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Create a Cognito group. 409 if a group with that name already
     exists, 400 if the name cannot satisfy Cognito's ``groupName``
@@ -9248,6 +9278,10 @@ def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[st
 )
 async def delete_cognito_group(
     request: Request,
+    # ``current_user`` FIRST: FastAPI solves in signature order, so the
+    # superuser gate has to precede the input validator (see
+    # :func:`validated_group_name`).
+    current_user: UserModel = Depends(require_admin),
     group_name: str = Depends(validated_group_name),
     allow_mapped: bool = Query(
         False,
@@ -9265,7 +9299,6 @@ async def delete_cognito_group(
         ),
     ),
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
     """Delete a Cognito group. 404 if no such group. Superuser-gated,
     rate-limited (the lowest limit of the four — this is the only
@@ -9381,8 +9414,8 @@ async def delete_cognito_group(
 
 @router.get("/coord/cognito/groups/{group_name}/users")
 async def list_cognito_group_users(
-    group_name: str = Depends(validated_group_name),
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
 ) -> dict[str, Any]:
     """List the members of a Cognito group. 404 if no such group.
     Superuser-gated.
@@ -9413,9 +9446,9 @@ async def list_cognito_group_users(
 async def add_cognito_group_user(
     request: Request,
     body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
     group_name: str = Depends(validated_group_name),
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
     """Add a user (resolved by email) to a Cognito group. Superuser-gated,
     rate-limited, audited.
@@ -9469,9 +9502,9 @@ async def add_cognito_group_user(
 async def remove_cognito_group_user(
     request: Request,
     body: _GroupMemberBody,
+    current_user: UserModel = Depends(require_admin),
     group_name: str = Depends(validated_group_name),
     db: AsyncSession = Depends(get_async_db),
-    current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
     """Remove a user (resolved by email) from a Cognito group.
     Superuser-gated, rate-limited, audited.

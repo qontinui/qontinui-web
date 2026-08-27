@@ -57,6 +57,8 @@ class _RecordingSession:
 
     def __init__(self, fail: Exception | None = None) -> None:
         self.executed: list[tuple[str, dict[str, Any]]] = []
+        self.savepoints = 0
+        self.savepoint_rollbacks = 0
         self.rollbacks = 0
         self._fail = fail
 
@@ -65,6 +67,27 @@ class _RecordingSession:
         if self._fail is not None:
             raise self._fail
         return MagicMock()
+
+    def begin_nested(self) -> Any:
+        """Stand-in for the SAVEPOINT the audit writer wraps its INSERT in.
+
+        Recording the savepoint separately from a session-wide ``rollback``
+        is the point: a session-wide one would also expire ``current_user``,
+        which was loaded through this very session.
+        """
+        session = self
+
+        class _Savepoint:
+            async def __aenter__(self) -> Any:
+                session.savepoints += 1
+                return self
+
+            async def __aexit__(self, exc_type: Any, *_: Any) -> bool:
+                if exc_type is not None:
+                    session.savepoint_rollbacks += 1
+                return False
+
+        return _Savepoint()
 
     async def rollback(self) -> None:
         self.rollbacks += 1
@@ -308,16 +331,32 @@ class TestAnUnwritableAuditDoesNotUndoTheDelete:
         assert resp.status_code == 200, resp.text
         assert resp.json() == {"ok": True}
 
-    def test_the_failed_write_is_rolled_back(self, actor_id: UUID):
+    def test_the_failed_write_is_contained_in_a_savepoint(self, actor_id: UUID):
         """A failed INSERT poisons the session's transaction and
-        ``get_async_db`` commits on teardown — without the rollback an audit
-        problem would turn a completed mutation into a 500 after the fact."""
+        ``get_async_db`` commits on teardown, so an audit problem would
+        otherwise turn a completed mutation into a 500 after the fact.
+
+        A SAVEPOINT rather than a session-wide ``rollback()``: ``db`` is the
+        same session ``require_admin`` loaded ``current_user`` from, and a
+        session-wide rollback expires that instance — a live trap for the
+        next handler that reads ``current_user`` after the audit call."""
         session = _RecordingSession(fail=RuntimeError("relation does not exist"))
         client = TestClient(_build_app(session, actor_id))
         with patch.object(cognito_admin, "delete_group", lambda name: None):
             client.delete(f"{_GROUPS_URL}/acme-devs", headers=_AUTH)
 
-        assert session.rollbacks == 1
+        assert session.savepoints == 1
+        assert session.savepoint_rollbacks == 1
+        assert session.rollbacks == 0
+
+    def test_a_successful_write_also_uses_the_savepoint(self, actor_id: UUID):
+        session = _RecordingSession()
+        client = TestClient(_build_app(session, actor_id))
+        with patch.object(cognito_admin, "delete_group", lambda name: None):
+            client.delete(f"{_GROUPS_URL}/acme-devs", headers=_AUTH)
+
+        assert session.savepoints == 1
+        assert session.savepoint_rollbacks == 0
 
     def test_the_failure_is_logged_with_the_row(self, actor_id: UUID):
         """Best-effort must not mean silent — the row has to be recoverable
@@ -386,14 +425,29 @@ class TestTheAuditRowMatchesTheMigration:
         named = set(re.findall(r":(\w+)", sql))
         assert named == inserted
 
-    def test_the_migration_chains_off_the_local_head(self):
-        """coord re-points ``down_revision`` at the live merged head when the
-        PR lands; what this pins is that the branch itself has one head, so
-        ``alembic-graph-pr.yml`` sees no fork."""
+    def test_the_revision_graph_stays_single_headed(self):
+        """What matters is that this branch adds no FORK —
+        ``alembic-graph-pr.yml`` fails a PR that does.
+
+        Asserting the literal ``down_revision`` would be worse than useless:
+        coord re-points it at the live merged head when the PR lands, so a
+        literal assertion is a test written to break on the merge commit.
+        Ask the graph instead."""
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        script = ScriptDirectory.from_config(Config("alembic.ini"))
+        assert script.get_heads() == ["cgaudit_01"]
+        # ...and it is genuinely reachable from the base, not an island.
+        assert script.get_revision("cgaudit_01").down_revision is not None
+
+    def test_the_migration_is_reversible(self):
+        module = self._migration_module()
+        assert callable(module.downgrade)
         source = self.MIGRATION.read_text()
-        assert 'revision: str = "cgaudit_01"' in source
-        assert 'down_revision: str = "ffland_headsync_01"' in source
-        assert "def downgrade() -> None:" in source
+        # An unconditional DROP TABLE beside two guarded DROP INDEXes is the
+        # asymmetry that bites after an upgrade which skipped.
+        assert "DROP TABLE IF EXISTS" in source
 
 
 # ---------------------------------------------------------------------------

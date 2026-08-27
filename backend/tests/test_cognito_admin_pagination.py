@@ -238,6 +238,41 @@ class TestResolveSubPaginates:
         assert cognito_admin.resolve_username_for_sub("") is None
         assert client.calls == []
 
+    def test_its_page_budget_is_tighter_than_the_email_resolver(self, paging):
+        """This resolver runs for EVERY signed-in user, so its worst case is
+        a latency budget rather than a background job — and every page is a
+        call against the same admin-API quota that produces the throttle the
+        endpoint now maps to 429. ``sub`` is unique and indexed, so a match
+        is not buried behind a thousand non-matches; a tight cap is safe
+        here in a way it would not be for an arbitrary filter."""
+        assert cognito_admin._SUB_LOOKUP_MAX_PAGES < cognito_admin._LIST_USERS_MAX_PAGES
+        # ...and still several times the one page it read before.
+        assert cognito_admin._SUB_LOOKUP_MAX_PAGES > 1
+
+    def test_the_sub_cap_raises_rather_than_reporting_the_user_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """``identities.py`` turns a ``CognitoAdminError`` into a 502. That
+        is the right answer for "I gave up": returning ``None`` would make it
+        a 404 telling a signed-in user their own account has no Cognito
+        identity."""
+
+        class _Endless:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def list_users(self, **kwargs: Any) -> dict[str, Any]:
+                self.calls += 1
+                return {"Users": [], "PaginationToken": f"p{self.calls}"}
+
+        client = _Endless()
+        monkeypatch.setattr(cognito_admin, "_get_client", lambda: client)
+        monkeypatch.setattr(settings, "COGNITO_USER_POOL_ID", "pool-xyz")
+
+        with pytest.raises(CognitoAdminError, match="did not terminate"):
+            cognito_admin.resolve_username_for_sub("sub-123")
+        assert client.calls == cognito_admin._SUB_LOOKUP_MAX_PAGES
+
     def test_a_user_row_without_a_username_does_not_end_the_search(self, paging):
         """A malformed row is not a match. Returning ``None`` on it — which
         the old code did — would report an existing user as absent."""
