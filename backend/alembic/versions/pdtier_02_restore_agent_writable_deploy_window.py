@@ -1,7 +1,7 @@
 """coord prompt_documents - restore ``agent_writable`` for the deploy window
 
 Revision ID: pdtier_02
-Revises: pdtier_01
+Revises: fleet_res_tel_04
 Create Date: 2026-08-27
 
 A DEPLOY-WINDOW SHIM, and it is meant to be short-lived
@@ -106,7 +106,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "pdtier_02"
-down_revision: str | Sequence[str] | None = "pdtier_01"
+down_revision: str | Sequence[str] | None = "fleet_res_tel_04"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
