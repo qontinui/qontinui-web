@@ -10,13 +10,8 @@
  * (`never` > `ask-first` > `proceed+notify` > `proceed+log` > `proceed`).
  * Additive and tier-raising edits land immediately; an edit that lowers a tier
  * or widens authority — or that the comparator cannot classify, which counts as
- * loosening — is held as a pending proposal instead, UNLESS the tenant's
- * `policy_write` dial is `full`, at which point a classified loosening LANDS
- * announced rather than being held (plan
- * `2026-08-27-tenant-level-agent-authorable-stores.md`). So neither half of
- * this page may assert which directions can appear in it: proposals are read
- * and decided here, alongside the writes that did land — each marked with its
- * direction where coord classified one, each undoable.
+ * loosening — is held as a pending proposal instead. This page is where those
+ * are read and decided, alongside the writes that did land (each undoable).
  *
  * ASYNC BY DESIGN. It is a review QUEUE, not a gate: no agent, session, or merge
  * waits on it. A proposal sitting here means the edit did not happen, which is
@@ -63,7 +58,6 @@ export default function PromptDocumentProposalsPage() {
           className="size-4 shrink-0 self-center text-muted-foreground"
           aria-hidden
         />
-<<<<<<< HEAD
         {/* `<h2>`, not `<h1>` — `admin/coord/layout.tsx` already renders the
             console's one `<h1>` ("Coord operator console"), which 13 Playwright
             assertions match by role and exact name. A second `<h1>` was always
@@ -80,20 +74,6 @@ export default function PromptDocumentProposalsPage() {
           below, undoable in one click. Nothing is waiting on you to keep
           working — an unreviewed proposal simply hasn&apos;t been applied.
         </p>
-=======
-        <div>
-          <h1 className="text-lg font-semibold">Policy Edit Review</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Edits your agents made to the policies coord serves them. Which
-            edits have to wait for you and which land announced is your
-            policy-write setting: whatever is waiting is at the top, and
-            everything that landed is listed below — marked where it widened
-            what agents may do, and undoable in one click. Nothing is waiting on
-            you to keep working — an unreviewed proposal simply hasn&apos;t been
-            applied.
-          </p>
-        </div>
->>>>>>> 634fdbf4 (feat(coord-console): mark loosenings, filter agent authors, diff landed writes)
       </div>
 
       <ReviewFeed />

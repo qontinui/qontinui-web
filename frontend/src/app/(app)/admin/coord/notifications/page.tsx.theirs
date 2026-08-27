@@ -104,7 +104,6 @@ import {
   isContractError,
   isMigrationPending,
   kindOptions,
-  matchesNotificationRef,
   mergeKindVocabulary,
   selectionIds,
 } from "@/components/admin/coord/notificationStatus";
@@ -155,29 +154,6 @@ export default function CoordNotificationsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
   const [vocabulary, setVocabulary] = useState<string[]>([]);
-
-  /**
-   * `?ref=<id>` — the deep link the landed-write feed on
-   * `/admin/coord/prompt-document-proposals` uses to reach the event that
-   * announced one write, and the reasoning its author recorded (plan
-   * `2026-08-27-tenant-level-agent-authorable-stores.md`, Phase 4).
-   *
-   * Read once on mount from `window.location` rather than `useSearchParams`,
-   * which would force this client page behind a Suspense boundary for a
-   * one-shot read — the same call `/admin/coord/gates?gate=<id>` makes.
-   *
-   * It expands a row; it does NOT become a filter. `filterActive` below governs
-   * the blast radius of mark-all-read, and quietly widening what counts as a
-   * filter would change what that button does.
-   */
-  const [linkedRef, setLinkedRef] = useState<string | null>(null);
-  const linkedApplied = useRef(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const ref = new URLSearchParams(window.location.search).get("ref");
-    if (ref) setLinkedRef(ref);
-  }, []);
 
   /**
    * Generation counter for "the query currently on screen". The effect below
@@ -353,30 +329,6 @@ export default function CoordNotificationsPage() {
   );
 
   /**
-   * The linked row, if it is on the page that is loaded.
-   *
-   * `null` while a `linkedRef` is set is a real, reportable state — the event
-   * may be older than the loaded page, or excluded by the current filter — and
-   * the banner says which rather than leaving the operator on an ordinary feed
-   * wondering whether the link worked.
-   */
-  const linkedMatch = useMemo(() => {
-    if (!linkedRef) return null;
-    return (
-      rows.find((n) => matchesNotificationRef(n, linkedRef))?.notification_id ??
-      null
-    );
-  }, [rows, linkedRef]);
-
-  // One-shot: expand the linked row when it first arrives. Guarded so a later
-  // poll cannot re-open a row the operator has since collapsed.
-  useEffect(() => {
-    if (!linkedMatch || linkedApplied.current) return;
-    linkedApplied.current = true;
-    setExpanded(linkedMatch);
-  }, [linkedMatch]);
-
-  /**
    * Mark-read-in-bulk, and what it will actually do.
    *
    * `{notification_ids: null}` means "every unread row for this principal",
@@ -541,101 +493,6 @@ export default function CoordNotificationsPage() {
                 {loadingMore ? "Loading…" : "Load more"}
               </Button>
             </div>
-<<<<<<< HEAD
-=======
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                markRead(
-                  filterActive
-                    ? { notification_ids: loadedUnreadIds }
-                    : MARK_ALL,
-                  true
-                )
-              }
-              disabled={markAllDisabled || marking !== null}
-              title={markAllTitle}
-              data-testid="coord-notifications-mark-all-read"
-              data-mark-all-scope={filterActive ? "loaded" : "everything"}
-            >
-              <CheckCheck className="mr-1 h-3 w-3" />
-              {markAllLabel}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchHead(false)}
-              data-testid="coord-notifications-refresh"
-            >
-              <RefreshCw className="h-3 w-3" />
-            </Button>
-          </div>
-
-          {/* Callers supply the whole sentence — a mark-read rejection is not
-              a "failed to load". */}
-          {error && <p className="text-sm text-destructive">{error}</p>}
-
-          {linkedRef && (
-            <p
-              className="text-sm text-muted-foreground"
-              data-testid="coord-notifications-linked-ref"
-            >
-              {linkedMatch
-                ? "Showing the event this write was announced with — expanded below."
-                : "The linked event is not on the page that is loaded. It may be older than these, or excluded by the filters above — clear them or load more."}
-            </p>
-          )}
-
-          {loading && rows.length === 0 ? (
-            <Skeleton className="h-24 w-full" />
-          ) : migrationPending ? (
-            // Quiet degrade — the table does not exist in coord yet.
-            <p
-              className="text-sm italic text-muted-foreground"
-              data-testid="coord-notifications-pending"
-            >
-              Notifications are not available yet.
-            </p>
-          ) : rows.length > 0 ? (
-            <div className="space-y-1.5">
-              {rows.map((n) => (
-                <NotificationRow
-                  key={n.notification_id}
-                  notification={n}
-                  expanded={expanded === n.notification_id}
-                  onToggle={() =>
-                    setExpanded((cur) =>
-                      cur === n.notification_id ? null : n.notification_id
-                    )
-                  }
-                  onMarkRead={() =>
-                    markRead({ notification_ids: [n.notification_id] })
-                  }
-                  markPending={marking === n.notification_id}
-                />
-              ))}
-              {nextCursor && (
-                <div className="pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadMore}
-                    disabled={loadingMore}
-                    data-testid="coord-notifications-load-more"
-                  >
-                    {loadingMore ? "Loading…" : "Load more"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm italic text-muted-foreground">
-              {unreadOnly
-                ? "Nothing unread."
-                : "No notifications matching filters."}
-            </p>
->>>>>>> 634fdbf4 (feat(coord-console): mark loosenings, filter agent authors, diff landed writes)
           )}
         </>
       )}

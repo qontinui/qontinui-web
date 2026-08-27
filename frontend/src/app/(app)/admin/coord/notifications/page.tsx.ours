@@ -39,47 +39,11 @@
  * days-long answer costs a measured 5 requests over ~15s, which this page's
  * 10s poller would overlap with itself while the first paint sat behind a
  * skeleton for the whole chain.
- *
- * ## Console style (Phase 3 Wave 5)
- *
- * This route landed AFTER the console plan was authored and was missing from
- * its census — see that plan's §4 correction. Migrated per
- * `frontend/docs/console-ui-style-guide.md`:
- *
- * - **R9** — the page-level `<Card><CardHeader><CardTitle>Notifications`
- *   wrapper is gone; `coord/layout.tsx` already renders the console `<h1>`.
- * - **R1** — a `<HealthStrip>` opens the page. Its counts are coord's own
- *   server-computed `total` / `unread_count` scalars, which this page ALREADY
- *   holds — not `rows.length`, which would report the page size, the exact
- *   misread the notifications plan exists to stop. The `N unread` / `N total`
- *   badges that were in the card title are those two counts.
- * - **R2/R5** — `<NotificationRow>` moved onto `<RecordRow>` /
- *   `<RecordDetail>` in the same commit. It was already row-shaped and already
- *   expanded in place; what changed is that it is the shared implementation
- *   rather than a second copy.
- * - **R6** — the list renders through `<RecordList>`, so an in-flight first
- *   read shows skeletons rather than an empty list asserting there is nothing;
- *   and the two count badges render `–` rather than `0` in every state where
- *   coord has not answered. That is what the second `loaded` flag below is
- *   for: `loading` settles on FAILURE too (it is cleared in a `finally`),
- *   which is right for the skeleton and wrong for a count.
- *
- * **The strip is never red or amber for a BACKLOG**, and that is the point:
- * this is an append-only EVENT feed, so an unread row blocks nobody and decays
- * into nothing. Amber would promise something else clears it; red would claim
- * "act now". Both are false. It IS amber when we cannot say what happened —
- * migration-pending, a failed read, or before the first answer. See
- * `notificationsHealth.tsx`.
- *
- * **The kind filter and the unread-only switch deliberately stay a `<Select>`
- * and a `<Switch>`, not `<FilterTabs>`.** Both are SERVER-side (`?kind=`,
- * `?unread_only=`) and change what is fetched, so every tab but the active one
- * would carry `–` forever — the precedent `/plans` set in Wave 1. They are
- * also frozen authored testids (D4a). The counts an operator wants are in the
- * strip, taken from coord's scalars rather than from the loaded page.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -89,10 +53,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { CheckCheck, Filter, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList } from "@/components/console";
+import { Badge } from "@/components/ui/badge";
+import { Bell, CheckCheck, Filter, RefreshCw } from "lucide-react";
 import { NotificationRow } from "@/components/admin/coord/NotificationRow";
-import { deriveNotificationsHealth } from "@/components/admin/coord/notificationsHealth";
 import {
   type CoordNotificationRow,
   type MarkReadResponse,
@@ -138,17 +101,6 @@ export default function CoordNotificationsPage() {
   const [unreadCount, setUnreadCount] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
-  /**
-   * True once a read has SUCCEEDED — never merely "a read finished".
-   *
-   * `loading` is cleared in a `finally`, so it settles on failure too: exactly
-   * what the SKELETON wants (stop spinning) and exactly what the COUNTS must
-   * not use (a failed first read would fall through to `0 unread`, which is a
-   * claim we have not earned). Two flags, two questions — the split `/history`
-   * documents and Wave 2 propagated to /lands, /deploys, /agents and
-   * /releases.
-   */
-  const [loaded, setLoaded] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,7 +173,6 @@ export default function CoordNotificationsPage() {
         if (!merge) setNextCursor(body.next_cursor ?? null);
         applyEnvelope(body);
         setMigrationPending(false);
-        setLoaded(true);
         setError(null);
       } catch (e) {
         // The guard covers the failure arms too: a stale 503 must not flip the
@@ -406,143 +357,65 @@ export default function CoordNotificationsPage() {
       ? `Marks ALL ${markAllCount} unread notifications, including kinds not shown here. This cannot be undone.`
       : "Marks ALL unread notifications, including kinds not shown here. This cannot be undone.";
 
-  const health = deriveNotificationsHealth({
-    unreadCount,
-    total,
-    loaded,
-    migrationPending,
-    failed: error !== null && !loaded,
-  });
-
   return (
     <div
       className="p-3 sm:p-6 space-y-4"
       data-testid="coord-notifications-page"
     >
-      <HealthStrip
-        level={health.level}
-        headline={health.headline}
-        detail={health.detail}
-        badges={health.badges}
-        data-testid="coord-notifications-health"
-      />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select value={kind} onValueChange={setKind}>
-          <SelectTrigger
-            className="w-[190px]"
-            data-testid="coord-notifications-kind-select"
-          >
-            <SelectValue placeholder="kind" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">All kinds</SelectItem>
-            {kinds.map((k) => (
-              <SelectItem key={k} value={k}>
-                {humanKind(k)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="ml-2 flex items-center gap-1.5">
-          <Switch
-            id="unread-only"
-            checked={unreadOnly}
-            onCheckedChange={setUnreadOnly}
-            data-testid="coord-notifications-unread-only"
-          />
-          <label
-            htmlFor="unread-only"
-            className="text-xs text-muted-foreground"
-          >
-            unread only
-          </label>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() =>
-            markRead(
-              filterActive ? { notification_ids: loadedUnreadIds } : MARK_ALL,
-              true
-            )
-          }
-          disabled={markAllDisabled || marking !== null}
-          title={markAllTitle}
-          data-testid="coord-notifications-mark-all-read"
-          data-mark-all-scope={filterActive ? "loaded" : "everything"}
-        >
-          <CheckCheck className="mr-1 h-3 w-3" />
-          {markAllLabel}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => fetchHead(false)}
-          data-testid="coord-notifications-refresh"
-        >
-          <RefreshCw className="h-3 w-3" />
-        </Button>
-      </div>
-
-      {/* Callers supply the whole sentence — a mark-read rejection is not
-          a "failed to load". */}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      {migrationPending ? (
-        // Quiet degrade — the table does not exist in coord yet.
-        <p
-          className="text-sm italic text-muted-foreground"
-          data-testid="coord-notifications-pending"
-        >
-          Notifications are not available yet.
-        </p>
-      ) : (
-        <>
-          <RecordList
-            items={rows}
-            itemKey={(n) => n.notification_id}
-            // R6 applied to a list: an in-flight FIRST read renders skeletons,
-            // never an empty list claiming there is nothing. A later poll that
-            // fails leaves the rows we have.
-            loaded={!(loading && rows.length === 0)}
-            skeletonRows={8}
-            expandedKey={expanded}
-            onExpandedKeyChange={setExpanded}
-            empty={
-              <p className="text-sm italic text-muted-foreground">
-                {unreadOnly
-                  ? "Nothing unread."
-                  : "No notifications matching filters."}
-              </p>
-            }
-            renderRow={(n, ctx) => (
-              <NotificationRow
-                notification={n}
-                expanded={ctx.expanded}
-                onToggle={ctx.onToggle}
-                onMarkRead={() =>
-                  markRead({ notification_ids: [n.notification_id] })
-                }
-                markPending={marking === n.notification_id}
-              />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+            <Bell className="h-4 w-4" />
+            Notifications
+            {unreadCount != null && unreadCount > 0 && (
+              <Badge data-testid="coord-notifications-unread-count">
+                {unreadCount} unread
+              </Badge>
             )}
-          />
-          {nextCursor && rows.length > 0 && (
-            <div className="pt-1">
-              <Button
+            {total != null && (
+              <Badge
                 variant="outline"
-                size="sm"
-                onClick={loadMore}
-                disabled={loadingMore}
-                data-testid="coord-notifications-load-more"
+                data-testid="coord-notifications-total"
+                className="font-normal"
               >
-                {loadingMore ? "Loading…" : "Load more"}
-              </Button>
+                {total} total
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={kind} onValueChange={setKind}>
+              <SelectTrigger
+                className="w-[190px]"
+                data-testid="coord-notifications-kind-select"
+              >
+                <SelectValue placeholder="kind" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">All kinds</SelectItem>
+                {kinds.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {humanKind(k)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="ml-2 flex items-center gap-1.5">
+              <Switch
+                id="unread-only"
+                checked={unreadOnly}
+                onCheckedChange={setUnreadOnly}
+                data-testid="coord-notifications-unread-only"
+              />
+              <label
+                htmlFor="unread-only"
+                className="text-xs text-muted-foreground"
+              >
+                unread only
+              </label>
             </div>
-<<<<<<< HEAD
-=======
             <Button
               variant="outline"
               size="sm"
@@ -635,10 +508,9 @@ export default function CoordNotificationsPage() {
                 ? "Nothing unread."
                 : "No notifications matching filters."}
             </p>
->>>>>>> 634fdbf4 (feat(coord-console): mark loosenings, filter agent authors, diff landed writes)
           )}
-        </>
-      )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
