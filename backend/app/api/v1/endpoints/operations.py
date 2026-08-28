@@ -8423,6 +8423,50 @@ _ADMIN_CONFERRING_ROLES = frozenset({"admin"})
 #: nothing coord produces today.
 _MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
 
+
+def _is_attributable(value: Any) -> bool:
+    """True when a row's identity field can be compared to a real identifier.
+
+    Written as ONE predicate on purpose. Two earlier rounds of this fix put a
+    *different* normalization in the check than in the accessors below
+    (``bool()``, then ``str.strip()``, against the accessors' bare
+    ``str(x or "")``), and the gap between the two normalizations IS the
+    vulnerability: a value that satisfies the check but not the comparison
+    attributes to no group, so :func:`delete_cognito_group`'s guard 1 sees
+    nothing mapped while :func:`_tenants_stranded_by` counts the row as admin
+    cover *from another group* — silencing guard 3, the guard with no
+    override. Narrowing the gap keeps leaving a smaller one; the fix is to
+    have no gap, which is why the accessors are documented as reading only
+    values that passed through here.
+
+    The three clauses, and the shape each one exists for:
+
+    * ``v == v.strip()`` — ``" acme-devs "`` is a legal, distinct row in
+      ``coord.group_tenant_roles`` (bare ``TEXT NOT NULL``, no CHECK, and
+      coord's writer validates ``trim().is_empty()`` without ever trimming
+      what it stores), and it is one mis-pasted space away from a real
+      mapping. It does NOT equal ``"acme-devs"``, so on its own — with no
+      override flag at all — it blinds both derived guards.
+    * ``v.strip() != ""`` — blank in the sense coord itself means.
+    * ``v.isprintable()`` — ``False`` for the whole ``Cf`` category, i.e. the
+      invisible characters ``str.strip()`` does NOT remove and Rust's
+      ``trim`` does not either: ZWSP, BOM, ZWNJ, word joiner, soft hyphen.
+      Every one of them makes a value that looks identical to a real
+      identifier and compares unequal to it.
+
+    Nothing legitimate is refused: Cognito group names are drawn from
+    ``\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}`` (all printable, no surrounding space),
+    coord's ``tenant_slug`` must match ``^[a-z0-9][a-z0-9-]{0,63}$``, and its
+    ``role`` comes from a closed vocabulary.
+    """
+    return (
+        isinstance(value, str)
+        and value == value.strip()
+        and value.strip() != ""
+        and value.isprintable()
+    )
+
+
 #: Details :func:`_proxy_coord_get` puts on the ``HTTPException`` it
 #: SYNTHESIZES when the request never completed. The 502 / 504 riding with
 #: them are **qontinui-web's own codes, not coord's** — reporting them as
@@ -8431,10 +8475,13 @@ _MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
 #: all. Matched on the detail rather than the number so a genuine coord 502 is
 #: still reported as a coord 502.
 #:
-#: This mirrors string literals in :func:`_proxy_coord_get` rather than
-#: importing them (they are repeated across every proxy helper in this
-#: module). ``test_a_synthesized_transport_code_is_not_reported_as_coords``
-#: is what keeps the two in step: change the literal there and it reds.
+#: SECONDARY only. The primary discriminator is the chained ``__context__``
+#: exception, which a coord response body cannot forge — these strings are
+#: consulted just for a re-raise that lost its context, and only then, because
+#: ``_proxy_coord_get`` passes coord's ``resp.text`` through as the detail and
+#: a genuine coord 5xx whose body IS one of these would otherwise be demoted.
+#: ``test_a_synthesized_transport_code_is_not_reported_as_coords`` drives the
+#: real ``_proxy_coord_get``, so it keeps both tests honest.
 _COORD_SYNTHESIZED_TRANSPORT_DETAILS = frozenset(
     {"coord is not reachable", "timeout waiting for coord"}
 )
@@ -8542,7 +8589,20 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
         # but with a status IT invented (502 / 504) when the request never
         # completed. Only the first is coord's answer, so only the first is
         # reported as one.
-        synthesized = exc.detail in _COORD_SYNTHESIZED_TRANSPORT_DETAILS
+        # Structural, not textual. ``_proxy_coord_get`` raises INSIDE its
+        # ``except httpx.ConnectError`` / ``except httpx.TimeoutException``
+        # blocks, so implicit chaining puts the real transport error on
+        # ``__context__`` — which no coord response body can forge, and which
+        # covers a future third conversion automatically. The detail strings
+        # stay as a belt-and-braces second test only; on their own they demote
+        # a GENUINE coord 5xx whose body happens to be that literal, since
+        # ``_proxy_coord_get`` passes ``resp.text`` through as the detail.
+        synthesized = isinstance(
+            exc.__context__, (httpx.ConnectError, httpx.TimeoutException)
+        ) or (
+            exc.__context__ is None
+            and exc.detail in _COORD_SYNTHESIZED_TRANSPORT_DETAILS
+        )
         coord_status = None if synthesized else exc.status_code
         logger.warning(
             "cognito_group_delete_mapping_check_failed",
@@ -8626,21 +8686,7 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
             "group_tenant_roles contains an entry that is not an object"
         )
     for key in _MAPPING_ROW_IDENTITY_KEYS:
-        # ``.strip()``, not bare truthiness. ``"   "`` is a truthy ``str`` and
-        # would pass — then attribute to no real group while still counting as
-        # admin cover "from another group", which is the phantom-cover
-        # suppression of guard 3 that this check exists to stop. Coord's own
-        # writer rejects a blank ``group_id`` with ``trim().is_empty()``
-        # (``routes_phase3``), so matching that costs nothing real; its
-        # bootstrap seeder does NOT validate, and the column carries no CHECK.
-        #
-        # The boundary is deliberately coord's: ``str.strip()`` removes every
-        # character Python calls whitespace (NBSP and the ideographic space
-        # included), and leaves zero-width/BOM characters — which Rust's
-        # ``trim`` also leaves. A ``group_id`` of U+200B is therefore a valid
-        # id to coord and is treated as one here. Refusing it would be this
-        # code inventing a rule coord does not have.
-        if not all(isinstance(row.get(key), str) and row[key].strip() for row in rows):
+        if not all(_is_attributable(row.get(key)) for row in rows):
             _raise_mapping_check_unreadable(
                 f"a group_tenant_roles entry carries no usable {key}"
             )
@@ -8649,6 +8695,16 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     # on its own; this makes the element type true rather than merely
     # accepted.)
     return [row for row in rows if isinstance(row, dict)]
+
+
+# The three accessors below coerce a missing value to ``""`` and compare the
+# result to a real identifier. That coercion is SAFE only on rows that came
+# through :func:`_coord_group_tenant_role_rows`, where
+# :func:`_is_attributable` has already rejected every value that would coerce
+# or compare surprisingly. Called on an unvalidated row, ``""`` is not "no
+# match" — it is a match against nothing that still counts as cover from
+# another group, which is the fail-open this whole module comment is about.
+# If you need these somewhere else, validate there too.
 
 
 def _row_group_id(row: dict[str, Any]) -> str:

@@ -996,6 +996,46 @@ class TestPhantomAdminCoverCannotSuppressTheLastAdminGuard:
                 {"group_id": "other-group", "tenant_slug": "acme", "role": " "},
                 "blank role",
             ),
+            # Below: shapes a `.strip()`-only check does NOT catch. Each is a
+            # value that survives stripping and still compares unequal to the
+            # identifier it imitates — which is the whole mechanism, not a
+            # spelling of it.
+            (
+                {"group_id": " acme-devs ", "tenant_slug": "acme", "role": "admin"},
+                "PADDED copy of the target group id",
+            ),
+            (
+                {"group_id": "\tacme-devs", "tenant_slug": "acme", "role": "admin"},
+                "tab-prefixed copy of the target",
+            ),
+            (
+                {"group_id": "acme-devs\n", "tenant_slug": "acme", "role": "admin"},
+                "newline-suffixed copy of the target",
+            ),
+            (
+                {"group_id": "\u200b", "tenant_slug": "acme", "role": "admin"},
+                "zero-width space (str.strip leaves it)",
+            ),
+            (
+                {"group_id": "\ufeff", "tenant_slug": "acme", "role": "admin"},
+                "BOM / zero-width no-break space",
+            ),
+            (
+                {"group_id": "\u200c", "tenant_slug": "acme", "role": "admin"},
+                "zero-width non-joiner",
+            ),
+            (
+                {"group_id": "\u2060", "tenant_slug": "acme", "role": "admin"},
+                "word joiner",
+            ),
+            (
+                {"group_id": "\u00ad", "tenant_slug": "acme", "role": "admin"},
+                "soft hyphen",
+            ),
+            (
+                {"group_id": "acme-devs\u200b", "tenant_slug": "acme", "role": "admin"},
+                "invisible-suffixed copy of the target",
+            ),
         ],
     )
     def test_a_phantom_cover_row_cannot_get_the_delete_through(
@@ -1012,7 +1052,59 @@ class TestPhantomAdminCoverCannotSuppressTheLastAdminGuard:
         resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
 
         assert h.deleter.calls == [], f"{label}: phantom cover got the delete through"
-        assert resp.status_code in (409, 502), f"{label}: {resp.text}"
+        # 502 per case, not `in (409, 502)`: every shape here is the table being
+        # refused as unreadable, and a disjunction would let "guard 3 happened to
+        # fire" pass for "the row was rejected" — two different reasons, only one
+        # of which this class is about. The 409 path has its own test below.
+        assert resp.status_code == 502, f"{label}: {resp.text}"
+        assert _detail(resp)["error"] == "mapping_check_unreadable", label
+
+    @pytest.mark.parametrize(
+        ("group_id", "label"),
+        [
+            (" acme-devs ", "padded"),
+            ("\t" + "acme-devs", "tab-prefixed"),
+            ("acme-devs" + "\u200b", "invisible-suffixed"),
+        ],
+    )
+    def test_a_lookalike_needs_no_override_flag_at_all(
+        self, admin_client: TestClient, group_id: str, label: str
+    ):
+        """The sharpest shape: ONE row, no query parameters.
+
+        A row whose ``group_id`` merely LOOKS like the group being deleted is
+        not caught by guard 1 (it compares unequal, so nothing reads as
+        mapped) and is counted by guard 3 as admin cover from another group.
+        Both derived guards go quiet on a single row with no override — which
+        makes this strictly more reachable than the phantom-cover pairs above,
+        and it is one mis-pasted space away from a real mapping.
+        """
+        h = _Harness(body={"group_tenant_roles": [_mapping(group_id, "acme", "admin")]})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert h.deleter.calls == [], f"{label}: a lookalike row got the delete through"
+        assert resp.status_code == 502, f"{label}: {resp.text}"
+
+    @pytest.mark.parametrize(
+        ("role", "label"),
+        [
+            ("\u200b" + "admin", "invisible-prefixed role"),
+            ("admin" + "\u200b", "invisible-suffixed role"),
+        ],
+    )
+    def test_an_unreadable_role_on_the_REAL_row_is_refused(
+        self, admin_client: TestClient, role: str, label: str
+    ):
+        """Same mechanism, inverted: the row that should TRIGGER guard 3 is the
+        unreadable one. ``_row_confers_admin`` lowercases and matches against a
+        closed vocabulary, so an invisible character makes a real admin mapping
+        confer nothing — and the tenant is stranded with the guard silent.
+        """
+        h = _Harness(body={"group_tenant_roles": [_mapping("acme-devs", "acme", role)]})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert h.deleter.calls == [], f"{label}: the delete went through"
+        assert resp.status_code == 502, f"{label}: {resp.text}"
 
     def test_the_control_refuses_without_the_phantom_row(
         self, admin_client: TestClient
