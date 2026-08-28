@@ -113,6 +113,7 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
@@ -533,47 +534,6 @@ function readRollup(body: unknown): AlertsRollup {
     return { alerts: body as Array<{ severity?: string }> };
   }
   return (body ?? {}) as AlertsRollup;
-}
-
-/**
- * Poll `fn` on `intervalMs`, SKIPPING ticks while the tab is hidden and
- * catching up the moment it becomes visible again. The initial fetch always
- * runs, so a tab that mounts hidden still has a badge when it is revealed.
- *
- * This nav renders on EVERY console page, so its two badges are the pollers
- * with the widest reach in the app — and until now the only alerts pollers
- * with no visibility gate at all. `/admin/coord/alerts` gates its two
- * (`page.tsx` `usePoll`) and `RedMainBanner` gates its one, and the alerts
- * page's own comment counts "the nav badge on top" as the third of the three
- * it is reasoning about; it just could not reach it from there. Left ungated,
- * a console tab left open overnight bills three requests a minute (two here,
- * one for notifications) against a rollup nobody is looking at.
- *
- * Deliberately a local helper rather than an import from the alerts page: a
- * `"use client"` route module is not a hook library, and the nav must not
- * start depending on a page's internals to keep its own timer honest.
- */
-function useVisiblePoll(fn: () => void, intervalMs: number) {
-  useEffect(() => {
-    // An effect never runs during SSR, so `document` is in practice always
-    // here; the guard is for a non-DOM test environment, and it defaults to
-    // VISIBLE so a missing `document` can never silently stop the polling
-    // this hook exists to do. Same shape as the alerts page's `usePoll`.
-    const visible = () =>
-      typeof document === "undefined" || document.visibilityState !== "hidden";
-    const tick = () => {
-      if (visible()) fn();
-    };
-    const onVisibilityChange = () => {
-      if (visible()) fn();
-    };
-    const id = setInterval(tick, intervalMs);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [fn, intervalMs]);
 }
 
 /**
