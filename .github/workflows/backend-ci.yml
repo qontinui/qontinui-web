@@ -25,7 +25,9 @@ on:
       # scripts/ci/** — backend/tests/test_alembic_head_gate.py exercises
       # scripts/ci/{count_alembic_heads,notify_forked_open_prs,_alembic_graph}.py
       # directly, including a guard pinning the ABSENCE of a deleted retry
-      # layer. Without this entry that guard NEVER RUNS on the change it
+      # layer, and test_ruff_version_parity_gate.py exercises
+      # scripts/ci/check_ruff_version_parity.py the same way. Without this
+      # entry that guard NEVER RUNS on the change it
       # guards: a PR touching only scripts/ci/ does not trigger this workflow,
       # so re-adding the retry would sail through. Same path-scoped-gate trap
       # the frontend entries above and the nightly note below describe; the

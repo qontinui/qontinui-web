@@ -10,11 +10,23 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.0
+    # NOT a free-floating pin: this must be the ruff version `poetry.lock`
+    # resolves, because that is the ruff `backend-ci.yml` executes. A hook and a
+    # CI gate running different formatters reproduce, one level up, exactly the
+    # defect the `ruff-format` hook below was added to prevent. The
+    # `ruff-version-parity` local hook enforces it and prints the token to write
+    # here; move this line only together with the lockfiles.
+    rev: v0.14.14
     hooks:
-      - id: ruff
+      # `ruff-check`, not `ruff`: upstream renamed this hook and kept `ruff` as
+      # a "Legacy alias" whose entry is byte-identical (`ruff check
+      # --force-exclude`). Running it under the old id changes nothing except
+      # that pre-commit prints the hook as "ruff (legacy alias)" — so the rename
+      # rides the rev bump rather than waiting for the alias to be dropped, and
+      # the two hooks now read as the matched pair they are.
+      - id: ruff-check
         args: [--fix]
-      # `ruff` above is the LINTER only. backend-ci.yml runs BOTH
+      # `ruff-check` above is the LINTER only. backend-ci.yml runs BOTH
       # `ruff check .` and `ruff format --check .`, so without this hook a
       # backend change can pass every local gate and still red CI on
       # formatting alone -- which has happened at least four times, once
@@ -36,6 +48,28 @@ repos:
 
   - repo: local
     hooks:
+      - id: ruff-version-parity
+        name: pre-commit ruff pin == the ruff CI runs
+        # SAME SCRIPT as .github/workflows/ruff-version-parity.yml and
+        # .qontinui/ci.toml's `ruff-version-parity` step — the shape plan
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity Phase 5
+        # established, and the one .qontinui/ci.toml's header calls preferred:
+        # three lanes, one copy of the logic, so the lanes cannot drift.
+        #
+        # Guards the `rev:` in the block above against `poetry.lock`. Stdlib
+        # only (no PyYAML): the ci_node lane runs it on a checkout with nothing
+        # installed. See the script's docstring for why the pin is not free.
+        entry: python scripts/ci/check_ruff_version_parity.py
+        language: system
+        pass_filenames: false
+        # A NARROW `files:`, unlike gitignore-tracked-files below, which needs
+        # `always_run`. That hook guards a property of the (rules, index) pair,
+        # which any commit can break. This one guards a property of two FILES:
+        # nothing but an edit to the pre-commit config or to a lockfile can put
+        # the two versions out of step, so the glob is exact, not a coverage
+        # hole. The script reads both sides itself, hence `pass_filenames: false`.
+        files: ^(\.pre-commit-config\.yaml|(.*/)?poetry\.lock)$
+
       - id: eslint
         name: ESLint (frontend)
         entry: bash -c 'args=(); for f in "$@"; do args+=("${f#frontend/}"); done; cd frontend && npx eslint --no-warn-ignored "${args[@]}"' --
