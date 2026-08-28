@@ -989,6 +989,27 @@ class TestCoordPolicyListFilters:
         assert resp.status_code == 200
         assert instance.get.call_args.kwargs["params"] == {"repo": ""}
 
+    def test_empty_enabled_is_rejected_before_the_handler(
+        self, client: TestClient
+    ):
+        """``?enabled=`` is the ONE filter the empty-string rule above does not
+        reach, and the docstring used to claim all three behaved alike.
+
+        ``enabled`` is a ``bool``, so FastAPI's validation answers 422 before
+        this function runs — no request is issued to coord at all. That costs
+        nothing (an empty ``enabled`` has no meaning to coord, whose own field
+        is an ``Option<bool>``), but a reader who believed the blanket claim
+        would look for a forwarded ``""`` that can never exist. Pinned so the
+        two string filters and the bool one cannot silently converge again."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            _configure_mock_client(MockClient, instance)
+            resp = client.get(f"{API_PREFIX}/coord/policies?enabled=")
+
+        assert resp.status_code == 422
+        # Not merely "did not forward an empty string" — coord is never called.
+        instance.get.assert_not_called()
+
     def test_list_stays_readable_to_a_non_admin_member(self, client: TestClient):
         """The read gate is membership (``get_tenant_id``), not tenant-admin —
         adding filters must not have moved it."""

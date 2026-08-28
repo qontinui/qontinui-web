@@ -7008,10 +7008,19 @@ async def list_coord_policies(
 
     ``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``
     filters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when
-    PRESENT — including as an empty string, which is a real filter to coord and
-    not a synonym for "unfiltered" (``?repo=`` selects the degenerate
-    empty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is
-    a better answer than silently listing everything). Until this route
+    PRESENT.
+
+    For the two STRING filters that includes an empty string, which is a real
+    filter to coord and not a synonym for "unfiltered" (``?repo=`` selects the
+    degenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown
+    kind, which is a better answer than silently listing everything).
+    ``enabled`` is the exception and is NOT reachable that way: it is a
+    ``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function
+    runs (measured — ``?repo=`` and ``?kind=`` reach the handler as ``""``;
+    ``?enabled=`` does not reach it at all). Only ``?enabled=true`` /
+    ``?enabled=false`` are expressible, which costs nothing: an empty
+    ``enabled`` has no meaning to coord, whose own field is an
+    ``Option<bool>``. Until this route
     accepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and
     a tenant's DISABLED rules were **not listable from the console** — the
     ``/admin/coord/automation-rules`` enable/disable switch could therefore
