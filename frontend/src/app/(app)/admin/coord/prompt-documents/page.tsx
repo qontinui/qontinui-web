@@ -43,6 +43,7 @@
  */
 
 import { NotebookText } from "lucide-react";
+import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
@@ -77,6 +78,18 @@ export default function PromptDocumentsPage() {
         more restrictive of the two. Coord's own refusal message sends operators
         to this page for the first, so the second must be here too.
       */}
+      {/*
+        The per-KIND authorship tier sits between the per-document control in
+        the list above and the tenant-wide dial below, because that is where it
+        sits in coord's resolution order: floor, then per-document, then
+        per-kind, then coord's compile-time default. It is also the only one of
+        the three that can be set for a document that does not exist yet, which
+        is the case the per-document control structurally cannot reach.
+      */}
+      <div className="border-t border-border pt-8">
+        <KindAuthorshipTierControl />
+      </div>
+
       <div className="border-t border-border pt-8">
         <PolicyWriteDialControl />
       </div>
