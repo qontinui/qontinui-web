@@ -394,6 +394,39 @@ export interface PromptDocumentSummary {
   updated_at: string;
 }
 
+/**
+ * Coord's three-state agent authorship TIER — the vocabulary stored in
+ * `coord.prompt_documents.agent_write_tier` and
+ * `coord.prompt_document_kind_tiers.tier`.
+ *
+ * These strings are a WIRE contract with coord's `AgentWriteTier::as_str`, not
+ * display labels: coord's DB CHECK constrains the column to exactly these, and
+ * a value outside the set resolves fail-closed to `deny` on the enforcement
+ * path. Renaming one here does not rename it there — it just stops matching.
+ *
+ * ⚠️ `allow_with_notification` currently BEHAVES as `allow`. Coord resolves the
+ * tier but does not yet enforce the notification precondition (Phase 2 of plan
+ * `2026-08-27-tenant-level-agent-authorable-stores`), which is why every
+ * kind-tier response carries `notification_enforced` and a prose `warning`
+ * saying so. Do not render this tier's NAME without that disclosure.
+ */
+export type AgentWriteTier = "deny" | "allow" | "allow_with_notification";
+
+/** Every tier, least permissive first — matches coord's `AgentWriteTier::ALL`. */
+export const AGENT_WRITE_TIERS: readonly AgentWriteTier[] = [
+  "deny",
+  "allow",
+  "allow_with_notification",
+] as const;
+
+/** Narrow an arbitrary coord string to a tier this console knows. */
+export function isAgentWriteTier(value: unknown): value is AgentWriteTier {
+  return (
+    typeof value === "string" &&
+    (AGENT_WRITE_TIERS as readonly string[]).includes(value)
+  );
+}
+
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
 export interface PromptDocument extends PromptDocumentSummary {
   tenant_id: string;
