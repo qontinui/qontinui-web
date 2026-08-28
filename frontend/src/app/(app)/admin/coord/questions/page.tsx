@@ -103,11 +103,21 @@ export default function CoordQuestionsPage() {
   const [answeredError, setAnsweredError] = useState(false);
   const [gapsError, setGapsError] = useState(false);
 
-  // Generation guard for the polled read: an in-flight FAILING request that
-  // resolves after a later successful one must not set `error` back. That was
-  // survivable while `error` only drove a banner; now it drives the strip's
-  // level and headline, so a lost race would paint amber over a good read.
+  // Generation guards — one per read, because all three flags now feed a
+  // rendered verdict rather than a banner. Both race directions matter, and
+  // they are NOT symmetric:
+  //
+  //   stale FAILURE lands after a fresh success -> spurious amber. Fails safe.
+  //   stale SUCCESS lands after a fresh failure -> `setGapsError(false)` and
+  //     the GREEN all-clear repaint on top of a read that is currently
+  //     failing. That is the reviewed defect class, re-created in a race
+  //     window, and the degraded poll below makes the window ordinary rather
+  //     than theoretical.
+  //
+  // So a resolution from a superseded generation is dropped, in both arms.
   const pendingSeq = useRef(0);
+  const answeredSeq = useRef(0);
+  const gapsSeq = useRef(0);
 
   const fetchPending = useCallback(async () => {
     const seq = ++pendingSeq.current;
@@ -125,6 +135,7 @@ export default function CoordQuestionsPage() {
   }, []);
 
   const fetchAnswered = useCallback(async () => {
+    const seq = ++answeredSeq.current;
     try {
       // The answered endpoint may not be wired yet on every coord build;
       // any failure (incl. 404/501) is tolerated by the catch below, which
@@ -132,9 +143,11 @@ export default function CoordQuestionsPage() {
       const body = await httpClient.get<unknown>(
         `${API}/agent-questions/answered?limit=${ANSWERED_LIMIT}`
       );
+      if (seq !== answeredSeq.current) return;
       setAnswered(extractQuestions(body));
       setAnsweredError(false);
     } catch (e) {
+      if (seq !== answeredSeq.current) return;
       // Don't clobber a pending-tab error; the pending tab is the load-bearing
       // view and stays usable. But tolerating the failure is not the same as
       // ASSERTING an empty answered list, so flag it: `answered 0` and "No
@@ -149,6 +162,7 @@ export default function CoordQuestionsPage() {
   // defensively client-filter on the POLICY_GAP marker, so the tab is correct
   // even during the window where coord's `gap` SQL filter isn't yet deployed.
   const fetchGaps = useCallback(async () => {
+    const seq = ++gapsSeq.current;
     try {
       const [pendingBody, answeredBody] = await Promise.all([
         httpClient.get<unknown>(`${API}/agent-questions/pending?gap=true`),
@@ -164,9 +178,11 @@ export default function CoordQuestionsPage() {
         .sort((a, b) =>
           (b.created_at ?? "").localeCompare(a.created_at ?? "")
         );
+      if (seq !== gapsSeq.current) return;
       setGaps(merged);
       setGapsError(false);
     } catch (e) {
+      if (seq !== gapsSeq.current) return;
       // The worst of the three to swallow: `gaps` at `[]` makes
       // `blockingGaps` 0, which is what turns the strip GREEN under the
       // headline "No agent is waiting on an answer". A read that never
@@ -190,24 +206,43 @@ export default function CoordQuestionsPage() {
     setHandledGaps((prev) => new Set(prev).add(questionId));
   }, []);
 
-  // `answeredError` / `gapsError` are cleared only by a full read, and only
-  // `fetchPending` is polled — so without this a single transient gap failure
-  // would pin the page at "could not read the gaps inbox" until someone
-  // pressed refresh, while pending re-read happily every 10s. A degraded page
-  // has to be able to heal itself. Read through a ref so the interval is not
-  // torn down and rebuilt on every flag change.
+  // `gapsError` is cleared only by a full read, and only `fetchPending` is
+  // polled — so without this a single transient gap failure would pin the page
+  // at "could not read the gaps inbox" until someone pressed refresh, while
+  // pending re-read happily every 10s. A degraded page has to heal itself.
+  //
+  // `answeredError` is deliberately NOT in here. It drives no verdict — the
+  // strip level and headline are decided by pending + gaps alone — and
+  // `fetchAnswered`'s own comment above preserves tolerance for coord builds
+  // where `/answered` is not wired at all. On such a build the flag is
+  // permanently true, so including it would pin this page at 4x the read
+  // volume forever with no path back to the cheap poll. Its badge stays
+  // dashed, which is the honest rendering, and a refresh re-reads it.
   const degraded = useRef(false);
-  degraded.current = error !== null || answeredError || gapsError;
+  const pollInFlight = useRef(false);
+  useEffect(() => {
+    // Written in an effect, not the render body: a concurrent render that
+    // React throws away must not leave its value behind in a ref.
+    degraded.current = error !== null || gapsError;
+  }, [error, gapsError]);
 
   useEffect(() => {
     setLoading(true);
-    fetchAll();
+    void fetchAll();
     // Poll the pending list; the answered list is operator-driven and doesn't
-    // need 10s churn — EXCEPT while something is unread, when the whole point
-    // of the poll is to find out that it no longer is.
+    // need 10s churn — EXCEPT while a verdict-bearing read is unread, when the
+    // whole point of the poll is to find out that it no longer is.
     const id = setInterval(() => {
-      if (degraded.current) void fetchAll();
-      else void fetchPending();
+      // A degraded tick is 4 logical reads, and `httpClient` retries a 5xx
+      // three times with 1/2/4s backoff — comfortably longer than the 10s
+      // interval. Without this guard the ticks overlap, which is exactly what
+      // turns the generation races above from theoretical into routine.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      const run = degraded.current ? fetchAll() : fetchPending();
+      void run.finally(() => {
+        pollInFlight.current = false;
+      });
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchAll, fetchPending]);
@@ -249,9 +284,14 @@ export default function CoordQuestionsPage() {
   const waitingUnknown = waitingUnreadable.length > 0;
   const anyUnknown = allUnreadable.length > 0;
   // A read that failed but left a NON-empty list behind: not fabricated, but
-  // not fresh either, and otherwise its only trace is a `console.warn`.
-  const anyStale =
-    (error !== null || answeredError || gapsError) && !anyUnknown;
+  // not fresh either, and otherwise its only trace is a `console.warn`. Named,
+  // like the unknown ones — "something is stale" sends an operator hunting.
+  const staleNames = [
+    error !== null ? "pending" : null,
+    gapsError ? "gaps" : null,
+    answeredError ? "answered" : null,
+  ].filter(Boolean);
+  const anyStale = staleNames.length > 0 && !anyUnknown;
   const inboxWord = (n: number) => (n === 1 ? "inbox" : "inboxes");
 
   // R1 — derived from the three lists already on the page, never a second
@@ -271,16 +311,24 @@ export default function CoordQuestionsPage() {
         : blockingGaps > 0
           ? "amber"
           : "green";
+  // When something loud is ALSO true, the unknown arm below is unreachable —
+  // so it rides along on the loud headline instead of being dropped. The
+  // headline is the surface an operator reads first, and "2 policy gaps still
+  // blocking" with no hint that the pending inbox went unread understates what
+  // is actually not known.
+  const alsoUnknown = waitingUnknown
+    ? ` (${waitingUnreadable.join(" and ")} unread)`
+    : "";
   const headline = loading
     ? "Waiting for coord…"
     : pending.length > 0
       ? `${pending.length} agent${
           pending.length === 1 ? " is" : "s are"
-        } stopped waiting on you`
+        } stopped waiting on you${alsoUnknown}`
       : blockingGaps > 0
         ? `${blockingGaps} policy gap${
             blockingGaps === 1 ? "" : "s"
-          } still blocking`
+          } still blocking${alsoUnknown}`
         : waitingUnknown
           ? `Could not read the ${waitingUnreadable.join(" and ")} ${inboxWord(
               waitingUnreadable.length
@@ -300,7 +348,9 @@ export default function CoordQuestionsPage() {
                   ", "
                 )}. Those counts are unknown — a dash, not a zero.`
               : anyStale
-                ? "coord did not answer on the last read — the counts below are the last ones that landed, not current"
+                ? `coord did not answer for: ${staleNames.join(
+                    ", "
+                  )}. Those counts are the last ones that landed, not current.`
                 : "an unanswered question is an agent that has stopped — nothing else clears it"
         }
         badges={[

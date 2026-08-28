@@ -322,6 +322,83 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(strip).toHaveTextContent(/gaps\s*0/);
   });
 
+  it("ignores a STALE successful gap read that lands after a newer one failed", async () => {
+    // The race direction that fails UNSAFE, and the reason all three reads
+    // carry a generation guard. A slow first read resolving late runs
+    // `setGaps(merged); setGapsError(false)` \u2014 repainting the GREEN all-clear
+    // on top of a read that is failing right now. That is this whole PR's
+    // defect, re-created in a window the degraded poll makes ordinary.
+    let gapCalls = 0;
+    let releaseFirst!: () => void;
+    const firstLanded = new Promise<void>((res) => {
+      releaseFirst = res;
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        // One `fetchGaps` issues TWO gap reads; the first pair hangs.
+        if (gapCalls <= 2) {
+          await firstLanded;
+          return { questions: [] };
+        }
+        throw new Error("coord unreachable");
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    // Refresh while the first gap read is still in flight: the SECOND read
+    // fails, and it is the current one.
+    await user.click(await screen.findByTestId("coord-questions-refresh"));
+    const strip = screen.getByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip).toHaveTextContent(/could not read/i);
+
+    // Now let the superseded, SUCCESSFUL read land. It must be dropped.
+    releaseFirst();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+    expect(strip).toHaveTextContent(/gaps\s*\u2013/);
+  });
+
+  it("names which read went stale when a failure left a real count behind", async () => {
+    // `anyStale` is the third state: the read failed, but the list it left is
+    // non-empty, so nothing is fabricated \u2014 only out of date. Saying merely
+    // "something is stale" sends an operator hunting, so it names the read.
+    let calls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) return { questions: [] };
+      if (url.includes("/pending")) {
+        calls += 1;
+        if (calls > 1) throw new Error("coord unreachable");
+        return { questions: PENDING };
+      }
+      return { questions: [] };
+    });
+    render(<CoordQuestionsPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-questions-pending-count")
+      ).toHaveTextContent("1 pending")
+    );
+
+    await userEvent.setup().click(screen.getByTestId("coord-questions-refresh"));
+    await screen.findByText(/Failed to load/i);
+
+    const strip = screen.getByTestId("coord-questions-health");
+    expect(strip).toHaveTextContent(/coord did not answer for: pending/);
+    expect(strip).toHaveTextContent(/last ones that landed/);
+    // Not the UNKNOWN copy \u2014 the count is real, just old.
+    expect(strip.textContent ?? "").not.toMatch(/a dash, not a zero/);
+  });
+
   it("keeps a stale-but-real count rather than blanking it when a POLL fails", async () => {
     // A failed read only fabricates when the list it left behind is EMPTY.
     // A retained non-empty list is stale, not invented, and blanking it would
