@@ -40,6 +40,26 @@
  * authenticated user) never mounts the body. Talks only to the always-registered
  * `httpClient` (no cloud-only extension slot), matching every sibling
  * admin/coord page.
+ *
+ * ## Console style (Phase 3 ride-along) — R9 only
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` classes this
+ * route as a form/dialog surface, not a list, and says such routes "ride along
+ * in whichever wave touches them, taking R9 + R3 only". No wave touched it, so
+ * the ride-along is done here explicitly rather than left as a gap.
+ *
+ * - **R9** — the page `<h1>Prompt Documents</h1>` and its 5-size icon are gone
+ *   (`coord/layout.tsx:41-53` already renders the console title and the nav
+ *   crumb). The description STAYS: it is not a restatement of the title, it
+ *   names which content this is and states the versioning contract an editor
+ *   needs before their first edit. Body padding moves from `p-6` to the
+ *   console's `p-3 sm:p-6`; `space-y-8` is deliberately KEPT rather than
+ *   narrowed to `space-y-4`, because the two `border-t` sections below are
+ *   separate governance controls and their separation is what stops them
+ *   reading as one.
+ * - **R3** — nothing to correct at page scope. The one amber surface here
+ *   (`PromptDocumentList`) is a warning callout, not a kind-keyed status hue,
+ *   so there is no palette to enrol in `console/attention.test.ts`.
  */
 
 import { NotebookText } from "lucide-react";
@@ -50,23 +70,34 @@ import { SessionComplianceSection } from "./_components/SessionComplianceSection
 
 export default function PromptDocumentsPage() {
   return (
-    <div className="space-y-8 p-6" data-testid="prompt-documents-page">
-      <div className="flex items-start gap-3">
-        <NotebookText className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-        <div>
-          <h1 className="text-lg font-semibold">Prompt Documents</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The prompt-shaped content coord serves your fleet, in two halves:
-            how a session must act (session briefings, policy prose, response
-            templates, continuation rules, agent playbooks, prompt templates,
-            the Claude Code settings baseline) and what you are building
-            (product intent, initiatives, success metrics, domain specs,
-            audience profiles, decision records). Every edit is saved as a new
-            version — prior wordings stay readable and restorable, and seeded
-            documents can be reset to their shipped default.
-          </p>
-        </div>
-      </div>
+    <div
+      className="p-3 sm:p-6 space-y-8"
+      data-testid="prompt-documents-page"
+    >
+      {/* R9 — no page <h1>: `coord/layout.tsx` already renders the console
+          title and the nav crumb naming this route. The prose stays because it
+          is not a restatement of the title — it names WHICH content this is and
+          states the versioning contract an editor needs before their first
+          edit. `space-y-8` is kept, not narrowed to `space-y-4`: the two
+          `border-t` sections below are separate governance controls, and their
+          separation is the thing that keeps them from reading as one. */}
+      <p className="flex items-start gap-2 text-sm text-muted-foreground">
+        <NotebookText
+          className="mt-0.5 size-4 shrink-0"
+          aria-hidden
+          data-testid="prompt-documents-icon"
+        />
+        <span>
+          The prompt-shaped content coord serves your fleet, in two halves: how
+          a session must act (session briefings, policy prose, response
+          templates, continuation rules, agent playbooks, prompt templates, the
+          Claude Code settings baseline) and what you are building (product
+          intent, initiatives, success metrics, domain specs, audience profiles,
+          decision records). Every edit is saved as a new version — prior
+          wordings stay readable and restorable, and seeded documents can be
+          reset to their shipped default.
+        </span>
+      </p>
 
       <PromptDocumentList />
 

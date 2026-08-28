@@ -7,6 +7,7 @@ import {
   measuredZeroBuckets,
   parseDiskSurvey,
   parseScanStats,
+  readErrorsSeen,
   reportOnlyDisagreement,
   rollupDisagreement,
   surveyDisagreement,
@@ -712,6 +713,146 @@ describe("census_status: unavailable", () => {
 // ---------------------------------------------------------------------------
 // The runner's four distinguishable states (confirmed contract).
 // ---------------------------------------------------------------------------
+
+describe("roots_unknown vetoes every measured zero", () => {
+  /**
+   * The exact payload a FAILED walk produced before the runner stopped
+   * emitting it: an empty item list, null byte totals, and four per-class rows
+   * of `roots: 0`. `ClassSummary.roots` is an unsigned integer on the wire and
+   * cannot be nulled the way the bytes are, so those rows are bit-for-bit what
+   * a fully-read, genuinely-empty machine sends — and `forBucket` read them as
+   * a certified `0 B`, printing "nothing to reclaim" over a walk that saw
+   * nothing.
+   *
+   * `summary.roots_unknown` is the runner's own contradiction of that reading.
+   * Reading it is what makes this page safe against an OLDER runner build too:
+   * the runner now sends an EMPTY rollup instead, but a machine on the previous
+   * build still serves the zeroed one over loopback.
+   */
+  const zeroedRollup = [
+    { class: "in-repo-canonical", roots: 0, bytes: null, verb: null },
+    {
+      class: "sibling-worktree",
+      roots: 0,
+      bytes: null,
+      verb: "orphan-target-reaper",
+    },
+    { class: "container", roots: 0, bytes: null, verb: "orphan-target-reaper" },
+    {
+      class: "sibling-nongit",
+      roots: 0,
+      bytes: null,
+      verb: "orphan-target-reaper",
+    },
+  ];
+
+  it("refuses both buckets on the zeroed rollup an OLD runner still sends", () => {
+    const survey = surveyOf({
+      items: [],
+      census_status: "fresh",
+      summary: {
+        reclaimable_bytes: null,
+        report_only_bytes: null,
+        roots_unknown: true,
+        by_class: zeroedRollup,
+      },
+      scan: {
+        ...COMPLETE_SCAN,
+        read_errors: [{ path: "D:/x", error: "denied" }],
+        read_errors_total: 1,
+      },
+    });
+    expect(survey.summaryRootsUnknown).toBe(true);
+    expect(measuredZeroBuckets(survey)).toEqual({
+      actionable: false,
+      reportOnly: false,
+    });
+  });
+
+  it("refuses both buckets on the EMPTY rollup a current runner sends", () => {
+    const survey = surveyOf({
+      items: [],
+      census_status: "fresh",
+      summary: {
+        reclaimable_bytes: null,
+        report_only_bytes: null,
+        roots_unknown: true,
+        by_class: [],
+      },
+      scan: {
+        ...COMPLETE_SCAN,
+        read_errors: [{ path: "D:/x", error: "denied" }],
+        read_errors_total: 1,
+      },
+    });
+    expect(measuredZeroBuckets(survey)).toEqual({
+      actionable: false,
+      reportOnly: false,
+    });
+  });
+
+  it("NON-VACUOUS: the same rollup without the flag is still a measured zero", () => {
+    // Drop `roots_unknown` and the identical shape is a real reading of a real
+    // empty machine — which is the distinction this flag exists to draw, and
+    // which the veto must not erase.
+    const survey = surveyOf({
+      items: [],
+      census_status: "fresh",
+      summary: {
+        reclaimable_bytes: 0,
+        report_only_bytes: 0,
+        by_class: zeroedRollup.map((r) => ({ ...r, bytes: 0 })),
+      },
+      scan: COMPLETE_SCAN,
+    });
+    expect(survey.summaryRootsUnknown).toBe(false);
+    expect(measuredZeroBuckets(survey)).toEqual({
+      actionable: true,
+      reportOnly: true,
+    });
+  });
+});
+
+describe("readErrorsSeen counts failures, never the sample", () => {
+  const scanWith = (over: Record<string, unknown>) =>
+    parseScanStats({ ...COMPLETE_SCAN, ...over });
+
+  const listOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      path: `D:/x${i}`,
+      error: "denied",
+    }));
+
+  it("reads the runner's UNCAPPED total, not the 100-entry sample", () => {
+    // The runner caps `read_errors` at 100 and sends the real figure beside it.
+    // Counting the array reported a locked subtree as a flat "100 directories".
+    const scan = scanWith({
+      read_errors: listOf(100),
+      read_errors_total: 4137,
+    });
+    expect(scan?.readErrors).toHaveLength(100);
+    expect(readErrorsSeen(scan)).toBe(4137);
+  });
+
+  it("falls back to the list for a runner build that sends no total", () => {
+    // There the list IS the whole set, so the fallback is exact, not a guess.
+    const scan = scanWith({ read_errors: listOf(3) });
+    expect(scan?.readErrorsTotal).toBeNull();
+    expect(readErrorsSeen(scan)).toBe(3);
+  });
+
+  it("never reports FEWER errors than the payload visibly carries", () => {
+    // A total that contradicts its own list is a runner bug; taking the larger
+    // fails toward showing the operator MORE incompleteness, never less.
+    const scan = scanWith({ read_errors: listOf(5), read_errors_total: 0 });
+    expect(readErrorsSeen(scan)).toBe(5);
+  });
+
+  it("is 0 for an absent scan block, and 0 for a clean walk", () => {
+    expect(readErrorsSeen(null)).toBe(0);
+    expect(readErrorsSeen(scanWith({}))).toBe(0);
+  });
+});
 
 describe("the four states", () => {
   it("cold start: pending + null totals may NOT say 'nothing to reclaim'", () => {

@@ -18,7 +18,7 @@ import contextvars
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -737,6 +737,28 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
+class CoordTransportUnavailable(HTTPException):
+    """The request to coord never completed — so its status is OURS, not coord's.
+
+    :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
+    timeout. Both are qontinui-web's own numbers; coord was never reached and
+    gave no answer. A caller that reports a status to an operator must be able
+    to tell those from a status coord genuinely returned, and every
+    string-based way of telling is forgeable: ``_proxy_coord_get`` passes
+    coord's ``resp.text`` straight through as the detail, so a coord 5xx whose
+    body happens to read "coord is not reachable" is indistinguishable by
+    detail alone. Chained ``__context__`` does not work either — a genuine
+    coord error is raised OUTSIDE any ``except`` block, so its context is
+    ``None`` and every genuine answer falls through to whatever the fallback
+    is, making the fallback the only arm that ever runs.
+
+    A subclass is unforgeable by a response body, survives a re-raise or a
+    retry loop, and covers any future transport conversion that uses it
+    without a second edit. It is transparent to every other caller of the
+    proxies: it IS an ``HTTPException``, with the same status and detail.
+    """
+
+
 async def _proxy_coord_get(
     path: str,
     *,
@@ -804,16 +826,16 @@ async def _proxy_coord_get(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=request_headers)
-        except httpx.ConnectError:
-            raise HTTPException(
+        except httpx.ConnectError as exc:
+            raise CoordTransportUnavailable(
                 status_code=502,
                 detail="coord is not reachable",
-            )
-        except httpx.TimeoutException:
-            raise HTTPException(
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise CoordTransportUnavailable(
                 status_code=504,
                 detail="timeout waiting for coord",
-            )
+            ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -8487,6 +8509,15 @@ async def create_cognito_group(
 # override for the mapped case on purpose — "delete the mapping first" is
 # the ordering the guard is there to impose.
 #
+# Guards 1 and 3 are derived ENTIRELY from the rows
+# ``_coord_group_tenant_role_rows`` returns, so an empty return — or a row it
+# cannot attribute to a group — makes both of them vacuous and the AWS delete
+# proceeds. That is why the reader refuses instead of returning ``[]``: on an
+# HTTP failure (``mapping_check_unavailable``), and on an answer whose body,
+# list or ROWS are not the table (``mapping_check_unreadable``). "No rows"
+# must mean coord SAID no rows, and a row must carry the three fields the
+# guards read or it is not a row.
+#
 # NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
 # 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
 # from ``coord.operator_membership_sync``, whose only non-test writer is
@@ -8516,6 +8547,121 @@ HOME_GROUP_SUFFIX = "-home"
 _ADMIN_CONFERRING_ROLES = frozenset({"admin"})
 
 
+#: Row keys the guards actually read. ``_row_group_id`` /
+#: ``_row_tenant_slug`` / ``_row_confers_admin`` each coerce a missing or null
+#: value to ``""``, so a row lacking any of them is silently un-attributable:
+#: it can neither match the group being deleted nor be counted as admin cover
+#: — and it can be counted as cover *from some other group*, which suppresses
+#: the one guard that has no override. Coord serializes all three as
+#: non-nullable ``String`` off a ``TEXT NOT NULL`` primary key
+#: (``routes_phase3::get_group_tenant_roles``), so requiring them refuses
+#: nothing coord produces today.
+_MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
+
+
+def _is_attributable(value: Any) -> bool:
+    """True when a row's identity field can be compared to a real identifier.
+
+    Written as ONE predicate on purpose. Two earlier rounds of this fix put a
+    *different* normalization in the check than in the accessors below
+    (``bool()``, then ``str.strip()``, against the accessors' bare
+    ``str(x or "")``), and the gap between the two normalizations IS the
+    vulnerability: a value that satisfies the check but not the comparison
+    attributes to no group, so :func:`delete_cognito_group`'s guard 1 sees
+    nothing mapped while :func:`_tenants_stranded_by` counts the row as admin
+    cover *from another group* — silencing guard 3, the guard with no
+    override. Narrowing the gap keeps leaving a smaller one; the fix is to
+    have no gap, which is why the accessors are documented as reading only
+    values that passed through here.
+
+    The three clauses, and the shape each one exists for:
+
+    * ``v == v.strip()`` — ``" acme-devs "`` is a legal, distinct row in
+      ``coord.group_tenant_roles`` (bare ``TEXT NOT NULL``, no CHECK, and
+      coord's writer validates ``trim().is_empty()`` without ever trimming
+      what it stores), and it is one mis-pasted space away from a real
+      mapping. It does NOT equal ``"acme-devs"``, so on its own — with no
+      override flag at all — it blinds both derived guards.
+    * ``v.strip() != ""`` — blank in the sense coord itself means.
+    * ``v.isprintable()`` — ``False`` for the whole ``Cf`` category, i.e. the
+      invisible characters ``str.strip()`` does NOT remove and Rust's
+      ``trim`` does not either: ZWSP, BOM, ZWNJ, word joiner, soft hyphen.
+      Every one of them makes a value that looks identical to a real
+      identifier and compares unequal to it.
+
+    Nothing coord's VALIDATED writer produces is refused: group names are drawn from
+    ``\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}`` (all printable, no surrounding space),
+    coord's ``tenant_slug`` must match ``^[a-z0-9][a-z0-9-]{0,63}$``, and its
+    ``role`` is checked against a known vocabulary.
+
+    Its BOOTSTRAP SEEDER does not (``auth_sso::seed_bootstrap_group_mappings``
+    inserts ``COORD_SSO_BOOTSTRAP_GROUP_MAPPINGS`` verbatim, and the column
+    carries no CHECK), so a stray space in that environment variable seeds a
+    row this refuses — and because the check is table-wide, that one row
+    blocks EVERY group delete until it is removed from
+    ``coord.group_tenant_roles``. Fail-closed is the right direction for an
+    irreversible operation and the refusal names the offending key, but it
+    is called out here because there is no override and the next move is
+    otherwise not obvious.
+    """
+    return (
+        isinstance(value, str)
+        and value == value.strip()
+        and value.strip() != ""
+        and value.isprintable()
+    )
+
+
+#: Details :func:`_proxy_coord_get` puts on the ``HTTPException`` it
+#: SYNTHESIZES when the request never completed. The 502 / 504 riding with
+#: them are **qontinui-web's own codes, not coord's** — reporting them as
+#: "coord answered 502" names an answer coord never gave, the same dishonesty
+#: :func:`_raise_mapping_check_unreadable` avoids by carrying no status at
+#: all. Matched on the detail rather than the number so a genuine coord 502 is
+#: still reported as a coord 502.
+#:
+def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
+    """Refuse: *coord answered without an error status, but not with the
+    mapping table*.
+
+    Logs and raises in one place, so the warning cannot be emitted without the
+    refusal it describes actually happening. ``NoReturn`` documents that and
+    keeps a future "build it, forget to raise it" a type error — it buys no
+    narrowing here, since everything downstream of the read is ``Any``.
+
+    ``reason`` names the ACTUAL cause — which key or which type was wrong —
+    because the operator's next move differs by cause and "malformed
+    response" alone would not tell them whether to look at coord, at a proxy
+    in front of it, or at their own session.
+
+    The status is deliberately NOT reported. ``_proxy_coord_get`` treats every
+    status below 400 as success and discards the response, so this arm cannot
+    observe whether it was a 200, a 204, or a 302 from something in front of
+    coord — and a 3xx is one of the realistic causes here. Naming a status we
+    did not see would point the operator at coord's handler when the fault is
+    the hop before it; the sibling ``mapping_check_unavailable`` carries
+    ``coord_status`` only because it genuinely has one.
+    """
+    logger.warning("cognito_group_delete_mapping_check_unreadable", reason=reason)
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "error": "mapping_check_unreadable",
+            "reason": reason,
+            "message": (
+                "Refused: coord answered without an error status, but the body "
+                "is not its group → tenant → role table "
+                f"({reason}), so there is no way to tell what this delete "
+                "would break. Nothing was deleted. An unreadable answer is "
+                "UNKNOWN, not 'this group has no mappings' — treating it as "
+                "the latter would let the delete through with every guard "
+                "unchecked. Something answered where coord should have, so "
+                "check coord's route AND anything proxying it."
+            ),
+        },
+    )
+
+
 async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     """Every ``coord.group_tenant_roles`` row, via the existing proxy path.
 
@@ -8529,13 +8675,41 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     EVERY failure of the read — transport, timeout, or a coord 4xx (the route
     is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
     admin role gets 403 there) — is re-raised as **502
-    ``mapping_check_unavailable``** carrying coord's own status. One code
-    path, one meaning: *the check could not be completed, so nothing was
+    ``mapping_check_unavailable``**, carrying coord's own status where there
+    is one and ``None`` where coord never completed an answer. That takes two
+    arms, not one: ``_proxy_coord_get`` converts only ``ConnectError`` and
+    ``TimeoutException`` into an ``HTTPException``, so the rest of
+    ``httpx.HTTPError`` is caught here rather than escaping as a bare 500.
+    One meaning either way: *the check could not be completed, so nothing was
     deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
     the one thing this endpoint must never do is treat a failed read as a
     clean bill of health. Passing coord's 403 straight through would instead
     read as "you may not delete this group", which is a different — and
     false — claim.
+
+    **A 200 whose BODY is not the table is the same UNKNOWN**, and it used to
+    be the one arm that got it wrong: a non-dict body, a missing or non-list
+    ``group_tenant_roles``, all returned ``[]`` — indistinguishable from a
+    genuinely unmapped group, so all three guards in
+    :func:`delete_cognito_group` passed and the irreversible AWS delete
+    proceeded. The HTTP status is not the only way a read fails. Those bodies
+    now raise **502 ``mapping_check_unreadable``**, a code distinct from
+    ``mapping_check_unavailable`` precisely so the operator can tell "coord
+    never answered" from "coord answered with something that is not the
+    table" — the second is a coord/proxy defect worth chasing, not an outage
+    to wait out.
+
+    Validation reaches the ROW, not just the envelope. Checking only the
+    envelope would leave the original defect intact one layer down: a
+    well-formed list of well-formed objects that do not carry
+    ``_MAPPING_ROW_IDENTITY_KEYS`` — a renamed column in coord's ``SELECT``,
+    a renamed key in its ``json!`` — reads as rows while attributing to no
+    group and no tenant, and both derived guards go vacuous again. So every
+    row must carry a usable ``group_id``, ``tenant_slug`` and ``role``.
+
+    A **well-formed** 200 whose ``group_tenant_roles`` is a real empty list
+    stays a legitimate "no mappings" and still deletes: refusing that would
+    make the guard a blanket denial, which is its own failure.
     """
     try:
         payload = await _proxy_coord_get(
@@ -8544,30 +8718,119 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
             forward_bearer=True,
         )
     except HTTPException as exc:
+        # `_proxy_coord_get` raises with coord's OWN status for a coord 4xx/5xx,
+        # but with a status IT invented (502 / 504) when the request never
+        # completed. Only the first is coord's answer, so only the first is
+        # reported as one.
+        # The TYPE is the discriminator — see `CoordTransportUnavailable`.
+        # Matching the detail string instead demotes a genuine coord 5xx whose
+        # body happens to be that literal (`_proxy_coord_get` passes
+        # `resp.text` through as the detail), and matching `__context__`
+        # silently never fires, because a genuine coord error is raised
+        # outside any `except` block and so carries no context at all.
+        synthesized = isinstance(exc, CoordTransportUnavailable)
+        coord_status = None if synthesized else exc.status_code
         logger.warning(
             "cognito_group_delete_mapping_check_failed",
-            coord_status=exc.status_code,
+            coord_status=coord_status,
+        )
+        cause = (
+            f"{exc.detail} — coord never completed an answer"
+            if synthesized
+            else f"coord answered {exc.status_code}"
         )
         raise HTTPException(
             status_code=502,
             detail={
                 "error": "mapping_check_unavailable",
-                "coord_status": exc.status_code,
+                "coord_status": coord_status,
                 "message": (
                     "Refused: coord's group → tenant → role table could not "
-                    f"be read (coord answered {exc.status_code}), so there is "
-                    "no way to tell what this delete would break. Nothing was "
-                    "deleted. A 403 here means the caller holds no coord "
-                    "admin role; anything else means coord is unreachable."
+                    f"be read ({cause}), so there is no way to tell what this "
+                    "delete would break. Nothing was deleted. A 403 here means "
+                    "the caller holds no coord admin role; anything else means "
+                    "coord is unreachable."
                 ),
             },
         ) from exc
+    except httpx.HTTPError as exc:
+        # ``_proxy_coord_get`` maps only ``ConnectError`` and
+        # ``TimeoutException`` to an ``HTTPException``; every other httpx
+        # transport failure — ``RemoteProtocolError`` from a load balancer
+        # cutting the response, ``ReadError``, ``ProxyError`` — escapes it and
+        # used to surface as a bare 500. Safe (nothing was deleted) but
+        # undiagnosable, and it made the "EVERY failure of the read" contract
+        # below untrue. No status: coord never completed an answer.
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=None,
+            error=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": None,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read ({type(exc).__name__} — coord never completed an "
+                    "answer), so there is no way to tell what this delete "
+                    "would break. Nothing was deleted."
+                ),
+            },
+        ) from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # ``_proxy_coord_get`` ends in ``resp.json()`` → ``jsonlib.loads``,
+        # whose only realistic failures are these two — an HTML error page from
+        # a proxy in front of coord, or a mis-encoded body. Uncaught this became
+        # a bare 500; it is the same UNKNOWN as every other unreadable answer.
+        #
+        # Deliberately NOT the wider ``ValueError`` these both subclass: that
+        # would also catch a ``ValueError`` raised BEFORE the response exists
+        # (a malformed ``COORD_URL``, say) and report it as "the body is not
+        # JSON" under a message asserting coord answered — naming a cause that
+        # is not the actual one, which is the thing this refusal exists to
+        # avoid.
+        _raise_mapping_check_unreadable(f"the body is not JSON ({exc})")
+
     if not isinstance(payload, dict):
-        return []
-    rows = payload.get("group_tenant_roles")
+        _raise_mapping_check_unreadable(
+            f"the body is {type(payload).__name__}, not an object"
+        )
+    if "group_tenant_roles" not in payload:
+        _raise_mapping_check_unreadable("the body carries no group_tenant_roles key")
+    rows = payload["group_tenant_roles"]
     if not isinstance(rows, list):
-        return []
+        _raise_mapping_check_unreadable(
+            f"group_tenant_roles is {type(rows).__name__}, not a list"
+        )
+    if not all(isinstance(row, dict) for row in rows):
+        # Dropping the non-objects instead would silently narrow the guard's
+        # input — and the row it dropped could be the one mapping that makes
+        # this delete strand a tenant.
+        _raise_mapping_check_unreadable(
+            "group_tenant_roles contains an entry that is not an object"
+        )
+    for key in _MAPPING_ROW_IDENTITY_KEYS:
+        if not all(_is_attributable(row.get(key)) for row in rows):
+            _raise_mapping_check_unreadable(
+                f"a group_tenant_roles entry carries no usable {key}"
+            )
+    # Provably a no-op filter after the checks above — belt and braces, not a
+    # discard. (`rows` is already `list[Any]` and would satisfy the annotation
+    # on its own; this makes the element type true rather than merely
+    # accepted.)
     return [row for row in rows if isinstance(row, dict)]
+
+
+# The three accessors below coerce a missing value to ``""`` and compare the
+# result to a real identifier. That coercion is SAFE only on rows that came
+# through :func:`_coord_group_tenant_role_rows`, where
+# :func:`_is_attributable` has already rejected every value that would coerce
+# or compare surprisingly. Called on an unvalidated row, ``""`` is not "no
+# match" — it is a match against nothing that still counts as cover from
+# another group, which is the fail-open this whole module comment is about.
+# If you need these somewhere else, validate there too.
 
 
 def _row_group_id(row: dict[str, Any]) -> str:
@@ -8579,7 +8842,17 @@ def _row_tenant_slug(row: dict[str, Any]) -> str:
 
 
 def _row_confers_admin(row: dict[str, Any]) -> bool:
-    return str(row.get("role") or "").strip().lower() in _ADMIN_CONFERRING_ROLES
+    # BYTE-EXACT, and deliberately not `.strip().lower()`. Coord's
+    # `rbac::is_tenant_admin` — the gate deciding whether anyone can re-create
+    # a mapping into a tenant this delete would strand — matches
+    # `role = ANY(&["admin"])`: no lower(), no ILIKE, no citext. A row spelled
+    # `Admin` therefore confers NOTHING there, and crediting it as admin cover
+    # here silenced guard 3 while the tenant was stranded for real. Case
+    # folding was this comparison disagreeing with the ground truth it stands
+    # in for — the same shape as every other defect in this module's history.
+    # `.strip()` is separately unnecessary: `_is_attributable` has already
+    # rejected any surrounding whitespace.
+    return row.get("role") in _ADMIN_CONFERRING_ROLES
 
 
 def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[str]:
