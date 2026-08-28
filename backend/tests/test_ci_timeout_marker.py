@@ -151,6 +151,38 @@ def test_every_carrier_stamps_its_job_start_as_the_first_step():
         assert "JOB_START_EPOCH" in steps[0]["run"]
 
 
+def test_the_stamp_step_does_not_inherit_a_repo_relative_working_directory():
+    """A pre-checkout step must not run inside a directory that does not exist.
+
+    The stamp step is step 1, so it runs BEFORE `actions/checkout`. A job whose
+    `defaults.run.working-directory` points into the repo (`./backend`) has no
+    such directory at that moment: the step fails on a missing cwd, and because
+    it is first, the entire job dies with every later step skipped.
+
+    This is not hypothetical -- it took down `backend-ci`'s `Run Tests` on the
+    first CI run of this change. The job's own default is the hazard, so the
+    invariant is: whenever the job declares a repo-relative default, the stamp
+    step must override it.
+    """
+    for workflow in MARKER_WORKFLOWS:
+        job_id, job, _ = _find_step(workflow, MARKER_STEP_NAME)
+        stamp = job["steps"][0]
+        job_default = ((job.get("defaults") or {}).get("run") or {}).get(
+            "working-directory"
+        )
+        wd = stamp.get("working-directory")
+        assert wd, (
+            f"{workflow} job {job_id!r}: the stamp step declares no "
+            f"working-directory; it runs before checkout, and the job default "
+            f"is {job_default!r}"
+        )
+        assert "github.workspace" in wd, (
+            f"{workflow} job {job_id!r}: the stamp step's working-directory is "
+            f"{wd!r}; it must anchor to the workspace root, which exists "
+            "before any step runs"
+        )
+
+
 def test_every_declared_job_timeout_matches_its_job():
     """`JOB_TIMEOUT_MINUTES` must equal the job's own `timeout-minutes`.
 
