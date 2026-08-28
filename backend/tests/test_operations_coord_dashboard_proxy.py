@@ -989,9 +989,7 @@ class TestCoordPolicyListFilters:
         assert resp.status_code == 200
         assert instance.get.call_args.kwargs["params"] == {"repo": ""}
 
-    def test_empty_enabled_is_rejected_before_the_handler(
-        self, client: TestClient
-    ):
+    def test_empty_enabled_is_rejected_before_the_handler(self, client: TestClient):
         """``?enabled=`` is the ONE filter the empty-string rule above does not
         reach, and the docstring used to claim all three behaved alike.
 
