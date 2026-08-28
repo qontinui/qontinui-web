@@ -1,0 +1,79 @@
+name: pre-commit ruff pin == the ruff CI runs
+
+# THE GATE LOGIC LIVES IN `scripts/ci/check_ruff_version_parity.py`, not here —
+# the shape plan 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
+# Phase 5 established for forbid-public-schema, web-boundary-lint,
+# alembic-single-head and gitignore-tracked-files. Three lanes invoke the one
+# script:
+#
+#   * this workflow, step "Compare the pre-commit ruff pin against the lockfiles"
+#   * .qontinui/ci.toml, step `ruff-version-parity`
+#   * .pre-commit-config.yaml, hook `ruff-version-parity`
+#
+# WHY THIS GATE EXISTS. `505f5738` added the `ruff-format` pre-commit hook so
+# formatting stops being enforced only by backend-ci.yml's `ruff format
+# --check .`. Its commit message names the residual it left: the hook pinned
+# ruff at `v0.14.0` while CI runs whatever poetry.lock resolves. Two formatters
+# behind one gate is the same defect one level up — the hook can call a tree
+# clean that CI reds, or "fix" a tree into one CI rejects. See the script's
+# docstring for the measurement.
+#
+# NO `paths:` FILTER, and this one deserves its own reasoning because the usual
+# argument does not apply. gitignore-tracked-files.yml runs unfiltered because
+# its invariant is NOT path-expressible: the (rules, tracked files) pair breaks
+# when a file is added under an existing rule, a commit touching neither side.
+# This invariant IS path-expressible — only an edit to `.pre-commit-config.yaml`
+# or to a `poetry.lock` can put the versions out of step — so a filter would be
+# exact rather than a coverage hole.
+#
+# It is still the wrong shape, for the `push:` refs below. A path-filtered check
+# does not run at all on a merge candidate that touches neither file, and a
+# check that never runs is indistinguishable from one still pending: if this is
+# ever added to branch protection, every unrelated candidate would hang in
+# awaiting-ci. backend-ci.yml's own `lint` job header states the principle — "a
+# required check that cannot pass is worse than a slow one" — and a check that
+# cannot RUN is the same class. The whole job is a checkout plus two file reads,
+# so the filter would be buying seconds at the price of that trap.
+#
+# What the unfiltered trigger costs is also why this gate is NOT a step in
+# backend-ci.yml's `lint` job, which would otherwise be its natural home: that
+# workflow's other jobs stand up Postgres, Redis and a Docker build, and the
+# change that motivated this gate touches `.pre-commit-config.yaml` alone.
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
+    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). This is
+    # a merge gate, so it must run on candidate refs or the proposal hangs in
+    # awaiting-ci. Validation-only (offline read of committed files); no deploy.
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+
+jobs:
+  ruff-version-parity:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # The script is stdlib-only, but `tomllib` is stdlib only from 3.11, and
+      # the runner image's own python3 is not a version this repo chose. Pinning
+      # it here is the lesson of this same workflow directory: backend-ci.yml's
+      # `lint` job broke for every branch when a comment asserting "Python 3.12
+      # is pre-installed" went stale under it. Same PYTHON_VERSION as that job.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compare the pre-commit ruff pin against the lockfiles
+        # Exits 1 naming each disagreeing lockfile and printing the exact `rev:`
+        # token to write, and 2 if no pin or no lockfile was found — a
+        # comparison that proved nothing is an unknown, never a pass.
+        run: python scripts/ci/check_ruff_version_parity.py
