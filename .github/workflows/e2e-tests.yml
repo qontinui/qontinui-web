@@ -229,6 +229,19 @@ jobs:
         node-version: [20]
 
     steps:
+      # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
+      #
+      # The infrastructure marker below measures elapsed time to tell a job
+      # TIMEOUT from an external cancel, and `run_started_at` (the API value it
+      # falls back to) measures the RUN: it includes every upstream `needs:` job
+      # and all queue time. On a `needs:`-gated job that skew can exceed the
+      # budget slack, so a LATE external cancel reads as past the budget and is
+      # reported as a timeout -- the same laundering of one cause into another
+      # that the marker exists to prevent, merely inverted. This stamp removes
+      # the skew, and removes the `gh api` dependency on the common path.
+      - name: Record job start time
+        run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+
       - name: Checkout code
         uses: actions/checkout@v5
 
@@ -861,8 +874,15 @@ jobs:
           apt_failed=""
           apt_running=""
           soft_failed=""
+          # How many rows actually parsed. An EMPTY APT_STEP_OUTCOMES -- which is
+          # what a renamed or deleted step id renders to -- leaves all three
+          # buckets empty, exactly like a clean run. That is an absence of DATA,
+          # not an observation of health, and arm 2d is the first arm to make a
+          # POSITIVE claim on it.
+          apt_rows_seen=0
           while IFS='|' read -r step_name outcome conclusion; do
             [ -z "${step_name// }" ] && continue
+            apt_rows_seen=$(( apt_rows_seen + 1 ))
             case "$outcome" in
               failure)
                 if [ "$conclusion" = "failure" ]; then
@@ -879,6 +899,10 @@ jobs:
           why="$why That call is normally seconds, but has been observed to stall"
           why="$why for 30+ minutes (and, unbounded, for 5h59m). Nothing under test ran."
           ref="See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          # A separate pointer for the budget arms. $ref names the apt-stall
+          # plan, which is the wrong citation for an arm that exists to say
+          # this was NOT the apt stall.
+          ref_budget="See plan 2026-08-27-web-backend-coverage-producer-timeout."
 
           # Context line, emitted before any verdict.
           if [ -n "$soft_failed" ]; then
@@ -920,14 +944,59 @@ jobs:
           # This lookup CAN fail (403, rate limit, network blip, a timestamp
           # `date -u -d` cannot parse); every failure leaves `elapsed_min`
           # empty, and empty is UNKNOWN. It is never evidence for a negative.
+          # PREFER this job's own start stamp (written by the job's first
+          # step). `run_started_at` measures the RUN -- it includes every
+          # upstream `needs:` job and all queue time -- so on a `needs:`-gated
+          # job it overstates this job's elapsed time by more than the slack
+          # below, and a LATE external cancel would then be reported as a
+          # timeout. The API lookup stays as the fallback for a job whose stamp
+          # step did not run.
+          #
+          # The guards are not decoration: `-e` is on, so a non-numeric or
+          # absurd value reaching `$(( ))` would ABORT this step, and a marker
+          # that aborts explains nothing. `10#` forces base 10 -- bash reads a
+          # leading zero as octal, where `08` is a hard error, not a value.
+          # Every failure path leaves `elapsed_min` empty, and empty is UNKNOWN;
+          # it is never evidence for a negative.
           elapsed_min=""
-          started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
-          if [ -n "$started" ]; then
-            start_epoch="$(date -u -d "$started" +%s 2>/dev/null || true)"
-            if [ -n "$start_epoch" ]; then
-              elapsed_min=$(( ( $(date -u +%s) - start_epoch ) / 60 ))
+          elapsed_basis=""
+          job_start="${JOB_START_EPOCH:-}"
+          if [ -n "$job_start" ] && [ -z "${job_start//[0-9]/}" ] && [ ${#job_start} -le 11 ]; then
+            job_start=$(( 10#$job_start ))
+            # A real CI job start is a 10-digit epoch. Anything smaller is a
+            # nonsense stamp -- '08' parses fine and means 8 SECONDS after 1970
+            # -- and turning it into a 29-million-minute "measurement" would be
+            # garbage presented as fact, which is the very laundering this
+            # marker exists to stop. Below the floor, leave it UNKNOWN.
+            if [ "$job_start" -ge 1600000000 ]; then
+              elapsed_min=$(( ( $(date -u +%s) - job_start ) / 60 ))
+              elapsed_basis="job"
             fi
           fi
+          if [ -z "$elapsed_min" ]; then
+            started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
+            if [ -n "$started" ]; then
+              start_epoch="$(date -u -d "$started" +%s 2>/dev/null || true)"
+              if [ -n "$start_epoch" ]; then
+                elapsed_min=$(( ( $(date -u +%s) - start_epoch ) / 60 ))
+                elapsed_basis="run"
+              fi
+            fi
+          fi
+
+          # A negative elapsed means the clock moved backwards or the stamp is
+          # nonsense. Report UNKNOWN rather than a garbage measurement.
+          if [ -n "$elapsed_min" ] && [ "$elapsed_min" -lt 0 ]; then
+            elapsed_min=""
+            elapsed_basis=""
+          fi
+
+          # Named so an arm that RULES can disclose what it measured.
+          case "$elapsed_basis" in
+            job) basis_note="measured from this job's own start" ;;
+            run) basis_note="measured from the RUN's start (this job's own start stamp was unavailable), so it also includes any upstream 'needs:' job and queue time" ;;
+            *)   basis_note="not measured" ;;
+          esac
 
           # 2 minutes of slack absorbs the gap between run start and job start.
           budget_floor=$(( JOB_TIMEOUT_MINUTES - 2 ))
@@ -953,7 +1022,7 @@ jobs:
           # rule. The UNKNOWN wording never implies the budget was not reached.
           case "$budget_reached" in
             yes) budget_phrase="which IS its full ${JOB_TIMEOUT_MINUTES}-minute budget" ;;
-            no)  budget_phrase="well short of its ${JOB_TIMEOUT_MINUTES}-minute budget" ;;
+            no)  budget_phrase="short of its ${JOB_TIMEOUT_MINUTES}-minute budget" ;;
             *)   budget_phrase="against a ${JOB_TIMEOUT_MINUTES}-minute budget whose expiry could NOT be checked" ;;
           esac
 
@@ -1009,7 +1078,11 @@ jobs:
           # the cascade, and this arm asserts a positive cause. When one is
           # present, arm 3a speaks instead and hedges.
           if [ "$JOB_STATUS" = "cancelled" ] && [ "$budget_reached" = "yes" ] && [ -z "$soft_failed" ]; then
-            echo "::error title=Job budget exhausted - a TIMEOUT, not an external cancel::This job ran ${elapsed_min} min against its ${JOB_TIMEOUT_MINUTES}-minute budget, and GitHub cancelled it when that budget expired. No apt-dependent step failed, none was mid-flight, and none soft-failed - so this is NOT the apt-mirror stall, and NOT an external cancel either (a reap or a manual cancel lands at an arbitrary, typically far earlier, elapsed). The job's own work did not fit its budget. A job timeout concludes as 'cancelled' with ZERO failing steps, which 'gh pr checks' renders as 'fail' - that rendering is what makes this look like a test failure. It is not a verdict on the diff. But re-running WITHOUT raising the budget will most likely time out again: raise the budget, or make the work fit it. $ref"
+            if [ "$apt_rows_seen" -gt 0 ]; then
+              echo "::error title=Job budget exhausted - a TIMEOUT, not an external cancel::This job ran ${elapsed_min} min (${basis_note}) against its ${JOB_TIMEOUT_MINUTES}-minute budget, and GitHub cancelled it when that budget expired. No apt-dependent step failed, none was mid-flight, and none soft-failed - so this is NOT the apt-mirror stall, and NOT an external cancel either (a reap or a manual cancel lands at an arbitrary, typically far earlier, elapsed). The job's own work did not fit its budget. A job timeout concludes as 'cancelled' with ZERO failing steps, which 'gh pr checks' renders as 'fail' - that rendering is what makes this look like a test failure. It is not a verdict on the diff. But re-running WITHOUT raising the budget will most likely time out again: raise the budget, or make the work fit it. $ref_budget"
+            else
+              echo "::warning title=Job budget exhausted, but the apt telemetry was EMPTY::This job ran ${elapsed_min} min (${basis_note}) against its ${JOB_TIMEOUT_MINUTES}-minute budget, so the budget WAS reached and a job timeout is the leading explanation. But APT_STEP_OUTCOMES parsed to ZERO rows - a step id was renamed or removed, so the expression rendered empty - which makes 'no apt-dependent step failed' an absence of DATA here, not an observation. The apt-mirror stall therefore can NOT be ruled out, and this arm will not assert a cause from telemetry it did not receive. Fix the step-id reference so the next run can rule. $ref_budget $ref"
+            fi
             exit 0
           fi
 
