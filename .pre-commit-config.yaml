@@ -14,6 +14,25 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
+      # `ruff` above is the LINTER only. backend-ci.yml runs BOTH
+      # `ruff check .` and `ruff format --check .`, so without this hook a
+      # backend change can pass every local gate and still red CI on
+      # formatting alone -- which has happened at least four times, once
+      # breaking `main` and blocking four PRs for 40+ merge-train cycles
+      # (`0bb156dd`, "style: ruff format operations.py to unbreak main").
+      # Formatting is the cheapest possible thing to get wrong and the most
+      # expensive place to discover it.
+      #
+      # `files: ^backend/` mirrors the CI step's SCOPE, not just its command:
+      # that job runs with `working-directory: ./backend`, so `ruff format
+      # --check .` covers `backend/**` and nothing else. Unscoped, this hook
+      # reformats six repo-root Python files CI has never checked
+      # (`.github/scripts/`, `.pre-commit-hooks/`, `research_env/`,
+      # `scripts/`) — unrelated churn in whatever PR happens to touch them
+      # next, enforcing a rule no gate actually applies. Widen this only
+      # together with the CI step, so the two cannot drift apart again.
+      - id: ruff-format
+        files: ^backend/
 
   - repo: local
     hooks:
