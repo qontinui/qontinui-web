@@ -974,6 +974,28 @@ class TestPhantomAdminCoverCannotSuppressTheLastAdminGuard:
                 {"group_id": "\t\n ", "tenant_slug": "acme", "role": "admin"},
                 "tab/newline",
             ),
+            # `.strip()` must reach every character Python calls whitespace,
+            # not just ASCII — these two are the ones a naive `== " "` or an
+            # ASCII-only strip would miss.
+            (
+                {"group_id": " ", "tenant_slug": "acme", "role": "admin"},
+                "non-breaking space",
+            ),
+            (
+                {"group_id": "　", "tenant_slug": "acme", "role": "admin"},
+                "ideographic space",
+            ),
+            # The other two identity fields matter for the same reason: a blank
+            # `tenant_slug` on the real mapping makes guard 3 skip the tenant
+            # entirely, and a blank `role` makes it confer nothing.
+            (
+                {"group_id": "other-group", "tenant_slug": "  ", "role": "admin"},
+                "blank tenant_slug",
+            ),
+            (
+                {"group_id": "other-group", "tenant_slug": "acme", "role": " "},
+                "blank role",
+            ),
         ],
     )
     def test_a_phantom_cover_row_cannot_get_the_delete_through(

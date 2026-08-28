@@ -8633,6 +8633,13 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
         # writer rejects a blank ``group_id`` with ``trim().is_empty()``
         # (``routes_phase3``), so matching that costs nothing real; its
         # bootstrap seeder does NOT validate, and the column carries no CHECK.
+        #
+        # The boundary is deliberately coord's: ``str.strip()`` removes every
+        # character Python calls whitespace (NBSP and the ideographic space
+        # included), and leaves zero-width/BOM characters — which Rust's
+        # ``trim`` also leaves. A ``group_id`` of U+200B is therefore a valid
+        # id to coord and is treated as one here. Refusing it would be this
+        # code inventing a rule coord does not have.
         if not all(isinstance(row.get(key), str) and row[key].strip() for row in rows):
             _raise_mapping_check_unreadable(
                 f"a group_tenant_roles entry carries no usable {key}"
