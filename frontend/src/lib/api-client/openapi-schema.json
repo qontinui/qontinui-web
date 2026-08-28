@@ -81033,6 +81033,134 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-document-kind-tiers": {
+      "get": {
+        "description": "This tenant's per-kind agent authorship tiers. Any tenant member.\n\nOne row per KIND, not one per stored row: \"no row\" is a meaningful state\n(coord's compile-time default answers instead), and the two facts that\nmatter most \u2014 the unliftable ``floor`` and the liftable\n``builtin_default_denies`` \u2014 are not in coord's table at all.\n\nRead-only for any tenant member, matching the sibling document reads; the\nPUT/DELETE below are tenant-admin-gated and coord re-checks.\n\nCoord answers **503** rather than an empty list when the store is not\nprovisioned, and that distinction is load-bearing: an empty list reads as\n\"no kind has a setting\", which is a claim about the operator's\nconfiguration nothing has evidence for. The 503 passes through.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Kind Tiers Api V1 Operations Coord Prompt Document Kind Tiers Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Prompt Document Kind Tiers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-kind-tiers/{kind}": {
+      "delete": {
+        "description": "Clear this tenant's per-kind tier for ``kind``, returning it to \"no\noperator opinion\" so coord's compile-time default answers again.\nTenant-admin only.\n\nA separate verb rather than a nullable ``tier`` on the PUT: JSON ``null``\nis indistinguishable from omission on the way through, so a nullable field\ncannot express a clear at all.\n\nIdempotent \u2014 coord answers 200 for a kind that held no row, because \"this\nkind holds no tenant setting\" is the state being requested and it is\nequally true either way. A caller reconciling state must not read a\nsuccessful no-op as a failure.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_kind_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Clear Prompt Document Kind Tier Api V1 Operations Coord Prompt Document Kind Tiers  Kind  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Clear Prompt Document Kind Tier",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Set this tenant's authorship tier for every document of ``kind``.\nTenant-admin only.\n\nBody: ``{tier}`` \u2014 one of ``deny``, ``allow``, ``allow_with_notification``.\nOnly ``tier`` is forwarded: coord stamps ``updated_by`` from its own\nauthenticated ``OperatorContext`` on this route, so forwarding a client\nclaim would add another client-asserted-provenance site of the kind plan\n``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.\n\n\u26a0\ufe0f **``allow_with_notification`` currently behaves exactly as ``allow``.**\nCoord resolves the tier but does not yet enforce the notification\nprecondition (Phase 2 of plan\n``2026-08-27-tenant-level-agent-authorable-stores``). Coord's response\ncarries ``notification_enforced: false`` and a prose ``warning`` saying so\non every call, and the UI must surface it \u2014 a control whose NAME promises\nmore than the deployed build delivers, in the permissive direction, is\nworse than no control.\n\nCoord 4xx passes through: 400 for an unknown kind or an unrecognized tier\n(naming the vocabulary), and **409 for a kind that is an unliftable\nFLOOR** \u2014 ``claude_settings``, whose documents a machine copies into its own\nharness configuration. That one is refused rather than stored-and-ignored,\nso the store's contents and its meaning stay the same thing.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_kind_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Prompt Document Kind Tier Api V1 Operations Coord Prompt Document Kind Tiers  Kind  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Prompt Document Kind Tier",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-document-proposals": {
       "get": {
         "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` vocabulary \u2014 the web tier deliberately does not re-encode it, so\na coord-side vocabulary addition needs no web change). Coord returns\n``{\"proposals\": [...]}``.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
