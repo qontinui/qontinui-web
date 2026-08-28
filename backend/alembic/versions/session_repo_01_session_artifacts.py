@@ -1,7 +1,7 @@
 """agent.session_artifacts — the Claude Code Session Repository head row
 
 Revision ID: session_repo_01_session_artifacts
-Revises: projdash_01_stf_prefix_idx
+Revises: pdtier_02
 Create Date: 2026-08-26
 
 Phase 3a of ``2026-08-26-claude-code-session-repository-in-qontinui-web``:
@@ -119,7 +119,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "session_repo_01_session_artifacts"
-down_revision: str = "projdash_01_stf_prefix_idx"
+down_revision: str = "pdtier_02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
