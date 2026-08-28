@@ -1708,6 +1708,13 @@ function CognitoGroupItem({
             // make `queryByTestId(...) === null` mean "there ARE mappings" —
             // the opposite of what a reader assumes, and a way for a future
             // `toBeNull()` assertion to pass vacuously on the mapped path.
+            //
+            // NOTE for tests: this arm is the ONLY one that can render the id
+            // more than once (one `<li>` per mapping), and `getByTestId`
+            // THROWS on multiple matches. A test that reaches the mapped path
+            // with more than one mapping must use `getAllByTestId`. The other
+            // three arms are always single, which is why the singular query is
+            // safe there.
             mappings.map((m) => (
               <li
                 key={`${m.tenant_slug}:${m.role}`}
@@ -1878,8 +1885,19 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as GroupTenantRolesResponse;
+        // A successful STATUS is not a successful READ. `group_tenant_roles`
+        // is declared non-optional, so a `?? []` here is dead per the types
+        // and live at runtime — and what it would fabricate is precisely the
+        // absence claim this whole change exists to make unreachable. Treat a
+        // malformed 200 as the failure it is and let the `catch` route it to
+        // the unknown arm. (It also stops a non-array body throwing later,
+        // inside the `.filter()` at the render site.)
+        const rows = json?.group_tenant_roles;
+        if (!Array.isArray(rows)) {
+          throw new Error("malformed group-tenant-roles payload");
+        }
         if (!cancelled) {
-          setMappings(json.group_tenant_roles ?? []);
+          setMappings(rows);
           setMappingsError(false);
         }
       } catch (err) {
