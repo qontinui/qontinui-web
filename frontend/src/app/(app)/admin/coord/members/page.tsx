@@ -61,6 +61,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +92,7 @@ import {
   ShieldCheck,
   Trash2,
   UserPlus,
+  Users,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1201,7 +1203,14 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
  * Lazily fetches `GET /coord/cognito/groups/{name}/users` when first opened and
  * supports removing a user by email via `DELETE .../users {email}`.
  */
-function CognitoGroupMembers({ groupName }: { groupName: string }) {
+function CognitoGroupMembers({
+  groupName,
+  onChanged,
+}: {
+  groupName: string;
+  /** Tell the section its member counts are stale (a removal happened). */
+  onChanged?: () => void;
+}) {
   const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1247,6 +1256,7 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
         }
         toast.success(`Removed ${email} from ${groupName}`);
         await load();
+        onChanged?.();
       } catch (err) {
         log.warn("remove cognito group user failed", err);
         toast.error(
@@ -1256,7 +1266,7 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
         setBusy(null);
       }
     },
-    [groupName, load]
+    [groupName, load, onChanged]
   );
 
   if (loading) {
@@ -1326,24 +1336,85 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
   );
 }
 
+/** Suffix coord treats as a home-tenant pin (`auth_sso::HOME_GROUP_SUFFIX`). */
+const HOME_GROUP_SUFFIX = "-home";
+
+/**
+ * The human sentence out of a backend error response.
+ *
+ * The group-delete guards answer 409 with a STRUCTURED detail
+ * (`{error, tenants, message}`) so the caller can branch on `error`, while
+ * every other route on this page answers with a plain-string detail. Rendering
+ * `[object Object]` at the one place an operator most needs to read the reason
+ * is exactly the failure this helper exists to prevent.
+ */
+async function backendErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    const detail = parsed?.detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (detail && typeof detail === "object") {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === "string" && message) return message;
+    }
+  } catch {
+    // Not JSON — fall through to the raw body.
+  }
+  return text.trim() || `HTTP ${res.status}`;
+}
+
 /**
  * A single Cognito group row: name / description / created columns, an
  * expand toggle that reveals members, an inline "add user by email" form, and a
  * delete-group action.
+ *
+ * The delete is the dangerous one, so two things are true of this row that were
+ * not before plan
+ * `2026-08-27-members-page-delete-paths-authorization-and-blast-radius`
+ * Phase 2:
+ *
+ *  - **Blast radius is on the COLLAPSED row.** The member list only mounts
+ *    inside `{expanded && …}`, so a collapsed row used to show name,
+ *    description and a creation time — zero information about what the Delete
+ *    button beside it would affect. Member count and coord's tenant mappings
+ *    are now rendered next to the name, at the moment of decision.
+ *  - **Delete goes through {@link ConfirmDestructiveDialog}** and requires
+ *    typing the group name. `DestructiveButton` alone only blocks synthetic
+ *    clicks; it never asked a human anything.
  */
 function CognitoGroupItem({
   group,
+  mappings,
+  memberCount,
+  membersError,
   onDeleted,
+  onMembersChanged,
 }: {
   group: CognitoGroupRow;
+  /** coord `group_tenant_roles` rows whose `group_id` is this group. */
+  mappings: GroupTenantRoleRow[];
+  /** Members in this group; `null` while loading, `undefined` if unknown. */
+  memberCount: number | null | undefined;
+  /** Set when the member-count probe failed — unknown, NOT zero. */
+  membersError: boolean;
   onDeleted: () => void;
+  /** Refresh the section's counts after an add/remove in this group. */
+  onMembersChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [allowHomeGroup, setAllowHomeGroup] = useState(false);
   // Bump to force the members sub-list to refetch after an add.
   const [membersKey, setMembersKey] = useState(0);
+
+  const isHomeGroup = group.group_name.endsWith(HOME_GROUP_SUFFIX);
+  const homeTenantSlug = isHomeGroup
+    ? group.group_name.slice(0, -HOME_GROUP_SUFFIX.length)
+    : null;
 
   const addUser = useCallback(async () => {
     const email = addEmail.trim();
@@ -1370,13 +1441,13 @@ function CognitoGroupItem({
         return;
       }
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        throw new Error(await backendErrorMessage(res));
       }
       toast.success(`Added ${email} to ${group.group_name}`);
       setAddEmail("");
       setExpanded(true);
       setMembersKey((k) => k + 1);
+      onMembersChanged();
     } catch (err) {
       log.warn("add cognito group user failed", err);
       toast.error(
@@ -1385,36 +1456,48 @@ function CognitoGroupItem({
     } finally {
       setAdding(false);
     }
-  }, [addEmail, group.group_name]);
+  }, [addEmail, group.group_name, onMembersChanged]);
 
   const deleteGroup = useCallback(async () => {
     setDeleting(true);
     try {
+      // `allow_home_group` is the ONE override the dashboard offers. There is
+      // deliberately no `allow_mapped` control: when coord maps the group the
+      // backend 409s and the fix is to remove the mapping first — that
+      // ordering is the guard's whole purpose, and a checkbox would erase it.
+      const query = allowHomeGroup ? "?allow_home_group=true" : "";
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
           group.group_name
-        )}`,
+        )}${query}`,
         { method: "DELETE" }
       );
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        throw new Error(await backendErrorMessage(res));
       }
       toast.success(`Deleted group ${group.group_name}`);
+      setConfirmOpen(false);
       onDeleted();
     } catch (err) {
       log.warn("delete cognito group failed", err);
       toast.error(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+        { duration: 12_000 }
       );
       setDeleting(false);
     }
-  }, [group.group_name, onDeleted]);
+  }, [group.group_name, allowHomeGroup, onDeleted]);
+
+  const memberLabel = membersError
+    ? "members unknown"
+    : memberCount == null
+      ? "counting members…"
+      : `${memberCount} member${memberCount === 1 ? "" : "s"}`;
 
   return (
     <>
       <TableRow data-testid={`cognito-group-row-${group.group_name}`}>
-        <TableCell className="font-medium">
+        <TableCell className="font-medium align-top">
           <button
             type="button"
             className="flex items-center gap-1.5 hover:underline"
@@ -1429,18 +1512,67 @@ function CognitoGroupItem({
             )}
             {group.group_name}
           </button>
+          {/* Blast radius — visible WITHOUT expanding the row, because the
+              Delete button beside it is visible without expanding too. */}
+          <div
+            className="mt-1 flex flex-wrap items-center gap-1 pl-[1.375rem]"
+            data-testid={`cognito-group-blast-${group.group_name}`}
+          >
+            <Badge
+              variant={membersError ? "outline" : "secondary"}
+              className="text-[0.7rem] font-normal"
+              data-testid={`cognito-group-members-count-${group.group_name}`}
+            >
+              <Users className="h-3 w-3" />
+              {memberLabel}
+            </Badge>
+            {mappings.length === 0 ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-muted-foreground"
+                data-testid={`cognito-group-unmapped-${group.group_name}`}
+              >
+                no tenant mappings
+              </Badge>
+            ) : (
+              mappings.map((m) => (
+                <Badge
+                  key={`${m.tenant_slug}:${m.role}`}
+                  variant="outline"
+                  className="text-[0.7rem] font-normal"
+                  data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
+                >
+                  <Building2 className="h-3 w-3" />
+                  {m.tenant_slug} · {tierLabel(m.role)}
+                </Badge>
+              ))
+            )}
+            {isHomeGroup ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                data-testid={`cognito-group-home-pin-${group.group_name}`}
+              >
+                <ShieldCheck className="h-3 w-3" />
+                pins home → {homeTenantSlug}
+              </Badge>
+            ) : null}
+          </div>
         </TableCell>
-        <TableCell className="text-muted-foreground">
+        <TableCell className="text-muted-foreground align-top">
           {group.description || "—"}
         </TableCell>
-        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+        <TableCell className="text-muted-foreground text-xs whitespace-nowrap align-top">
           {relativeTime(group.creation_date)}
         </TableCell>
-        <TableCell className="text-right">
+        <TableCell className="text-right align-top">
           <DestructiveButton
             size="sm"
             disabled={deleting}
-            onClick={deleteGroup}
+            onClick={() => {
+              setAllowHomeGroup(false);
+              setConfirmOpen(true);
+            }}
             data-testid={`cognito-delete-group-${group.group_name}`}
           >
             <Trash2 className="h-4 w-4" />
@@ -1448,6 +1580,87 @@ function CognitoGroupItem({
           </DestructiveButton>
         </TableCell>
       </TableRow>
+
+      <ConfirmDestructiveDialog
+        open={confirmOpen}
+        onOpenChange={(o) => {
+          if (!o) setAllowHomeGroup(false);
+          setConfirmOpen(o);
+        }}
+        title={`Delete the Cognito group ${group.group_name}?`}
+        description={
+          <>
+            This deletes the group from the <strong>shared</strong> Cognito
+            pool. Cognito has no undo — re-creating the group does not restore
+            its members, and every tenant keyed off this pool is affected.
+            Members do not lose the roles it grants right away: each person&apos;s
+            token stops carrying the group at their <strong>next login</strong>,
+            so the effect arrives one person at a time, whenever they next sign
+            in.
+          </>
+        }
+        confirmLabel="Delete group"
+        confirmPhrase={group.group_name}
+        busy={deleting}
+        // The `-home` acknowledgement is a HARD gate in the UI, not a hint:
+        // the backend refuses without `allow_home_group`, and shipping a
+        // confirm that is guaranteed to 409 would teach operators to click
+        // through the dialog and read the toast instead.
+        confirmDisabled={isHomeGroup && !allowHomeGroup}
+        onConfirm={() => void deleteGroup()}
+        extra={
+          isHomeGroup ? (
+            <label
+              className="flex items-start gap-2 text-sm"
+              htmlFor={`cognito-allow-home-${group.group_name}`}
+            >
+              <Checkbox
+                id={`cognito-allow-home-${group.group_name}`}
+                checked={allowHomeGroup}
+                onCheckedChange={(v) => setAllowHomeGroup(v === true)}
+                data-testid={`cognito-allow-home-${group.group_name}`}
+              />
+              <span>
+                I understand this un-pins the home tenant for everyone in{" "}
+                <span className="font-mono">{group.group_name}</span>.
+              </span>
+            </label>
+          ) : null
+        }
+        testId={`cognito-delete-confirm-${group.group_name}`}
+      >
+        <p className="font-medium">What this affects</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li data-testid={`cognito-delete-confirm-members-${group.group_name}`}>
+            {membersError
+              ? "Member count could not be read — treat it as unknown, not zero."
+              : memberCount == null
+                ? "Counting members…"
+                : `${memberCount} member${
+                    memberCount === 1 ? "" : "s"
+                  } lose this group at their next login.`}
+          </li>
+          {mappings.length === 0 ? (
+            <li>No coord tenant mappings reference this group.</li>
+          ) : (
+            mappings.map((m) => (
+              <li key={`${m.tenant_slug}:${m.role}`}>
+                Grants <strong>{tierLabel(m.role)}</strong> in{" "}
+                <span className="font-mono">{m.tenant_slug}</span> — the backend
+                will refuse this delete until that mapping is removed above.
+              </li>
+            ))
+          )}
+          {isHomeGroup ? (
+            <li>
+              Pins its members&apos; home tenant to{" "}
+              <span className="font-mono">{homeTenantSlug}</span>. Their home
+              re-resolves at their next login.
+            </li>
+          ) : null}
+        </ul>
+      </ConfirmDestructiveDialog>
+
       {expanded && (
         // D2 — this row ALREADY expanded a full-width `colSpan` cell before
         // this plan reached it. What changes is only the host: the ad-hoc
@@ -1461,6 +1674,7 @@ function CognitoGroupItem({
                 <CognitoGroupMembers
                   key={membersKey}
                   groupName={group.group_name}
+                  onChanged={onMembersChanged}
                 />
               }
               actions={
@@ -1506,6 +1720,22 @@ function CognitoGroupItem({
 }
 
 /**
+ * Calls `onMount` once, the first time it renders. Renders nothing.
+ *
+ * `CollapsiblePanel` UNMOUNTS its children while closed (Radix
+ * `CollapsibleContent`, no `forceMount`), so a child's mount IS the "the
+ * operator opened this panel" event. The panel owns its open state and
+ * exposes no callback, and reaching for one would mean forking a shared
+ * console primitive to serve one caller.
+ */
+function MountedOnce({ onMount }: { onMount: () => void }) {
+  useEffect(() => {
+    onMount();
+  }, [onMount]);
+  return null;
+}
+
+/**
  * Pool-wide Cognito group management. Superuser-only — pool-wide Cognito ops
  * require staff/superuser access. A coord admin who is NOT a superuser sees a
  * muted note instead of the controls.
@@ -1514,6 +1744,24 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Blast-radius inputs for the group ROWS. Section-level, not per-row,
+  // because the row that needs them is the one that has NOT been expanded —
+  // a per-row lazy fetch would arrive only after the operator had already
+  // expanded, which is after the decision the numbers exist to inform.
+  const [mappings, setMappings] = useState<GroupTenantRoleRow[]>([]);
+  const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
+  // Groups whose member probe FAILED. Kept apart from `memberCounts` so a
+  // failed read renders as "unknown" rather than as a confident zero.
+  const [memberErrors, setMemberErrors] = useState<Record<string, true>>({});
+  const [countsToken, setCountsToken] = useState(0);
+  // Wave 4 folded this section (`CollapsiblePanel defaultOpen={false}`) as
+  // "the least-often-read section on the page". The group LIST still loads
+  // eagerly, because the folded header badge counts it — but the blast-radius
+  // reads are one coord query plus one AWS `list_users_in_group` PER GROUP,
+  // and spending those on a panel nobody opened is pure waste. They wait for
+  // the first open, which is also the first moment their output can be seen.
+  const [panelOpened, setPanelOpened] = useState(false);
+  const markPanelOpened = useCallback(() => setPanelOpened(true), []);
 
   // Create-group form state.
   const [newName, setNewName] = useState("");
@@ -1541,6 +1789,71 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   useEffect(() => {
     if (isSuperuser) void load();
   }, [load, isSuperuser]);
+
+  // coord's group -> tenant -> role mappings. Read here as well as in the
+  // section above: this is the reason the backend refuses a delete, so the
+  // row that offers the delete has to show it.
+  useEffect(() => {
+    if (!isSuperuser || !panelOpened) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as GroupTenantRolesResponse;
+        if (!cancelled) setMappings(json.group_tenant_roles ?? []);
+      } catch (err) {
+        // Non-fatal: the group list still renders. The backend enforces the
+        // referential guard regardless of what this panel managed to show.
+        log.warn("load group-tenant-roles for blast radius failed", err);
+        if (!cancelled) setMappings([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperuser, panelOpened, countsToken]);
+
+  // Member counts, one probe per group, in parallel.
+  useEffect(() => {
+    if (!isSuperuser || !panelOpened || groups.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const counts: Record<string, number> = {};
+      const errors: Record<string, true> = {};
+      await Promise.all(
+        groups.map(async (g) => {
+          try {
+            const res = await httpClient.fetch(
+              `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+                g.group_name
+              )}/users`
+            );
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = (await res.json()) as CognitoGroupUsersResponse;
+            counts[g.group_name] = (json.users ?? []).length;
+          } catch (err) {
+            log.warn("member count probe failed", g.group_name, err);
+            errors[g.group_name] = true;
+          }
+        })
+      );
+      if (!cancelled) {
+        setMemberCounts(counts);
+        setMemberErrors(errors);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperuser, panelOpened, groups, countsToken]);
+
+  const refreshBlastRadius = useCallback(
+    () => setCountsToken((t) => t + 1),
+    []
+  );
 
   const createGroup = useCallback(async () => {
     const group_name = newName.trim();
@@ -1597,6 +1910,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       contentClassName="space-y-4"
     >
       <>
+        {/* Mounts only while the panel is open — that is the signal the
+            blast-radius probes wait on. */}
+        <MountedOnce onMount={markPanelOpened} />
         {!isSuperuser ? (
           <p
             className="text-sm text-muted-foreground"
@@ -1640,7 +1956,17 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                     <CognitoGroupItem
                       key={g.group_name}
                       group={g}
+                      mappings={mappings.filter(
+                        (m) => m.group_id === g.group_name
+                      )}
+                      memberCount={
+                        memberErrors[g.group_name]
+                          ? undefined
+                          : (memberCounts[g.group_name] ?? null)
+                      }
+                      membersError={memberErrors[g.group_name] === true}
                       onDeleted={load}
+                      onMembersChanged={refreshBlastRadius}
                     />
                   ))}
                 </TableBody>
