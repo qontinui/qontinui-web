@@ -34,6 +34,7 @@ import {
   Download,
   ListChecks,
   Coins,
+  Archive,
 } from "lucide-react";
 import type { NavItem } from "./types";
 
@@ -82,6 +83,32 @@ export const devNavItems: NavItem[] = [
     group: "Coordination",
   },
 
+  // ===========================================================================
+  // Session Repository — the PERMANENT archive of Claude Code sessions
+  // (`agent.session_artifacts` + the object store), plan
+  // `2026-08-26-claude-code-session-repository-in-qontinui-web` Phase 5.
+  //
+  // A FIRST-CLASS entry rather than an /admin/coord/* sub-page, and that is
+  // the plan's call, not a styling preference: the corpus answers questions an
+  // ordinary operator asks daily ("which sessions did I never close out?",
+  // "what was that tab doing before the rebuild?"), and burying it in the
+  // coordination console would make "where did my sessions go" tribal
+  // knowledge. It sits beside the shared registry's live /sessions view — that
+  // one is coord's, bounded by a 7-day GC; this one keeps them.
+  //
+  // Visible to all authenticated users: reads are member-visible and
+  // tenant-scoped server-side, with the relaunch/transfer mutation gated by
+  // <CoordAdminOnly> on the detail page and by the backend behind it.
+  // ===========================================================================
+  {
+    id: "session-repository",
+    label: "Session Repository",
+    description: "Archived Claude Code sessions — search, review, relaunch",
+    icon: React.createElement(Archive, { className: "size-5" }),
+    route: "/sessions/repository",
+    color: "#10B981",
+    group: "Coordination",
+  },
   // NOTE: there is no top-level "Operations" item. The cross-machine fleet
   // view + operations panels were merged into the Coord Console; /operations
   // redirects to its Pipeline tab (/admin/coord/pipeline), and the machine
