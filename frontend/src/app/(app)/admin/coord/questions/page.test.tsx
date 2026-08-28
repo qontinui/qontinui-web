@@ -21,6 +21,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const get = vi.fn();
 
@@ -41,6 +42,21 @@ const PENDING = [
     created_at: "2026-08-20T09:00:00Z",
   },
 ];
+
+/** A POLICY_GAP question that has ALREADY been answered — a gap, not blocking. */
+const ANSWERED_GAP = {
+  question_id: "00000000-0000-0000-0000-deadbeef0002",
+  agent_id: "01a01de1-9d08-7c31-a055-271ad6df6217",
+  question: "POLICY_GAP: no clause covers a dependency bump",
+  created_at: "2026-08-20T08:00:00Z",
+  responded_at: "2026-08-20T08:30:00Z",
+  response: "added a clause",
+  // `isGapQuestion` keys on this marker, not on the question text — without
+  // it the row is filtered out and the scenario silently collapses to the
+  // empty-list case the other tests already cover.
+  context:
+    'POLICY_GAP {"policy_gap":{"category":"dependencies"},"context":null}',
+};
 
 beforeEach(() => {
   get.mockReset();
@@ -89,5 +105,337 @@ describe("/admin/coord/questions frozen testids (D4a)", () => {
       ).toHaveTextContent("1 pending");
     });
     expect(screen.getByTestId("coord-question-card")).toBeInTheDocument();
+  });
+});
+
+/**
+ * A read that FAILED must render as unknown, never as zero/none.
+ *
+ * `fetchAnswered` and `fetchGaps` both swallowed their errors into a
+ * `console.warn`, leaving their lists at the `[]` the `useState` initializer
+ * had put there — the identical array a successful empty read produces. Every
+ * consumer downstream then stated the absence as fact, and the worst of them
+ * was the health strip: `blockingGaps === 0` and `pending.length === 0` is the
+ * GREEN arm, headline **"No agent is waiting on an answer"**. Coord going dark
+ * rendered as the all-clear, which is the one sentence that tells an operator
+ * to stop looking at this page.
+ *
+ * Each test below asserts the LITERAL copy an operator would read, in both
+ * directions: the unknown marker is present AND the absence claim is gone. A
+ * build that rendered both would still be making the false claim.
+ */
+describe("/admin/coord/questions — a failed read is unknown, not empty", () => {
+  /** Fail exactly the URLs matching `failOn`; serve empty for the rest. */
+  function routeWithFailures(failOn: RegExp) {
+    get.mockImplementation(async (url: string) => {
+      if (failOn.test(url)) throw new Error("coord unreachable");
+      return { questions: [] };
+    });
+  }
+
+  it("does not report the all-clear when the gap inbox could not be read", async () => {
+    routeWithFailures(/gap=true/);
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() => expect(strip).toHaveTextContent(/could not read/i));
+    // The precise sentence that would send an operator away.
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+    expect(strip).toHaveTextContent(/unknown/i);
+    // The DOT, not just the words. The pulsing traffic light is what an
+    // operator scans; a regression that reverted only the `level` expression
+    // while keeping the new headline would pass every copy assertion here and
+    // still show green on an inbox nobody read.
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    // The count is a dash, not a zero it never measured.
+    expect(strip).toHaveTextContent(/gaps\s*–/);
+    expect(strip.textContent ?? "").not.toMatch(/gaps\s*0/);
+  });
+
+  it("does not go green when a failed gap read left only ANSWERED gaps behind", async () => {
+    // The narrow window the first cut of this fix missed. The gap list unions
+    // `pending?gap=true` with `answered?gap=true`, so a retained list can be
+    // NON-empty while `blockingGaps` is 0 — every row already answered. An
+    // "unknown" predicate keyed on `visibleGaps.length` reads "known" there,
+    // and the strip prints `gaps 0` and the all-clear off a read that failed.
+    // Each predicate must be keyed on the quantity ITS OWN surface renders.
+    let gapCalls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        if (gapCalls > 2) throw new Error("coord unreachable");
+        // Two reads make up one `fetchGaps`; put the answered gap on the
+        // answered leg so the first load succeeds with a non-blocking gap.
+        return url.includes("/answered")
+          ? { questions: [ANSWERED_GAP] }
+          : { questions: [] };
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    // First load lands: one gap, none blocking — genuinely green.
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "green")
+    );
+    expect(strip).toHaveTextContent(/gaps\s*0/);
+
+    // Now coord goes dark and the operator refreshes.
+    await user.click(screen.getByTestId("coord-questions-refresh"));
+
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip).toHaveTextContent(/could not read/i);
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+    expect(strip).toHaveTextContent(/gaps\s*–/);
+  });
+
+  it("dashes the pending badge and every tab count that could not be read", async () => {
+    // The badge/tab half of the fix, which the copy assertions do not reach.
+    get.mockImplementation(async () => {
+      throw new Error("coord unreachable");
+    });
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip).toHaveTextContent(/–\s*pending/);
+    expect(strip).toHaveTextContent(/gaps\s*–/);
+    expect(strip).toHaveTextContent(/answered\s*–/);
+    expect(strip.textContent ?? "").not.toMatch(/0\s*pending/);
+    // All three named in the detail line, and the noun agrees.
+    expect(strip).toHaveTextContent(/pending, gaps, answered/);
+    expect(strip).toHaveTextContent(/inboxes/);
+
+    for (const id of [
+      "coord-questions-tab-pending",
+      "coord-questions-tab-answered",
+      "coord-questions-tab-gaps",
+    ]) {
+      expect(screen.getByTestId(id)).toHaveTextContent("–");
+      expect(screen.getByTestId(id).textContent ?? "").not.toMatch(/\b0\b/);
+    }
+  });
+
+  it("treats a 200 whose body has no `questions` array as unknown, not empty", async () => {
+    // The same class with an HTTP 200 in front of it: `?? []` turned an
+    // unrecognised shape into a confident zero.
+    get.mockImplementation(async () => ({ unexpected: "shape" }));
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+  });
+
+  it("leaves the strip green when only the ANSWERED read fails", async () => {
+    // Over-correction guard. The strip answers "is an agent waiting?", which
+    // pending + gaps decide on their own. `fetchAnswered`'s own comment says
+    // the endpoint may not be wired on every coord build — letting it drive
+    // the level would leave such a build permanently amber with the all-clear
+    // permanently hidden, which teaches operators to ignore amber.
+    routeWithFailures(/\/answered\?limit=/);
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/No agent is waiting on an answer/i)
+    );
+    expect(strip).toHaveAttribute("data-health-level", "green");
+    // Still surfaced, just not as the verdict: the badge dashes and the detail
+    // line names it.
+    expect(strip).toHaveTextContent(/answered\s*–/);
+    expect(strip).toHaveTextContent(/coord did not answer for: answered/);
+  });
+
+  it("says the gap list is unreadable instead of 'No policy gaps reported'", async () => {
+    routeWithFailures(/gap=true/);
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    await user.click(await screen.findByTestId("coord-questions-tab-gaps"));
+    expect(
+      await screen.findByTestId("coord-questions-gaps-unreadable")
+    ).toHaveTextContent(/unknown/i);
+    expect(screen.queryByTestId("coord-questions-gaps-empty")).toBeNull();
+    expect(
+      screen.getByTestId("coord-questions-gaps-list").textContent ?? ""
+    ).not.toMatch(/No policy gaps reported/i);
+  });
+
+  it("says the answered list is unreadable instead of 'No recently-answered questions'", async () => {
+    // Only the plain answered read fails — the `gap=true` variants still work,
+    // so this pins the answered arm on its own rather than riding the gap one.
+    routeWithFailures(/\/answered\?limit=/);
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    await user.click(await screen.findByTestId("coord-questions-tab-answered"));
+    expect(
+      await screen.findByTestId("coord-questions-answered-unreadable")
+    ).toHaveTextContent(/unknown/i);
+    expect(screen.queryByTestId("coord-questions-answered-empty")).toBeNull();
+    expect(
+      screen.getByTestId("coord-questions-health")
+    ).toHaveTextContent(/answered\s*–/);
+  });
+
+  it("says the pending list is unreadable instead of 'No pending questions'", async () => {
+    routeWithFailures(/\/pending$/);
+    render(<CoordQuestionsPage />);
+
+    expect(
+      await screen.findByTestId("coord-questions-pending-unreadable")
+    ).toHaveTextContent(/unknown/i);
+    expect(screen.queryByTestId("coord-questions-pending-empty")).toBeNull();
+    const strip = screen.getByTestId("coord-questions-health");
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+  });
+
+  it("still shows the all-clear when every read SUCCEEDS and is genuinely empty", async () => {
+    // The other half of the pin: the unknown arms must not swallow the real
+    // green state, or the fix would be indistinguishable from breaking it.
+    get.mockImplementation(async () => ({ questions: [] }));
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/No agent is waiting on an answer/i)
+    );
+    expect(strip).toHaveAttribute("data-health-level", "green");
+    expect(strip.textContent ?? "").not.toMatch(/could not read/i);
+    expect(strip).toHaveTextContent(/gaps\s*0/);
+  });
+
+  it("ignores a STALE successful gap read that lands after a newer one failed", async () => {
+    // The race direction that fails UNSAFE, and the reason all three reads
+    // carry a generation guard. A slow first read resolving late runs
+    // `setGaps(merged); setGapsError(false)` \u2014 repainting the GREEN all-clear
+    // on top of a read that is failing right now. That is this whole PR's
+    // defect, re-created in a window the degraded poll makes ordinary.
+    let gapCalls = 0;
+    let releaseFirst!: () => void;
+    const firstLanded = new Promise<void>((res) => {
+      releaseFirst = res;
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        // One `fetchGaps` issues TWO gap reads; the first pair hangs.
+        if (gapCalls <= 2) {
+          await firstLanded;
+          return { questions: [] };
+        }
+        throw new Error("coord unreachable");
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    // Refresh while the first gap read is still in flight: the SECOND read
+    // fails, and it is the current one.
+    await user.click(await screen.findByTestId("coord-questions-refresh"));
+    const strip = screen.getByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "amber")
+    );
+    expect(strip).toHaveTextContent(/could not read/i);
+
+    // Now let the superseded, SUCCESSFUL read land. It must be dropped.
+    releaseFirst();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+    expect(strip).toHaveTextContent(/gaps\s*\u2013/);
+  });
+
+  it("names which read went stale when a failure left a real count behind", async () => {
+    // `anyStale` is the third state: the read failed, but the list it left is
+    // non-empty, so nothing is fabricated \u2014 only out of date. Saying merely
+    // "something is stale" sends an operator hunting, so it names the read.
+    let calls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) return { questions: [] };
+      if (url.includes("/pending")) {
+        calls += 1;
+        if (calls > 1) throw new Error("coord unreachable");
+        return { questions: PENDING };
+      }
+      return { questions: [] };
+    });
+    render(<CoordQuestionsPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-questions-pending-count")
+      ).toHaveTextContent("1 pending")
+    );
+
+    await userEvent.setup().click(screen.getByTestId("coord-questions-refresh"));
+    await screen.findByText(/Failed to load/i);
+
+    const strip = screen.getByTestId("coord-questions-health");
+    expect(strip).toHaveTextContent(/coord did not answer for: pending/);
+    expect(strip).toHaveTextContent(/last ones that landed/);
+    // Not the UNKNOWN copy \u2014 the count is real, just old.
+    expect(strip.textContent ?? "").not.toMatch(/a dash, not a zero/);
+  });
+
+  it("keeps a stale-but-real count rather than blanking it when a POLL fails", async () => {
+    // A failed read only fabricates when the list it left behind is EMPTY.
+    // A retained non-empty list is stale, not invented, and blanking it would
+    // discard a count the operator can still act on.
+    let calls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) return { questions: [] };
+      if (url.includes("/pending")) {
+        calls += 1;
+        if (calls > 1) throw new Error("coord unreachable");
+        return { questions: PENDING };
+      }
+      return { questions: [] };
+    });
+    render(<CoordQuestionsPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-questions-pending-count")
+      ).toHaveTextContent("1 pending")
+    );
+
+    await screen.findByTestId("coord-questions-refresh");
+    await userEvent.setup().click(screen.getByTestId("coord-questions-refresh"));
+
+    // Wait on an OBSERVABLE consequence of the rejection, not on the request
+    // counter: `calls` is bumped inside the mock before it throws, so it
+    // proves only that the request went out — the assertion below would pass
+    // vacuously if it ran before the catch had re-rendered.
+    await screen.findByText(/Failed to load/i);
+    expect(
+      screen.getByTestId("coord-questions-pending-count")
+    ).toHaveTextContent("1 pending");
+    // And the verdict still reflects the count we can still act on.
+    expect(screen.getByTestId("coord-questions-health")).toHaveAttribute(
+      "data-health-level",
+      "red"
+    );
+    expect(calls).toBeGreaterThan(1);
   });
 });
