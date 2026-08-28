@@ -64,7 +64,7 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "session_repo_01_session_artifacts"
-_PARENT_REVISION_ID = "projdash_01_stf_prefix_idx"
+_PARENT_REVISION_ID = "pdtier_02"
 _REVISION_FILENAME = "session_repo_01_session_artifacts.py"
 
 
