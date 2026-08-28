@@ -18,7 +18,7 @@ import contextvars
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -8374,6 +8374,15 @@ async def create_cognito_group(
 # override for the mapped case on purpose — "delete the mapping first" is
 # the ordering the guard is there to impose.
 #
+# Guards 1 and 3 are derived ENTIRELY from the rows
+# ``_coord_group_tenant_role_rows`` returns, so an empty return — or a row it
+# cannot attribute to a group — makes both of them vacuous and the AWS delete
+# proceeds. That is why the reader refuses instead of returning ``[]``: on an
+# HTTP failure (``mapping_check_unavailable``), and on an answer whose body,
+# list or ROWS are not the table (``mapping_check_unreadable``). "No rows"
+# must mean coord SAID no rows, and a row must carry the three fields the
+# guards read or it is not a row.
+#
 # NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
 # 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
 # from ``coord.operator_membership_sync``, whose only non-test writer is
@@ -8403,6 +8412,59 @@ HOME_GROUP_SUFFIX = "-home"
 _ADMIN_CONFERRING_ROLES = frozenset({"admin"})
 
 
+#: Row keys the guards actually read. ``_row_group_id`` /
+#: ``_row_tenant_slug`` / ``_row_confers_admin`` each coerce a missing or null
+#: value to ``""``, so a row lacking any of them is silently un-attributable:
+#: it can neither match the group being deleted nor be counted as admin cover
+#: — and it can be counted as cover *from some other group*, which suppresses
+#: the one guard that has no override. Coord serializes all three as
+#: non-nullable ``String`` off a ``TEXT NOT NULL`` primary key
+#: (``routes_phase3::get_group_tenant_roles``), so requiring them refuses
+#: nothing coord produces today.
+_MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
+
+
+def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
+    """Refuse: *coord answered without an error status, but not with the
+    mapping table*.
+
+    Logs and raises in one place, so the warning cannot be emitted without the
+    refusal it describes actually happening. ``NoReturn`` is what lets the
+    type checker narrow after each call.
+
+    ``reason`` names the ACTUAL cause — which key or which type was wrong —
+    because the operator's next move differs by cause and "malformed
+    response" alone would not tell them whether to look at coord, at a proxy
+    in front of it, or at their own session.
+
+    The status is deliberately NOT reported. ``_proxy_coord_get`` treats every
+    status below 400 as success and discards the response, so this arm cannot
+    observe whether it was a 200, a 204, or a 302 from something in front of
+    coord — and a 3xx is one of the realistic causes here. Naming a status we
+    did not see would point the operator at coord's handler when the fault is
+    the hop before it; the sibling ``mapping_check_unavailable`` carries
+    ``coord_status`` only because it genuinely has one.
+    """
+    logger.warning("cognito_group_delete_mapping_check_unreadable", reason=reason)
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "error": "mapping_check_unreadable",
+            "reason": reason,
+            "message": (
+                "Refused: coord answered without an error status, but the body "
+                "is not its group → tenant → role table "
+                f"({reason}), so there is no way to tell what this delete "
+                "would break. Nothing was deleted. An unreadable answer is "
+                "UNKNOWN, not 'this group has no mappings' — treating it as "
+                "the latter would let the delete through with every guard "
+                "unchecked. Something answered where coord should have, so "
+                "check coord's route AND anything proxying it."
+            ),
+        },
+    )
+
+
 async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     """Every ``coord.group_tenant_roles`` row, via the existing proxy path.
 
@@ -8423,6 +8485,30 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     clean bill of health. Passing coord's 403 straight through would instead
     read as "you may not delete this group", which is a different — and
     false — claim.
+
+    **A 200 whose BODY is not the table is the same UNKNOWN**, and it used to
+    be the one arm that got it wrong: a non-dict body, a missing or non-list
+    ``group_tenant_roles``, all returned ``[]`` — indistinguishable from a
+    genuinely unmapped group, so all three guards in
+    :func:`delete_cognito_group` passed and the irreversible AWS delete
+    proceeded. The HTTP status is not the only way a read fails. Those bodies
+    now raise **502 ``mapping_check_unreadable``**, a code distinct from
+    ``mapping_check_unavailable`` precisely so the operator can tell "coord
+    never answered" from "coord answered with something that is not the
+    table" — the second is a coord/proxy defect worth chasing, not an outage
+    to wait out.
+
+    Validation reaches the ROW, not just the envelope. Checking only the
+    envelope would leave the original defect intact one layer down: a
+    well-formed list of well-formed objects that do not carry
+    ``_MAPPING_ROW_IDENTITY_KEYS`` — a renamed column in coord's ``SELECT``,
+    a renamed key in its ``json!`` — reads as rows while attributing to no
+    group and no tenant, and both derived guards go vacuous again. So every
+    row must carry a usable ``group_id``, ``tenant_slug`` and ``role``.
+
+    A **well-formed** 200 whose ``group_tenant_roles`` is a real empty list
+    stays a legitimate "no mappings" and still deletes: refusing that would
+    make the guard a blanket denial, which is its own failure.
     """
     try:
         payload = await _proxy_coord_get(
@@ -8449,11 +8535,40 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
                 ),
             },
         ) from exc
+    except ValueError as exc:
+        # ``_proxy_coord_get`` ends in ``resp.json()``, which raises
+        # ``json.JSONDecodeError`` (a ``ValueError``) when a 2xx carries a body
+        # that is not JSON at all — an HTML error page from a proxy in front of
+        # coord being the realistic one. Uncaught this became a bare 500; it is
+        # the same UNKNOWN as every other unreadable answer and deserves the
+        # same typed refusal.
+        _raise_mapping_check_unreadable(f"the body is not JSON ({exc})")
+
     if not isinstance(payload, dict):
-        return []
-    rows = payload.get("group_tenant_roles")
+        _raise_mapping_check_unreadable(
+            f"the body is {type(payload).__name__}, not an object"
+        )
+    if "group_tenant_roles" not in payload:
+        _raise_mapping_check_unreadable("the body carries no group_tenant_roles key")
+    rows = payload["group_tenant_roles"]
     if not isinstance(rows, list):
-        return []
+        _raise_mapping_check_unreadable(
+            f"group_tenant_roles is {type(rows).__name__}, not a list"
+        )
+    if not all(isinstance(row, dict) for row in rows):
+        # Dropping the non-objects instead would silently narrow the guard's
+        # input — and the row it dropped could be the one mapping that makes
+        # this delete strand a tenant.
+        _raise_mapping_check_unreadable(
+            "group_tenant_roles contains an entry that is not an object"
+        )
+    for key in _MAPPING_ROW_IDENTITY_KEYS:
+        if not all(isinstance(row.get(key), str) and row[key] for row in rows):
+            _raise_mapping_check_unreadable(
+                f"a group_tenant_roles entry carries no usable {key}"
+            )
+    # Provably a no-op filter after the checks above; it is here so the return
+    # type narrows for the type checker, not to discard anything.
     return [row for row in rows if isinstance(row, dict)]
 
 
