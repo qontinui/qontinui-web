@@ -497,6 +497,19 @@ filter input. A count that has **not been fetched renders `–`, never `0`** —
 absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 `silent-empty-is-unknown` policy, applied to a badge.
 
+> **"Not fetched" includes "fetched and FAILED", and the rule does not stop at
+> the badge.** Read narrowly — as only the in-flight window — R6 leaves the
+> larger hole open: a `catch` that swallows its error leaves the list at the
+> `[]` its `useState` initializer put there, which is byte-identical to a
+> successful empty read, and `loading` is already false by then. Every
+> consumer downstream then states the absence as fact — the tab count, the
+> health-strip level and headline, and the `empty=` copy, which is where the
+> claim is actually made in words. `/admin/coord/questions` shipped exactly
+> that: `fetchGaps` failing rendered a GREEN strip reading *"No agent is
+> waiting on an answer"*. So a failed read needs its **own flag**, separate
+> from the list, and every surface derived from that list has to consult it —
+> `RecordList`'s `empty` slot included. `loading` cannot stand in for it.
+
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
 composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved
