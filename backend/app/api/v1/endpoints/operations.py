@@ -17,6 +17,7 @@ import asyncio
 import contextvars
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NoReturn
 from urllib.parse import quote
@@ -9469,14 +9470,63 @@ async def create_cognito_group(
 # override for the mapped case on purpose — "delete the mapping first" is
 # the ordering the guard is there to impose.
 #
-# Guards 1 and 3 are derived ENTIRELY from the rows
-# ``_coord_group_tenant_role_rows`` returns, so an empty return — or a row it
-# cannot attribute to a group — makes both of them vacuous and the AWS delete
-# proceeds. That is why the reader refuses instead of returning ``[]``: on an
-# HTTP failure (``mapping_check_unavailable``), and on an answer whose body,
-# list or ROWS are not the table (``mapping_check_unreadable``). "No rows"
-# must mean coord SAID no rows, and a row must carry the three fields the
-# guards read or it is not a row.
+# Guards 1 and 3 are derived ENTIRELY from what
+# ``_coord_group_blast_radius`` returns, so an unreadable or under-reported
+# answer makes both of them vacuous and the AWS delete proceeds. That is why
+# the reader refuses instead of returning a zeroed verdict: on an HTTP failure
+# (``mapping_check_unavailable``), and on an answer whose body is not the
+# verdict (``mapping_check_unreadable``). "Nothing mapped" must mean coord SAID
+# nothing mapped.
+#
+# WHY A DEDICATED COORD ROUTE, and not the mappings LIST.
+#
+# Until 2026-08-28 these guards read coord's
+# ``GET /admin/coord/group-tenant-roles`` — the mappings LIST — through a
+# reader whose docstring claimed "every ``coord.group_tenant_roles`` row". It
+# was not. That route is TENANT-SCOPED and INNER-joined
+# (``routes_phase3::get_group_tenant_roles``:
+# ``JOIN coord.tenants … WHERE t.tenant_id = $1``), so it returned only the
+# caller's OWN tenant's mappings, and dropped any mapping whose ``tenant_slug``
+# has no ``coord.tenants`` row — i.e. exactly an ``auto_create_tenant``
+# onboarding mapping, which is the row this page's own workflow creates.
+#
+# Two consequences, both fail-OPEN:
+#   * a group mapped into ANOTHER tenant read as "mapped nowhere", so guard 1
+#     never fired and the pool-wide delete proceeded;
+#   * guard 3 — the one with NO override — could not fire for any tenant but
+#     the caller's own, because both its stranded-candidate set and its
+#     cover set came from the same scoped rows.
+#
+# None of that was detectable here. Coord answered a well-formed 200 carrying a
+# well-formed list of well-formed rows: every envelope and row check below
+# passed, because it was not a malformed answer to the right question, it was a
+# correct answer to the WRONG one. NO amount of response-shape validation can
+# catch that class, which is why the fix was a different QUESTION rather than a
+# stricter parser.
+#
+# The tenant-scoped list is CORRECT for what it is — an admin list surface, and
+# deliberately scoped (its own doc comment forbids growing it an ``?all=true``).
+# The mismatch was deriving a DESTRUCTIVE, POOL-WIDE guard from it. A Cognito
+# group is a pool object; its blast radius is pool-wide; so the guard now asks a
+# pool-wide question, at
+# ``GET /admin/coord/group-tenant-roles/blast-radius?group_id=…``.
+#
+# That route returns a VERDICT, not rows, and names no tenant but the caller's
+# own — every other tenant is an integer. Two reasons, and the second is why
+# there is less code here than there used to be:
+#   * coord cannot verify this endpoint's ``require_admin`` (it sees a Cognito
+#     bearer holding ``admin`` in SOME tenant), so it must not hand another
+#     tenant's configuration over; and it already classifies pool-wide,
+#     row-level group→tenant data as posture-sensitive, withholding it from
+#     non-operator principals on its MCP surface.
+#   * "what confers admin" is coord's own predicate (``rbac::is_tenant_admin``).
+#     Keeping a Python mirror of it here is what produced the case-folding and
+#     ``owner``-widening defects this module's history records. The verdict now
+#     comes from the process that owns the predicate.
+#
+# ⚠️ If you ever need more detail than the verdict carries, add it to the
+# blast-radius route. Do NOT reach back to the mappings list: it is scoped, and
+# it will lie to you exactly as convincingly as it did before.
 #
 # NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
 # 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
@@ -9494,45 +9544,35 @@ async def create_cognito_group(
 #: case-sensitive — tenant slugs are lowercase ASCII).
 HOME_GROUP_SUFFIX = "-home"
 
-#: Roles in ``coord.group_tenant_roles`` that confer admin **for the repair
-#: route's own gate**. Deliberately the narrow vocabulary: coord's
-#: ``rbac::is_tenant_admin`` — which
-#: ``routes_phase3::caller_is_admin_in_tenant`` delegates to, and which
-#: therefore decides whether anyone can re-create a mapping into a stranded
-#: tenant — asks for the bare ``'admin'`` literal, NOT the wider
-#: ``ADMIN_ROLES`` (``admin | owner``) vocabulary that ``/admin/coord/me``
-#: reports ``is_admin`` from. A tenant left with only an ``owner`` mapping
-#: still cannot repair itself, so treating ``owner`` as admin-conferring
-#: here would let exactly the stranding this guard exists to stop through.
-_ADMIN_CONFERRING_ROLES = frozenset({"admin"})
-
-
-#: Row keys the guards actually read. ``_row_group_id`` /
-#: ``_row_tenant_slug`` / ``_row_confers_admin`` each coerce a missing or null
-#: value to ``""``, so a row lacking any of them is silently un-attributable:
-#: it can neither match the group being deleted nor be counted as admin cover
-#: — and it can be counted as cover *from some other group*, which suppresses
-#: the one guard that has no override. Coord serializes all three as
-#: non-nullable ``String`` off a ``TEXT NOT NULL`` primary key
-#: (``routes_phase3::get_group_tenant_roles``), so requiring them refuses
-#: nothing coord produces today.
-_MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
+# `_is_attributable` below names the shape of a value these guards may compare
+# or display. The blast-radius verdict carries far fewer strings than the old
+# row table did, but the ones it does carry still matter: the echoed `group_id`
+# is COMPARED (`_verdict_is_about`), and the caller's own tenant slugs are
+# DISPLAYED in a refusal message. A value carrying a ZWSP reads as a real
+# identifier to a human and is a different string to Python.
 
 
 def _is_attributable(value: Any) -> bool:
     """True when a row's identity field can be compared to a real identifier.
 
     Written as ONE predicate on purpose. Two earlier rounds of this fix put a
-    *different* normalization in the check than in the accessors below
-    (``bool()``, then ``str.strip()``, against the accessors' bare
-    ``str(x or "")``), and the gap between the two normalizations IS the
+    *different* normalization in the check than in the readers that consumed
+    its output (``bool()``, then ``str.strip()``, against a bare
+    ``str(x or "")``), and the gap between two normalizations IS the
     vulnerability: a value that satisfies the check but not the comparison
-    attributes to no group, so :func:`delete_cognito_group`'s guard 1 sees
-    nothing mapped while :func:`_tenants_stranded_by` counts the row as admin
-    cover *from another group* — silencing guard 3, the guard with no
+    attributes to nothing, so one guard sees nothing mapped while another
+    counts the same value as cover -- silencing guard 3, the guard with no
     override. Narrowing the gap keeps leaving a smaller one; the fix is to
-    have no gap, which is why the accessors are documented as reading only
-    values that passed through here.
+    have no gap, which is why every string that arrives FROM COORD and reaches
+    a comparison or an operator-facing message passes through here and is
+    compared unchanged.
+
+    ``group_name`` itself does NOT pass through here, deliberately: it is the
+    caller's own path parameter, and the identical string is what goes to coord
+    (``params={"group_id": group_name}``), what the echo is compared against,
+    and what is handed to ``delete_group``. Normalising it would make the guard
+    and the delete disagree about which group is which, which is worse than any
+    lookalike it could reject.
 
     The three clauses, and the shape each one exists for:
 
@@ -9557,11 +9597,12 @@ def _is_attributable(value: Any) -> bool:
     Its BOOTSTRAP SEEDER does not (``auth_sso::seed_bootstrap_group_mappings``
     inserts ``COORD_SSO_BOOTSTRAP_GROUP_MAPPINGS`` verbatim, and the column
     carries no CHECK), so a stray space in that environment variable seeds a
-    row this refuses — and because the check is table-wide, that one row
-    blocks EVERY group delete until it is removed from
-    ``coord.group_tenant_roles``. Fail-closed is the right direction for an
-    irreversible operation and the refusal names the offending key, but it
-    is called out here because there is no override and the next move is
+    row this refuses. The blast radius of that is much smaller than it used to
+    be: this check no longer runs over the whole table, only over the caller's
+    OWN tenant's slugs for the ONE group being deleted, so a malformed row in
+    a foreign tenant blocks nothing here. Fail-closed is still the right
+    direction for an irreversible operation and the refusal names the offending
+    key, but it is called out because there is no override and the next move is
     otherwise not obvious.
     """
     return (
@@ -9572,14 +9613,17 @@ def _is_attributable(value: Any) -> bool:
     )
 
 
-#: Details :func:`_proxy_coord_get` puts on the ``HTTPException`` it
-#: SYNTHESIZES when the request never completed. The 502 / 504 riding with
-#: them are **qontinui-web's own codes, not coord's** — reporting them as
-#: "coord answered 502" names an answer coord never gave, the same dishonesty
-#: :func:`_raise_mapping_check_unreadable` avoids by carrying no status at
-#: all. Matched on the detail rather than the number so a genuine coord 502 is
-#: still reported as a coord 502.
-#:
+# The 502 / 504 :func:`_proxy_coord_get` invents when the request never
+# completed are **qontinui-web's own codes, not coord's** — reporting them as
+# "coord answered 502" names an answer coord never gave, the same dishonesty
+# :func:`_raise_mapping_check_unreadable` avoids by carrying no status at all.
+#
+# They are told apart by the ``CoordTransportUnavailable`` TYPE, never by the
+# detail STRING. This comment used to say the opposite ("matched on the detail
+# rather than the number"), which argued for the exact defect the type exists
+# to close: ``_proxy_coord_get`` passes coord's ``resp.text`` straight through
+# as the detail, so a genuine coord 5xx whose body happens to read like our
+# transport text would be demoted to "coord never answered".
 def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
     """Refuse: *coord answered without an error status, but not with the
     mapping table*.
@@ -9610,7 +9654,7 @@ def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
             "reason": reason,
             "message": (
                 "Refused: coord answered without an error status, but the body "
-                "is not its group → tenant → role table "
+                "is not its group blast-radius verdict "
                 f"({reason}), so there is no way to tell what this delete "
                 "would break. Nothing was deleted. An unreadable answer is "
                 "UNKNOWN, not 'this group has no mappings' — treating it as "
@@ -9622,67 +9666,249 @@ def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
     )
 
 
-async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
-    """Every ``coord.group_tenant_roles`` row, via the existing proxy path.
+@dataclass(frozen=True)
+class _BlastRadius:
+    """What deleting one Cognito group would take down, POOL-WIDE.
 
-    Reuses ``_proxy_coord_get`` against the same coord route
-    :func:`get_coord_group_tenant_roles` already proxies — no second client,
-    no cross-schema read. ``forward_bearer=True`` with no resolved tenant is
-    what puts the caller's Cognito bearer on the wire (the group routes are
-    ``require_admin``-gated and resolve no coord tenant of their own), so
-    the caller must have run :func:`capture_caller_bearer` first.
+    Coord's verdict, parsed and re-validated. Slugs appear only for the
+    caller's OWN tenant -- exactly the scope coord's tenant-scoped mappings
+    list already discloses to this caller; every other tenant is an integer.
+    See the module comment above :data:`HOME_GROUP_SUFFIX` for why the verdict
+    is computed in coord rather than derived from rows here.
 
-    EVERY failure of the read — transport, timeout, or a coord 4xx (the route
-    is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
-    admin role gets 403 there) — is re-raised as **502
-    ``mapping_check_unavailable``**, carrying coord's own status where there
-    is one and ``None`` where coord never completed an answer. That takes two
-    arms, not one: ``_proxy_coord_get`` converts only ``ConnectError`` and
-    ``TimeoutException`` into an ``HTTPException``, so the rest of
-    ``httpx.HTTPError`` is caught here rather than escaping as a bare 500.
-    One meaning either way: *the check could not be completed, so nothing was
-    deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
-    the one thing this endpoint must never do is treat a failed read as a
-    clean bill of health. Passing coord's 403 straight through would instead
-    read as "you may not delete this group", which is a different — and
-    false — claim.
+    Frozen because a guard must not be able to talk itself out of a refusal by
+    mutating the evidence.
+    """
 
-    **A 200 whose BODY is not the table is the same UNKNOWN**, and it used to
-    be the one arm that got it wrong: a non-dict body, a missing or non-list
-    ``group_tenant_roles``, all returned ``[]`` — indistinguishable from a
-    genuinely unmapped group, so all three guards in
-    :func:`delete_cognito_group` passed and the irreversible AWS delete
-    proceeded. The HTTP status is not the only way a read fails. Those bodies
-    now raise **502 ``mapping_check_unreadable``**, a code distinct from
-    ``mapping_check_unavailable`` precisely so the operator can tell "coord
-    never answered" from "coord answered with something that is not the
-    table" — the second is a coord/proxy defect worth chasing, not an outage
+    #: ROW count, pool-wide. The honest size of the blast radius, and the
+    #: left-hand side of the sum invariant.
+    mapped_total: int
+    #: One slug per own-tenant ROW — **not** deduplicated, because
+    #: `len()` of this is a term in the sum invariant and coord emits one entry
+    #: per row (`(group_id, tenant_slug, role)` is its PK, so one group can
+    #: carry several rows in one tenant). Deduplication happens at RENDER time
+    #: in :func:`_display_slugs`; keeping the two apart is what lets the count
+    #: stay honest while the message stays readable.
+    mapped_own_tenant_slugs: tuple[str, ...]
+    #: ROWS in tenants the caller does not administer — see coord's own field
+    #: doc. A message that calls these "tenants" is wrong; :func:`_render_affected`
+    #: takes a `unit` for exactly this reason.
+    mapped_other_tenant_rows: int
+    #: ROWS whose tenant is not materialised yet, possibly spanning several
+    #: distinct pending slugs.
+    mapped_unmaterialized_rows: int
+    #: Own-tenant slugs that would be STRANDED. Deduplicated by coord already
+    #: (stranding is a property of a tenant, not of a row), and at most one
+    #: element under coord's current classifier — but parsed and rendered as N,
+    #: because this process cannot check that property of the producer.
+    strands_own_tenant: tuple[str, ...]
+    #: Distinct OTHER TENANTS that would be stranded. A tenant count, unlike
+    #: the two `*_rows` fields above.
+    strands_other_tenant_count: int
+
+    @property
+    def strands_total(self) -> int:
+        return len(self.strands_own_tenant) + self.strands_other_tenant_count
+
+
+#: Integer fields of the verdict. Every one is REQUIRED -- a missing count is
+#: not a zero, it is an answer we cannot read (see :func:`_verdict_count`).
+_BLAST_RADIUS_COUNT_KEYS = (
+    "mapped_total",
+    "mapped_other_tenant_rows",
+    "mapped_unmaterialized_rows",
+    "strands_other_tenant_count",
+)
+
+#: List fields of the verdict.
+#: List fields, and the entry type each one carries. ``mapped_own_tenant`` is
+#: a list of row objects; ``strands_own_tenant`` a list of bare slug strings.
+#: Pinned per key rather than accepting either everywhere: a parser looser than
+#: the contract it validates is the wrong direction for this module, and an
+#: object arriving where a string belongs means the two sides disagree about
+#: the shape, which is worth refusing while it is still cheap to notice.
+_BLAST_RADIUS_LIST_KEYS: dict[str, type] = {
+    "mapped_own_tenant": dict,
+    "strands_own_tenant": str,
+}
+
+
+def _verdict_is_about(payload: dict[str, Any], group_name: str) -> None:
+    """Refuse unless coord's verdict is about the group we asked about.
+
+    Coord echoes the requested group back as ``group_id``. Checking it is the
+    ONE refusal property the row-shaped reader had for free and this one has to
+    make explicit: that reader re-attributed every row client-side
+    (``_row_group_id(r) == group_name``), so a table about some other group
+    yielded an empty mapped set for THIS group. A verdict is pre-aggregated —
+    there is nothing left to re-attribute — so an answer about the wrong group
+    is well-formed, sum-consistent, and, if it happens to be all zeros,
+    indistinguishable from "this group breaks nothing".
+
+    The realistic channel is not a malicious coord: it is any cache or proxy
+    between here and coord that keys on path and ignores the query string (the
+    group rides in ``params``), or a future coord regression binding the wrong
+    parameter. Both produce a clean bill of health for a group nobody asked
+    about, in front of an irreversible pool-wide delete.
+
+    Compared byte-exactly and through :func:`_is_attributable`, for the same
+    reason every other identifier here is: an echo carrying an invisible
+    character renders identically to the group name and is a different string.
+    """
+    echoed = payload.get("group_id")
+    if not _is_attributable(echoed):
+        _raise_mapping_check_unreadable("the body carries no usable group_id")
+    if echoed != group_name:
+        _raise_mapping_check_unreadable(
+            f"the verdict is about {echoed!r}, not {group_name!r}"
+        )
+
+
+def _verdict_count(payload: dict[str, Any], key: str) -> int:
+    """One non-negative integer field of coord's verdict, or refuse.
+
+    ``bool`` is rejected explicitly. ``isinstance(True, int)`` is ``True`` in
+    Python, so a plain ``isinstance(v, int)`` accepts ``True`` and then
+    ``mapped_total = True`` compares equal to ``1`` -- a verdict that reads as
+    "one mapping" when coord sent a boolean. That is precisely the
+    complete-looking-but-wrong shape this module exists to refuse, so it is
+    refused rather than coerced.
+
+    A NEGATIVE count is refused for the same reason: it cannot be produced by
+    counting anything, so its presence means the body is not the verdict. It
+    matters more than it looks -- ``strands_total`` sums two fields, and a
+    negative on either side could cancel a real strand out to zero and silence
+    the one guard that has no override.
+    """
+    if key not in payload:
+        _raise_mapping_check_unreadable(f"the body carries no {key}")
+    value = payload[key]
+    # TWO checks, not one `or`. Both spellings reject the same inputs, but the
+    # `or` form leaves `value` as ``Any`` for the type checker — so the `return`
+    # trips `warn_return_any` and, worse, no static check would notice if the
+    # narrowing later stopped being sound. Split, mypy narrows to ``int``
+    # (`_raise_mapping_check_unreadable` is ``NoReturn``), and each arm gets to
+    # name its own cause.
+    if isinstance(value, bool):
+        _raise_mapping_check_unreadable(f"{key} is a boolean, not an integer")
+    if not isinstance(value, int):
+        _raise_mapping_check_unreadable(
+            f"{key} is {type(value).__name__}, not an integer"
+        )
+    if value < 0:
+        _raise_mapping_check_unreadable(f"{key} is negative ({value})")
+    return value
+
+
+def _verdict_slugs(
+    payload: dict[str, Any], key: str, entry_type: type
+) -> tuple[str, ...]:
+    """One list-of-tenant-slugs field of coord's verdict, or refuse.
+
+    ``mapped_own_tenant`` arrives as a list of row objects and
+    ``strands_own_tenant`` as a list of bare slug strings; both are reduced to
+    slugs here, and every slug must pass :func:`_is_attributable` -- these
+    strings reach a refusal message and a length comparison, and one carrying
+    an invisible character looks identical to a real slug while being a
+    different value.
+
+    Entries are never dropped. Dropping one would silently narrow the guard's
+    input, and the entry dropped could be the one that makes this delete strand
+    a tenant -- the same fail-open the row-shaped reader before it refused.
+    """
+    if key not in payload:
+        _raise_mapping_check_unreadable(f"the body carries no {key}")
+    entries = payload[key]
+    if not isinstance(entries, list):
+        _raise_mapping_check_unreadable(
+            f"{key} is {type(entries).__name__}, not a list"
+        )
+    slugs: list[str] = []
+    for entry in entries:
+        slug: Any
+        if not isinstance(entry, entry_type) or isinstance(entry, bool):
+            # `bool` excluded explicitly: it is a subclass of `int`, and while
+            # neither expected type is `int` today, the exclusion costs nothing
+            # and this module's history is full of a subclass slipping through
+            # an `isinstance`.
+            _raise_mapping_check_unreadable(
+                f"a {key} entry is {type(entry).__name__}, not a {entry_type.__name__}"
+            )
+        slug = entry.get("tenant_slug") if isinstance(entry, dict) else entry
+        if not _is_attributable(slug):
+            _raise_mapping_check_unreadable(
+                f"a {key} entry carries no usable tenant_slug"
+            )
+        slugs.append(str(slug))
+    return tuple(slugs)
+
+
+async def _coord_group_blast_radius(group_name: str) -> _BlastRadius:
+    r"""What deleting ``group_name`` from the shared Cognito pool would break.
+
+    Reads coord's ``GET /admin/coord/group-tenant-roles/blast-radius``, which
+    answers the POOL-WIDE question. It deliberately does NOT read the mappings
+    list (``/admin/coord/group-tenant-roles``): that route is tenant-scoped and
+    INNER-joined, so it under-reports the blast radius while looking complete
+    -- see the module comment above :data:`HOME_GROUP_SUFFIX`.
+
+    ``group_name`` rides in ``params``, never interpolated into the path.
+    Cognito group names are drawn from ``\p{L}\p{M}\p{S}\p{N}\p{P}``, which
+    includes ``/``, ``?`` and ``#``; httpx percent-encodes a query value, while
+    a path-interpolated one would silently address a DIFFERENT route and the
+    guard would be answered about a group nobody asked about.
+
+    ``forward_bearer=True`` with no resolved tenant is what puts the caller's
+    Cognito bearer on the wire (the group routes are ``require_admin``-gated
+    and resolve no coord tenant of their own), so the caller must have run
+    :func:`capture_caller_bearer` first.
+
+    EVERY failure of the read -- transport, timeout, or a coord 4xx/5xx -- is
+    re-raised as **502 ``mapping_check_unavailable``**, carrying coord's own
+    status where there is one and ``None`` where coord never completed an
+    answer. That takes two arms, not one: ``_proxy_coord_get`` converts only
+    ``ConnectError`` and ``TimeoutException`` into an ``HTTPException``, so the
+    rest of ``httpx.HTTPError`` is caught here rather than escaping as a bare
+    500. One meaning either way: *the check could not be completed, so nothing
+    was deleted.* An unreadable blast radius is UNKNOWN, not "this group breaks
+    nothing", and the one thing this endpoint must never do is treat a failed
+    read as a clean bill of health.
+
+    **A 404 is in that set on purpose.** It is what a coord deployment
+    PREDATING this route returns, so a web release that reaches production
+    ahead of coord's refuses group deletes rather than failing open, and
+    self-heals the moment coord deploys. Same for a coord rollback.
+
+    **A 200 whose BODY is not the verdict is the same UNKNOWN**, raised as 502
+    ``mapping_check_unreadable`` -- a distinct code so the operator can tell
+    "coord never answered" from "coord answered with something that is not the
+    verdict", which is a coord/proxy defect worth chasing rather than an outage
     to wait out.
 
-    Validation reaches the ROW, not just the envelope. Checking only the
-    envelope would leave the original defect intact one layer down: a
-    well-formed list of well-formed objects that do not carry
-    ``_MAPPING_ROW_IDENTITY_KEYS`` — a renamed column in coord's ``SELECT``,
-    a renamed key in its ``json!`` — reads as rows while attributing to no
-    group and no tenant, and both derived guards go vacuous again. So every
-    row must carry a usable ``group_id``, ``tenant_slug`` and ``role``.
+    Validation reaches every field, not just the envelope, and ends with the
+    SUM INVARIANT. Checking the fields alone would leave the original defect
+    one layer down: a well-formed verdict whose buckets do not add up to
+    ``mapped_total`` means a bucket went missing between coord's SQL and this
+    parse -- and a missing bucket is exactly how "mapped in another tenant"
+    became "mapped nowhere" in the first place.
 
-    A **well-formed** 200 whose ``group_tenant_roles`` is a real empty list
-    stays a legitimate "no mappings" and still deletes: refusing that would
-    make the guard a blanket denial, which is its own failure.
+    A well-formed all-zero verdict stays a legitimate "this group breaks
+    nothing" and still deletes: refusing that would make the guard a blanket
+    denial, which is its own failure.
     """
     try:
         payload = await _proxy_coord_get(
-            "/admin/coord/group-tenant-roles",
+            "/admin/coord/group-tenant-roles/blast-radius",
+            params={"group_id": group_name},
             tenant_id=None,
             forward_bearer=True,
         )
     except HTTPException as exc:
-        # `_proxy_coord_get` raises with coord's OWN status for a coord 4xx/5xx,
-        # but with a status IT invented (502 / 504) when the request never
-        # completed. Only the first is coord's answer, so only the first is
-        # reported as one.
-        # The TYPE is the discriminator — see `CoordTransportUnavailable`.
+        # `_proxy_coord_get` raises with coord's OWN status for a coord
+        # 4xx/5xx, but with a status IT invented (502 / 504) when the request
+        # never completed. Only the first is coord's answer, so only the first
+        # is reported as one.
+        # The TYPE is the discriminator -- see `CoordTransportUnavailable`.
         # Matching the detail string instead demotes a genuine coord 5xx whose
         # body happens to be that literal (`_proxy_coord_get` passes
         # `resp.text` through as the detail), and matching `__context__`
@@ -9695,7 +9921,7 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
             coord_status=coord_status,
         )
         cause = (
-            f"{exc.detail} — coord never completed an answer"
+            f"{exc.detail} -- coord never completed an answer"
             if synthesized
             else f"coord answered {exc.status_code}"
         )
@@ -9705,22 +9931,23 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
                 "error": "mapping_check_unavailable",
                 "coord_status": coord_status,
                 "message": (
-                    "Refused: coord's group → tenant → role table could not "
-                    f"be read ({cause}), so there is no way to tell what this "
-                    "delete would break. Nothing was deleted. A 403 here means "
-                    "the caller holds no coord admin role; anything else means "
-                    "coord is unreachable."
+                    "Refused: coord could not tell us what deleting this group "
+                    f"would break ({cause}), so there is no way to know. "
+                    "Nothing was deleted. A 403 here means the caller holds no "
+                    "coord admin role; a 404 means coord has not yet deployed "
+                    "the blast-radius read; anything else means coord is "
+                    "unreachable."
                 ),
             },
         ) from exc
     except httpx.HTTPError as exc:
         # ``_proxy_coord_get`` maps only ``ConnectError`` and
         # ``TimeoutException`` to an ``HTTPException``; every other httpx
-        # transport failure — ``RemoteProtocolError`` from a load balancer
-        # cutting the response, ``ReadError``, ``ProxyError`` — escapes it and
-        # used to surface as a bare 500. Safe (nothing was deleted) but
-        # undiagnosable, and it made the "EVERY failure of the read" contract
-        # below untrue. No status: coord never completed an answer.
+        # transport failure -- ``RemoteProtocolError`` from a load balancer
+        # cutting the response, ``ReadError``, ``ProxyError`` -- escapes it and
+        # would otherwise surface as a bare 500. Safe (nothing was deleted) but
+        # undiagnosable, and it would make the "EVERY failure of the read"
+        # contract above untrue. No status: coord never completed an answer.
         logger.warning(
             "cognito_group_delete_mapping_check_failed",
             coord_status=None,
@@ -9732,23 +9959,24 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
                 "error": "mapping_check_unavailable",
                 "coord_status": None,
                 "message": (
-                    "Refused: coord's group → tenant → role table could not "
-                    f"be read ({type(exc).__name__} — coord never completed an "
-                    "answer), so there is no way to tell what this delete "
-                    "would break. Nothing was deleted."
+                    "Refused: coord could not tell us what deleting this group "
+                    f"would break ({type(exc).__name__} -- coord never "
+                    "completed an answer), so there is no way to know. Nothing "
+                    "was deleted."
                 ),
             },
         ) from exc
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        # ``_proxy_coord_get`` ends in ``resp.json()`` → ``jsonlib.loads``,
-        # whose only realistic failures are these two — an HTML error page from
-        # a proxy in front of coord, or a mis-encoded body. Uncaught this became
-        # a bare 500; it is the same UNKNOWN as every other unreadable answer.
+        # ``_proxy_coord_get`` ends in ``resp.json()`` -> ``jsonlib.loads``,
+        # whose only realistic failures are these two -- an HTML error page
+        # from a proxy in front of coord, or a mis-encoded body. Uncaught this
+        # became a bare 500; it is the same UNKNOWN as every other unreadable
+        # answer.
         #
         # Deliberately NOT the wider ``ValueError`` these both subclass: that
         # would also catch a ``ValueError`` raised BEFORE the response exists
         # (a malformed ``COORD_URL``, say) and report it as "the body is not
-        # JSON" under a message asserting coord answered — naming a cause that
+        # JSON" under a message asserting coord answered -- naming a cause that
         # is not the actual one, which is the thing this refusal exists to
         # avoid.
         _raise_mapping_check_unreadable(f"the body is not JSON ({exc})")
@@ -9757,88 +9985,91 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
         _raise_mapping_check_unreadable(
             f"the body is {type(payload).__name__}, not an object"
         )
-    if "group_tenant_roles" not in payload:
-        _raise_mapping_check_unreadable("the body carries no group_tenant_roles key")
-    rows = payload["group_tenant_roles"]
-    if not isinstance(rows, list):
-        _raise_mapping_check_unreadable(
-            f"group_tenant_roles is {type(rows).__name__}, not a list"
-        )
-    if not all(isinstance(row, dict) for row in rows):
-        # Dropping the non-objects instead would silently narrow the guard's
-        # input — and the row it dropped could be the one mapping that makes
-        # this delete strand a tenant.
-        _raise_mapping_check_unreadable(
-            "group_tenant_roles contains an entry that is not an object"
-        )
-    for key in _MAPPING_ROW_IDENTITY_KEYS:
-        if not all(_is_attributable(row.get(key)) for row in rows):
-            _raise_mapping_check_unreadable(
-                f"a group_tenant_roles entry carries no usable {key}"
-            )
-    # Provably a no-op filter after the checks above — belt and braces, not a
-    # discard. (`rows` is already `list[Any]` and would satisfy the annotation
-    # on its own; this makes the element type true rather than merely
-    # accepted.)
-    return [row for row in rows if isinstance(row, dict)]
 
+    # Before any field is read: is this verdict even about our group?
+    _verdict_is_about(payload, group_name)
 
-# The three accessors below coerce a missing value to ``""`` and compare the
-# result to a real identifier. That coercion is SAFE only on rows that came
-# through :func:`_coord_group_tenant_role_rows`, where
-# :func:`_is_attributable` has already rejected every value that would coerce
-# or compare surprisingly. Called on an unvalidated row, ``""`` is not "no
-# match" — it is a match against nothing that still counts as cover from
-# another group, which is the fail-open this whole module comment is about.
-# If you need these somewhere else, validate there too.
-
-
-def _row_group_id(row: dict[str, Any]) -> str:
-    return str(row.get("group_id") or "")
-
-
-def _row_tenant_slug(row: dict[str, Any]) -> str:
-    return str(row.get("tenant_slug") or "")
-
-
-def _row_confers_admin(row: dict[str, Any]) -> bool:
-    # BYTE-EXACT, and deliberately not `.strip().lower()`. Coord's
-    # `rbac::is_tenant_admin` — the gate deciding whether anyone can re-create
-    # a mapping into a tenant this delete would strand — matches
-    # `role = ANY(&["admin"])`: no lower(), no ILIKE, no citext. A row spelled
-    # `Admin` therefore confers NOTHING there, and crediting it as admin cover
-    # here silenced guard 3 while the tenant was stranded for real. Case
-    # folding was this comparison disagreeing with the ground truth it stands
-    # in for — the same shape as every other defect in this module's history.
-    # `.strip()` is separately unnecessary: `_is_attributable` has already
-    # rejected any surrounding whitespace.
-    return row.get("role") in _ADMIN_CONFERRING_ROLES
-
-
-def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[str]:
-    """Tenant slugs left with no admin-conferring mapping once ``group_name``
-    is gone.
-
-    A tenant is stranded when this group confers admin on it and NO OTHER
-    group does. Other rows belonging to the SAME group do not count — the
-    delete takes every one of them out at once.
-    """
-    stranded: list[str] = []
-    admin_from_others = {
-        _row_tenant_slug(r)
-        for r in rows
-        if _row_confers_admin(r) and _row_group_id(r) != group_name
+    counts = {key: _verdict_count(payload, key) for key in _BLAST_RADIUS_COUNT_KEYS}
+    lists = {
+        key: _verdict_slugs(payload, key, entry_type)
+        for key, entry_type in _BLAST_RADIUS_LIST_KEYS.items()
     }
-    for slug in sorted(
-        {
-            _row_tenant_slug(r)
-            for r in rows
-            if _row_group_id(r) == group_name and _row_confers_admin(r)
-        }
-    ):
-        if slug and slug not in admin_from_others:
-            stranded.append(slug)
-    return stranded
+
+    verdict = _BlastRadius(
+        mapped_total=counts["mapped_total"],
+        mapped_own_tenant_slugs=lists["mapped_own_tenant"],
+        mapped_other_tenant_rows=counts["mapped_other_tenant_rows"],
+        mapped_unmaterialized_rows=counts["mapped_unmaterialized_rows"],
+        strands_own_tenant=lists["strands_own_tenant"],
+        strands_other_tenant_count=counts["strands_other_tenant_count"],
+    )
+
+    parts = (
+        len(verdict.mapped_own_tenant_slugs)
+        + verdict.mapped_other_tenant_rows
+        + verdict.mapped_unmaterialized_rows
+    )
+    if verdict.mapped_total != parts:
+        _raise_mapping_check_unreadable(
+            f"mapped_total ({verdict.mapped_total}) is not the sum of its "
+            f"buckets ({parts})"
+        )
+    return verdict
+
+
+def _display_slugs(slugs: tuple[str, ...]) -> tuple[str, ...]:
+    """Sorted, DEDUPLICATED tenant slugs, for naming in a refusal.
+
+    Coord emits one `mapped_own_tenant` entry per ROW and
+    `(group_id, tenant_slug, role)` is its PK, so one group legitimately holds
+    several rows in one tenant. Rendered raw that reads "mapped to acme, acme".
+    The COUNT beside it (`mapped_total` / `strands_total`) stays the honest
+    size; this only decides what may be NAMED.
+    """
+    return tuple(sorted(set(slugs)))
+
+
+def _render_affected(
+    named: tuple[str, ...], other: int, *, unit: str, unmaterialized: int = 0
+) -> str:
+    """Render a partly-disclosable set of tenants for an operator message.
+
+    Names what may be named and COUNTS the rest, and says plainly that the rest
+    exist. Coord cannot verify this endpoint's superuser gate, so it returns
+    another tenant's slug to nobody -- but a refusal that silently omitted the
+    tenants it could not name would be a refusal the operator cannot act on,
+    and would read as a smaller blast radius than the one that stopped them.
+    """
+    parts: list[str] = []
+    if named:
+        parts.append(", ".join(named))
+    if other:
+        # `unit` is REQUIRED and keyword-only because the two guards count
+        # different things and share this renderer. Guard 1's bucket is a ROW
+        # count -- `(group_id, tenant_slug, role)` is coord's PK, so one group
+        # holds several rows in one tenant, and "3 other tenants" would be a
+        # false statement in the one sentence the operator acts on. Guard 3's
+        # is a distinct-TENANT count, because stranding is a property of a
+        # tenant. Over-reporting is the safe direction for the REFUSAL; it is
+        # not a licence to over-report in the prose.
+        plural = "s" if other != 1 else ""
+        # "further" only when something was actually named before it -- with no
+        # named tenant, "mapped to 1 further mapping" reads as a fragment.
+        more = "further " if named else ""
+        if unit == "mapping":
+            parts.append(
+                f"{other} {more}mapping{plural} in tenants you do not administer"
+            )
+        else:
+            parts.append(f"{other} {more}tenant{plural} you do not administer")
+    if unmaterialized:
+        # Also rows, and they may span several distinct pending slugs — hence
+        # "tenants", plural-agnostic, never "a tenant".
+        parts.append(
+            f"{unmaterialized} mapping{'s' if unmaterialized != 1 else ''} into "
+            "tenants that do not exist yet"
+        )
+    return " and ".join(parts) if parts else "a tenant"
 
 
 @router.delete("/coord/cognito/groups/{group_name}")
@@ -9885,27 +10116,40 @@ async def delete_cognito_group(
     # The bearer is what authenticates the coord read below; `require_admin`
     # resolves no coord tenant and so never captures it.
     capture_caller_bearer(request)
-    rows = await _coord_group_tenant_role_rows()
+    radius = await _coord_group_blast_radius(group_name)
 
     # -- Guard 1: coord maps this group ------------------------------------
-    mapped = [r for r in rows if _row_group_id(r) == group_name]
-    if mapped and not allow_mapped:
-        tenants = sorted({_row_tenant_slug(r) for r in mapped if _row_tenant_slug(r)})
+    if radius.mapped_total and not allow_mapped:
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "group_is_mapped",
                 "group_name": group_name,
-                "tenants": tenants,
+                # The tenants this caller may be told about. PARTIAL BY
+                # DESIGN, and `mapped_total` beside it is the honest size --
+                # coord names no tenant this caller does not administer, so a
+                # list alone would understate the blast radius. Anything
+                # reading `tenants` as exhaustive is reading it wrong.
+                "tenants": list(_display_slugs(radius.mapped_own_tenant_slugs)),
+                "mapped_total": radius.mapped_total,
+                "other_tenant_rows": radius.mapped_other_tenant_rows,
+                "unmaterialized_rows": radius.mapped_unmaterialized_rows,
                 "message": (
                     f"{group_name} is mapped to "
-                    f"{', '.join(tenants) or 'a tenant'} in coord's "
-                    "group → tenant → role table. Deleting the group would "
-                    "leave those mappings with no input: each affected "
-                    "operator loses the roles they grant at their NEXT "
-                    "LOGIN, one person at a time, with nothing to correlate "
-                    "it back to. Remove the mapping first, then delete the "
-                    "group."
+                    + _render_affected(
+                        _display_slugs(radius.mapped_own_tenant_slugs),
+                        radius.mapped_other_tenant_rows,
+                        unit="mapping",
+                        unmaterialized=radius.mapped_unmaterialized_rows,
+                    )
+                    + " in coord's group -> tenant -> role table "
+                    f"({radius.mapped_total} mapping"
+                    f"{'s' if radius.mapped_total != 1 else ''} in all). "
+                    "Deleting the group would leave those mappings with no "
+                    "input: each affected operator loses the roles they grant "
+                    "at their NEXT LOGIN, one person at a time, with nothing "
+                    "to correlate it back to. Remove the mapping first, then "
+                    "delete the group."
                 ),
             },
         )
@@ -9932,22 +10176,38 @@ async def delete_cognito_group(
         )
 
     # -- Guard 3: last admin-conferring mapping (NO override) --------------
-    stranded = _tenants_stranded_by(group_name, rows)
-    if stranded:
+    #
+    # "Stranded" is coord's verdict, not a re-derivation here: a tenant is
+    # stranded when no OTHER group confers admin on it AND no
+    # `coord.operator_roles` admin grant survives the delete. Both halves need
+    # pool-wide data this process does not have and must not be given, and the
+    # second half needs `rbac::is_tenant_admin`'s own vocabulary -- which is
+    # exactly what a Python mirror of it kept getting wrong.
+    if radius.strands_total:
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "last_admin_mapping",
                 "group_name": group_name,
-                "tenants": stranded,
+                # Same partiality as guard 1, same reason. `strands_total` is
+                # the honest size.
+                "tenants": list(_display_slugs(radius.strands_own_tenant)),
+                "strands_total": radius.strands_total,
+                "other_tenant_count": radius.strands_other_tenant_count,
                 "message": (
-                    f"{group_name} is the only group conferring admin on "
-                    f"{', '.join(stranded)}. Deleting it would leave "
-                    "nobody able to re-create the mapping, because that "
-                    "route requires an admin in the very tenant this would "
-                    "strand — recovery would need the AWS console. Grant "
-                    "another group admin on it first. This guard has no "
-                    "override."
+                    f"{group_name} is the only thing conferring admin on "
+                    + _render_affected(
+                        _display_slugs(radius.strands_own_tenant),
+                        radius.strands_other_tenant_count,
+                        unit="tenant",
+                    )
+                    + f" ({radius.strands_total} tenant"
+                    f"{'s' if radius.strands_total != 1 else ''} in all). "
+                    "Deleting it would leave nobody able to re-create the "
+                    "mapping, because that route requires an admin in the very "
+                    "tenant this would strand -- recovery would need the AWS "
+                    "console. Grant another group admin on it first. This "
+                    "guard has no override."
                 ),
             },
         )
