@@ -63,6 +63,11 @@
  *     "reclaimable_bytes": 12345678 | null,
  *     "report_only_bytes": 98765432 | null,
  *     "bytes_incomplete": false,
+ *     "roots_unknown": false,                  // true => the walk produced NO
+ *                                              // population; every `roots`
+ *                                              // below is a placeholder, and
+ *                                              // a current runner sends
+ *                                              // `by_class: []` as well
  *     "by_class": [{ "class": ..., "roots": 0, "bytes": null,
  *                    "reclaimable_roots": 0, "reclaimable_bytes": null,
  *                    "roots_with_unknown_bytes": 0, "verb": null,
@@ -77,7 +82,10 @@
  *   "scan": {                                  // null until a walk completed
  *     "dirs_visited": 12345,
  *     "truncated": false,                      // true => `items` is a PREFIX
- *     "read_errors": [{ "path": "...", "error": "..." }],
+ *     "read_errors": [{ "path": "...", "error": "..." }],  // CAPPED sample
+ *     "read_errors_total": 0,                  // the UNCAPPED count; absent
+ *                                              // from a runner build that
+ *                                              // predates the cap
  *     "roots_with_unknown_bytes": 0,
  *     "roots_with_partial_bytes": 0
  *   }
@@ -338,9 +346,41 @@ export interface DiskScanStats {
    * settling for `truncated !== true`, a test an absent key passes.
    */
   hasTruncatedField: boolean;
+  /**
+   * The failed reads the runner CHOSE TO LIST — a bounded sample, not the
+   * population. Never count this array; read {@link readErrorsSeen}.
+   */
   readErrors: DiskScanError[];
+  /**
+   * `scan.read_errors_total` — the runner's UNCAPPED count of failed reads, or
+   * `null` from a build that predates the field.
+   *
+   * The runner caps `read_errors` at 100 entries because the walk records one
+   * per unreadable directory across up to 200,000 of them and serialises the
+   * lot into every response. `read_errors.length` therefore stopped being a
+   * count the moment that cap landed: a machine with a permission-locked
+   * subtree reports thousands and this page would have said exactly `100`.
+   */
+  readErrorsTotal: number | null;
   rootsWithUnknownBytes: number | null;
   rootsWithPartialBytes: number | null;
+}
+
+/**
+ * How many reads failed, as this page must count them.
+ *
+ * Prefers the runner's uncapped total and falls back to the listed length only
+ * for a build that sends no total — where the list IS the whole set, so the
+ * fallback is exact rather than a guess. Takes the larger of the two so a
+ * payload whose total contradicts its own list can never report FEWER errors
+ * than it visibly carries.
+ */
+export function readErrorsSeen(scan: DiskScanStats | null): number {
+  if (scan === null) return 0;
+  const listed = scan.readErrors.length;
+  return scan.readErrorsTotal === null
+    ? listed
+    : Math.max(scan.readErrorsTotal, listed);
 }
 
 /** A parsed survey. Every field is what the runner said, or an explicit gap. */
@@ -395,6 +435,20 @@ export interface DiskSurvey {
    * one says the listed rows are under-sized.
    */
   bytesIncomplete: boolean;
+  /**
+   * `summary.roots_unknown` — the runner saying its walk produced NO population
+   * at all, so every count in the rollup is a placeholder rather than a
+   * measurement.
+   *
+   * It exists because `ClassSummary.roots` is an unsigned integer on the wire
+   * and cannot be nulled the way the byte totals are. A failed
+   * `read_dir(workspace_root)` therefore emitted four rows of `roots: 0` that
+   * are indistinguishable from a fully-read, genuinely-empty machine — and
+   * {@link measuredZeroBuckets} read them as a certified `0 B`. This flag is
+   * the runner's own contradiction of that reading, and it must be consulted
+   * before any zero on this page is called measured.
+   */
+  summaryRootsUnknown: boolean;
   /**
    * `scan` — the walk's own report on itself, or `null` when the runner sent
    * none. See {@link DiskScanStats}.
@@ -617,6 +671,7 @@ export function parseScanStats(raw: unknown): DiskScanStats | null {
     truncated: raw.truncated === true,
     hasTruncatedField: Object.hasOwn(raw, "truncated"),
     readErrors,
+    readErrorsTotal: count(raw.read_errors_total),
     rootsWithUnknownBytes: count(raw.roots_with_unknown_bytes),
     rootsWithPartialBytes: count(raw.roots_with_partial_bytes),
   };
@@ -730,6 +785,7 @@ export function parseDiskSurvey(payload: unknown): DiskSurveyParse {
       byClass: rollup?.rows ?? null,
       byClassSkipped: rollup?.skipped ?? 0,
       bytesIncomplete: summary?.bytes_incomplete === true,
+      summaryRootsUnknown: summary?.roots_unknown === true,
       scan: parseScanStats(payload.scan),
       skippedItems: skipped,
     },
@@ -1164,6 +1220,15 @@ export function measuredZeroBuckets(survey: DiskSurvey): {
   // The runner's own headline totals are the FIRST authority: a completed
   // census that found nothing reports `0`, while a cold one reports `null`.
   // An explicit zero is a measurement and licenses a `0 B` tile on its own.
+  // The runner's own veto, read FIRST because it contradicts every other
+  // signal on this path. `roots_unknown` means the walk produced no population,
+  // so the rollup's `roots: 0` rows are placeholders and the byte totals it
+  // nulled would arrive as NaN — but a runner build that emits an EMPTY rollup
+  // and one that emits four zeroed rows both reach here, and only this flag
+  // separates either of them from a genuinely empty machine.
+  if (survey.summaryRootsUnknown)
+    return { actionable: false, reportOnly: false };
+
   const summarySaysZero = (n: number) => Number.isFinite(n) && n === 0;
   const fromSummary = {
     actionable: summarySaysZero(survey.summaryReclaimableBytes),
