@@ -737,6 +737,28 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
+class CoordTransportUnavailable(HTTPException):
+    """The request to coord never completed — so its status is OURS, not coord's.
+
+    :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
+    timeout. Both are qontinui-web's own numbers; coord was never reached and
+    gave no answer. A caller that reports a status to an operator must be able
+    to tell those from a status coord genuinely returned, and every
+    string-based way of telling is forgeable: ``_proxy_coord_get`` passes
+    coord's ``resp.text`` straight through as the detail, so a coord 5xx whose
+    body happens to read "coord is not reachable" is indistinguishable by
+    detail alone. Chained ``__context__`` does not work either — a genuine
+    coord error is raised OUTSIDE any ``except`` block, so its context is
+    ``None`` and every genuine answer falls through to whatever the fallback
+    is, making the fallback the only arm that ever runs.
+
+    A subclass is unforgeable by a response body, survives a re-raise or a
+    retry loop, and covers any future transport conversion that uses it
+    without a second edit. It is transparent to every other caller of the
+    proxies: it IS an ``HTTPException``, with the same status and detail.
+    """
+
+
 async def _proxy_coord_get(
     path: str,
     *,
@@ -804,16 +826,16 @@ async def _proxy_coord_get(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=request_headers)
-        except httpx.ConnectError:
-            raise HTTPException(
+        except httpx.ConnectError as exc:
+            raise CoordTransportUnavailable(
                 status_code=502,
                 detail="coord is not reachable",
-            )
-        except httpx.TimeoutException:
-            raise HTTPException(
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise CoordTransportUnavailable(
                 status_code=504,
                 detail="timeout waiting for coord",
-            )
+            ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -8454,10 +8476,20 @@ def _is_attributable(value: Any) -> bool:
       Every one of them makes a value that looks identical to a real
       identifier and compares unequal to it.
 
-    Nothing legitimate is refused: Cognito group names are drawn from
+    Nothing coord's VALIDATED writer produces is refused: group names are drawn from
     ``\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}`` (all printable, no surrounding space),
     coord's ``tenant_slug`` must match ``^[a-z0-9][a-z0-9-]{0,63}$``, and its
-    ``role`` comes from a closed vocabulary.
+    ``role`` is checked against a known vocabulary.
+
+    Its BOOTSTRAP SEEDER does not (``auth_sso::seed_bootstrap_group_mappings``
+    inserts ``COORD_SSO_BOOTSTRAP_GROUP_MAPPINGS`` verbatim, and the column
+    carries no CHECK), so a stray space in that environment variable seeds a
+    row this refuses — and because the check is table-wide, that one row
+    blocks EVERY group delete until it is removed from
+    ``coord.group_tenant_roles``. Fail-closed is the right direction for an
+    irreversible operation and the refusal names the offending key, but it
+    is called out here because there is no override and the next move is
+    otherwise not obvious.
     """
     return (
         isinstance(value, str)
@@ -8475,18 +8507,6 @@ def _is_attributable(value: Any) -> bool:
 #: all. Matched on the detail rather than the number so a genuine coord 502 is
 #: still reported as a coord 502.
 #:
-#: SECONDARY only. The primary discriminator is the chained ``__context__``
-#: exception, which a coord response body cannot forge — these strings are
-#: consulted just for a re-raise that lost its context, and only then, because
-#: ``_proxy_coord_get`` passes coord's ``resp.text`` through as the detail and
-#: a genuine coord 5xx whose body IS one of these would otherwise be demoted.
-#: ``test_a_synthesized_transport_code_is_not_reported_as_coords`` drives the
-#: real ``_proxy_coord_get``, so it keeps both tests honest.
-_COORD_SYNTHESIZED_TRANSPORT_DETAILS = frozenset(
-    {"coord is not reachable", "timeout waiting for coord"}
-)
-
-
 def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
     """Refuse: *coord answered without an error status, but not with the
     mapping table*.
@@ -8589,20 +8609,13 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
         # but with a status IT invented (502 / 504) when the request never
         # completed. Only the first is coord's answer, so only the first is
         # reported as one.
-        # Structural, not textual. ``_proxy_coord_get`` raises INSIDE its
-        # ``except httpx.ConnectError`` / ``except httpx.TimeoutException``
-        # blocks, so implicit chaining puts the real transport error on
-        # ``__context__`` — which no coord response body can forge, and which
-        # covers a future third conversion automatically. The detail strings
-        # stay as a belt-and-braces second test only; on their own they demote
-        # a GENUINE coord 5xx whose body happens to be that literal, since
-        # ``_proxy_coord_get`` passes ``resp.text`` through as the detail.
-        synthesized = isinstance(
-            exc.__context__, (httpx.ConnectError, httpx.TimeoutException)
-        ) or (
-            exc.__context__ is None
-            and exc.detail in _COORD_SYNTHESIZED_TRANSPORT_DETAILS
-        )
+        # The TYPE is the discriminator — see `CoordTransportUnavailable`.
+        # Matching the detail string instead demotes a genuine coord 5xx whose
+        # body happens to be that literal (`_proxy_coord_get` passes
+        # `resp.text` through as the detail), and matching `__context__`
+        # silently never fires, because a genuine coord error is raised
+        # outside any `except` block and so carries no context at all.
+        synthesized = isinstance(exc, CoordTransportUnavailable)
         coord_status = None if synthesized else exc.status_code
         logger.warning(
             "cognito_group_delete_mapping_check_failed",
@@ -8716,7 +8729,17 @@ def _row_tenant_slug(row: dict[str, Any]) -> str:
 
 
 def _row_confers_admin(row: dict[str, Any]) -> bool:
-    return str(row.get("role") or "").strip().lower() in _ADMIN_CONFERRING_ROLES
+    # BYTE-EXACT, and deliberately not `.strip().lower()`. Coord's
+    # `rbac::is_tenant_admin` — the gate deciding whether anyone can re-create
+    # a mapping into a tenant this delete would strand — matches
+    # `role = ANY(&["admin"])`: no lower(), no ILIKE, no citext. A row spelled
+    # `Admin` therefore confers NOTHING there, and crediting it as admin cover
+    # here silenced guard 3 while the tenant was stranded for real. Case
+    # folding was this comparison disagreeing with the ground truth it stands
+    # in for — the same shape as every other defect in this module's history.
+    # `.strip()` is separately unnecessary: `_is_attributable` has already
+    # rejected any surrounding whitespace.
+    return row.get("role") in _ADMIN_CONFERRING_ROLES
 
 
 def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[str]:

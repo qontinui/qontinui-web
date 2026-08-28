@@ -141,6 +141,7 @@ class _Harness:
         coord_status: int = 200,
         body: Any = _FROM_ROWS,
         json_error: Exception | None = None,
+        coord_text: str = '{"error":"admin_required"}',
     ) -> None:
         # `body` and `json_error` each SHADOW what comes below them, so a test
         # setting two of these would silently exercise an input it did not
@@ -155,6 +156,7 @@ class _Harness:
         self.coord_status = coord_status
         self.body = body
         self.json_error = json_error
+        self.coord_text = coord_text
         self.deleter = _Deleter()
         self.get_calls: list[Any] = []
 
@@ -169,7 +171,7 @@ class _Harness:
             resp.json.return_value = {"group_tenant_roles": self.rows}
         else:
             resp.json.return_value = self.body
-        resp.text = '{"error":"admin_required"}'
+        resp.text = self.coord_text
 
         instance = MagicMock()
         if self.coord_error is not None:
@@ -932,6 +934,36 @@ class TestUnconvertedTransportFailuresAreRefused:
 
         assert deleter.calls == []
 
+    @pytest.mark.parametrize(
+        "forged",
+        ["coord is not reachable", "timeout waiting for coord"],
+    )
+    def test_a_coord_error_body_cannot_forge_a_transport_failure(
+        self, admin_client: TestClient, forged: str
+    ):
+        """coord answered — with a body that reads like our own transport text.
+
+        ``_proxy_coord_get`` passes coord's ``resp.text`` straight through as
+        the ``HTTPException`` detail, so any discriminator that matches on that
+        string can be forged by a response body and will demote a real coord
+        5xx to "coord never answered". The discriminator is the exception TYPE
+        for exactly this reason; ``CoordTransportUnavailable`` is raised only
+        where we invent the status ourselves.
+
+        The harness could not even express this case until ``coord_text``
+        became settable — which is why the string-matching version shipped
+        looking tested.
+        """
+        h = _Harness(coord_status=503, coord_text=forged)
+        detail = _detail(h.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
+
+        assert detail["error"] == "mapping_check_unavailable"
+        assert detail["coord_status"] == 503, (
+            f"a genuine coord answer was demoted by its own body: {detail}"
+        )
+        assert "coord answered 503" in detail["message"]
+        assert h.deleter.calls == []
+
 
 # ---------------------------------------------------------------------------
 # V9 — the phantom-cover scenario itself, end to end
@@ -1137,3 +1169,83 @@ class TestPhantomAdminCoverCannotSuppressTheLastAdminGuard:
 
         assert resp.status_code == 200, resp.text
         assert h.deleter.calls == ["acme-devs"]
+
+
+# ---------------------------------------------------------------------------
+# V10 — "confers admin" must mean what coord means by it
+# ---------------------------------------------------------------------------
+
+
+class TestAdminCoverMatchesCoordsOwnComparison:
+    """Guard 3 asks "does another group still confer admin here?" — and coord
+    is the only authority on the answer.
+
+    ``rbac::is_tenant_admin``, which ``caller_is_admin_in_tenant`` delegates to
+    and which decides whether anyone can re-create a mapping into a stranded
+    tenant, matches ``role = ANY(&["admin"])``: byte-exact, no ``lower()``, no
+    ``ILIKE``, no ``citext``. A row spelled ``Admin`` confers nothing there.
+    Case-folding it here credited cover that does not exist and left the guard
+    silent while the tenant was stranded for real — the same shape as every
+    other defect in this file's history: a comparison disagreeing with the
+    ground truth it stands in for.
+
+    Reachable without any malformed data: the column is bare ``TEXT NOT NULL``
+    with no CHECK, and coord's bootstrap seeder inserts env JSON unvalidated.
+    """
+
+    @pytest.mark.parametrize("role", ["Admin", "ADMIN", "aDmIn"])
+    def test_a_case_variant_role_is_not_admin_cover(
+        self, admin_client: TestClient, role: str
+    ):
+        h = _Harness(
+            rows=[
+                _mapping("acme-devs", "acme", "admin"),
+                _mapping("acme-others", "acme", role),
+            ]
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert h.deleter.calls == [], f"{role!r} was credited as admin cover"
+        assert resp.status_code == 409, resp.text
+        assert _detail(resp)["error"] == "last_admin_mapping"
+
+    @pytest.mark.parametrize("role", ["Admin", "ADMIN"])
+    def test_a_case_variant_role_on_the_deleted_group_strands_nobody(
+        self, admin_client: TestClient, role: str
+    ):
+        """The other direction, and the counterweight: if the group being
+        deleted itself only claims ``Admin``, coord grants no admin from it
+        either — so nothing is stranded and the delete must proceed. A guard
+        that simply refused every case variant would pass the test above and
+        fail here."""
+        h = _Harness(rows=[_mapping("acme-devs", "acme", role)])
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert resp.status_code == 200, resp.text
+        assert h.deleter.calls == ["acme-devs"]
+
+    def test_exact_admin_still_works_on_both_sides(self, admin_client: TestClient):
+        """And the byte-exact spelling must still behave exactly as before:
+        cover from another group permits the delete, and its absence refuses."""
+        covered = _Harness(
+            rows=[
+                _mapping("acme-devs", "acme", "admin"),
+                _mapping("acme-admins", "acme", "admin"),
+            ]
+        )
+        assert (
+            covered.run(
+                admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true"
+            ).status_code
+            == 200
+        )
+        assert covered.deleter.calls == ["acme-devs"]
+
+        uncovered = _Harness(rows=[_mapping("acme-devs", "acme", "admin")])
+        assert (
+            uncovered.run(
+                admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true"
+            ).status_code
+            == 409
+        )
+        assert uncovered.deleter.calls == []
