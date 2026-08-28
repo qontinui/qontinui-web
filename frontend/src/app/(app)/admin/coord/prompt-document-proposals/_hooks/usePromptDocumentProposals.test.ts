@@ -274,3 +274,105 @@ describe("usePromptDocumentProposals — honesty about what is missing", () => {
     expect(result.current.unavailable).toBeNull();
   });
 });
+
+/**
+ * The lazy per-row diff (plan
+ * `2026-08-27-tenant-level-agent-authorable-stores.md`, Phase 4).
+ *
+ * It reuses the SAME `…/versions/{n}` reads the undo path makes, one version
+ * apart, so the two properties worth pinning are about the cache rather than the
+ * fetch: a version snapshot is immutable, so a hit must not re-fetch — and a
+ * FAILED read must not become permanent, or a transient 502 leaves that row
+ * unexplainable for the life of the page.
+ */
+describe("usePromptDocumentProposals — the landed-write diff", () => {
+  it("fetches this version and the one before it, and caches the pair", async () => {
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions/4")) return Promise.resolve({ body: "new" });
+      if (url.endsWith("/versions/3")) return Promise.resolve({ body: "old" });
+      return routeInitial({})(url);
+    });
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    getMock.mockClear();
+
+    await act(async () => {
+      await result.current.loadWriteDiff(HEAD_WRITE);
+    });
+    expect(result.current.writeDiffFor(HEAD_WRITE)).toEqual({
+      status: "ready",
+      previous: "old",
+      current: "new",
+    });
+    expect(getMock).toHaveBeenCalledTimes(2);
+
+    // A second expand of the same row must not hit the network again.
+    getMock.mockClear();
+    await act(async () => {
+      await result.current.loadWriteDiff(HEAD_WRITE);
+    });
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it("diffs v1 against the empty document without a second fetch", async () => {
+    const first = { ...HEAD_WRITE, version_number: 1, current_version: 1 };
+    getMock.mockImplementation((url: string) => {
+      if (url.endsWith("/versions/1")) return Promise.resolve({ body: "first" });
+      return routeInitial({})(url);
+    });
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    getMock.mockClear();
+
+    await act(async () => {
+      await result.current.loadWriteDiff(first);
+    });
+    expect(result.current.writeDiffFor(first)).toEqual({
+      status: "ready",
+      previous: "",
+      current: "first",
+    });
+    // There is no v0 to ask for.
+    expect(getMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a failed read as an ERROR and lets a later expand retry", async () => {
+    let attempt = 0;
+    getMock.mockImplementation((url: string) => {
+      if (url.includes("/versions/")) {
+        attempt += 1;
+        if (attempt <= 2) return Promise.reject(new Error("HTTP 502"));
+        return Promise.resolve({ body: url.endsWith("/3") ? "old" : "new" });
+      }
+      return routeInitial({})(url);
+    });
+
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.loadWriteDiff(HEAD_WRITE);
+    });
+    expect(result.current.writeDiffFor(HEAD_WRITE)).toEqual({
+      status: "error",
+      error: "HTTP 502",
+    });
+
+    // The guard released, so the row is retryable rather than pinned.
+    await act(async () => {
+      await result.current.loadWriteDiff(HEAD_WRITE);
+    });
+    expect(result.current.writeDiffFor(HEAD_WRITE)).toMatchObject({
+      status: "ready",
+    });
+  });
+
+  it("reports a never-requested row as null, not as an empty diff", async () => {
+    getMock.mockImplementation(routeInitial({}));
+    const { result } = renderHook(() => usePromptDocumentProposals());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.writeDiffFor(HEAD_WRITE)).toBeNull();
+  });
+});
