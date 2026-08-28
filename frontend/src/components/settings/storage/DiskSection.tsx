@@ -80,6 +80,7 @@ import {
   DISK_SURVEY_PATH,
   measuredZeroBuckets,
   parseDiskSurvey,
+  readErrorsSeen,
   reportOnlyDisagreement,
   rollupDisagreement,
   SURVEY_NOT_YET_READ,
@@ -598,7 +599,11 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   // listed rows are under-sized. Collapsing them tells an operator "these
   // numbers are a bit low" when the truth is "you are not seeing the list".
   const truncatedWalk = survey.scan?.truncated === true;
-  const readErrorCount = survey.scan?.readErrors.length ?? 0;
+  // NEVER `readErrors.length`: the runner caps that array at 100 entries and
+  // sends the real figure in `read_errors_total`, so counting the list turned a
+  // locked subtree's thousands of failures into a flat "100 directories" — a
+  // silent under-report on the one panel built to make under-reports visible.
+  const readErrorCount = readErrorsSeen(survey.scan);
   const incompleteWalk = truncatedWalk || survey.bytesIncomplete;
   const dirsVisited = survey.scan?.dirsVisited ?? null;
   const afterNDirs =
