@@ -8423,14 +8423,31 @@ _ADMIN_CONFERRING_ROLES = frozenset({"admin"})
 #: nothing coord produces today.
 _MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
 
+#: Details :func:`_proxy_coord_get` puts on the ``HTTPException`` it
+#: SYNTHESIZES when the request never completed. The 502 / 504 riding with
+#: them are **qontinui-web's own codes, not coord's** — reporting them as
+#: "coord answered 502" names an answer coord never gave, the same dishonesty
+#: :func:`_raise_mapping_check_unreadable` avoids by carrying no status at
+#: all. Matched on the detail rather than the number so a genuine coord 502 is
+#: still reported as a coord 502.
+#:
+#: This mirrors string literals in :func:`_proxy_coord_get` rather than
+#: importing them (they are repeated across every proxy helper in this
+#: module). ``test_a_synthesized_transport_code_is_not_reported_as_coords``
+#: is what keeps the two in step: change the literal there and it reds.
+_COORD_SYNTHESIZED_TRANSPORT_DETAILS = frozenset(
+    {"coord is not reachable", "timeout waiting for coord"}
+)
+
 
 def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
     """Refuse: *coord answered without an error status, but not with the
     mapping table*.
 
     Logs and raises in one place, so the warning cannot be emitted without the
-    refusal it describes actually happening. ``NoReturn`` is what lets the
-    type checker narrow after each call.
+    refusal it describes actually happening. ``NoReturn`` documents that and
+    keeps a future "build it, forget to raise it" a type error — it buys no
+    narrowing here, since everything downstream of the read is ``Any``.
 
     ``reason`` names the ACTUAL cause — which key or which type was wrong —
     because the operator's next move differs by cause and "malformed
@@ -8521,21 +8538,32 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
             forward_bearer=True,
         )
     except HTTPException as exc:
+        # `_proxy_coord_get` raises with coord's OWN status for a coord 4xx/5xx,
+        # but with a status IT invented (502 / 504) when the request never
+        # completed. Only the first is coord's answer, so only the first is
+        # reported as one.
+        synthesized = exc.detail in _COORD_SYNTHESIZED_TRANSPORT_DETAILS
+        coord_status = None if synthesized else exc.status_code
         logger.warning(
             "cognito_group_delete_mapping_check_failed",
-            coord_status=exc.status_code,
+            coord_status=coord_status,
+        )
+        cause = (
+            f"{exc.detail} — coord never completed an answer"
+            if synthesized
+            else f"coord answered {exc.status_code}"
         )
         raise HTTPException(
             status_code=502,
             detail={
                 "error": "mapping_check_unavailable",
-                "coord_status": exc.status_code,
+                "coord_status": coord_status,
                 "message": (
                     "Refused: coord's group → tenant → role table could not "
-                    f"be read (coord answered {exc.status_code}), so there is "
-                    "no way to tell what this delete would break. Nothing was "
-                    "deleted. A 403 here means the caller holds no coord "
-                    "admin role; anything else means coord is unreachable."
+                    f"be read ({cause}), so there is no way to tell what this "
+                    "delete would break. Nothing was deleted. A 403 here means "
+                    "the caller holds no coord admin role; anything else means "
+                    "coord is unreachable."
                 ),
             },
         ) from exc
@@ -8598,12 +8626,21 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
             "group_tenant_roles contains an entry that is not an object"
         )
     for key in _MAPPING_ROW_IDENTITY_KEYS:
-        if not all(isinstance(row.get(key), str) and row[key] for row in rows):
+        # ``.strip()``, not bare truthiness. ``"   "`` is a truthy ``str`` and
+        # would pass — then attribute to no real group while still counting as
+        # admin cover "from another group", which is the phantom-cover
+        # suppression of guard 3 that this check exists to stop. Coord's own
+        # writer rejects a blank ``group_id`` with ``trim().is_empty()``
+        # (``routes_phase3``), so matching that costs nothing real; its
+        # bootstrap seeder does NOT validate, and the column carries no CHECK.
+        if not all(isinstance(row.get(key), str) and row[key].strip() for row in rows):
             _raise_mapping_check_unreadable(
                 f"a group_tenant_roles entry carries no usable {key}"
             )
-    # Provably a no-op filter after the checks above; it is here so the return
-    # type narrows for the type checker, not to discard anything.
+    # Provably a no-op filter after the checks above — belt and braces, not a
+    # discard. (`rows` is already `list[Any]` and would satisfy the annotation
+    # on its own; this makes the element type true rather than merely
+    # accepted.)
     return [row for row in rows if isinstance(row, dict)]
 
 
