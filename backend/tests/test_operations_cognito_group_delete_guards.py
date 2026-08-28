@@ -521,8 +521,10 @@ class TestMalformedTwoHundredIsRefused:
     the source had always said the right thing ("an unreadable mapping table
     is UNKNOWN, not 'no mappings'"); this arm did the opposite.
 
-    Every case here asserts ``deleter.calls == []``. A 502 with the delete
-    already sent would be a post-mortem, not a refusal.
+    Every REFUSAL case here asserts ``deleter.calls == []`` — a 502 with the
+    delete already sent would be a post-mortem, not a refusal. The two
+    must-succeed counterweights assert the delete WAS sent, which is the
+    point of them.
     """
 
     @pytest.mark.parametrize(
@@ -628,6 +630,8 @@ class TestMalformedTwoHundredIsRefused:
         # inequality alone would still hold if both codes changed together.
         assert _detail(malformed_resp)["error"] == "mapping_check_unreadable"
         assert _detail(unreachable_resp)["error"] == "mapping_check_unavailable"
+        assert malformed.deleter.calls == []
+        assert unreachable.deleter.calls == []
 
     def test_the_refusal_does_not_claim_a_status_it_never_saw(
         self, admin_client: TestClient
@@ -852,22 +856,45 @@ class TestUnconvertedTransportFailuresAreRefused:
 
         assert detail["coord_status"] is None
 
-    def test_the_converted_ones_still_report_their_own_status(
+    @pytest.mark.parametrize(
+        "exc",
+        [httpx.ConnectError("refused"), httpx.ReadTimeout("too slow")],
+        ids=lambda e: type(e).__name__,
+    )
+    def test_a_synthesized_transport_code_is_not_reported_as_coords(
+        self, admin_client: TestClient, exc: Exception
+    ):
+        """``_proxy_coord_get`` INVENTS a 502 for a connect error and a 504 for
+        a timeout. Those are qontinui-web's own numbers — coord never answered
+        — so reporting them as ``coord_status`` names an answer coord never
+        gave, exactly what the unreadable arm avoids by carrying no status.
+
+        This is also the coupling guard for
+        ``_COORD_SYNTHESIZED_TRANSPORT_DETAILS``: it mirrors literals in
+        ``_proxy_coord_get``, and changing them there reds this."""
+        h = _Harness(coord_error=exc)
+        detail = _detail(h.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
+
+        assert detail["error"] == "mapping_check_unavailable"
+        assert detail["coord_status"] is None, (
+            f"a web-synthesized code is reported as coord's: {detail}"
+        )
+        assert "coord answered" not in detail["message"]
+        assert h.deleter.calls == []
+
+    def test_a_real_coord_status_is_still_reported_as_one(
         self, admin_client: TestClient
     ):
-        """Counterweight: the new arm must not swallow the failures
-        ``_proxy_coord_get`` DOES convert. A connect error still arrives as the
-        504/502 it maps to, and a coord 403 still carries its 403."""
-        connect = _Harness(coord_error=httpx.ConnectError("refused"))
-        connect_detail = _detail(connect.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
-        assert connect_detail["error"] == "mapping_check_unavailable"
-        assert connect_detail["coord_status"] == 502
+        """Counterweight to the two arms above: dropping the status when coord
+        never answered must not drop it when coord DID. A coord 403 — the
+        caller holding no coord admin role — still carries its 403, and still
+        says coord answered."""
+        h = _Harness(coord_status=403)
+        detail = _detail(h.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
 
-        forbidden = _Harness(coord_status=403)
-        forbidden_detail = _detail(
-            forbidden.run(admin_client, f"{_GROUPS_URL}/acme-devs")
-        )
-        assert forbidden_detail["coord_status"] == 403
+        assert detail["coord_status"] == 403
+        assert "coord answered 403" in detail["message"]
+        assert h.deleter.calls == []
 
     def test_a_value_error_from_before_the_response_is_not_mislabelled(
         self, admin_client: TestClient
@@ -904,3 +931,95 @@ class TestUnconvertedTransportFailuresAreRefused:
             )
 
         assert deleter.calls == []
+
+
+# ---------------------------------------------------------------------------
+# V9 — the phantom-cover scenario itself, end to end
+# ---------------------------------------------------------------------------
+
+
+class TestPhantomAdminCoverCannotSuppressTheLastAdminGuard:
+    """The scenario the row check exists for, constructed rather than described.
+
+    V7 proves an unreadable row is refused. It does NOT prove the harm that
+    makes the refusal necessary, because in every V7 case the target group has
+    no valid mapping of its own — so pre-check those deleted a merely
+    unattributable group. The dangerous shape is different and needs both rows:
+
+      1. a REAL mapping making this group the only admin on a tenant, and
+      2. an unreadable row whose ``group_id`` does not resolve.
+
+    Row 2 lands in ``_tenants_stranded_by``'s "admin conferred by OTHER groups"
+    set — because its coerced ``""`` is `!=` the group being deleted — and so
+    stands in as cover from a group that does not exist. Guard 3 then finds
+    nothing stranded, and guard 3 is the one with NO override.
+
+    Each case here is a delete that MUST NOT happen. `409` (a guard fired) and
+    `502` (the table was refused) are both acceptable outcomes; `200` is not,
+    and neither is a non-empty ``deleter.calls``.
+    """
+
+    @pytest.mark.parametrize(
+        ("phantom", "label"),
+        [
+            ({"group_id": "   ", "tenant_slug": "acme", "role": "admin"}, "whitespace"),
+            ({"group_id": "", "tenant_slug": "acme", "role": "admin"}, "empty string"),
+            ({"group_id": None, "tenant_slug": "acme", "role": "admin"}, "null"),
+            ({"tenant_slug": "acme", "role": "admin"}, "absent"),
+            (
+                {"groupId": "some-other", "tenant_slug": "acme", "role": "admin"},
+                "camelCase key",
+            ),
+            (
+                {"group_id": "\t\n ", "tenant_slug": "acme", "role": "admin"},
+                "tab/newline",
+            ),
+        ],
+    )
+    def test_a_phantom_cover_row_cannot_get_the_delete_through(
+        self, admin_client: TestClient, phantom: dict[str, Any], label: str
+    ):
+        h = _Harness(
+            body={
+                "group_tenant_roles": [
+                    _mapping("acme-devs", "acme", "admin"),
+                    phantom,
+                ]
+            }
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert h.deleter.calls == [], f"{label}: phantom cover got the delete through"
+        assert resp.status_code in (409, 502), f"{label}: {resp.text}"
+
+    def test_the_control_refuses_without_the_phantom_row(
+        self, admin_client: TestClient
+    ):
+        """Same table minus the phantom row: guard 3 fires on its own. Without
+        this the tests above could pass for the wrong reason — a delete that
+        was never going to happen anyway proves nothing about cover."""
+        h = _Harness(rows=[_mapping("acme-devs", "acme", "admin")])
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert resp.status_code == 409, resp.text
+        detail = _detail(resp)
+        assert detail["error"] == "last_admin_mapping"
+        assert detail["tenants"] == ["acme"]
+        assert h.deleter.calls == []
+
+    def test_genuine_cover_from_a_real_other_group_still_permits_the_delete(
+        self, admin_client: TestClient
+    ):
+        """And the counterweight: a REAL second group conferring admin is
+        genuine cover, and the delete must still go through. Otherwise the
+        check above could be satisfied by refusing every last-admin table."""
+        h = _Harness(
+            rows=[
+                _mapping("acme-devs", "acme", "admin"),
+                _mapping("acme-admins", "acme", "admin"),
+            ]
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs?allow_mapped=true")
+
+        assert resp.status_code == 200, resp.text
+        assert h.deleter.calls == ["acme-devs"]
