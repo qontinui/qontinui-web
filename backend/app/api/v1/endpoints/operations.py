@@ -7224,10 +7224,11 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/authorship tier.
+    Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, attrs?, agent_writable?,
-    change_description?}`` with ``updated_by`` stamped from the authenticated
+    The body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,
+    agent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
     creates a new immutable version on every successful description/body edit;
@@ -7236,16 +7237,24 @@ async def update_prompt_document(
     edit is document configuration, not content — coord updates it in place
     without creating a version.
 
-    ``agent_writable`` is the per-document agent write access flag
-    (``true`` = agents may write this document via
-    ``coord_write_prompt_document``, ``false`` = they may not). It is
-    deliberately NOT attrs-shaped: supplying it takes coord's **versioning**
-    path even when nothing else changes, because who may write a policy
-    document is authority rather than configuration and the record of who
+    ``agent_write_tier`` is the per-document authorship setting — one of
+    ``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is
+    coord's LEGACY two-state spelling of the same setting, kept on the wire for
+    a client that predates the tier; coord resolves a legacy ``true`` as "at
+    least allow", so a stored ``allow_with_notification`` survives it, and a
+    legacy ``false`` is an unambiguous ``deny``. Send the tier when the caller
+    can name one — only an explicit tier can move a document ONTO, or DOWN off,
+    the notification tier. Both are forwarded verbatim; neither is synthesised
+    from the other here, because collapsing them at this hop would strip a
+    precondition the operator set with no error and no audit signal.
+
+    Either field is deliberately NOT attrs-shaped: supplying one takes coord's
+    **versioning** path even when nothing else changes, because who may write a
+    policy document is authority rather than configuration and the record of who
     changed it has to outlive the next agent append (which overwrites the
     parent row's mutable ``updated_by``).
 
-    Omitting it leaves the current setting alone. There is no wire
+    Omitting them leaves the current setting alone. There is no wire
     representation for clearing it back to "no operator opinion" — coord has
     none either.
     """
