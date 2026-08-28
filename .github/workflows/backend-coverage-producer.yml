@@ -43,9 +43,35 @@ jobs:
   produce:
     name: Per-test coverage -> coord
     runs-on: ubuntu-latest
-    # Non-gating, so the wall-clock never blocks anything; generous budget for
-    # the full suite run + export.
-    timeout-minutes: 45
+    # 45 until 2026-08-28, and that number was never measured. It was written
+    # with this workflow (d526e9e8, 2026-06-05) and called "generous"; it was in
+    # fact BELOW the median of the suite it budgets, so this job could only pass
+    # on the fast tail of its own distribution. Measured on the 15 newest
+    # push-on-main runs: 9 concluded `cancelled`, 6 of them consecutively, four
+    # at exactly 45m against the 45m budget -- while the two SUCCESSES took 43m
+    # and 45m. A coin flip, and the coin was weighted against us.
+    #
+    # 90 is not padding: it is the number backend-ci.yml's `test` job already
+    # carries for the BYTE-IDENTICAL pytest invocation (see the comment there),
+    # chosen from 40 consecutive green runs at p50 43.4 / p90 46.4 / max 56.9
+    # min. This job is a strict SUBSET of that one -- same suite, fewer steps --
+    # so 90 is if anything more generous here than where it was measured.
+    # Adopting it rather than inventing a third number also stops two lanes
+    # running the same suite from disagreeing about how long it takes.
+    #
+    # Non-gating, so the wall-clock blocks nothing; but a budget this job cannot
+    # meet is not "harmless slack", it is a permanent red on main's baseline
+    # (`cancelled` is not in coord's passing set) plus a coverage export that
+    # silently never runs.
+    #
+    # !! Keep `JOB_TIMEOUT_MINUTES` below in lockstep with this value. !!
+    # The duplication is forced: GitHub does not expose a job's own timeout to
+    # any expression, and `env` is NOT an available context for
+    # `jobs.<job_id>.timeout-minutes` (it IS for the step-level key, which makes
+    # the mistake look plausible). An unavailable context evaluates to EMPTY
+    # rather than erroring, so `${{ env.X }}` here would silently restore
+    # GitHub's 360-minute default with nothing in the log saying so.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: ./backend
@@ -90,6 +116,28 @@ jobs:
           - 6379:6379
 
     steps:
+      # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
+      #
+      # The infrastructure marker below measures elapsed time to tell a job
+      # TIMEOUT from an external cancel, and `run_started_at` (the API value it
+      # falls back to) measures the RUN: it includes every upstream `needs:` job
+      # and all queue time. On a `needs:`-gated job that skew can exceed the
+      # budget slack, so a LATE external cancel reads as past the budget and is
+      # reported as a timeout -- the same laundering of one cause into another
+      # that the marker exists to prevent, merely inverted. This stamp removes
+      # the skew, and removes the `gh api` dependency on the common path.
+      - name: Record job start time
+        # `working-directory` is NOT decoration. This step runs BEFORE
+        # `actions/checkout`, and a job whose `defaults.run.working-directory`
+        # points into the repo (e.g. `./backend`) has no such directory yet --
+        # the step then fails on a missing cwd, and because it is step 1 the
+        # whole job dies with every later step skipped. Anchoring to the
+        # workspace root, which the runner creates before any step, is what
+        # makes a pre-checkout step safe. Set explicitly on every carrier so
+        # this stays correct if a job later gains a default.
+        working-directory: ${{ github.workspace }}
+        run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v5
 
       # qontinui (a path-dep) pulls in torch from pytorch-cu128 — wheels
@@ -227,6 +275,67 @@ jobs:
             --cov-report=term \
             --junitxml=junit-results.xml
 
+      # Budget-creep tripwire. Raising `timeout-minutes` without this would
+      # trade a LOUD wrong signal (a red lane blamed on an external cancel) for
+      # a SILENT one -- the job creeping back up on the new budget with nothing
+      # to notice until it flips red again. It warns on a GREEN run once the job
+      # crosses a soft budget well below the hard one, so growth is visible with
+      # a third of the budget still in hand instead of announcing itself by
+      # reding the lane.
+      #
+      # It reads `JOB_START_EPOCH`, stamped by this job's FIRST step, so it
+      # measures the same quantity the budgets are expressed in: JOB wall-clock.
+      # Measuring only the pytest step would silently exclude the ~2-3 min setup
+      # prefix and so overstate the remaining headroom by exactly that much.
+      #
+      # NEGATIVE PATH FIRST, and harder than the positive one: a missing or
+      # non-numeric start says UNKNOWN and says the tripwire did NOT run. It
+      # must never print "within budget" off a measurement it does not have --
+      # that is the same absence-read-as-a-negative that made the marker call a
+      # timeout an external cancel.
+      #
+      # This step must not be able to red the lane. GitHub runs `run:` under
+      # `bash -eo pipefail`, so an unguarded `$(( ))` on a non-numeric value
+      # would abort the step and fail the job; the digit check below is what
+      # stops that, and it runs BEFORE any arithmetic.
+      - name: Warn if the job is approaching its budget
+        if: success()
+        env:
+          # Comfortably above the 56.9-min worst observed run of this suite,
+          # and 30 min below the job budget.
+          SOFT_BUDGET_MINUTES: '60'
+          JOB_TIMEOUT_MINUTES: '90'
+        run: |
+          set -uo pipefail
+
+          # All three guards are load-bearing under `-e`. Non-numeric aborts
+          # `$(( ))`; an over-long value overflows int64 and yields a garbage
+          # NEGATIVE "measurement" presented as fact; and `10#` forces base 10,
+          # because bash reads a leading zero as octal where `08` is a hard
+          # error rather than a value. Any of them firing means UNKNOWN.
+          start="${JOB_START_EPOCH:-}"
+          if [ -z "$start" ] || [ -n "${start//[0-9]/}" ] || [ ${#start} -gt 11 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::JOB_START_EPOCH was absent, non-numeric or implausible ('${start}'), so this job's duration could not be measured and the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN - it is specifically NOT a statement that the job is within budget."
+            exit 0
+          fi
+
+          start=$(( 10#$start ))
+          if [ "$start" -lt 1600000000 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::JOB_START_EPOCH='${JOB_START_EPOCH:-}' is not a plausible epoch (it resolves to ${start}, i.e. before 2020), so this job's duration could not be measured and the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN, not a statement that the job is within budget."
+            exit 0
+          fi
+
+          elapsed_min=$(( ( $(date -u +%s) - start ) / 60 ))
+          if [ "$elapsed_min" -lt 0 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::Computed a NEGATIVE elapsed time (${elapsed_min} min) from JOB_START_EPOCH='${start}', which cannot be a real measurement, so the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN, not a statement that the job is within budget."
+            exit 0
+          fi
+          echo "Job wall-clock: ${elapsed_min} min (soft budget ${SOFT_BUDGET_MINUTES} min, job budget ${JOB_TIMEOUT_MINUTES} min)."
+
+          if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
+            echo "::warning title=Coverage producer is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. Act on it before it becomes a timeout: this job's budget was previously set below the suite's own median, and every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
+          fi
+
       # Per-test -> touched-file coverage producer. Best-effort (the script
       # exits 0 on any failure), so it cannot fail this lane even when coord is
       # unreachable. The `--cov-context=test` flag above makes coverage.py record
@@ -295,8 +404,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
-          # declared at this job's `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '45'
+          # declared at this job's `timeout-minutes`. !! Must equal it. !!
+          # See the lockstep note there for why this cannot be an expression.
+          # If these two drift, `budget_floor` is computed from the wrong number
+          # and the job-timeout arm misfires or fails to fire.
+          JOB_TIMEOUT_MINUTES: '90'
           EXTERNAL_CANCEL_NOTE: >-
             this workflow declares `concurrency: cancel-in-progress: true`, so a newer push to the same ref supersedes the run - that or a manual cancel are the external causes
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
@@ -334,8 +446,15 @@ jobs:
           apt_failed=""
           apt_running=""
           soft_failed=""
+          # How many rows actually parsed. An EMPTY APT_STEP_OUTCOMES -- which is
+          # what a renamed or deleted step id renders to -- leaves all three
+          # buckets empty, exactly like a clean run. That is an absence of DATA,
+          # not an observation of health, and arm 2d is the first arm to make a
+          # POSITIVE claim on it.
+          apt_rows_seen=0
           while IFS='|' read -r step_name outcome conclusion; do
             [ -z "${step_name// }" ] && continue
+            apt_rows_seen=$(( apt_rows_seen + 1 ))
             case "$outcome" in
               failure)
                 if [ "$conclusion" = "failure" ]; then
@@ -352,6 +471,10 @@ jobs:
           why="$why That call is normally seconds, but has been observed to stall"
           why="$why for 30+ minutes (and, unbounded, for 5h59m). Nothing under test ran."
           ref="See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          # A separate pointer for the budget arms. $ref names the apt-stall
+          # plan, which is the wrong citation for an arm that exists to say
+          # this was NOT the apt stall.
+          ref_budget="See plan 2026-08-27-web-backend-coverage-producer-timeout."
 
           # Context line, emitted before any verdict.
           if [ -n "$soft_failed" ]; then
@@ -393,17 +516,87 @@ jobs:
           # This lookup CAN fail (403, rate limit, network blip, a timestamp
           # `date -u -d` cannot parse); every failure leaves `elapsed_min`
           # empty, and empty is UNKNOWN. It is never evidence for a negative.
+          # PREFER this job's own start stamp (written by the job's first
+          # step). `run_started_at` measures the RUN -- it includes every
+          # upstream `needs:` job and all queue time -- so on a `needs:`-gated
+          # job it overstates this job's elapsed time by more than the slack
+          # below, and a LATE external cancel would then be reported as a
+          # timeout. The API lookup stays as the fallback for a job whose stamp
+          # step did not run.
+          #
+          # The guards are not decoration: `-e` is on, so a non-numeric or
+          # absurd value reaching `$(( ))` would ABORT this step, and a marker
+          # that aborts explains nothing. `10#` forces base 10 -- bash reads a
+          # leading zero as octal, where `08` is a hard error, not a value.
+          # Every failure path leaves `elapsed_min` empty, and empty is UNKNOWN;
+          # it is never evidence for a negative.
           elapsed_min=""
-          started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
-          if [ -n "$started" ]; then
-            start_epoch="$(date -u -d "$started" +%s 2>/dev/null || true)"
-            if [ -n "$start_epoch" ]; then
-              elapsed_min=$(( ( $(date -u +%s) - start_epoch ) / 60 ))
+          elapsed_basis=""
+          job_start="${JOB_START_EPOCH:-}"
+          if [ -n "$job_start" ] && [ -z "${job_start//[0-9]/}" ] && [ ${#job_start} -le 11 ]; then
+            job_start=$(( 10#$job_start ))
+            # A real CI job start is a 10-digit epoch. Anything smaller is a
+            # nonsense stamp -- '08' parses fine and means 8 SECONDS after 1970
+            # -- and turning it into a 29-million-minute "measurement" would be
+            # garbage presented as fact, which is the very laundering this
+            # marker exists to stop. Below the floor, leave it UNKNOWN.
+            if [ "$job_start" -ge 1600000000 ]; then
+              elapsed_min=$(( ( $(date -u +%s) - job_start ) / 60 ))
+              elapsed_basis="job"
+            fi
+          fi
+          if [ -z "$elapsed_min" ]; then
+            started="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.run_started_at' 2>/dev/null || true)"
+            if [ -n "$started" ]; then
+              start_epoch="$(date -u -d "$started" +%s 2>/dev/null || true)"
+              if [ -n "$start_epoch" ]; then
+                elapsed_min=$(( ( $(date -u +%s) - start_epoch ) / 60 ))
+                elapsed_basis="run"
+              fi
             fi
           fi
 
+          # A negative elapsed means the clock moved backwards or the stamp is
+          # nonsense. Report UNKNOWN rather than a garbage measurement.
+          if [ -n "$elapsed_min" ] && [ "$elapsed_min" -lt 0 ]; then
+            elapsed_min=""
+            elapsed_basis=""
+          fi
+
+          # Named so an arm that RULES can disclose what it measured.
+          case "$elapsed_basis" in
+            job) basis_note="measured from this job's own start" ;;
+            run) basis_note="measured from the RUN's start (this job's own start stamp was unavailable), so it also includes any upstream 'needs:' job and queue time" ;;
+            *)   basis_note="not measured" ;;
+          esac
+
           # 2 minutes of slack absorbs the gap between run start and job start.
           budget_floor=$(( JOB_TIMEOUT_MINUTES - 2 ))
+
+          # Did the budget actually expire? THREE-valued: "yes" | "no" | ""
+          # (UNKNOWN, when elapsed could not be read). NEVER collapse UNKNOWN
+          # into "no". That collapse is precisely how arm 3 came to assert an
+          # external cancel for a job that had in fact exhausted its own budget:
+          # it interpolated `elapsed_min` into its message but never TESTED it,
+          # so the only arm performing the budget test was arm 2 -- which is
+          # guarded on an apt step being mid-flight and therefore unreachable on
+          # any job whose apt steps are guarded to 0s.
+          budget_reached=""
+          if [ -n "$elapsed_min" ]; then
+            if [ "$elapsed_min" -ge "$budget_floor" ]; then
+              budget_reached="yes"
+            else
+              budget_reached="no"
+            fi
+          fi
+
+          # One legible phrase per state, for the arms that REPORT rather than
+          # rule. The UNKNOWN wording never implies the budget was not reached.
+          case "$budget_reached" in
+            yes) budget_phrase="which IS its full ${JOB_TIMEOUT_MINUTES}-minute budget" ;;
+            no)  budget_phrase="short of its ${JOB_TIMEOUT_MINUTES}-minute budget" ;;
+            *)   budget_phrase="against a ${JOB_TIMEOUT_MINUTES}-minute budget whose expiry could NOT be checked" ;;
+          esac
 
           # --- Arm 2: the job budget expired while an apt step was still
           # running. Requires THREE facts. The `cancelled` guard is the one
@@ -412,7 +605,7 @@ jobs:
           # a job timeout, and this text ("GitHub concludes a job timeout as
           # 'cancelled'") would be describing a mechanism that did not fire.
           # That state belongs to arm 2b, which names the real conclusion.
-          if [ "$JOB_STATUS" = "cancelled" ] && [ -n "$apt_running" ] && [ -n "$elapsed_min" ] && [ "$elapsed_min" -ge "$budget_floor" ]; then
+          if [ "$JOB_STATUS" = "cancelled" ] && [ -n "$apt_running" ] && [ "$budget_reached" = "yes" ]; then
             echo "::error title=CI infrastructure timeout - NOT your diff::The ${JOB_TIMEOUT_MINUTES}-minute job budget expired after ${elapsed_min} min while step(s) '$apt_running' were STILL RUNNING. $why GitHub concludes a job timeout as 'cancelled', which 'gh pr checks' renders as 'fail' with zero failing steps - that rendering is what makes this look like your test failure. It is not. Re-run the job. $ref"
             exit 0
           fi
@@ -443,21 +636,60 @@ jobs:
             exit 0
           fi
 
+          # --- Arm 2d: cancelled AT OR PAST its budget, with NO apt step
+          # implicated at all. The job exhausted its OWN budget running its OWN
+          # work -- a job timeout. This is the FOURTH cause of `cancelled`, and
+          # the one this step's header taxonomy omitted: not the apt stall, not
+          # a merge-train reap, not an external cancel. Without this arm the
+          # state fell through to arm 3, which reported it as "cancelled from
+          # outside" -- how a producer that timed out on nearly every main push
+          # for days was read as a benign supersede every single time.
+          #
+          # Guarded on `soft_failed` being empty for the same reason every other
+          # ruling arm is: a soft-failed apt step can have red this job through
+          # the cascade, and this arm asserts a positive cause. When one is
+          # present, arm 3a speaks instead and hedges.
+          if [ "$JOB_STATUS" = "cancelled" ] && [ "$budget_reached" = "yes" ] && [ -z "$soft_failed" ]; then
+            if [ "$apt_rows_seen" -gt 0 ]; then
+              echo "::error title=Job budget exhausted - a TIMEOUT, not an external cancel::This job ran ${elapsed_min} min (${basis_note}) against its ${JOB_TIMEOUT_MINUTES}-minute budget, and GitHub cancelled it when that budget expired. No apt-dependent step failed, none was mid-flight, and none soft-failed - so this is NOT the apt-mirror stall, and NOT an external cancel either (a reap or a manual cancel lands at an arbitrary, typically far earlier, elapsed). The job's own work did not fit its budget. A job timeout concludes as 'cancelled' with ZERO failing steps, which 'gh pr checks' renders as 'fail' - that rendering is what makes this look like a test failure. It is not a verdict on the diff. But re-running WITHOUT raising the budget will most likely time out again: raise the budget, or make the work fit it. $ref_budget"
+            else
+              echo "::warning title=Job budget exhausted, but the apt telemetry was EMPTY::This job ran ${elapsed_min} min (${basis_note}) against its ${JOB_TIMEOUT_MINUTES}-minute budget, so the budget WAS reached and a job timeout is the leading explanation. But APT_STEP_OUTCOMES parsed to ZERO rows - a step id was renamed or removed, so the expression rendered empty - which makes 'no apt-dependent step failed' an absence of DATA here, not an observation. The apt-mirror stall therefore can NOT be ruled out, and this arm will not assert a cause from telemetry it did not receive. Fix the step-id reference so the next run can rule. $ref_budget $ref"
+            fi
+            exit 0
+          fi
+
           # --- Arm 3a: cancelled, nothing mid-flight, but an apt step
           # SOFT-failed. Arm 3's "No apt-dependent step failed" would be
           # flatly false here - one demonstrably did - so arm 3 does not get
           # to speak for this state.
           if [ "$JOB_STATUS" = "cancelled" ] && [ -n "$soft_failed" ]; then
-            echo "::warning title=Cancelled, and a soft-failed apt step may have red this job downstream::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget. No apt-dependent step was mid-flight, but step(s) '$soft_failed' soft-failed ('continue-on-error: true'), so the apt-mirror stall can NOT be ruled out here, and steps that needed what they install may have failed as a consequence. A cancelled run also reports no test results at all, so nothing here is a verdict on the code under test either way. $ref"
+            echo "::warning title=Cancelled, and a soft-failed apt step may have red this job downstream::This job was cancelled after ${elapsed_min:-an unknown number of} min, $budget_phrase. No apt-dependent step was mid-flight, but step(s) '$soft_failed' soft-failed ('continue-on-error: true'), so the apt-mirror stall can NOT be ruled out here, and steps that needed what they install may have failed as a consequence. Note the budget reading above: where it says the budget WAS reached, a plain job timeout is also live as a cause, and these two cannot be separated while a soft-failed apt step is in play. A cancelled run also reports no test results at all, so nothing here is a verdict on the code under test either way. $ref"
             exit 0
           fi
 
-          # --- Arm 3: cancelled, no apt step red the job, none was
-          # mid-flight and none soft-failed. The stall is ruled out BY THE
-          # STEP OUTCOMES - a positive fact - not by the elapsed time, which
-          # may be UNKNOWN. Explicitly decline to judge the diff either way.
+          # --- Arm 3: cancelled, no apt step red the job, none was mid-flight,
+          # none soft-failed, and the elapsed time is KNOWN and SHORT of the
+          # budget. The stall is ruled out by the step outcomes (a positive
+          # fact) and a job timeout is ruled out by the measurement, so an
+          # external cancel is what is left. Explicitly decline to judge the
+          # diff either way.
+          #
+          # The `budget_reached = "no"` guard is this arm's whole correction.
+          # It used to fire on ANY cancelled job, so it claimed an external
+          # cancel for job timeouts too -- while printing the very elapsed
+          # figure that refuted it.
+          if [ "$JOB_STATUS" = "cancelled" ] && [ "$budget_reached" = "no" ]; then
+            echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min} min, $budget_phrase. No apt-dependent step failed and none was mid-flight, so this was NOT the known apt-mirror stall; and it did not reach its own budget, so it was NOT a job timeout. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
+            exit 0
+          fi
+
+          # --- Arm 3b: cancelled, nothing implicated, and the elapsed time
+          # could NOT be read. A job timeout and an external cancel are
+          # indistinguishable without that measurement, so say so instead of
+          # picking one. This is the branch arm 3 used to swallow: it asserted
+          # an external cancel from a number it did not have.
           if [ "$JOB_STATUS" = "cancelled" ]; then
-            echo "::notice title=Run cancelled externally - NOT a verdict on this diff::This job was cancelled after ${elapsed_min:-an unknown number of} min against a ${JOB_TIMEOUT_MINUTES}-minute budget. No apt-dependent step failed and none was mid-flight, so this was NOT the known apt-mirror stall. It was cancelled from outside: $EXTERNAL_CANCEL_NOTE. A cancelled run reports no test results at all, so nothing here says anything about the code under test: do not read it as a failure of this change, and do not read it as a pass either. Re-run if you need a verdict."
+            echo "::warning title=Cancelled - a timeout cannot be told from an external cancel::This job was cancelled, but this run's elapsed time could NOT be read: the 'gh api' run lookup failed, was rate-limited, or returned a timestamp 'date -u -d' could not parse. Without it the ${JOB_TIMEOUT_MINUTES}-minute budget test cannot be performed, so a job-budget TIMEOUT and an external cancel ($EXTERNAL_CANCEL_NOTE) can NOT be told apart here. That is UNKNOWN - it is specifically NOT evidence of an external cancel. No apt-dependent step failed and none was mid-flight, so the apt-mirror stall IS ruled out, by the step outcomes rather than by any measurement. A cancelled run reports no test results at all, so nothing here speaks to the code under test. $ref"
             exit 0
           fi
 

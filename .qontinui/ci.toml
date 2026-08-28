@@ -255,6 +255,14 @@ name = "alembic-single-head"
 # backend/alembic/versions/*.py — it never imports env.py, so it costs nothing
 # and needs no database, which is exactly why this gate CAN live here while the
 # rest of backend-ci.yml's `test` job (gap 1 above) cannot.
+#
+# FOUR lanes now share this script: the required PR check, this manifest, the
+# post-land companion (alembic-graph-check.yml), and .pre-commit-config.yaml's
+# `alembic-single-head` hook. The workflow passes `--baseline-ref origin/main`
+# explicitly because its depth-1 checkout has no such ref until it fetches one;
+# here the default already IS `origin/main` and a runner checkout has it, so
+# the argv stays bare. `--baseline-ref` only selects the remediation text — it
+# cannot move the verdict — so the two lanes are the same gate.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
 
 [[steps]]

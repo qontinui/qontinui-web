@@ -66,6 +66,40 @@ repos:
         # also named `_staged_consolidation/`, which the transplant
         # removed from both the tree and SCOPED_DIRS.
 
+      - id: alembic-single-head
+        name: Alembic chain has exactly one head
+        entry: python scripts/ci/count_alembic_heads.py
+        language: system
+        pass_filenames: false
+        files: ^backend/alembic/versions/.*\.py$
+        # SAME SCRIPT as .github/workflows/alembic-graph-pr.yml's required
+        # `alembic-heads-pr` check, .qontinui/ci.toml's `alembic-single-head`
+        # step, and alembic-graph-check.yml's post-land companion. A fourth
+        # lane on one script, the pattern Phase 5 of
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
+        # established.
+        #
+        # `pass_filenames: false` with a NARROW `files:`, unlike
+        # gitignore-tracked-files below, which needs `always_run`. That hook
+        # guards a property of the (rules, index) pair, which any commit can
+        # break. This one guards a property of the REVISION SET, which only a
+        # commit touching backend/alembic/versions/ can break — so the glob is
+        # exact, not a coverage hole. The scan is over the whole dir either
+        # way, hence `pass_filenames: false`.
+        #
+        # THIS HOOK IS SHIFT-LEFT CONVENIENCE, NOT THE GUARD. Do not describe
+        # it as what closes the loop: it does not run in CI, it is bypassable
+        # with --no-verify, and — measured — it would have caught 0 of the 3
+        # forks on record, because in all three the declared parent WAS the
+        # single head at `git commit` time and a sibling landed 83 minutes to
+        # days later. The guard is the required CI check plus
+        # scripts/ci/notify_forked_open_prs.py, which sweeps open PRs on every
+        # land. What this hook buys is the genuinely-stale-parent path (a
+        # branch that sat before the revision was written) and, more usefully,
+        # a 2-second local reproduction that PRINTS THE CORRECT
+        # `down_revision` TOKEN instead of a 17-minute wait for a red check —
+        # naming that token was the entire fix in 3 of 3 cases.
+
       - id: gitignore-tracked-files
         name: no tracked file is gitignored
         # SAME SCRIPT as .github/workflows/gitignore-tracked-files.yml and
