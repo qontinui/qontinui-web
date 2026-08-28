@@ -100,8 +100,13 @@ interface RouteState {
    * an in-flight one both used to leave `mappings` as `[]`, which is the same
    * array a successful read of an unmapped group produces. Without a knob for
    * them the suite could only ever exercise the arm that happens to be right.
+   *
+   * `"malformed"` covers the third way to have no answer, and the sneakiest:
+   * a 200 whose body is not the shape we asked for. `res.ok` is true, so a
+   * status-only check calls it a success and `?? []` would publish it as a
+   * confident "none".
    */
-  mappingsMode: "ok" | "error" | "pending";
+  mappingsMode: "ok" | "error" | "pending" | "malformed";
   usersByGroup: Record<string, Array<Record<string, unknown>> | "error">;
   deleteResponse: { status: number; body: unknown };
 }
@@ -154,6 +159,11 @@ function installRouter() {
           // Never settles — the read is still in flight, which is a DIFFERENT
           // state from "read, and there are none".
           return new Promise<Response>(() => {});
+        }
+        if (state.mappingsMode === "malformed") {
+          // 200, `res.ok === true`, and no `group_tenant_roles` at all. The
+          // status says the read worked; the body says we have no answer.
+          return jsonResponse(200, { unexpected: "shape" });
         }
         return jsonResponse(200, { group_tenant_roles: state.mappings });
       }
@@ -305,10 +315,19 @@ describe("/admin/coord/members — Cognito group delete", () => {
     await user_.click(
       await screen.findByTestId("cognito-delete-group-acme-devs")
     );
-    const bullet = await screen.findByTestId(
+    // Re-query INSIDE the waitFor: `findByTestId` can resolve on the loading
+    // arm, and asserting against that captured node only works while both
+    // arms happen to render the same un-keyed element in the same slot. Hold
+    // the node and a future change of either arm's element type turns this
+    // into a timeout instead of a clear failure.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
+      ).toHaveTextContent(/could not be read/i)
+    );
+    const bullet = screen.getByTestId(
       "cognito-delete-confirm-mappings-acme-devs"
     );
-    await waitFor(() => expect(bullet).toHaveTextContent(/could not be read/i));
     expect(bullet).toHaveTextContent(/unknown/i);
 
     const dialog = screen.getByTestId("cognito-delete-confirm-acme-devs");
@@ -334,13 +353,48 @@ describe("/admin/coord/members — Cognito group delete", () => {
         within(blast).getByTestId("cognito-group-members-count-acme-devs")
       ).toHaveTextContent("2 members")
     );
+    // Assert the LITERAL copy, not just the testid — a testid-only assertion
+    // lets the operator-visible sentence change without any test noticing.
     expect(
       within(blast).getByTestId("cognito-group-mappings-loading-acme-devs")
-    ).toBeInTheDocument();
+    ).toHaveTextContent("reading tenant mappings");
     expect(
       within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
     ).toBeNull();
     expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+  });
+
+  it("treats a 200 with a malformed body as unknown, never as 'no mappings'", async () => {
+    // The status-only trap: `res.ok` is true, so a check that stops at the
+    // status calls this a successful read. What the body actually carries is
+    // no answer at all — and a `?? []` fallback would render that as the
+    // confident all-clear, which is the same fabrication a 502 used to make.
+    state.mappingsMode = "malformed";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-mappings-unknown-acme-devs")
+      ).toHaveTextContent("tenant mappings unknown")
+    );
+    expect(
+      within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
+    ).toBeNull();
+    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+
+    // …and the confirmation must not claim an empty blast radius either.
+    await user_.click(
+      await screen.findByTestId("cognito-delete-group-acme-devs")
+    );
+    const dialog = await screen.findByTestId(
+      "cognito-delete-confirm-acme-devs"
+    );
+    expect(dialog.textContent ?? "").not.toMatch(
+      /No coord tenant mappings reference this group/i
+    );
   });
 
   it("degrades a previously-known mapping to unknown when a REFRESH fails", async () => {
