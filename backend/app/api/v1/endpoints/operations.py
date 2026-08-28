@@ -8339,12 +8339,261 @@ async def create_cognito_group(
     return group
 
 
+# ---- Blast-radius guards for the pool-wide group DELETE ------------------
+#
+# ``DELETE /coord/cognito/groups/{group_name}`` removes a group from the
+# SHARED Cognito pool. It is irreversible (Cognito has no undelete), it is
+# not scoped to a tenant, and until plan
+# ``2026-08-27-members-page-delete-paths-authorization-and-blast-radius``
+# Phase 2 it went straight to AWS on one click. ``require_admin`` bounds
+# WHO may call it; the guards below bound WHAT it does.
+#
+# Three guards, in the order they prevent harm:
+#
+#  1. ``group_is_mapped`` — coord's ``coord.group_tenant_roles`` maps this
+#     group to one or more tenants. Deleting the group silently kills those
+#     mappings' only input (the ``cognito:groups`` token claim). Refused 409
+#     naming the tenants. There is deliberately NO foreign key backing this
+#     (``group_id`` is bare TEXT in
+#     ``alembic/versions/coord_group_claim_provisioning.py`` while the
+#     sibling table in the SAME migration does use an FK), so the check has
+#     to be explicit here.
+#  2. ``home_group_requires_override`` — a ``<slug>-home`` group pins an
+#     operator's home tenant (coord ``auth_sso::HOME_GROUP_SUFFIX``).
+#     Refused 409 unless ``allow_home_group=true``.
+#  3. ``last_admin_mapping`` — deleting this group would leave a tenant with
+#     no OTHER admin-conferring mapping. Refused 409 with **no override**:
+#     the repair route (coord ``POST /admin/coord/group-tenant-roles``)
+#     itself requires an admin *in the tenant you just stranded*
+#     (``routes_phase3::caller_is_admin_in_tenant``), so there is no way
+#     back through the product — recovery needs the AWS console.
+#
+# Guard 1 has an ``allow_mapped`` escape hatch and guard 2 an
+# ``allow_home_group`` one; guard 3 has none, which is what makes it the
+# backstop rather than a duplicate of guard 1. The dashboard sends neither
+# override for the mapped case on purpose — "delete the mapping first" is
+# the ordering the guard is there to impose.
+#
+# NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
+# 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
+# from ``coord.operator_membership_sync``, whose only non-test writer is
+# ``reconcile_group_memberships`` ← ``lookup_or_provision_operator`` — the
+# LOGIN path. A group deletion writes none of its inputs. The damage is
+# deferred and per-person: it lands at each affected operator's NEXT LOGIN,
+# when their token no longer carries the group and their roles/home
+# re-resolve. That is harder to operate than an immediate sweep, not
+# easier — unbounded in time and arriving one person at a time — so the
+# refusal messages say so rather than implying anything fires now.
+
+#: Suffix marking an explicit "this is my home tenant" group. Mirrors coord
+#: ``crates/coord/src/auth_sso.rs`` ``HOME_GROUP_SUFFIX`` (exact,
+#: case-sensitive — tenant slugs are lowercase ASCII).
+HOME_GROUP_SUFFIX = "-home"
+
+#: Roles in ``coord.group_tenant_roles`` that confer admin **for the repair
+#: route's own gate**. Deliberately the narrow vocabulary: coord's
+#: ``rbac::is_tenant_admin`` — which
+#: ``routes_phase3::caller_is_admin_in_tenant`` delegates to, and which
+#: therefore decides whether anyone can re-create a mapping into a stranded
+#: tenant — asks for the bare ``'admin'`` literal, NOT the wider
+#: ``ADMIN_ROLES`` (``admin | owner``) vocabulary that ``/admin/coord/me``
+#: reports ``is_admin`` from. A tenant left with only an ``owner`` mapping
+#: still cannot repair itself, so treating ``owner`` as admin-conferring
+#: here would let exactly the stranding this guard exists to stop through.
+_ADMIN_CONFERRING_ROLES = frozenset({"admin"})
+
+
+async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
+    """Every ``coord.group_tenant_roles`` row, via the existing proxy path.
+
+    Reuses ``_proxy_coord_get`` against the same coord route
+    :func:`get_coord_group_tenant_roles` already proxies — no second client,
+    no cross-schema read. ``forward_bearer=True`` with no resolved tenant is
+    what puts the caller's Cognito bearer on the wire (the group routes are
+    ``require_admin``-gated and resolve no coord tenant of their own), so
+    the caller must have run :func:`capture_caller_bearer` first.
+
+    EVERY failure of the read — transport, timeout, or a coord 4xx (the route
+    is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
+    admin role gets 403 there) — is re-raised as **502
+    ``mapping_check_unavailable``** carrying coord's own status. One code
+    path, one meaning: *the check could not be completed, so nothing was
+    deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
+    the one thing this endpoint must never do is treat a failed read as a
+    clean bill of health. Passing coord's 403 straight through would instead
+    read as "you may not delete this group", which is a different — and
+    false — claim.
+    """
+    try:
+        payload = await _proxy_coord_get(
+            "/admin/coord/group-tenant-roles",
+            tenant_id=None,
+            forward_bearer=True,
+        )
+    except HTTPException as exc:
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=exc.status_code,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": exc.status_code,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read (coord answered {exc.status_code}), so there is "
+                    "no way to tell what this delete would break. Nothing was "
+                    "deleted. A 403 here means the caller holds no coord "
+                    "admin role; anything else means coord is unreachable."
+                ),
+            },
+        ) from exc
+    if not isinstance(payload, dict):
+        return []
+    rows = payload.get("group_tenant_roles")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _row_group_id(row: dict[str, Any]) -> str:
+    return str(row.get("group_id") or "")
+
+
+def _row_tenant_slug(row: dict[str, Any]) -> str:
+    return str(row.get("tenant_slug") or "")
+
+
+def _row_confers_admin(row: dict[str, Any]) -> bool:
+    return str(row.get("role") or "").strip().lower() in _ADMIN_CONFERRING_ROLES
+
+
+def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[str]:
+    """Tenant slugs left with no admin-conferring mapping once ``group_name``
+    is gone.
+
+    A tenant is stranded when this group confers admin on it and NO OTHER
+    group does. Other rows belonging to the SAME group do not count — the
+    delete takes every one of them out at once.
+    """
+    stranded: list[str] = []
+    admin_from_others = {
+        _row_tenant_slug(r)
+        for r in rows
+        if _row_confers_admin(r) and _row_group_id(r) != group_name
+    }
+    for slug in sorted(
+        {
+            _row_tenant_slug(r)
+            for r in rows
+            if _row_group_id(r) == group_name and _row_confers_admin(r)
+        }
+    ):
+        if slug and slug not in admin_from_others:
+            stranded.append(slug)
+    return stranded
+
+
 @router.delete("/coord/cognito/groups/{group_name}")
 async def delete_cognito_group(
+    request: Request,
     group_name: str,
+    allow_mapped: bool = Query(
+        False,
+        description=(
+            "Delete even though coord maps this group to one or more "
+            "tenants. The last-admin guard still applies and has no "
+            "override."
+        ),
+    ),
+    allow_home_group: bool = Query(
+        False,
+        description=(
+            "Delete even though this is a `<slug>-home` group that pins "
+            "operators' home tenant."
+        ),
+    ),
     current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
-    """Delete a Cognito group. 404 if no such group. Superuser-gated."""
+    """Delete a Cognito group. 404 if no such group. Superuser-gated.
+
+    Refuses **409** before touching AWS when the delete would take
+    something else down with it — see the module comment above
+    :data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and
+    why the harm is deferred to each operator's next login rather than
+    swept immediately.
+    """
+    # The bearer is what authenticates the coord read below; `require_admin`
+    # resolves no coord tenant and so never captures it.
+    capture_caller_bearer(request)
+    rows = await _coord_group_tenant_role_rows()
+
+    # -- Guard 1: coord maps this group ------------------------------------
+    mapped = [r for r in rows if _row_group_id(r) == group_name]
+    if mapped and not allow_mapped:
+        tenants = sorted({_row_tenant_slug(r) for r in mapped if _row_tenant_slug(r)})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "group_is_mapped",
+                "group_name": group_name,
+                "tenants": tenants,
+                "message": (
+                    f"{group_name} is mapped to "
+                    f"{', '.join(tenants) or 'a tenant'} in coord's "
+                    "group → tenant → role table. Deleting the group would "
+                    "leave those mappings with no input: each affected "
+                    "operator loses the roles they grant at their NEXT "
+                    "LOGIN, one person at a time, with nothing to correlate "
+                    "it back to. Remove the mapping first, then delete the "
+                    "group."
+                ),
+            },
+        )
+
+    # -- Guard 2: `<slug>-home` pins a home tenant -------------------------
+    if group_name.endswith(HOME_GROUP_SUFFIX) and not allow_home_group:
+        slug = group_name[: -len(HOME_GROUP_SUFFIX)]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "home_group_requires_override",
+                "group_name": group_name,
+                "tenant_slug": slug,
+                "message": (
+                    f"{group_name} pins its members' home tenant to "
+                    f"'{slug}'. Deleting it does not re-home anyone now — "
+                    "coord's home-drift sweep reads the login path's own "
+                    "records, not Cognito — so the effect is DEFERRED: each "
+                    "member's home re-resolves at their next login, "
+                    "whenever that is. Pass allow_home_group=true to "
+                    "proceed anyway."
+                ),
+            },
+        )
+
+    # -- Guard 3: last admin-conferring mapping (NO override) --------------
+    stranded = _tenants_stranded_by(group_name, rows)
+    if stranded:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "last_admin_mapping",
+                "group_name": group_name,
+                "tenants": stranded,
+                "message": (
+                    f"{group_name} is the only group conferring admin on "
+                    f"{', '.join(stranded)}. Deleting it would leave "
+                    "nobody able to re-create the mapping, because that "
+                    "route requires an admin in the very tenant this would "
+                    "strand — recovery would need the AWS console. Grant "
+                    "another group admin on it first. This guard has no "
+                    "override."
+                ),
+            },
+        )
+
     try:
         await asyncio.to_thread(cognito_admin.delete_group, group_name)
     except CognitoAdminError as exc:
@@ -8354,6 +8603,12 @@ async def delete_cognito_group(
             "cognito_group_delete_failed", group_name=group_name, error=str(exc)
         )
         raise HTTPException(status_code=502, detail="Could not delete Cognito group.")
+    logger.info(
+        "cognito_group_deleted",
+        group_name=group_name,
+        allow_mapped=allow_mapped,
+        allow_home_group=allow_home_group,
+    )
     return {"ok": True}
 
 
