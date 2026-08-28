@@ -110,6 +110,15 @@ jobs:
       # that the marker exists to prevent, merely inverted. This stamp removes
       # the skew, and removes the `gh api` dependency on the common path.
       - name: Record job start time
+        # `working-directory` is NOT decoration. This step runs BEFORE
+        # `actions/checkout`, and a job whose `defaults.run.working-directory`
+        # points into the repo (e.g. `./backend`) has no such directory yet --
+        # the step then fails on a missing cwd, and because it is step 1 the
+        # whole job dies with every later step skipped. Anchoring to the
+        # workspace root, which the runner creates before any step, is what
+        # makes a pre-checkout step safe. Set explicitly on every carrier so
+        # this stays correct if a job later gains a default.
+        working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v5
