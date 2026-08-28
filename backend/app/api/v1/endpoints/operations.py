@@ -7340,6 +7340,119 @@ async def restore_prompt_document_version(
     )
 
 
+# ---------------------------------------------------------------------------
+# Per-KIND prompt-document authorship tier
+# ---------------------------------------------------------------------------
+#
+# The sibling lever to the per-document ``agent_write_tier`` on the PATCH
+# above, and the only one that can be expressed for a document that does not
+# exist yet. ``agent_write_tier`` is a column on a document ROW, so it can only
+# be set on a document that already exists; the intent kinds are denied
+# kind-wide over an OPEN name space, so the first agent write to a NEW name is
+# refused and there is nothing to flip.
+#
+# Coord serves these on a SIBLING path (``/coord/prompt-document-kind-tiers``)
+# rather than nested under ``/coord/prompt-documents/``, because that surface
+# already owns the ``{kind}/{name}`` two-segment shape. The proxy mirrors coord
+# verbatim rather than inventing a nicer local shape — the same discipline the
+# clause proxies keep.
+
+
+@router.get("/coord/prompt-document-kind-tiers")
+async def list_prompt_document_kind_tiers(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """This tenant's per-kind agent authorship tiers. Any tenant member.
+
+    One row per KIND, not one per stored row: "no row" is a meaningful state
+    (coord's compile-time default answers instead), and the two facts that
+    matter most — the unliftable ``floor`` and the liftable
+    ``builtin_default_denies`` — are not in coord's table at all.
+
+    Read-only for any tenant member, matching the sibling document reads; the
+    PUT/DELETE below are tenant-admin-gated and coord re-checks.
+
+    Coord answers **503** rather than an empty list when the store is not
+    provisioned, and that distinction is load-bearing: an empty list reads as
+    "no kind has a setting", which is a claim about the operator's
+    configuration nothing has evidence for. The 503 passes through.
+    """
+    return await _proxy_coord_get(
+        "/coord/prompt-document-kind-tiers", tenant_id=tenant_id
+    )
+
+
+@router.put("/coord/prompt-document-kind-tiers/{kind}")
+async def set_prompt_document_kind_tier(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set this tenant's authorship tier for every document of ``kind``.
+    Tenant-admin only.
+
+    Body: ``{tier}`` — one of ``deny``, ``allow``, ``allow_with_notification``.
+    Only ``tier`` is forwarded: coord stamps ``updated_by`` from its own
+    authenticated ``OperatorContext`` on this route, so forwarding a client
+    claim would add another client-asserted-provenance site of the kind plan
+    ``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.
+
+    ⚠️ **``allow_with_notification`` currently behaves exactly as ``allow``.**
+    Coord resolves the tier but does not yet enforce the notification
+    precondition (Phase 2 of plan
+    ``2026-08-27-tenant-level-agent-authorable-stores``). Coord's response
+    carries ``notification_enforced: false`` and a prose ``warning`` saying so
+    on every call, and the UI must surface it — a control whose NAME promises
+    more than the deployed build delivers, in the permissive direction, is
+    worse than no control.
+
+    Coord 4xx passes through: 400 for an unknown kind or an unrecognized tier
+    (naming the vocabulary), and **409 for a kind that is an unliftable
+    FLOOR** — ``claude_settings``, whose documents a machine copies into its own
+    harness configuration. That one is refused rather than stored-and-ignored,
+    so the store's contents and its meaning stay the same thing.
+    """
+    # Only `tier`, and only when the body CARRIED one. `{"tier": None}` is
+    # exactly the payload the DELETE docstring below says carries no meaning
+    # (JSON null is indistinguishable from omission on the way through), and
+    # synthesising it from an absent key would mean a typo'd key name reaching
+    # coord as an explicit null rather than as a missing field. Same shape as
+    # :func:`restore_prompt_document_version`, which inserts its optional field
+    # only when it is not None; coord's 400 then names the vocabulary.
+    payload: dict[str, Any] = {}
+    if body.get("tier") is not None:
+        payload["tier"] = body["tier"]
+    return await _proxy_coord_put(
+        f"/coord/prompt-document-kind-tiers/{quote(kind, safe='')}",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/prompt-document-kind-tiers/{kind}")
+async def clear_prompt_document_kind_tier(
+    kind: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Clear this tenant's per-kind tier for ``kind``, returning it to "no
+    operator opinion" so coord's compile-time default answers again.
+    Tenant-admin only.
+
+    A separate verb rather than a nullable ``tier`` on the PUT: JSON ``null``
+    is indistinguishable from omission on the way through, so a nullable field
+    cannot express a clear at all.
+
+    Idempotent — coord answers 200 for a kind that held no row, because "this
+    kind holds no tenant setting" is the state being requested and it is
+    equally true either way. A caller reconciling state must not read a
+    successful no-op as a failure.
+    """
+    return await _proxy_coord_delete(
+        f"/coord/prompt-document-kind-tiers/{quote(kind, safe='')}",
+        tenant_id=tenant_id,
+    )
+
+
 # Session compliance enforcement (plan
 # ``2026-07-30-session-compliance-report-enforcement.md`` Part B).
 #
