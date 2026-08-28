@@ -199,6 +199,65 @@ export function detailActor(
 }
 
 /**
+ * Does this row answer a `?ref=<id>` deep link?
+ *
+ * The landed-write feed on `/admin/coord/prompt-document-proposals` links a
+ * write to the notification that announced it, so the operator reaches the
+ * author's reasoning in one click instead of correlating two surfaces by
+ * timestamp (plan `2026-08-27-tenant-level-agent-authorable-stores.md`,
+ * Phase 4). It links into THIS feed rather than building a second one.
+ *
+ * Two spellings are accepted because the reference has two honest readings and
+ * the linking side cannot know which coord sent: the notification's own id, and
+ * a `notification_ref` coord carries into the payload (Phase 2 — the id of the
+ * finding whose body holds the reasoning). Matching both means the link works
+ * whichever one the payload turns out to carry, and neither reading can produce
+ * a false positive: both are opaque ids compared for exact equality.
+ *
+ * A blank ref matches nothing — an empty query string must never select the
+ * first row on the page.
+ */
+export function matchesNotificationRef(
+  n: Pick<CoordNotificationRow, "notification_id" | "detail">,
+  ref: string | null | undefined
+): boolean {
+  const wanted = (ref ?? "").trim();
+  if (!wanted) return false;
+  if (n.notification_id === wanted) return true;
+  const carried = n.detail?.["notification_ref"];
+  return typeof carried === "string" && carried.trim() === wanted;
+}
+
+/**
+ * What the `?ref=` banner should say, as a pure derivation of the three inputs
+ * that can be true at once.
+ *
+ * The whole point is that "not found" is the LAST arm, not the default. The
+ * operator arrives here by clicking through from a landed write, so the first
+ * render — empty rows, request in flight — would otherwise tell him the event
+ * is missing before anything had been fetched, and a failed load would tell him
+ * to clear filters when the truth is that coord did not answer. Both are the
+ * unknown-reported-as-fact failure the linking surface exists to avoid.
+ */
+export function linkedRefNotice(state: {
+  found: boolean;
+  loading: boolean;
+  error: boolean;
+}): string {
+  if (state.found) {
+    return "Showing the event this write was announced with — expanded below.";
+  }
+  if (state.loading) return "Looking for the linked event…";
+  if (state.error) {
+    return "The linked event could not be looked up — the feed above failed to load.";
+  }
+  return (
+    "The linked event is not on the page that is loaded. It may be older than " +
+    "these, or excluded by the filters above — clear them or load more."
+  );
+}
+
+/**
  * The single plain-language line for the row.
  *
  * Prefers coord's pre-rendered `summary` — coord owns the rendering, and its

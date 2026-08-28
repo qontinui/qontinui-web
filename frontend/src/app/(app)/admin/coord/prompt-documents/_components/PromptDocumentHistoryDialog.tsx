@@ -13,7 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { History, Loader2, Undo2 } from "lucide-react";
-import { diffLines } from "../_lib/diff";
+import {
+  DIFF_ADDED_COUNT_CLASS,
+  DIFF_REMOVED_COUNT_CLASS,
+  DiffTable,
+  diffLines,
+} from "@/components/console";
 import { validateBodyForKind } from "../_lib/sessionBriefingBody";
 import type {
   ListVersionsResponse,
@@ -81,7 +86,8 @@ function formatWhen(iso: string): string {
  *
  * Reversibility + honesty: every prior wording stays readable, each tagged with
  * who edited it and when, so an edit is never a one-way door. The diff is
- * computed client-side (`_lib/diff.ts`) — both sides are already in memory and
+ * computed client-side (`@/components/console` `diffLines`) — both sides are
+ * already in memory and
  * prompt documents are prose-sized, so there is no round-trip and no new
  * dependency.
  *
@@ -338,10 +344,10 @@ export function PromptDocumentHistoryDialog({
                     </span>
                   ) : (
                     <>
-                      <span className="text-emerald-600 dark:text-emerald-400">
+                      <span className={DIFF_ADDED_COUNT_CLASS}>
                         +{diff.stats.added}
                       </span>
-                      <span className="text-red-600 dark:text-red-400">
+                      <span className={DIFF_REMOVED_COUNT_CLASS}>
                         −{diff.stats.removed}
                       </span>
                       {diff.stats.truncated && (
@@ -353,43 +359,7 @@ export function PromptDocumentHistoryDialog({
                     </>
                   )}
                 </div>
-                <div
-                  className="min-h-0 flex-1 overflow-auto bg-background"
-                  data-testid="version-diff"
-                >
-                  <table className="w-full border-collapse font-mono text-xs">
-                    <tbody>
-                      {diff.lines.map((line, idx) => (
-                        <tr
-                          key={idx}
-                          className={cn(
-                            line.type === "added" &&
-                              "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                            line.type === "removed" &&
-                              "bg-red-500/10 text-red-700 dark:text-red-300"
-                          )}
-                        >
-                          <td className="w-10 select-none border-r border-border px-1.5 text-right align-top text-muted-foreground">
-                            {line.oldNumber ?? ""}
-                          </td>
-                          <td className="w-10 select-none border-r border-border px-1.5 text-right align-top text-muted-foreground">
-                            {line.newNumber ?? ""}
-                          </td>
-                          <td className="w-5 select-none px-1 align-top text-muted-foreground">
-                            {line.type === "added"
-                              ? "+"
-                              : line.type === "removed"
-                                ? "−"
-                                : ""}
-                          </td>
-                          <td className="whitespace-pre-wrap break-words px-1 align-top">
-                            {line.text === "" ? " " : line.text}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <DiffTable lines={diff.lines} data-testid="version-diff" />
               </>
             )}
           </div>

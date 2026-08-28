@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { writeKey } from "../_lib/writes";
 import { isUnavailableSevere } from "../types";
 import type {
   ListProposalsResponse,
@@ -42,6 +43,19 @@ interface DocumentVersionRow {
 interface VersionSnapshot {
   body: string;
 }
+
+/**
+ * The two bodies a landed write's diff is computed from, or why they could not
+ * be fetched.
+ *
+ * `error` is a first-class arm rather than an empty diff: an unreadable version
+ * must not render as "this write changed nothing", which is the same
+ * absence-is-not-zero rule the caveat banners above follow.
+ */
+export type WriteDiffState =
+  | { status: "loading" }
+  | { status: "ready"; previous: string; current: string }
+  | { status: "error"; error: string };
 
 /**
  * The operator review feed's data layer: pending policy-edit proposals, the
@@ -88,6 +102,31 @@ export function usePromptDocumentProposals() {
   const [writesNotices, setWritesNotices] = useState<string[]>([]);
   const [writesSevere, setWritesSevere] = useState(false);
   const [writesNothingRead, setWritesNothingRead] = useState(false);
+  /**
+   * Per-write diff bodies, keyed by `(kind, name, version)`.
+   *
+   * Never invalidated, and that is correct rather than lazy: a version snapshot
+   * is IMMUTABLE — coord appends a new version for every edit and never
+   * rewrites an old one — so the pair of bodies behind a given `(document,
+   * version)` cannot change under the cache. `reload()` deliberately leaves it
+   * alone; re-fetching bodies that cannot have moved would cost a round trip
+   * per open row for a guaranteed-identical answer.
+   */
+  const [writeDiffs, setWriteDiffs] = useState<Map<string, WriteDiffState>>(
+    new Map()
+  );
+  /**
+   * Keys already requested. A ref, not derived from `writeDiffs`, because the
+   * dedupe decision has to be made SYNCHRONOUSLY — reading it out of state
+   * would let two expands in the same tick both see an empty map and fire two
+   * identical pairs of fetches. Deciding it inside a `setState` updater would
+   * work too, but only by making the updater impure, which is exactly what
+   * React's StrictMode double-invoke exists to punish.
+   *
+   * A FAILED read is removed again, so re-expanding the row retries instead of
+   * pinning the error forever.
+   */
+  const requestedDiffs = useRef<Set<string>>(new Set());
 
   const loadProposals = useCallback(async () => {
     try {
@@ -192,6 +231,68 @@ export function usePromptDocumentProposals() {
     (kind: string, name: string): number | null =>
       liveVersions.get(docKey(kind, name)) ?? null,
     [liveVersions]
+  );
+
+  /**
+   * Fetch the two bodies a landed write's diff needs — the version itself and
+   * the one before it.
+   *
+   * No new endpoint: these are the SAME `…/versions/{n}` reads the undo path
+   * already makes, asked one version apart. Lazy on purpose — a feed of forty
+   * rows would otherwise open with eighty body fetches to render diffs nobody
+   * has asked to see.
+   *
+   * `v1` has no predecessor, so its left side is the empty document and the
+   * whole body renders as added. That is the truthful reading of "this document
+   * did not exist before this write"; the alternative (refusing to diff v1)
+   * would leave the first write — often the interesting one — unexplained.
+   */
+  const loadWriteDiff = useCallback(
+    async (write: PromptDocumentWrite): Promise<void> => {
+      const key = writeKey(write);
+      // Already ready or already in flight: a second expand must not re-fetch.
+      if (requestedDiffs.current.has(key)) return;
+      requestedDiffs.current.add(key);
+      setWriteDiffs((prev) => new Map(prev).set(key, { status: "loading" }));
+
+      const path = docPath(write.kind, write.name);
+      const previousVersion = write.version_number - 1;
+      try {
+        const [current, previous] = await Promise.all([
+          httpClient.get<VersionSnapshot>(`${path}/versions/${write.version_number}`),
+          previousVersion >= 1
+            ? httpClient.get<VersionSnapshot>(`${path}/versions/${previousVersion}`)
+            : Promise.resolve({ body: "" }),
+        ]);
+        setWriteDiffs((prev) => {
+          const next = new Map(prev);
+          next.set(key, {
+            status: "ready",
+            previous: previous?.body ?? "",
+            current: current?.body ?? "",
+          });
+          return next;
+        });
+      } catch (err) {
+        // Drop the guard so a later expand can try again — a transient 502
+        // must not make this row permanently unexplainable.
+        requestedDiffs.current.delete(key);
+        setWriteDiffs((prev) =>
+          new Map(prev).set(key, {
+            status: "error",
+            error: message(err, "Failed to read this version's text"),
+          })
+        );
+      }
+    },
+    []
+  );
+
+  /** The cached diff state for one write, or `null` when it was never asked for. */
+  const writeDiffFor = useCallback(
+    (write: PromptDocumentWrite): WriteDiffState | null =>
+      writeDiffs.get(writeKey(write)) ?? null,
+    [writeDiffs]
   );
 
   const decide = useCallback(
@@ -314,6 +415,8 @@ export function usePromptDocumentProposals() {
     writesSevere,
     writesNothingRead,
     liveVersionFor,
+    loadWriteDiff,
+    writeDiffFor,
     reload,
     decide,
     revertWrite,
