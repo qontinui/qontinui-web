@@ -8478,8 +8478,12 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
     EVERY failure of the read — transport, timeout, or a coord 4xx (the route
     is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
     admin role gets 403 there) — is re-raised as **502
-    ``mapping_check_unavailable``** carrying coord's own status. One code
-    path, one meaning: *the check could not be completed, so nothing was
+    ``mapping_check_unavailable``**, carrying coord's own status where there
+    is one and ``None`` where coord never completed an answer. That takes two
+    arms, not one: ``_proxy_coord_get`` converts only ``ConnectError`` and
+    ``TimeoutException`` into an ``HTTPException``, so the rest of
+    ``httpx.HTTPError`` is caught here rather than escaping as a bare 500.
+    One meaning either way: *the check could not be completed, so nothing was
     deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
     the one thing this endpoint must never do is treat a failed read as a
     clean bill of health. Passing coord's 403 straight through would instead
@@ -8535,13 +8539,44 @@ async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
                 ),
             },
         ) from exc
-    except ValueError as exc:
-        # ``_proxy_coord_get`` ends in ``resp.json()``, which raises
-        # ``json.JSONDecodeError`` (a ``ValueError``) when a 2xx carries a body
-        # that is not JSON at all — an HTML error page from a proxy in front of
-        # coord being the realistic one. Uncaught this became a bare 500; it is
-        # the same UNKNOWN as every other unreadable answer and deserves the
-        # same typed refusal.
+    except httpx.HTTPError as exc:
+        # ``_proxy_coord_get`` maps only ``ConnectError`` and
+        # ``TimeoutException`` to an ``HTTPException``; every other httpx
+        # transport failure — ``RemoteProtocolError`` from a load balancer
+        # cutting the response, ``ReadError``, ``ProxyError`` — escapes it and
+        # used to surface as a bare 500. Safe (nothing was deleted) but
+        # undiagnosable, and it made the "EVERY failure of the read" contract
+        # below untrue. No status: coord never completed an answer.
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=None,
+            error=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": None,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read ({type(exc).__name__} — coord never completed an "
+                    "answer), so there is no way to tell what this delete "
+                    "would break. Nothing was deleted."
+                ),
+            },
+        ) from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # ``_proxy_coord_get`` ends in ``resp.json()`` → ``jsonlib.loads``,
+        # whose only realistic failures are these two — an HTML error page from
+        # a proxy in front of coord, or a mis-encoded body. Uncaught this became
+        # a bare 500; it is the same UNKNOWN as every other unreadable answer.
+        #
+        # Deliberately NOT the wider ``ValueError`` these both subclass: that
+        # would also catch a ``ValueError`` raised BEFORE the response exists
+        # (a malformed ``COORD_URL``, say) and report it as "the body is not
+        # JSON" under a message asserting coord answered — naming a cause that
+        # is not the actual one, which is the thing this refusal exists to
+        # avoid.
         _raise_mapping_check_unreadable(f"the body is not JSON ({exc})")
 
     if not isinstance(payload, dict):
