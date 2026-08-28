@@ -17,6 +17,23 @@ Three guards, one test class each:
 * ``last_admin_mapping`` — the delete would leave a tenant with no other
   admin-conferring mapping (409, **no override**).
 
+Two further classes cover the INPUT all three are derived from. Guards 1 and
+3 read ``coord.group_tenant_roles`` through ``_coord_group_tenant_role_rows``,
+so an empty — or unattributable — return makes both vacuous, and that reader
+used to answer ``[]`` for a 200 whose body was not the table, sending the
+irreversible AWS delete on a check that never ran.
+``mapping_check_unreadable`` is the refusal that replaced it:
+
+* ``TestMalformedTwoHundredIsRefused`` — the ENVELOPE (body, key, list).
+* ``TestUnreadableRowsAreRefused`` — the ROWS. Envelope checks alone leave
+  the same defect one layer down: rows that carry none of the three fields
+  the guards read attribute to no group and no tenant, so both guards go
+  vacuous again on a perfectly well-formed 200.
+
+Both classes carry a counterweight that must still SUCCEED — a well-formed
+empty table, and coord's exact real row shape — because a fix that refused
+everything would satisfy every negative test in them and be its own failure.
+
 The coord read is stubbed at ``httpx.AsyncClient`` — the same seam
 ``test_operations_tenants_proxy.py`` uses — so nothing here needs a live
 coord, and ``cognito_admin.delete_group`` is patched so a guard that fails
@@ -32,6 +49,7 @@ would send an operator looking for a sweep that never runs.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -99,11 +117,21 @@ class _Deleter:
         self.calls.append(group_name)
 
 
+#: ``body=`` sentinel: "build the body from ``rows``" (distinct from an
+#: explicit ``body=None``, which is itself one of the malformed cases).
+_FROM_ROWS = object()
+
+
 class _Harness:
     """A DELETE run with the coord mapping read stubbed.
 
     ``rows`` is what coord's ``GET /admin/coord/group-tenant-roles`` returns;
     ``coord_error`` (an exception instance) makes that read fail instead.
+
+    ``body`` overrides the whole 200 payload, which is how the malformed-200
+    cases are expressed — coord's HTTP status says nothing about whether the
+    body is the table. ``json_error`` makes ``resp.json()`` itself raise, the
+    "200 carrying HTML from a proxy" case.
     """
 
     def __init__(
@@ -111,10 +139,14 @@ class _Harness:
         rows: list[dict[str, Any]] | None = None,
         coord_error: Exception | None = None,
         coord_status: int = 200,
+        body: Any = _FROM_ROWS,
+        json_error: Exception | None = None,
     ) -> None:
         self.rows = rows or []
         self.coord_error = coord_error
         self.coord_status = coord_status
+        self.body = body
+        self.json_error = json_error
         self.deleter = _Deleter()
         self.get_calls: list[Any] = []
 
@@ -123,7 +155,12 @@ class _Harness:
 
         resp = MagicMock(spec=httpx.Response)
         resp.status_code = self.coord_status
-        resp.json.return_value = {"group_tenant_roles": self.rows}
+        if self.json_error is not None:
+            resp.json.side_effect = self.json_error
+        elif self.body is _FROM_ROWS:
+            resp.json.return_value = {"group_tenant_roles": self.rows}
+        else:
+            resp.json.return_value = self.body
         resp.text = '{"error":"admin_required"}'
 
         instance = MagicMock()
@@ -458,3 +495,298 @@ class TestLastAdminGuard:
         # `gamma` has independent admin cover and must NOT be listed —
         # over-reporting would train operators to ignore the list.
         assert _detail(resp)["tenants"] == ["acme", "beta-corp"]
+
+
+# ---------------------------------------------------------------------------
+# V6 — a 200 whose BODY is not the table is UNKNOWN, not "no mappings"
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedTwoHundredIsRefused:
+    """The status code is not the only way the mapping read can fail.
+
+    Guards 1 and 3 are derived entirely from
+    ``_coord_group_tenant_role_rows``. When that reader answered ``[]`` for a
+    malformed 200 — a non-dict body, or a ``group_tenant_roles`` that was not
+    a list — BOTH guards evaluated to "nothing at risk" and the irreversible
+    pool-wide AWS delete went through. The exception arm directly above it in
+    the source had always said the right thing ("an unreadable mapping table
+    is UNKNOWN, not 'no mappings'"); this arm did the opposite.
+
+    Every case here asserts ``deleter.calls == []``. A 502 with the delete
+    already sent would be a post-mortem, not a refusal.
+    """
+
+    @pytest.mark.parametrize(
+        ("body", "label"),
+        [
+            (None, "null body"),
+            ([], "top-level list"),
+            (["acme-devs"], "top-level list of names"),
+            ("group_tenant_roles", "top-level string"),
+            (7, "top-level number"),
+        ],
+    )
+    def test_a_body_that_is_not_an_object_is_refused(
+        self, admin_client: TestClient, body: Any, label: str
+    ):
+        h = _Harness(body=body)
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, f"{label}: {resp.text}"
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == [], f"{label}: the AWS delete was still sent"
+
+    def test_a_body_missing_the_key_is_refused(self, admin_client: TestClient):
+        """An object with no ``group_tenant_roles`` at all — coord's own
+        error envelope, or a route that moved — is the shape a ``.get()``
+        with an implicit ``None`` default turns straight into "no mappings"."""
+        h = _Harness(body={"error": "not_found", "detail": "no such route"})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, resp.text
+        detail = _detail(resp)
+        assert detail["error"] == "mapping_check_unreadable"
+        assert "group_tenant_roles" in detail["reason"]
+        assert h.deleter.calls == []
+
+    @pytest.mark.parametrize(
+        ("value", "label"),
+        [
+            (None, "explicit null"),
+            ({}, "object"),
+            ("acme-devs", "string"),
+            (0, "number"),
+        ],
+    )
+    def test_a_non_list_group_tenant_roles_is_refused(
+        self, admin_client: TestClient, value: Any, label: str
+    ):
+        h = _Harness(body={"group_tenant_roles": value})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, f"{label}: {resp.text}"
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == [], f"{label}: the AWS delete was still sent"
+
+    def test_a_list_holding_a_non_object_is_refused_not_filtered(
+        self, admin_client: TestClient
+    ):
+        """Silently dropping the junk entries would narrow the guard's input,
+        and the entry dropped could be the mapping that makes this delete
+        strand a tenant. A partially unreadable table is still unreadable."""
+        h = _Harness(
+            body={
+                "group_tenant_roles": [
+                    _mapping("acme-devs", "acme", "operator"),
+                    "acme-admins",
+                ]
+            }
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/scratch-group")
+
+        assert resp.status_code == 502, resp.text
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == []
+
+    def test_a_two_hundred_that_is_not_json_at_all_is_refused(
+        self, admin_client: TestClient
+    ):
+        """``_proxy_coord_get`` ends in ``resp.json()``; an HTML error page
+        from a proxy in front of coord raises ``JSONDecodeError`` there. That
+        is a ``ValueError``, not an ``HTTPException``, so it fell past the
+        failure arm entirely and became a bare 500 with no typed answer."""
+        h = _Harness(
+            json_error=json.JSONDecodeError("Expecting value", "<html>503</html>", 0)
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, resp.text
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == []
+
+    def test_the_refusal_distinguishes_itself_from_an_unreachable_coord(
+        self, admin_client: TestClient
+    ):
+        """Two different operator responses hang off this distinction: an
+        outage is waited out, a 200 that is not the table is a coord/proxy
+        defect to chase. One shared code would erase that."""
+        malformed = _Harness(body={"group_tenant_roles": "nope"})
+        malformed_resp = malformed.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+        unreachable = _Harness(coord_error=httpx.ConnectError("refused"))
+        unreachable_resp = unreachable.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        # Pinned as LITERALS, not merely as "different from each other" — an
+        # inequality alone would still hold if both codes changed together.
+        assert _detail(malformed_resp)["error"] == "mapping_check_unreadable"
+        assert _detail(unreachable_resp)["error"] == "mapping_check_unavailable"
+
+    def test_the_refusal_does_not_claim_a_status_it_never_saw(
+        self, admin_client: TestClient
+    ):
+        """``_proxy_coord_get`` treats every status below 400 as success and
+        discards the response, so this arm cannot know whether it was a 200, a
+        204, or a 302 from a proxy in front of coord — and a 3xx carrying HTML
+        is one of the realistic causes. Stamping ``coord_status: 200`` would
+        send the operator to coord's handler for a fault in the hop before it.
+
+        The sibling ``mapping_check_unavailable`` still reports its status,
+        because that one genuinely has one (pinned above at the 403 case)."""
+        h = _Harness(
+            coord_status=302,
+            json_error=json.JSONDecodeError("Expecting value", "<html>", 0),
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, resp.text
+        detail = _detail(resp)
+        assert detail["error"] == "mapping_check_unreadable"
+        assert "coord_status" not in detail, (
+            f"the refusal reports a status it never observed: {detail}"
+        )
+        assert "200" not in detail["message"]
+        assert h.deleter.calls == []
+
+    def test_a_wellformed_empty_table_still_deletes(self, admin_client: TestClient):
+        """The load-bearing counterpart: a real empty list is a legitimate
+        "no mappings" and MUST still delete. Without this, the fix above
+        could be a blanket refusal and every test in this class would still
+        pass — which is its own failure, just a quieter one."""
+        h = _Harness(body={"group_tenant_roles": []})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/scratch-group")
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"ok": True}
+        assert h.deleter.calls == ["scratch-group"]
+
+    def test_a_wellformed_table_with_rows_still_refuses_on_the_mapping(
+        self, admin_client: TestClient
+    ):
+        """And a well-formed table still reaches the ORIGINAL guards — the
+        new arm must not swallow the 409 path it sits in front of."""
+        h = _Harness(
+            body={"group_tenant_roles": [_mapping("acme-devs", "acme", "operator")]}
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 409, resp.text
+        assert _detail(resp)["error"] == "group_is_mapped"
+        assert h.deleter.calls == []
+
+
+# ---------------------------------------------------------------------------
+# V7 — a well-formed ENVELOPE holding rows the guards cannot read is also
+#      UNKNOWN. Validating the envelope alone leaves the original defect
+#      intact one layer down.
+# ---------------------------------------------------------------------------
+
+
+class TestUnreadableRowsAreRefused:
+    """``{"group_tenant_roles": [ {...} ]}`` can satisfy every envelope check
+    and still be unreadable.
+
+    ``_row_group_id`` / ``_row_tenant_slug`` / ``_row_confers_admin`` each
+    coerce a missing or null value to ``""``. A row that lost its ``group_id``
+    therefore matches no group — so guard 1 sees nothing mapped — while still
+    landing in ``_tenants_stranded_by``'s "admin from OTHER groups" set, where
+    it acts as phantom cover and suppresses guard 3, the one guard with no
+    override. The sharp case is the middle one below: coord returned a mapping
+    row **for the very group being deleted**, and it was deleted anyway.
+
+    A renamed column in coord's ``SELECT``, or a renamed key in its ``json!``
+    (``routes_phase3::get_group_tenant_roles``), produces exactly this — a
+    200, a well-formed list, and both derived guards vacuous.
+    """
+
+    @pytest.mark.parametrize(
+        ("row", "label"),
+        [
+            ({"foo": "bar"}, "no recognisable keys at all"),
+            (
+                {"groupId": "acme-devs", "tenant_slug": "acme", "role": "admin"},
+                "group_id renamed camelCase — a mapping for THIS group",
+            ),
+            (
+                {"group_id": None, "tenant_slug": "acme", "role": "admin"},
+                "null group_id",
+            ),
+            (
+                {"group_id": "", "tenant_slug": "acme", "role": "admin"},
+                "empty group_id",
+            ),
+            (
+                {"group_id": "acme-devs", "role": "admin"},
+                "no tenant_slug",
+            ),
+            (
+                {"group_id": "acme-devs", "tenant_slug": "acme"},
+                "no role",
+            ),
+            (
+                {"group_id": 17, "tenant_slug": "acme", "role": "admin"},
+                "non-string group_id",
+            ),
+        ],
+    )
+    def test_a_row_missing_an_identity_field_is_refused(
+        self, admin_client: TestClient, row: dict[str, Any], label: str
+    ):
+        h = _Harness(body={"group_tenant_roles": [row]})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, f"{label}: {resp.text}"
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == [], f"{label}: the AWS delete was still sent"
+
+    def test_one_bad_row_among_good_ones_is_enough(self, admin_client: TestClient):
+        """The table is refused as a whole. Skipping just the unreadable row
+        would leave the readable ones deciding an irreversible delete on an
+        input we already know is not what coord's contract describes."""
+        h = _Harness(
+            body={
+                "group_tenant_roles": [
+                    _mapping("other-group", "acme", "admin"),
+                    {"tenant_slug": "acme", "role": "admin"},
+                ]
+            }
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/scratch-group")
+
+        assert resp.status_code == 502, resp.text
+        assert _detail(resp)["error"] == "mapping_check_unreadable"
+        assert h.deleter.calls == []
+
+    def test_the_reason_names_the_field_that_was_missing(
+        self, admin_client: TestClient
+    ):
+        """ "malformed response" would not tell the operator whether to look at
+        coord's SELECT, its serializer, or a proxy. The field name does."""
+        h = _Harness(body={"group_tenant_roles": [{"group_id": "g", "role": "admin"}]})
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert "tenant_slug" in _detail(resp)["reason"]
+
+    def test_coords_real_row_shape_is_accepted(self, admin_client: TestClient):
+        """The counterweight: the exact six-key shape
+        ``routes_phase3::get_group_tenant_roles`` emits — including its
+        nullable ``tenant_id`` — must pass every check and reach the ordinary
+        guards. Without this, the row validation could be arbitrarily strict
+        and every test above would still pass."""
+        h = _Harness(
+            body={
+                "group_tenant_roles": [
+                    {
+                        "group_id": "other-group",
+                        "tenant_slug": "acme",
+                        "role": "admin",
+                        "auto_create_tenant": True,
+                        "created_at": "2026-08-01T00:00:00Z",
+                        "tenant_id": None,
+                    }
+                ]
+            }
+        )
+        resp = h.run(admin_client, f"{_GROUPS_URL}/scratch-group")
+
+        assert resp.status_code == 200, resp.text
+        assert h.deleter.calls == ["scratch-group"]
