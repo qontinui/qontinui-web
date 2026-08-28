@@ -142,6 +142,14 @@ class _Harness:
         body: Any = _FROM_ROWS,
         json_error: Exception | None = None,
     ) -> None:
+        # `body` and `json_error` each SHADOW what comes below them, so a test
+        # setting two of these would silently exercise an input it did not
+        # intend — the "the harness quietly used its default" hazard these
+        # tests exist to catch, turned on the harness itself.
+        assert rows is None or body is _FROM_ROWS, "pass rows= or body=, not both"
+        assert json_error is None or body is _FROM_ROWS, (
+            "json_error= shadows body=; pass one"
+        )
         self.rows = rows or []
         self.coord_error = coord_error
         self.coord_status = coord_status
@@ -644,7 +652,9 @@ class TestMalformedTwoHundredIsRefused:
         assert "coord_status" not in detail, (
             f"the refusal reports a status it never observed: {detail}"
         )
-        assert "200" not in detail["message"]
+        # Targeted at the CLAIM, not at the digits: a decode error reporting
+        # "char 200" must not red this test, while "coord answered 200" must.
+        assert "answered 200" not in detail["message"]
         assert h.deleter.calls == []
 
     def test_a_wellformed_empty_table_still_deletes(self, admin_client: TestClient):
@@ -790,3 +800,107 @@ class TestUnreadableRowsAreRefused:
 
         assert resp.status_code == 200, resp.text
         assert h.deleter.calls == ["scratch-group"]
+
+
+# ---------------------------------------------------------------------------
+# V8 — the transport failures `_proxy_coord_get` does NOT convert
+# ---------------------------------------------------------------------------
+
+
+class TestUnconvertedTransportFailuresAreRefused:
+    """``_proxy_coord_get`` maps only ``ConnectError`` and ``TimeoutException``
+    to an ``HTTPException``.
+
+    Every other ``httpx.HTTPError`` — ``RemoteProtocolError`` from a load
+    balancer cutting the response mid-flight is the realistic one — escaped the
+    reader and surfaced as a bare 500. Nothing was deleted, so this was never a
+    safety hole; it was an undiagnosable one, and it made the reader's "EVERY
+    failure of the read" contract untrue. These pin the typed refusal.
+    """
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            httpx.RemoteProtocolError("server disconnected"),
+            httpx.ReadError("connection reset"),
+            httpx.WriteError("broken pipe"),
+            httpx.ProxyError("bad gateway from proxy"),
+        ],
+        ids=lambda e: type(e).__name__,
+    )
+    def test_an_unconverted_transport_failure_refuses(
+        self, admin_client: TestClient, exc: Exception
+    ):
+        h = _Harness(coord_error=exc)
+        resp = h.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+
+        assert resp.status_code == 502, resp.text
+        detail = _detail(resp)
+        assert detail["error"] == "mapping_check_unavailable"
+        assert type(exc).__name__ in detail["message"]
+        assert h.deleter.calls == []
+
+    def test_it_reports_no_status_because_coord_never_answered(
+        self, admin_client: TestClient
+    ):
+        """The sibling arm carries coord's real status; this one has none to
+        carry. Reporting a number here would invent an answer coord never
+        gave — the same dishonesty the unreadable arm avoids by omitting the
+        field entirely."""
+        h = _Harness(coord_error=httpx.RemoteProtocolError("server disconnected"))
+        detail = _detail(h.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
+
+        assert detail["coord_status"] is None
+
+    def test_the_converted_ones_still_report_their_own_status(
+        self, admin_client: TestClient
+    ):
+        """Counterweight: the new arm must not swallow the failures
+        ``_proxy_coord_get`` DOES convert. A connect error still arrives as the
+        504/502 it maps to, and a coord 403 still carries its 403."""
+        connect = _Harness(coord_error=httpx.ConnectError("refused"))
+        connect_detail = _detail(connect.run(admin_client, f"{_GROUPS_URL}/acme-devs"))
+        assert connect_detail["error"] == "mapping_check_unavailable"
+        assert connect_detail["coord_status"] == 502
+
+        forbidden = _Harness(coord_status=403)
+        forbidden_detail = _detail(
+            forbidden.run(admin_client, f"{_GROUPS_URL}/acme-devs")
+        )
+        assert forbidden_detail["coord_status"] == 403
+
+    def test_a_value_error_from_before_the_response_is_not_mislabelled(
+        self, admin_client: TestClient
+    ):
+        """The decode arm catches ``JSONDecodeError``/``UnicodeDecodeError``,
+        NOT the wider ``ValueError`` they subclass.
+
+        A ``ValueError`` raised before any response exists — a malformed
+        ``COORD_URL``, say — is not a body problem. Catching it would report
+        "the body is not JSON" under a message asserting coord answered, i.e.
+        name a cause that is not the actual one, which is exactly what these
+        refusals exist to avoid. Letting it escape is fail-CLOSED (nothing is
+        deleted) and honest by absence.
+        """
+        from app.services import cognito_admin
+
+        deleter = _Deleter()
+        instance = MagicMock()
+        instance.get = AsyncMock(side_effect=ValueError("COORD_URL is malformed"))
+        instance.__aenter__ = AsyncMock(return_value=instance)
+        instance.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "app.api.v1.endpoints.operations.httpx.AsyncClient",
+                return_value=instance,
+            ),
+            patch.object(cognito_admin, "delete_group", deleter),
+            pytest.raises(ValueError, match="COORD_URL is malformed"),
+        ):
+            admin_client.delete(
+                f"{_GROUPS_URL}/acme-devs",
+                headers={"Authorization": f"Bearer {_CALLER_TOKEN}"},
+            )
+
+        assert deleter.calls == []
