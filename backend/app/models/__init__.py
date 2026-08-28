@@ -126,6 +126,7 @@ from app.models.render_log import (
 from app.models.scheduled_workflow_run import ScheduledWorkflowRun
 from app.models.screenshot_input_association import ScreenshotInputAssociation
 from app.models.session_activity import SessionActivity
+from app.models.session_artifact import SessionArtifact
 from app.models.skill import Skill
 from app.models.snapshot import (
     Pattern,
@@ -521,6 +522,9 @@ __all__ = [
     "WorkArtifact",
     "WorkArtifactVersion",
     "WorkArtifactEdge",
+    # Claude Code Session Repository (agent.session_artifacts — archived
+    # sessions; bodies live in the object store, not in a column)
+    "SessionArtifact",
 ]
 
 # Cloud-control extension hook — no-op when no cloud-control package has

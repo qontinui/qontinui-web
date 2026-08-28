@@ -1386,14 +1386,25 @@ async function backendErrorMessage(res: Response): Promise<string> {
 function CognitoGroupItem({
   group,
   mappings,
+  mappingsError,
   memberCount,
   membersError,
   onDeleted,
   onMembersChanged,
 }: {
   group: CognitoGroupRow;
-  /** coord `group_tenant_roles` rows whose `group_id` is this group. */
-  mappings: GroupTenantRoleRow[];
+  /**
+   * coord `group_tenant_roles` rows whose `group_id` is this group; `null`
+   * while the section's read is still in flight (or has not run), so an
+   * un-arrived answer is never mistaken for an empty one.
+   */
+  mappings: GroupTenantRoleRow[] | null;
+  /**
+   * Set when the `group-tenant-roles` read FAILED — unknown, NOT "no
+   * mappings". The same distinction `membersError` draws, for the other half
+   * of the blast radius.
+   */
+  mappingsError: boolean;
   /** Members in this group; `null` while loading, `undefined` if unknown. */
   memberCount: number | null | undefined;
   /** Set when the member-count probe failed — unknown, NOT zero. */
@@ -1526,7 +1537,28 @@ function CognitoGroupItem({
               <Users className="h-3 w-3" />
               {memberLabel}
             </Badge>
-            {mappings.length === 0 ? (
+            {mappingsError ? (
+              // A FAILED read is not an empty one. Rendering "no tenant
+              // mappings" here would turn a suppressed error into the single
+              // most reassuring thing this row can say, right beside Delete.
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                data-testid={`cognito-group-mappings-unknown-${group.group_name}`}
+              >
+                <Building2 className="h-3 w-3" />
+                tenant mappings unknown
+              </Badge>
+            ) : mappings === null ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-muted-foreground"
+                data-testid={`cognito-group-mappings-loading-${group.group_name}`}
+              >
+                <Building2 className="h-3 w-3" />
+                reading tenant mappings…
+              </Badge>
+            ) : mappings.length === 0 ? (
               <Badge
                 variant="outline"
                 className="text-[0.7rem] font-normal text-muted-foreground"
@@ -1640,11 +1672,54 @@ function CognitoGroupItem({
                     memberCount === 1 ? "" : "s"
                   } lose this group at their next login.`}
           </li>
-          {mappings.length === 0 ? (
-            <li>No coord tenant mappings reference this group.</li>
+          {mappingsError ? (
+            // The bullet that would otherwise say "nothing references this
+            // group" is the one an operator reads as permission to proceed.
+            // When the read failed we do not know that, so we say so — and we
+            // name the guard that DOES know, so "unknown" does not read as
+            // "unguarded". The confirm stays enabled deliberately: the backend
+            // re-runs this check server-side and answers 502
+            // `mapping_check_unavailable` if IT cannot read the table either,
+            // so blocking here would only convert a recoverable delete into a
+            // dead end while implying the dashboard is the guard.
+            <li
+              className="text-amber-700 dark:text-amber-400"
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              coord&apos;s tenant mappings could not be read — treat this as
+              unknown, not as &ldquo;none&rdquo;. The delete is still checked
+              server-side and will be refused if any mapping exists.
+            </li>
+          ) : mappings === null ? (
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              Reading coord&apos;s tenant mappings…
+            </li>
+          ) : mappings.length === 0 ? (
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              No coord tenant mappings reference this group.
+            </li>
           ) : (
+            // The SAME testid rides every arm, this one included, so a query
+            // for it is total over the state space. Leaving it off here would
+            // make `queryByTestId(...) === null` mean "there ARE mappings" —
+            // the opposite of what a reader assumes, and a way for a future
+            // `toBeNull()` assertion to pass vacuously on the mapped path.
+            //
+            // NOTE for tests: this arm is the ONLY one that can render the id
+            // more than once (one `<li>` per mapping), and `getByTestId`
+            // THROWS on multiple matches. A test that reaches the mapped path
+            // with more than one mapping must use `getAllByTestId`. The other
+            // three arms are always single, which is why the singular query is
+            // safe there.
             mappings.map((m) => (
-              <li key={`${m.tenant_slug}:${m.role}`}>
+              <li
+                key={`${m.tenant_slug}:${m.role}`}
+                data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+              >
                 Grants <strong>{tierLabel(m.role)}</strong> in{" "}
                 <span className="font-mono">{m.tenant_slug}</span> — the backend
                 will refuse this delete until that mapping is removed above.
@@ -1748,7 +1823,14 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   // because the row that needs them is the one that has NOT been expanded —
   // a per-row lazy fetch would arrive only after the operator had already
   // expanded, which is after the decision the numbers exist to inform.
-  const [mappings, setMappings] = useState<GroupTenantRoleRow[]>([]);
+  // `null` until the read lands: an initial `[]` would render as the positive
+  // claim "no tenant mappings" for every group during the first paint, which
+  // is the same fabrication a failed read makes, just shorter-lived.
+  const [mappings, setMappings] = useState<GroupTenantRoleRow[] | null>(null);
+  // Set when the `group-tenant-roles` read FAILED. Kept apart from `mappings`
+  // for the same reason `memberErrors` is kept apart from `memberCounts` — a
+  // failed read must render as "unknown", never as "none".
+  const [mappingsError, setMappingsError] = useState(false);
   const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
   // Groups whose member probe FAILED. Kept apart from `memberCounts` so a
   // failed read renders as "unknown" rather than as a confident zero.
@@ -1803,12 +1885,39 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = (await res.json()) as GroupTenantRolesResponse;
-        if (!cancelled) setMappings(json.group_tenant_roles ?? []);
+        // A successful STATUS is not a successful READ. `group_tenant_roles`
+        // is declared non-optional, so a `?? []` here is dead per the types
+        // and live at runtime — and what it would fabricate is precisely the
+        // absence claim this whole change exists to make unreachable. Treat a
+        // malformed 200 as the failure it is and let the `catch` route it to
+        // the unknown arm. (It also stops a non-array body throwing later,
+        // inside the `.filter()` at the render site.)
+        const rows = json?.group_tenant_roles;
+        if (!Array.isArray(rows)) {
+          throw new Error("malformed group-tenant-roles payload");
+        }
+        if (!cancelled) {
+          setMappings(rows);
+          setMappingsError(false);
+        }
       } catch (err) {
         // Non-fatal: the group list still renders. The backend enforces the
         // referential guard regardless of what this panel managed to show.
+        //
+        // But do NOT collapse the failure to `[]`. `mappings.length === 0` is
+        // what renders "no tenant mappings" and "No coord tenant mappings
+        // reference this group." beside a Delete button, so an emptied array
+        // here would publish a suppressed error as a confident all-clear about
+        // the exact blast radius this panel exists to show. Flag it instead.
+        //
+        // The flag WINS at both render sites, so on a failed REFRESH a row
+        // that had shown real mappings degrades to "unknown" rather than
+        // continuing to display rows we can no longer vouch for. That is the
+        // same trade `memberCounts` makes (its map is replaced wholesale, so a
+        // known count degrades to "members unknown" too), and it is the safe
+        // direction: unknown is never a weaker warning than the truth.
         log.warn("load group-tenant-roles for blast radius failed", err);
-        if (!cancelled) setMappings([]);
+        if (!cancelled) setMappingsError(true);
       }
     })();
     return () => {
@@ -1956,9 +2065,12 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                     <CognitoGroupItem
                       key={g.group_name}
                       group={g}
-                      mappings={mappings.filter(
-                        (m) => m.group_id === g.group_name
-                      )}
+                      mappings={
+                        mappings === null
+                          ? null
+                          : mappings.filter((m) => m.group_id === g.group_name)
+                      }
+                      mappingsError={mappingsError}
                       memberCount={
                         memberErrors[g.group_name]
                           ? undefined

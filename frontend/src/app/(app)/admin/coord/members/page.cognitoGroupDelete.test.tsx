@@ -26,6 +26,14 @@
  *    a reason.
  * 5. **An unreadable member count is UNKNOWN, never 0.** A confident "0
  *    members" derived from a failed probe is the argument FOR deleting.
+ * 6. **An unreadable TENANT-MAPPING table is UNKNOWN, never "none".** Same
+ *    class as 5, other half of the blast radius, and the one that shipped
+ *    broken: the effect's `catch` collapsed the failure to `[]`, and
+ *    `mappings.length === 0` is what prints "no tenant mappings" on the row
+ *    and "No coord tenant mappings reference this group." in the dialog. The
+ *    four `unknown / not yet landed` tests below go red the moment a failed,
+ *    in-flight or since-invalidated read is allowed to render as an empty one
+ *    again.
  *
  * **Every test opens the "Cognito Groups" panel first.** Wave 4
  * (`feat(console): bring /members onto the console primitives`) folded all four
@@ -84,6 +92,21 @@ import MembersPage from "./page";
 interface RouteState {
   groups: Array<Record<string, unknown>>;
   mappings: Array<Record<string, unknown>>;
+  /**
+   * How `/coord/group-tenant-roles` behaves.
+   *
+   * `"error"` and `"pending"` exist because the two states this panel is most
+   * likely to get WRONG are the ones where it has no answer: a failed read and
+   * an in-flight one both used to leave `mappings` as `[]`, which is the same
+   * array a successful read of an unmapped group produces. Without a knob for
+   * them the suite could only ever exercise the arm that happens to be right.
+   *
+   * `"malformed"` covers the third way to have no answer, and the sneakiest:
+   * a 200 whose body is not the shape we asked for. `res.ok` is true, so a
+   * status-only check calls it a success and `?? []` would publish it as a
+   * confident "none".
+   */
+  mappingsMode: "ok" | "error" | "pending" | "malformed";
   usersByGroup: Record<string, Array<Record<string, unknown>> | "error">;
   deleteResponse: { status: number; body: unknown };
 }
@@ -129,6 +152,19 @@ function installRouter() {
         return jsonResponse(200, { users: rows ?? [] });
       }
       if (path.endsWith("/coord/group-tenant-roles")) {
+        if (state.mappingsMode === "error") {
+          return jsonResponse(502, { detail: "coord unreachable" });
+        }
+        if (state.mappingsMode === "pending") {
+          // Never settles — the read is still in flight, which is a DIFFERENT
+          // state from "read, and there are none".
+          return new Promise<Response>(() => {});
+        }
+        if (state.mappingsMode === "malformed") {
+          // 200, `res.ok === true`, and no `group_tenant_roles` at all. The
+          // status says the read worked; the body says we have no answer.
+          return jsonResponse(200, { unexpected: "shape" });
+        }
         return jsonResponse(200, { group_tenant_roles: state.mappings });
       }
       if (path.endsWith("/coord/my-tenants")) {
@@ -196,6 +232,7 @@ describe("/admin/coord/members — Cognito group delete", () => {
     state = {
       groups: [group("acme-devs")],
       mappings: [mapping("acme-devs", "acme", "operator")],
+      mappingsMode: "ok",
       usersByGroup: { "acme-devs": [user("ann"), user("bob")] },
       deleteResponse: { status: 200, body: { ok: true } },
     };
@@ -232,6 +269,174 @@ describe("/admin/coord/members — Cognito group delete", () => {
     );
     await waitFor(() => expect(badge).toHaveTextContent("members unknown"));
     expect(badge).not.toHaveTextContent("0 members");
+  });
+
+  // ---------------------------------------------------------------------
+  // An unreadable tenant-mapping table is UNKNOWN, never "no mappings".
+  //
+  // These are the negative-path twins of `shows the member count and mapped
+  // tenants without expanding the row`. They exist because the failure they
+  // pin is INVISIBLE to the positive tests: a `catch` that ends in
+  // `setMappings([])` makes every one of those pass while the row quietly
+  // publishes a suppressed error as "nothing references this group" — the
+  // single most reassuring sentence the dialog can show, beside a Delete
+  // button, derived from an answer the page never received.
+  //
+  // Each asserts the LITERAL absent-claim copy is gone, not merely that some
+  // unknown marker is present: a build that renders both would still be
+  // telling the operator there is nothing to break.
+  // ---------------------------------------------------------------------
+
+  it("reports an unreadable tenant-mapping read as unknown, never as 'no tenant mappings'", async () => {
+    state.mappingsMode = "error";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-mappings-unknown-acme-devs")
+      ).toHaveTextContent("tenant mappings unknown")
+    );
+    // The all-clear badge must not be rendered at all — not even alongside.
+    expect(
+      within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
+    ).toBeNull();
+    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+  });
+
+  it("does not claim an empty blast radius in the confirmation when the mapping read failed", async () => {
+    state.mappingsMode = "error";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    await user_.click(
+      await screen.findByTestId("cognito-delete-group-acme-devs")
+    );
+    // Re-query INSIDE the waitFor: `findByTestId` can resolve on the loading
+    // arm, and asserting against that captured node only works while both
+    // arms happen to render the same un-keyed element in the same slot. Hold
+    // the node and a future change of either arm's element type turns this
+    // into a timeout instead of a clear failure.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("cognito-delete-confirm-mappings-acme-devs")
+      ).toHaveTextContent(/could not be read/i)
+    );
+    const bullet = screen.getByTestId(
+      "cognito-delete-confirm-mappings-acme-devs"
+    );
+    expect(bullet).toHaveTextContent(/unknown/i);
+
+    const dialog = screen.getByTestId("cognito-delete-confirm-acme-devs");
+    expect(dialog.textContent ?? "").not.toMatch(
+      /No coord tenant mappings reference this group/i
+    );
+    // "Unknown" must not read as "unguarded": the sentence names the check
+    // that still runs server-side, so the operator knows what stops them.
+    expect(bullet).toHaveTextContent(/server-side/i);
+  });
+
+  it("says nothing about mappings until the read has landed", async () => {
+    state.mappingsMode = "pending";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
+    // The member count arrives independently, so the row is genuinely
+    // rendered — this is not an assertion about an unmounted tree.
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-members-count-acme-devs")
+      ).toHaveTextContent("2 members")
+    );
+    // Assert the LITERAL copy, not just the testid — a testid-only assertion
+    // lets the operator-visible sentence change without any test noticing.
+    expect(
+      within(blast).getByTestId("cognito-group-mappings-loading-acme-devs")
+    ).toHaveTextContent("reading tenant mappings");
+    expect(
+      within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
+    ).toBeNull();
+    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+  });
+
+  it("treats a 200 with a malformed body as unknown, never as 'no mappings'", async () => {
+    // The status-only trap: `res.ok` is true, so a check that stops at the
+    // status calls this a successful read. What the body actually carries is
+    // no answer at all — and a `?? []` fallback would render that as the
+    // confident all-clear, which is the same fabrication a 502 used to make.
+    state.mappingsMode = "malformed";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-mappings-unknown-acme-devs")
+      ).toHaveTextContent("tenant mappings unknown")
+    );
+    expect(
+      within(blast).queryByTestId("cognito-group-unmapped-acme-devs")
+    ).toBeNull();
+    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
+
+    // …and the confirmation must not claim an empty blast radius either.
+    await user_.click(
+      await screen.findByTestId("cognito-delete-group-acme-devs")
+    );
+    const dialog = await screen.findByTestId(
+      "cognito-delete-confirm-acme-devs"
+    );
+    expect(dialog.textContent ?? "").not.toMatch(
+      /No coord tenant mappings reference this group/i
+    );
+  });
+
+  it("degrades a previously-known mapping to unknown when a REFRESH fails", async () => {
+    // The `ok → error` transition, which the three tests above cannot reach:
+    // the first read succeeds and the row shows a real mapping, then adding a
+    // member bumps `countsToken` and the refetch 502s. The rows we can no
+    // longer vouch for must not keep standing as current — "unknown" is never
+    // a weaker warning than the truth, and the alternative is a badge that
+    // silently outlives the read behind it.
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openGroupsPanel(user_);
+
+    const blast = await screen.findByTestId("cognito-group-blast-acme-devs");
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-mapping-acme-devs-acme-operator")
+      ).toBeInTheDocument()
+    );
+
+    // Coord goes dark only NOW — `installRouter` reads `state` per request,
+    // so flipping it here is what makes the REFETCH the failing read rather
+    // than counting calls (the effect can legitimately run more than once).
+    state.mappingsMode = "error";
+
+    // Expand, add a member — that is what calls `refreshBlastRadius`.
+    await user_.click(await screen.findByTestId("cognito-group-toggle-acme-devs"));
+    await user_.type(
+      await screen.findByTestId("cognito-add-email-acme-devs"),
+      "cara@example.com"
+    );
+    await user_.click(screen.getByTestId("cognito-add-submit-acme-devs"));
+
+    await waitFor(() =>
+      expect(
+        within(blast).getByTestId("cognito-group-mappings-unknown-acme-devs")
+      ).toBeInTheDocument()
+    );
+    expect(
+      within(blast).queryByTestId("cognito-group-mapping-acme-devs-acme-operator")
+    ).toBeNull();
+    expect(blast.textContent ?? "").not.toMatch(/no tenant mappings/i);
   });
 
   it("spends no member probes on a panel nobody opened", async () => {
