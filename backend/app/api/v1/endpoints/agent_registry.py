@@ -284,9 +284,60 @@ class AgentPrefUpdateRequest(BaseModel):
 
 
 #: Fields of coord's ``EffectiveAgent`` that ASSERT SOMETHING ABOUT
-#: AUTHORIZATION, as opposed to describing the agent. Read strictly (absent or
-#: null → 502); see :func:`_render_effective`.
-_AUTHZ_FIELDS = ("enabled", "disposition", "source", "policy_required")
+#: AUTHORIZATION, as opposed to describing the agent, mapped to the JSON type
+#: each must arrive as. Read strictly — absent, null, or the wrong type is a
+#: 502; see :func:`_render_effective`.
+#:
+#: The TYPE half matters as much as the presence half, because the read used to
+#: end in ``bool(...)`` / ``str(...)``, which cannot fail: ``bool("false")`` is
+#: ``True`` and ``str(0)`` is ``"0"``. A wrong-typed field therefore produced a
+#: confident, well-formed, wrong authorization claim — strictly worse than the
+#: null this guard already refuses, which at least fails loudly.
+_AUTHZ_FIELD_TYPES: dict[str, type] = {
+    "enabled": bool,
+    "disposition": str,
+    "source": str,
+    "policy_required": bool,
+}
+
+#: The names alone, in declaration order.
+_AUTHZ_FIELDS = tuple(_AUTHZ_FIELD_TYPES)
+
+
+def _unusable_authz_fields(row: dict[str, Any]) -> list[str]:
+    """Name every authorization field this row cannot be rendered from.
+
+    Three ways a field is unusable, all of them the same defect — the page
+    would state an authorization fact that is not the system's:
+
+    * **missing or null** — ``bool(None)`` is ``False``, ``str(None)`` is
+      ``"None"``.
+    * **wrong type** — ``bool("false")`` is ``True``, so a string ``enabled``
+      renders a DISABLED agent as enabled: the exact shape of the outage this
+      module was rewritten to remove. ``str(0)`` is ``"0"``, and a ``source``
+      of ``"0"`` renders through the settings page's *default* branch,
+      misattributing coord's unknown state as "registry default" — the same
+      misattribution the null guard was written for.
+    * **empty string** — a ``disposition`` of ``""`` renders as
+      ``Disabled ·`` with nothing after it, and an empty ``source`` again
+      takes the *default* branch.
+
+    Booleans are checked with :func:`isinstance`, which is exact for ``bool``
+    here: JSON decodes only ``True``/``False`` to it, and the reverse hazard
+    (``isinstance(True, int)``) is not one this uses.
+    """
+    unusable: list[str] = []
+    for field, expected in _AUTHZ_FIELD_TYPES.items():
+        value = row.get(field)
+        if value is None:
+            unusable.append(f"{field} (missing or null)")
+        elif not isinstance(value, expected):
+            unusable.append(
+                f"{field} (expected {expected.__name__}, got {type(value).__name__})"
+            )
+        elif expected is str and not value:
+            unusable.append(f"{field} (empty string)")
+    return unusable
 
 
 def _effective_rows(payload: Any, expected_user_id: str) -> list[dict[str, Any]]:
@@ -406,10 +457,10 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
     ## The strict / permissive split
 
     :data:`_AUTHZ_FIELDS` — the four fields that ASSERT SOMETHING ABOUT
-    AUTHORIZATION — are read with **no fallback**, and absent *or null* is a
-    502. Everything else (purpose, model, effort, …) is cosmetic and stays
-    permissive, so a coord that adds or drops a descriptive field never takes
-    the settings page down.
+    AUTHORIZATION — are read with **no fallback**, and absent, null *or the
+    wrong type* is a 502 (:func:`_unusable_authz_fields`). Everything else
+    (purpose, model, effort, …) is cosmetic and stays permissive, so a coord
+    that adds or drops a descriptive field never takes the settings page down.
 
     ``policy_required`` is in the strict set even though the write path fails
     closed independently (coord answers 422 ``disposition_required`` and the
@@ -423,6 +474,23 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
     "registry default". Coord's ``EffectiveAgent`` fields are non-``Option``
     today, so this cannot fire; the guard exists for the day that changes,
     and when it does it will be null-shaped rather than absent.
+
+    **The type is checked for the same reason the presence is.** ``bool`` and
+    ``str`` cannot fail, so a guard that only rejects ``None`` and then coerces
+    lets every OTHER wrong value through as a confident claim:
+    ``enabled: "false"`` renders a disabled agent as **Enabled**, and
+    ``source: 0`` becomes ``"0"``, which is not ``"user_pref"`` and so reads as
+    "Registry default (no preference saved)". Those are worse than the null
+    this guard already refuses — null is at least loud. So the four are read
+    only when they arrive as the declared type, and the ``bool(...)`` /
+    ``str(...)`` coercions that used to end this function are gone.
+
+    Value-level validity is deliberately NOT checked: coord's ``effective_from``
+    already normalizes an unknown stored disposition to ``degrade`` (a
+    documented fail-open read) and stamps ``source`` from a ``&'static str``, so
+    an out-of-enum value cannot reach here — and a web-side copy of the enum is
+    the drift this module exists to remove (see :class:`AgentPrefUpdateRequest`
+    for the same call on the write path).
 
     That strictness is the whole lesson of the bug this replaced: the old
     code read ``row.get("enabled", True)`` off a route that never emitted
@@ -459,18 +527,18 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
                     "registry with agents silently dropped from it"
                 ),
             )
-        unusable = [k for k in _AUTHZ_FIELDS if row.get(k) is None]
+        unusable = _unusable_authz_fields(row)
         if unusable:
             logger.error(
-                "agent_registry_effective_row_missing_authz_fields",
+                "agent_registry_effective_row_unusable_authz_fields",
                 agent_name=name,
-                missing=unusable,
+                unusable=unusable,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=(
                     "coord returned an off-contract effective agent row "
-                    f"(agent {name!r} missing or null: {unusable}); refusing "
+                    f"(agent {name!r}: {'; '.join(unusable)}); refusing "
                     "to render an authorization state that is not the "
                     "system's"
                 ),
@@ -482,11 +550,17 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
                 spawn_path=str(row.get("spawn_path") or ""),
                 model=row.get("model"),
                 effort=row.get("effort"),
-                policy_required=bool(row["policy_required"]),
+                # No coercion: `_unusable_authz_fields` has already refused
+                # anything that is not the declared type, so a `bool(...)` /
+                # `str(...)` here could only ever be a no-op — or, if the guard
+                # above were ever weakened, silently launder the wrong value
+                # back in. Reading the field directly keeps the guard the ONLY
+                # thing standing between coord and the page.
+                policy_required=row["policy_required"],
                 fanout_bound=row.get("fanout_bound"),
-                enabled=bool(row["enabled"]),
-                disposition=str(row["disposition"]),
-                source=str(row["source"]),
+                enabled=row["enabled"],
+                disposition=row["disposition"],
+                source=row["source"],
             )
         )
     return entries

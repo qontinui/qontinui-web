@@ -47,6 +47,12 @@ be:
    published schema to what the read path enforces. Restoring the model
    defaults — ``enabled=True`` / ``disposition="block"``, i.e. the two wrong
    values the original bug produced — turns it red.
+6. :class:`TestWrongTypedAuthzFieldsAreLoud` closes the hole the null guard
+   left: it stopped at ``is None`` and then coerced with ``bool(...)`` /
+   ``str(...)``, neither of which can fail. All eight of its wrong-type cases
+   returned **200** against the endpoint before it existed —
+   ``enabled: "false"`` rendering a disabled agent as **Enabled** — so
+   restoring the coercions turns the class red.
 """
 
 from __future__ import annotations
@@ -270,6 +276,134 @@ class TestOffContractRowsAreLoud:
         (agent,) = resp.json()["agents"]
         assert agent["model"] is None
         assert agent["purpose"] == ""
+
+
+class TestWrongTypedAuthzFieldsAreLoud:
+    """The TYPE of an authorization field is checked, not just its presence.
+
+    The null guard above stopped at ``is None`` and then coerced with
+    ``bool(...)`` / ``str(...)`` — two functions that cannot fail. Every
+    wrong-typed value therefore laundered into a confident, well-formed, wrong
+    authorization claim, which is strictly WORSE than the null the guard
+    already refused: null at least produced a 502.
+
+    Measured against the endpoint before this class existed, all eight cases
+    below returned **200** — ``enabled: "false"`` rendered as
+    ``enabled: true`` (the settings page's "Enabled" badge on an agent the
+    operator had disabled: the exact shape of the outage this module was
+    rewritten to remove) and ``source: 0`` rendered as ``"0"``, which is not
+    ``"user_pref"`` and so reads as "Registry default (no preference saved)" —
+    the same misattribution :meth:`TestOffContractRowsAreLoud.
+    test_null_authz_field_is_a_502` was written for.
+
+    Coord cannot currently produce any of them (``EffectiveAgent`` types the
+    four as ``bool`` / ``String`` / ``&'static str``), so this is a guard for
+    the day that changes — the same posture the null guard already takes.
+    """
+
+    #: ``(field, off-contract value)``. Both wrong-type directions per field:
+    #: the truthy string that ``bool()`` silently accepts, and a non-string
+    #: that ``str()`` silently stringifies.
+    WRONG_TYPES = [
+        ("enabled", "false"),
+        ("enabled", 0),
+        ("policy_required", "false"),
+        ("policy_required", 1),
+        ("disposition", 42),
+        ("disposition", ["degrade"]),
+        ("source", 0),
+        ("source", {"kind": "user_pref"}),
+    ]
+
+    @pytest.mark.parametrize("field,value", WRONG_TYPES)
+    def test_a_wrong_typed_authz_field_is_a_502(self, field: str, value):
+        row = _effective_row(**{field: value})
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(return_value={"agents": [row], "folded_for": str(USER_ID)}),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 502, (
+            f"{field}={value!r} must fail loudly — coercing it renders an "
+            "authorization state that is not the system's"
+        )
+        detail = str(resp.json()["detail"])
+        assert field in detail
+        assert type(value).__name__ in detail, (
+            "the 502 must name the type coord actually sent, so the operator "
+            "can tell a contract break from an outage"
+        )
+
+    @pytest.mark.parametrize("field", ["disposition", "source"])
+    def test_an_empty_string_authz_field_is_a_502(self, field: str):
+        """``""`` is present and correctly typed, and still not a value.
+
+        An empty ``disposition`` renders as ``Disabled ·`` with nothing after
+        it; an empty ``source`` is not ``"user_pref"``, so the row again claims
+        "Registry default (no preference saved)".
+        """
+        row = _effective_row(**{field: ""})
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(return_value={"agents": [row], "folded_for": str(USER_ID)}),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 502
+        assert field in str(resp.json()["detail"])
+
+    def test_every_unusable_field_is_named_at_once(self):
+        """One round-trip names all four, not just the first.
+
+        An operator reading a 502 needs the whole contract break, not a
+        head-of-line report that hides three more behind a redeploy.
+        """
+        row = _effective_row(
+            enabled="false", disposition=42, source=0, policy_required="no"
+        )
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(return_value={"agents": [row], "folded_for": str(USER_ID)}),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 502
+        detail = str(resp.json()["detail"])
+        for field in ("enabled", "disposition", "source", "policy_required"):
+            assert field in detail
+
+    def test_the_correctly_typed_row_still_renders(self):
+        """The companion: strictness must not cost the legitimate row.
+
+        Vacuity guard for the class above — without this, deleting the render
+        entirely would leave every test in it green.
+        """
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(
+                return_value={
+                    "agents": [_effective_row(enabled=False, source="user_pref")],
+                    "folded_for": str(USER_ID),
+                }
+            ),
+        ):
+            client = TestClient(app)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200
+        (agent,) = resp.json()["agents"]
+        assert agent["enabled"] is False
+        assert agent["source"] == "user_pref"
+        assert agent["disposition"] == "degrade"
+        assert agent["policy_required"] is True
 
 
 class TestFoldedForIsVerified:
