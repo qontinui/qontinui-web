@@ -5,8 +5,8 @@
  * runs as a single-tenant install.
  *
  * The proprietary `@qontinui/cloud-control` package side-effect-registers
- * its services and components at module-load time by calling
- * `registerCloudExtensions(...)` from its `src/index.ts`.
+ * its services, components and context providers at module-load time by
+ * calling `registerCloudExtensions(...)` from its `src/index.ts`.
  *
  * **How the package gets loaded.** `components/cloud-extensions-boot.tsx` is
  * a `"use client"` module with a *static* `import "@qontinui/cloud-control"`,
@@ -35,12 +35,17 @@
  * whatever is in the map at that instant and nothing re-renders the consumer
  * afterwards, so a slot filled later renders nothing *forever* — a silent
  * failure indistinguishable from a correct OSS-only deploy. `useSlotComponent`
- * subscribes. `getComponent` / `getService` remain the right API for
- * non-React callers (e.g. `services/service-factory.ts`'s Proxy, which
- * re-reads on every property access and so has no staleness problem).
+ * subscribes, and `useSlotProviders` is the same rule for the provider slot.
+ * `getComponent` / `getService` / `getProvider` / `getProviders` remain the
+ * right API for non-React callers (e.g. `services/service-factory.ts`'s Proxy,
+ * which re-reads on every property access and so has no staleness problem)
+ * and for tests.
  *
- * **Only two slot kinds exist, and routes are not one of them.** This
- * registry also carried `appRoutes`, `marketingRoutes`, `navItems` and
+ * **Three slot kinds exist, and routes are not one of them.** `services`
+ * and `components` are the originals; `providers` was added 2026-08-26 for
+ * the React context a cloud component reads, which a component slot cannot
+ * carry — see the `providers` field below and `components/CloudProviders`.
+ * This registry also carried `appRoutes`, `marketingRoutes`, `navItems` and
  * `profilePanels` until 2026-08-19. None of them could ever have worked:
  * Next resolves the App Router from the filesystem at build time, and the
  * sidebar builds its item list from static modules, so a runtime array of
@@ -48,14 +53,16 @@
  * empty on both sides. Cloud routes are mounted by one-line re-export shims
  * under `app/(app)/` and nav entries come from `@cloud/nav-items`, both
  * resolved through the build-time `@cloud` alias; see
- * `docs/composed-cloud-build.md`. Services and components stay because they
- * are genuine runtime *values* with no build-time contract to satisfy.
+ * `docs/composed-cloud-build.md`. The three that stay do so because they are
+ * genuine runtime *values* with no build-time contract to satisfy.
  *
  * This module imports React hooks, which are absent from React's
  * `react-server` build. Verified 2026-08-18 by walking the app-router server
  * graph from all 78 non-`"use client"` entry points: `extension-slots.ts` is
  * not reachable without crossing a `"use client"` boundary, and all four
- * component-slot consumers are client components.
+ * component-slot consumers are client components. The provider-slot consumer
+ * added since — `components/CloudProviders.tsx` — is `"use client"` too, and
+ * its only mount site (`app/(app)/layout.tsx`) is itself a client component.
  *
  * See: D:/qontinui-root/qontinui-cloud-control/  (private repo)
  *      D:/qontinui-root/tmp_cloud_control_carve_out.md  §4.1.
@@ -257,6 +264,20 @@ export function getComponent<P>(name: string): ComponentType<P> | undefined {
  *   the server by construction (the cloud-control bundle only loads in the
  *   browser).
  */
+export function useSlotComponent<P>(
+  name: string
+): ComponentType<P> | undefined {
+  const getSnapshot = useCallback(
+    () => slots.components.get(name) as ComponentType<P> | undefined,
+    [name]
+  );
+  const getServerSnapshot = useCallback(
+    (): ComponentType<P> | undefined => undefined,
+    []
+  );
+  return useSyncExternalStore(subscribeToSlots, getSnapshot, getServerSnapshot);
+}
+
 /** Stable module-level snapshot getters — see `providersSnapshot`. */
 function getProvidersSnapshot(): readonly CloudProvider[] {
   return providersSnapshot;
@@ -269,6 +290,28 @@ function getProvidersSnapshot(): readonly CloudProvider[] {
 const SERVER_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
 function getServerProvidersSnapshot(): readonly CloudProvider[] {
   return SERVER_PROVIDERS;
+}
+
+/**
+ * Look up a provider slot by name. Returns `undefined` when cloud-control
+ * registered no provider under that name (the OSS-only case, and the
+ * composed case before its bundle has loaded).
+ *
+ * Providers are *mounted* as a set, by `CloudProviders` via
+ * `useSlotProviders` — nothing renders one by name. This exists so the
+ * registration name is readable at all: it is the same by-name read
+ * `getService` and `getComponent` give the other two slot kinds, and it is
+ * what lets `cloud-extensions-boot.registration.test.tsx` assert that a
+ * NAMED provider really reached the client-side registry. Without it the
+ * provider kind could only be counted, so a registration landing under the
+ * wrong name would still satisfy a length check.
+ *
+ * **Not for React consumers**, for the same reason as `getComponent`: a
+ * one-shot read with no subscription goes permanently stale if it happens
+ * before the cloud-control bundle registers.
+ */
+export function getProvider(name: string): CloudProvider | undefined {
+  return slots.providers.get(name);
 }
 
 /**
@@ -293,18 +336,4 @@ export function useSlotProviders(): readonly CloudProvider[] {
     getProvidersSnapshot,
     getServerProvidersSnapshot
   );
-}
-
-export function useSlotComponent<P>(
-  name: string
-): ComponentType<P> | undefined {
-  const getSnapshot = useCallback(
-    () => slots.components.get(name) as ComponentType<P> | undefined,
-    [name]
-  );
-  const getServerSnapshot = useCallback(
-    (): ComponentType<P> | undefined => undefined,
-    []
-  );
-  return useSyncExternalStore(subscribeToSlots, getSnapshot, getServerSnapshot);
 }
