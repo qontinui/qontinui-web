@@ -11,14 +11,14 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
-# Four gates are stronger than "mirrored": web-boundary-lint, forbid-public-
-# schema, alembic-single-head and gitignore-tracked-files invoke the SAME
-# committed script the workflow invokes (scripts/ci/*.py), so there is nothing
-# left to keep in sync — the two lanes cannot drift because there is only one
-# copy of the logic. That is the
-# preferred shape for any future gate here; the string-mirroring above is what
-# you settle for when the workflow step is a third-party action or a package.json
-# script this lane must name for itself.
+# Five gates are stronger than "mirrored": web-boundary-lint, forbid-public-
+# schema, alembic-single-head, gitignore-tracked-files and ruff-version-parity
+# invoke the SAME committed script the workflow invokes (scripts/ci/*.py), so
+# there is nothing left to keep in sync — the two lanes cannot drift because
+# there is only one copy of the logic. That is the preferred shape for any
+# future gate here; the string-mirroring above is what you settle for when the
+# workflow step is a third-party action or a package.json script this lane must
+# name for itself.
 #
 # Commands are argv arrays (never shell strings); env is limited to the runner's
 # allowlist (qontinui-runner/src-tauri/src/ci_node/manifest.rs::ENV_ALLOWLIST);
@@ -209,12 +209,15 @@ pin = "default-branch"
 # an offline scan of the checked-out tree taking a few seconds (measured on this
 # lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for the first three;
 # `gitignore-tracked-files` was added later and is the same order of magnitude —
-# two `git ls-files` calls over the index), against minutes for the installs
+# two `git ls-files` calls over the index; `ruff-version-parity`, added later
+# still, is cheaper than any of them — it reads two committed files and
+# compares two strings, with no subprocess at all), against minutes for the
+# installs
 # that follow. So putting them ahead of
 # `frontend-install` means a dispatch that is going to fail on one of them fails
 # before it pays for a dependency install.
 #
-# These four are NOT string-mirrors of their workflows — both lanes invoke the
+# These five are NOT string-mirrors of their workflows — both lanes invoke the
 # same committed script, so they cannot drift.
 #
 # Each script exits 1 on the violation it checks for and 2 when it COULD NOT
@@ -264,6 +267,25 @@ name = "alembic-single-head"
 # the argv stays bare. `--baseline-ref` only selects the remediation text — it
 # cannot move the verdict — so the two lanes are the same gate.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
+
+[[steps]]
+name = "ruff-version-parity"
+# backend-ci.yml's `lint` job, step "Check ruff version parity (pre-commit vs
+# poetry.lock)". Asserts that the ruff `backend-ruff-check` and
+# `backend-ruff-format` below actually run — the one backend/poetry.lock
+# resolves — is the same ruff that a contributor's pre-commit hooks run.
+#
+# Belongs in THIS block rather than beside the backend steps: it reads two
+# committed files and needs no poetry venv, no sibling repo and no npm, which
+# is the property that defines this section. It is also the cheapest possible
+# way to fail a dispatch that is going to fail anyway.
+#
+# A FIFTH gate of the "same committed script" shape the header calls the
+# preferred one — and the only one here guarding a TOOL VERSION rather than
+# the tree's contents. That is deliberate: this manifest can mirror a
+# workflow's commands, but nothing in it can mirror a third-party pre-commit
+# `rev`, so the equality has to be asserted by a script both lanes run.
+command = ["python", "scripts/ci/check_ruff_version_parity.py"]
 
 [[steps]]
 name = "gitignore-tracked-files"

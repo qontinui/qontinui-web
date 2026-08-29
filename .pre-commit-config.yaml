@@ -10,11 +10,28 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.0
+    # KEEP THIS EQUAL TO `ruff`'s resolved version in backend/poetry.lock —
+    # that is the ruff backend-ci.yml's `lint` job installs and runs, and a
+    # hook running a DIFFERENT ruff reproduces the exact defect the
+    # `ruff-format` hook below was added to close: local green, CI red, no
+    # way for the contributor to see it coming.
+    #
+    # Not left to memory. `ruff-version-parity` below fails the commit when
+    # this tag and that lockfile disagree, which is what makes the pin hold:
+    # backend/pyproject.toml declares `ruff = "^0.14"`, a CARET, so any
+    # `poetry lock` refresh may move CI to another 0.14.x while this line
+    # sits frozen. See scripts/ci/check_ruff_version_parity.py.
+    rev: v0.14.14
     hooks:
-      - id: ruff
+      # `ruff-check`, not `ruff`. Upstream renamed this hook and kept `ruff`
+      # as an alias whose `name` renders "ruff (legacy alias)" on every run.
+      # The rename is not new at this rev — v0.14.0 already served all three
+      # ids — so this is a spelling correction, not a consequence of the bump
+      # above; it is made here because this is the block being edited and
+      # because an alias upstream calls legacy is one it may eventually drop.
+      - id: ruff-check
         args: [--fix]
-      # `ruff` above is the LINTER only. backend-ci.yml runs BOTH
+      # `ruff-check` above is the LINTER only. backend-ci.yml runs BOTH
       # `ruff check .` and `ruff format --check .`, so without this hook a
       # backend change can pass every local gate and still red CI on
       # formatting alone -- which has happened at least four times, once
@@ -138,6 +155,30 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: ruff-version-parity
+        name: pre-commit ruff == CI ruff
+        # SAME SCRIPT as .github/workflows/backend-ci.yml's `lint` job and
+        # .qontinui/ci.toml's `ruff-version-parity` step. Guards the pin at
+        # the top of this file: the ruff-pre-commit `rev` must equal the
+        # `ruff` version backend/poetry.lock resolves, because that is the
+        # one CI installs and runs.
+        #
+        # This is the second half of `505f5738`, which added the
+        # `ruff-format` hook and recorded the version skew as the residual it
+        # was deliberately not fixing. Aligning the numbers once would not
+        # have held: `ruff = "^0.14"` in backend/pyproject.toml lets a
+        # `poetry lock` refresh move CI's ruff on its own, silently
+        # re-opening the local-green/CI-red gap that cost four incidents.
+        #
+        # NARROW `files:` with `pass_filenames: false`, like
+        # alembic-single-head and unlike gitignore-tracked-files: the skew is
+        # a property of exactly these two files, so only a commit touching
+        # one of them can create it. The glob is exact, not a coverage hole.
+        entry: python scripts/ci/check_ruff_version_parity.py
+        language: system
+        pass_filenames: false
+        files: ^(\.pre-commit-config\.yaml|backend/poetry\.lock)$
 
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint

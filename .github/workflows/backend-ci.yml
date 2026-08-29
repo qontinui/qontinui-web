@@ -124,6 +124,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      # Ahead of the poetry install on purpose: this gate needs nothing but a
+      # bare interpreter and two committed files, so a PR that is going to
+      # fail it fails in seconds rather than after paying for a dependency
+      # install. `working-directory` overrides the job's ./backend default
+      # because the path below is repo-relative; the script itself resolves
+      # the repo root from its own location, so its verdict does not depend
+      # on cwd either way.
+      #
+      # SAME SCRIPT as .pre-commit-config.yaml's `ruff-version-parity` hook
+      # and .qontinui/ci.toml's `ruff-version-parity` step. It asserts that
+      # the ruff the two ruff steps below run (poetry.lock's) is the ruff a
+      # contributor's pre-commit hooks run — without which those hooks can go
+      # green on a tree this job rejects, which is the defect `505f5738`
+      # added the ruff-format hook to close and left half-open.
+      - name: Check ruff version parity (pre-commit vs poetry.lock)
+        run: python scripts/ci/check_ruff_version_parity.py
+        working-directory: ${{ github.workspace }}
+
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
