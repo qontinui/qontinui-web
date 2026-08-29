@@ -2,11 +2,18 @@
  * Regression tests for ``<CreateOrganizationDialogSlot>``.
  *
  * Guards the 2026-08-26 production outage: the extension registry
- * transports components and services but NOT React providers, so
+ * transported components and services but NOT React providers, so
  * cloud-control's `CreateOrganizationDialog` — which calls its own
  * package's `useOrganization()`, a hook that THROWS when its Provider is
  * absent rather than returning a safe default — took down every
  * authenticated page via the root ErrorBoundary in `app/layout.tsx`.
+ *
+ * A `providers` slot has since closed that specific hole (`CloudProviders`),
+ * so the outage's own trigger cannot recur. These tests still hold, and the
+ * boundary they cover still earns its place: a slot component is foreign
+ * code the host cannot typecheck against its own provider tree, and it can
+ * throw for reasons the host never sees — including cloud-control
+ * registering a component without the provider it depends on.
  *
  * Contract under test:
  *   - nothing renders when no slot component is registered (OSS-only)
