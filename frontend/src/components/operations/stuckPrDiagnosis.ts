@@ -273,6 +273,22 @@ export function parseProposalView(body: unknown): ProposalView | null {
   };
 }
 
+/**
+ * coord's `NudgeReason::CiRed` code. A row under this reason is written by the
+ * CI-red path (`stuck_author_nudge.rs` `claim_ci_red_nudge`), NOT by the sweep,
+ * and it is never a `stuck_now[]` reason — the sweep classifies only
+ * `merge_conflict`. It therefore only ever reaches this module as history.
+ */
+export const NUDGE_REASON_CI_RED = "ci_red";
+
+/** One row of coord's `coord.pr_author_nudges` ledger. */
+export interface NudgeHistory {
+  /** How many times coord has nudged this PR's author UNDER THIS REASON. */
+  nudgeCount: number;
+  lastNudgedAt: string | null;
+  lastOutcome: string | null;
+}
+
 /** One PR coord currently considers stuck, fused from its two nudge lists. */
 export interface StuckPr {
   prNumber: number;
@@ -282,10 +298,26 @@ export interface StuckPr {
    * `merge_conflict`). `null` when the PR is known only from a stale proposal.
    */
   reason: string | null;
-  /** How many times coord has nudged this PR's author. */
+  /**
+   * The nudge count for THIS PR UNDER {@link reason}.
+   *
+   * Reason-matched deliberately. `coord.pr_author_nudges` is keyed
+   * `(repo, pr_number, reason)`, so one PR can hold several rows, and coord's
+   * read returns all of them unfiltered ordered `last_nudged_at DESC`. Taking
+   * "the newest row for this PR" would attribute another reason's count to this
+   * one's hypothesis.
+   */
   nudgeCount: number;
   lastNudgedAt: string | null;
   lastOutcome: string | null;
+  /**
+   * This PR's `ci_red` ledger row, or `null` when coord has never CI-red-nudged
+   * it. Carried SEPARATELY rather than folded into the fields above: it is a
+   * different failure mode from the `merge_conflict` that put the PR in
+   * `stuck_now[]`, and conflating the two is exactly the misattribution the
+   * reason-matched key above exists to prevent.
+   */
+  ciRed: NudgeHistory | null;
 }
 
 /** Parsed `GET /pr-merge/:repo/stuck-nudges`. */
@@ -311,23 +343,31 @@ export function parseStuckNudges(body: unknown): StuckNudges | null {
   const repo = asString(b.repo);
   if (!repo) return null;
 
-  const history = new Map<
-    number,
-    {
-      nudgeCount: number;
-      lastNudgedAt: string | null;
-      lastOutcome: string | null;
-    }
-  >();
+  // Keyed `(pr_number, reason)`, matching coord's own primary key. Before the
+  // CI-red dedup ledger landed (`coord.pr_author_nudges.failure_signature`,
+  // alembic `coord_pr_author_nudges_02`) this table held sweep rows only, so
+  // one reason per PR and a `pr_number` key was accidentally sufficient. It is
+  // not any more: `claim_ci_red_nudge` now writes `ci_red` rows to the same
+  // table, coord's read returns every reason unfiltered, and it orders
+  // `last_nudged_at DESC` — so the far more frequently written `ci_red` row
+  // would otherwise shadow the `merge_conflict` row that `stuck_now[]` is
+  // actually reporting.
+  const history = new Map<string, NudgeHistory>();
+  const historyKey = (prNumber: number, reason: string) =>
+    `${prNumber} ${reason}`;
   if (Array.isArray(b.nudges)) {
     for (const row of b.nudges) {
       if (!row || typeof row !== "object") continue;
       const r = row as Record<string, unknown>;
       const prNumber = asFiniteNumber(r.pr_number);
       if (prNumber === null) continue;
-      // `nudges` is ordered last_nudged_at DESC, so the FIRST row per PR wins.
-      if (history.has(prNumber)) continue;
-      history.set(prNumber, {
+      const reason = asString(r.reason);
+      if (reason === null) continue;
+      const key = historyKey(prNumber, reason);
+      // `nudges` is ordered last_nudged_at DESC, so the FIRST row per
+      // (PR, reason) wins.
+      if (history.has(key)) continue;
+      history.set(key, {
         nudgeCount: asFiniteNumber(r.nudge_count) ?? 0,
         lastNudgedAt: asString(r.last_nudged_at),
         lastOutcome: asString(r.last_outcome),
@@ -342,13 +382,19 @@ export function parseStuckNudges(body: unknown): StuckNudges | null {
       const r = row as Record<string, unknown>;
       const prNumber = asFiniteNumber(r.pr_number);
       if (prNumber === null) continue;
-      const h = history.get(prNumber);
+      const reason = asString(r.reason);
+      // Enrich from the row under THIS PR's live reason. A `null` reason has no
+      // ledger row to match, which reads as "no history" rather than as another
+      // reason's history.
+      const h =
+        reason === null ? undefined : history.get(historyKey(prNumber, reason));
       prs.push({
         prNumber,
-        reason: asString(r.reason),
+        reason,
         nudgeCount: h?.nudgeCount ?? 0,
         lastNudgedAt: h?.lastNudgedAt ?? null,
         lastOutcome: h?.lastOutcome ?? null,
+        ciRed: history.get(historyKey(prNumber, NUDGE_REASON_CI_RED)) ?? null,
       });
     }
   }
@@ -519,10 +565,16 @@ export interface StuckPrInput {
   prNumber: number;
   /** coord's live `stuck_now[].reason` code, or `null`. */
   reason: string | null;
-  /** How many times coord has nudged the author. */
+  /** How many times coord has nudged the author UNDER {@link reason}. */
   nudgeCount: number;
   /** coord's nudge cap, or `null` when unknown. */
   maxNudges: number | null;
+  /**
+   * This PR's `ci_red` ledger row, or `null`. Separate from the fields above
+   * because it is a different failure mode from the one in {@link reason} —
+   * see {@link StuckPr.ciRed}.
+   */
+  ciRed: NudgeHistory | null;
   /**
    * When coord last nudged this PR's author (RFC3339), or `null`. Evidence for
    * how long this has been a known problem — a `nudge_count` with no clock
@@ -576,6 +628,40 @@ export function durationLabel(seconds: number): string {
 }
 
 /**
+ * Label one reason's nudge count, saying what hitting the cap actually MEANS
+ * for that reason. Pure — exported for the vitest suite.
+ *
+ * The two reasons cap differently, and the difference is the whole point:
+ *
+ * - The SWEEP's reasons (`merge_conflict`) go through `record_nudge` /
+ *   `check_eligibility`, whose `nudge_count` cap is a LIFETIME cap per
+ *   `(repo, pr_number, reason)`. At the cap coord really has stopped.
+ * - `ci_red` goes through `claim_ci_red_nudge`, whose eligibility `WHERE` has
+ *   an `IS DISTINCT FROM` arm that IGNORES the cap: a new
+ *   `failure_signature` — a different head SHA or a different set of failing
+ *   checks — resets `nudge_count` to 1 and nudges again. The cap is therefore
+ *   per-failure-identity, not terminal, and coord's own source says so:
+ *   "new failures still get through (the `IS DISTINCT FROM` arm ignores the
+ *   cap)".
+ *
+ * Reporting `ci_red` at its cap as "coord has stopped nudging" would tell an
+ * operator the alarm is exhausted when it is merely quiet about ONE failure —
+ * the same absent-evidence-vs-evidence-of-absence error this card's
+ * `nudgesEnabled` branch already guards against.
+ */
+export function nudgeCountLabel(
+  nudgeCount: number,
+  maxNudges: number | null,
+  reason: string
+): string {
+  if (maxNudges === null || nudgeCount < maxNudges) return String(nudgeCount);
+  return reason === NUDGE_REASON_CI_RED
+    ? `${nudgeCount} (cap reached for this failure — a different failure ` +
+        `re-arms it)`
+    : `${nudgeCount} (cap reached — coord has stopped nudging)`;
+}
+
+/**
  * Rank a stuck PR's hypotheses, highest confidence first. Pure — exported for
  * the vitest suite, and the single place the card's content is decided.
  *
@@ -592,11 +678,12 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
   if (input.nudgeCount > 0) {
     nudgeEvidence.push({
       source: "coord stuck-nudges",
-      pointer: `${repo}#${prNumber}.nudge_count`,
-      value:
-        input.maxNudges !== null && input.nudgeCount >= input.maxNudges
-          ? `${input.nudgeCount} (cap reached — coord has stopped nudging)`
-          : String(input.nudgeCount),
+      pointer: `${repo}#${prNumber}.${input.reason ?? "nudge"}.nudge_count`,
+      value: nudgeCountLabel(
+        input.nudgeCount,
+        input.maxNudges,
+        input.reason ?? ""
+      ),
     });
     // A count alone cannot date the problem, and `last_outcome` is the only
     // field that says whether the nudges coord counted actually REACHED anyone.
@@ -619,11 +706,44 @@ export function diagnoseStuckPr(input: StuckPrInput): Hypothesis[] {
     // Zero nudges with the flag OFF is not "coord saw nothing wrong" — coord
     // was not looking. Saying so is the difference between absent evidence and
     // evidence of absence, which this card's honesty gate turns on.
+    //
+    // Scoped to the SWEEP deliberately. `COORD_PR_STUCK_NUDGE_ENABLED` gates
+    // the sweep tick that writes `merge_conflict` rows; the CI-red path shipped
+    // ARMED and is not flag-gated, so this flag being off does NOT mean coord
+    // is silent about this PR. Overstating it to "no live signal" would be the
+    // same over-claim in the opposite direction.
     nudgeEvidence.push({
       source: "coord stuck-nudges",
       pointer: `${repo}.enabled`,
-      value: "false (author nudges are off for this repo — no live signal)",
+      value:
+        "false (the stuck-PR sweep is off for this repo — no merge_conflict " +
+        "nudges; CI-red nudges are unaffected)",
     });
+  }
+
+  // A `ci_red` row is a DIFFERENT failure from the one that put this PR in
+  // `stuck_now[]`, so it is reported in its own right rather than substituted
+  // for the live reason's count. "Stuck on a conflict AND repeatedly told CI is
+  // red" is a materially different situation from either alone, and until the
+  // reason-matched key above it was a coin-flip which of the two the card
+  // showed.
+  if (input.ciRed && input.ciRed.nudgeCount > 0) {
+    nudgeEvidence.push({
+      source: "coord stuck-nudges",
+      pointer: `${repo}#${prNumber}.${NUDGE_REASON_CI_RED}.nudge_count`,
+      value: nudgeCountLabel(
+        input.ciRed.nudgeCount,
+        input.maxNudges,
+        NUDGE_REASON_CI_RED
+      ),
+    });
+    if (input.ciRed.lastOutcome) {
+      nudgeEvidence.push({
+        source: "coord stuck-nudges",
+        pointer: `${repo}#${prNumber}.${NUDGE_REASON_CI_RED}.last_outcome`,
+        value: input.ciRed.lastOutcome,
+      });
+    }
   }
 
   // ---- Merge conflict: coord's own live classification. -------------------
@@ -954,7 +1074,20 @@ export function isRetractedByVerdict(input: StuckPrInput): boolean {
   // the card has least to go on, so it keeps its low-confidence card.
   const p = input.proposal;
   if (!p) return false;
-  if (input.reason !== null || input.nudgeCount > 0) return false;
+  // `ciRed` is checked alongside `nudgeCount` because the rule above is "no
+  // nudge history", and since the reason-matched split `nudgeCount` carries
+  // only the LIVE reason's row. Today a `ci_red` row can only ride along with a
+  // non-null `reason`, so this arm is redundant with the first — deliberately:
+  // it pins the stated contract rather than leaning on that coupling, which is
+  // exactly the incidental sufficiency that made the old `pr_number` key look
+  // correct until a second reason started writing.
+  if (
+    input.reason !== null ||
+    input.nudgeCount > 0 ||
+    (input.ciRed?.nudgeCount ?? 0) > 0
+  ) {
+    return false;
+  }
   if (isTerminalProposalStatus(p.status)) return false;
   if (p.statusNote) return false;
   return p.secondsSinceUpdate < STALE_PROPOSAL_SECS;

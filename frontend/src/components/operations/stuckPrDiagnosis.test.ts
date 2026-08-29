@@ -15,6 +15,7 @@ import {
   isRetractedByVerdict,
   isTerminalProposalStatus,
   leverAffordance,
+  nudgeCountLabel,
   parseProposalView,
   parseStuckNudges,
   type Hypothesis,
@@ -60,6 +61,7 @@ function input(overrides: Partial<StuckPrInput> = {}): StuckPrInput {
     maxNudges: 3,
     lastNudgedAt: null,
     lastOutcome: null,
+    ciRed: null,
     nudgesEnabled: true,
     blockingSummary: null,
     proposal: null,
@@ -182,8 +184,66 @@ describe("parseStuckNudges", () => {
         nudgeCount: 2,
         lastNudgedAt: "2026-08-06T00:00:00Z",
         lastOutcome: null,
+        ciRed: null,
       },
     ]);
+  });
+
+  // `coord.pr_author_nudges` is keyed `(repo, pr_number, reason)` and coord's
+  // read returns every reason unfiltered, ordered `last_nudged_at DESC`. Since
+  // the CI-red dedup ledger landed, `ci_red` rows share the table with the
+  // sweep's `merge_conflict` rows and are written far more often — so the
+  // newest row for a PR is routinely the WRONG reason for what `stuck_now[]`
+  // is reporting.
+  const twoReasons = {
+    repo: REPO,
+    enabled: true,
+    max_nudges: 3,
+    nudges: [
+      // NEWER, and a different reason from the live one.
+      {
+        pr_number: 503,
+        reason: "ci_red",
+        first_nudged_at: "2026-08-09T00:00:00Z",
+        last_nudged_at: "2026-08-10T00:00:00Z",
+        nudge_count: 3,
+        last_outcome: "delivered",
+      },
+      {
+        pr_number: 503,
+        reason: "merge_conflict",
+        first_nudged_at: "2026-08-05T00:00:00Z",
+        last_nudged_at: "2026-08-06T00:00:00Z",
+        nudge_count: 1,
+        last_outcome: "ignored",
+      },
+    ],
+    stuck_now: [{ pr_number: 503, reason: "merge_conflict" }],
+  };
+
+  it("enriches from the row matching the LIVE reason, not the newest row", () => {
+    const pr = parseStuckNudges(twoReasons)?.prs[0];
+    // The `merge_conflict` row's own numbers — not the newer `ci_red` row's.
+    expect(pr?.nudgeCount).toBe(1);
+    expect(pr?.lastNudgedAt).toBe("2026-08-06T00:00:00Z");
+    expect(pr?.lastOutcome).toBe("ignored");
+  });
+
+  it("carries the ci_red row separately instead of dropping or merging it", () => {
+    expect(parseStuckNudges(twoReasons)?.prs[0]?.ciRed).toEqual({
+      nudgeCount: 3,
+      lastNudgedAt: "2026-08-10T00:00:00Z",
+      lastOutcome: "delivered",
+    });
+  });
+
+  it("treats a reasonless ledger row as unusable rather than as a match", () => {
+    const got = parseStuckNudges({
+      ...twoReasons,
+      nudges: [{ pr_number: 503, nudge_count: 9, last_outcome: "delivered" }],
+    });
+    expect(got?.prs[0]?.nudgeCount).toBe(0);
+    expect(got?.prs[0]?.ciRed).toBeNull();
   });
 
   it("never resurrects a PR that only appears in history", () => {
@@ -576,6 +636,53 @@ describe("diagnoseStuckPr — nudge history and the nudge feature flag", () => {
     const pointers = got[0].evidence.map((e) => e.pointer);
     expect(pointers.some((p) => p.endsWith(".last_nudged_at"))).toBe(true);
     expect(pointers.some((p) => p.endsWith(".last_outcome"))).toBe(true);
+  });
+
+  // coord caps the two reasons differently. The sweep's `record_nudge` cap is a
+  // LIFETIME cap per `(repo, pr_number, reason)`; `claim_ci_red_nudge`'s
+  // eligibility `WHERE` has an `IS DISTINCT FROM failure_signature` arm that
+  // ignores the cap outright, so a different failure resets the count to 1 and
+  // nudges again. Reporting the second as "coord has stopped nudging" tells an
+  // operator the alarm is spent when it is merely quiet about ONE failure.
+  it("does not claim coord stopped nudging when a ci_red cap can re-arm", () => {
+    expect(nudgeCountLabel(3, 3, "ci_red")).toContain("re-arms");
+    expect(nudgeCountLabel(3, 3, "ci_red")).not.toContain("stopped nudging");
+  });
+
+  it("still reports the sweep's cap as terminal, because it is", () => {
+    expect(nudgeCountLabel(3, 3, "merge_conflict")).toContain(
+      "coord has stopped nudging"
+    );
+  });
+
+  it("says nothing about a cap below it, or with no cap known", () => {
+    expect(nudgeCountLabel(2, 3, "merge_conflict")).toBe("2");
+    expect(nudgeCountLabel(9, null, "ci_red")).toBe("9");
+  });
+
+  it("reports a ci_red row under its own reason, not as the live reason's", () => {
+    const got = diagnoseStuckPr(
+      input({
+        reason: "merge_conflict",
+        nudgeCount: 1,
+        ciRed: {
+          nudgeCount: 3,
+          lastNudgedAt: "2026-08-10T00:00:00Z",
+          lastOutcome: "delivered",
+        },
+      })
+    );
+    const evidence = got[0].evidence;
+    const ciRed = evidence.find((e) =>
+      e.pointer.endsWith(".ci_red.nudge_count")
+    );
+    expect(ciRed?.value).toContain("3");
+    // The live reason keeps its OWN count alongside — one does not replace the
+    // other, which is the whole point of keying the ledger by reason.
+    const live = evidence.find((e) =>
+      e.pointer.endsWith(".merge_conflict.nudge_count")
+    );
+    expect(live?.value).toBe("1");
   });
 
   it("says nudges are OFF rather than letting silence read as health", () => {

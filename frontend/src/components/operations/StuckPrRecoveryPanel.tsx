@@ -54,6 +54,7 @@ import {
   type ActionError,
   type Hypothesis,
   type LeverActionKind,
+  type NudgeHistory,
   type ProposalView,
   type StuckPr,
   type StuckPrLever,
@@ -70,6 +71,8 @@ export interface StuckCandidate {
   lastNudgedAt: string | null;
   /** How coord's last nudge landed, or `null`. */
   lastOutcome: string | null;
+  /** This PR's `ci_red` ledger row, or `null`. See {@link StuckPr.ciRed}. */
+  ciRed: NudgeHistory | null;
   /** coord's own one-line hold reason from `/pr-merge/prs`. */
   blockingSummary: string | null;
 }
@@ -106,6 +109,7 @@ export function fuseStuckCandidates(
       // what stops them being parsed and then silently dropped here.
       lastNudgedAt: n.lastNudgedAt,
       lastOutcome: n.lastOutcome,
+      ciRed: n.ciRed,
       maxNudges,
       blockingSummary: null,
     });
@@ -133,6 +137,9 @@ export function fuseStuckCandidates(
         nudgeCount: 0,
         lastNudgedAt: null,
         lastOutcome: null,
+        // A PR known only from a stale proposal has no stuck-nudges row at all,
+        // so there is no `ci_red` history to carry either.
+        ciRed: null,
         maxNudges,
         blockingSummary: row.blocking_summary ?? null,
       });
@@ -370,6 +377,7 @@ export function StuckPrDiagnosisCard({
         maxNudges: candidate.maxNudges,
         lastNudgedAt: candidate.lastNudgedAt,
         lastOutcome: candidate.lastOutcome,
+        ciRed: candidate.ciRed,
         nudgesEnabled,
         blockingSummary: candidate.blockingSummary,
         proposal,
@@ -646,6 +654,7 @@ export function StuckPrRecoveryPanel({ repo }: StuckPrRecoveryPanelProps) {
         maxNudges: c.maxNudges,
         lastNudgedAt: c.lastNudgedAt,
         lastOutcome: c.lastOutcome,
+        ciRed: c.ciRed,
         nudgesEnabled,
         blockingSummary: c.blockingSummary,
         proposal: verdicts.get(c.prNumber) ?? null,

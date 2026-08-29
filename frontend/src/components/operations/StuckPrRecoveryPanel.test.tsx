@@ -605,6 +605,10 @@ describe("<StuckPrRecoveryPanel> — the verdict overrides the age screen", () =
     });
     render(<StuckPrRecoveryPanel />);
     const evidence = await screen.findByTestId("stuck-pr-evidence");
-    expect(evidence.textContent).toContain("author nudges are off");
+    // Scoped to the SWEEP: `enabled` gates the tick that writes
+    // `merge_conflict` rows, while the CI-red path ships armed and un-gated —
+    // so "off" here must not be read as "coord is silent about this PR".
+    expect(evidence.textContent).toContain("the stuck-PR sweep is off");
+    expect(evidence.textContent).toContain("CI-red nudges are unaffected");
   });
 });
