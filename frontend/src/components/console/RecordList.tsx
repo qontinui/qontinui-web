@@ -28,23 +28,20 @@
  * hoists the state so a reopened tab reopens the row the operator left open.
  */
 
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RecordRowKeyContext } from "./RecordRow";
 
 export interface RecordListRenderContext {
   expanded: boolean;
   onToggle: () => void;
   /**
-   * The key `itemKey` returned for this row — the same string the expansion
-   * state is keyed on, handed back so `<RecordRow rowKey>` can be set without
-   * the caller recomputing it.
+   * The key this list keyed the row on — the SAME string `itemKey` returned,
+   * and the same one expansion compares against.
    *
-   * Named `rowKey`, not `key`, to match the prop it feeds and to keep it
-   * clearly distinct from React's reserved one. Callers whose rows carry a
-   * natural id (a slug, a question id) can keep passing that directly; this
-   * exists for the ones whose key is a composite the list already built, which
-   * previously had no way to reach it and so shipped rows with no
-   * `data-row-key` at all.
+   * A `<RecordRow>` picks this up from context and needs nothing; it is on the
+   * context for a row that renders its own wrapper, or that wants the key for
+   * a nested testid.
    */
   rowKey: string;
 }
@@ -61,6 +58,10 @@ export interface RecordListBaseProps<T> {
    * Prefer the record's own identity; append the index only in the fallback,
    * never as the whole key (a positional key re-keys every row below a
    * deletion and collapses whatever the operator had open).
+   *
+   * This is also the ONLY place a row's `data-row-key` comes from: the value
+   * is published on `RecordRowKeyContext` and `<RecordRow>` writes it. A row
+   * inside a list therefore cannot disagree with the key it opens on.
    */
   itemKey: (item: T, index: number) => string;
   /** Render one row. Normally a `<RecordRow>` given `expanded` / `onToggle`. */
@@ -128,17 +129,24 @@ export function RecordList<T>({
       {items.map((item, index) => {
         const key = itemKey(item, index);
         return (
-          // A Fragment, not a wrapper element: `space-y-*` is a `> * + *`
-          // margin rule, so an extra (even `display:contents`) wrapper would
-          // silently swallow the gap between rows.
-          <Fragment key={key}>
+          // A context Provider, not a wrapper element — and for the same
+          // reason the Fragment it replaced was one: `space-y-*` is a
+          // `> * + *` margin rule, so an extra (even `display:contents`)
+          // wrapper would silently swallow the gap between rows. A Provider
+          // renders no DOM node at all, so the row stays a direct child.
+          //
+          // What it publishes is this row's identity, so `<RecordRow>` writes
+          // the key the LIST keyed it on rather than re-deriving a second one
+          // from the record. See `RecordRow`'s `rowKey` doc for the four
+          // surfaces where those two expressions had already drifted apart.
+          <RecordRowKeyContext.Provider key={key} value={key}>
             {renderRow(item, {
               expanded: openKey === key,
               // One open at a time: opening a row closes the previous one.
               onToggle: () => setOpenKey(openKey === key ? null : key),
               rowKey: key,
             })}
-          </Fragment>
+          </RecordRowKeyContext.Provider>
         );
       })}
     </div>

@@ -139,6 +139,12 @@ export function LogRow({
   return (
     <RecordRow
       data-testid="agent-log-row"
+      // KEPT, unlike the other rows that dropped theirs, because this row has
+      // a call site with no `<RecordList>` above it: the agent-detail page
+      // hand-rolls its `.map` and hoists expansion itself. Inside `/agents`'
+      // list the list's key wins and this expression is dead — which is the
+      // fix, since the two disagreed (the list's `??` chain has no
+      // `created_at` leg, this one does).
       rowKey={String(log.log_id ?? `${log.agent_id}-${occurredAt ?? ""}`)}
       expanded={expanded}
       onToggle={onToggle}
