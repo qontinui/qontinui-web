@@ -498,7 +498,7 @@ function RowDetail({
             )}
             {row.agentId && (
               <Button asChild size="sm" variant="outline">
-                <Link href="/admin/agent-sessions">
+                <Link href="/sessions">
                   Agent {row.agentId.slice(0, 8)}
                 </Link>
               </Button>

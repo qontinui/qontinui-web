@@ -117,7 +117,7 @@ const POLL_INTERVAL_MS = 10_000;
 const QUERY_DEBOUNCE_MS = 300;
 
 /** The status filter's vocabulary — coord's own agent-session words. */
-type StatusTab = "all" | "live" | "stale" | "closed";
+export type StatusTab = "all" | "live" | "stale" | "closed";
 
 const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
   { id: "all", label: "All" },
@@ -125,6 +125,19 @@ const STATUS_TABS: ReadonlyArray<{ id: StatusTab; label: string }> = [
   { id: "stale", label: "Stale" },
   { id: "closed", label: "Closed" },
 ];
+
+/**
+ * `?status=` off the URL, or `null` for anything this console does not filter
+ * on. Deliberately NOT a fallback to `"all"`: an unrecognized value is the
+ * caller's problem to notice, and silently widening it to "everything" would
+ * make a typo'd deep link look like a working one.
+ *
+ * Phase 3's `/admin/agent-sessions?live=true` → `/sessions?status=live` 308 is
+ * what puts a value here today.
+ */
+export function parseStatusTab(raw: string | null | undefined): StatusTab | null {
+  return STATUS_TABS.some((t) => t.id === raw) ? (raw as StatusTab) : null;
+}
 
 /** The dash D2 requires, with the sentence that says WHICH unknown it is. */
 function Dash({ title }: { title: string }) {
@@ -144,6 +157,13 @@ export interface SessionsConsoleProps {
   hostnameFor?: (deviceId: string) => string | undefined;
   /** Initial `?device=` deep link — `/environments/sessions?device=` maps here. */
   initialDevice?: string;
+  /**
+   * Initial status tab. `/admin/agent-sessions?live=true` 308s to
+   * `/sessions?status=live`, and without this the mapped param would land on a
+   * page that ignores it — a redirect that looks like it preserved the filter
+   * and did not.
+   */
+  initialStatus?: StatusTab;
   pollEnabled?: boolean;
   /** Injected for tests. Defaults to the real API client. */
   fetcher?: typeof listConsolidatedSessions;
@@ -163,6 +183,7 @@ export interface SessionsConsoleProps {
 export function SessionsConsole({
   hostnameFor,
   initialDevice,
+  initialStatus,
   pollEnabled = true,
   fetcher,
   now,
@@ -184,7 +205,7 @@ export function SessionsConsole({
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  const [status, setStatus] = useState<StatusTab>("all");
+  const [status, setStatus] = useState<StatusTab>(initialStatus ?? "all");
   // Two query states, not one. `query` is what the operator is typing;
   // `appliedQuery` is what has been sent. `?q=` is a SERVER filter (coord runs
   // the full-text half), so binding the fetch to `query` directly would issue
