@@ -48,6 +48,7 @@ import {
 } from "@/components/console";
 import {
   AUTHOR_GLYPH_KINDS,
+  AUTHOR_RED,
   RowTime,
   StatusBadge,
   STATUS_BADGE_CLASS,
@@ -252,7 +253,7 @@ function FailingChecks({ row }: { row: PipelineRow }) {
     return null;
 
   const chipClass =
-    "font-mono text-[11px] bg-red-500/15 text-red-200 border-red-500/35";
+    `font-mono text-[11px] ${AUTHOR_RED}`;
   return (
     <div className="space-y-1" data-testid="failing-checks">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground m-0">
