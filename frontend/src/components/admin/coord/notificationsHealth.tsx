@@ -21,18 +21,27 @@
  *
  * ## What it IS loud about
  *
- * Not knowing. `migrationPending` (coord answers `503
- * schema_migration_pending` until the `coord.notifications` revision deploys),
- * a failed read, the pre-first-response state, **and a read that succeeded
- * without carrying `unread_count`** are all *we cannot tell you what happened
- * while you were away* — R3's ignorance floor, the same amber `attentionOf`
- * defaults to and the same discipline that makes an unfetched count render `–`
- * rather than `0`.
+ * Not knowing, in all five of its shapes. `migrationPending` (coord answers
+ * `503 schema_migration_pending` until the `coord.notifications` revision
+ * deploys), a first read that failed, the pre-first-response state, **a read
+ * that succeeded without carrying `unread_count`**, and **counts left standing
+ * by a poll that has since stopped succeeding** are all *we cannot tell you
+ * what happened while you were away* — R3's ignorance floor, the same amber
+ * `attentionOf` defaults to and the same discipline that makes an unfetched
+ * count render `–` rather than `0`.
  *
- * That fourth case is the one this module originally missed: `loaded` and
- * `unreadCount === null` is a REACHABLE pair, not a contradiction, and
- * collapsing it with `?? 0` made the strip claim "Nothing unread" beside a
- * badge that said `–`. See the guard on `unreadCount === null` below.
+ * The last two are the ones this module originally missed, and they are missed
+ * in opposite directions:
+ *
+ *  - `loaded && unreadCount === null` is a REACHABLE pair, not a
+ *    contradiction, and collapsing it with `?? 0` made the strip claim
+ *    "Nothing unread" beside a badge that said `–`. A fabricated fact.
+ *  - `loaded && failed` left a green "137 unread events" sitting above the
+ *    page's own "Failed to load…" line, because the old input said `failed`
+ *    only when NOTHING had ever loaded. A stale fact, reported as current.
+ *
+ * Both are the same error — the strip stating more than it knows — so both get
+ * the same colour and a sentence naming which one it is.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -53,7 +62,22 @@ export interface NotificationsHealthInput {
   loaded: boolean;
   /** coord has the routes but not the table yet. */
   migrationPending: boolean;
-  /** The last read failed. */
+  /**
+   * The MOST RECENT feed read failed — not "a read has ever failed", and not
+   * "something on this page errored".
+   *
+   * Crossed with `loaded` this is a two-arm split, and both arms are amber for
+   * different reasons:
+   *
+   * | `loaded` | `failed` | what the strip owes the operator |
+   * |---|---|---|
+   * | false | true | nothing was ever read — the counts are UNKNOWN, `–` |
+   * | true  | true | the counts we hold are from an EARLIER read and may be out of date |
+   *
+   * The second arm is the one a `loading`-shaped flag cannot express, and the
+   * one this page shipped without: a poll that fails after a good first load
+   * leaves real numbers on screen with nothing saying they stopped moving.
+   */
   failed: boolean;
 }
 
@@ -121,6 +145,20 @@ export function deriveNotificationsHealth(
     };
   }
   if (failed) {
+    // Arm 2 of the split: we DID read once, and the numbers on screen are from
+    // that read. They are real, so they are shown — but they stopped moving,
+    // and only the strip can say so. Reporting them silently is the same
+    // confident-false-claim as `?? 0`, made with a stale fact instead of a
+    // fabricated one.
+    if (loaded) {
+      return {
+        level: "amber",
+        headline: "These counts stopped updating",
+        detail:
+          "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+        badges: countBadges(unreadCount, total),
+      };
+    }
     return {
       level: "amber",
       headline: "Could not read the feed",
@@ -157,7 +195,7 @@ export function deriveNotificationsHealth(
    * while you were away* state: amber, and say which. `total` is reported if we
    * DO have it — one missing scalar does not make the other unknown.
    */
-  if (unreadCount === null) {
+  if (unreadCount == null) {
     return {
       level: "amber",
       headline: "The unread count did not come back",

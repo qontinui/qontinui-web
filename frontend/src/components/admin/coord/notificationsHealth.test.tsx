@@ -17,18 +17,25 @@
  *    the instinct to paint N-unread amber is strong enough that only a test
  *    stops it coming back.
  *
- * 2. **Every unknown is amber, and says which one it is** — including the one
- *    the first cut of the module got wrong: a read that SUCCEEDED without
- *    carrying `unread_count`. `loaded && unreadCount === null` is reachable
- *    (`page.tsx`'s `applyEnvelope` only writes a scalar `if (typeof … ===
- *    "number")` while `setLoaded(true)` fires on any successful GET), and the
- *    original `unreadCount ?? 0` turned it into a green "Nothing unread"
- *    headline beside a `–` badge.
+ * 2. **Every unknown is amber, and says which one it is** — including the two
+ *    the first cut of the module got wrong, in opposite directions:
+ *
+ *      - a read that SUCCEEDED without carrying `unread_count`.
+ *        `loaded && unreadCount === null` is reachable (`page.tsx`'s
+ *        `applyEnvelope` only writes a scalar `if (typeof … === "number")`
+ *        while `setLoaded(true)` fires on any successful GET), and the original
+ *        `unreadCount ?? 0` turned it into a green "Nothing unread" headline
+ *        beside a `–` badge — a FABRICATED fact;
+ *      - counts left standing by a poll that stopped succeeding. The old input
+ *        said `failed` only when nothing had ever loaded, so the common case on
+ *        a 10s poller — good first load, then failures — kept a green
+ *        "137 unread events" above the page's own "Failed to load…" line: a
+ *        STALE fact reported as current.
  *
  * The badges are asserted through the FROZEN authored testids
- * (`coord-notifications-unread-count`, `coord-notifications-total`, D4a) rather
- * than by array position, so a reordering is not a failure and a dropped testid
- * is.
+ * (`coord-notifications-unread-count`, `coord-notifications-total`, D4a), so a
+ * dropped or renamed testid fails here rather than silently in a spec nobody
+ * runs. The one place order IS asserted says so at its call site.
  */
 
 import { describe, expect, it } from "vitest";
@@ -136,17 +143,48 @@ describe("deriveNotificationsHealth — every unknown is amber, and says which",
     expect(h.headline).toMatch(/Waiting for coord/);
   });
 
-  it("holds the dash even when a STALE count is still in state", () => {
-    // `page.tsx` keeps the previous scalars when a poll fails — deliberately,
-    // so the list does not blank. The strip must not re-report them as current:
-    // "137 unread" beside "Could not read the feed" is a claim about a read
-    // that did not happen.
+  it("dashes both counts when NOTHING was ever read, whatever is in state", () => {
+    // Defensive: the page cannot currently reach `failed && !loaded` with
+    // scalars set, because both are only ever written beside `setLoaded(true)`.
+    // The arm is still asserted with them populated, because "nothing was ever
+    // read" must not depend on a caller having also cleared its state — the
+    // dash is owed by THIS branch, not by the page's bookkeeping.
     const h = deriveNotificationsHealth(
       input({ failed: true, loaded: false, unreadCount: 137, total: 900 })
     );
+    expect(h.headline).toMatch(/Could not read/);
     const badges = badgesOf(h);
     expect(badges.unread).toBe("– unread");
     expect(badges.total).toBe("– total");
+  });
+
+  it("AMBER, with the REAL numbers, when a poll fails after a good load", () => {
+    // The second half of the unknown-vs-stale split, and the state a 10s
+    // poller spends most of its bad time in. These counts are real — they came
+    // from a read that worked — so they are shown; what they are not is
+    // CURRENT, and only the strip can say so. Reporting them under a green
+    // light beside the page's own "Failed to load…" line is the same
+    // over-claim as `?? 0`, made with a stale fact instead of a made-up one.
+    const h = deriveNotificationsHealth(
+      input({ failed: true, loaded: true, unreadCount: 137, total: 900 })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).toMatch(/stopped updating/);
+    expect(h.detail).toMatch(/UNKNOWN/);
+    const badges = badgesOf(h);
+    expect(badges.unread).toBe("137 unread");
+    expect(badges.total).toBe("900 total");
+  });
+
+  it("un-stales itself when the poll recovers", () => {
+    // `failed` is the state of the LAST read, not a latch. A recovered poll
+    // must return the strip to green without a reload, or the amber becomes
+    // background noise operators learn to ignore.
+    const h = deriveNotificationsHealth(
+      input({ failed: false, loaded: true, unreadCount: 137, total: 900 })
+    );
+    expect(h.level).toBe("green");
+    expect(h.headline).toBe("137 unread events");
   });
 
   it("AMBER when the read SUCCEEDED but carried no unread count", () => {
@@ -186,6 +224,51 @@ describe("deriveNotificationsHealth — every unknown is amber, and says which",
   });
 });
 
+describe("which unknown wins when several are true at once", () => {
+  // Order is a real decision, not an artefact of how the guards were typed:
+  // each arm names a DIFFERENT cause, and naming the wrong one sends the
+  // operator to the wrong place. These pin the order so a later insertion
+  // cannot quietly re-rank them.
+
+  it("migration-pending outranks everything — it explains all the rest", () => {
+    // If coord has no table, then of course nothing was read and no count came
+    // back. Reporting "the unread count did not come back" here would be true
+    // and useless.
+    const h = deriveNotificationsHealth(
+      input({
+        migrationPending: true,
+        failed: true,
+        loaded: true,
+        unreadCount: null,
+      })
+    );
+    expect(h.headline).toMatch(/not available yet/);
+  });
+
+  it("a failed read outranks a missing scalar", () => {
+    // Both are true after a first read that answered without `unread_count`
+    // and a second that failed. The failure is the actionable one — it names
+    // something that stopped working, where the missing scalar names a shape.
+    const h = deriveNotificationsHealth(
+      input({ failed: true, loaded: true, unreadCount: null, total: 900 })
+    );
+    expect(h.headline).toMatch(/stopped updating/);
+    // …and it still refuses to invent the count it does not have.
+    expect(badgesOf(h).unread).toBe("– unread");
+  });
+
+  it("treats an undefined count exactly like a null one", () => {
+    // The prop is typed `number | null`, so this is defensive — but the guard
+    // and the badge helper must not disagree about what "absent" means, or the
+    // original defect returns through the one spelling that slipped past.
+    const h = deriveNotificationsHealth(
+      input({ loaded: true, unreadCount: undefined as unknown as null })
+    );
+    expect(h.level).toBe("amber");
+    expect(h.headline).not.toMatch(/Nothing unread/);
+  });
+});
+
 describe("the strip's contract with the page", () => {
   it("emits BOTH frozen testids in every branch, unknown ones included", () => {
     // D4a: these two ids moved off the deleted `<CardTitle>` badges onto the
@@ -194,6 +277,7 @@ describe("the strip's contract with the page", () => {
     const branches: NotificationsHealthInput[] = [
       input({ migrationPending: true, loaded: false }),
       input({ failed: true, loaded: false }),
+      input({ failed: true, loaded: true, unreadCount: 137, total: 900 }),
       input({ loaded: false, unreadCount: null, total: null }),
       input({ loaded: true, unreadCount: null, total: null }),
       input({ unreadCount: 137, total: 900 }),
@@ -203,6 +287,9 @@ describe("the strip's contract with the page", () => {
       const keys = deriveNotificationsHealth(branch).badges.map(
         (b) => b["data-testid"]
       );
+      // Order IS asserted here, deliberately: unread reads before total on
+      // every surface that shows both, and the strip is the only place left
+      // that decides it.
       expect(keys).toEqual([
         "coord-notifications-unread-count",
         "coord-notifications-total",
