@@ -30,6 +30,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Path,
     Query,
     Request,
     WebSocket,
@@ -48,7 +49,7 @@ from qontinui_schemas.generated.per_type.memory_restore_request import (
 from qontinui_schemas.generated.per_type.memory_upsert_request import (
     MemoryUpsertRequest,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
@@ -68,6 +69,7 @@ from app.api.deps import (
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
+from app.middleware.rate_limit import get_authorization_identifier, user_limiter
 from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
@@ -81,8 +83,12 @@ from app.services import cognito_admin
 from app.services.cognito_admin import (
     CognitoAdminError,
     CognitoAmbiguousEmailError,
+    CognitoConfigurationError,
     CognitoGroupExistsError,
     CognitoInvalidParameterError,
+    CognitoResourceNotFoundError,
+    CognitoThrottledError,
+    CognitoUserNotFoundError,
 )
 from app.services.coord_device_status import (
     CoordDeviceStatusDisabledError,
@@ -8455,11 +8461,21 @@ async def get_coord_my_tenants(
 # group) is detected in the error text and mapped to 404.
 
 
+#: Cognito's own cap on ``GroupType.Description``. Without it a longer
+#: description spent an AWS round-trip only to come back as
+#: ``InvalidParameterException`` — which the endpoint turned into a 502
+#: blaming AWS for the caller's over-long text. Rejecting it at the schema
+#: makes it a 422 that names the field, before anything leaves the process.
+_COGNITO_GROUP_DESCRIPTION_MAX = 2048
+
+
 class _CreateGroupBody(BaseModel):
     """Body for ``POST /coord/cognito/groups``."""
 
     group_name: str = Field(..., min_length=1)
-    description: str | None = None
+    description: str | None = Field(
+        default=None, max_length=_COGNITO_GROUP_DESCRIPTION_MAX
+    )
 
 
 class _GroupMemberBody(BaseModel):
@@ -8468,53 +8484,381 @@ class _GroupMemberBody(BaseModel):
     email: str = Field(..., min_length=1)
 
 
+# ---- Rate limits on the mutating pool-wide routes ------------------------
+#
+# ``operations.py`` carried no limiter at all, and this app installs no
+# ``SlowAPIMiddleware``, so ``Limiter.default_limits`` never apply either:
+# slowapi here is **per-decorator only** (``app.state.limiter`` in
+# ``main.py`` wires the 429 handler, not enforcement). Nothing therefore
+# throttled a scripted loop that walked the pool deleting every group —
+# ``require_admin`` bounds who may call these, and until now nothing bounded
+# how fast.
+#
+# The numbers are sized against how these routes are actually driven. Pool
+# provisioning is a hand operation: an operator creates a group, maps it in
+# coord, adds a few people. That is single digits per minute. A loop is
+# hundreds. Every limit below sits far above the first and far below the
+# second, so the cap is invisible to real use and immediate to a script.
+#
+#   * DELETE group  — 5/min. The lowest, because it is the only irreversible
+#     one: Cognito has no undelete and the Phase 2 guards can only refuse
+#     the deletes they can prove are harmful.
+#   * POST group    — 10/min. Creation is recoverable (delete it again), so
+#     the limit exists to bound noise rather than damage.
+#   * add/remove member — 30/min. Onboarding a team by hand is a legitimate
+#     burst of a dozen or so calls; 30 leaves room for it while still
+#     stopping a membership-stripping loop within seconds.
+#
+# Keyed per caller (``get_authorization_identifier``) rather than per IP:
+# behind Vercel/ALB an IP key would collapse every operator into one bucket.
+#
+# ``shared_limit`` with an explicit scope, NOT ``limit`` — and that is not a
+# style choice. slowapi's default ``key_style`` is ``"url"``, so a plain
+# ``@limiter.limit`` on a route with a PATH PARAMETER buckets per URL:
+# ``DELETE .../groups/a`` and ``DELETE .../groups/b`` would count
+# separately, and the scripted loop this exists to stop — one call per
+# group name — would never share a bucket with itself. ``users.py`` gets
+# away with ``limit`` because ``PUT /me`` has no path parameter. Naming the
+# scope pins one bucket per ROUTE per caller.
+#
+# Deliberately NOT done here: installing ``SlowAPIMiddleware`` globally.
+# That would switch on ``default_limits`` for every route in the app at
+# once — a fleet-wide behaviour change, and not this plan's to make.
+_DELETE_GROUP_RATE_LIMIT = "5 per minute"
+_CREATE_GROUP_RATE_LIMIT = "10 per minute"
+_GROUP_MEMBER_RATE_LIMIT = "30 per minute"
+
+
+def _rate_limiting_disabled() -> bool:
+    """Honour the ``RATE_LIMIT_ENABLED`` kill switch on these decorators.
+
+    ``user_limiter`` is built without ``enabled=`` (unlike ``auth_limiter``
+    / ``api_limiter``), so it does not read the switch itself. Reading it
+    here — per request, not at import — keeps these routes the same
+    operational off-ramp every other limited route in this app has.
+    """
+    return not settings.RATE_LIMIT_ENABLED
+
+
+# ---- Group-name validation on the PATH parameter -------------------------
+
+
+def validated_group_name(
+    group_name: str = Path(
+        ...,
+        description="Cognito group name.",
+    ),
+) -> str:
+    """A path ``group_name`` that can exist in Cognito, or a 400 saying why.
+
+    ``cognito_admin.invalid_group_name_reason`` is the single definition of
+    Cognito's ``groupName`` constraint (it landed with the create route,
+    which validates its *body* field with it). Lifting it to a dependency
+    applies the same rule to the four routes that take the name in the
+    PATH — until now a malformed name there travelled all the way to AWS,
+    came back ``InvalidParameterException``, and was reported as **502**:
+    the endpoint telling the operator that AWS is broken when the only
+    thing wrong was a space in what they typed.
+
+    A dependency rather than a call at the top of each handler so a fifth
+    route cannot be added past it, and so the check runs before the
+    handler's own work — the delete route in particular reads coord's
+    mapping table first, and there is no point spending that round-trip on
+    a name Cognito could never have held.
+
+    **It must be declared AFTER ``current_user`` in every signature.**
+    FastAPI solves dependencies in signature order, so declaring it first
+    made an unauthenticated caller get a 400 about their group name instead
+    of a 401 — processing caller-controlled input on a superuser-gated
+    route before deciding whether the caller is anybody at all, and letting
+    the status code depend on that input pre-authentication. Nothing leaks
+    (the rule is public), but authenticate first is not a property to
+    rediscover per route. ``test_the_validator_does_not_run_before_the_admin_gate``
+    pins it.
+
+    ``create_cognito_group`` is NOT one of these four: its name arrives in
+    ``_CreateGroupBody``, and ``cognito_admin.create_group`` already runs
+    the same check on it. Re-validating there would be a second, drifting
+    copy of one rule.
+    """
+    reason = cognito_admin.invalid_group_name_reason(group_name)
+    if reason is not None:
+        raise HTTPException(status_code=400, detail=f"group_name {reason}")
+    return group_name
+
+
+# ---- Mapping a Cognito failure onto the status that is TRUE of it --------
+
+
 def _is_resource_not_found(exc: CognitoAdminError) -> bool:
-    """True when a wrapped boto3 error denotes a missing AWS resource."""
+    """True when a wrapped boto3 error denotes a missing AWS *group*.
+
+    Types first: ``cognito_admin`` now classifies boto3's ``Error.Code``
+    into subclasses, so the ordinary path does no string matching at all.
+    The text arm remains for a ``CognitoAdminError`` raised outside that
+    classifier.
+
+    ``CognitoConfigurationError`` is excluded explicitly. It IS a
+    ``ResourceNotFoundException`` — the one AWS returns for a pool id that
+    names nothing — so the old text test matched it and reported a server
+    misconfiguration as ``404 No such group``.
+    """
+    if isinstance(exc, CognitoConfigurationError):
+        return False
+    if isinstance(exc, CognitoResourceNotFoundError):
+        return True
     message = str(exc)
     return "ResourceNotFoundException" in message or "not found" in message.lower()
+
+
+def _cognito_http_error(
+    exc: CognitoAdminError,
+    *,
+    log_event: str,
+    fallback_detail: str,
+    group_name: str | None = None,
+    email: str | None = None,
+    **log_context: Any,
+) -> HTTPException:
+    """The ``HTTPException`` that tells the truth about ``exc``.
+
+    One mapper for all six group routes, so a status is decided once rather
+    than six times with five different sets of string tests. 502 keeps its
+    meaning — *the upstream is genuinely broken* — which is the only thing
+    that makes it a useful signal in a log.
+
+    The arms, in the order they are tried:
+
+    * throttled          → **429**, with ``Retry-After``. AWS is healthy.
+    * pool misconfigured → **500**. A server fault, never "no such group".
+    * bad parameter      → **400**. The caller's input, carrying AWS's reason.
+    * user not found     → **404** naming the email, not the group.
+    * group not found    → **404** naming the group.
+    * anything else      → 502 with ``fallback_detail``.
+    """
+    if isinstance(exc, CognitoThrottledError):
+        logger.warning(log_event, reason="throttled", error=str(exc), **log_context)
+        return HTTPException(
+            status_code=429,
+            detail={
+                "error": "cognito_throttled",
+                "message": (
+                    "Cognito is rate-limiting this pool's admin API. Nothing "
+                    "was changed; retry in a few seconds."
+                ),
+            },
+            # AWS's own hint when it sent one; 5s only when it did not. A
+            # number we invented would be a guess presented as the service's
+            # answer.
+            headers={"Retry-After": exc.retry_after or "5"},
+        )
+    if isinstance(exc, CognitoConfigurationError):
+        logger.error(
+            log_event, reason="pool_misconfigured", error=str(exc), **log_context
+        )
+        return HTTPException(
+            status_code=500,
+            detail={
+                "error": "cognito_pool_misconfigured",
+                "message": (
+                    "This server's Cognito user pool is absent or "
+                    "misconfigured (COGNITO_USER_POOL_ID), so the request "
+                    "resolved against no pool at all. That is a SERVER "
+                    "configuration fault — it does not mean the group or "
+                    "user you named is missing."
+                ),
+            },
+        )
+    if isinstance(exc, CognitoInvalidParameterError):
+        # AWS rejected an argument as malformed. That is the caller's error
+        # and self-explaining, so it carries AWS's message rather than the
+        # generic 502 that would claim the upstream is broken. Item 11's
+        # validator covers the group NAME before the wire; this covers every
+        # other argument, including a malformed username on the membership
+        # routes.
+        logger.info(
+            log_event, reason="invalid_parameter", error=str(exc), **log_context
+        )
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, CognitoUserNotFoundError):
+        logger.info(log_event, reason="user_not_found", error=str(exc), **log_context)
+        return HTTPException(
+            status_code=404,
+            detail=(
+                f"No such Cognito user: {email}" if email else "No such Cognito user."
+            ),
+        )
+    if group_name is not None and _is_resource_not_found(exc):
+        logger.info(log_event, reason="group_not_found", error=str(exc), **log_context)
+        return HTTPException(status_code=404, detail=f"No such group: {group_name}")
+    logger.error(log_event, error=str(exc), **log_context)
+    return HTTPException(status_code=502, detail=fallback_detail)
+
+
+# ---- Audit: who did what to the shared pool ------------------------------
+#
+# All six routes bound ``current_user`` via ``require_admin`` and then never
+# referenced it, so the only trace a pool-wide group had been deleted was a
+# service-layer structlog line carrying no actor at all. These are the
+# highest-blast-radius operations in the dashboard; "someone deleted it" is
+# not an answer anybody can act on.
+#
+# Shape mirrors ``auth/identities.py`` ``_write_audit``: core SQL against a
+# dedicated audit table rather than an ORM model, keeping the audit surface
+# decoupled from the User mapper. That precedent covers a strictly
+# LOWER-privilege operation (a user linking their own identity), which is
+# the argument for having it here too.
+
+#: Actions written to ``auth.cognito_group_admin_events``. Mirrors that
+#: table's CHECK constraint — a value added here without the matching
+#: migration would make every audit write fail.
+_COGNITO_AUDIT_ACTIONS = frozenset(
+    {"create_group", "delete_group", "add_user_to_group", "remove_user_from_group"}
+)
+
+
+async def _write_cognito_group_audit(
+    db: AsyncSession | None,
+    *,
+    actor_user_id: Any,
+    action: str,
+    group_name: str,
+    target_email: str | None = None,
+    target_username: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Insert one ``auth.cognito_group_admin_events`` row.
+
+    Called only AFTER the AWS call succeeded, and best-effort ON PURPOSE.
+    By the time we get here the pool has already changed and Cognito has no
+    undelete, so raising would report a failure that did not happen and
+    invite the operator to retry a delete that already landed — strictly
+    worse than an audit gap. The failure is logged at ``error`` with the
+    whole row (``target_email`` included: that row is the only thing the log
+    line is FOR, and a redacted one could not be replayed), so it is
+    recoverable from the application log rather than silently dropped.
+
+    The ``INSERT`` runs inside a **SAVEPOINT**. A failed statement otherwise
+    poisons the whole session — and ``get_async_db`` commits on teardown, so
+    an audit-table problem would turn a successful mutation into a 500 after
+    the fact. A savepoint rolls back only this statement, which also matters
+    because ``db`` is the SAME session ``require_admin`` loaded
+    ``current_user`` from: a session-wide ``rollback()`` would expire that
+    instance and make any later attribute read re-query.
+
+    What this does NOT cover, deliberately, is a failure raised by the
+    teardown ``commit()`` itself (a dropped connection, a deferred
+    constraint). Nothing at this layer can: the commit happens after the
+    response is already decided.
+    """
+    payload: dict[str, Any] = {
+        "actor_user_id": str(actor_user_id),
+        "action": action,
+        "group_name": group_name,
+        "target_email": target_email,
+        "target_username": target_username,
+        "details": json.dumps(details or {}),
+    }
+    try:
+        if db is None:
+            raise RuntimeError("no database session was provided")
+        async with db.begin_nested():
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO auth.cognito_group_admin_events
+                        (actor_user_id, action, group_name, target_email,
+                         target_username, details)
+                    VALUES
+                        (:actor_user_id, :action, :group_name, :target_email,
+                         :target_username, CAST(:details AS JSONB))
+                    """
+                ),
+                payload,
+            )
+    except Exception as exc:  # noqa: BLE001 - audit must never fail the request
+        logger.error(
+            "cognito_group_audit_write_failed",
+            error=str(exc),
+            actor_user_id=payload["actor_user_id"],
+            action=action,
+            group_name=group_name,
+            target_email=target_email,
+            target_username=target_username,
+        )
 
 
 @router.get("/coord/cognito/groups")
 async def list_cognito_groups(
     current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
-    """List every Cognito group in the shared pool. Superuser-gated."""
+    """List every Cognito group in the shared pool. Superuser-gated.
+
+    Read-only: no audit row and no rate limit (it changes nothing and the
+    dashboard polls it), but it shares the error mapper so a throttle reads
+    429 and a bad pool id reads 500 rather than both reading 502.
+    """
     try:
         groups = await asyncio.to_thread(cognito_admin.list_groups)
     except CognitoAdminError as exc:
-        logger.error("cognito_groups_list_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not list Cognito groups.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_groups_list_failed",
+            fallback_detail="Could not list Cognito groups.",
+        ) from exc
     return {"groups": groups}
 
 
 @router.post("/coord/cognito/groups")
+@user_limiter.shared_limit(
+    _CREATE_GROUP_RATE_LIMIT,
+    scope="cognito-group-create",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def create_cognito_group(
+    request: Request,
     body: _CreateGroupBody,
     current_user: UserModel = Depends(require_admin),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Create a Cognito group. 409 if a group with that name already
     exists, 400 if the name cannot satisfy Cognito's ``groupName``
-    constraint. Superuser-gated."""
+    constraint. Superuser-gated, rate-limited, audited.
+
+    ``request`` is here because slowapi requires it on a limited endpoint,
+    not because the handler reads it.
+    """
     try:
         group = await asyncio.to_thread(
             cognito_admin.create_group, body.group_name, body.description
         )
     except CognitoGroupExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:
         # A malformed name is the CALLER's error and self-explaining — it must
         # be caught BEFORE the generic ``CognitoAdminError`` arm below, which
         # would otherwise collapse it into a 502 that claims AWS is broken.
         # 502 stays reserved for a genuinely broken upstream, which is the
         # only thing that makes it a useful signal.
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error(
-            "cognito_group_create_failed",
-            group_name=body.group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not create Cognito group.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_create_failed",
+            fallback_detail="Could not create Cognito group.",
+            # No group 404 arm: the group being created cannot be "missing",
+            # so a ResourceNotFoundException here can only be about the pool.
+            group_name=None,
+            group=body.group_name,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="create_group",
+        group_name=body.group_name,
+        details={"description": body.description},
+    )
     return group
 
 
@@ -8926,9 +9270,19 @@ def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[st
 
 
 @router.delete("/coord/cognito/groups/{group_name}")
+@user_limiter.shared_limit(
+    _DELETE_GROUP_RATE_LIMIT,
+    scope="cognito-group-delete",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def delete_cognito_group(
     request: Request,
-    group_name: str,
+    # ``current_user`` FIRST: FastAPI solves in signature order, so the
+    # superuser gate has to precede the input validator (see
+    # :func:`validated_group_name`).
+    current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
     allow_mapped: bool = Query(
         False,
         description=(
@@ -8944,9 +9298,11 @@ async def delete_cognito_group(
             "operators' home tenant."
         ),
     ),
-    current_user: UserModel = Depends(require_admin),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Delete a Cognito group. 404 if no such group. Superuser-gated.
+    """Delete a Cognito group. 404 if no such group. Superuser-gated,
+    rate-limited (the lowest limit of the four — this is the only
+    irreversible one), and audited with the acting superuser.
 
     Refuses **409** before touching AWS when the delete would take
     something else down with it — see the module comment above
@@ -9027,49 +9383,75 @@ async def delete_cognito_group(
     try:
         await asyncio.to_thread(cognito_admin.delete_group, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_delete_failed", group_name=group_name, error=str(exc)
-        )
-        raise HTTPException(status_code=502, detail="Could not delete Cognito group.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_delete_failed",
+            fallback_detail="Could not delete Cognito group.",
+            group_name=group_name,
+        ) from exc
     logger.info(
         "cognito_group_deleted",
         group_name=group_name,
         allow_mapped=allow_mapped,
         allow_home_group=allow_home_group,
+        actor_user_id=str(current_user.id),
+    )
+    # The overrides go into the audit row because they are the record of a
+    # guard being consciously stepped over — the one thing a reviewer of an
+    # irreversible pool-wide delete most needs to see.
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="delete_group",
+        group_name=group_name,
+        details={
+            "allow_mapped": allow_mapped,
+            "allow_home_group": allow_home_group,
+        },
     )
     return {"ok": True}
 
 
 @router.get("/coord/cognito/groups/{group_name}/users")
 async def list_cognito_group_users(
-    group_name: str,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
 ) -> dict[str, Any]:
     """List the members of a Cognito group. 404 if no such group.
-    Superuser-gated."""
+    Superuser-gated.
+
+    Read-only, so no audit row and no rate limit — but it does take the
+    group name in the path, so it gets the 400 validator like its three
+    mutating siblings.
+    """
     try:
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_users_list_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_users_list_failed",
+            fallback_detail="Could not list group members.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not list group members.")
+        ) from exc
     return {"users": users}
 
 
 @router.post("/coord/cognito/groups/{group_name}/users")
+@user_limiter.shared_limit(
+    _GROUP_MEMBER_RATE_LIMIT,
+    scope="cognito-group-add-member",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def add_cognito_group_user(
-    group_name: str,
+    request: Request,
     body: _GroupMemberBody,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Add a user (resolved by email) to a Cognito group. Superuser-gated.
+    """Add a user (resolved by email) to a Cognito group. Superuser-gated,
+    rate-limited, audited.
 
     404 if no user has that email; 409 if the email is ambiguous (>1 match).
     """
@@ -9078,35 +9460,54 @@ async def add_cognito_group_user(
             cognito_admin.resolve_username_for_email, body.email
         )
     except CognitoAmbiguousEmailError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_email_resolve_failed",
+            fallback_detail="Could not resolve user by email.",
+            email=body.email,
+        ) from exc
     if not username:
         raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
     try:
         await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_add_user_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_add_user_failed",
+            fallback_detail="Could not add user to group.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not add user to group.")
+            email=body.email,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="add_user_to_group",
+        group_name=group_name,
+        target_email=body.email,
+        target_username=username,
+    )
     return {"ok": True, "username": username}
 
 
 @router.delete("/coord/cognito/groups/{group_name}/users")
+@user_limiter.shared_limit(
+    _GROUP_MEMBER_RATE_LIMIT,
+    scope="cognito-group-remove-member",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def remove_cognito_group_user(
-    group_name: str,
+    request: Request,
     body: _GroupMemberBody,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Remove a user (resolved by email) from a Cognito group.
-    Superuser-gated.
+    Superuser-gated, rate-limited, audited.
 
     404 if no user has that email; 409 if the email is ambiguous (>1 match).
     """
@@ -9115,10 +9516,14 @@ async def remove_cognito_group_user(
             cognito_admin.resolve_username_for_email, body.email
         )
     except CognitoAmbiguousEmailError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_email_resolve_failed",
+            fallback_detail="Could not resolve user by email.",
+            email=body.email,
+        ) from exc
     if not username:
         raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
@@ -9127,12 +9532,19 @@ async def remove_cognito_group_user(
             cognito_admin.remove_user_from_group, username, group_name
         )
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_remove_user_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_remove_user_failed",
+            fallback_detail="Could not remove user from group.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not remove user from group.")
+            email=body.email,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="remove_user_from_group",
+        group_name=group_name,
+        target_email=body.email,
+        target_username=username,
+    )
     return {"ok": True, "username": username}
