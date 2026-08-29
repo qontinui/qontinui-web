@@ -17,6 +17,11 @@
 import { useMemo } from "react";
 import { ChevronDown, GitBranch, Hammer, Layers, Lock } from "lucide-react";
 
+// Subpath, not the `@/components/console` barrel: `/sessions` is not a console
+// surface, so this leaf pulls in the one pure formatter rather than the whole
+// primitive set. The three admin dashboards take the barrel because the barrel
+// names their routes as surfaces it serves.
+import { relativeTime as consoleRelativeTime } from "@/components/console/time";
 import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
@@ -66,18 +71,14 @@ function kindLabel(kind: LineageActionKind): string {
   }
 }
 
+/**
+ * This surface's relative timestamps, rendered through the console primitive.
+ *
+ * Was a fourth byte-identical private copy of the same function. `absent: "—"`
+ * is this surface's choice; the console's own default is `never`.
+ */
 function relativeTime(iso?: string | null): string {
-  if (!iso) return "—";
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const min = Math.floor(diffSec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
+  return consoleRelativeTime(iso, { absent: "—" });
 }
 
 export function LineageTimeline({
