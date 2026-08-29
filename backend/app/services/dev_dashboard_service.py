@@ -132,12 +132,13 @@ class FleetRegistry:
                 resp = await client.get(url)
                 resp.raise_for_status()
                 data = resp.json()
-                # The runner returns a list of task runs
-                runs: list[Any] = (
-                    data
-                    if isinstance(data, list)
-                    else data.get("data", data.get("task_runs", []))
-                )
+                # The runner returns an envelope: {"scope": ..., "task_runs": [...]}.
+                # `scope` states that the list covers workflow task-runs on one
+                # API port and is NOT a census of live agent sessions. Indexing
+                # rather than .get() keeps a future shape change loud (it lands
+                # in the except below with the KeyError named) instead of
+                # silently reporting zero running tasks.
+                runs: list[Any] = data["task_runs"]
                 return [
                     {
                         "id": run.get("id", ""),

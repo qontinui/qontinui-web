@@ -67,6 +67,12 @@ export interface TaskRun {
   auto_continue?: boolean;
   output_log?: string;
   workflow_name?: string;
+  /**
+   * Unified workflow ID this run executes. Served by the runner
+   * (`database/types.rs` `TaskRun::workflow_id`, omitted when null) and used
+   * to match a running task to the workflow open in the builder.
+   */
+  workflow_id?: string;
   workflow_type?: string;
   depth?: number;
   created_at: string;
@@ -88,6 +94,26 @@ export interface TaskRun {
   loop_result?: LoopResult | null;
   /** Structured failure information */
   failure_info?: FailureInfo | null;
+}
+
+/**
+ * Response shape of `GET /task-runs/running`.
+ *
+ * The endpoint returns an ENVELOPE, not a bare array. `scope` is the runner's
+ * own description of what the list covers: a port-filtered *workflow*
+ * task-run ledger — NOT a census of live agent sessions. Surface it anywhere
+ * an empty `task_runs` is rendered, so an empty list is never read as "the
+ * runner is idle, it is safe to restart".
+ *
+ * Plan: 2026-08-29-no-single-answer-to-is-it-safe-to-restart-the-runner.
+ */
+export interface RunningTaskRunsResponse {
+  /**
+   * e.g. "workflow task-runs on API port 9876; NOT a session census —
+   * see /restart-readiness"
+   */
+  scope: string;
+  task_runs: TaskRun[];
 }
 
 export interface TaskRunOutput {
