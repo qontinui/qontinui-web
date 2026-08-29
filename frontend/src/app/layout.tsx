@@ -61,7 +61,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* Registers @qontinui/cloud-control's services and components into
+        {/* Registers @qontinui/cloud-control's services, components and
+            context providers into
             `@/lib/extension-slots` in the composed cloud build, and does
             nothing in OSS-only builds. This layout is a Server Component, so
             the registration CANNOT live in this module — the boot module

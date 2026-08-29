@@ -3,10 +3,10 @@
 /**
  * Cloud-control registration boot module.
  *
- * `@qontinui/cloud-control` registers its services and components into
- * `@/lib/extension-slots` as an import side effect. Two things have to be
- * true for that registration to be observable, and until this module
- * existed neither was:
+ * `@qontinui/cloud-control` registers its services, components and context
+ * providers into `@/lib/extension-slots` as an import side effect. Two
+ * things have to be true for that registration to be observable, and until
+ * this module existed neither was:
  *
  * 1. **It must be in webpack's graph.** The previous loader lived in
  *    `app/layout.tsx` as
