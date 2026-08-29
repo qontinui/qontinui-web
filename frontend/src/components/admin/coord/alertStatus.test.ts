@@ -86,6 +86,14 @@ describe("ATTENTION_BY_KIND totality", () => {
     "auth-config",
     "merge-stuck",
     "machine-health",
+    "replication",
+    "land-integrity",
+    "gate-stuck",
+    "gate-pending",
+    "config-drift",
+    "session-health",
+    "serving-drift",
+    "backfill-gap",
     "resolved",
     "unknown",
   ];
@@ -345,6 +353,25 @@ describe("classifyAlertKind", () => {
     ["pr_merge_train_stalled", "merge-stuck"],
     ["machine_degraded", "machine-health"],
     ["fleet_partitioned", "machine-health"],
+    // Added 2026-08-24 — the families that measured `unknown` in production.
+    ["gate_unclearable_terminal", "gate-stuck"],
+    ["gate_continuation_pending", "gate-pending"],
+    ["gate_stale_open", "gate-pending"],
+    ["coord_lost_land", "land-integrity"],
+    ["land_verification_stalled", "land-integrity"],
+    ["coord_bare_stale_seed", "land-integrity"],
+    ["mirror_ref_rejected_persistently", "replication"],
+    ["git_no_sync_target", "replication"],
+    ["git_conflict_ref_missing", "replication"],
+    ["merge_land_replication_failed", "replication"],
+    ["expectation_stall_candidate", "session-health"],
+    ["session_message_delivery_blocked", "session-health"],
+    ["config_armed_but_inert", "config-drift"],
+    ["branch_protection_required_contexts", "config-drift"],
+    ["route_serving_drift", "serving-drift"],
+    ["memory_embedding_gap", "backfill-gap"],
+    ["pr_stuck_unattributable", "merge-stuck"],
+    ["pr_reconciler_drift", "merge-stuck"],
   ];
 
   it.each(CASES)("maps %s → %s", (raw, expected) => {
@@ -363,6 +390,131 @@ describe("classifyAlertKind", () => {
     expect(
       classifyAlertKind(row({ resolved_at: "2026-08-14T22:00:00Z" }))
     ).toBe("resolved");
+  });
+
+  it("lets an EXACT alias beat the prefix family it sits inside", () => {
+    // Each of these matches a prefix rule that would give it the WRONG
+    // family, so the alias-first order in `classifyAlertKind` is load-bearing
+    // rather than incidental. The mapping tables above and below would catch a
+    // reversal too — but as four scattered mapping failures. This one names
+    // the cause, so the next reader is not left inferring it from a diff.
+    expect(classifyAlertKind(row({ kind: "git_no_sync_target" }))).toBe(
+      "replication" // not `git-invariant` via `git_`
+    );
+    expect(classifyAlertKind(row({ kind: "merge_land_replication_failed" }))).toBe(
+      "replication" // not `merge-stuck` via `merge_`
+    );
+    expect(classifyAlertKind(row({ kind: "gate_unclearable_terminal" }))).toBe(
+      "gate-stuck" // not `gate-pending` via `gate_`
+    );
+    expect(classifyAlertKind(row({ kind: "worktree_disk_danger" }))).toBe(
+      "disk-danger" // not `worktree-waste` via `worktree_`
+    );
+  });
+});
+
+/**
+ * The live coord vocabulary, measured 2026-08-24 against production the day
+ * qontinui-web#986 landed: `GET /coord/alerts?limit=1` reported
+ * `total_count: 13830` and served a 43-entry `kinds` list, and each row below
+ * carries that kind's own `total_count` from a `?kind=<k>&limit=1` probe.
+ *
+ * **This test exists because the table it guards had ALREADY rotted when it
+ * was written.** Under the vocabulary #986 shipped nine days earlier, 18 of
+ * these 43 kinds — 9,520 of the 13,830 unresolved rows, 68.8% — classified
+ * `unknown` and rendered as "Needs a look" with no attention floor. The page's
+ * `KINDS` filter list had the same disease and was cured by having coord serve
+ * it; this table cannot be, because coord's registry
+ * (`crates/coord/src/alert_kind.rs`, 126 wire strings) is not exposed over
+ * HTTP. A dated pin is the substitute: when coord adds a family, THIS fails.
+ *
+ * Deliberately a snapshot with a date on it, not a claim about the present.
+ * A kind retiring from production does not make its row wrong — the mapping
+ * still has to be right — so nothing here asserts the list is still complete.
+ * What it does assert is that every kind this fleet was measurably serving
+ * gets a real family, and it names the row counts so the next reader can
+ * judge whether the sample is still worth anything.
+ */
+describe("live coord vocabulary (measured 2026-08-24)", () => {
+  const LIVE: Array<[string, AlertKind, number]> = [
+    ["expectation_stall_candidate", "session-health", 4722],
+    ["gate_continuation_pending", "gate-pending", 1937],
+    ["coord_lost_land", "land-integrity", 1134],
+    ["git_inv-2", "git-invariant", 1112],
+    ["pr_merge_stuck", "merge-stuck", 900],
+    ["land_verification_stalled", "land-integrity", 830],
+    ["stale_primary_tree", "stale-tree", 647],
+    ["pr_merge_unlandable_escalated", "merge-stuck", 622],
+    ["gate_unclearable_terminal", "gate-stuck", 366],
+    ["merge_verification_lag", "merge-stuck", 282],
+    ["pr_merge_awaiting_ci_requeue_terminal_fail", "merge-stuck", 271],
+    ["stale_wip", "stale-wip", 235],
+    ["pr_stuck_unattributable", "merge-stuck", 215],
+    ["gate_stale_open", "gate-pending", 205],
+    ["mirror_ref_rejected_persistently", "replication", 90],
+    ["worktree_unjunctioned", "worktree-waste", 62],
+    ["repo_pull_hold", "stale-tree", 44],
+    ["pr_merge_proposal_requeue_terminal_fail", "merge-stuck", 33],
+    ["pr_merge_train_stalled", "merge-stuck", 29],
+    ["pr_merge_unlandable_capped", "merge-stuck", 26],
+    ["pr_merge_escalate_blocked", "merge-stuck", 12],
+    ["pr_merge_conflicting_unproposed", "merge-stuck", 12],
+    ["session_message_delivery_blocked", "session-health", 6],
+    ["worktree_disk_danger", "disk-danger", 4],
+    ["pr_merge_land_conflict_wedged", "merge-stuck", 4],
+    ["merge_stacked_parent_abandoned", "merge-stuck", 4],
+    ["branch_protection_required_contexts", "config-drift", 4],
+    ["route_serving_drift", "serving-drift", 3],
+    ["memory_embedding_gap", "backfill-gap", 3],
+    ["pr_merge_zero_dispatch", "merge-stuck", 2],
+    ["worktree_repair_husks", "worktree-waste", 1],
+    ["pr_reconciler_drift", "merge-stuck", 1],
+    ["pr_merge_ready_unmerged_age", "merge-stuck", 1],
+    ["pr_merge_inflight_slow", "merge-stuck", 1],
+    ["pr_merge_execution_stall", "merge-stuck", 1],
+    ["pr_merge_dispatch_stall", "merge-stuck", 1],
+    ["merge_land_replication_failed", "replication", 1],
+    ["git_no_sync_target", "replication", 1],
+    ["git_inv-1", "git-invariant", 1],
+    ["git_conflict_ref_missing", "replication", 1],
+    ["coord_bare_stale_seed", "land-integrity", 1],
+    ["config_armed_but_inert", "config-drift", 1],
+    ["auth_client_aud_active_negation", "auth-config", 1],
+  ];
+
+  it("covers the whole sample — the union is 43 kinds / 13,829 rows", () => {
+    // Pins the sample itself, so a row silently dropped from the table below
+    // cannot quietly shrink what "the live vocabulary" means. 13,829 is the
+    // sum of the per-kind probes; the corpus-wide probe read 13,830 in the
+    // same minute, and the one-row gap is a watcher resolving mid-sweep —
+    // recorded rather than reconciled, because reconciling it would mean
+    // asserting the corpus held still, which it demonstrably does not.
+    expect(LIVE).toHaveLength(43);
+    expect(LIVE.reduce((n, [, , rows]) => n + rows, 0)).toBe(13829);
+    expect(new Set(LIVE.map(([raw]) => raw)).size).toBe(43);
+  });
+
+  it.each(LIVE)("classifies %s → %s (%i live rows)", (raw, expected) => {
+    expect(classifyAlertKind(row({ kind: raw }))).toBe(expected);
+  });
+
+  it("leaves NO live kind unclassified", () => {
+    const unclassified = LIVE.filter(
+      ([raw]) => classifyAlertKind(row({ kind: raw })) === "unknown"
+    );
+    expect(unclassified.map(([raw]) => raw)).toEqual([]);
+  });
+
+  it("gives every live kind a label and an attention that are not the unknown floor", () => {
+    for (const [raw, expected] of LIVE) {
+      const status = deriveAlertStatus(row({ kind: raw, severity: "warning" }));
+      expect(status.kind, raw).toBe(expected);
+      // The point of classifying is that the row says something specific.
+      expect(status.label, `${raw} label`).not.toBe("Needs a look");
+      expect(alertGuidance(status.kind), `${raw} guidance`).not.toContain(
+        "does not recognise"
+      );
+    }
   });
 });
 
