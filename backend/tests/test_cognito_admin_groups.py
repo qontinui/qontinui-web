@@ -260,7 +260,13 @@ def test_resolve_email_single_match_returns_username(
     assert kwargs == {
         "UserPoolId": "pool-xyz",
         "Filter": 'email = "u1@example.com"',
-        "Limit": 2,
+        # Was ``Limit: 2`` — the "a duplicate is detected without paging"
+        # shortcut. ``Limit`` is a PER-PAGE cap and Cognito filters AFTER
+        # selecting the page, so page one of a filtered query is routinely
+        # empty and that shortcut reported existing users as absent. The
+        # resolver now asks for Cognito's maximum page and follows
+        # ``PaginationToken``; see ``test_cognito_admin_pagination.py``.
+        "Limit": 60,
     }
 
 
