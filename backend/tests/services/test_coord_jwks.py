@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 
 from app.services.coord_jwks import (
+    _MAX_KID_CHARS,
     CoordJWKSClient,
     CoordTokenExpiredError,
     CoordTokenForeignIssuerError,
@@ -319,6 +320,39 @@ async def test_unknown_kid_raises_foreign_issuer_error() -> None:
     assert "http://test" in str(exc)
     # Still a CoordTokenInvalidError, so existing broad handlers keep working.
     assert isinstance(exc, CoordTokenInvalidError)
+
+
+@pytest.mark.asyncio
+async def test_unknown_kid_is_capped_before_it_reaches_the_message() -> None:
+    """The foreign-issuer message must not carry an unbounded caller kid.
+
+    `kid` is read from an UNVERIFIED header on a PRE-AUTH path, and both
+    terminal callers log the resulting message (`deps`, `devices_ws`) plus the
+    `token_kid` attribute. Uncapped, the caller chooses the content and the
+    size of a log write and can repeat it at will.
+
+    The cap shipped with the classification but with no test of its own, so a
+    later edit to this raise site could drop it silently. Asserted on the
+    message AND on `token_kid`, because both reach a log.
+    """
+    private, jwk = _ed25519_keypair()
+    client = _FakeClient(jwks={"keys": [jwk]})
+
+    oversized = _thumbprint_kid("B" * 400)
+    token = pyjwt.encode(
+        _coord_claims(),
+        private,
+        algorithm="EdDSA",
+        headers={"kid": oversized, "typ": "JWT"},
+    )
+
+    with pytest.raises(CoordTokenForeignIssuerError) as exc_info:
+        await client.verify_token(token)
+
+    exc = exc_info.value
+    assert len(exc.token_kid) == _MAX_KID_CHARS
+    assert oversized.startswith(exc.token_kid)
+    assert oversized not in str(exc)
 
 
 @pytest.mark.asyncio

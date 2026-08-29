@@ -52,6 +52,15 @@ write-amplification decision on two hot append-heavy tables), and the full
 ``up -> down -> up`` walk with live rows in both journals, which is the only
 thing that exercises ``downgrade()`` at all.
 
+And, separately, **all four decisions again at ``head``**. Everything above
+walks only as far as ``wf_resume_fingerprint_01``, so it pins what the revision
+does IN ISOLATION — a different claim from the one the contract needs. What
+deploys is ``alembic upgrade head``, and what the Phase 3b consumer reads is
+that schema. A revision landing LATER that adds the column to
+``workflow_step_checkpoints_uniq``, indexes it, defaults it, makes it
+``NOT NULL`` or drops the ``COMMENT`` leaves every assertion above green. That
+gap is what ``test_the_contract_still_holds_at_head`` closes.
+
 ⚠️ Cross-repo note: the CONSUMER of this column is qontinui-runner (Phase 3b,
 ``qontinui-runner#1094``). This repo has no reader — no model, route, service
 or schema references either journal — so these assertions are the only place
@@ -453,6 +462,35 @@ def _upgraded(_admin_url: str) -> Iterator[Engine]:
         yield engine
 
 
+@pytest.fixture(scope="module")
+def _at_head(_admin_url: str) -> Iterator[Engine]:
+    """One ephemeral database walked all the way to ``head``.
+
+    Every other walk in this module stops AT ``wf_resume_fingerprint_01``,
+    which pins what the revision does **in isolation**. That is a different
+    claim from the one the contract actually needs: the four decisions are
+    load-bearing at the version that DEPLOYS. ``alembic upgrade head`` is what
+    ``migrate.yml`` runs, and head is the schema the Phase 3b consumer in
+    qontinui-runner reads against.
+
+    Nothing today asserts the gap between the two. A LATER revision that adds
+    ``step_fingerprint`` to ``workflow_step_checkpoints_uniq``, indexes it,
+    gives it a ``DEFAULT`` or a ``NOT NULL``, or drops the ``COMMENT`` leaves
+    every test above green, because none of them walks past its own revision —
+    and nothing else in the repo would notice either: a sweep finds the column
+    in that revision and this module and nowhere else, and the consumer is in
+    another repository. The four ``ALTER``-time assertions would still pass
+    while production had already regressed.
+
+    This costs a THIRD chain replay, which ``_upgraded`` otherwise works hard
+    to avoid. It is the only assertion here made against the schema production
+    actually gets, so it is the replay least worth economising on.
+    """
+    with ephemeral_database(_admin_url, "wf_fingerprint_01_head") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", "head")
+        yield engine
+
+
 # ---------------------------------------------------------------------------
 # Live-schema walks.
 # ---------------------------------------------------------------------------
@@ -791,3 +829,126 @@ def test_up_down_up_leaves_no_residue_and_upgrade_is_idempotent(
         assert _event_rows(engine, execution_id) == before_events, (
             "re-running upgrade() disturbed live event-log rows"
         )
+
+
+def test_the_contract_still_holds_at_head(_at_head: Engine) -> None:
+    """All four decisions, re-asserted against the schema that DEPLOYS.
+
+    The tests above pin ``wf_resume_fingerprint_01``'s own effect. This one
+    pins the property the consumer depends on — that the effect **survives to
+    head**. They are not the same assertion, and only this one is checked
+    against what ``migrate.yml`` produces and what qontinui-runner's Phase 3b
+    reader will meet in production.
+
+    Deliberately re-asserted here rather than factored into a helper shared
+    with the ``_upgraded`` tests: this test must keep passing (or start
+    failing) for reasons of its own, and a shared helper would let a future
+    edit weaken both sites at once. The duplication is the point.
+
+    A failure here and a pass above localises the regression precisely: the
+    revision is still correct, and something that landed AFTER it changed the
+    column out from under the contract.
+    """
+    engine = _at_head
+    execution_id = f"exec-{uuid.uuid4().hex[:12]}"
+    exec_null = f"exec-{uuid.uuid4().hex[:12]}"
+
+    # Decision 3 — nullable text, no default, on both journals.
+    _assert_column_present(engine)
+
+    # Decision 1, structurally — the uniqueness key is still the five
+    # positional columns.
+    assert _uniq_constraint_columns(engine) == _UNIQ_COLUMNS, (
+        f"at head, {_UNIQ_CONSTRAINT} is {_uniq_constraint_columns(engine)}, "
+        f"expected {_UNIQ_COLUMNS}. A revision after "
+        f"{_REVISION_ID} put {_COLUMN} into the uniqueness key: the runner's "
+        f"ON CONFLICT upsert is an append log in production, one row per edit "
+        f"per step, unbounded, with no error anywhere"
+    )
+
+    # Decision 1, behaviourally — the runner's own upsert still updates rather
+    # than appending. Catches a SECOND unique index over the six columns, which
+    # leaves the original constraint intact and so passes the check above.
+    _seed_task_run(engine, execution_id)
+    _seed_checkpoint(engine, execution_id, fingerprint=_FINGERPRINT_V1)
+    _upsert_checkpoint(engine, execution_id, _FINGERPRINT_V2)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT step_fingerprint
+                  FROM project.workflow_step_checkpoints
+                 WHERE execution_id = :exec
+                """
+            ),
+            {"exec": execution_id},
+        ).fetchall()
+    assert len(rows) == 1, (
+        f"at head the upsert appended instead of updating — {len(rows)} rows "
+        f"for one (execution_id, phase, iteration, step_index, stage_index)"
+    )
+    assert rows[0][0] == _FINGERPRINT_V2, (
+        "at head a 64-char hex digest did not survive the upsert unchanged; a "
+        "narrowed or truncated column compares EQUAL and re-opens the "
+        "stale-replay defect"
+    )
+
+    # Decision 2 — NULL is still a MISS on both journals. Asserted
+    # behaviourally, not merely from the nullability above: this is the one
+    # property the consumer's correctness rests on directly.
+    _seed_task_run(engine, exec_null)
+    _seed_checkpoint(engine, exec_null, fingerprint=None)
+    _seed_event(engine, exec_null, fingerprint=None)
+    for table in _JOURNALS:
+        with engine.connect() as conn:
+            matched = conn.execute(
+                text(
+                    f"""
+                    SELECT count(*) FROM {_SCHEMA}.{table}
+                     WHERE execution_id = :exec
+                       AND step_fingerprint = :fp
+                    """  # f-string: both names are module constants
+                ),
+                {"exec": exec_null, "fp": _FINGERPRINT_V1},
+            ).scalar()
+        assert matched == 0, (
+            f"at head, `step_fingerprint = $1` matched {matched} row(s) in "
+            f"{_SCHEMA}.{table} that carry NO fingerprint. A row without one "
+            f"is a MISS and must be re-executed, never served"
+        )
+
+    # Decision 4 — still no index on the column, and the lookup indexes that
+    # make that decision defensible are still there.
+    offenders = _indexes_mentioning_the_column(engine)
+    assert offenders == [], (
+        f"at head, index(es) {offenders} reference {_COLUMN}. The revision "
+        f"creates none deliberately; one added later is write amplification "
+        f"on two hot append-heavy journals for zero read benefit"
+    )
+    with engine.connect() as conn:
+        existing = {
+            r[0]
+            for r in conn.execute(
+                text("SELECT indexname FROM pg_indexes WHERE schemaname = :s"),
+                {"s": _SCHEMA},
+            ).fetchall()
+        }
+    for idx in ("idx_wsc_lookup", "idx_event_log_node"):
+        assert idx in existing, (
+            f"{idx} is gone at head. It is what locates the row the "
+            f"fingerprint is compared on; without it the 'no index needed' "
+            f"reasoning no longer holds"
+        )
+
+    # The ``COMMENT`` still carries the contract at head — it is the only
+    # machine-readable trace of it on the web side.
+    for table in _JOURNALS:
+        comment = (_column_comment(engine, table) or "").lower()
+        assert "null" in comment and "miss" in comment, (
+            f"at head, {_SCHEMA}.{table}.{_COLUMN}'s COMMENT no longer states "
+            f"the NULL-means-MISS rule: {comment!r}"
+        )
+    assert "non-key" in (_column_comment(engine, _CHECKPOINTS) or "").lower(), (
+        f"at head, {_SCHEMA}.{_CHECKPOINTS}.{_COLUMN}'s COMMENT no longer "
+        f"records that the column is NON-KEY"
+    )
