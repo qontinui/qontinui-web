@@ -27,9 +27,16 @@
  * Nothing fetches until the row is OPEN. `RecordList` keeps one row open at a
  * time, so this is bounded at one session's worth of reads no matter how large
  * the fleet is.
+ *
+ * ## How an open row STAYS current (Phase 4)
+ *
+ * Not with a timer. The row follows the session's already-shipped SSE stream
+ * and re-issues the three reads when coord says something happened
+ * (`liveRevalidation.ts`). The console's single 10s interval refreshes the
+ * list; this stream refreshes the open row; nothing polls twice.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { RecordDetail, relativeTime } from "@/components/console";
@@ -40,7 +47,15 @@ import {
   getSessionLineage,
 } from "./api";
 import { LineageTimeline } from "./LineageTimeline";
-import { classifyLifecycleError, type HalfResult } from "./sessionKeyResolution";
+import {
+  useSessionEventRevalidation,
+  type SessionRevalidationOptions,
+} from "./liveRevalidation";
+import {
+  classifyLifecycleError,
+  foldRevalidation,
+  type HalfResult,
+} from "./sessionKeyResolution";
 import {
   agentSessionId,
   hasAgentHalf,
@@ -68,16 +83,35 @@ export interface CoordinationReaders {
 const IDLE: HalfResult<never> = { state: "loading" };
 
 /**
- * Read the coordination half for one session, once, while the row is open.
+ * Read the coordination half for one session while the row is open, and keep
+ * it current over that session's OWN SSE stream (Phase 4).
  *
  * `classifyLifecycleError` is reused verbatim rather than re-spelled: all
  * three routes throw the same `SessionsApiError`, and the 404-is-an-answer
  * split must not be written twice.
+ *
+ * ## Refresh is SSE-driven, never a timer
+ *
+ * The first read fires when the row opens. After that, `coord.session_events`
+ * for THIS session is followed through the already-shipped
+ * `subscribeSessionEvents` client and a qualifying event re-issues the three
+ * reads — see `liveRevalidation.ts` for the denylist and the coalescing. There
+ * is no second interval anywhere on this surface: the console's one 10s poll
+ * refreshes the LIST, this stream refreshes the OPEN ROW, and they answer
+ * different questions.
+ *
+ * ## A failed re-read does not erase what we hold
+ *
+ * A revalidation that does not land leaves the previous answer on screen,
+ * marked `stale` by {@link foldRevalidation}, rather than dropping the panel
+ * back to a dash. Coord answering 404 is different and DOES replace it. The
+ * first read has nothing to retain, so it is applied unfolded.
  */
 export function useSessionCoordination(
   sessionId: string | null,
   enabled: boolean,
-  readers: CoordinationReaders = {}
+  readers: CoordinationReaders = {},
+  revalidation: SessionRevalidationOptions = {}
 ): SessionCoordination {
   const [state, setState] = useState<SessionCoordination>({
     claims: IDLE,
@@ -88,47 +122,91 @@ export function useSessionCoordination(
   const { claims: readClaims, agents: readAgents, lineage: readLineage } =
     readers;
 
+  /**
+   * Issue all three reads once. `refresh` is `false` for the read that opens
+   * the row (nothing to retain) and `true` for every SSE-driven one.
+   *
+   * Returns the `AbortController` so both callers can cancel in flight: the
+   * mount effect on teardown, the revalidation on the next trigger.
+   */
+  const readAll = useCallback(
+    (id: string, refresh: boolean): AbortController => {
+      const ctrl = new AbortController();
+
+      const run = <T, R>(
+        read: (sid: string, signal?: AbortSignal) => Promise<R>,
+        pick: (value: R) => T,
+        apply: (result: HalfResult<T>) => void
+      ) => {
+        void read(id, ctrl.signal)
+          .then((value) => {
+            if (!ctrl.signal.aborted) {
+              apply({ state: "resolved", value: pick(value) });
+            }
+          })
+          .catch((err: unknown) => {
+            if ((err as { name?: string })?.name === "AbortError") return;
+            if (!ctrl.signal.aborted) {
+              apply(classifyLifecycleError(err) as HalfResult<T>);
+            }
+          });
+      };
+
+      // Written out per half rather than through one generic applier: the
+      // three payload types are unrelated, and a `keyof` indexer over them
+      // widens `prev[key]` into a union TypeScript cannot narrow back.
+      const fold = <T,>(prev: HalfResult<T>, next: HalfResult<T>) =>
+        refresh ? foldRevalidation(prev, next) : next;
+
+      run(
+        readClaims ?? getSessionClaims,
+        (r) => r.claims ?? [],
+        (claims) =>
+          setState((prev) => ({ ...prev, claims: fold(prev.claims, claims) }))
+      );
+      run(
+        readAgents ?? getSessionAgentStatus,
+        (r) => r.agents ?? [],
+        (agents) =>
+          setState((prev) => ({ ...prev, agents: fold(prev.agents, agents) }))
+      );
+      run(
+        readLineage ?? getSessionLineage,
+        (r) => r.actions ?? [],
+        (lineage) =>
+          setState((prev) => ({ ...prev, lineage: fold(prev.lineage, lineage) }))
+      );
+
+      return ctrl;
+    },
+    [readClaims, readAgents, readLineage]
+  );
+
   useEffect(() => {
     if (!enabled || !sessionId) return;
-    const ctrl = new AbortController();
-
-    const run = <T, R>(
-      read: (id: string, signal?: AbortSignal) => Promise<R>,
-      pick: (value: R) => T,
-      apply: (result: HalfResult<T>) => void
-    ) => {
-      void read(sessionId, ctrl.signal)
-        .then((value) => {
-          if (!ctrl.signal.aborted) {
-            apply({ state: "resolved", value: pick(value) });
-          }
-        })
-        .catch((err: unknown) => {
-          if ((err as { name?: string })?.name === "AbortError") return;
-          if (!ctrl.signal.aborted) {
-            apply(classifyLifecycleError(err) as HalfResult<T>);
-          }
-        });
-    };
-
-    run(
-      readClaims ?? getSessionClaims,
-      (r) => r.claims ?? [],
-      (claims) => setState((prev) => ({ ...prev, claims }))
-    );
-    run(
-      readAgents ?? getSessionAgentStatus,
-      (r) => r.agents ?? [],
-      (agents) => setState((prev) => ({ ...prev, agents }))
-    );
-    run(
-      readLineage ?? getSessionLineage,
-      (r) => r.actions ?? [],
-      (lineage) => setState((prev) => ({ ...prev, lineage }))
-    );
-
+    const ctrl = readAll(sessionId, false);
     return () => ctrl.abort();
-  }, [enabled, sessionId, readClaims, readAgents, readLineage]);
+  }, [enabled, sessionId, readAll]);
+
+  // The SSE half. A revalidation supersedes any earlier one still in flight,
+  // so a burst that outruns the network cannot interleave two answers, and the
+  // last one is aborted on unmount rather than left to set state on a gone row.
+  const inflight = useRef<AbortController | null>(null);
+  const revalidate = useCallback(() => {
+    if (!sessionId) return;
+    inflight.current?.abort();
+    inflight.current = readAll(sessionId, true);
+  }, [sessionId, readAll]);
+
+  useSessionEventRevalidation(sessionId, enabled, revalidate, revalidation);
+
+  useEffect(
+    () => () => {
+      inflight.current?.abort();
+      inflight.current = null;
+    },
+    []
+  );
 
   return state;
 }
@@ -296,6 +374,11 @@ export function SessionRowExpansion({
  * data. `resolved` with an EMPTY array is the fourth and it is data — coord
  * looked and there is nothing, which is a different sentence from both dashes
  * above it.
+ *
+ * `resolved` + `stale` is the fifth (Phase 4): a value we hold whose LAST
+ * re-read did not land. It renders the data — throwing away a real answer
+ * because a refresh blipped is the failure `readFailure.ts` exists to prevent
+ * — with a note saying it is old.
  */
 function HalfBlock<T>({
   half,
@@ -333,14 +416,30 @@ function HalfBlock<T>({
       </p>
     );
   }
+  const staleNote = half.stale ? (
+    <p
+      className="text-[10px] text-amber-300/80"
+      data-testid={`${testId}-stale`}
+      title="the last refresh of this read did not land — what is shown is the previous answer, not a new one"
+    >
+      last refresh failed — showing the previous answer
+    </p>
+  ) : null;
+
   if (half.value.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground" data-testid={testId}>
-        {empty}
-      </p>
+      <div data-testid={testId}>
+        <p className="text-xs text-muted-foreground">{empty}</p>
+        {staleNote}
+      </div>
     );
   }
-  return <div data-testid={testId}>{render(half.value)}</div>;
+  return (
+    <div data-testid={testId}>
+      {render(half.value)}
+      {staleNote}
+    </div>
+  );
 }
 
 function RawDash({ title }: { title: string }) {
