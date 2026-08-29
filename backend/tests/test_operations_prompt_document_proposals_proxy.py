@@ -21,7 +21,16 @@ The behaviours that matter here, and why:
   is worse than an error;
 * the landed-write feed aggregates the EXISTING per-document versions route,
   orders newest-first across documents, and reports partial results rather than
-  failing wholesale when one document's history is unreadable.
+  failing wholesale when one document's history is unreadable;
+* that feed carries coord's two OPTIONAL per-write annotations — ``loosening``
+  and ``notification_ref`` (plan
+  ``2026-08-27-tenant-level-agent-authorable-stores.md``) — through per ROW, and
+  keeps **absent distinct from ``false``**. ``false`` is a verdict — the
+  classifier ran and found no widening — and it is what the shipped page counts
+  to say "coord classified these writes and none was a loosening"; absent means
+  no verdict exists, whatever the cause. A key coord did not send is therefore
+  omitted rather than defaulted, since a defaulted ``false`` would invent that
+  verdict on every historical write at once.
 """
 
 import asyncio
@@ -649,6 +658,302 @@ class TestListWrites:
         body = resp.json()
         assert body["writes"] == []
         assert "unavailable" in body
+
+    def test_annotations_are_carried_through_when_coord_sends_them(
+        self, auth_client: TestClient
+    ):
+        """``loosening`` and ``notification_ref`` reach the page verbatim.
+
+        Both are OPTIONAL coord-side additions (plan
+        ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4). The
+        write dict used to be a fixed literal that simply had no slot for them,
+        so coord could serve them and the shipped frontend would still render
+        dark forever.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "operating-rules",
+                    "description": "Operating rules",
+                    "updated_at": "2026-08-29T12:00:00Z",
+                }
+            ],
+            "total": 1,
+        }
+        versions = _versions_payload(
+            6,
+            [
+                {
+                    "version_number": 6,
+                    "description": "agent-authorship-is-the-default",
+                    "edited_by": "device:c79a07d5-7e40-49b4-87fa-554c749f9644",
+                    "created_at": "2026-08-29T12:00:00Z",
+                    "loosening": True,
+                    "notification_ref": "e510cf9d-1c79-4667-b206-b00b90fde90f",
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=versions),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        assert resp.status_code == 200
+        write = resp.json()["writes"][0]
+        assert write["loosening"] is True
+        assert write["notification_ref"] == "e510cf9d-1c79-4667-b206-b00b90fde90f"
+
+    def test_loosening_false_is_passed_through_not_dropped(
+        self, auth_client: TestClient
+    ):
+        """``false`` is a VERDICT and must survive as one.
+
+        It is the whole basis of the frontend's ``looseningClassificationPresent``
+        (``_lib/writes.ts``), which distinguishes "coord classified these writes
+        and none was a loosening" from "coord never classified them". A
+        passthrough that only forwarded truthy values would collapse the first
+        case into the second and the surface could never say "nothing on this
+        page is flagged".
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "alpha",
+                    "description": "Alpha",
+                    "updated_at": "2026-08-29T12:00:00Z",
+                }
+            ],
+            "total": 1,
+        }
+        versions = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": "agent:x",
+                    "created_at": "2026-08-29T12:00:00Z",
+                    "loosening": False,
+                    "notification_ref": None,
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=versions),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        write = resp.json()["writes"][0]
+        assert "loosening" in write, "a served `false` must not be dropped"
+        assert write["loosening"] is False
+        # A served value is forwarded verbatim whatever it is — the proxy does
+        # not re-encode coord's vocabulary. `null` is not a state coord actually
+        # emits (the field is `Option<bool>` / `Option<Uuid>` with
+        # `skip_serializing_if = "Option::is_none"`, so it sends the key or
+        # nothing), and no consumer tells it from absent; this pins the
+        # passthrough branch, not a fourth meaning.
+        assert "notification_ref" in write
+        assert write["notification_ref"] is None
+
+    def test_absent_annotations_stay_absent_never_null_and_never_false(
+        self, auth_client: TestClient
+    ):
+        """An older coord build omits both keys, and so must this feed.
+
+        Emitting ``false`` would invent a verdict the classifier never gave, on
+        every write that predates it. Emitting ``null`` would not mislead any
+        consumer — nothing distinguishes it from absent — but it would put a key
+        in the response that coord never sent, which is the shape a later
+        default gets attached to. The frontend's optional types
+        (``loosening?: boolean | null``) exist so the page can tell a real
+        verdict from the absence of one; this test pins the absence.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "alpha",
+                    "description": "Alpha",
+                    "updated_at": "2026-08-29T12:00:00Z",
+                }
+            ],
+            "total": 1,
+        }
+        versions = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": "agent:x",
+                    "created_at": "2026-08-29T12:00:00Z",
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=versions),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        write = resp.json()["writes"][0]
+        assert "loosening" not in write
+        assert "notification_ref" not in write
+        # The rest of the row is unaffected — an absent annotation is ORDINARY,
+        # not a read failure, so it must not push the document into `partial`.
+        assert write["version_number"] == 1
+        assert "partial" not in resp.json()
+
+    def test_mixed_feed_keeps_each_rows_own_annotation_state(
+        self, auth_client: TestClient
+    ):
+        """Per-ROW, not per-response: the two states coexist in one feed.
+
+        Reachable in the ordinary case — versions written before the coord
+        classifier deployed sit in the same document's history as ones written
+        after it — so a passthrough that decided once for the whole response
+        (say, from the first row it saw) would mislabel the other half.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "classified",
+                    "description": "Classified",
+                    "updated_at": "2026-08-29T12:00:00Z",
+                },
+                {
+                    "kind": "audience_profile",
+                    "name": "unclassified",
+                    "description": "Unclassified",
+                    "updated_at": "2026-08-28T12:00:00Z",
+                },
+            ],
+            "total": 2,
+        }
+        classified = _versions_payload(
+            2,
+            [
+                {
+                    "version_number": 2,
+                    "description": None,
+                    "edited_by": "agent:x",
+                    "created_at": "2026-08-29T12:00:00Z",
+                    "loosening": True,
+                    "notification_ref": "11111111-1111-1111-1111-111111111111",
+                },
+                {
+                    # Same document, older write, written before the classifier.
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": "agent:x",
+                    "created_at": "2026-08-27T12:00:00Z",
+                },
+            ],
+        )
+        unclassified = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": "operator:1:op@example.com",
+                    "created_at": "2026-08-28T12:00:00Z",
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=classified),
+                _mock_response(json_data=unclassified),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        writes = {(w["name"], w["version_number"]): w for w in resp.json()["writes"]}
+        assert len(writes) == 3
+        flagged = writes[("classified", 2)]
+        assert flagged["loosening"] is True
+        assert flagged["notification_ref"] == "11111111-1111-1111-1111-111111111111"
+        for key in (("classified", 1), ("unclassified", 1)):
+            assert "loosening" not in writes[key]
+            assert "notification_ref" not in writes[key]
+
+    def test_wrong_typed_annotation_is_dropped_without_faking_a_failure(
+        self, auth_client: TestClient
+    ):
+        """A coord-side type defect must not reach — or blank — the page.
+
+        ``notificationHref`` calls ``.trim()`` on the ref, so a number would
+        throw in the browser and take the feed down. Dropping it degrades to the
+        absent case, which the surface already renders correctly. It is
+        deliberately NOT counted in ``partial``: the document's history WAS
+        returned, and reporting an unreadable document would misdescribe a feed
+        that is otherwise complete.
+        """
+        documents = {
+            "documents": [
+                {
+                    "kind": "policy",
+                    "name": "alpha",
+                    "description": "Alpha",
+                    "updated_at": "2026-08-29T12:00:00Z",
+                }
+            ],
+            "total": 1,
+        }
+        versions = _versions_payload(
+            1,
+            [
+                {
+                    "version_number": 1,
+                    "description": None,
+                    "edited_by": "agent:x",
+                    "created_at": "2026-08-29T12:00:00Z",
+                    "loosening": "yes",
+                    "notification_ref": 12345,
+                }
+            ],
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.side_effect = [
+                _mock_response(json_data=documents),
+                _mock_response(json_data=versions),
+            ]
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(WRITES)
+
+        body = resp.json()
+        write = body["writes"][0]
+        assert "loosening" not in write
+        assert "notification_ref" not in write
+        assert "partial" not in body
 
     def test_limit_truncates_after_ordering(self, auth_client: TestClient):
         documents = {
