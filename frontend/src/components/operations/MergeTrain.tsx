@@ -33,6 +33,7 @@ import {
   RotateCcw,
   ShieldQuestion,
 } from "lucide-react";
+import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
 import { relativeTime } from "./utils";
 import { redactSecrets } from "./mergeTypes";
 import type {
@@ -60,7 +61,10 @@ function statusTint(status: ProposalStatus): string {
       return "bg-muted text-muted-foreground border-border";
     case "conflict":
     case "blocked-by-overlap":
-      return "bg-red-500/15 text-red-200 border-red-500/30";
+      // Was a hand-spelled red carrying `border-red-500/30` where
+      // `AUTHOR_RED` says `/35` — a live drift the prefix audit could not
+      // see, and the reason the constants are imported rather than typed.
+      return AUTHOR_RED;
     case "speculative-ci":
       // Candidate CI on a speculative tip stacked on an unlanded predecessor —
       // coord testing, same family as dry-rebasing, never red.
@@ -343,7 +347,7 @@ function honestyBadgeClass(tone: HonestyTone): string {
     case "ok":
       return "bg-green-500/15 text-green-200 border-green-500/30";
     case "degraded":
-      return "bg-amber-500/15 text-amber-200 border-amber-500/30";
+      return WAITING_AMBER;
     case "unknown":
     default:
       return "bg-muted text-muted-foreground border-border";
@@ -486,7 +490,7 @@ export function GateDecisionRow({ block }: { block: BlastRadiusBlock }) {
             {repeats > 1 && (
               <Badge
                 variant="outline"
-                className="font-mono text-[10px] normal-case bg-amber-500/15 text-amber-200 border-amber-500/30"
+                className={`font-mono text-[10px] normal-case ${WAITING_AMBER}`}
                 data-repeat-count={repeats}
                 data-first-seen-at={block.first_seen_at ?? ""}
                 title={

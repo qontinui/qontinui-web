@@ -28,12 +28,23 @@
  * | `diff` / `DiffTable` | supports R5 — the version diff a detail panel shows |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
- * route, and **no shipped module under `console/` has any runtime dependency
- * on `components/operations/`** — the only edge from shipped code is an
- * `import type` on `prPipeline`, which erases at build time. (`console/`'s
- * TESTS do import values from `operations/` and `admin/coord/`: that is
- * `attention.test.ts`, the cross-surface palette oracle, and it is supposed
- * to. Test files ship nothing.) That is what lets `/admin/coord/*`,
+ * route, and **no module under `console/` that is REACHABLE FROM A ROUTE has
+ * any runtime dependency on `components/operations/`** — the only edge from
+ * route-reachable code is an `import type` on `prPipeline`, which erases at
+ * build time.
+ *
+ * "Reachable from a route" is the whole clause, not a qualifier bolted on
+ * afterwards, because two files under `console/` DO import values from
+ * `operations/` and `admin/coord/` and neither is reachable:
+ * `attention.test.ts`, the cross-surface palette oracle, and
+ * `consoleSurfaces.ts`, the registry it audits. Test files ship nothing; the
+ * registry is a `.ts` rather than a test file only because a test cannot
+ * import another test's local `const`, and it is deliberately absent from
+ * this barrel and imported by nothing but those two tests, so it is
+ * tree-shaken out of every bundle. **Do not export it here, and do not
+ * import it from a component** — either would make it route-reachable and
+ * pull 18 surfaces' status modules into whatever imports
+ * `@/components/console`. That is what lets `/admin/coord/*`,
  * `/admin/agent-claims` and `/admin/agent-sessions` share these without
  * sharing a data model, and it is a property to CHECK when adding a
  * primitive, not one to assume: the one import that broke it
