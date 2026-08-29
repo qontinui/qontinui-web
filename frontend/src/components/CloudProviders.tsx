@@ -23,6 +23,36 @@ import { useSlotProviders } from "@/lib/extension-slots";
  * OUTERMOST, so a later provider may read an earlier one's context. Cloud
  * packages that care must register in dependency order.
  *
+ * A LATE registration REMOUNTS everything below. Adding a provider wraps the
+ * innermost node in one more element, so the child at that position changes
+ * type (a bare `<>{children}</>` becomes a `<Provider>`), and React deletes
+ * that subtree and rebuilds it rather than moving it — discarding all of its
+ * state. Here that subtree is the whole authenticated tree. It is not
+ * fixable: wrapping a subtree in a provider *is* changing its parent.
+ *
+ * Two separate things keep it from happening in production, and BOTH are
+ * load-bearing:
+ *
+ * 1. `cloud-extensions-boot.tsx` registers through a STATIC import, so the
+ *    slot is full before anything here mounts. See
+ *    `docs/composed-cloud-build.md`, "Why the boot import is static".
+ * 2. `app/(app)/layout.tsx`'s `AppAuthGate` renders `AuthLoadingShell`
+ *    instead of its children while `useAuth()` is loading — which on the
+ *    server is always — so `CloudProviders` is never in the HYDRATION
+ *    render. That matters because `useSyncExternalStore` must use
+ *    `getServerSnapshot` when hydrating, and ours is a frozen empty array
+ *    (`extension-slots.ts`): a `CloudProviders` present at hydration would
+ *    render zero providers and then swap to the real snapshot, which is this
+ *    remount, on every composed-build page load. Making auth resolve
+ *    synchronously would therefore reintroduce it — a change with no visible
+ *    connection to extension slots.
+ *
+ * `CloudProviders.test.tsx` pins the remount itself. It does NOT pin either
+ * condition above: it registers by hand and never imports the boot module.
+ * The check that fails if the boot import stops being static is the composed
+ * half of `cloud-extensions-boot.registration.test.tsx`, which runs in its
+ * own CI job.
+ *
  * Each provider is mounted directly, WITHOUT a fault boundary. That is
  * deliberate: a provider is infrastructure for the subtree beneath it, so
  * swallowing its failure would leave every consumer reading a missing context
