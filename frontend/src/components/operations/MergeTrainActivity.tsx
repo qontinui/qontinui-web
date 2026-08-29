@@ -54,6 +54,7 @@ import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatDuration,
   perRepoCapHint,
+  slotScopeNote,
   type PauseReason,
   type PauseSeverity,
   type RepoTrainRow,
@@ -240,8 +241,13 @@ function TrainHeader({
                 // the configured cap while the dequeue enforces a narrower one
                 // for some repo in the breakdown below.
                 `; ${perRepoCapHint(summary.slots)}` +
-                ". Occupancy and cap are fleet-wide (the semaphore is); the " +
-                "per-repo breakdown below is scoped to your tenant."
+                // The scope sentence used to be hardcoded "occupancy and cap
+                // are fleet-wide", which is half true: coord observes this
+                // endpoint under a tenant ALWAYS, so the cap is the tenant's
+                // while only the occupancy is fleet-wide. `slotScopeNote` says
+                // which is which, and says "unknown" against a coord too old to
+                // report the scope rather than picking one.
+                `. ${slotScopeNote(summary.slots)}`
               }
             />
             <Stat

@@ -324,7 +324,15 @@ export interface RepoTrainRow {
 }
 
 export interface TrainBanner {
-  code: PauseReasonCode | "suppressed-train" | "healthy";
+  code:
+    | PauseReasonCode
+    | "suppressed-train"
+    /** coord's occupancy count exceeds the ceiling that admitted it — a coord
+     *  defect that makes every slot number on the tab suspect. Not a
+     *  `PauseReasonCode`: it is never a per-repo row, and it explains why the
+     *  capacity readings cannot be trusted rather than why one repo paused. */
+    | "occupancy-over-cap"
+    | "healthy";
   severity: PauseSeverity;
   label: string;
   detail: string;
@@ -435,6 +443,45 @@ export function perRepoCapHint(slots: SlotSaturation): string {
     : `${narrowed.length} repos are held below it while their candidate CI ` +
       `keeps failing`;
   return `per-repo cap ${slots.per_repo_cap} configured, but ${which}`;
+}
+
+/**
+ * The scope clause for the Slots stat — which of `occupied` and `effective_cap`
+ * is fleet-wide and which is not.
+ *
+ * The stat used to hardcode *"Occupancy and cap are fleet-wide (the semaphore
+ * is)"*. Only the first half is true. coord's `/pr-merge/health` observes slot
+ * saturation with a tenant ALWAYS (`observe(state, Some(tenant_id))`), and under
+ * a tenant scope `effective_cap` and `online_ci_runners` describe THAT TENANT's
+ * fleet, while `occupied` stays fleet-wide in both scopes. So the stat printed a
+ * fleet-wide numerator over a tenant-scoped denominator and called the pair
+ * fleet-wide — the same shape of error as quoting the configured per-repo cap
+ * beside a flag derived against a narrowed one.
+ *
+ * Absence is UNKNOWN, not fleet-wide: a coord predating `tenant_scoped` omits
+ * it, and asserting either scope on no evidence is what this whole module exists
+ * to avoid. The undecided case therefore names both possibilities instead.
+ */
+export function slotScopeNote(slots: SlotSaturation): string {
+  if (slots.tenant_scoped === true) {
+    return (
+      `Occupancy is fleet-wide (the global semaphore is), but the cap beside ` +
+      `it is YOUR TENANT's — coord sized it from your own CI runners. The ` +
+      `per-repo breakdown below is tenant-scoped too.`
+    );
+  }
+  if (slots.tenant_scoped === false) {
+    return (
+      `Occupancy and cap are both fleet-wide — coord reported this ` +
+      `observation untenanted, so the cap is not the one any single tenant ` +
+      `dispatches under.`
+    );
+  }
+  return (
+    `Occupancy is fleet-wide (the global semaphore is). This coord does not ` +
+    `report whether the cap was computed for your tenant or for the whole ` +
+    `fleet, so treat the scope as unknown rather than either one.`
+  );
 }
 
 /** The trailing clause that explains a narrowed cap, or "" when it is not. */
@@ -692,6 +739,35 @@ export function buildTrainSummary(
   //     train the operator to ignore this banner.
   const slots = health?.slots ?? null;
   if (slots) {
+    // The invariant tripwire, ABOVE every capacity reading below it: when
+    // coord's occupancy count exceeds the ceiling that admitted it, the count
+    // and the real semaphore have diverged, and every "N/M slots" number on
+    // this tab is derived from the same suspect count. Saying so first stops an
+    // operator chasing a throughput ceiling that may not exist.
+    //
+    // `> 0` rather than truthiness, and no fallback when the field is absent: a
+    // coord predating it says nothing about the invariant, and inferring the
+    // breach from `occupied > configured_cap` ourselves would re-derive the
+    // comparison coord documents as ITS to make (against `configured_cap`,
+    // never `effective_cap`, which legitimately shrinks under in-flight work).
+    const overCap = slots.occupancy_over_cap ?? 0;
+    if (overCap > 0) {
+      banners.push({
+        code: "occupancy-over-cap",
+        severity: "blocking",
+        label: "Slot count exceeds the ceiling",
+        detail:
+          `coord counts ${slots.occupied} permit-holding proposal` +
+          `${slots.occupied === 1 ? "" : "s"} against a global ceiling of ` +
+          `${slots.configured_cap} — ${overCap} over, which ` +
+          `is IMPOSSIBLE: the global semaphore is built once and never ` +
+          `resized, so this count and the real semaphore have diverged. Every ` +
+          `slot number on this tab comes from that count, so read them as ` +
+          `suspect until it clears. This is a coord defect, not a capacity ` +
+          `limit — it sat on a Prometheus gauge through three incidents ` +
+          `before anything asserted it.`,
+      });
+    }
     if (slots.dynamic && slots.effective_cap === 0) {
       banners.push({
         code: "no-ci-runners",
@@ -700,7 +776,16 @@ export function buildTrainSummary(
         detail:
           `The slot cap is dynamic (COORD_MERGE_SLOT_CAP_DYNAMIC=1) and no CI ` +
           `runner is online, so the effective cap is 0 — the train cannot ` +
-          `dispatch anything at all, regardless of how many PRs are ready.`,
+          `dispatch anything at all, regardless of how many PRs are ready.` +
+          // Scope changes the remedy AND the blast radius. Tenanted, the runners
+          // to bring back are the tenant's OWN and other tenants keep landing
+          // normally; written fleet-wide the same sentence tells an operator the
+          // whole control plane is down. coord's own `compute_headline` splits
+          // on this field for the same reason.
+          (slots.tenant_scoped === true
+            ? ` coord sized this cap from YOUR TENANT's runners, so it is your ` +
+              `fleet that has stopped — other tenants may be landing normally.`
+            : ""),
       });
     } else if (slots.saturated && slots.queued_depth > 0) {
       const waited = slots.oldest_queued_wait_seconds ?? null;
