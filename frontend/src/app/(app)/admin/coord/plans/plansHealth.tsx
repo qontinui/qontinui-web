@@ -15,6 +15,11 @@
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import {
+  UNKNOWN_COUNTS_DETAIL,
+  readIsUnknown,
+  staleDetail,
+} from "@/components/console";
 import { describePlanStatus } from "@/components/admin/coord/planStatus";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
@@ -49,10 +54,11 @@ export interface PlansHealth {
  * "No plan is blocked" — the sentence that tells an operator to stop looking —
  * off a list of unknown age.
  *
- * A failed read that left NOTHING behind is UNKNOWN and dashes its counts. A
- * failed read over plans an earlier poll delivered is STALE: those rows are
- * real and still actionable, so they keep rendering and the detail says they
- * are old. That is the split `/admin/coord/questions` settled on.
+ * A failed read from a page coord has NEVER answered is UNKNOWN and dashes its
+ * counts. A failed read after any successful one is STALE: those rows are real
+ * and still actionable — including a real, fetched count of ZERO — so they keep
+ * rendering and the detail says they are old. `readIsUnknown` carries why the
+ * split is `loaded` and not `plans.length`.
  *
  * @param readFailed the page's last fetch threw.
  */
@@ -61,11 +67,11 @@ export function derivePlansHealth(
   loaded: boolean,
   readFailed = false
 ): PlansHealth {
-  if (readFailed && plans.length === 0) {
+  if (readIsUnknown(loaded, readFailed)) {
     return {
       level: "amber",
       headline: "Could not read the work-unit list — unknown, not empty",
-      detail: "coord did not answer; these counts are a dash, not a zero",
+      detail: UNKNOWN_COUNTS_DETAIL,
       badges: [
         { key: "total", label: <>plans –</>, tone: "muted" },
         { key: "blocked", label: <>blocked –</>, tone: "muted" },
@@ -109,11 +115,8 @@ export function derivePlansHealth(
     unrecognised > 0
       ? `${unrecognised} carry a status this build has no label for — shown verbatim`
       : `${active} in progress, ${shipped} shipped`;
-  // Stale, not unknown: the rows are real, only their age is not. It leads the
-  // line because the headline above may be "No plan is blocked".
-  const detail = readFailed
-    ? `Last refresh failed — these counts are stale. ${window}`
-    : window;
+  // Stale, not unknown: the rows are real, only their age is not.
+  const detail = readFailed ? staleDetail(window) : window;
 
   return {
     level,

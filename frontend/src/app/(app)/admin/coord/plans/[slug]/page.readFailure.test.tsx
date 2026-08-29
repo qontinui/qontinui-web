@@ -62,10 +62,11 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
     httpPost.mockReset();
   });
 
-  it("says the plan is UNKNOWN, not missing, when the detail read fails", async () => {
+  it("says the plan is UNKNOWN, not missing, when the read never lands", async () => {
+    // A transport failure — no status code, because nothing answered.
     routeGets({
-      detail:new Error("coord unreachable"),
-      history:new Error("coord unreachable"),
+      detail: new Error("Failed to fetch"),
+      history: new Error("Failed to fetch"),
     });
     render(<CoordPlanDetailPage />);
 
@@ -79,9 +80,19 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("still says 'not found' when coord answered and the plan really is absent", async () => {
-    // The distinction only means something if the honest 404 survives it.
-    routeGets({ detail: {}, history: { history: [] } });
+  it("still says 'not found' on coord's own 404 — the answer, not the absence of one", async () => {
+    // THE arm that makes the split worth having, and the one an earlier cut of
+    // this change got backwards. `httpClient.get` throws on every non-2xx
+    // (`http-client.ts:546-549`), so a 404 — the most definitive answer coord
+    // gives — arrives through the SAME `catch` as a dead socket. Treating "an
+    // error exists" as "we could not read" reports every mistyped slug, and
+    // every soft-deleted memory on the sibling route, as an outage.
+    routeGets({
+      detail: new Error(
+        `GET ${DETAIL_URL} failed: 404 - {"error":"work_unit_not_found"}`
+      ),
+      history: { history: [] },
+    });
     render(<CoordPlanDetailPage />);
 
     expect(
@@ -94,8 +105,8 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
 
   it("dashes the history count instead of printing 0 when that read fails", async () => {
     routeGets({
-      detail:({ work_unit: { slug: SLUG, status: "in_progress" } }),
-      history:new Error("history endpoint down"),
+      detail: { work_unit: { slug: SLUG, status: "in_progress" } },
+      history: new Error("history endpoint down"),
     });
     render(<CoordPlanDetailPage />);
 
@@ -113,8 +124,8 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
 
   it("keeps 'No status history yet' when coord confirms an empty history", async () => {
     routeGets({
-      detail:({ work_unit: { slug: SLUG, status: "in_progress" } }),
-      history:({ history: [] }),
+      detail: { work_unit: { slug: SLUG, status: "in_progress" } },
+      history: { history: [] },
     });
     render(<CoordPlanDetailPage />);
 
@@ -128,14 +139,10 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
 
   it("shows the phase, which the page's own type used to throw away", async () => {
     routeGets({
-      detail:({
-        work_unit: {
-          slug: SLUG,
-          status: "in_progress",
-          current_phase: "3",
-        },
-      }),
-      history:({ history: [] }),
+      detail: {
+        work_unit: { slug: SLUG, status: "in_progress", current_phase: "3" },
+      },
+      history: { history: [] },
     });
     render(<CoordPlanDetailPage />);
 
