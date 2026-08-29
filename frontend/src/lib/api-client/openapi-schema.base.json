@@ -77592,7 +77592,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
+        "description": "Delete a Cognito group. 404 if no such group, 400 if the name cannot\nsatisfy Cognito's ``groupName`` constraint (``validated_group_name``).\nSuperuser-gated, rate-limited (the lowest limit of the four \u2014 this is\nthe only irreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
@@ -77668,7 +77668,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
@@ -77778,7 +77778,7 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
