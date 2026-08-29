@@ -527,6 +527,148 @@ describe("RecordRow (R2, R4)", () => {
       "qontinui-web#1"
     );
   });
+
+  it("omits data-row-key when nobody supplied one", () => {
+    // Absent, not empty: an empty `data-row-key` would look like an identity a
+    // selector could match on.
+    render(
+      <RecordRow {...base} expanded={false} onToggle={() => {}} data-testid="row" />
+    );
+    expect(screen.getByTestId("row")).not.toHaveAttribute("data-row-key");
+  });
+});
+
+// ----------------------------------------------------------------------------
+// The row's identity is the LIST's key — a row may not derive a second one
+// ----------------------------------------------------------------------------
+
+describe("RecordRow identity inside a RecordList", () => {
+  /** A row that re-derives its own (wrong) key, the way four surfaces did. */
+  function SelfKeyingRow({
+    item,
+    expanded,
+    onToggle,
+  }: {
+    item: { id: string; name: string };
+    expanded: boolean;
+    onToggle: () => void;
+  }) {
+    return (
+      <RecordRow
+        data-testid="row"
+        rowKey={item.name}
+        identity={item.id}
+        label={item.name}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
+    );
+  }
+
+  const items = [
+    { id: "a", name: "shared-subject" },
+    { id: "b", name: "shared-subject" },
+  ];
+
+  it("writes the list's itemKey, not the row's own expression", () => {
+    // The defect this closes: `data-row-key` named something no expansion
+    // state ever held, so a selector could not address the row that opens.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+      />
+    );
+    const rows = screen.getAllByTestId("row");
+    expect(rows.map((r) => r.getAttribute("data-row-key"))).toEqual([
+      "shared-subject#0",
+      "shared-subject#1",
+    ]);
+  });
+
+  it("keeps two rows with an identical fallback identity distinguishable", () => {
+    // Both rows' own expression yields "shared-subject". The list's index
+    // suffix is the only thing separating them, and the row now carries it.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+      />
+    );
+    const keys = screen
+      .getAllByTestId("row")
+      .map((r) => r.getAttribute("data-row-key"));
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("hands the same key to renderRow, so a row can address it directly", () => {
+    const seen: string[] = [];
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => {
+          seen.push(ctx.rowKey);
+          return (
+            <RecordRow
+              data-testid="row"
+              identity={item.id}
+              label={item.name}
+              expanded={ctx.expanded}
+              onToggle={ctx.onToggle}
+            />
+          );
+        }}
+        loaded
+      />
+    );
+    expect(seen).toEqual(["shared-subject#0", "shared-subject#1"]);
+  });
+
+  it("is exactly the key expansion compares against", () => {
+    // The two were allowed to differ before, which is what made the attribute
+    // untrustworthy. Open the second row and assert the OPEN one is the row
+    // whose `data-row-key` matches.
+    render(
+      <RecordList
+        items={items}
+        itemKey={(i, index) => `${i.name}#${index}`}
+        renderRow={(item, ctx) => (
+          <SelfKeyingRow item={item} expanded={ctx.expanded} onToggle={ctx.onToggle} />
+        )}
+        loaded
+        expandedKey="shared-subject#1"
+        onExpandedKeyChange={() => {}}
+      />
+    );
+    const open = screen
+      .getAllByTestId("row")
+      .filter(
+        (r) => within(r).getByRole("button").getAttribute("aria-expanded") === "true"
+      );
+    expect(open).toHaveLength(1);
+    expect(open[0]).toHaveAttribute("data-row-key", "shared-subject#1");
+  });
+
+  it("still honours the prop OUTSIDE a list", () => {
+    // `PlanLibraryList` and the agent-detail log feed hand-roll their `.map`,
+    // so the prop is their only source and must keep working.
+    render(
+      <SelfKeyingRow item={items[0]} expanded={false} onToggle={() => {}} />
+    );
+    expect(screen.getByTestId("row")).toHaveAttribute(
+      "data-row-key",
+      "shared-subject"
+    );
+  });
 });
 
 // ----------------------------------------------------------------------------
