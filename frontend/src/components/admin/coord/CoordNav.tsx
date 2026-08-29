@@ -113,6 +113,7 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
@@ -600,9 +601,8 @@ function useAlertsBadge(): {
 
   useEffect(() => {
     fetchCount();
-    const id = setInterval(fetchCount, ALERTS_POLL_MS);
-    return () => clearInterval(id);
   }, [fetchCount]);
+  useVisiblePoll(fetchCount, ALERTS_POLL_MS);
 
   return { count, critical, known };
 }
@@ -654,9 +654,8 @@ function useNotificationsBadge(): { count: number } {
 
   useEffect(() => {
     fetchCount();
-    const id = setInterval(fetchCount, NOTIFICATIONS_POLL_MS);
-    return () => clearInterval(id);
   }, [fetchCount]);
+  useVisiblePoll(fetchCount, NOTIFICATIONS_POLL_MS);
 
   return { count };
 }
