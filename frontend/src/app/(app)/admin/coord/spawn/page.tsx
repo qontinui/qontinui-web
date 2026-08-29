@@ -133,9 +133,13 @@ export default function CoordSpawnPage() {
 
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
   const loaded = data !== null;
+  // R6 — "not fetched" includes "fetched and FAILED", and every surface derived
+  // from the list has to consult it, the `empty=` slot included.
+  const readFailed = error !== null;
+  const plansUnknown = readFailed && plans.length === 0;
   const health = useMemo(
-    () => derivePlansHealth(plans, loaded),
-    [plans, loaded]
+    () => derivePlansHealth(plans, loaded, readFailed),
+    [plans, loaded, readFailed]
   );
 
   return (
@@ -206,12 +210,22 @@ export default function CoordSpawnPage() {
           loaded={!(loading && !data)}
           skeletonRows={6}
           empty={
-            <p
-              className="text-sm text-muted-foreground italic"
-              data-testid="coord-spawn-plans-empty"
-            >
-              No plans matching status={status === "any" ? "any" : status}.
-            </p>
+            plansUnknown ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-spawn-plans-unknown"
+              >
+                Could not read the work-unit list — whether any plan matches
+                status={status === "any" ? "any" : status} is unknown, not none.
+              </p>
+            ) : (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-spawn-plans-empty"
+              >
+                No plans matching status={status === "any" ? "any" : status}.
+              </p>
+            )
           }
           renderRow={(p, ctx) => (
             <SpawnPlanRow

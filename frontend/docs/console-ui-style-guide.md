@@ -509,6 +509,17 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > waiting on an answer"*. So a failed read needs its **own flag**, separate
 > from the list, and every surface derived from that list has to consult it —
 > `RecordList`'s `empty` slot included. `loading` cannot stand in for it.
+>
+> **Two arms, not one — and the failure arm goes FIRST.** A read that failed
+> leaving nothing behind is UNKNOWN: dash the counts. A read that failed over
+> rows an earlier poll delivered is STALE: those rows are real and still
+> actionable, so they keep rendering and the detail line says they are old.
+> Blanking them would discard a count the operator can act on. The order
+> matters because a *first* load that errors leaves `loaded` false as well, so
+> a `!loaded`-first deriver renders "Waiting for coord…" over a request that is
+> never arriving. `agentLogHealth.tsx` and `plans/plansHealth.tsx` are the
+> worked examples; between them they cover `/agents/[agent_id]`, `/plans` and
+> `/spawn`, and their tests pin both arms.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now

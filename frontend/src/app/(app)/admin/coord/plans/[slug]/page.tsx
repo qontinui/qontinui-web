@@ -104,6 +104,15 @@ interface CoordWorkUnit {
   slug: string;
   title?: string | null;
   status?: string;
+  /**
+   * coord `work_units.current_phase`. Omitted from this interface until
+   * 2026-08-29, which silently disarmed `derivePlanStatus`'s `reason` — it
+   * reads exactly this field, so the badge could never produce its "phase N"
+   * subtitle here even though `/plans` and `/spawn` show it for the same work
+   * unit. The deriver was doing its job; it was being handed a type that had
+   * thrown the input away.
+   */
+  current_phase?: string | null;
   updated_at?: string | null;
 }
 
@@ -140,6 +149,14 @@ export default function CoordPlanDetailPage() {
   const [history, setHistory] = useState<PlanHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * R6 — the history read gets its OWN flag. It used to fail into a bare
+   * `catch {}`, leaving `history` at the `[]` its initializer put there, which
+   * is byte-identical to the array coord returns for a work unit that has never
+   * transitioned. The panel then printed a `0` badge and "No status history
+   * yet." — a confirmed absence, asserted from a read that never answered.
+   */
+  const [historyError, setHistoryError] = useState(false);
 
   const [newStatus, setNewStatus] = useState("in_progress");
   const [note, setNote] = useState("");
@@ -161,8 +178,13 @@ export default function CoordPlanDetailPage() {
           `${API}/plans/${encodeURIComponent(slug)}/history`
         );
         setHistory(historyBody.history ?? planBody.recent_history ?? []);
+        setHistoryError(false);
       } catch {
-        // ignore — history is supplementary
+        // Still supplementary — it must not fail the page — but "supplementary"
+        // is not "unrecordable". The envelope's `recent_history` may have
+        // seeded rows above; if it did they stand, and only their completeness
+        // is unknown.
+        setHistoryError(true);
       }
       setError(null);
     } catch (e) {
@@ -199,6 +221,10 @@ export default function CoordPlanDetailPage() {
       setTransitioning(false);
     }
   }, [slug, newStatus, note, fetchAll]);
+
+  /** The history read failed AND left nothing behind. Stale-but-present rows
+   *  from the detail envelope are real, so they keep rendering. */
+  const historyUnknown = historyError && history.length === 0;
 
   return (
     <div
@@ -331,8 +357,20 @@ export default function CoordPlanDetailPage() {
             icon={<History className="h-3.5 w-3.5" />}
             title="Status history"
             summary={
-              <Badge variant="outline" className="font-mono text-[11px]">
-                {history.length}
+              <Badge
+                variant="outline"
+                className="font-mono text-[11px]"
+                title={
+                  historyUnknown
+                    ? "The history read failed; how many transitions this plan has is unknown."
+                    : historyError
+                      ? "The history read failed. These rows came from the detail envelope and may be incomplete."
+                      : undefined
+                }
+              >
+                {/* R6 — `–`, never `0`, for a count nobody managed to fetch. */}
+                {historyUnknown ? "–" : history.length}
+                {historyError && !historyUnknown ? "+" : ""}
               </Badge>
             }
             data-testid="coord-plan-history"
@@ -347,9 +385,22 @@ export default function CoordPlanDetailPage() {
               // appended, never used alone (see `RecordList`'s itemKey doc).
               itemKey={(h, i) => `${h.transitioned_at}-${h.to_status}-${i}`}
               empty={
-                <p className="text-sm text-muted-foreground italic">
-                  No status history yet.
-                </p>
+                historyUnknown ? (
+                  <p
+                    className="text-sm text-muted-foreground italic"
+                    data-testid="coord-plan-history-unknown"
+                  >
+                    Could not read this plan&rsquo;s status history — whether it
+                    has transitions is unknown, not none.
+                  </p>
+                ) : (
+                  <p
+                    className="text-sm text-muted-foreground italic"
+                    data-testid="coord-plan-history-empty"
+                  >
+                    No status history yet.
+                  </p>
+                )
               }
               renderRow={(h, ctx) => {
                 const status = derivePlanStatus({ status: h.to_status });
@@ -357,6 +408,11 @@ export default function CoordPlanDetailPage() {
                 return (
                   <RecordRow
                     data-testid="coord-plan-history-row"
+                    // The key `itemKey` already computed. Every other
+                    // `<RecordRow>` in the repo sets this; without it the row
+                    // emits no `data-row-key` and no spec can address one
+                    // specific transition.
+                    rowKey={ctx.rowKey}
                     expanded={ctx.expanded}
                     onToggle={ctx.onToggle}
                     accent={rowAccentClass(status)}
@@ -432,8 +488,21 @@ export default function CoordPlanDetailPage() {
           </CollapsiblePanel>
 
         </>
+      ) : error ? (
+        // R6 — "not found" is a claim about coord's CORPUS; a read that failed
+        // supports no such claim. The red line above says what broke; this line
+        // must not turn it into a verdict about whether the plan exists.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-plan-detail-unknown"
+        >
+          Could not read plan {slug} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-plan-detail-missing"
+        >
           Plan {slug} not found.
         </p>
       )}

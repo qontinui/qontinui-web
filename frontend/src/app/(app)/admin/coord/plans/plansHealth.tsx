@@ -40,11 +40,39 @@ export interface PlansHealth {
  *
  * The reason the rule matters at all: a page that has not heard from coord yet
  * must not claim there are no blocked plans.
+ *
+ * **`readFailed` is the other half of that rule**, and it is a separate
+ * argument because `loaded` cannot express it. R6 covers "fetched and FAILED"
+ * as well as "still in flight": a first load that errors leaves `loaded` false
+ * and renders "Waiting for coord…" over a request that is never arriving,
+ * while a poll that errors after a good load leaves `loaded` true and paints
+ * "No plan is blocked" — the sentence that tells an operator to stop looking —
+ * off a list of unknown age.
+ *
+ * A failed read that left NOTHING behind is UNKNOWN and dashes its counts. A
+ * failed read over plans an earlier poll delivered is STALE: those rows are
+ * real and still actionable, so they keep rendering and the detail says they
+ * are old. That is the split `/admin/coord/questions` settled on.
+ *
+ * @param readFailed the page's last fetch threw.
  */
 export function derivePlansHealth(
   plans: CoordPlanRow[],
-  loaded: boolean
+  loaded: boolean,
+  readFailed = false
 ): PlansHealth {
+  if (readFailed && plans.length === 0) {
+    return {
+      level: "amber",
+      headline: "Could not read the work-unit list — unknown, not empty",
+      detail: "coord did not answer; these counts are a dash, not a zero",
+      badges: [
+        { key: "total", label: <>plans –</>, tone: "muted" },
+        { key: "blocked", label: <>blocked –</>, tone: "muted" },
+      ],
+    };
+  }
+
   if (!loaded) {
     return {
       level: "amber",
@@ -77,10 +105,15 @@ export function derivePlansHealth(
       : plans.length === 0
         ? "No work units in this window"
         : "No plan is blocked";
-  const detail =
+  const window =
     unrecognised > 0
       ? `${unrecognised} carry a status this build has no label for — shown verbatim`
       : `${active} in progress, ${shipped} shipped`;
+  // Stale, not unknown: the rows are real, only their age is not. It leads the
+  // line because the headline above may be "No plan is blocked".
+  const detail = readFailed
+    ? `Last refresh failed — these counts are stale. ${window}`
+    : window;
 
   return {
     level,
