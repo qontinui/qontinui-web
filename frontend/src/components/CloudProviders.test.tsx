@@ -107,19 +107,21 @@ describe("CloudProviders", () => {
   });
 
   it("REMOUNTS its children when a registration lands late", () => {
-    // The cost of the line above, pinned. Adding a provider changes the
-    // element type at this position — `<>{children}</>` becomes
-    // `<Provider>{children}</Provider>` — so React unmounts the old subtree
-    // and mounts a new one, discarding all of its state. In the composed
-    // build that subtree is the ENTIRE authenticated tree.
+    // The cost of the line above, pinned. Adding a provider wraps the
+    // innermost node in one more element, so the child at that position
+    // changes type and React deletes that subtree and rebuilds it rather
+    // than moving it, discarding all of its state. In the composed build
+    // that subtree is the ENTIRE authenticated tree.
     //
     // Nothing here is a defect to fix: you cannot wrap a subtree in a
-    // provider without changing its parent, and the production ordering
-    // makes it moot (`cloud-extensions-boot` registers via a *static*
-    // import, evaluated before hydration, so the slot is full on first
-    // render). This test exists so that the invariant that makes it moot —
-    // "the boot import stays static" — has a failing test behind it instead
-    // of only a design note. See `docs/composed-cloud-build.md`.
+    // provider without changing its parent. Two unrelated properties keep
+    // production off this path — the boot import is static, and
+    // `AppAuthGate` keeps `CloudProviders` out of the hydration render
+    // (`docs/composed-cloud-build.md`).
+    //
+    // This test does NOT guard either of those; it registers by hand and
+    // never imports the boot module. It pins the CONSEQUENCE, so the cost of
+    // losing one of them is a measured fact rather than a design note.
     let mounts = 0;
     function StatefulChild() {
       React.useEffect(() => {

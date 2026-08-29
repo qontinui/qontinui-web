@@ -326,15 +326,30 @@ in a client module evaluates during the initial bundle load, before hydration.
 
 Since the `providers` slot landed, the stakes are higher than a flash. A
 provider arriving late does not leave a leaf slot empty for a moment — it
-changes the element type at the top of the authenticated tree, because
-`CloudProviders` goes from rendering `<>{children}</>` to
-`<Provider>{children}</Provider>`. React reconciles that as a different node,
-so it unmounts the entire authenticated subtree and mounts a fresh one,
-discarding every piece of component state in it. There is no way to wrap a
-subtree in a provider without changing its parent, so the static import is
-not an optimisation here: it is what keeps the case from arising at all.
-`CloudProviders.test.tsx` pins the remount, so switching the boot import back
-to an effect fails a test rather than shipping a state-losing reload.
+wraps the authenticated tree in one more element, so the node at that
+position changes type and React deletes that subtree and rebuilds it instead
+of moving it, discarding every piece of component state in it. There is no
+way to wrap a subtree in a provider without changing its parent, so the
+static import is not an optimisation here: it is one of the two things
+keeping the case from arising at all.
+
+**The other is `AppAuthGate`, and it is easy to break by accident.**
+`useSyncExternalStore` must read `getServerSnapshot` when hydrating, and
+`useSlotProviders`' is a frozen empty array — so a `CloudProviders` taking
+part in the hydration render would mount zero providers and then swap to the
+real snapshot, which is exactly the remount above, on every composed-build
+page load. It does not, only because `app/(app)/layout.tsx` renders
+`AuthLoadingShell` in place of its children while `useAuth()` reports
+loading, which on the server is always. Making auth resolve synchronously —
+an SSR cookie read, a synchronous `localStorage` seed — would reintroduce a
+whole-tree remount with no visible connection to extension slots.
+
+`CloudProviders.test.tsx` pins the remount itself, so its cost is not
+folklore. It does **not** pin either condition: it registers by hand and
+never imports the boot module. What fails if the boot import stops being
+static is the composed half of `cloud-extensions-boot.registration.test.tsx`
+— importing the boot module would then register nothing — and that runs in
+the `composed-cloud-build` job, not the ordinary unit-test job.
 
 **Why a link and not a copy.** One source of truth, so editing
 `qontinui-cloud-control` is picked up by the next build with no re-sync and no
