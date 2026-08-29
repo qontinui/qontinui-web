@@ -24,11 +24,18 @@
  *    never seen — as `unknown`, with attention derived from the row's severity
  *    rather than silently calm.
  *
- * The `Attention` vocabulary is imported from `prPipeline.ts` rather than
- * redeclared, so the merge pipeline and the alerts tab read identically.
+ * The `Attention` vocabulary is imported rather than redeclared, so the merge
+ * pipeline and the alerts tab read identically. It comes from
+ * `@/components/console/attention` — the base layer that DECLARES it — not from
+ * `prPipeline`, which merely re-exports it for compatibility. Reaching through
+ * the merge-train derivation for a two-word type was the last such edge left in
+ * the tree; the other sixteen modules already take the direct one.
  */
 
-import type { Attention } from "@/components/operations/prPipeline";
+import {
+  type Attention,
+  escalateAttention,
+} from "@/components/console/attention";
 
 export type { Attention };
 
@@ -464,17 +471,11 @@ export function attentionFromSeverity(severity?: string): Attention {
   }
 }
 
-/** Ordering of the attention vocabulary, loudest last. */
-const ATTENTION_RANK: Record<Attention, number> = {
-  none: 0,
-  waiting: 1,
-  author: 2,
-};
-
-/** The louder of two attentions — escalation only, never de-escalation. */
-function escalate(a: Attention, b: Attention): Attention {
-  return ATTENTION_RANK[b] > ATTENTION_RANK[a] ? b : a;
-}
+// The `ATTENTION_RANK` table and its `escalate` helper used to be declared
+// here. They are now `console/attention`'s `ATTENTION_RANK` and
+// `escalateAttention` — character-for-character the same rank table and the
+// same comparison, generalised out of this file and `prPipeline` by the console
+// extraction, then left un-adopted here. Same semantics, one definition.
 
 /**
  * Map coord's raw `kind` onto the derived vocabulary.
@@ -626,7 +627,7 @@ export function deriveAlertStatus(row: CoordAlertRow): AlertStatus {
       ? "none"
       : kind === "unknown"
         ? bySeverity
-        : escalate(ATTENTION_BY_KIND[kind], bySeverity);
+        : escalateAttention(ATTENTION_BY_KIND[kind], bySeverity);
   return {
     kind,
     label: LABEL_BY_KIND[kind],
