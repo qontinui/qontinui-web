@@ -6128,8 +6128,12 @@ def _consolidate_sessions(
             out.append({**row, "row_class": "lifecycle_only", "agent_session": None})
             continue
         key = str(bridge)
-        agent = agents_by_id.get(key)
-        if agent is None or owners.get(key) != str(row.get("id") or ""):
+        # Deliberately NOT named `agent`: the loops above and below bind that
+        # name to a `dict[str, Any]` element, so reusing it here for a
+        # `.get()` result — which is `dict[str, Any] | None` — is a real type
+        # collision, not a lint nit (mypy [assignment]).
+        agent_half = agents_by_id.get(key)
+        if agent_half is None or owners.get(key) != str(row.get("id") or ""):
             # Either the agent half did not carry the bridged row (capped or
             # filtered out), or this is an OLDER `coord.sessions` row sharing
             # the bridge and the newest one owns it. Both are UNKNOWN: we have
@@ -6138,7 +6142,7 @@ def _consolidate_sessions(
             out.append({**row, "row_class": None, "agent_session": None})
             continue
         consumed.add(key)
-        out.append({**row, "row_class": "linked", "agent_session": agent})
+        out.append({**row, "row_class": "linked", "agent_session": agent_half})
 
     for agent in agents:
         agent_id = agent.get("id")
