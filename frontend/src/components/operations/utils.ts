@@ -426,9 +426,15 @@ export const DEVICE_STATUS_POLL_FALLBACK_MS = 5_000;
  * catalogue — a `console/` → `operations/` runtime edge for one pure 28-line
  * formatter. NEW code imports it from `@/components/console`.
  *
- * Six further files declare their own `relativeTime` rather than importing
- * one, so they are NOT in that 23 and were not touched; see
- * `console/time.ts`'s module doc for the list. They are later-wave debt.
+ * The private copies that were NOT in that 23 — invisible to this re-export
+ * because they imported nothing — have since been folded onto the primitive by
+ * Phase 1's post-merge follow-up. `console/time.ts`'s module doc carries the
+ * list and the one file that stayed behind (a same-name, different-behaviour
+ * formatter, not a copy).
+ *
+ * `relativeTime` now takes an options bag (`{ absent, now }`). This is a
+ * **binding** re-export, so that signature travels to every importer here and
+ * a zero-argument call is unchanged.
  */
 export { relativeTime } from "@/components/console/time";
 

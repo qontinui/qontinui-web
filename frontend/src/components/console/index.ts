@@ -93,6 +93,7 @@ export type {
 } from "./statusRow";
 
 export { absoluteTime, relativeTime } from "./time";
+export type { RelativeTimeOptions } from "./time";
 
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";
