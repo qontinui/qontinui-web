@@ -94,6 +94,28 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 export interface SessionRepositoryQuery {
   account?: string;
   repo?: string;
+  /**
+   * The Claude Code session uuid — the archive's own identity column, and the
+   * SAME id space as `coord.agent_sessions.id` /
+   * `coord.sessions.claude_code_session_id`.
+   *
+   * This is the FORWARD half of the session ↔ archive round trip
+   * (`2026-08-26-sessions-console-consolidation` Phase 2). The reverse already
+   * ships: `SessionArtifactDetail.tsx` links an archive row back to
+   * `/sessions/{coord_session_id}`. Prefer this over
+   * {@link SessionRepositoryQuery.coordSessionId} — it is the indexed arm.
+   *
+   * An empty result means *this archive holds no row for that id*. It is
+   * **not** a claim that the session had no transcript, and a caller must
+   * render it as `–` rather than as "no transcript" (plan D2).
+   */
+  claudeSessionId?: string;
+  /**
+   * The `coord.sessions` id an archive row recorded. Unindexed (a scan) and a
+   * SOFT link coord garbage-collects underneath us, so a miss means "no
+   * archive row recorded that coord id" and nothing about the session.
+   */
+  coordSessionId?: string;
   state?: string;
   closeoutState?: string;
   tenantSource?: string;
@@ -112,6 +134,10 @@ function toQuery(query: SessionRepositoryQuery): string {
   const qs = new URLSearchParams();
   if (query.account?.trim()) qs.set("account", query.account.trim());
   if (query.repo?.trim()) qs.set("repo", query.repo.trim());
+  if (query.claudeSessionId?.trim())
+    qs.set("claude_session_id", query.claudeSessionId.trim());
+  if (query.coordSessionId?.trim())
+    qs.set("coord_session_id", query.coordSessionId.trim());
   // The server names this param `state` (it aliases `session_state`).
   if (query.state?.trim()) qs.set("state", query.state.trim());
   if (query.closeoutState?.trim())
