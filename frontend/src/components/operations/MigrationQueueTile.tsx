@@ -10,7 +10,7 @@ import {
 import { Layers, RefreshCw } from "lucide-react";
 import { useMigrationQueueStream } from "./useMigrationQueueStream";
 import { useTenantDefaultRepo } from "./useTenantDefaultRepo";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import type { MigrationReservation } from "./types";
 
 // ---------------------------------------------------------------------------

@@ -588,7 +588,7 @@ closed panel costs zero polling, and a red state never hides behind a click.
 When a panel is collapsed, check whether anything else depended on its polling side
 effect. If so, hoist the fetch to the page.
 
-✅ `src/components/operations/CollapsiblePanel.tsx:3-22` states the contract in its
+✅ `src/components/console/CollapsiblePanel.tsx:3-22` states the contract in its
 own module doc, and the two properties are structural:
 
 ```tsx
@@ -871,21 +871,35 @@ existing importers are untouched (13 via `@/components/operations/utils`, 10 via
 `./utils`). The lesson generalises: **check this property when adding a
 primitive**, because the import that broke it looked completely harmless.
 
-> **Later-wave debt, discovered while counting those 23.** Six more files
-> declare their OWN `relativeTime` and import nothing, so the shim does not
-> reach them and this move did not touch them:
+> **That debt is PAID — and how it got paid is the reusable part.** Phase 1
+> found six more files declaring their OWN `relativeTime` and importing nothing,
+> so the `operations/utils.ts` shim never reached them, plus
+> `operations/gatesPredicate.ts`'s `relativeAgo` — a same-shape copy under
+> another name that disclosed itself in its own comment. All were left as
+> later-wave debt. **No wave collected any of them**, because none of them sits
+> on a `/admin/coord/*` route the Phase 3 census counted; they were collected by
+> Phase 1's post-merge follow-up instead.
+>
+> **Publishing a primitive is not enough to retire its copies.** Four of those
+> files were byte-identical to each other and still could not call
+> `console/time`, because the primitive was missing the two things they needed:
+> a **caller-chosen absent placeholder** (they render `—`; the console renders
+> `never`) and an **injectable clock** (`gatesPredicate` names its absence, in
+> its own comment, as the reason it kept a copy). Both are now optional
+> parameters, so the five real duplicates —
 > `admin/agent-claims/AgentClaimsDashboard.tsx`,
 > `admin/agent-sessions/AgentSessionsDashboard.tsx`,
-> `admin/coord/TreeCard.tsx`,
 > `admin/prompt-injections/PromptInjectionsDashboard.tsx`,
-> `execute/ScheduleListItem.tsx`, `sessions/LineageTimeline.tsx` — plus
-> `operations/gatesPredicate.ts`'s `relativeAgo`, a same-shape copy under
-> another name that discloses itself in its own comment. Three of them
-> (`/admin/agent-claims`, `/admin/agent-sessions`, `TreeCard` on the coord
-> console) are surfaces [§1](#1-scope) explicitly claims, so these are six
-> live instances of the duplicate-helper defect this plan exists to remove.
-> **Migrate each onto `console/time` as its wave reaches it**, and do not read
-> "23 importers" as "every caller".
+> `sessions/LineageTimeline.tsx` and `gatesPredicate`'s `relativeAgo` — now
+> delegate. When a copy will not adopt your primitive, **ask what the primitive
+> is missing** before recording it as somebody else's debt.
+>
+> Two corrections to Phase 1's list of six. `admin/coord/TreeCard.tsx` no longer
+> exists — Phase 3 deleted it. And **`execute/ScheduleListItem.tsx` was never a
+> duplicate**: same name, different behaviour — it *rounds* where this one
+> floors (`119s` → `2m`, not `1m`) and renders future stamps as `in 5m`. It
+> stays where it is. A same-name helper is not automatically a copy; diff the
+> bodies before folding one in.
 
 ### 3.2 The console primitives
 
@@ -901,9 +915,9 @@ same table. Every module doc cites its rule number and links this file.
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
 | `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
-| `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx`; a re-export shim stays at the old path for its ~15 relative importers, plus one in `operations/index.ts` (D3). |
+| `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
-| `time.ts` | supports R2 | `relativeTime(iso)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime`, so its **23** importers are untouched — but six other files declare their own copy and are NOT among them (see §3.1). |
+| `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
