@@ -529,6 +529,11 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > rather than respelling it, because the strip and the `empty=` slot have to
 > agree about the same read and two spellings drift invisibly.
 >
+> `/admin/coord/questions` — the route this rule was WRITTEN from — still
+> hand-spells the older list-is-empty form four times
+> (`questions/page.tsx:263-268`). It predates the shared predicate and is not
+> yet converted; do not copy it, and do not read its survival as an exemption.
+>
 > **A 404 is an ANSWER, and belongs on the "not found" side.** `httpClient`
 > throws on every non-2xx, so coord's 404 — the most definitive answer it
 > gives — reaches the page through the same `catch` as a dead socket. A detail
@@ -541,7 +546,19 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > Worked examples: `agentLogHealth.tsx` and `plans/plansHealth.tsx` for the
 > strips (`/agents/[agent_id]`, `/plans`, `/spawn`); `plans/[slug]`,
 > `questions/[id]`, `memory/[name]` and `memory/[name]/version/[version]` for
-> the 404 split. Their tests pin every arm.
+> the 404 split. **What is pinned by test**: both derivers' arms
+> (`agentLogHealth.test.tsx`, `plansHealth.test.tsx`), the predicates
+> themselves (`console/readFailure.test.ts`), and the 404-vs-unreadable split
+> end to end on `plans/[slug]` (`page.readFailure.test.tsx`). The other three
+> detail routes carry the same wiring with no route-level test of their own —
+> stated rather than implied, because "their tests pin every arm" is exactly
+> the kind of unenforced claim this section exists to stop.
+>
+> **Retaining a record across a param change defeats all of this.** Both arms
+> live behind `record === null`, so a route that keeps the previous record when
+> the next id 404s renders the OLD record under the NEW heading and reaches
+> neither arm. Reset the record where the route param changes — not in the
+> `catch`, which would blank a loaded page on a transient blip.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now

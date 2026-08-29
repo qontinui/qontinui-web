@@ -29,8 +29,17 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
+/**
+ * Mutable so a test can change the ROUTE PARAM and re-render, which is the
+ * only way to exercise the param-change reset honestly. Remounting with a new
+ * React `key` would reset every hook by itself and the test would pass with
+ * the reset deleted. Vitest hoists `vi.mock`, so the name must start with
+ * `mock` for the factory to be allowed to close over it.
+ */
+let mockSlug = "2026-08-16-a-plan";
+
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ slug: "2026-08-16-a-plan" }),
+  useParams: () => ({ slug: mockSlug }),
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -42,7 +51,6 @@ import CoordPlanDetailPage from "./page";
 
 const SLUG = "2026-08-16-a-plan";
 const DETAIL_URL = `/api/v1/operations/plans/${SLUG}`;
-const HISTORY_URL = `${DETAIL_URL}/history`;
 
 /**
  * Route the page's two GETs independently. An `Error` value means that call
@@ -51,7 +59,8 @@ const HISTORY_URL = `${DETAIL_URL}/history`;
  */
 function routeGets(handlers: { detail: unknown; history: unknown }) {
   httpGet.mockImplementation((url: string) => {
-    const v = url === HISTORY_URL ? handlers.history : handlers.detail;
+    // Suffix, not the exact URL: one test changes the slug mid-flight.
+    const v = url.endsWith("/history") ? handlers.history : handlers.detail;
     return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);
   });
 }
@@ -60,6 +69,7 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpPost.mockReset();
+    mockSlug = SLUG;
   });
 
   it("says the plan is UNKNOWN, not missing, when the read never lands", async () => {
@@ -135,6 +145,64 @@ describe("CoordPlanDetailPage — a failed read is not an absence", () => {
     expect(
       screen.queryByTestId("coord-plan-history-unknown")
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps a plan's genuine ZERO transitions when only /history fails", async () => {
+    // The envelope carried `recent_history: []` — coord ANSWERED, and the
+    // answer was "none". A `history.length === 0` predicate would dash that
+    // fetched zero the moment the supplementary endpoint blipped, reporting a
+    // real answer as ignorance. The signal is the KEY's presence, not the
+    // array's length.
+    routeGets({
+      detail: {
+        work_unit: { slug: SLUG, status: "in_progress" },
+        recent_history: [],
+      },
+      history: new Error("history endpoint down"),
+    });
+    render(<CoordPlanDetailPage />);
+
+    expect(
+      await screen.findByTestId("coord-plan-history-empty")
+    ).toHaveTextContent(/No status history yet/i);
+    expect(
+      screen.queryByTestId("coord-plan-history-unknown")
+    ).not.toBeInTheDocument();
+    const panel = screen.getByTestId("coord-plan-history");
+    expect(panel).toHaveTextContent("0");
+    expect(panel).not.toHaveTextContent("–");
+  });
+
+  it("does not render the previous plan under a new slug that 404s", async () => {
+    // Both arms above live behind `plan === null`, and the catch never nulls
+    // it — so without the param-change reset a mistyped slug shows the LAST
+    // plan's detail under the new breadcrumb and neither arm is reachable.
+    routeGets({
+      detail: { work_unit: { slug: SLUG, title: "The first plan" } },
+      history: { history: [] },
+    });
+    const { rerender } = render(<CoordPlanDetailPage />);
+    expect(await screen.findByTestId("coord-plan-meta")).toHaveTextContent(
+      "The first plan"
+    );
+
+    routeGets({
+      detail: new Error(
+        'GET /api/v1/operations/plans/typo failed: 404 - {"error":"work_unit_not_found"}'
+      ),
+      history: { history: [] },
+    });
+    // Change the ROUTE PARAM and re-render the SAME element — no new `key`, so
+    // React keeps the component mounted and its state alive. That is what the
+    // reset has to survive; a remount would reset everything on its own and
+    // this test would pass with the reset deleted.
+    mockSlug = "2026-08-16-a-typo";
+    rerender(<CoordPlanDetailPage />);
+
+    expect(
+      await screen.findByTestId("coord-plan-detail-missing")
+    ).toHaveTextContent(/not found/i);
+    expect(screen.queryByText("The first plan")).not.toBeInTheDocument();
   });
 
   it("shows the phase, which the page's own type used to throw away", async () => {

@@ -169,6 +169,18 @@ export default function CoordPlanDetailPage() {
    * yet." — a confirmed absence, asserted from a read that never answered.
    */
   const [historyError, setHistoryError] = useState(false);
+  /**
+   * Something ANSWERED about this plan's history — either the detail envelope
+   * carried a `recent_history` key, or the history endpoint returned.
+   *
+   * This is the history panel's own `loaded`, and it exists for the same
+   * reason `readIsUnknown` keys on `loaded` rather than on a list being empty:
+   * a plan with genuinely zero transitions is a fetched zero, and dashing it
+   * because a supplementary endpoint then failed would report a real answer as
+   * ignorance. Presence of the KEY is the signal, not the length of the array
+   * behind it.
+   */
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const [newStatus, setNewStatus] = useState("in_progress");
   const [note, setNote] = useState("");
@@ -191,11 +203,15 @@ export default function CoordPlanDetailPage() {
       // The detail envelope already carries `recent_history`; seed from it,
       // then refine with the full history endpoint.
       setHistory(planBody.recent_history ?? []);
+      // The envelope answering at all counts, even with an empty array — that
+      // is coord saying "no transitions", not coord saying nothing.
+      if (planBody.recent_history !== undefined) setHistoryLoaded(true);
       try {
         const historyBody = await httpClient.get<PlanHistoryResponse>(
           `${API}/plans/${encodeURIComponent(slug)}/history`
         );
         setHistory(historyBody.history ?? planBody.recent_history ?? []);
+        if (historyBody.history !== undefined) setHistoryLoaded(true);
         setHistoryError(false);
       } catch {
         // Still supplementary — it must not fail the page — but "supplementary"
@@ -215,6 +231,23 @@ export default function CoordPlanDetailPage() {
   }, [slug]);
 
   useEffect(() => {
+    // Drop the PREVIOUS slug's record before asking about this one. Without
+    // this the catch never nulls `plan`, so navigating to a slug that 404s
+    // renders the last plan's full detail under the new slug's breadcrumb —
+    // and both the "not found" and "unknown" arms below sit behind
+    // `plan === null`, so neither can ever be reached.
+    //
+    // This effect keys on `fetchAll`, which keys on `slug`, so it fires on a
+    // route change and NOT on `onTransition`'s refresh — which calls
+    // `fetchAll()` directly and would otherwise flash a loaded page to a
+    // skeleton. This route does not poll, so a param change is the only time
+    // the retained record belongs to a different question.
+    setPlan(null);
+    setHistory([]);
+    setHistoryLoaded(false);
+    setHistoryError(false);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchAll();
   }, [fetchAll]);
@@ -242,9 +275,10 @@ export default function CoordPlanDetailPage() {
     }
   }, [slug, newStatus, note, fetchAll]);
 
-  /** The history read failed AND left nothing behind. Stale-but-present rows
-   *  from the detail envelope are real, so they keep rendering. */
-  const historyUnknown = historyError && history.length === 0;
+  /** The history read failed and NOTHING has answered about it — the same
+   *  `loaded`-keyed shape as `readIsUnknown`, not the list-is-empty spelling
+   *  that would report a plan's genuine zero transitions as ignorance. */
+  const historyUnknown = historyError && !historyLoaded;
   /** The detail read failed in a way that is NOT coord answering "no such
    *  work unit" — so nothing is known about whether this plan exists. */
   const readUnreadable = error !== null && !notFound;
