@@ -89200,11 +89200,11 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains three fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {
-            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
             "in": "query",
             "name": "scope",
             "required": false,
@@ -89217,7 +89217,7 @@
                   "type": "null"
                 }
               ],
-              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
               "title": "Scope"
             }
           },
@@ -89255,6 +89255,84 @@
               ],
               "description": "RFC 3339 timestamp; only rows updated at-or-after are returned.",
               "title": "Since"
+            }
+          },
+          {
+            "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across `coord.sessions` and `coord.agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+            "in": "query",
+            "name": "shape",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across `coord.sessions` and `coord.agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+              "title": "Shape"
+            }
+          },
+          {
+            "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers `coord.sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "live",
+                    "stale",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers `coord.sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+              "title": "Status"
             }
           }
         ],
@@ -104059,6 +104137,43 @@
               ],
               "description": "Soft link to a coord work unit. Never resolved; a slug with no matching work unit simply returns its sessions.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord.agent_sessions.id / coord.sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+            "in": "query",
+            "name": "claude_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord.agent_sessions.id / coord.sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+              "title": "Claude Session Id"
+            }
+          },
+          {
+            "description": "Exact match on the coord.sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+            "in": "query",
+            "name": "coord_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the coord.sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+              "title": "Coord Session Id"
             }
           },
           {
