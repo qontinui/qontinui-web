@@ -319,6 +319,117 @@ _ADMIN_AUTHZ_FIELD_TYPES: dict[str, type] = {
     "policy_required": bool,
 }
 
+#: One route's descriptive-field contract: ``{field: (accepted, fallback)}``.
+_DescriptiveSpec = dict[str, tuple[type | tuple[type, ...], Any]]
+
+#: The DESCRIPTIVE half of the strict/permissive split, mapped to the JSON
+#: type(s) each field is read under and the value it degrades to otherwise.
+#:
+#: Permissive was only ever implemented as "may be ABSENT". A field that
+#: arrived with the wrong TYPE did one of two things, neither of them
+#: permissive (both measured against the route):
+#:
+#: * ``model: 42``, ``effort: 0``, ``fanout_bound: {...}`` raised
+#:   ``ValidationError`` out of the model constructor — a **500**, which is
+#:   precisely the "takes the settings page down" that :func:`_render_effective`
+#:   promises a descriptive field never does. Worse than the 502s beside it:
+#:   those carry a ``detail`` naming the field, which the page renders on its
+#:   error card, while a 500 tells the reader nothing.
+#: * ``fanout_bound: true`` rendered as a bound of **1** (and ``false`` as
+#:   **0**), because ``bool`` is a subclass of ``int``. That is a fabricated
+#:   number presented as coord's — the same laundering the authz guard exists
+#:   to remove, still live on the route that guard was added to.
+#:
+#: So the split now means what it says: an authorization field is LOUD
+#: (502, :data:`_AUTHZ_FIELD_TYPES`), a descriptive field DEGRADES to its
+#: declared fallback, and neither launders.
+_EFFECTIVE_DESCRIPTIVE: _DescriptiveSpec = {
+    "purpose": (str, ""),
+    "spawn_path": (str, ""),
+    "model": (str, None),
+    "effort": (str, None),
+    "fanout_bound": ((int, str), None),
+}
+
+#: The same rule for the admin route's raw row. ``fanout_bound`` is ``int``
+#: alone here — :class:`AdminAgentRegistryRow` declares no ``str`` arm — and
+#: ``trigger_condition`` exists only on this side.
+_ADMIN_DESCRIPTIVE: _DescriptiveSpec = {
+    "purpose": (str, ""),
+    "trigger_condition": (str, ""),
+    "spawn_path": (str, ""),
+    "model": (str, None),
+    "effort": (str, None),
+    "fanout_bound": (int, None),
+}
+
+
+def _descriptive_is_usable(value: Any, accepted: type | tuple[type, ...]) -> bool:
+    """Whether a descriptive value may be read as its declared type.
+
+    The single predicate behind both the RENDER (:func:`_descriptive`) and the
+    LOG (:func:`_degraded_descriptive_fields`). They must never disagree: a
+    second copy of this rule is how the admin route came to hand-roll the
+    presence check ``_unusable_authz_fields`` had already been written to
+    remove, and a log that says "degraded" while the render says otherwise is
+    the same defect aimed at whoever is debugging.
+
+    ``bool`` is rejected first and unconditionally, because it is a subclass of
+    ``int``: without this, ``fanout_bound: true`` reads as a fan-out bound of
+    ``1``. None of these fields is a boolean on either contract, so there is no
+    case where a bool is the right answer.
+    """
+    if isinstance(value, bool):
+        return False
+    return isinstance(value, accepted)
+
+
+def _descriptive(row: dict[str, Any], field: str, spec: _DescriptiveSpec) -> Any:
+    """Read one descriptive field, degrading unless it arrives as its type.
+
+    The counterpart to :func:`_unusable_authz_fields`: same "read it only as
+    the declared type" rule, opposite consequence. These fields describe an
+    agent rather than asserting anything about its authorization, so a wrong
+    one must not take the page down — but it must not be INVENTED either.
+
+    The field's accepted types and fallback are looked up from ``spec`` rather
+    than passed alongside it, so a caller cannot pair a name with another
+    field's contract.
+
+    The previous ``str(row.get("purpose") or "")`` is gone for the same reason
+    the ``bool(...)`` / ``str(...)`` coercions were removed from the authz
+    read: ``str`` cannot fail, so ``purpose: {"a": 1}`` rendered as the Python
+    repr ``"{'a': 1}"`` on the settings page — a value coord never sent,
+    displayed as though it had.
+    """
+    accepted, fallback = spec[field]
+    value = row.get(field)
+    return value if _descriptive_is_usable(value, accepted) else fallback
+
+
+def _degraded_descriptive_fields(
+    row: dict[str, Any], spec: _DescriptiveSpec
+) -> list[str]:
+    """Name every descriptive field that will be degraded rather than read.
+
+    A degrade is the correct RENDER and still an off-contract read, so it is
+    logged. Silently dropping the field is how a coord serialization drift
+    survives unnoticed until someone notices a column is empty for everyone —
+    which is the shape of the original outage, one severity down.
+
+    A field that is simply ABSENT or ``null`` is not reported: that is the
+    permissiveness working as designed, and coord legitimately serves
+    ``model``/``effort`` as ``null``.
+    """
+    degraded: list[str] = []
+    for field, (accepted, _fallback) in spec.items():
+        value = row.get(field)
+        if value is None:
+            continue
+        if not _descriptive_is_usable(value, accepted):
+            degraded.append(f"{field} (got {type(value).__name__})")
+    return degraded
+
 
 def _unusable_authz_fields(
     row: dict[str, Any], field_types: dict[str, type] | None = None
@@ -492,6 +603,15 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
     (purpose, model, effort, …) is cosmetic and stays permissive, so a coord
     that adds or drops a descriptive field never takes the settings page down.
 
+    Permissive means DEGRADES, not "is coerced" — see
+    :data:`_EFFECTIVE_DESCRIPTIVE`. It used to mean only "may be absent": a
+    descriptive field that arrived with the wrong *type* either 500'd the page
+    out of the model constructor (``model: 42``), which is the exact opposite
+    of the promise above, or was silently invented (``fanout_bound: true``
+    rendering as a bound of ``1``, ``purpose: {"a": 1}`` as the repr
+    ``"{'a': 1}"``). Both are now read only as the declared type and fall back
+    to the field's default, with the drift logged.
+
     ``policy_required`` is in the strict set even though the write path fails
     closed independently (coord answers 422 ``disposition_required`` and the
     page opens the forced-disposition picker on that code). Nobody bypasses
@@ -573,13 +693,28 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
                     "system's"
                 ),
             )
+        degraded = _degraded_descriptive_fields(row, _EFFECTIVE_DESCRIPTIVE)
+        if degraded:
+            # Not an error: the row still renders, and the authorization state
+            # on it is coord's. But an off-contract descriptive field is drift,
+            # and drift that logs nothing is how a field goes empty for every
+            # user without anyone noticing.
+            logger.warning(
+                "agent_registry_effective_row_degraded_descriptive_fields",
+                agent_name=name,
+                degraded=degraded,
+            )
         entries.append(
             AgentRegistryEntry(
                 agent_name=name,
-                purpose=str(row.get("purpose") or ""),
-                spawn_path=str(row.get("spawn_path") or ""),
-                model=row.get("model"),
-                effort=row.get("effort"),
+                # Read only as the declared type — see `_descriptive`. A wrong
+                # type degrades to the fallback instead of 500-ing the page
+                # (`model: 42`) or inventing a value (`fanout_bound: true`
+                # rendering as a bound of 1).
+                purpose=_descriptive(row, "purpose", _EFFECTIVE_DESCRIPTIVE),
+                spawn_path=_descriptive(row, "spawn_path", _EFFECTIVE_DESCRIPTIVE),
+                model=_descriptive(row, "model", _EFFECTIVE_DESCRIPTIVE),
+                effort=_descriptive(row, "effort", _EFFECTIVE_DESCRIPTIVE),
                 # No coercion: `_unusable_authz_fields` has already refused
                 # anything that is not the declared type, so a `bool(...)` /
                 # `str(...)` here could only ever be a no-op — or, if the guard
@@ -587,7 +722,7 @@ def _render_effective(rows: list[dict[str, Any]]) -> list[AgentRegistryEntry]:
                 # back in. Reading the field directly keeps the guard the ONLY
                 # thing standing between coord and the page.
                 policy_required=row["policy_required"],
-                fanout_bound=row.get("fanout_bound"),
+                fanout_bound=_descriptive(row, "fanout_bound", _EFFECTIVE_DESCRIPTIVE),
                 enabled=row["enabled"],
                 disposition=row["disposition"],
                 source=row["source"],
@@ -900,32 +1035,41 @@ def _render_admin_rows(
         default_enabled = row["default_enabled"]
         rows_for_agent = by_agent.get(name, [])
         dispositions = row.get("allowed_dispositions")
+        degraded = _degraded_descriptive_fields(row, _ADMIN_DESCRIPTIVE)
+        if degraded:
+            logger.warning(
+                "agent_registry_admin_row_degraded_descriptive_fields",
+                agent_name=name,
+                degraded=degraded,
+            )
         entries.append(
             AdminAgentRegistryRow(
                 agent_name=name,
-                purpose=str(row.get("purpose") or ""),
-                trigger_condition=str(row.get("trigger_condition") or ""),
-                spawn_path=str(row.get("spawn_path") or ""),
-                model=row.get("model"),
-                effort=row.get("effort"),
+                # Same rule as the effective route, via the same helper. The
+                # `fanout_bound` carve-out this route already had was right and
+                # is now the rule for every descriptive field rather than the
+                # one it was spelled out for; `model` and `effort` carried no
+                # such guard and 500'd the admin page on a wrong type.
+                purpose=_descriptive(row, "purpose", _ADMIN_DESCRIPTIVE),
+                trigger_condition=_descriptive(
+                    row, "trigger_condition", _ADMIN_DESCRIPTIVE
+                ),
+                spawn_path=_descriptive(row, "spawn_path", _ADMIN_DESCRIPTIVE),
+                model=_descriptive(row, "model", _ADMIN_DESCRIPTIVE),
+                effort=_descriptive(row, "effort", _ADMIN_DESCRIPTIVE),
                 default_enabled=default_enabled,
                 policy_required=row["policy_required"],
+                # Real strings only, not `str(d)`. These are the options the
+                # page offers an admin to CHOOSE from, so a repr'd non-string
+                # (`"{'x': 1}"`) becomes a pickable disposition coord never
+                # declared — the write would then be refused by coord's own
+                # `invalid_disposition`, with the page having invited it.
                 allowed_dispositions=(
-                    [str(d) for d in dispositions]
+                    [d for d in dispositions if isinstance(d, str)]
                     if isinstance(dispositions, list)
                     else []
                 ),
-                # `not isinstance(..., bool)` is load-bearing: `bool` IS a
-                # subclass of `int` in Python, but pydantic v2 refuses a bool
-                # for an `int` field — so an off-contract `fanout_bound: true`
-                # would 500 the whole page instead of degrading to "unknown"
-                # on one descriptive field.
-                fanout_bound=(
-                    row["fanout_bound"]
-                    if isinstance(row.get("fanout_bound"), int)
-                    and not isinstance(row.get("fanout_bound"), bool)
-                    else None
-                ),
+                fanout_bound=_descriptive(row, "fanout_bound", _ADMIN_DESCRIPTIVE),
                 pref_count=len(rows_for_agent),
                 pref_differs_from_default_count=sum(
                     1
