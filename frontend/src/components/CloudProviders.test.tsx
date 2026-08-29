@@ -106,6 +106,46 @@ describe("CloudProviders", () => {
     expect(screen.getByTestId("provider-late")).toBeInTheDocument();
   });
 
+  it("REMOUNTS its children when a registration lands late", () => {
+    // The cost of the line above, pinned. Adding a provider changes the
+    // element type at this position — `<>{children}</>` becomes
+    // `<Provider>{children}</Provider>` — so React unmounts the old subtree
+    // and mounts a new one, discarding all of its state. In the composed
+    // build that subtree is the ENTIRE authenticated tree.
+    //
+    // Nothing here is a defect to fix: you cannot wrap a subtree in a
+    // provider without changing its parent, and the production ordering
+    // makes it moot (`cloud-extensions-boot` registers via a *static*
+    // import, evaluated before hydration, so the slot is full on first
+    // render). This test exists so that the invariant that makes it moot —
+    // "the boot import stays static" — has a failing test behind it instead
+    // of only a design note. See `docs/composed-cloud-build.md`.
+    let mounts = 0;
+    function StatefulChild() {
+      React.useEffect(() => {
+        mounts += 1;
+      }, []);
+      return <div data-testid="stateful">child</div>;
+    }
+
+    render(
+      <CloudProviders>
+        <StatefulChild />
+      </CloudProviders>
+    );
+    expect(mounts).toBe(1);
+
+    act(() => {
+      registerCloudExtensions({
+        providers: { remountProvider: makeProvider("remount") },
+      });
+    });
+
+    // A second mount, not a re-render: the child was torn down and rebuilt.
+    expect(mounts).toBe(2);
+    expect(screen.getByTestId("stateful")).toBeInTheDocument();
+  });
+
   it("hands out a reference-stable snapshot between registrations", () => {
     registerCloudExtensions({ providers: { s1: makeProvider("s1") } });
     const first = getProviders();

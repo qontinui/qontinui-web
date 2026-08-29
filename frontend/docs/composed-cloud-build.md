@@ -324,6 +324,18 @@ An effect-driven import resolves after first paint, which would make
 consumer to grow a loading state that can flash the wrong UI. A static import
 in a client module evaluates during the initial bundle load, before hydration.
 
+Since the `providers` slot landed, the stakes are higher than a flash. A
+provider arriving late does not leave a leaf slot empty for a moment — it
+changes the element type at the top of the authenticated tree, because
+`CloudProviders` goes from rendering `<>{children}</>` to
+`<Provider>{children}</Provider>`. React reconciles that as a different node,
+so it unmounts the entire authenticated subtree and mounts a fresh one,
+discarding every piece of component state in it. There is no way to wrap a
+subtree in a provider without changing its parent, so the static import is
+not an optimisation here: it is what keeps the case from arising at all.
+`CloudProviders.test.tsx` pins the remount, so switching the boot import back
+to an effect fails a test rather than shipping a state-losing reload.
+
 **Why a link and not a copy.** One source of truth, so editing
 `qontinui-cloud-control` is picked up by the next build with no re-sync and no
 stale-copy failure mode. `next.config.mjs` carries a warning that SWC cannot

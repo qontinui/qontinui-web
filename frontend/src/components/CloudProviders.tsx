@@ -23,6 +23,19 @@ import { useSlotProviders } from "@/lib/extension-slots";
  * OUTERMOST, so a later provider may read an earlier one's context. Cloud
  * packages that care must register in dependency order.
  *
+ * A LATE registration REMOUNTS everything below. Adding a provider changes
+ * the element type at that position — `<>{children}</>` becomes
+ * `<Provider>{children}</Provider>` — so React tears the old subtree down
+ * and builds a new one, discarding its state. Here that subtree is the whole
+ * authenticated tree. This is not fixable (wrapping a subtree in a provider
+ * *is* changing its parent) and in production it never happens: the boot
+ * import in `cloud-extensions-boot.tsx` is a STATIC import evaluated before
+ * hydration, so the slot is already full on the first render. That static
+ * import is therefore load-bearing for more than slot latency — see
+ * `docs/composed-cloud-build.md`, "Why the boot import is static". The
+ * remount is pinned by a test in `CloudProviders.test.tsx` so the invariant
+ * fails loudly rather than silently.
+ *
  * Each provider is mounted directly, WITHOUT a fault boundary. That is
  * deliberate: a provider is infrastructure for the subtree beneath it, so
  * swallowing its failure would leave every consumer reading a missing context
