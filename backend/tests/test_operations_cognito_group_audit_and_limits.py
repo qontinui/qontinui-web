@@ -432,12 +432,27 @@ class TestTheAuditRowMatchesTheMigration:
         Asserting the literal ``down_revision`` would be worse than useless:
         coord re-points it at the live merged head when the PR lands, so a
         literal assertion is a test written to break on the merge commit.
-        Ask the graph instead."""
+        Ask the graph instead.
+
+        That reasoning applies to the HEAD identity too, and this test used to
+        assert ``get_heads() == ["cgaudit_01"]`` — which fails the moment any
+        later revision stacks on this one, exactly as `pdann_01` does. Being
+        the head is not a property this migration owns; a revision stops being
+        the head as soon as the next one lands, and that is the normal case,
+        not a regression. The invariants that actually belong here are that the
+        graph has ONE head and that this revision is on the chain leading to
+        it — both strictly stronger than the identity check, and neither
+        breaks when somebody stacks on top."""
         from alembic.config import Config
         from alembic.script import ScriptDirectory
 
         script = ScriptDirectory.from_config(Config("alembic.ini"))
-        assert script.get_heads() == ["cgaudit_01"]
+        heads = script.get_heads()
+        assert len(heads) == 1, f"revision graph forked: {heads}"
+        # ...this revision is on that single chain, not stranded on a branch
+        # the head cannot reach...
+        chain = {rev.revision for rev in script.iterate_revisions(heads[0], "base")}
+        assert "cgaudit_01" in chain
         # ...and it is genuinely reachable from the base, not an island.
         assert script.get_revision("cgaudit_01").down_revision is not None
 
