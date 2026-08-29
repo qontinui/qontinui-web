@@ -302,6 +302,34 @@ class TestClaimsAlerts:
         # Passed through verbatim — no Python-side re-filtering.
         assert resp.json() == coord_payload
 
+    def test_asks_for_coords_maximum_page_rather_than_its_default(
+        self, auth_client: TestClient
+    ):
+        """The page size is EXPLICIT, because coord's default moved.
+
+        This endpoint sent no ``limit``, so it inherited coord's default —
+        and the coord half of the same plan dropped that default from 500
+        to 100 when it added paging. The narrowing lives in another repo
+        and produces no signal here, so the only thing that can pin it is
+        an assertion on the outgoing request.
+
+        It matters because the single consumer (``AgentClaimsDashboard``'s
+        stale-claim section) neither pages nor reads ``total_count``: above
+        the ceiling it renders a truncated list as the whole truth, which
+        is the defect this plan exists to kill.
+        """
+        mock_resp = _mock_response(json_data={"alerts": []})
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = mock_resp
+            _configure_mock_client(MockClient, instance)
+            resp = auth_client.get(f"{API_PREFIX}/claims/alerts")
+        assert resp.status_code == 200
+        called_params = instance.get.call_args.kwargs.get("params", {})
+        # coord's documented hard maximum; it clamps rather than erroring,
+        # so this stays safe even if that ceiling is lowered later.
+        assert called_params.get("limit") == 1000
+
     def test_no_python_side_filtering(self, auth_client: TestClient):
         """Whatever coord returns is what the caller gets.
 

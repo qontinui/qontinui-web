@@ -39,7 +39,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import {
   classifyFreshness,
   formatAge,

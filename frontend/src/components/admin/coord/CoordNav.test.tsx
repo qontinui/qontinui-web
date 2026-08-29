@@ -28,7 +28,7 @@
  *    exactly like a healthy one
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -446,6 +446,77 @@ describe("CoordNav", () => {
     expect(
       screen.queryByTestId("coord-nav-notifications-badge")
     ).not.toBeInTheDocument();
+  });
+
+  describe("polling is gated on tab visibility", () => {
+    /**
+     * The nav renders on every console page, so these two badges are the
+     * widest-reach pollers in the app. `/admin/coord/alerts` gates its own two
+     * pollers and `RedMainBanner` gates its one; this nav was the third the
+     * alerts page's comment names and the only one still ticking behind a
+     * hidden tab.
+     *
+     * Asserted through `document.visibilityState` rather than through a
+     * request count alone, because "no requests fired" is also what a broken
+     * poller looks like — the catch-up leg is what tells the two apart.
+     */
+    function setVisibility(state: "visible" | "hidden") {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => state,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+
+    afterEach(() => {
+      // Hand the property back, or every later test in the file inherits a
+      // hidden document.
+      delete (document as unknown as Record<string, unknown>).visibilityState;
+    });
+
+    it("skips ticks while the tab is hidden, and catches up when it returns", async () => {
+      httpGet.mockResolvedValue({ alerts: [], total_count: 3 });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        // The INITIAL fetch is the caller's job and always runs, so a tab that
+        // mounts hidden still has a badge when it is revealed.
+        await waitFor(() => expect(httpGet).toHaveBeenCalled());
+        const afterMount = httpGet.mock.calls.length;
+
+        setVisibility("hidden");
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+        expect(
+          httpGet.mock.calls.length,
+          "a hidden tab must not bill a request"
+        ).toBe(afterMount);
+
+        setVisibility("visible");
+        await waitFor(() =>
+          expect(httpGet.mock.calls.length).toBeGreaterThan(afterMount)
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("still polls on the interval while the tab is visible", async () => {
+      httpGet.mockResolvedValue({ alerts: [], total_count: 3 });
+      setVisibility("visible");
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await waitFor(() => expect(httpGet).toHaveBeenCalled());
+        const afterMount = httpGet.mock.calls.length;
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(httpGet.mock.calls.length).toBeGreaterThan(afterMount)
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe("Notifications badge", () => {

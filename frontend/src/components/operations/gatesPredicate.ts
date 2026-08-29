@@ -11,6 +11,11 @@
 // the web hasn't been taught about still shows up legibly.
 // ============================================================================
 
+// Subpath, not the `@/components/console` barrel: this module is pure (no
+// React, no route catalogue) and `console/time` imports nothing, so the edge
+// costs nothing. The barrel would pull the whole primitive set in behind it.
+import { relativeTime } from "@/components/console/time";
+
 import type { ContinuationSpawn, GatePredicate, GateRow } from "./types";
 
 /** Max characters of the continuation prompt's first line shown in the summary. */
@@ -301,22 +306,16 @@ export interface ContinuationLifecycle {
   accent: ContinuationLifecycleAccent;
 }
 
-/** Compact "Ns/Nm/Nh/Nd ago" — a local copy of `utils.relativeTime`'s shape so
- *  this module stays pure (no util import) and the test is deterministic via the
- *  injectable `now`. `null`/unparseable → "an unknown time ago". */
+/** Compact "Ns/Nm/Nh/Nd ago"; `null`/unparseable → "an unknown time ago".
+ *
+ *  This used to be a local copy of `utils.relativeTime`'s shape, for two stated
+ *  reasons: keeping this module free of a `utils` import (that module is the
+ *  merge-train route catalogue, with a runtime dependency on `api-config`), and
+ *  needing a deterministic `now`. Both now hold against `console/time`, which
+ *  imports nothing and takes an injectable clock — so this delegates instead of
+ *  duplicating. */
 function relativeAgo(iso: string, now: number): string {
-  const then = new Date(iso).getTime();
-  const diffMs = now - then;
-  if (Number.isNaN(diffMs)) return "an unknown time ago";
-  if (diffMs < 0) return "just now";
-  const seconds = Math.floor(diffMs / 1_000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return relativeTime(iso, { now, absent: "an unknown time ago" });
 }
 
 /** The lifecycle stamps this reads — a structural subset of `GateRow` so the
