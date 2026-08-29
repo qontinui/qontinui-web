@@ -1374,6 +1374,26 @@ that one object per surface rather than four loose constants, and Phase 1's
 `console/attention.ts` (`paletteDisagreements`) makes the agreement assertion
 itself shared — see §3.2.
 
+**…and it enrols in the registry: add one row to `CONSOLE_PALETTES` in
+`console/consoleSurfaces.ts`**, naming the module that DECLARES the table.
+This is not optional politeness. `consoleSurfaces.test.ts` scans the console's
+source for attention tables and asserts set-equality against that registry in
+both directions, so a surface that skips the row fails CI, and a row pointing
+at a module that was renamed fails too. The registry used to live inside
+`attention.test.ts` and enrolment used to be manual — which is how seven
+palettes across Waves 1 and 2 came to be audited only beside themselves.
+
+**Nothing but `console/statusRow.tsx` may spell an R3 literal.** The same file
+carries a second scan: within `components/console/`, `components/admin/coord/`,
+`components/operations/` and `app/(app)/admin/coord/`, no module may contain a
+string byte-equal to — or an *opacity-drifted near-miss of* — `AUTHOR_RED`,
+`WAITING_AMBER` or `UNKNOWN_AMBER`. Import them. §4.1 always said this; the
+scan is what makes it true, and it found ten violations the first time it ran,
+one of them a genuine `/30`-against-`/35` drift. The near-miss half matters
+most for the two ambers, which differ *only* in a background opacity while
+saying different things — so a hand-spelled amber is a coin flip between two
+claims, not mere duplication.
+
 ### 4.3 Known gap — the palette is not tokenised
 
 The families above are **raw Tailwind literals in one component**.
@@ -1434,6 +1454,7 @@ so each has one home, and this table says plainly which ones actually gate a PR.
 | **Executable** — the primitives every console page composes from | `frontend/src/components/console/` (+ `index.ts` barrel), built on `console/statusRow.tsx` | The type system + unit tests. **This is the real style guide**: a page either uses `<RecordRow>` or it doesn't | **Yes** — `tsc` + `vitest` |
 | **Declarative atoms** — density and palette as CSS-property rules | `frontend/src/config/qontinui-web.styleguide.uibridge.json` (`rules[]`) | **Nothing. There is no evaluator for this file anywhere in the fleet.** | **No** |
 | **CI-enforced atoms** — what actually bites | `frontend/tests/e2e/style-gate/specs/<id>.json` + `baselines/<id>.json`, per route in `routes.json` | The `Style Gate (shadow)` workflow (`.github/workflows/style-gate.yml`), running `vision-audit` pinned by `style-gate.lock` | **Yes, but indirectly** — the workflow is *not* a required check; coord's `ci-not-green` predicate is what holds the PR. See §6.2 |
+| **Lint** — the shapes that must not come back | `frontend/eslint-rules/no-fat-record-card.mjs` (+ its `.test.mjs` fixtures) | ESLint, via the local `@qontinui-web` plugin. Bans a bordered, padded card rendered **per record** under `admin/coord/**` — R2's opposite | **Yes** — `npm run lint --max-warnings 0` |
 
 ### 6.1 The declarative layer has no evaluator — say so, do not imply otherwise
 
