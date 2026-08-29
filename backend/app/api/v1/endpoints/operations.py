@@ -4031,6 +4031,33 @@ async def get_fleet_resource_samples(
       §D1 control that validates and versions with no consumer). It must
       reach the browser as null so it can render "set, not enforced"
       instead of inheriting a verb it does not have.
+    * The **saturation** fields — ``threads_max``, ``threads_used``,
+      ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic
+      ``fleet_res_tel_04``, qontinui-web#1104) — are a THIRD axis, and
+      the only one that is instrumentally independent of memory. On
+      2026-08-27 a container sat at 190,840 of a 192,146 kernel thread
+      ceiling (99.3%), no ``fork()`` on the box could succeed, and every
+      memory and disk figure this route returned was green *and
+      accurate*: they were all measuring a resource that had not run
+      out. Passed through untouched like everything else here, and with
+      the same rule doing more work than usual — **NULL must stay NULL**.
+      A fabricated ``0`` does not merely misreport on this axis, it
+      inverts the reading: ``threads_used = 0`` renders as *perfectly
+      idle* on the one column built to catch a saturated box, and a
+      ``NULLS LAST`` ranking would then promote the blind machine to the
+      front of the dispatch queue.
+    * ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |
+      null) is not bookkeeping and must not be dropped as a label: a
+      cgroup counts **tasks (threads)** and ``/proc`` counts
+      **thread-group leaders**, which coord's own ``process_health.rs``
+      records as "different quantities" — they can differ by an order of
+      magnitude. A publisher that probes the cgroup, fails, and falls
+      back to ``/proc`` emits a number whose meaning changed with
+      nothing else in the row saying so. It carries no CHECK in the
+      schema (an unrecognised provenance label would otherwise fail the
+      whole INSERT and discard the memory and disk metrics on the same
+      row), so an unexpected value reaches the browser and renders as an
+      explicit unknown rather than being coerced here.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
