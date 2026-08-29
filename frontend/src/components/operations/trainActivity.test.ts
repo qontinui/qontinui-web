@@ -6,6 +6,7 @@ import {
   fallbackMergeStatus,
   formatDuration,
   perRepoCapHint,
+  slotScopeNote,
 } from "./trainActivity";
 import { redactSecrets } from "./mergeTypes";
 import type { PrRow, ProposalDetail, TrainHealth } from "./mergeTypes";
@@ -1366,6 +1367,133 @@ describe("slot-cap saturation", () => {
     expect(s.slots).toBeNull();
     expect(s.banners.map((b) => b.code)).not.toContain("slots-saturated");
     expect(s.banners.map((b) => b.code)).not.toContain("repo-cap-starved");
+  });
+
+  // --- occupancy_over_cap: the invariant tripwire nothing was reading. ------
+  // coord always serializes it and documents it as having to read 0 forever.
+  // Unread, the console rendered the impossible `4/3` as an ordinary ratio and
+  // repeated the silence the Prometheus gauge already kept through three
+  // incidents.
+
+  it("raises a blocking banner when the slot count exceeds the ceiling", () => {
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          configured_cap: 3,
+          effective_cap: 3,
+          occupied: 4,
+          occupancy_over_cap: 1,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "occupancy-over-cap");
+    expect(b?.severity).toBe("blocking");
+    expect(b?.detail).toContain("4 permit-holding proposals");
+    expect(b?.detail).toContain("ceiling of 3");
+    expect(b?.detail).toContain("coord defect");
+  });
+
+  it("ranks the tripwire above the capacity readings it undermines", () => {
+    // Every slot number on the tab comes from the suspect count, so an
+    // operator must read "these numbers are wrong" before "the train is at
+    // capacity" — otherwise they chase a throughput ceiling that may not exist.
+    const s = buildTrainSummary(
+      { slots: slots({ occupied: 4, occupancy_over_cap: 1 }) },
+      [],
+      NOW
+    );
+    const codes = s.banners.map((b) => b.code);
+    expect(codes.indexOf("occupancy-over-cap")).toBeLessThan(
+      codes.indexOf("slots-saturated")
+    );
+  });
+
+  it("stays silent on a healthy invariant and on a coord that omits it", () => {
+    // 0 is coord ASSERTING the invariant holds; absence is an older producer
+    // saying nothing. Neither may raise the banner — and absence must not be
+    // back-derived from `occupied > configured_cap`, which is coord's
+    // comparison to make, not ours.
+    for (const over of [
+      { occupancy_over_cap: 0 },
+      { occupancy_over_cap: undefined },
+    ]) {
+      const s = buildTrainSummary({ slots: slots(over) }, [], NOW);
+      expect(s.banners.map((b) => b.code)).not.toContain("occupancy-over-cap");
+    }
+  });
+
+  // --- tenant_scoped: the scope the Slots stat used to assert wrongly. ------
+  // `/pr-merge/health` observes with `Some(tenant_id)` ALWAYS, so under any
+  // coord that reports the field the cap is the TENANT's while the occupancy
+  // beside it stays fleet-wide. The stat hardcoded "occupancy and cap are
+  // fleet-wide", pairing a fleet-wide numerator with a tenant-scoped
+  // denominator — the same shape as quoting a configured per-repo cap beside a
+  // flag derived against a narrowed one.
+
+  it("says the cap is the tenant's when coord scoped the observation", () => {
+    const note = slotScopeNote(slots({ tenant_scoped: true }));
+    expect(note).toContain("Occupancy is fleet-wide");
+    expect(note).toContain("YOUR TENANT's");
+  });
+
+  it("says both are fleet-wide only when coord reports an untenanted read", () => {
+    const note = slotScopeNote(slots({ tenant_scoped: false }));
+    expect(note).toContain("both fleet-wide");
+  });
+
+  it("reports the scope as unknown when coord omits tenant_scoped", () => {
+    // Absence is UNKNOWN, not fleet-wide. Picking either scope on no evidence
+    // is the absence-as-fact error the whole module exists to avoid.
+    const note = slotScopeNote(slots());
+    expect(note).toContain("unknown");
+    expect(note).not.toContain("YOUR TENANT's");
+    expect(note).not.toContain("both fleet-wide");
+  });
+
+  it("names the tenant's own fleet when its dynamic cap collapses to 0", () => {
+    // Scope changes the remedy and the blast radius: tenanted, the runners to
+    // bring back are the tenant's own and other tenants keep landing.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          dynamic: true,
+          effective_cap: 0,
+          occupied: 0,
+          online_ci_runners: 0,
+          tenant_scoped: true,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "no-ci-runners");
+    expect(b?.detail).toContain("YOUR TENANT's runners");
+    expect(b?.detail).toContain("other tenants may be landing normally");
+  });
+
+  it("keeps the no-runners copy unchanged when the scope is unknown", () => {
+    // A coord too old to report the scope must not have a tenant claim put in
+    // its mouth — the copy is byte-identical to before the field existed.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          dynamic: true,
+          effective_cap: 0,
+          occupied: 0,
+          online_ci_runners: 0,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "no-ci-runners");
+    expect(b?.detail).toBe(
+      `The slot cap is dynamic (COORD_MERGE_SLOT_CAP_DYNAMIC=1) and no CI ` +
+        `runner is online, so the effective cap is 0 — the train cannot ` +
+        `dispatch anything at all, regardless of how many PRs are ready.`
+    );
   });
 });
 
