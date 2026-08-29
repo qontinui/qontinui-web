@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { SessionsApiError } from "./api";
 import { SessionsConsole } from "./SessionsConsole";
 import type {
   ConsolidatedSessionRow,
@@ -78,6 +79,33 @@ function envelope(
   };
 }
 
+/**
+ * The reads an OPEN row makes. Stubbed by default so a collapsed-row test
+ * never touches the network, and so the "nothing fetches while shut" assertion
+ * has something to count.
+ */
+function stubReaders() {
+  return {
+    coordinationReaders: {
+      claims: vi.fn(async () => ({ claims: [], count: 0 })),
+      agents: vi.fn(async () => ({ agents: [], count: 0 })),
+      lineage: vi.fn(async () => ({ session_id: "s", actions: [] })),
+    },
+    readOutput: vi.fn(async () => ({
+      session_id: "s",
+      tier: "warm",
+      chunks: [],
+      count: 0,
+    })),
+    listArtifacts: vi.fn(async () => ({
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 10,
+    })),
+  };
+}
+
 function mount(
   response: ConsolidatedSessionsResponse | Error,
   props: Partial<React.ComponentProps<typeof SessionsConsole>> = {}
@@ -86,12 +114,14 @@ function mount(
     if (response instanceof Error) throw response;
     return response;
   });
+  const stubs = stubReaders();
   render(
     <SessionsConsole
       pollEnabled={false}
       now={NOW}
       fetcher={fetcher as never}
       hostnameFor={(id) => (id === "dev-a" ? "alpha" : "beta")}
+      {...(stubs as never)}
       {...props}
     />
   );
@@ -310,5 +340,207 @@ describe("the request", () => {
     const fetcher = mount(envelope([]));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(fetcher.mock.calls[0][0].status).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 — D3: the detail expands IN PLACE, with all five slots
+// ---------------------------------------------------------------------------
+
+describe("D3 — the expansion", () => {
+  it("renders BELOW the row it belongs to, not as a slide-over", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+    const detail = await screen.findByTestId("sessions-console-detail");
+    // R5: the panel is a CHILD of the row, sharing its border. A sheet would
+    // be a sibling of the list, portalled to the document body.
+    expect(row.contains(detail)).toBe(true);
+  });
+
+  it("fills all five RecordDetail slots — why, problems, actions, history, raw", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+    const detail = await screen.findByTestId("sessions-console-detail");
+
+    expect(detail).toHaveTextContent(/Both halves/i); // why
+    expect(
+      within(detail).getByTestId("sessions-console-detail-coordination")
+    ).toBeInTheDocument(); // problems
+    expect(
+      within(detail).getByTestId("sessions-console-open-full")
+    ).toHaveAttribute("href", `/sessions/${LINKED.id}`); // actions
+    expect(
+      within(detail).getByTestId("sessions-console-detail-lineage")
+    ).toBeInTheDocument(); // history
+    expect(detail).toHaveTextContent("row_class"); // raw
+  });
+
+  it("makes NO coordination read while the row is shut", async () => {
+    const stubs = stubReaders();
+    render(
+      <SessionsConsole
+        pollEnabled={false}
+        now={NOW}
+        fetcher={(async () => envelope([LINKED])) as never}
+        {...(stubs as never)}
+      />
+    );
+    await screen.findAllByTestId("sessions-console-row");
+    expect(stubs.coordinationReaders.claims).not.toHaveBeenCalled();
+    expect(stubs.readOutput).not.toHaveBeenCalled();
+    expect(stubs.listArtifacts).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes 'coord answered none' from 'the read did not land'", async () => {
+    const stubs = stubReaders();
+    stubs.coordinationReaders.agents = vi.fn(async () => {
+      throw new SessionsApiError("GET /agent-status failed: 502", 502);
+    }) as never;
+    render(
+      <SessionsConsole
+        pollEnabled={false}
+        now={NOW}
+        fetcher={(async () => envelope([LINKED])) as never}
+        {...(stubs as never)}
+      />
+    );
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+
+    // The claims read ANSWERED with an empty list — that is data.
+    const claims = await screen.findByTestId("sessions-console-detail-claims");
+    await waitFor(() =>
+      expect(claims).toHaveTextContent(/coord answered: this session holds no claims/i)
+    );
+    // The agent-status read did NOT land — that is a dash and a sentence.
+    const agents = screen.getByTestId("sessions-console-detail-agent-status");
+    await waitFor(() => expect(agents).toHaveTextContent("–"));
+    expect(agents).toHaveTextContent(/unknown, not idle/i);
+    expect(agents.textContent).not.toMatch(/^0$|\bfalse\b/i);
+  });
+
+  it("a lifecycle_only row's lineage slot says NOT APPLICABLE, never empty", async () => {
+    mount(envelope([LIFECYCLE_ONLY]));
+    const row = await rowFor(LIFECYCLE_ONLY.id);
+    await userEvent.click(within(row).getByRole("button"));
+    const na = await screen.findByTestId("sessions-console-detail-lineage-na");
+    expect(na).toHaveTextContent(/Not applicable/i);
+    expect(na.textContent).not.toMatch(/\bnone\b|^0$/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 — BOTH transcript stores, and the per-row indicator
+// ---------------------------------------------------------------------------
+
+describe("the two transcript stores", () => {
+  it("the per-row indicator is – until probed — unknown, not 'no transcript'", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    const cell = within(row).getByTestId("sessions-console-row-transcript");
+    expect(cell).toHaveTextContent("–");
+    expect(cell.textContent).not.toMatch(/closed|false|^0$/i);
+    expect(within(cell).getByTestId("sessions-console-unknown")).toHaveAttribute(
+      "title",
+      expect.stringContaining("not probed")
+    );
+  });
+
+  it("reports the coord tier once the row is opened", async () => {
+    const stubs = stubReaders();
+    stubs.readOutput = vi.fn(async () => ({
+      session_id: "s",
+      tier: "warm",
+      chunks: [{ chunk_offset: 0, payload_b64: "aGk=" }],
+      count: 1,
+    })) as never;
+    render(
+      <SessionsConsole
+        pollEnabled={false}
+        now={NOW}
+        fetcher={(async () => envelope([LINKED])) as never}
+        {...(stubs as never)}
+      />
+    );
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+    await waitFor(() =>
+      expect(
+        within(row).getByTestId("sessions-console-row-transcript")
+      ).toHaveTextContent("warm")
+    );
+  });
+
+  it("links the PERMANENT copy — the forward half of the round trip", async () => {
+    const stubs = stubReaders();
+    stubs.listArtifacts = vi.fn(async () => ({
+      items: [
+        {
+          id: "artifact-9",
+          claude_session_id: "agent-1",
+          account_label: "work",
+          coord_session_id: LINKED.id,
+          body_source: "disk_verbatim",
+          content_sha256: "abc",
+          turn_count: 12,
+          byte_count: 99,
+          last_activity_at: null,
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 10,
+    })) as never;
+    render(
+      <SessionsConsole
+        pollEnabled={false}
+        now={NOW}
+        fetcher={(async () => envelope([LINKED])) as never}
+        {...(stubs as never)}
+      />
+    );
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+
+    const links = await screen.findByTestId("session-transcript-archive-links");
+    expect(within(links).getByRole("link")).toHaveAttribute(
+      "href",
+      "/sessions/repository/artifact-9"
+    );
+    // It is looked up by the archive's OWN identity column, not the coord id.
+    expect(stubs.listArtifacts).toHaveBeenCalledWith(
+      expect.objectContaining({ claudeSessionId: "agent-1" })
+    );
+  });
+
+  it("a session with no archived row renders –, NOT 'no transcript'", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+
+    const state = await screen.findByTestId("session-transcript-archive-state");
+    await waitFor(() => expect(state).toHaveTextContent("–"));
+    expect(state.textContent).not.toMatch(/closed|false|^0$/i);
+    expect(state).toHaveAttribute(
+      "title",
+      expect.stringContaining("holds no row")
+    );
+    expect(screen.queryByTestId("session-transcript-archive-links")).toBeNull();
+  });
+
+  it("keeps the two stores as TWO — coord's stream is not the archive", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    await userEvent.click(within(row).getByRole("button"));
+    const stores = await screen.findByTestId("session-transcript-stores");
+    expect(
+      within(stores).getByTestId("session-transcript-live")
+    ).toHaveTextContent(/coord/i);
+    expect(
+      within(stores).getByTestId("session-transcript-archive")
+    ).toHaveTextContent(/qontinui-web/i);
+    expect(stores).toHaveTextContent(/7 days/i);
   });
 });
