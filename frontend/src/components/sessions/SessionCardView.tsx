@@ -10,8 +10,8 @@
  * route alone. Plan `2026-08-26-sessions-console-consolidation.md` D5 requires
  * it on the merged `/sessions/[key]` view, and the honest way to put it there
  * is to move the one component both pages render rather than to grow a second
- * copy that drifts. The environments page now imports it; Phase 3 deletes that
- * page, and this component survives.
+ * copy that drifts. Phase 3 deleted that page (it 308s to `/sessions/[key]`
+ * now); this component survived, and `/sessions/[key]` is its only caller.
  *
  * `twin-session-card` is carried forward **verbatim** — Spec-CI asserts on it
  * (trap 5), and a testid must not be renamed in the PR that moves what it
@@ -19,8 +19,9 @@
  *
  * The only addition is {@link SessionCardViewProps.archiveSlot}: the merged
  * page renders the PERMANENT transcript store beside coord's live one there
- * (§1 — there are two stores and they are different things). The environments
- * page passes nothing and renders exactly what it rendered before.
+ * (§1 — there are two stores and they are different things). It is optional,
+ * which is what let the environments page keep rendering exactly what it
+ * rendered before for the one phase it outlived the extraction.
  */
 
 import type { ReactNode } from "react";
