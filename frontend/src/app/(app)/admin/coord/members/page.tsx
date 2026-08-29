@@ -886,7 +886,18 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as GroupTenantRolesResponse;
-      setRows(json.group_tenant_roles ?? []);
+      // A successful STATUS is not a successful READ — the same rule the
+      // blast-radius read of this SAME endpoint applies below. `?? []` is dead
+      // per the types (`group_tenant_roles` is declared non-optional) and live
+      // at runtime, and what it fabricates is "No mappings yet." from a body
+      // that never carried the table. It also stops a non-array body reaching
+      // `rows.map()` at the render site, where `.length` succeeds on a string
+      // and `.map` then throws, taking the panel down.
+      const next = json?.group_tenant_roles;
+      if (!Array.isArray(next)) {
+        throw new Error("malformed group-tenant-roles payload");
+      }
+      setRows(next);
     } catch (err) {
       log.warn("load group-tenant-roles failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -1028,9 +1039,23 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       defaultOpen={false}
       storageKey="coord-members-group-roles"
       summary={(
-        <Badge variant="outline" className="font-mono text-[11px]">
+        <Badge
+          variant="outline"
+          className={`font-mono text-[11px]${
+            error ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-group-roles-summary"
+        >
           <span className="font-normal text-muted-foreground">mappings&nbsp;</span>
-          {loading ? "–" : rows.length}
+          {/* `rows.length` is 0 both when the read said "none" and when it
+              FAILED, and this panel is `defaultOpen={false}` — so the error
+              text below is hidden and this badge is the whole story an
+              operator gets. Printing `0` there states the most reassuring
+              possible answer on the strength of a read that did not land. The
+              comment above says the count is here precisely so an empty set
+              can be noticed WITHOUT opening; that is exactly what makes the
+              false `0` worth closing. */}
+          {loading ? "–" : error ? "unknown" : rows.length}
         </Badge>
       )}
       contentClassName="space-y-4"
@@ -1859,7 +1884,15 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as CognitoGroupsResponse;
-      setGroups(json.groups ?? []);
+      // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
+      // not the list is UNKNOWN, not "no groups". `?? []` would render "No
+      // Cognito groups yet." for a pool that may be full of them, and a
+      // non-array body would reach `groups.map()` below and throw.
+      const next = json?.groups;
+      if (!Array.isArray(next)) {
+        throw new Error("malformed cognito groups payload");
+      }
+      setGroups(next);
     } catch (err) {
       log.warn("load cognito groups failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -2011,9 +2044,19 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       defaultOpen={false}
       storageKey="coord-members-cognito-groups"
       summary={(
-        <Badge variant="outline" className="font-mono text-[11px]">
+        <Badge
+          variant="outline"
+          className={`font-mono text-[11px]${
+            error ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-cognito-groups-summary"
+        >
           <span className="font-normal text-muted-foreground">groups&nbsp;</span>
-          {loading ? "–" : groups.length}
+          {/* A failed read must not print `groups 0` on a collapsed panel —
+              see the mappings badge above. This is the section that carries
+              the pool-wide Delete, so "there is nothing here" is the last
+              thing it should assert on a read that never landed. */}
+          {loading ? "–" : error ? "unknown" : groups.length}
         </Badge>
       )}
       contentClassName="space-y-4"
