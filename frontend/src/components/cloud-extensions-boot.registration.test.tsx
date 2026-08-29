@@ -88,14 +88,18 @@ describe("cloud-control extension registration", () => {
         expect(slots.getProvider(name), `provider slot ${name}`).toBeDefined();
       }
 
-      // `getProvider` proves the NAME arrived; `getProviders` proves the
-      // registration also reached the array `CloudProviders` actually
-      // mounts from. They are rebuilt at different moments (the Map on
-      // `set`, the array once per `registerCloudExtensions` call), so a
-      // by-name hit does not imply a mountable one.
-      expect(slots.getProviders().length).toBeGreaterThanOrEqual(
-        CLOUD_PROVIDERS.length
-      );
+      // `getProvider` proves each NAME arrived; `getProviders` proves the
+      // registration also reached the array `CloudProviders` actually mounts
+      // from. `registerCloudExtensions` fills the Map and rebuilds that array
+      // in two separate statements, and only the Map write is unconditional —
+      // so a refactor that updates one and not the other leaves every by-name
+      // check green while nothing mounts.
+      //
+      // Exact, not `>=`, for the reason stated at the top of this file: a
+      // provider added to cloud-control's `index.ts` and not listed here must
+      // be visible. This is the composed-shape mirror of the OSS case's
+      // `toHaveLength(0)`.
+      expect(slots.getProviders()).toHaveLength(CLOUD_PROVIDERS.length);
     },
     // This import pulls cloud-control's whole module graph (~45 raw .ts/.tsx
     // files) through vite's transform on demand. That is ~20s on a warm run
