@@ -510,6 +510,27 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > from the list, and every surface derived from that list has to consult it —
 > `RecordList`'s `empty` slot included. `loading` cannot stand in for it.
 
+> **And "fetched and failed" is still not the last case: a read can SUCCEED and
+> not carry the number.** `loaded` true, no error, count still `null` — a state
+> the two clauses above both step over, because both are about a read that did
+> not produce an answer, and this is a read that produced a *partial* one.
+> Reached whenever a page guards its envelope (`if (typeof body.x ===
+> "number")`, the correct way to treat an absent scalar as UNKNOWN) while
+> flipping `loaded` on the response as a whole — a coord build that predates the
+> field, or a partial degrade, lands there. `/admin/coord/notifications` shipped
+> exactly that: `deriveNotificationsHealth` wrote `unreadCount ?? 0` and painted
+> a GREEN strip headlined *"Nothing unread"* with the detail *"you have seen
+> everything coord recorded"*, one element away from its own badge correctly
+> reading `–`.
+>
+> The rule that covers all three: **`?? 0` on a value whose `null` means UNKNOWN
+> is the bug, wherever it appears** — and a strip's `level`, `headline` and
+> `detail` are consumers of that value exactly as much as the badge is. A badge
+> that says `–` beside a headline that says "nothing" has not applied R6; it has
+> applied it to the one element where the dash was easy. Derive every part of a
+> strip from the same `null`, and scalars are **independent** — a missing
+> `unread_count` does not make a `total` you were sent unknown.
+
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
 composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved
