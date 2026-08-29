@@ -1,7 +1,7 @@
 """cognito group admin audit table (pool-wide group + membership changes)
 
 Revision ID: cgaudit_01
-Revises: ffland_headsync_01
+Revises: coord_agent_questions_audience
 Create Date: 2026-08-27
 
 Plan ``2026-08-27-members-page-delete-paths-authorization-and-blast-radius``
@@ -48,7 +48,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "cgaudit_01"
-down_revision: str = "ffland_headsync_01"
+down_revision: str = "coord_agent_questions_audience"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
