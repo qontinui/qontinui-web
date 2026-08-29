@@ -44,6 +44,20 @@
  * filtered by the selection. Derived per-response they would collapse to the
  * one selected kind and a second could never be added, so the fallback
  * ACCUMULATES every kind ever seen (`seenKinds`) instead.
+ *
+ * `kinds` HAS THREE STATES, and reading it as two is the same mistake one
+ * level down. Coord serves a list, an EMPTY list (it looked; this tenant has
+ * no alerts in scope), or `null` (un-upgraded build, continuation page, or a
+ * failed `DISTINCT kind` query) — and says so itself: "`null` on failure,
+ * same UNKNOWN-not-empty rule". Keying "is it served?" on the list's LENGTH
+ * collapsed the first two, so a fleet with nothing wrong — the state the page
+ * is meant to reward — was told its coord build does not serve the kind list.
+ * The predicate is presence, exactly as `total_count`'s already is.
+ *
+ * `unknown_kinds` is the other half of that contract: the selected kinds
+ * coord could match against neither its registry nor the live table. It is
+ * why an empty result can name its own cause instead of rendering as a bare
+ * "No alerts matching filters."
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -97,20 +111,64 @@ interface AlertsResponse {
   total_count?: number;
   /** Opaque keyset cursor for the next page; absent/null on the last page. */
   next_cursor?: string | null;
-  /** The distinct kind vocabulary, served so the filter cannot rot. */
-  kinds?: Array<string | { kind?: string }>;
+  /**
+   * The distinct kind vocabulary, served so the filter cannot rot.
+   *
+   * THREE states on the wire, and they are not two: a list (the vocabulary),
+   * an EMPTY list (coord looked and this tenant has no alerts in scope), and
+   * `null`/absent (coord served nothing — an un-upgraded build, a
+   * continuation page, or a failed `DISTINCT kind` query). Coord encodes the
+   * split deliberately — "`null` on failure, same UNKNOWN-not-empty rule" —
+   * so collapsing them here is the one thing this page must not do.
+   */
+  kinds?: Array<string | { kind?: string }> | null;
+  /**
+   * Selected `kind` values coord could match against NEITHER its canonical
+   * registry NOR the live table — so they can never return a row.
+   *
+   * REPORTED, not rejected: `kind` is a bare TEXT column with no CHECK, so a
+   * value outside the registry is not provably absent (a legacy row could
+   * still carry it). `null`/absent is UNKNOWN — coord returns it whenever the
+   * live vocabulary was itself unreadable, precisely so `[]` keeps meaning
+   * "every kind you asked for is real".
+   */
+  unknown_kinds?: string[] | null;
 }
 
-/** Normalize the served kind vocabulary; tolerates strings or `{kind}` rows. */
-function readKinds(body: AlertsResponse | null): string[] {
+/**
+ * Normalize the served kind vocabulary, PRESERVING the served/not-served
+ * split. Tolerates strings or `{kind}` rows.
+ *
+ * Returns `null` when coord served no list at all, and `[]` only when it
+ * served an empty one. The previous shape returned `[]` for both, which made
+ * a healthy fleet — zero alerts in scope, so an empty vocabulary — render as
+ * "this coord build does not serve the kind list": a false claim about the
+ * deployment, and the exact empty-is-not-unknown inversion this page exists
+ * to refuse.
+ */
+function readKinds(body: AlertsResponse | null): string[] | null {
   const raw = body?.kinds;
-  if (!Array.isArray(raw)) return [];
+  if (!Array.isArray(raw)) return null;
   const out = new Set<string>();
   for (const k of raw) {
     const v = typeof k === "string" ? k : k?.kind;
     if (typeof v === "string" && v.trim() !== "") out.add(v.trim());
   }
   return [...out].sort();
+}
+
+/**
+ * The selected kinds coord says can never match, or `null` for UNKNOWN.
+ *
+ * Same three-state read as `readKinds` and for the same reason: an absent
+ * `unknown_kinds` means coord could not check, not that the check passed.
+ */
+function readUnknownKinds(body: AlertsResponse | null): string[] | null {
+  const raw = body?.unknown_kinds;
+  if (!Array.isArray(raw)) return null;
+  return raw.filter(
+    (k): k is string => typeof k === "string" && k.trim() !== ""
+  );
 }
 
 /** `{alerts:[…]}` and a bare list are both accepted (two coord vintages). */
@@ -361,7 +419,16 @@ export default function CoordAlertsPage() {
   const alerts = useMemo(() => pages.flat(), [pages]);
 
   const servedKinds = useMemo(() => readKinds(head), [head]);
-  const kindsAreServed = servedKinds.length > 0;
+  // PRESENCE, not length — the same reading `total_count` already gets from
+  // `typeof headTotal === "number"`. An empty vocabulary is an ANSWER (no
+  // alerts in scope); only a missing one is unknown.
+  const kindsAreServed = servedKinds !== null;
+  const unknownKinds = useMemo(() => readUnknownKinds(head), [head]);
+  /** Only the unmatchable kinds the operator is actually filtering on. */
+  const unknownSelected = useMemo(
+    () => (unknownKinds ?? []).filter((k) => selectedKinds.includes(k)),
+    [unknownKinds, selectedKinds]
+  );
 
   // The kind vocabulary: served by the API when it can be, otherwise every
   // kind observed so far. The derived list is PARTIAL by construction (it can
@@ -372,9 +439,15 @@ export default function CoordAlertsPage() {
   // "kinds with a live row", so resolving the last row of a kind currently
   // filtered on would drop its chip from the row while the filter is still
   // applied — a filter doing something with no control showing it.
+  //
+  // The fallback is keyed on the vocabulary being ABSENT, not on it being
+  // empty. A served `[]` is coord answering "no alerts in scope, so no
+  // kinds"; falling back to `seenKinds` there would repopulate the strip from
+  // rows observed under an earlier `include_resolved` scope and present them
+  // as the live vocabulary coord just told us is empty.
   const kinds = useMemo(() => {
-    const seen = new Set<string>(servedKinds);
-    if (seen.size === 0) {
+    const seen = new Set<string>(servedKinds ?? []);
+    if (servedKinds === null) {
       for (const k of seenKinds) seen.add(k);
     }
     for (const k of selectedKinds) seen.add(k);
@@ -467,12 +540,22 @@ export default function CoordAlertsPage() {
             // not, the chips are only the kinds inside the window already
             // loaded. Say which — a partial list presented as the vocabulary
             // is the `silent-empty-is-unknown` mistake in menu form.
+            //
+            // Only the ABSENT case is partial. A served-but-empty list is a
+            // complete answer, and labelling it "partial" told an operator
+            // with a healthy fleet that their coord build was old.
             allLabel={kindsAreServed ? "all" : "all (list partial)"}
             title={
-              kindsAreServed
-                ? "kinds served by the API"
-                : "this coord build does not serve the kind list — showing only " +
-                  "the kinds present in the rows loaded so far"
+              !kindsAreServed
+                ? // Deliberately does not name a cause: coord serves no list
+                  // on an un-upgraded build AND when its `DISTINCT kind`
+                  // query fails. Asserting the first would be a guess.
+                  "the API served no kind list (an older coord build, or the " +
+                  "vocabulary query failed) — showing only the kinds present " +
+                  "in the rows loaded so far"
+                : servedKinds.length === 0
+                  ? "the API served an empty kind list — no alerts in scope"
+                  : "kinds served by the API"
             }
           />
           <div className="flex items-center gap-1.5 ml-2">
@@ -506,6 +589,40 @@ export default function CoordAlertsPage() {
               "counting…"
             )}
           </span>
+          {/* Coord reports the selected kinds it can match against NEITHER
+              its canonical registry NOR the live table. Without this, such a
+              filter renders as a plain "No alerts matching filters." — an
+              empty result whose CAUSE (a kind that can never match) is on the
+              wire and simply unread. Reachable from this control: a kind that
+              is LIVE but absent from coord's registry (its `alert_kind`
+              catalogue covers even the mixed-separator names like
+              `git_inv-2`, so this means a row written by something outside
+              it) is selected, and its last row then resolves. The chip
+              survives because the selection is unioned back in, and coord
+              stops vouching for the value. A CANONICAL kind with zero live
+              rows is NOT reported — the registry is exactly what keeps
+              "resolved to zero" from reading as "you typed it wrong".
+
+              Muted, NOT an attention hue. §4 reserves red for "act now" and
+              amber for "waiting on something else", and this is neither — it
+              explains the operator's own filter, the same category as the
+              `poll-paused` notice below, which is styled identically. Spending
+              a severity colour here would dilute the one vocabulary the
+              console audits (`attention.ts`). */}
+          {unknownSelected.length > 0 && (
+            <span
+              className="text-xs text-muted-foreground normal-case tracking-normal"
+              data-testid="coord-alerts-unknown-kinds"
+              title={
+                "coord matched these against neither its alert-kind registry " +
+                "nor any live row, so they cannot return anything"
+              }
+            >
+              {unknownSelected.join(", ")}{" "}
+              {unknownSelected.length === 1 ? "matches" : "match"} no known
+              alert kind
+            </span>
+          )}
         </div>
 
         {error && (

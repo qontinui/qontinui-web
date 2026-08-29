@@ -588,6 +588,122 @@ describe("CoordAlertsPage filters", () => {
     });
   });
 
+  it("calls a SERVED but empty kind list an answer, not a missing one", async () => {
+    // The three-state read. `kinds: []` is coord saying it looked and this
+    // tenant has no alerts in scope — the state a healthy fleet is IN. Keyed
+    // on length, that was indistinguishable from `kinds` absent, so the page
+    // told an operator with nothing wrong that their coord build was old.
+    httpGet.mockImplementation((url: unknown) => {
+      if (isCriticalProbe(String(url))) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      return Promise.resolve({
+        alerts: [],
+        total_count: 0,
+        next_cursor: null,
+        kinds: [],
+      });
+    });
+
+    render(<CoordAlertsPage />);
+    // Wait for the RESPONSE to have committed, not merely for the count
+    // element to exist: before the first answer it renders "counting…" and
+    // `head` is still null, which is legitimately the not-served state. An
+    // assertion that ran there would be testing the pre-fetch render.
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-alerts-match-count")).toHaveTextContent(
+        "showing 0 of 0"
+      )
+    );
+
+    const all = screen.getByTestId("coord-alerts-kind-filter-all");
+    expect(all).not.toHaveTextContent("list partial");
+    expect(
+      screen.getByTestId("coord-alerts-kind-filter")
+    ).toHaveAttribute("title", expect.stringContaining("empty kind list"));
+  });
+
+  it("still calls an ABSENT kind list partial, without naming a cause", async () => {
+    // The other side of the same predicate — and the title must not assert
+    // "old build": coord also serves no list when its DISTINCT query fails.
+    httpGet.mockImplementation((url: unknown) => {
+      if (isCriticalProbe(String(url))) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      return Promise.resolve({ alerts: [STALE_TREE], total_count: 1 });
+    });
+
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+
+    expect(
+      screen.getByTestId("coord-alerts-kind-filter-all")
+    ).toHaveTextContent("list partial");
+    const title = screen
+      .getByTestId("coord-alerts-kind-filter")
+      .getAttribute("title");
+    expect(title).toContain("vocabulary query failed");
+  });
+
+  it("names a selected kind coord says can never match", async () => {
+    // `unknown_kinds` is served for this caller and was unread, so a filter
+    // that CANNOT return a row rendered as a bare "No alerts matching
+    // filters." — the cause sitting unparsed in the response.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (isCriticalProbe(u)) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      const filtered = u.includes("kind=legacy_unregistered");
+      return Promise.resolve({
+        alerts: filtered ? [] : [STALE_TREE],
+        total_count: filtered ? 0 : 1643,
+        next_cursor: null,
+        kinds: ["stale_primary_tree", "legacy_unregistered"],
+        // A kind that is LIVE but outside coord's `alert_kind` registry —
+        // coord's own `unmatched_kinds` tests use exactly this shape. It
+        // vouches for the value while a row carries it; once the last one
+        // resolves it is in neither the registry nor the table. (A merely
+        // hyphenated name like `git_inv-2` would NOT qualify: the registry
+        // covers the mixed-separator kinds too.)
+        unknown_kinds: filtered ? ["legacy_unregistered"] : [],
+      });
+    });
+
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+    expect(screen.queryByTestId("coord-alerts-unknown-kinds")).toBeNull();
+
+    fireEvent.click(
+      screen.getByTestId("coord-alerts-kind-filter-legacy_unregistered")
+    );
+
+    const note = await screen.findByTestId("coord-alerts-unknown-kinds");
+    expect(note).toHaveTextContent("legacy_unregistered");
+    expect(note).toHaveTextContent("no known alert kind");
+  });
+
+  it("reports only the unmatchable kinds actually selected", async () => {
+    // Coord answers for the whole request; a value the operator is no longer
+    // filtering on must not be narrated back at them.
+    httpGet.mockImplementation((url: unknown) => {
+      if (isCriticalProbe(String(url))) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      return Promise.resolve({
+        alerts: [STALE_TREE],
+        total_count: 1,
+        next_cursor: null,
+        kinds: ["stale_primary_tree"],
+        unknown_kinds: ["some_other_kind"],
+      });
+    });
+
+    render(<CoordAlertsPage />);
+    await screen.findByTestId("coord-alert-row");
+    expect(screen.queryByTestId("coord-alerts-unknown-kinds")).toBeNull();
+  });
+
   it("does not refetch when `all` is clicked and nothing is selected", async () => {
     render(<CoordAlertsPage />);
     await screen.findByTestId("coord-alert-row");
