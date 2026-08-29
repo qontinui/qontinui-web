@@ -334,8 +334,21 @@ export default function CoordQuestionDetailPage() {
               )}
           </section>
         </>
+      ) : error ? (
+        // R6 — a read that failed supports no claim about coord's corpus. This
+        // route is where an operator lands to unblock a stopped agent, so
+        // "not found" here reads as "that agent's question is gone".
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-question-detail-unknown"
+        >
+          Could not read question {id} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-question-detail-missing"
+        >
           Question {id} not found.
         </p>
       )}
