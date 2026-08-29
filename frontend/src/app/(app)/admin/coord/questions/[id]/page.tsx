@@ -129,6 +129,14 @@ export default function CoordQuestionDetailPage() {
   }, [id]);
 
   useEffect(() => {
+    // Drop the previous id's question first: the catch never nulls
+    // `question`, so a 404 after a successful load would render the OLD
+    // question under the new id — and both arms below sit behind
+    // `question === null`, so neither could be reached. `fetchOne` keys on
+    // `id`, and this route does not poll.
+    setQuestion(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchOne();
   }, [fetchOne]);

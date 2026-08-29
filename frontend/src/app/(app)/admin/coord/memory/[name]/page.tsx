@@ -165,6 +165,14 @@ export default function CoordMemoryDetailPage() {
   }, [name]);
 
   useEffect(() => {
+    // Drop the previous name's memory first: the catch never nulls `memory`,
+    // so a 404 after a successful load would render the OLD memory's content
+    // under the new name — and both arms below sit behind `memory === null`.
+    // `fetchMemory` keys on `name`, so this fires on a route change and not on
+    // `onSave`'s refresh, which calls it directly; this route does not poll.
+    setMemory(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchMemory();
   }, [fetchMemory]);
@@ -230,7 +238,10 @@ export default function CoordMemoryDetailPage() {
    * silent rather than guessing.
    */
   const headVersion = memory?.version ?? 0;
-  const historyTruncated = headVersion > history.length;
+  // `top10.length > 0` keeps the badge and the body agreeing: the picker below
+  // is guarded on it, so without it a response carrying `version: 5` and no
+  // `history` at all would print `0/5` beside "No prior versions."
+  const historyTruncated = top10.length > 0 && headVersion > history.length;
 
   return (
     <div
