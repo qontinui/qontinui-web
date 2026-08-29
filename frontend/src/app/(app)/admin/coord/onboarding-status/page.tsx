@@ -80,13 +80,24 @@ import {
 } from "@/components/admin/coord/onboardingClaimStatus";
 import { httpClient } from "@/services/service-factory";
 
-/** Coord's claim success envelope (frozen contract, coord PR #901). */
+/**
+ * Coord's claim success envelope (frozen contract, coord PR #901).
+ *
+ * **Only `account_login` is rendered.** The rest of this interface is a record
+ * of the wire shape, kept so a future reader can see what the response carries
+ * without re-reading coord — it is deliberately not a to-do list of fields to
+ * surface. The `enrolled` comment used to claim the shape was "rendered
+ * generically"; nothing rendered it, and the checklist below reports enrolment
+ * from its own poll rather than from this envelope. Corrected rather than
+ * implemented: a banner that reprints ids the checklist already covers is more
+ * chrome, which is what R9 exists to remove.
+ */
 interface ClaimResponse {
   ok: boolean;
   account_login: string;
   installation_id: number;
   tenant_id: string;
-  // `enrolled` shape is coord-owned (count or flag) — rendered generically.
+  /** Coord-owned shape (count or flag). Not read here — see the note above. */
   enrolled?: unknown;
 }
 
