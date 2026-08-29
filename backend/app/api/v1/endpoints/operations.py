@@ -3170,6 +3170,13 @@ async def get_claims_steals(
     )
 
 
+#: Page size asked of coord for the claim-alert slice. Coord's documented hard
+#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
+#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
+#: is a constant and not a query parameter.
+_CLAIMS_ALERTS_LIMIT = 1000
+
+
 @router.get("/claims/alerts")
 async def get_claims_alerts(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -3192,8 +3199,27 @@ async def get_claims_alerts(
 
     Forwards the operator bearer (fleet-auth P2/D6).
     """
+    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
+    # no page size, so it inherits coord's default — and the coord half of
+    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
+    # default from 500 to 100 when it added paging. Silently, from here: the
+    # narrowing lives in another repo and there is no signal on this side.
+    #
+    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
+    # not page and does not read `total_count`, so above the ceiling it would
+    # render a truncated list as the whole truth — the exact defect that plan
+    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
+    # maximum (it clamps rather than erroring), which is 2x the ceiling this
+    # endpoint had before the coord change and 10x the one it has now.
+    #
+    # Deliberately a constant in the params dict rather than a `limit` query
+    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
+    # endpoint has exactly one caller, which wants all active claim alerts.
+    # Give it a real `limit` when a second caller needs a different answer.
     payload = await _proxy_coord_get(
-        "/coord/alerts", params={"source": "claim-"}, tenant_id=tenant_id
+        "/coord/alerts",
+        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
+        tenant_id=tenant_id,
     )
     # coord returns either a list or `{"alerts": [...]}` depending on the
     # version; pass either through untouched. No Python-side filtering —
@@ -7198,10 +7224,11 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/authorship tier.
+    Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, attrs?, agent_writable?,
-    change_description?}`` with ``updated_by`` stamped from the authenticated
+    The body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,
+    agent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
     creates a new immutable version on every successful description/body edit;
@@ -7210,16 +7237,24 @@ async def update_prompt_document(
     edit is document configuration, not content — coord updates it in place
     without creating a version.
 
-    ``agent_writable`` is the per-document agent write access flag
-    (``true`` = agents may write this document via
-    ``coord_write_prompt_document``, ``false`` = they may not). It is
-    deliberately NOT attrs-shaped: supplying it takes coord's **versioning**
-    path even when nothing else changes, because who may write a policy
-    document is authority rather than configuration and the record of who
+    ``agent_write_tier`` is the per-document authorship setting — one of
+    ``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is
+    coord's LEGACY two-state spelling of the same setting, kept on the wire for
+    a client that predates the tier; coord resolves a legacy ``true`` as "at
+    least allow", so a stored ``allow_with_notification`` survives it, and a
+    legacy ``false`` is an unambiguous ``deny``. Send the tier when the caller
+    can name one — only an explicit tier can move a document ONTO, or DOWN off,
+    the notification tier. Both are forwarded verbatim; neither is synthesised
+    from the other here, because collapsing them at this hop would strip a
+    precondition the operator set with no error and no audit signal.
+
+    Either field is deliberately NOT attrs-shaped: supplying one takes coord's
+    **versioning** path even when nothing else changes, because who may write a
+    policy document is authority rather than configuration and the record of who
     changed it has to outlive the next agent append (which overwrites the
     parent row's mutable ``updated_by``).
 
-    Omitting it leaves the current setting alone. There is no wire
+    Omitting them leaves the current setting alone. There is no wire
     representation for clearing it back to "no operator opinion" — coord has
     none either.
     """

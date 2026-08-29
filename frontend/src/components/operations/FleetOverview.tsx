@@ -29,7 +29,7 @@ import {
   relativeTime,
   volumeSeverity,
 } from "./utils";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import {
   indexDeviceVolumes,
   parseFleetVolumes,
