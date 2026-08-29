@@ -191,6 +191,32 @@ class TestLocalPreCheckOnEveryGroupRoute:
         assert fake.calls == []
         assert "spaces" in _detail(resp)
         assert "Could not delete Cognito group" not in _detail(resp)
+        # The check runs BEFORE the blast-radius guards, so coord is not asked
+        # to compute the blast radius of a group that cannot exist.
+        assert no_mappings.await_count == 0
+
+    def test_delete_group_answers_the_name_before_the_home_guard(
+        self, admin_client: TestClient, no_mappings: Any
+    ) -> None:
+        """Guard ordering, pinned.
+
+        `my tenant-home` ends in ``HOME_GROUP_SUFFIX``, so with the name check
+        after the guards it answered **409 home_group_requires_override** —
+        asking the operator to pass a flag to override a guard protecting a
+        group Cognito could never have created. The reason they can act on is
+        the name, so the name has to be answered first.
+        """
+        from app.services import cognito_admin
+
+        fake = _FakeCognitoClient()
+        with patch.object(cognito_admin, "_get_client", return_value=fake):
+            resp = admin_client.delete(
+                f"{API_PREFIX}/coord/cognito/groups/my%20tenant-home"
+            )
+
+        assert resp.status_code == 400
+        assert "spaces" in _detail(resp)
+        assert fake.calls == []
 
     def test_list_group_users(self, admin_client: TestClient) -> None:
         from app.services import cognito_admin

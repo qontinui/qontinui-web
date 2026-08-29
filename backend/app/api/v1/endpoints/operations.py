@@ -9903,6 +9903,12 @@ async def delete_cognito_group(
     why the harm is deferred to each operator's next login rather than
     swept immediately.
     """
+    # No handler-level name check needed here: `group_name` already came
+    # through the `validated_group_name` dependency above, which runs BEFORE
+    # this body — and so before the guards below ever spend a coord
+    # round-trip on a name Cognito could never have held. Without that
+    # ordering, `my tenant-home` would trip Guard 2 and ask the operator to
+    # `allow_home_group` their way past a group that cannot exist.
     # The bearer is what authenticates the coord read below; `require_admin`
     # resolves no coord tenant and so never captures it.
     capture_caller_bearer(request)
