@@ -30,11 +30,19 @@
  * be reachable by keyboard, and a div with an onClick is not.
  */
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Attention } from "./attention";
 import { rowAccentClass } from "./statusRow";
+
+/**
+ * The key the enclosing `<RecordList>` keyed this row on, or `null` when the
+ * row is rendered outside one.
+ *
+ * `<RecordList>` provides it; `<RecordRow>` reads it. Nothing else should.
+ */
+export const RecordRowKeyContext = createContext<string | null>(null);
 
 export interface RecordRowProps {
   /** Mono identity chip: `repo#123`, a worktree name, a drive letter. */
@@ -81,7 +89,25 @@ export interface RecordRowProps {
    * rounded-b-md`) so the two read as one object.
    */
   children?: ReactNode;
-  /** Written to `data-row-key` — the row's stable identity for e2e/specs. */
+  /**
+   * Written to `data-row-key` — the row's stable identity for e2e/specs.
+   *
+   * **Inside a `<RecordList>` this is IGNORED, and that is the point.** The
+   * list already computed the row's identity, via `itemKey`, and keys both the
+   * React reconciliation and the one-open-at-a-time expansion on it. A row
+   * deriving a second identity from the same record cannot be more right than
+   * the list, and can be — was — wrong: on four surfaces the two expressions
+   * disagreed, so `data-row-key` named something no expansion state ever used.
+   * `/trees` disagreed totally (`device_id:repo` against `repo:primary_path`),
+   * `/alerts` in exactly the collision-prone fallback the index suffix exists
+   * for, `/releases` and `/agents` in one leg of their `??` chains each.
+   *
+   * So the list wins where there is a list, and this prop is the source only
+   * where there is not — `PlanLibraryList`'s hand-rolled `.map` (its expansion
+   * has two anchors, so it deliberately owns no list) and the agent-detail log
+   * feed. Keep supplying it: it is what those surfaces, and a standalone
+   * render in a unit test, have.
+   */
   rowKey?: string;
   className?: string;
   "data-testid"?: string;
@@ -105,8 +131,14 @@ export function RecordRow({
   reasonTestId = "row-reason",
 }: RecordRowProps) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
+  // The list's key wins over the prop — see `rowKey`'s doc. `null` (the
+  // context default) means there is no enclosing list, so the prop is the only
+  // source; `??` rather than `||` so a list could legitimately key a row on
+  // the empty string.
+  const listKey = useContext(RecordRowKeyContext);
+  const resolvedRowKey = listKey ?? rowKey;
   return (
-    <div data-testid={testId} data-row-key={rowKey} className={className}>
+    <div data-testid={testId} data-row-key={resolvedRowKey} className={className}>
       <button
         type="button"
         onClick={onToggle}
