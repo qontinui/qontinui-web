@@ -7901,6 +7901,94 @@ def _parse_iso(value: Any) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+# The two OPTIONAL per-write annotations coord serves on a version row
+# (``list_versions`` / ``get_version``), mapped to the JSON types the shipped
+# frontend declares for them (``PromptDocumentWrite.loosening?: boolean | null``,
+# ``notification_ref?: string | null``).
+#
+# THE WIRE VOCABULARY IS ``true`` / ``false`` / ABSENT — there is no fourth
+# state, and nothing here should imply one. coord holds `loosening` as
+# ``Option<bool>`` with ``skip_serializing_if = "Option::is_none"``, so it emits
+# ``true``, ``false``, or the key not at all; it never emits ``null``. ``None``
+# is nevertheless admissible below and is forwarded verbatim, because a proxy
+# does not re-encode its upstream's vocabulary — but that branch is
+# defensiveness against a future producer, NOT a state with a meaning today: no
+# current producer emits it, and no current consumer distinguishes it from an
+# absent key (``looseningClassificationPresent`` counts ``=== true`` and
+# ``=== false`` only, and ``notificationHref`` maps ``null``, blank and absent
+# alike to "no link").
+#
+# The type guard is ``isinstance``, and ``isinstance(1, bool)`` is False — so a
+# JSON ``1`` is correctly NOT accepted as a ``loosening`` verdict, the reverse
+# of the usual "bool is a subclass of int" trap.
+_WRITE_ANNOTATIONS: tuple[tuple[str, tuple[type, ...]], ...] = (
+    ("loosening", (bool,)),
+    ("notification_ref", (str,)),
+)
+
+
+def _write_annotations(version: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
+    """The annotation keys coord actually served on this version row.
+
+    **ABSENT MUST STAY ABSENT, and this function is the only place that decides
+    it.** The write dict is otherwise a fixed literal built with ``.get``, and a
+    key built that way is ALWAYS present in the output — ``.get`` cannot tell an
+    unserved key from a served value, so every row in the feed would carry a
+    ``loosening`` this proxy invented rather than one coord sent. Membership
+    makes that unrepresentable, and it is the same rule that keeps ``edited_by``
+    verbatim: a proxy reports its upstream, it does not fill in for it.
+
+    What the two served values mean, so nothing infers a third:
+
+    * ``false`` — the direction classifier RAN on this write and found no
+      widening. This is a real verdict and must survive as ``false``; it is what
+      ``looseningClassificationPresent`` (``_lib/writes.ts``) counts, and it is
+      the whole basis of the page saying "nothing here is flagged".
+    * absent — no verdict exists. Several causes, and the surface treats them
+      alike because none of them is a statement about the write: no classifier
+      ran for it (coord's own ``None`` — an operator PATCH, a clause recompile,
+      a seed rewrite), a coord build predating the classification, or coord
+      degrading its own read when the columns are missing
+      (``pg_error::is_missing_schema_object``, 42703/42P01).
+
+    So ``false`` and absent are genuinely different facts, and the one thing this
+    function must never do is emit ``false`` for an unserved key — that would
+    invent a verdict coord never gave, on every historical write at once.
+
+    The same membership rule reaches ``notification_ref``. Nothing renders
+    differently for an absent ref than for a ``null`` one — ``notificationHref``
+    maps both to no link — so the reason is not a rendering bug it averts, it is
+    that the feed's job is to report what coord holds.
+
+    Values are passed through unmodified — this proxy does not re-encode coord's
+    vocabulary any more than it re-encodes ``edited_by``. The one thing it does
+    do is refuse a value of a type the frontend's declared contract cannot hold
+    (a numeric ``notification_ref``, say, on which ``notificationHref``'s
+    ``.trim()`` would throw and take the page down). Such a value is dropped and
+    logged with the document address, so a coord-side type defect is greppable
+    instead of silent — and it is deliberately NOT counted as a failed document
+    read: the document's history WAS returned, so inflating ``partial`` here
+    would misreport a well-formed feed as a partial one.
+    """
+    out: dict[str, Any] = {}
+    for key, admissible in _WRITE_ANNOTATIONS:
+        if key not in version:
+            continue
+        value = version[key]
+        if value is None or isinstance(value, admissible):
+            out[key] = value
+            continue
+        logger.warning(
+            "prompt_document_write_annotation_wrong_type",
+            kind=doc.get("kind"),
+            name=doc.get("name"),
+            version_number=version.get("version_number"),
+            annotation=key,
+            got=type(value).__name__,
+        )
+    return out
+
+
 async def _fetch_versions_bulk(
     documents: list[dict[str, Any]], tenant_id: UUID
 ) -> list[Any]:
@@ -8114,15 +8202,35 @@ async def list_prompt_document_writes(
     :func:`update_prompt_document`, which coord records as a NEW version —
     history is never rewritten).
 
-    Writes are returned unfiltered, with ``edited_by`` verbatim. Deliberately no
-    "agent writes only" filter: the provenance tag coord's write tool stamps is
-    not fixed until its Phase 5 half lands, and filtering on a guessed prefix
-    would silently hide writes — the exact failure this feed exists to prevent.
+    Writes are returned unfiltered, with ``edited_by`` verbatim, and that is
+    still deliberate — but **not for the reason this docstring used to give.** It
+    said the provenance tag coord stamps "is not fixed until its Phase 5 half
+    lands", so filtering on a guessed prefix would silently hide writes. The
+    spellings are no longer a guess: ``frontend/…/prompt-document-proposals/_lib/
+    authorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over
+    ``session:`` / ``agent:`` / ``device:``, matching coord's own
+    ``notifications::human_identity``, and classifies everything else as
+    ``operator`` / ``system`` / ``unknown`` rather than folding it into either
+    side. The reason the filter is absent HERE is now about where it belongs, not
+    about what it would have to guess: it runs on the client over rows already on
+    screen, it is off by default, and when it is on the feed states how many rows
+    it hides and in which class — so a hidden write stays a counted write. A
+    server-side filter can offer none of that, and its drops would be invisible.
+
+    Two OPTIONAL per-write annotations are carried through from coord's version
+    rows: ``loosening`` (the direction verdict for a write that LANDED) and
+    ``notification_ref`` (the finding id that carries the author's reasoning).
+    Plan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.
+    **A key coord did not send is OMITTED here, never sent as ``null`` and never
+    as ``false``** — see :func:`_write_annotations`.
 
     Honest partial results: a per-document versions read that fails is skipped and
     reported in ``partial`` rather than failing the whole feed, so one bad
     document cannot blank the page — and every skip is logged, so "3 of 20
     documents did not return their history" is greppable rather than a dead end.
+    An absent annotation is NOT such a failure: it is the ordinary shape of a
+    coord build that predates the classification, and must never push a document
+    into ``failed``.
     """
     try:
         listing = await _proxy_coord_get("/coord/prompt-documents", tenant_id=tenant_id)
@@ -8179,6 +8287,10 @@ async def list_prompt_document_writes(
                     "edited_by": version.get("edited_by"),
                     "created_at": version.get("created_at"),
                     "current_version": current_version,
+                    # Spread LAST and built by membership, not by `.get` — the
+                    # fixed literal above is exactly the shape that cannot
+                    # express "this key was not served".
+                    **_write_annotations(version, doc),
                 }
             )
 
