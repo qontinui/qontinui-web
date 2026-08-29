@@ -162,10 +162,15 @@ export function subscribeToSlots(listener: () => void): () => void {
  * Cloud-control's `index.ts` calls this at module-load time with the
  * subset of slots it wants to attach.
  *
- * Semantics: both slot kinds are **last-write-wins** (Map.set overwrites).
- * That lets hot-reload swap a `BillingService` cleanly without a stale
- * instance hanging around. Production: do not call multiple times.
+ * Semantics: all three slot kinds are **last-write-wins** (Map.set
+ * overwrites). That lets hot-reload swap a `BillingService` cleanly without
+ * a stale instance hanging around. Production: do not call multiple times.
  * Hot-reload: explicitly supported.
+ *
+ * Re-registering a PROVIDER is the one case where last-write-wins is not
+ * free: `CloudProviders` mounts providers by identity, so replacing one
+ * remounts the subtree beneath it. Harmless under hot-reload, which is the
+ * only caller that does it.
  *
  * Every `subscribeToSlots` listener is notified once, after all mutations
  * above have been applied — never per-slot, so subscribers never observe a
@@ -278,16 +283,30 @@ export function useSlotComponent<P>(
   return useSyncExternalStore(subscribeToSlots, getSnapshot, getServerSnapshot);
 }
 
-/** Stable module-level snapshot getters — see `providersSnapshot`. */
+/** Stable module-level client snapshot getter — see `providersSnapshot`. */
 function getProvidersSnapshot(): readonly CloudProvider[] {
   return providersSnapshot;
 }
+
 /**
  * SSR and OSS-only must agree, and the registry is empty on the server by
  * construction (the cloud-control bundle only loads in the browser). A
  * frozen module constant keeps the reference stable across calls.
  */
 const SERVER_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
+
+/**
+ * The `getServerSnapshot` half of `useSlotProviders`, used for the HYDRATION
+ * render as well as for SSR — React has to, or the two would tear.
+ *
+ * So a `CloudProviders` that took part in hydration would render zero
+ * providers and then swap to the real snapshot, remounting everything below
+ * it. It does not, because `app/(app)/layout.tsx`'s `AppAuthGate` renders
+ * `AuthLoadingShell` instead of its children while auth is loading — which
+ * on the server is always — so `CloudProviders` first mounts after
+ * hydration, off `getProvidersSnapshot`. That gate is load-bearing for more
+ * than auth; see `components/CloudProviders`.
+ */
 function getServerProvidersSnapshot(): readonly CloudProvider[] {
   return SERVER_PROVIDERS;
 }
