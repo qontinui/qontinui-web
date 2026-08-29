@@ -91,8 +91,16 @@ export const ALERT_BADGE_CLASS: Record<AlertKind, string> = {
   "red-main": AUTHOR_RED,
   "auth-config": AUTHOR_RED,
   "merge-stuck": AUTHOR_RED,
+  replication: AUTHOR_RED,
+  "land-integrity": AUTHOR_RED,
+  "gate-stuck": AUTHOR_RED,
+  "config-drift": AUTHOR_RED,
   "worktree-waste": WAITING_AMBER,
   "machine-health": WAITING_AMBER,
+  "gate-pending": WAITING_AMBER,
+  "session-health": WAITING_AMBER,
+  "serving-drift": WAITING_AMBER,
+  "backfill-gap": WAITING_AMBER,
   resolved: "bg-green-500/5 text-green-300 border-green-500/25",
   // The FLOOR for an unclassified row. `unknown`'s real attention is computed
   // per row from severity, so `alertPaletteFor` replaces this — it is what an
