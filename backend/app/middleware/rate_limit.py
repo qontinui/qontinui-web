@@ -1,4 +1,5 @@
 import functools
+import hashlib
 import logging
 import time
 
@@ -41,6 +42,44 @@ def get_user_identifier(request: Request) -> str:
     if user:
         return f"user:{user.id}"
     return f"ip:{request.client.host}"  # type: ignore[union-attr]
+
+
+def get_authorization_identifier(request: Request) -> str:
+    """Per-CALLER rate-limit bucket for bearer-authenticated admin routes.
+
+    Same problem ``_get_refresh_token_subject`` (below) solves for the
+    refresh endpoint: behind Vercel/ALB every request arrives from a handful
+    of source IPs, so an IP-keyed limit collapses every operator into one
+    bucket and one person's cleanup run throttles everybody else's. It is
+    also the reason ``get_user_identifier`` is not enough here — it reads
+    ``request.state.user``, which the limiter's key function is called too
+    early to see (slowapi evaluates the limit inside the endpoint wrapper,
+    with only the raw request in hand).
+
+    Superuser-gated routes always carry ``Authorization: Bearer <token>``,
+    so the token identifies the caller. It is HASHED, never decoded: this
+    must not become a second, unverified token parser, and the digest keeps
+    a bearer out of log lines and Redis keys. Tokens rotate roughly hourly,
+    which is far longer than any per-minute window keyed off them.
+
+    Falls back to the client IP when there is no bearer — an unauthenticated
+    caller never reaches these routes, so that arm only covers oddities like
+    a probe.
+
+    **Do not rename the ``request`` parameter.** slowapi decides whether to
+    call a key function with the request or with no arguments by looking for
+    a parameter literally named ``"request"``
+    (``Limiter.__evaluate_limits`` -> ``inspect.signature(lim.key_func)``).
+    Renaming it would silently switch slowapi to calling this with zero args
+    and raise inside the limiter rather than here.
+    """
+    header = request.headers.get("authorization") or ""
+    token = header[7:].strip() if header[:7].lower() == "bearer " else ""
+    if token:
+        return "bearer:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:32]
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return f"ip:{host or 'unknown'}"
 
 
 # Create limiter instance
