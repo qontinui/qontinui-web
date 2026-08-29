@@ -82,9 +82,9 @@ const ACTIVITY_BADGE: Record<TrainActivityKind, string> = {
   "speculative-ci": "bg-purple-500/15 text-purple-200 border-purple-500/30",
   "dry-rebasing": "bg-purple-500/15 text-purple-200 border-purple-500/30",
   // Serialized behind another proposal: waiting on something else → amber.
-  "blocked-by-overlap": "bg-amber-500/15 text-amber-200 border-amber-500/30",
+  "blocked-by-overlap": WAITING_AMBER,
   queued: "bg-muted text-muted-foreground border-border",
-  conflict: "bg-red-500/15 text-red-200 border-red-500/35",
+  conflict: AUTHOR_RED,
   "shadow-landed": "bg-muted text-muted-foreground border-border",
   merged: "bg-green-500/15 text-green-200 border-green-500/30",
   cancelled: "bg-muted text-muted-foreground border-border",

@@ -51,7 +51,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { AlertTriangle, Filter, RefreshCw } from "lucide-react";
-import { CollapsiblePanel, FilterChips, RecordList } from "@/components/console";
+import {
+  AUTHOR_RED,
+  CollapsiblePanel,
+  FilterChips,
+  RecordList,
+} from "@/components/console";
 import { AlertRow } from "@/components/admin/coord/AlertRow";
 import {
   alertSubject,
@@ -401,7 +406,7 @@ export default function CoordAlertsPage() {
             variant="outline"
             className={
               criticalTotal.value > 0
-                ? "bg-red-500/15 text-red-200 border-red-500/35"
+                ? AUTHOR_RED
                 : undefined
             }
             data-testid="coord-alerts-critical-count"
