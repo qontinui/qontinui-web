@@ -9,8 +9,15 @@
  *
  * MOVED from `components/operations/` into `components/console/` by plan
  * `2026-08-16-coord-console-ui-unification-pipeline-style.md` Phase 1 (D3),
- * **unchanged**. A re-export stays at `components/operations/CollapsiblePanel`
- * so the ~15 existing relative importers keep working in this PR.
+ * **unchanged**. Phase 1 left a re-export shim behind at
+ * `components/operations/CollapsiblePanel` to spare that PR a repo-wide import
+ * churn, on the stated condition that it be deleted "once the console migration
+ * (Phase 3) has rewritten the last caller". Phase 3 landed and rewrote none of
+ * them: every caller of the shim lived in `components/operations/`, which no
+ * wave's route census covered, so the condition fired with nobody watching it.
+ * The seven callers were repointed here and the shim deleted as Phase 1's
+ * post-merge follow-up. `components/operations/index.ts` still re-exports this
+ * symbol — that is the barrel, not the shim, and it is intentional.
  *
  * Designed for monitoring surfaces: when collapsed, the header still shows the
  * `summary` (counts / status badges) so a red/blocked state never hides behind

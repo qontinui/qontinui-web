@@ -21,34 +21,82 @@
  * plan applies to `statusRow` and `CollapsiblePanel`. No shipped module under
  * `console/` has any runtime dependency on `operations/`; keep it that way.
  *
- * **This is NOT every caller of a function shaped like this one.** Six more
- * files declare their OWN `relativeTime` and import nothing, so they are
- * invisible to the shim and untouched by this move — later-wave debt, and
- * exactly the duplicate-helper defect this plan is chartered to remove:
- * `admin/agent-claims/AgentClaimsDashboard.tsx`,
+ * **The private-copy debt this module was created to absorb is now paid.**
+ * Phase 1 disclosed six files that declared their OWN `relativeTime` and
+ * imported nothing, so they were invisible to the shim and untouched by the
+ * move. Migrating them needed two things this module did not offer, which is
+ * *why* they were copies rather than callers, and both now exist:
+ *
+ * 1. **An injectable clock** (`options.now`). Without it a caller cannot write
+ *    a deterministic test, which is the reason `operations/gatesPredicate.ts`
+ *    stated in its own comment for keeping `relativeAgo`.
+ * 2. **A caller-chosen absent placeholder** (`options.absent`). The console
+ *    renders `never`; the agent dashboards render `—`. A shared formatter that
+ *    hard-codes one of them can only ever serve half its callers.
+ *
+ * Migrated onto this module: `admin/agent-claims/AgentClaimsDashboard.tsx`,
  * `admin/agent-sessions/AgentSessionsDashboard.tsx`,
- * `admin/coord/TreeCard.tsx`,
  * `admin/prompt-injections/PromptInjectionsDashboard.tsx`,
- * `execute/ScheduleListItem.tsx`, `sessions/LineageTimeline.tsx` (plus
- * `operations/gatesPredicate.ts`'s `relativeAgo`, a same-shape copy under
- * another name, self-disclosed in its own comment). The first three are named
- * in this guide's own scope as surfaces this plan unifies — migrate them onto
- * this module as their wave reaches them, and do not read "23" as "all of
- * them".
+ * `sessions/LineageTimeline.tsx` (four byte-identical copies) and
+ * `operations/gatesPredicate.ts`'s `relativeAgo`. `admin/coord/TreeCard.tsx`
+ * was deleted by Phase 3.
+ *
+ * **One named file deliberately did NOT migrate.**
+ * `execute/ScheduleListItem.tsx` is a same-NAME, different-BEHAVIOUR function:
+ * it rounds rather than floors and renders future stamps as `in 5m`. Folding it
+ * in would change what that surface displays, so it stays where it is. Phase 1
+ * listed it as a duplicate; it is not one, and this correction is the reason
+ * the count here is five and not six.
  */
+
+/** Caller-supplied knobs for {@link relativeTime}. Both are optional and both
+ *  default to what the console itself renders, so an existing call site that
+ *  passes nothing is unaffected. */
+export interface RelativeTimeOptions {
+  /**
+   * What to render when there is no usable timestamp — absent, or present but
+   * unparseable. Defaults to `"never"`, which is what every `/admin/coord/*`
+   * surface renders; the agent dashboards pass `"—"` and
+   * `gatesPredicate` passes `"an unknown time ago"`.
+   */
+  absent?: string;
+  /**
+   * The clock, in epoch milliseconds. Defaults to `Date.now()`. Exists so a
+   * caller can render deterministically under test without stubbing global
+   * time — the absence of this knob is why `operations/gatesPredicate.ts` kept
+   * a private copy.
+   */
+  now?: number;
+}
 
 /**
  * Convert an ISO timestamp to a human-friendly relative string.
  * e.g. "3s ago", "2m ago", "1h ago", "3d ago"
+ *
+ * **An unparseable timestamp renders as `absent`, not as a duration.** It used
+ * to share the `"just now"` branch with a negative delta, which reported a
+ * parse failure as the calmest possible reading — the `silent-empty-is-unknown`
+ * mistake applied to a clock. The two cases only ever looked alike because
+ * `NaN < 0` is false.
+ *
+ * **Any negative delta is still `"just now"`** — not only a stamp that is
+ * genuinely in the future. Sub-second server/browser clock skew lands here far
+ * more often than a real future timestamp does, and for both the honest reading
+ * is that the event is about now.
  */
-export function relativeTime(iso: string | null | undefined): string {
-  if (!iso) return "never";
+export function relativeTime(
+  iso: string | null | undefined,
+  options: RelativeTimeOptions = {}
+): string {
+  const absent = options.absent ?? "never";
+  if (!iso) return absent;
 
-  const now = Date.now();
+  const now = options.now ?? Date.now();
   const then = new Date(iso).getTime();
   const diffMs = now - then;
 
-  if (Number.isNaN(diffMs) || diffMs < 0) return "just now";
+  if (Number.isNaN(diffMs)) return absent;
+  if (diffMs < 0) return "just now";
 
   const seconds = Math.floor(diffMs / 1_000);
   if (seconds < 60) return `${seconds}s ago`;
