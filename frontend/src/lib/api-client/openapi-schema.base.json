@@ -52045,6 +52045,7 @@
           "description": {
             "anyOf": [
               {
+                "maxLength": 2048,
                 "type": "string"
               },
               {
@@ -77331,7 +77332,7 @@
     },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
-        "description": "List every Cognito group in the shared pool. Superuser-gated.",
+        "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
         "operationId": "api_v1_operations_coord_cognito_groups_get",
         "responses": {
           "200": {
@@ -77358,7 +77359,7 @@
         ]
       },
       "post": {
-        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated.",
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated, rate-limited, audited.\n\n``request`` is here because slowapi requires it on a limited endpoint,\nnot because the handler reads it.",
         "operationId": "api_v1_operations_coord_cognito_groups_post",
         "requestBody": {
           "content": {
@@ -77407,14 +77408,16 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -77481,14 +77484,16 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -77539,14 +77544,16 @@
         ]
       },
       "get": {
-        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.",
+        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.\n\nRead-only, so no audit row and no rate limit \u2014 but it does take the\ngroup name in the path, so it gets the 400 validator like its three\nmutating siblings.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_get",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -77587,14 +77594,16 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
