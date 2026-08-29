@@ -580,6 +580,26 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > applied it to the one element where the dash was easy. Derive every part of a
 > strip from the same `null`, and scalars are **independent** — a missing
 > `unread_count` does not make a `total` you were sent unknown.
+>
+> **And the strip is not the page.** One read feeds several surfaces — the
+> strip, the `<RecordList empty=>` node, any "we looked for X" banner — and each
+> is capable of the claim independently, so fixing the loudest one is not
+> fixing the page. `/admin/coord/notifications` shipped exactly that twice: the
+> post-merge audit of Wave 5 corrected the strip, and left the `empty=` slot
+> still saying *"No notifications matching filters."* under a strip that said
+> *"Could not read the feed"* — the same fabricated absence, made in **words**
+> instead of a number — and a `?ref=` banner reading the page's shared `error`
+> line, which mark-read also writes, so a rejected POST blamed a feed that had
+> loaded fine.
+>
+> Two rules follow. **Import the predicate, do not re-spell it**
+> (`console/readFailure.ts` `readIsUnknown`): two hand-rolled `failed &&
+> !loaded`s drift, and the drift is invisible because both spellings look
+> right. And **give each surface the flag that answers ITS question** — "has
+> anything ever arrived" (`loaded`), "did the last read fail" (`readFailed`),
+> and "is anything wrong on this page at all" (`error`, which writes from
+> mutations too) are three different questions, and a surface wired to the
+> wrong one is confidently wrong rather than silent.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
