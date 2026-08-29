@@ -3170,6 +3170,13 @@ async def get_claims_steals(
     )
 
 
+#: Page size asked of coord for the claim-alert slice. Coord's documented hard
+#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
+#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
+#: is a constant and not a query parameter.
+_CLAIMS_ALERTS_LIMIT = 1000
+
+
 @router.get("/claims/alerts")
 async def get_claims_alerts(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -3192,8 +3199,27 @@ async def get_claims_alerts(
 
     Forwards the operator bearer (fleet-auth P2/D6).
     """
+    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
+    # no page size, so it inherits coord's default — and the coord half of
+    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
+    # default from 500 to 100 when it added paging. Silently, from here: the
+    # narrowing lives in another repo and there is no signal on this side.
+    #
+    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
+    # not page and does not read `total_count`, so above the ceiling it would
+    # render a truncated list as the whole truth — the exact defect that plan
+    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
+    # maximum (it clamps rather than erroring), which is 2x the ceiling this
+    # endpoint had before the coord change and 10x the one it has now.
+    #
+    # Deliberately a constant in the params dict rather than a `limit` query
+    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
+    # endpoint has exactly one caller, which wants all active claim alerts.
+    # Give it a real `limit` when a second caller needs a different answer.
     payload = await _proxy_coord_get(
-        "/coord/alerts", params={"source": "claim-"}, tenant_id=tenant_id
+        "/coord/alerts",
+        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
+        tenant_id=tenant_id,
     )
     # coord returns either a list or `{"alerts": [...]}` depending on the
     # version; pass either through untouched. No Python-side filtering —
@@ -7008,10 +7034,19 @@ async def list_coord_policies(
 
     ``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``
     filters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when
-    PRESENT — including as an empty string, which is a real filter to coord and
-    not a synonym for "unfiltered" (``?repo=`` selects the degenerate
-    empty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is
-    a better answer than silently listing everything). Until this route
+    PRESENT.
+
+    For the two STRING filters that includes an empty string, which is a real
+    filter to coord and not a synonym for "unfiltered" (``?repo=`` selects the
+    degenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown
+    kind, which is a better answer than silently listing everything).
+    ``enabled`` is the exception and is NOT reachable that way: it is a
+    ``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function
+    runs (measured — ``?repo=`` and ``?kind=`` reach the handler as ``""``;
+    ``?enabled=`` does not reach it at all). Only ``?enabled=true`` /
+    ``?enabled=false`` are expressible, which costs nothing: an empty
+    ``enabled`` has no meaning to coord, whose own field is an
+    ``Option<bool>``. Until this route
     accepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and
     a tenant's DISABLED rules were **not listable from the console** — the
     ``/admin/coord/automation-rules`` enable/disable switch could therefore
