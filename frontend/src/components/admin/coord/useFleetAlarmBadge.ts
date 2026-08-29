@@ -39,6 +39,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
 import { httpClient } from "@/services/service-factory";
 import { createLogger } from "@/lib/logger";
 import {
@@ -129,15 +130,30 @@ export function useFleetAlarmBadge(): FleetAlarmBadge {
     }
   }, []);
 
+  // `useVisiblePoll` re-arms its interval whenever `fn` changes identity, so
+  // hand it one stable reference rather than a fresh arrow per render.
+  const fetchCountsTick = useCallback(() => void fetchCounts(), [fetchCounts]);
+
+  // The MOUNT fetch, and the cancelled-flag lifecycle it owns. Always runs,
+  // including in a tab that mounts hidden, so the badge has a value the moment
+  // it is revealed.
   useEffect(() => {
     cancelled.current = false;
     void fetchCounts();
-    const id = setInterval(() => void fetchCounts(), FLEET_ALARM_POLL_MS);
     return () => {
       cancelled.current = true;
-      clearInterval(id);
     };
   }, [fetchCounts]);
+
+  // The REPEAT, gated on tab visibility like the nav's other two badges.
+  //
+  // This hook is the third poller mounted by `CoordNav`, and it shipped with a
+  // bare `setInterval` while the other two were gated -- so a hidden console
+  // tab went on billing two requests a minute (fleet health + resource
+  // samples) forever. `CoordNav.test.tsx`'s visibility test asserts across the
+  // WHOLE nav rather than per badge, which is what caught it; keep it that way,
+  // because a per-badge assertion would have passed while this one polled.
+  useVisiblePoll(fetchCountsTick, FLEET_ALARM_POLL_MS);
 
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), TICK_MS);
