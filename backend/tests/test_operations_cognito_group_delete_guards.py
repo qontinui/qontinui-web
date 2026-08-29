@@ -91,6 +91,29 @@ def _build_admin_app() -> FastAPI:
     return test_app
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limit_bucket():
+    """Give every test its own rate-limit bucket.
+
+    Phase 3 item 10 put a 5-per-minute cap on this route (it is the only
+    irreversible one of the four mutating group routes). slowapi's memory
+    storage is process-wide and these tests share a bucket — the TestClient
+    sends no distinguishing bearer on most of them — so without a reset the
+    sixth DELETE in this module would 429 and every assertion after it would
+    be testing the limiter instead of the guards.
+
+    Resetting the STORAGE rather than disabling the limiter keeps the
+    decorator on the code path, so a regression that breaks it (slowapi
+    requires a ``request: Request`` parameter, for instance) still fails
+    here rather than in production.
+    """
+    from app.middleware.rate_limit import user_limiter
+
+    user_limiter.reset()
+    yield
+    user_limiter.reset()
+
+
 @pytest.fixture()
 def admin_client() -> TestClient:
     return TestClient(_build_admin_app())
