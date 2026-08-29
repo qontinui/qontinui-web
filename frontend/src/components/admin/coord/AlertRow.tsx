@@ -215,7 +215,12 @@ export function AlertRow({
   return (
     <RecordRow
       data-testid="coord-alert-row"
-      rowKey={String(alert.id ?? alert.alert_key ?? subject)}
+      // No `rowKey`: `<RecordList>` publishes the key it opens this row on and
+      // `<RecordRow>` writes it. The expression that used to be here —
+      // `alert.id ?? alert.alert_key ?? subject` — dropped the `#${i}` suffix
+      // the page's own `itemKey` appends, so on exactly the payload that
+      // fallback exists for (no id, no alert_key) two alerts sharing a subject
+      // emitted one `data-row-key` while opening independently.
       expanded={expanded}
       onToggle={onToggle}
       className={alert.resolved_at ? "opacity-60" : undefined}
