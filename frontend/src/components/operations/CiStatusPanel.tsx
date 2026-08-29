@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import {
   Tooltip,
   TooltipContent,

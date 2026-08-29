@@ -118,6 +118,59 @@ describe("summarizeVerdict — delivery instance", () => {
     expect(prose).not.toContain("merge state mixed");
   });
 
+  it("counts the blocking bucket from coord's number when the list is absent", () => {
+    // Coord serves each bucket as a count AND (when it fits) a list. Reading
+    // only the list understated the blocking bucket to zero, which dropped the
+    // "still unmerged" clause entirely and left the vaguest wording standing.
+    const v = deliveryVerdict("active_negation", {
+      status: "shipped",
+      all_merged: false,
+      prs: [
+        { repo: "qontinui-web", pr: 1, merged: false },
+        { repo: "qontinui-web", pr: 2, merged: false },
+        { repo: "qontinui-coord", pr: 3, merged: false },
+      ],
+      blocking_unmerged_count: 2,
+      terminal_unlanded_count: 1,
+      landed_count: 0,
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    expect(prose).toContain("2 still unmerged");
+    expect(prose).toContain("1 closed without landing");
+    expect(prose).not.toContain("merge state mixed");
+  });
+
+  it("never says 'none landed' when coord counted landed citations", () => {
+    // The mirror of the "all merged" regression: `all_merged` is absent here
+    // (an older or partial verdict), which is not evidence that nothing landed.
+    // Asserting "none landed" over three landed citations is the same falsehood
+    // pointing the other way.
+    const v = deliveryVerdict("none", {
+      status: "shipped",
+      prs: [
+        { repo: "qontinui-web", pr: 1, merged: true },
+        { repo: "qontinui-web", pr: 2, merged: true },
+        { repo: "qontinui-coord", pr: 3, merged: true },
+        {
+          repo: "qontinui-runner",
+          pr: 4,
+          merged: false,
+          terminal_unlanded: true,
+        },
+      ],
+      landed_count: 3,
+      blocking_unmerged_count: 0,
+      terminal_unlanded_count: 1,
+    });
+    const { prose } = summarizeVerdict("delivery", v);
+    expect(prose).not.toContain("none landed");
+    expect(prose).toContain("3 landed");
+    expect(prose).toContain("1 closed without landing");
+    // Nor may it claim the predicate coord did not assert.
+    expect(prose).not.toContain("all merged");
+    expect(prose).not.toContain("delivered");
+  });
+
   it("falls back to plan wording when no anchor_kind is present", () => {
     const v = deliveryVerdict("none", {
       status: "shipped",

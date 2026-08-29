@@ -25,7 +25,9 @@ vi.mock("@/services/service-factory", () => ({
   },
 }));
 
-const { AgentPrefError, listAgentRegistry } = await import("./agent-registry");
+const { AgentPrefError, listAgentRegistry, listAdminAgentRegistry } = await import(
+  "./agent-registry",
+);
 
 function respondWith(body: unknown, status = 200) {
   fetchMock.mockResolvedValueOnce(
@@ -88,5 +90,53 @@ describe("listAgentRegistry", () => {
       502,
     );
     await expect(listAgentRegistry()).rejects.toThrow(/non-list `agents`/);
+  });
+});
+
+/**
+ * The ADMIN twin. `listAdminAgentRegistry` shipped with the `?? []` that
+ * `listAgentRegistry` had already had removed — the same defect on a function
+ * added afterwards. An admin reading an empty registry concludes the tenant
+ * has no agents to configure, and that page's whole job is a tenant-wide
+ * consent decision.
+ */
+describe("listAdminAgentRegistry", () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  const adminRow = {
+    agent_name: "code-reviewer",
+    purpose: "Reviews code changes.",
+    trigger_condition: "before opening a PR",
+    spawn_path: "in_session_subagent",
+    model: null,
+    effort: null,
+    default_enabled: false,
+    policy_required: true,
+    allowed_dispositions: ["block", "degrade", "warn_proceed"],
+    fanout_bound: 15,
+    pref_count: 0,
+    pref_differs_from_default_count: 0,
+  };
+
+  it("returns the rows the backend served", async () => {
+    respondWith({ agents: [adminRow] });
+    await expect(listAdminAgentRegistry()).resolves.toEqual([adminRow]);
+  });
+
+  it("passes an empty registry through as an empty list", async () => {
+    respondWith({ agents: [] });
+    await expect(listAdminAgentRegistry()).resolves.toEqual([]);
+  });
+
+  it.each([
+    ["no agents key", {}],
+    ["a null agents key", { agents: null }],
+    ["an object agents key", { agents: { "code-reviewer": adminRow } }],
+    ["a bare array body", [adminRow]],
+  ])("throws rather than claiming an empty registry on %s", async (_l, body) => {
+    respondWith(body);
+    await expect(listAdminAgentRegistry()).rejects.toBeInstanceOf(AgentPrefError);
   });
 });
