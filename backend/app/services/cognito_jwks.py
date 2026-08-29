@@ -60,6 +60,14 @@ logger = structlog.get_logger(__name__)
 # stream of unknown kids identically.
 _FORCED_REFRESH_COOLDOWN_S = 30
 
+# Cap on the attacker-controlled ``kid`` where it reaches an exception
+# message, which ``cognito_user`` logs at WARNING on a PRE-AUTH path.
+# Matches `coord_jwks._MAX_KID_CHARS`, for the same reason: the kid is read
+# from an UNVERIFIED header and is otherwise unbounded, so without a cap a
+# caller can choose the content of a log write and repeat it at will.
+# Cognito's own kids are ~44 chars, so 64 truncates nothing real.
+_MAX_KID_CHARS = 64
+
 # Clock-skew tolerance for ``exp`` / ``iat`` validation. Web and Cognito
 # run on different clocks; standard distributed-JWT practice is 30-60s.
 # 30s matches the coord verifier's floor.
@@ -217,6 +225,10 @@ class CognitoJWKSClient:
         kid = header.get("kid")
         if not kid:
             raise CognitoTokenInvalidError("token header missing 'kid'")
+        # Coerce and cap before the kid can reach the unknown-kid exception
+        # message below, which `cognito_user` logs. Same treatment as the
+        # sibling `coord_jwks`; see `_MAX_KID_CHARS`.
+        kid = str(kid)[:_MAX_KID_CHARS]
 
         # First pass against the cached set; on a kid-miss, force one
         # refresh to absorb Cognito signing-key rotation.
