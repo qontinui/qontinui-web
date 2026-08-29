@@ -1,5 +1,5 @@
 /**
- * Line diff for the prompt-document version history (plan
+ * Line diff for prompt-document bodies (plan
  * `2026-07-17-session-autonomy-fabric.md` Phase 9).
  *
  * Prompt documents are prose measured in kilobytes and both sides are already in
@@ -8,6 +8,16 @@
  * library; the only existing "diff" surface, the collaboration
  * ConflictDiffItem, compares whole field VALUES and has no line-level engine to
  * reuse).
+ *
+ * **Promoted here from `admin/coord/prompt-documents/_lib/diff.ts`** by plan
+ * `2026-08-27-tenant-level-agent-authorable-stores.md` Phase 4, when the
+ * landed-write feed on the sibling `prompt-document-proposals` route became a
+ * second consumer. A per-route copy would have been the third hand-rolled line
+ * diff in this repo; the style guide's §6.4 rule ("a new console page composes
+ * primitives, or extends the guide in the same PR") makes promotion the
+ * intended move, and `time.ts`'s `relativeTime` is the precedent for it. This
+ * module is pure — it imports nothing, so it drags no runtime edge into
+ * `console/`, which is the property to CHECK when moving something here.
  *
  * Classic LCS dynamic programming over lines: O(n·m) time and memory, exact
  * (not a heuristic), and stable. A guard rail bails out to a whole-document

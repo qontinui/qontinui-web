@@ -64,6 +64,17 @@ the presented bearer:
    the ``X-Qontinui-Active-Tenant`` re-scoping header, which
    ``get_coord_identity`` forwards to coord).
 
+The fall-through from 1/2 to 3 is a PROBE, not a rejection: most coord
+verification failures mean only "this is not a coord token", and a Cognito
+bearer necessarily fails coord verification on its way to succeeding at
+step 3. Two failures are excluded, because they are reached only after the
+signature verified against a key this coord serves and so PROVE the bearer
+is coord-signed: an expired token and a not-yet-valid one both stop here
+with the reason named, rather than falling through to be reported as the
+generic "Authentication required." — or, where an operator user also
+resolves, silently answered 200 as that operator, on a different tenant
+than the presented token named.
+
 No credential → 401. Credential valid but no tenant resolvable → 403.
 """
 
@@ -132,8 +143,11 @@ from app.services import memory_store as store
 from app.services.coord_identity import get_coord_identity
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
+    CoordTokenExpiredError,
     CoordTokenInvalidError,
+    CoordTokenNotYetValidError,
     coord_jwks_client,
+    describe_token_rejection,
 )
 from app.services.memory_redaction import log_redactions, redact_text
 from app.services.memory_retrieval import rrf_fuse
@@ -255,8 +269,43 @@ async def get_memory_tenant(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Memory authentication temporarily unavailable.",
             ) from exc
+        except (CoordTokenExpiredError, CoordTokenNotYetValidError) as exc:
+            # These two arms are reached only AFTER the signature verified
+            # against a key this coord actually serves, so the bearer is
+            # provably coord-signed — it cannot also be a Cognito token, and
+            # falling through would answer a stale device JWT with the
+            # generic "Authentication required." at the bottom of this
+            # function. That is the same misdiagnosis the `coord_jwks` error
+            # split exists to remove, just relocated: the presenter's remedy
+            # is to re-mint (expired) or to fix clock drift (not yet valid),
+            # and neither is discoverable from "Authentication required."
+            #
+            # And when an operator user DOES resolve, the old fall-through was
+            # worse than unhelpful: it returned 200 as `actor="operator"` on
+            # `identity.home_tenant_id` — a silent principal downgrade onto a
+            # DIFFERENT tenant than the token's own `tenant_id` claim. A
+            # presented credential that verified must not be quietly discarded
+            # in favour of an ambient one; that is the half of this argument
+            # to keep in mind before reverting it.
+            #
+            # Deliberately narrower than the base class. A foreign-issuer
+            # rejection MUST keep falling through, because a Cognito bearer
+            # lands in that arm on the way to a SUCCESSFUL request — see
+            # `CoordTokenForeignIssuerError`'s own docstring. The residual
+            # `CoordTokenInvalidError` arm (bad signature, malformed header,
+            # missing kid) also keeps falling through: it does not prove the
+            # token was coord-signed, so Cognito still deserves its turn.
+            logger.warning(
+                "memory_auth_token_rejected",
+                error=str(exc),
+                failure=type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=describe_token_rejection(exc),
+            ) from exc
         except CoordTokenInvalidError:
-            # Not a coord-signed token — fall through to the Cognito path.
+            # Not provably a coord-signed token — fall through to Cognito.
             claims = None
 
         if claims is not None:

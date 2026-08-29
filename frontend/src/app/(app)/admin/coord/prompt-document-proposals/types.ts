@@ -12,9 +12,17 @@
  *
  * Additive clauses and tier-RAISING edits land immediately (they appear in the
  * landed-write feed). An edit that LOWERS a clause's tier or widens authority —
- * and, fail-closed, any edit the comparator cannot classify — does NOT land: it
- * is re-routed into `coord.prompt_document_proposals` (web migration
- * `prompt_doc_proposals_01`) as a PENDING proposal for operator review.
+ * and, fail-closed, any edit the comparator cannot classify — is re-routed into
+ * `coord.prompt_document_proposals` (web migration `prompt_doc_proposals_01`)
+ * as a PENDING proposal for operator review.
+ *
+ * **Which of those actually get held is the tenant's `policy_write` dial, not a
+ * constant.** At the shipped default a classified loosening becomes a proposal;
+ * at `full` it LANDS instead, announced rather than held (plan
+ * `2026-08-27-tenant-level-agent-authorable-stores.md`). So the landed-write
+ * feed must not describe itself as "only the safe direction" — it describes
+ * what landed, and `PromptDocumentWrite.loosening` is where the direction of a
+ * landed write is said out loud.
  *
  * So `direction` only ever takes two values here. `tightening` proposals do not
  * exist by construction — a tightening edit is already in the document.
@@ -157,10 +165,37 @@ export interface PromptDocumentWrite {
   version_number: number;
   /** The change note recorded at edit time. */
   change_note: string | null;
+  /**
+   * Coord's actor label for whoever wrote this version, stamped server-side.
+   * Several producers, several shapes — see `_lib/authorship.ts`, which is the
+   * only place that decides what one means.
+   */
   edited_by: string | null;
   created_at: string;
   /** The document's live version — `version_number === current_version` ⇒ head. */
   current_version: number;
+  /**
+   * **OPTIONAL — may be absent, and absent is not `false`.** Coord's direction
+   * verdict for a write that LANDED: `true` when the edit granted or widened
+   * authority (plan `2026-08-27-tenant-level-agent-authorable-stores.md`,
+   * Phase 3, reachable once the tenant's `policy_write` dial is `full`).
+   *
+   * A coord build that predates that classification omits the field entirely.
+   * The page must therefore treat `undefined` as "this server does not
+   * classify landed writes" — an unmarked ordinary row — and never as an
+   * authoritative "not a loosening". Only `true` marks and promotes a row; see
+   * `_lib/writes.ts`.
+   */
+  loosening?: boolean | null;
+  /**
+   * **OPTIONAL — absent means no link, not a broken one.** The reference coord
+   * carries from the write call into the emitted notification's payload, so a
+   * row reaches the author's stated reasoning in one click instead of the
+   * operator correlating two surfaces by timestamp (Phase 2).
+   *
+   * Served by the same not-yet-landed coord change as `loosening`.
+   */
+  notification_ref?: string | null;
 }
 
 /**

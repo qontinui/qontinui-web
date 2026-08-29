@@ -18,7 +18,7 @@ import contextvars
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 from urllib.parse import quote
 from uuid import UUID
 
@@ -30,6 +30,7 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Path,
     Query,
     Request,
     WebSocket,
@@ -48,7 +49,7 @@ from qontinui_schemas.generated.per_type.memory_restore_request import (
 from qontinui_schemas.generated.per_type.memory_upsert_request import (
     MemoryUpsertRequest,
 )
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketState
@@ -68,6 +69,7 @@ from app.api.deps import (
 from app.api.v1.endpoints.devices import _device_to_wire as _runner_to_wire
 from app.core.config import settings
 from app.crud import runner_crud
+from app.middleware.rate_limit import get_authorization_identifier, user_limiter
 from app.models.machine_display_name import MachineDisplayName
 from app.models.user import User as UserModel
 from app.schemas.dev_dashboard import (
@@ -81,8 +83,12 @@ from app.services import cognito_admin
 from app.services.cognito_admin import (
     CognitoAdminError,
     CognitoAmbiguousEmailError,
+    CognitoConfigurationError,
     CognitoGroupExistsError,
     CognitoInvalidParameterError,
+    CognitoResourceNotFoundError,
+    CognitoThrottledError,
+    CognitoUserNotFoundError,
 )
 from app.services.coord_device_status import (
     CoordDeviceStatusDisabledError,
@@ -737,6 +743,28 @@ async def remove_runner(
 # Per plans/2026-05-18-coordination-layer-demos.md §5.2.1.
 
 
+class CoordTransportUnavailable(HTTPException):
+    """The request to coord never completed — so its status is OURS, not coord's.
+
+    :func:`_proxy_coord_get` invents a 502 for a connect error and a 504 for a
+    timeout. Both are qontinui-web's own numbers; coord was never reached and
+    gave no answer. A caller that reports a status to an operator must be able
+    to tell those from a status coord genuinely returned, and every
+    string-based way of telling is forgeable: ``_proxy_coord_get`` passes
+    coord's ``resp.text`` straight through as the detail, so a coord 5xx whose
+    body happens to read "coord is not reachable" is indistinguishable by
+    detail alone. Chained ``__context__`` does not work either — a genuine
+    coord error is raised OUTSIDE any ``except`` block, so its context is
+    ``None`` and every genuine answer falls through to whatever the fallback
+    is, making the fallback the only arm that ever runs.
+
+    A subclass is unforgeable by a response body, survives a re-raise or a
+    retry loop, and covers any future transport conversion that uses it
+    without a second edit. It is transparent to every other caller of the
+    proxies: it IS an ``HTTPException``, with the same status and detail.
+    """
+
+
 async def _proxy_coord_get(
     path: str,
     *,
@@ -804,16 +832,16 @@ async def _proxy_coord_get(
     async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
         try:
             resp = await client.get(url, params=params, headers=request_headers)
-        except httpx.ConnectError:
-            raise HTTPException(
+        except httpx.ConnectError as exc:
+            raise CoordTransportUnavailable(
                 status_code=502,
                 detail="coord is not reachable",
-            )
-        except httpx.TimeoutException:
-            raise HTTPException(
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise CoordTransportUnavailable(
                 status_code=504,
                 detail="timeout waiting for coord",
-            )
+            ) from exc
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -3148,6 +3176,13 @@ async def get_claims_steals(
     )
 
 
+#: Page size asked of coord for the claim-alert slice. Coord's documented hard
+#: maximum, and it clamps rather than erroring, so this cannot 4xx if the cap
+#: ever moves down. See the comment in :func:`get_claims_alerts` for why this
+#: is a constant and not a query parameter.
+_CLAIMS_ALERTS_LIMIT = 1000
+
+
 @router.get("/claims/alerts")
 async def get_claims_alerts(
     tenant_id: UUID = Depends(get_tenant_id),
@@ -3170,8 +3205,27 @@ async def get_claims_alerts(
 
     Forwards the operator bearer (fleet-auth P2/D6).
     """
+    # `limit` is EXPLICIT, and it is not a style choice. This endpoint sends
+    # no page size, so it inherits coord's default — and the coord half of
+    # plan `2026-08-05-coord-alerts-surface-and-fleet-style-ui` dropped that
+    # default from 500 to 100 when it added paging. Silently, from here: the
+    # narrowing lives in another repo and there is no signal on this side.
+    #
+    # The single consumer (`AgentClaimsDashboard`'s stale-claim section) does
+    # not page and does not read `total_count`, so above the ceiling it would
+    # render a truncated list as the whole truth — the exact defect that plan
+    # exists to kill, re-created one endpoint over. 1000 is coord's own hard
+    # maximum (it clamps rather than erroring), which is 2x the ceiling this
+    # endpoint had before the coord change and 10x the one it has now.
+    #
+    # Deliberately a constant in the params dict rather than a `limit` query
+    # parameter: a new FastAPI parameter changes the OpenAPI schema, and this
+    # endpoint has exactly one caller, which wants all active claim alerts.
+    # Give it a real `limit` when a second caller needs a different answer.
     payload = await _proxy_coord_get(
-        "/coord/alerts", params={"source": "claim-"}, tenant_id=tenant_id
+        "/coord/alerts",
+        params={"source": "claim-", "limit": _CLAIMS_ALERTS_LIMIT},
+        tenant_id=tenant_id,
     )
     # coord returns either a list or `{"alerts": [...]}` depending on the
     # version; pass either through untouched. No Python-side filtering —
@@ -3977,6 +4031,33 @@ async def get_fleet_resource_samples(
       §D1 control that validates and versions with no consumer). It must
       reach the browser as null so it can render "set, not enforced"
       instead of inheriting a verb it does not have.
+    * The **saturation** fields — ``threads_max``, ``threads_used``,
+      ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic
+      ``fleet_res_tel_04``, qontinui-web#1104) — are a THIRD axis, and
+      the only one that is instrumentally independent of memory. On
+      2026-08-27 a container sat at 190,840 of a 192,146 kernel thread
+      ceiling (99.3%), no ``fork()`` on the box could succeed, and every
+      memory and disk figure this route returned was green *and
+      accurate*: they were all measuring a resource that had not run
+      out. Passed through untouched like everything else here, and with
+      the same rule doing more work than usual — **NULL must stay NULL**.
+      A fabricated ``0`` does not merely misreport on this axis, it
+      inverts the reading: ``threads_used = 0`` renders as *perfectly
+      idle* on the one column built to catch a saturated box, and a
+      ``NULLS LAST`` ranking would then promote the blind machine to the
+      front of the dispatch queue.
+    * ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |
+      null) is not bookkeeping and must not be dropped as a label: a
+      cgroup counts **tasks (threads)** and ``/proc`` counts
+      **thread-group leaders**, which coord's own ``process_health.rs``
+      records as "different quantities" — they can differ by an order of
+      magnitude. A publisher that probes the cgroup, fails, and falls
+      back to ``/proc`` emits a number whose meaning changed with
+      nothing else in the row saying so. It carries no CHECK in the
+      schema (an unrecognised provenance label would otherwise fail the
+      whole INSERT and discard the memory and disk metrics on the same
+      row), so an unexpected value reaches the browser and renders as an
+      explicit unknown rather than being coerced here.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -6986,10 +7067,19 @@ async def list_coord_policies(
 
     ``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``
     filters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when
-    PRESENT — including as an empty string, which is a real filter to coord and
-    not a synonym for "unfiltered" (``?repo=`` selects the degenerate
-    empty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is
-    a better answer than silently listing everything). Until this route
+    PRESENT.
+
+    For the two STRING filters that includes an empty string, which is a real
+    filter to coord and not a synonym for "unfiltered" (``?repo=`` selects the
+    degenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown
+    kind, which is a better answer than silently listing everything).
+    ``enabled`` is the exception and is NOT reachable that way: it is a
+    ``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function
+    runs (measured — ``?repo=`` and ``?kind=`` reach the handler as ``""``;
+    ``?enabled=`` does not reach it at all). Only ``?enabled=true`` /
+    ``?enabled=false`` are expressible, which costs nothing: an empty
+    ``enabled`` has no meaning to coord, whose own field is an
+    ``Option<bool>``. Until this route
     accepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and
     a tenant's DISABLED rules were **not listable from the console** — the
     ``/admin/coord/automation-rules`` enable/disable switch could therefore
@@ -7167,10 +7257,11 @@ async def update_prompt_document(
     tenant_id: UUID = Depends(require_coord_tenant_admin),
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
-    """Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.
+    """Edit a prompt document's description/body/attrs/authorship tier.
+    Tenant-admin only.
 
-    The body is forwarded as ``{description?, body?, attrs?, agent_writable?,
-    change_description?}`` with ``updated_by`` stamped from the authenticated
+    The body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,
+    agent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated
     session (see :func:`_editor_identity`) — a body-supplied ``updated_by`` is
     ignored, so the version snapshot coord writes carries the real editor. Coord
     creates a new immutable version on every successful description/body edit;
@@ -7179,16 +7270,24 @@ async def update_prompt_document(
     edit is document configuration, not content — coord updates it in place
     without creating a version.
 
-    ``agent_writable`` is the per-document agent write access flag
-    (``true`` = agents may write this document via
-    ``coord_write_prompt_document``, ``false`` = they may not). It is
-    deliberately NOT attrs-shaped: supplying it takes coord's **versioning**
-    path even when nothing else changes, because who may write a policy
-    document is authority rather than configuration and the record of who
+    ``agent_write_tier`` is the per-document authorship setting — one of
+    ``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is
+    coord's LEGACY two-state spelling of the same setting, kept on the wire for
+    a client that predates the tier; coord resolves a legacy ``true`` as "at
+    least allow", so a stored ``allow_with_notification`` survives it, and a
+    legacy ``false`` is an unambiguous ``deny``. Send the tier when the caller
+    can name one — only an explicit tier can move a document ONTO, or DOWN off,
+    the notification tier. Both are forwarded verbatim; neither is synthesised
+    from the other here, because collapsing them at this hop would strip a
+    precondition the operator set with no error and no audit signal.
+
+    Either field is deliberately NOT attrs-shaped: supplying one takes coord's
+    **versioning** path even when nothing else changes, because who may write a
+    policy document is authority rather than configuration and the record of who
     changed it has to outlive the next agent append (which overwrites the
     parent row's mutable ``updated_by``).
 
-    Omitting it leaves the current setting alone. There is no wire
+    Omitting them leaves the current setting alone. There is no wire
     representation for clearing it back to "no operator opinion" — coord has
     none either.
     """
@@ -7314,6 +7413,119 @@ async def restore_prompt_document_version(
         f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}"
         f"/versions/{version}/restore",
         payload,
+        tenant_id=tenant_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-KIND prompt-document authorship tier
+# ---------------------------------------------------------------------------
+#
+# The sibling lever to the per-document ``agent_write_tier`` on the PATCH
+# above, and the only one that can be expressed for a document that does not
+# exist yet. ``agent_write_tier`` is a column on a document ROW, so it can only
+# be set on a document that already exists; the intent kinds are denied
+# kind-wide over an OPEN name space, so the first agent write to a NEW name is
+# refused and there is nothing to flip.
+#
+# Coord serves these on a SIBLING path (``/coord/prompt-document-kind-tiers``)
+# rather than nested under ``/coord/prompt-documents/``, because that surface
+# already owns the ``{kind}/{name}`` two-segment shape. The proxy mirrors coord
+# verbatim rather than inventing a nicer local shape — the same discipline the
+# clause proxies keep.
+
+
+@router.get("/coord/prompt-document-kind-tiers")
+async def list_prompt_document_kind_tiers(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """This tenant's per-kind agent authorship tiers. Any tenant member.
+
+    One row per KIND, not one per stored row: "no row" is a meaningful state
+    (coord's compile-time default answers instead), and the two facts that
+    matter most — the unliftable ``floor`` and the liftable
+    ``builtin_default_denies`` — are not in coord's table at all.
+
+    Read-only for any tenant member, matching the sibling document reads; the
+    PUT/DELETE below are tenant-admin-gated and coord re-checks.
+
+    Coord answers **503** rather than an empty list when the store is not
+    provisioned, and that distinction is load-bearing: an empty list reads as
+    "no kind has a setting", which is a claim about the operator's
+    configuration nothing has evidence for. The 503 passes through.
+    """
+    return await _proxy_coord_get(
+        "/coord/prompt-document-kind-tiers", tenant_id=tenant_id
+    )
+
+
+@router.put("/coord/prompt-document-kind-tiers/{kind}")
+async def set_prompt_document_kind_tier(
+    kind: str,
+    body: dict[str, Any],
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Set this tenant's authorship tier for every document of ``kind``.
+    Tenant-admin only.
+
+    Body: ``{tier}`` — one of ``deny``, ``allow``, ``allow_with_notification``.
+    Only ``tier`` is forwarded: coord stamps ``updated_by`` from its own
+    authenticated ``OperatorContext`` on this route, so forwarding a client
+    claim would add another client-asserted-provenance site of the kind plan
+    ``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.
+
+    ⚠️ **``allow_with_notification`` currently behaves exactly as ``allow``.**
+    Coord resolves the tier but does not yet enforce the notification
+    precondition (Phase 2 of plan
+    ``2026-08-27-tenant-level-agent-authorable-stores``). Coord's response
+    carries ``notification_enforced: false`` and a prose ``warning`` saying so
+    on every call, and the UI must surface it — a control whose NAME promises
+    more than the deployed build delivers, in the permissive direction, is
+    worse than no control.
+
+    Coord 4xx passes through: 400 for an unknown kind or an unrecognized tier
+    (naming the vocabulary), and **409 for a kind that is an unliftable
+    FLOOR** — ``claude_settings``, whose documents a machine copies into its own
+    harness configuration. That one is refused rather than stored-and-ignored,
+    so the store's contents and its meaning stay the same thing.
+    """
+    # Only `tier`, and only when the body CARRIED one. `{"tier": None}` is
+    # exactly the payload the DELETE docstring below says carries no meaning
+    # (JSON null is indistinguishable from omission on the way through), and
+    # synthesising it from an absent key would mean a typo'd key name reaching
+    # coord as an explicit null rather than as a missing field. Same shape as
+    # :func:`restore_prompt_document_version`, which inserts its optional field
+    # only when it is not None; coord's 400 then names the vocabulary.
+    payload: dict[str, Any] = {}
+    if body.get("tier") is not None:
+        payload["tier"] = body["tier"]
+    return await _proxy_coord_put(
+        f"/coord/prompt-document-kind-tiers/{quote(kind, safe='')}",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.delete("/coord/prompt-document-kind-tiers/{kind}")
+async def clear_prompt_document_kind_tier(
+    kind: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Clear this tenant's per-kind tier for ``kind``, returning it to "no
+    operator opinion" so coord's compile-time default answers again.
+    Tenant-admin only.
+
+    A separate verb rather than a nullable ``tier`` on the PUT: JSON ``null``
+    is indistinguishable from omission on the way through, so a nullable field
+    cannot express a clear at all.
+
+    Idempotent — coord answers 200 for a kind that held no row, because "this
+    kind holds no tenant setting" is the state being requested and it is
+    equally true either way. A caller reconciling state must not read a
+    successful no-op as a failure.
+    """
+    return await _proxy_coord_delete(
+        f"/coord/prompt-document-kind-tiers/{quote(kind, safe='')}",
         tenant_id=tenant_id,
     )
 
@@ -7716,6 +7928,94 @@ def _parse_iso(value: Any) -> datetime:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+# The two OPTIONAL per-write annotations coord serves on a version row
+# (``list_versions`` / ``get_version``), mapped to the JSON types the shipped
+# frontend declares for them (``PromptDocumentWrite.loosening?: boolean | null``,
+# ``notification_ref?: string | null``).
+#
+# THE WIRE VOCABULARY IS ``true`` / ``false`` / ABSENT — there is no fourth
+# state, and nothing here should imply one. coord holds `loosening` as
+# ``Option<bool>`` with ``skip_serializing_if = "Option::is_none"``, so it emits
+# ``true``, ``false``, or the key not at all; it never emits ``null``. ``None``
+# is nevertheless admissible below and is forwarded verbatim, because a proxy
+# does not re-encode its upstream's vocabulary — but that branch is
+# defensiveness against a future producer, NOT a state with a meaning today: no
+# current producer emits it, and no current consumer distinguishes it from an
+# absent key (``looseningClassificationPresent`` counts ``=== true`` and
+# ``=== false`` only, and ``notificationHref`` maps ``null``, blank and absent
+# alike to "no link").
+#
+# The type guard is ``isinstance``, and ``isinstance(1, bool)`` is False — so a
+# JSON ``1`` is correctly NOT accepted as a ``loosening`` verdict, the reverse
+# of the usual "bool is a subclass of int" trap.
+_WRITE_ANNOTATIONS: tuple[tuple[str, tuple[type, ...]], ...] = (
+    ("loosening", (bool,)),
+    ("notification_ref", (str,)),
+)
+
+
+def _write_annotations(version: dict[str, Any], doc: dict[str, Any]) -> dict[str, Any]:
+    """The annotation keys coord actually served on this version row.
+
+    **ABSENT MUST STAY ABSENT, and this function is the only place that decides
+    it.** The write dict is otherwise a fixed literal built with ``.get``, and a
+    key built that way is ALWAYS present in the output — ``.get`` cannot tell an
+    unserved key from a served value, so every row in the feed would carry a
+    ``loosening`` this proxy invented rather than one coord sent. Membership
+    makes that unrepresentable, and it is the same rule that keeps ``edited_by``
+    verbatim: a proxy reports its upstream, it does not fill in for it.
+
+    What the two served values mean, so nothing infers a third:
+
+    * ``false`` — the direction classifier RAN on this write and found no
+      widening. This is a real verdict and must survive as ``false``; it is what
+      ``looseningClassificationPresent`` (``_lib/writes.ts``) counts, and it is
+      the whole basis of the page saying "nothing here is flagged".
+    * absent — no verdict exists. Several causes, and the surface treats them
+      alike because none of them is a statement about the write: no classifier
+      ran for it (coord's own ``None`` — an operator PATCH, a clause recompile,
+      a seed rewrite), a coord build predating the classification, or coord
+      degrading its own read when the columns are missing
+      (``pg_error::is_missing_schema_object``, 42703/42P01).
+
+    So ``false`` and absent are genuinely different facts, and the one thing this
+    function must never do is emit ``false`` for an unserved key — that would
+    invent a verdict coord never gave, on every historical write at once.
+
+    The same membership rule reaches ``notification_ref``. Nothing renders
+    differently for an absent ref than for a ``null`` one — ``notificationHref``
+    maps both to no link — so the reason is not a rendering bug it averts, it is
+    that the feed's job is to report what coord holds.
+
+    Values are passed through unmodified — this proxy does not re-encode coord's
+    vocabulary any more than it re-encodes ``edited_by``. The one thing it does
+    do is refuse a value of a type the frontend's declared contract cannot hold
+    (a numeric ``notification_ref``, say, on which ``notificationHref``'s
+    ``.trim()`` would throw and take the page down). Such a value is dropped and
+    logged with the document address, so a coord-side type defect is greppable
+    instead of silent — and it is deliberately NOT counted as a failed document
+    read: the document's history WAS returned, so inflating ``partial`` here
+    would misreport a well-formed feed as a partial one.
+    """
+    out: dict[str, Any] = {}
+    for key, admissible in _WRITE_ANNOTATIONS:
+        if key not in version:
+            continue
+        value = version[key]
+        if value is None or isinstance(value, admissible):
+            out[key] = value
+            continue
+        logger.warning(
+            "prompt_document_write_annotation_wrong_type",
+            kind=doc.get("kind"),
+            name=doc.get("name"),
+            version_number=version.get("version_number"),
+            annotation=key,
+            got=type(value).__name__,
+        )
+    return out
+
+
 async def _fetch_versions_bulk(
     documents: list[dict[str, Any]], tenant_id: UUID
 ) -> list[Any]:
@@ -7929,15 +8229,35 @@ async def list_prompt_document_writes(
     :func:`update_prompt_document`, which coord records as a NEW version —
     history is never rewritten).
 
-    Writes are returned unfiltered, with ``edited_by`` verbatim. Deliberately no
-    "agent writes only" filter: the provenance tag coord's write tool stamps is
-    not fixed until its Phase 5 half lands, and filtering on a guessed prefix
-    would silently hide writes — the exact failure this feed exists to prevent.
+    Writes are returned unfiltered, with ``edited_by`` verbatim, and that is
+    still deliberate — but **not for the reason this docstring used to give.** It
+    said the provenance tag coord stamps "is not fixed until its Phase 5 half
+    lands", so filtering on a guessed prefix would silently hide writes. The
+    spellings are no longer a guess: ``frontend/…/prompt-document-proposals/_lib/
+    authorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over
+    ``session:`` / ``agent:`` / ``device:``, matching coord's own
+    ``notifications::human_identity``, and classifies everything else as
+    ``operator`` / ``system`` / ``unknown`` rather than folding it into either
+    side. The reason the filter is absent HERE is now about where it belongs, not
+    about what it would have to guess: it runs on the client over rows already on
+    screen, it is off by default, and when it is on the feed states how many rows
+    it hides and in which class — so a hidden write stays a counted write. A
+    server-side filter can offer none of that, and its drops would be invisible.
+
+    Two OPTIONAL per-write annotations are carried through from coord's version
+    rows: ``loosening`` (the direction verdict for a write that LANDED) and
+    ``notification_ref`` (the finding id that carries the author's reasoning).
+    Plan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.
+    **A key coord did not send is OMITTED here, never sent as ``null`` and never
+    as ``false``** — see :func:`_write_annotations`.
 
     Honest partial results: a per-document versions read that fails is skipped and
     reported in ``partial`` rather than failing the whole feed, so one bad
     document cannot blank the page — and every skip is logged, so "3 of 20
     documents did not return their history" is greppable rather than a dead end.
+    An absent annotation is NOT such a failure: it is the ordinary shape of a
+    coord build that predates the classification, and must never push a document
+    into ``failed``.
     """
     try:
         listing = await _proxy_coord_get("/coord/prompt-documents", tenant_id=tenant_id)
@@ -7994,6 +8314,10 @@ async def list_prompt_document_writes(
                     "edited_by": version.get("edited_by"),
                     "created_at": version.get("created_at"),
                     "current_version": current_version,
+                    # Spread LAST and built by membership, not by `.get` — the
+                    # fixed literal above is exactly the shape that cannot
+                    # express "this key was not served".
+                    **_write_annotations(version, doc),
                 }
             )
 
@@ -8276,11 +8600,21 @@ async def get_coord_my_tenants(
 # group) is detected in the error text and mapped to 404.
 
 
+#: Cognito's own cap on ``GroupType.Description``. Without it a longer
+#: description spent an AWS round-trip only to come back as
+#: ``InvalidParameterException`` — which the endpoint turned into a 502
+#: blaming AWS for the caller's over-long text. Rejecting it at the schema
+#: makes it a 422 that names the field, before anything leaves the process.
+_COGNITO_GROUP_DESCRIPTION_MAX = 2048
+
+
 class _CreateGroupBody(BaseModel):
     """Body for ``POST /coord/cognito/groups``."""
 
     group_name: str = Field(..., min_length=1)
-    description: str | None = None
+    description: str | None = Field(
+        default=None, max_length=_COGNITO_GROUP_DESCRIPTION_MAX
+    )
 
 
 class _GroupMemberBody(BaseModel):
@@ -8289,102 +8623,974 @@ class _GroupMemberBody(BaseModel):
     email: str = Field(..., min_length=1)
 
 
+# ---- Rate limits on the mutating pool-wide routes ------------------------
+#
+# ``operations.py`` carried no limiter at all, and this app installs no
+# ``SlowAPIMiddleware``, so ``Limiter.default_limits`` never apply either:
+# slowapi here is **per-decorator only** (``app.state.limiter`` in
+# ``main.py`` wires the 429 handler, not enforcement). Nothing therefore
+# throttled a scripted loop that walked the pool deleting every group —
+# ``require_admin`` bounds who may call these, and until now nothing bounded
+# how fast.
+#
+# The numbers are sized against how these routes are actually driven. Pool
+# provisioning is a hand operation: an operator creates a group, maps it in
+# coord, adds a few people. That is single digits per minute. A loop is
+# hundreds. Every limit below sits far above the first and far below the
+# second, so the cap is invisible to real use and immediate to a script.
+#
+#   * DELETE group  — 5/min. The lowest, because it is the only irreversible
+#     one: Cognito has no undelete and the Phase 2 guards can only refuse
+#     the deletes they can prove are harmful.
+#   * POST group    — 10/min. Creation is recoverable (delete it again), so
+#     the limit exists to bound noise rather than damage.
+#   * add/remove member — 30/min. Onboarding a team by hand is a legitimate
+#     burst of a dozen or so calls; 30 leaves room for it while still
+#     stopping a membership-stripping loop within seconds.
+#
+# Keyed per caller (``get_authorization_identifier``) rather than per IP:
+# behind Vercel/ALB an IP key would collapse every operator into one bucket.
+#
+# ``shared_limit`` with an explicit scope, NOT ``limit`` — and that is not a
+# style choice. slowapi's default ``key_style`` is ``"url"``, so a plain
+# ``@limiter.limit`` on a route with a PATH PARAMETER buckets per URL:
+# ``DELETE .../groups/a`` and ``DELETE .../groups/b`` would count
+# separately, and the scripted loop this exists to stop — one call per
+# group name — would never share a bucket with itself. ``users.py`` gets
+# away with ``limit`` because ``PUT /me`` has no path parameter. Naming the
+# scope pins one bucket per ROUTE per caller.
+#
+# Deliberately NOT done here: installing ``SlowAPIMiddleware`` globally.
+# That would switch on ``default_limits`` for every route in the app at
+# once — a fleet-wide behaviour change, and not this plan's to make.
+_DELETE_GROUP_RATE_LIMIT = "5 per minute"
+_CREATE_GROUP_RATE_LIMIT = "10 per minute"
+_GROUP_MEMBER_RATE_LIMIT = "30 per minute"
+
+
+def _rate_limiting_disabled() -> bool:
+    """Honour the ``RATE_LIMIT_ENABLED`` kill switch on these decorators.
+
+    ``user_limiter`` is built without ``enabled=`` (unlike ``auth_limiter``
+    / ``api_limiter``), so it does not read the switch itself. Reading it
+    here — per request, not at import — keeps these routes the same
+    operational off-ramp every other limited route in this app has.
+    """
+    return not settings.RATE_LIMIT_ENABLED
+
+
+# ---- Group-name validation on the PATH parameter -------------------------
+
+
+def validated_group_name(
+    group_name: str = Path(
+        ...,
+        description="Cognito group name.",
+    ),
+) -> str:
+    """A path ``group_name`` that can exist in Cognito, or a 400 saying why.
+
+    ``cognito_admin.invalid_group_name_reason`` is the single definition of
+    Cognito's ``groupName`` constraint (it landed with the create route,
+    which validates its *body* field with it). Lifting it to a dependency
+    applies the same rule to the four routes that take the name in the
+    PATH — until now a malformed name there travelled all the way to AWS,
+    came back ``InvalidParameterException``, and was reported as **502**:
+    the endpoint telling the operator that AWS is broken when the only
+    thing wrong was a space in what they typed.
+
+    A dependency rather than a call at the top of each handler so a fifth
+    route cannot be added past it, and so the check runs before the
+    handler's own work — the delete route in particular reads coord's
+    mapping table first, and there is no point spending that round-trip on
+    a name Cognito could never have held.
+
+    **It must be declared AFTER ``current_user`` in every signature.**
+    FastAPI solves dependencies in signature order, so declaring it first
+    made an unauthenticated caller get a 400 about their group name instead
+    of a 401 — processing caller-controlled input on a superuser-gated
+    route before deciding whether the caller is anybody at all, and letting
+    the status code depend on that input pre-authentication. Nothing leaks
+    (the rule is public), but authenticate first is not a property to
+    rediscover per route. ``test_the_validator_does_not_run_before_the_admin_gate``
+    pins it.
+
+    ``create_cognito_group`` is NOT one of these four: its name arrives in
+    ``_CreateGroupBody``, and ``cognito_admin.create_group`` already runs
+    the same check on it. Re-validating there would be a second, drifting
+    copy of one rule.
+    """
+    reason = cognito_admin.invalid_group_name_reason(group_name)
+    if reason is not None:
+        raise HTTPException(status_code=400, detail=f"group_name {reason}")
+    return group_name
+
+
+# ---- Mapping a Cognito failure onto the status that is TRUE of it --------
+
+
 def _is_resource_not_found(exc: CognitoAdminError) -> bool:
-    """True when a wrapped boto3 error denotes a missing AWS resource."""
+    """True when a wrapped boto3 error denotes a missing AWS *group*.
+
+    Types first: ``cognito_admin`` now classifies boto3's ``Error.Code``
+    into subclasses, so the ordinary path does no string matching at all.
+    The text arm remains for a ``CognitoAdminError`` raised outside that
+    classifier.
+
+    ``CognitoConfigurationError`` is excluded explicitly. It IS a
+    ``ResourceNotFoundException`` — the one AWS returns for a pool id that
+    names nothing — so the old text test matched it and reported a server
+    misconfiguration as ``404 No such group``.
+    """
+    if isinstance(exc, CognitoConfigurationError):
+        return False
+    if isinstance(exc, CognitoResourceNotFoundError):
+        return True
     message = str(exc)
     return "ResourceNotFoundException" in message or "not found" in message.lower()
+
+
+def _cognito_http_error(
+    exc: CognitoAdminError,
+    *,
+    log_event: str,
+    fallback_detail: str,
+    group_name: str | None = None,
+    email: str | None = None,
+    **log_context: Any,
+) -> HTTPException:
+    """The ``HTTPException`` that tells the truth about ``exc``.
+
+    One mapper for all six group routes, so a status is decided once rather
+    than six times with five different sets of string tests. 502 keeps its
+    meaning — *the upstream is genuinely broken* — which is the only thing
+    that makes it a useful signal in a log.
+
+    The arms, in the order they are tried:
+
+    * throttled          → **429**, with ``Retry-After``. AWS is healthy.
+    * pool misconfigured → **500**. A server fault, never "no such group".
+    * bad parameter      → **400**. The caller's input, carrying AWS's reason.
+    * user not found     → **404** naming the email, not the group.
+    * group not found    → **404** naming the group.
+    * anything else      → 502 with ``fallback_detail``.
+    """
+    if isinstance(exc, CognitoThrottledError):
+        logger.warning(log_event, reason="throttled", error=str(exc), **log_context)
+        return HTTPException(
+            status_code=429,
+            detail={
+                "error": "cognito_throttled",
+                "message": (
+                    "Cognito is rate-limiting this pool's admin API. Nothing "
+                    "was changed; retry in a few seconds."
+                ),
+            },
+            # AWS's own hint when it sent one; 5s only when it did not. A
+            # number we invented would be a guess presented as the service's
+            # answer.
+            headers={"Retry-After": exc.retry_after or "5"},
+        )
+    if isinstance(exc, CognitoConfigurationError):
+        logger.error(
+            log_event, reason="pool_misconfigured", error=str(exc), **log_context
+        )
+        return HTTPException(
+            status_code=500,
+            detail={
+                "error": "cognito_pool_misconfigured",
+                "message": (
+                    "This server's Cognito user pool is absent or "
+                    "misconfigured (COGNITO_USER_POOL_ID), so the request "
+                    "resolved against no pool at all. That is a SERVER "
+                    "configuration fault — it does not mean the group or "
+                    "user you named is missing."
+                ),
+            },
+        )
+    if isinstance(exc, CognitoInvalidParameterError):
+        # AWS rejected an argument as malformed. That is the caller's error
+        # and self-explaining, so it carries AWS's message rather than the
+        # generic 502 that would claim the upstream is broken. Item 11's
+        # validator covers the group NAME before the wire; this covers every
+        # other argument, including a malformed username on the membership
+        # routes.
+        logger.info(
+            log_event, reason="invalid_parameter", error=str(exc), **log_context
+        )
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, CognitoUserNotFoundError):
+        logger.info(log_event, reason="user_not_found", error=str(exc), **log_context)
+        return HTTPException(
+            status_code=404,
+            detail=(
+                f"No such Cognito user: {email}" if email else "No such Cognito user."
+            ),
+        )
+    if group_name is not None and _is_resource_not_found(exc):
+        logger.info(log_event, reason="group_not_found", error=str(exc), **log_context)
+        return HTTPException(status_code=404, detail=f"No such group: {group_name}")
+    logger.error(log_event, error=str(exc), **log_context)
+    return HTTPException(status_code=502, detail=fallback_detail)
+
+
+# ---- Audit: who did what to the shared pool ------------------------------
+#
+# All six routes bound ``current_user`` via ``require_admin`` and then never
+# referenced it, so the only trace a pool-wide group had been deleted was a
+# service-layer structlog line carrying no actor at all. These are the
+# highest-blast-radius operations in the dashboard; "someone deleted it" is
+# not an answer anybody can act on.
+#
+# Shape mirrors ``auth/identities.py`` ``_write_audit``: core SQL against a
+# dedicated audit table rather than an ORM model, keeping the audit surface
+# decoupled from the User mapper. That precedent covers a strictly
+# LOWER-privilege operation (a user linking their own identity), which is
+# the argument for having it here too.
+
+#: Actions written to ``auth.cognito_group_admin_events``. Mirrors that
+#: table's CHECK constraint — a value added here without the matching
+#: migration would make every audit write fail.
+_COGNITO_AUDIT_ACTIONS = frozenset(
+    {"create_group", "delete_group", "add_user_to_group", "remove_user_from_group"}
+)
+
+
+async def _write_cognito_group_audit(
+    db: AsyncSession | None,
+    *,
+    actor_user_id: Any,
+    action: str,
+    group_name: str,
+    target_email: str | None = None,
+    target_username: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Insert one ``auth.cognito_group_admin_events`` row.
+
+    Called only AFTER the AWS call succeeded, and best-effort ON PURPOSE.
+    By the time we get here the pool has already changed and Cognito has no
+    undelete, so raising would report a failure that did not happen and
+    invite the operator to retry a delete that already landed — strictly
+    worse than an audit gap. The failure is logged at ``error`` with the
+    whole row (``target_email`` included: that row is the only thing the log
+    line is FOR, and a redacted one could not be replayed), so it is
+    recoverable from the application log rather than silently dropped.
+
+    The ``INSERT`` runs inside a **SAVEPOINT**. A failed statement otherwise
+    poisons the whole session — and ``get_async_db`` commits on teardown, so
+    an audit-table problem would turn a successful mutation into a 500 after
+    the fact. A savepoint rolls back only this statement, which also matters
+    because ``db`` is the SAME session ``require_admin`` loaded
+    ``current_user`` from: a session-wide ``rollback()`` would expire that
+    instance and make any later attribute read re-query.
+
+    What this does NOT cover, deliberately, is a failure raised by the
+    teardown ``commit()`` itself (a dropped connection, a deferred
+    constraint). Nothing at this layer can: the commit happens after the
+    response is already decided.
+    """
+    payload: dict[str, Any] = {
+        "actor_user_id": str(actor_user_id),
+        "action": action,
+        "group_name": group_name,
+        "target_email": target_email,
+        "target_username": target_username,
+        "details": json.dumps(details or {}),
+    }
+    try:
+        if db is None:
+            raise RuntimeError("no database session was provided")
+        async with db.begin_nested():
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO auth.cognito_group_admin_events
+                        (actor_user_id, action, group_name, target_email,
+                         target_username, details)
+                    VALUES
+                        (:actor_user_id, :action, :group_name, :target_email,
+                         :target_username, CAST(:details AS JSONB))
+                    """
+                ),
+                payload,
+            )
+    except Exception as exc:  # noqa: BLE001 - audit must never fail the request
+        logger.error(
+            "cognito_group_audit_write_failed",
+            error=str(exc),
+            actor_user_id=payload["actor_user_id"],
+            action=action,
+            group_name=group_name,
+            target_email=target_email,
+            target_username=target_username,
+        )
 
 
 @router.get("/coord/cognito/groups")
 async def list_cognito_groups(
     current_user: UserModel = Depends(require_admin),
 ) -> dict[str, Any]:
-    """List every Cognito group in the shared pool. Superuser-gated."""
+    """List every Cognito group in the shared pool. Superuser-gated.
+
+    Read-only: no audit row and no rate limit (it changes nothing and the
+    dashboard polls it), but it shares the error mapper so a throttle reads
+    429 and a bad pool id reads 500 rather than both reading 502.
+    """
     try:
         groups = await asyncio.to_thread(cognito_admin.list_groups)
     except CognitoAdminError as exc:
-        logger.error("cognito_groups_list_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not list Cognito groups.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_groups_list_failed",
+            fallback_detail="Could not list Cognito groups.",
+        ) from exc
     return {"groups": groups}
 
 
 @router.post("/coord/cognito/groups")
+@user_limiter.shared_limit(
+    _CREATE_GROUP_RATE_LIMIT,
+    scope="cognito-group-create",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def create_cognito_group(
+    request: Request,
     body: _CreateGroupBody,
     current_user: UserModel = Depends(require_admin),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Create a Cognito group. 409 if a group with that name already
     exists, 400 if the name cannot satisfy Cognito's ``groupName``
-    constraint. Superuser-gated."""
+    constraint. Superuser-gated, rate-limited, audited.
+
+    ``request`` is here because slowapi requires it on a limited endpoint,
+    not because the handler reads it.
+    """
     try:
         group = await asyncio.to_thread(
             cognito_admin.create_group, body.group_name, body.description
         )
     except CognitoGroupExistsError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:
         # A malformed name is the CALLER's error and self-explaining — it must
         # be caught BEFORE the generic ``CognitoAdminError`` arm below, which
         # would otherwise collapse it into a 502 that claims AWS is broken.
         # 502 stays reserved for a genuinely broken upstream, which is the
         # only thing that makes it a useful signal.
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error(
-            "cognito_group_create_failed",
-            group_name=body.group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not create Cognito group.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_create_failed",
+            fallback_detail="Could not create Cognito group.",
+            # No group 404 arm: the group being created cannot be "missing",
+            # so a ResourceNotFoundException here can only be about the pool.
+            group_name=None,
+            group=body.group_name,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="create_group",
+        group_name=body.group_name,
+        details={"description": body.description},
+    )
     return group
 
 
+# ---- Blast-radius guards for the pool-wide group DELETE ------------------
+#
+# ``DELETE /coord/cognito/groups/{group_name}`` removes a group from the
+# SHARED Cognito pool. It is irreversible (Cognito has no undelete), it is
+# not scoped to a tenant, and until plan
+# ``2026-08-27-members-page-delete-paths-authorization-and-blast-radius``
+# Phase 2 it went straight to AWS on one click. ``require_admin`` bounds
+# WHO may call it; the guards below bound WHAT it does.
+#
+# Three guards, in the order they prevent harm:
+#
+#  1. ``group_is_mapped`` — coord's ``coord.group_tenant_roles`` maps this
+#     group to one or more tenants. Deleting the group silently kills those
+#     mappings' only input (the ``cognito:groups`` token claim). Refused 409
+#     naming the tenants. There is deliberately NO foreign key backing this
+#     (``group_id`` is bare TEXT in
+#     ``alembic/versions/coord_group_claim_provisioning.py`` while the
+#     sibling table in the SAME migration does use an FK), so the check has
+#     to be explicit here.
+#  2. ``home_group_requires_override`` — a ``<slug>-home`` group pins an
+#     operator's home tenant (coord ``auth_sso::HOME_GROUP_SUFFIX``).
+#     Refused 409 unless ``allow_home_group=true``.
+#  3. ``last_admin_mapping`` — deleting this group would leave a tenant with
+#     no OTHER admin-conferring mapping. Refused 409 with **no override**:
+#     the repair route (coord ``POST /admin/coord/group-tenant-roles``)
+#     itself requires an admin *in the tenant you just stranded*
+#     (``routes_phase3::caller_is_admin_in_tenant``), so there is no way
+#     back through the product — recovery needs the AWS console.
+#
+# Guard 1 has an ``allow_mapped`` escape hatch and guard 2 an
+# ``allow_home_group`` one; guard 3 has none, which is what makes it the
+# backstop rather than a duplicate of guard 1. The dashboard sends neither
+# override for the mapped case on purpose — "delete the mapping first" is
+# the ordering the guard is there to impose.
+#
+# Guards 1 and 3 are derived ENTIRELY from the rows
+# ``_coord_group_tenant_role_rows`` returns, so an empty return — or a row it
+# cannot attribute to a group — makes both of them vacuous and the AWS delete
+# proceeds. That is why the reader refuses instead of returning ``[]``: on an
+# HTTP failure (``mapping_check_unavailable``), and on an answer whose body,
+# list or ROWS are not the table (``mapping_check_unreadable``). "No rows"
+# must mean coord SAID no rows, and a row must carry the three fields the
+# guards read or it is not a row.
+#
+# NOT an immediate sweep. Deleting the Cognito group does NOT trip coord's
+# 300s ``reconcile_home_tenant_drift``: that sweep reads ``claimed_groups``
+# from ``coord.operator_membership_sync``, whose only non-test writer is
+# ``reconcile_group_memberships`` ← ``lookup_or_provision_operator`` — the
+# LOGIN path. A group deletion writes none of its inputs. The damage is
+# deferred and per-person: it lands at each affected operator's NEXT LOGIN,
+# when their token no longer carries the group and their roles/home
+# re-resolve. That is harder to operate than an immediate sweep, not
+# easier — unbounded in time and arriving one person at a time — so the
+# refusal messages say so rather than implying anything fires now.
+
+#: Suffix marking an explicit "this is my home tenant" group. Mirrors coord
+#: ``crates/coord/src/auth_sso.rs`` ``HOME_GROUP_SUFFIX`` (exact,
+#: case-sensitive — tenant slugs are lowercase ASCII).
+HOME_GROUP_SUFFIX = "-home"
+
+#: Roles in ``coord.group_tenant_roles`` that confer admin **for the repair
+#: route's own gate**. Deliberately the narrow vocabulary: coord's
+#: ``rbac::is_tenant_admin`` — which
+#: ``routes_phase3::caller_is_admin_in_tenant`` delegates to, and which
+#: therefore decides whether anyone can re-create a mapping into a stranded
+#: tenant — asks for the bare ``'admin'`` literal, NOT the wider
+#: ``ADMIN_ROLES`` (``admin | owner``) vocabulary that ``/admin/coord/me``
+#: reports ``is_admin`` from. A tenant left with only an ``owner`` mapping
+#: still cannot repair itself, so treating ``owner`` as admin-conferring
+#: here would let exactly the stranding this guard exists to stop through.
+_ADMIN_CONFERRING_ROLES = frozenset({"admin"})
+
+
+#: Row keys the guards actually read. ``_row_group_id`` /
+#: ``_row_tenant_slug`` / ``_row_confers_admin`` each coerce a missing or null
+#: value to ``""``, so a row lacking any of them is silently un-attributable:
+#: it can neither match the group being deleted nor be counted as admin cover
+#: — and it can be counted as cover *from some other group*, which suppresses
+#: the one guard that has no override. Coord serializes all three as
+#: non-nullable ``String`` off a ``TEXT NOT NULL`` primary key
+#: (``routes_phase3::get_group_tenant_roles``), so requiring them refuses
+#: nothing coord produces today.
+_MAPPING_ROW_IDENTITY_KEYS = ("group_id", "tenant_slug", "role")
+
+
+def _is_attributable(value: Any) -> bool:
+    """True when a row's identity field can be compared to a real identifier.
+
+    Written as ONE predicate on purpose. Two earlier rounds of this fix put a
+    *different* normalization in the check than in the accessors below
+    (``bool()``, then ``str.strip()``, against the accessors' bare
+    ``str(x or "")``), and the gap between the two normalizations IS the
+    vulnerability: a value that satisfies the check but not the comparison
+    attributes to no group, so :func:`delete_cognito_group`'s guard 1 sees
+    nothing mapped while :func:`_tenants_stranded_by` counts the row as admin
+    cover *from another group* — silencing guard 3, the guard with no
+    override. Narrowing the gap keeps leaving a smaller one; the fix is to
+    have no gap, which is why the accessors are documented as reading only
+    values that passed through here.
+
+    The three clauses, and the shape each one exists for:
+
+    * ``v == v.strip()`` — ``" acme-devs "`` is a legal, distinct row in
+      ``coord.group_tenant_roles`` (bare ``TEXT NOT NULL``, no CHECK, and
+      coord's writer validates ``trim().is_empty()`` without ever trimming
+      what it stores), and it is one mis-pasted space away from a real
+      mapping. It does NOT equal ``"acme-devs"``, so on its own — with no
+      override flag at all — it blinds both derived guards.
+    * ``v.strip() != ""`` — blank in the sense coord itself means.
+    * ``v.isprintable()`` — ``False`` for the whole ``Cf`` category, i.e. the
+      invisible characters ``str.strip()`` does NOT remove and Rust's
+      ``trim`` does not either: ZWSP, BOM, ZWNJ, word joiner, soft hyphen.
+      Every one of them makes a value that looks identical to a real
+      identifier and compares unequal to it.
+
+    Nothing coord's VALIDATED writer produces is refused: group names are drawn from
+    ``\\p{L}\\p{M}\\p{S}\\p{N}\\p{P}`` (all printable, no surrounding space),
+    coord's ``tenant_slug`` must match ``^[a-z0-9][a-z0-9-]{0,63}$``, and its
+    ``role`` is checked against a known vocabulary.
+
+    Its BOOTSTRAP SEEDER does not (``auth_sso::seed_bootstrap_group_mappings``
+    inserts ``COORD_SSO_BOOTSTRAP_GROUP_MAPPINGS`` verbatim, and the column
+    carries no CHECK), so a stray space in that environment variable seeds a
+    row this refuses — and because the check is table-wide, that one row
+    blocks EVERY group delete until it is removed from
+    ``coord.group_tenant_roles``. Fail-closed is the right direction for an
+    irreversible operation and the refusal names the offending key, but it
+    is called out here because there is no override and the next move is
+    otherwise not obvious.
+    """
+    return (
+        isinstance(value, str)
+        and value == value.strip()
+        and value.strip() != ""
+        and value.isprintable()
+    )
+
+
+#: Details :func:`_proxy_coord_get` puts on the ``HTTPException`` it
+#: SYNTHESIZES when the request never completed. The 502 / 504 riding with
+#: them are **qontinui-web's own codes, not coord's** — reporting them as
+#: "coord answered 502" names an answer coord never gave, the same dishonesty
+#: :func:`_raise_mapping_check_unreadable` avoids by carrying no status at
+#: all. Matched on the detail rather than the number so a genuine coord 502 is
+#: still reported as a coord 502.
+#:
+def _raise_mapping_check_unreadable(reason: str) -> NoReturn:
+    """Refuse: *coord answered without an error status, but not with the
+    mapping table*.
+
+    Logs and raises in one place, so the warning cannot be emitted without the
+    refusal it describes actually happening. ``NoReturn`` documents that and
+    keeps a future "build it, forget to raise it" a type error — it buys no
+    narrowing here, since everything downstream of the read is ``Any``.
+
+    ``reason`` names the ACTUAL cause — which key or which type was wrong —
+    because the operator's next move differs by cause and "malformed
+    response" alone would not tell them whether to look at coord, at a proxy
+    in front of it, or at their own session.
+
+    The status is deliberately NOT reported. ``_proxy_coord_get`` treats every
+    status below 400 as success and discards the response, so this arm cannot
+    observe whether it was a 200, a 204, or a 302 from something in front of
+    coord — and a 3xx is one of the realistic causes here. Naming a status we
+    did not see would point the operator at coord's handler when the fault is
+    the hop before it; the sibling ``mapping_check_unavailable`` carries
+    ``coord_status`` only because it genuinely has one.
+    """
+    logger.warning("cognito_group_delete_mapping_check_unreadable", reason=reason)
+    raise HTTPException(
+        status_code=502,
+        detail={
+            "error": "mapping_check_unreadable",
+            "reason": reason,
+            "message": (
+                "Refused: coord answered without an error status, but the body "
+                "is not its group → tenant → role table "
+                f"({reason}), so there is no way to tell what this delete "
+                "would break. Nothing was deleted. An unreadable answer is "
+                "UNKNOWN, not 'this group has no mappings' — treating it as "
+                "the latter would let the delete through with every guard "
+                "unchecked. Something answered where coord should have, so "
+                "check coord's route AND anything proxying it."
+            ),
+        },
+    )
+
+
+async def _coord_group_tenant_role_rows() -> list[dict[str, Any]]:
+    """Every ``coord.group_tenant_roles`` row, via the existing proxy path.
+
+    Reuses ``_proxy_coord_get`` against the same coord route
+    :func:`get_coord_group_tenant_roles` already proxies — no second client,
+    no cross-schema read. ``forward_bearer=True`` with no resolved tenant is
+    what puts the caller's Cognito bearer on the wire (the group routes are
+    ``require_admin``-gated and resolve no coord tenant of their own), so
+    the caller must have run :func:`capture_caller_bearer` first.
+
+    EVERY failure of the read — transport, timeout, or a coord 4xx (the route
+    is coord-side ``admin``-gated, so a qontinui superuser who holds no coord
+    admin role gets 403 there) — is re-raised as **502
+    ``mapping_check_unavailable``**, carrying coord's own status where there
+    is one and ``None`` where coord never completed an answer. That takes two
+    arms, not one: ``_proxy_coord_get`` converts only ``ConnectError`` and
+    ``TimeoutException`` into an ``HTTPException``, so the rest of
+    ``httpx.HTTPError`` is caught here rather than escaping as a bare 500.
+    One meaning either way: *the check could not be completed, so nothing was
+    deleted.* An unreadable mapping table is UNKNOWN, not "no mappings", and
+    the one thing this endpoint must never do is treat a failed read as a
+    clean bill of health. Passing coord's 403 straight through would instead
+    read as "you may not delete this group", which is a different — and
+    false — claim.
+
+    **A 200 whose BODY is not the table is the same UNKNOWN**, and it used to
+    be the one arm that got it wrong: a non-dict body, a missing or non-list
+    ``group_tenant_roles``, all returned ``[]`` — indistinguishable from a
+    genuinely unmapped group, so all three guards in
+    :func:`delete_cognito_group` passed and the irreversible AWS delete
+    proceeded. The HTTP status is not the only way a read fails. Those bodies
+    now raise **502 ``mapping_check_unreadable``**, a code distinct from
+    ``mapping_check_unavailable`` precisely so the operator can tell "coord
+    never answered" from "coord answered with something that is not the
+    table" — the second is a coord/proxy defect worth chasing, not an outage
+    to wait out.
+
+    Validation reaches the ROW, not just the envelope. Checking only the
+    envelope would leave the original defect intact one layer down: a
+    well-formed list of well-formed objects that do not carry
+    ``_MAPPING_ROW_IDENTITY_KEYS`` — a renamed column in coord's ``SELECT``,
+    a renamed key in its ``json!`` — reads as rows while attributing to no
+    group and no tenant, and both derived guards go vacuous again. So every
+    row must carry a usable ``group_id``, ``tenant_slug`` and ``role``.
+
+    A **well-formed** 200 whose ``group_tenant_roles`` is a real empty list
+    stays a legitimate "no mappings" and still deletes: refusing that would
+    make the guard a blanket denial, which is its own failure.
+    """
+    try:
+        payload = await _proxy_coord_get(
+            "/admin/coord/group-tenant-roles",
+            tenant_id=None,
+            forward_bearer=True,
+        )
+    except HTTPException as exc:
+        # `_proxy_coord_get` raises with coord's OWN status for a coord 4xx/5xx,
+        # but with a status IT invented (502 / 504) when the request never
+        # completed. Only the first is coord's answer, so only the first is
+        # reported as one.
+        # The TYPE is the discriminator — see `CoordTransportUnavailable`.
+        # Matching the detail string instead demotes a genuine coord 5xx whose
+        # body happens to be that literal (`_proxy_coord_get` passes
+        # `resp.text` through as the detail), and matching `__context__`
+        # silently never fires, because a genuine coord error is raised
+        # outside any `except` block and so carries no context at all.
+        synthesized = isinstance(exc, CoordTransportUnavailable)
+        coord_status = None if synthesized else exc.status_code
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=coord_status,
+        )
+        cause = (
+            f"{exc.detail} — coord never completed an answer"
+            if synthesized
+            else f"coord answered {exc.status_code}"
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": coord_status,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read ({cause}), so there is no way to tell what this "
+                    "delete would break. Nothing was deleted. A 403 here means "
+                    "the caller holds no coord admin role; anything else means "
+                    "coord is unreachable."
+                ),
+            },
+        ) from exc
+    except httpx.HTTPError as exc:
+        # ``_proxy_coord_get`` maps only ``ConnectError`` and
+        # ``TimeoutException`` to an ``HTTPException``; every other httpx
+        # transport failure — ``RemoteProtocolError`` from a load balancer
+        # cutting the response, ``ReadError``, ``ProxyError`` — escapes it and
+        # used to surface as a bare 500. Safe (nothing was deleted) but
+        # undiagnosable, and it made the "EVERY failure of the read" contract
+        # below untrue. No status: coord never completed an answer.
+        logger.warning(
+            "cognito_group_delete_mapping_check_failed",
+            coord_status=None,
+            error=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "mapping_check_unavailable",
+                "coord_status": None,
+                "message": (
+                    "Refused: coord's group → tenant → role table could not "
+                    f"be read ({type(exc).__name__} — coord never completed an "
+                    "answer), so there is no way to tell what this delete "
+                    "would break. Nothing was deleted."
+                ),
+            },
+        ) from exc
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        # ``_proxy_coord_get`` ends in ``resp.json()`` → ``jsonlib.loads``,
+        # whose only realistic failures are these two — an HTML error page from
+        # a proxy in front of coord, or a mis-encoded body. Uncaught this became
+        # a bare 500; it is the same UNKNOWN as every other unreadable answer.
+        #
+        # Deliberately NOT the wider ``ValueError`` these both subclass: that
+        # would also catch a ``ValueError`` raised BEFORE the response exists
+        # (a malformed ``COORD_URL``, say) and report it as "the body is not
+        # JSON" under a message asserting coord answered — naming a cause that
+        # is not the actual one, which is the thing this refusal exists to
+        # avoid.
+        _raise_mapping_check_unreadable(f"the body is not JSON ({exc})")
+
+    if not isinstance(payload, dict):
+        _raise_mapping_check_unreadable(
+            f"the body is {type(payload).__name__}, not an object"
+        )
+    if "group_tenant_roles" not in payload:
+        _raise_mapping_check_unreadable("the body carries no group_tenant_roles key")
+    rows = payload["group_tenant_roles"]
+    if not isinstance(rows, list):
+        _raise_mapping_check_unreadable(
+            f"group_tenant_roles is {type(rows).__name__}, not a list"
+        )
+    if not all(isinstance(row, dict) for row in rows):
+        # Dropping the non-objects instead would silently narrow the guard's
+        # input — and the row it dropped could be the one mapping that makes
+        # this delete strand a tenant.
+        _raise_mapping_check_unreadable(
+            "group_tenant_roles contains an entry that is not an object"
+        )
+    for key in _MAPPING_ROW_IDENTITY_KEYS:
+        if not all(_is_attributable(row.get(key)) for row in rows):
+            _raise_mapping_check_unreadable(
+                f"a group_tenant_roles entry carries no usable {key}"
+            )
+    # Provably a no-op filter after the checks above — belt and braces, not a
+    # discard. (`rows` is already `list[Any]` and would satisfy the annotation
+    # on its own; this makes the element type true rather than merely
+    # accepted.)
+    return [row for row in rows if isinstance(row, dict)]
+
+
+# The three accessors below coerce a missing value to ``""`` and compare the
+# result to a real identifier. That coercion is SAFE only on rows that came
+# through :func:`_coord_group_tenant_role_rows`, where
+# :func:`_is_attributable` has already rejected every value that would coerce
+# or compare surprisingly. Called on an unvalidated row, ``""`` is not "no
+# match" — it is a match against nothing that still counts as cover from
+# another group, which is the fail-open this whole module comment is about.
+# If you need these somewhere else, validate there too.
+
+
+def _row_group_id(row: dict[str, Any]) -> str:
+    return str(row.get("group_id") or "")
+
+
+def _row_tenant_slug(row: dict[str, Any]) -> str:
+    return str(row.get("tenant_slug") or "")
+
+
+def _row_confers_admin(row: dict[str, Any]) -> bool:
+    # BYTE-EXACT, and deliberately not `.strip().lower()`. Coord's
+    # `rbac::is_tenant_admin` — the gate deciding whether anyone can re-create
+    # a mapping into a tenant this delete would strand — matches
+    # `role = ANY(&["admin"])`: no lower(), no ILIKE, no citext. A row spelled
+    # `Admin` therefore confers NOTHING there, and crediting it as admin cover
+    # here silenced guard 3 while the tenant was stranded for real. Case
+    # folding was this comparison disagreeing with the ground truth it stands
+    # in for — the same shape as every other defect in this module's history.
+    # `.strip()` is separately unnecessary: `_is_attributable` has already
+    # rejected any surrounding whitespace.
+    return row.get("role") in _ADMIN_CONFERRING_ROLES
+
+
+def _tenants_stranded_by(group_name: str, rows: list[dict[str, Any]]) -> list[str]:
+    """Tenant slugs left with no admin-conferring mapping once ``group_name``
+    is gone.
+
+    A tenant is stranded when this group confers admin on it and NO OTHER
+    group does. Other rows belonging to the SAME group do not count — the
+    delete takes every one of them out at once.
+    """
+    stranded: list[str] = []
+    admin_from_others = {
+        _row_tenant_slug(r)
+        for r in rows
+        if _row_confers_admin(r) and _row_group_id(r) != group_name
+    }
+    for slug in sorted(
+        {
+            _row_tenant_slug(r)
+            for r in rows
+            if _row_group_id(r) == group_name and _row_confers_admin(r)
+        }
+    ):
+        if slug and slug not in admin_from_others:
+            stranded.append(slug)
+    return stranded
+
+
 @router.delete("/coord/cognito/groups/{group_name}")
+@user_limiter.shared_limit(
+    _DELETE_GROUP_RATE_LIMIT,
+    scope="cognito-group-delete",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def delete_cognito_group(
-    group_name: str,
+    request: Request,
+    # ``current_user`` FIRST: FastAPI solves in signature order, so the
+    # superuser gate has to precede the input validator (see
+    # :func:`validated_group_name`).
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+    allow_mapped: bool = Query(
+        False,
+        description=(
+            "Delete even though coord maps this group to one or more "
+            "tenants. The last-admin guard still applies and has no "
+            "override."
+        ),
+    ),
+    allow_home_group: bool = Query(
+        False,
+        description=(
+            "Delete even though this is a `<slug>-home` group that pins "
+            "operators' home tenant."
+        ),
+    ),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Delete a Cognito group. 404 if no such group. Superuser-gated."""
+    """Delete a Cognito group. 404 if no such group. Superuser-gated,
+    rate-limited (the lowest limit of the four — this is the only
+    irreversible one), and audited with the acting superuser.
+
+    Refuses **409** before touching AWS when the delete would take
+    something else down with it — see the module comment above
+    :data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and
+    why the harm is deferred to each operator's next login rather than
+    swept immediately.
+    """
+    # The bearer is what authenticates the coord read below; `require_admin`
+    # resolves no coord tenant and so never captures it.
+    capture_caller_bearer(request)
+    rows = await _coord_group_tenant_role_rows()
+
+    # -- Guard 1: coord maps this group ------------------------------------
+    mapped = [r for r in rows if _row_group_id(r) == group_name]
+    if mapped and not allow_mapped:
+        tenants = sorted({_row_tenant_slug(r) for r in mapped if _row_tenant_slug(r)})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "group_is_mapped",
+                "group_name": group_name,
+                "tenants": tenants,
+                "message": (
+                    f"{group_name} is mapped to "
+                    f"{', '.join(tenants) or 'a tenant'} in coord's "
+                    "group → tenant → role table. Deleting the group would "
+                    "leave those mappings with no input: each affected "
+                    "operator loses the roles they grant at their NEXT "
+                    "LOGIN, one person at a time, with nothing to correlate "
+                    "it back to. Remove the mapping first, then delete the "
+                    "group."
+                ),
+            },
+        )
+
+    # -- Guard 2: `<slug>-home` pins a home tenant -------------------------
+    if group_name.endswith(HOME_GROUP_SUFFIX) and not allow_home_group:
+        slug = group_name[: -len(HOME_GROUP_SUFFIX)]
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "home_group_requires_override",
+                "group_name": group_name,
+                "tenant_slug": slug,
+                "message": (
+                    f"{group_name} pins its members' home tenant to "
+                    f"'{slug}'. Deleting it does not re-home anyone now — "
+                    "coord's home-drift sweep reads the login path's own "
+                    "records, not Cognito — so the effect is DEFERRED: each "
+                    "member's home re-resolves at their next login, "
+                    "whenever that is. Pass allow_home_group=true to "
+                    "proceed anyway."
+                ),
+            },
+        )
+
+    # -- Guard 3: last admin-conferring mapping (NO override) --------------
+    stranded = _tenants_stranded_by(group_name, rows)
+    if stranded:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "last_admin_mapping",
+                "group_name": group_name,
+                "tenants": stranded,
+                "message": (
+                    f"{group_name} is the only group conferring admin on "
+                    f"{', '.join(stranded)}. Deleting it would leave "
+                    "nobody able to re-create the mapping, because that "
+                    "route requires an admin in the very tenant this would "
+                    "strand — recovery would need the AWS console. Grant "
+                    "another group admin on it first. This guard has no "
+                    "override."
+                ),
+            },
+        )
+
     try:
         await asyncio.to_thread(cognito_admin.delete_group, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_delete_failed", group_name=group_name, error=str(exc)
-        )
-        raise HTTPException(status_code=502, detail="Could not delete Cognito group.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_delete_failed",
+            fallback_detail="Could not delete Cognito group.",
+            group_name=group_name,
+        ) from exc
+    logger.info(
+        "cognito_group_deleted",
+        group_name=group_name,
+        allow_mapped=allow_mapped,
+        allow_home_group=allow_home_group,
+        actor_user_id=str(current_user.id),
+    )
+    # The overrides go into the audit row because they are the record of a
+    # guard being consciously stepped over — the one thing a reviewer of an
+    # irreversible pool-wide delete most needs to see.
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="delete_group",
+        group_name=group_name,
+        details={
+            "allow_mapped": allow_mapped,
+            "allow_home_group": allow_home_group,
+        },
+    )
     return {"ok": True}
 
 
 @router.get("/coord/cognito/groups/{group_name}/users")
 async def list_cognito_group_users(
-    group_name: str,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
 ) -> dict[str, Any]:
     """List the members of a Cognito group. 404 if no such group.
-    Superuser-gated."""
+    Superuser-gated.
+
+    Read-only, so no audit row and no rate limit — but it does take the
+    group name in the path, so it gets the 400 validator like its three
+    mutating siblings.
+    """
     try:
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_users_list_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_users_list_failed",
+            fallback_detail="Could not list group members.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not list group members.")
+        ) from exc
     return {"users": users}
 
 
 @router.post("/coord/cognito/groups/{group_name}/users")
+@user_limiter.shared_limit(
+    _GROUP_MEMBER_RATE_LIMIT,
+    scope="cognito-group-add-member",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def add_cognito_group_user(
-    group_name: str,
+    request: Request,
     body: _GroupMemberBody,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Add a user (resolved by email) to a Cognito group. Superuser-gated.
+    """Add a user (resolved by email) to a Cognito group. Superuser-gated,
+    rate-limited, audited.
 
     404 if no user has that email; 409 if the email is ambiguous (>1 match).
     """
@@ -8393,35 +9599,54 @@ async def add_cognito_group_user(
             cognito_admin.resolve_username_for_email, body.email
         )
     except CognitoAmbiguousEmailError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_email_resolve_failed",
+            fallback_detail="Could not resolve user by email.",
+            email=body.email,
+        ) from exc
     if not username:
         raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
     try:
         await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_add_user_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_add_user_failed",
+            fallback_detail="Could not add user to group.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not add user to group.")
+            email=body.email,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="add_user_to_group",
+        group_name=group_name,
+        target_email=body.email,
+        target_username=username,
+    )
     return {"ok": True, "username": username}
 
 
 @router.delete("/coord/cognito/groups/{group_name}/users")
+@user_limiter.shared_limit(
+    _GROUP_MEMBER_RATE_LIMIT,
+    scope="cognito-group-remove-member",
+    key_func=get_authorization_identifier,
+    exempt_when=_rate_limiting_disabled,
+)
 async def remove_cognito_group_user(
-    group_name: str,
+    request: Request,
     body: _GroupMemberBody,
     current_user: UserModel = Depends(require_admin),
+    group_name: str = Depends(validated_group_name),
+    db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
     """Remove a user (resolved by email) from a Cognito group.
-    Superuser-gated.
+    Superuser-gated, rate-limited, audited.
 
     404 if no user has that email; 409 if the email is ambiguous (>1 match).
     """
@@ -8430,10 +9655,14 @@ async def remove_cognito_group_user(
             cognito_admin.resolve_username_for_email, body.email
         )
     except CognitoAmbiguousEmailError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoAdminError as exc:
-        logger.error("cognito_email_resolve_failed", error=str(exc))
-        raise HTTPException(status_code=502, detail="Could not resolve user by email.")
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_email_resolve_failed",
+            fallback_detail="Could not resolve user by email.",
+            email=body.email,
+        ) from exc
     if not username:
         raise HTTPException(status_code=404, detail=f"No user with email: {body.email}")
 
@@ -8442,12 +9671,19 @@ async def remove_cognito_group_user(
             cognito_admin.remove_user_from_group, username, group_name
         )
     except CognitoAdminError as exc:
-        if _is_resource_not_found(exc):
-            raise HTTPException(status_code=404, detail=f"No such group: {group_name}")
-        logger.error(
-            "cognito_group_remove_user_failed",
+        raise _cognito_http_error(
+            exc,
+            log_event="cognito_group_remove_user_failed",
+            fallback_detail="Could not remove user from group.",
             group_name=group_name,
-            error=str(exc),
-        )
-        raise HTTPException(status_code=502, detail="Could not remove user from group.")
+            email=body.email,
+        ) from exc
+    await _write_cognito_group_audit(
+        db,
+        actor_user_id=current_user.id,
+        action="remove_user_from_group",
+        group_name=group_name,
+        target_email=body.email,
+        target_username=username,
+    )
     return {"ok": True, "username": username}

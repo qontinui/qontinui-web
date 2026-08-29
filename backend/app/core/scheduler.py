@@ -465,6 +465,13 @@ async def _job_memory_bridge_sync() -> Any:
     return await _async_bridge_sync(AsyncSessionLocal)
 
 
+async def _job_session_archive() -> Any:
+    from app.db.session import AsyncSessionLocal
+    from app.jobs.session_archiver import archive_all
+
+    return await archive_all(AsyncSessionLocal)
+
+
 async def _job_scheduled_dispatch() -> Any:
     from app.jobs.scheduled_dispatch import poll_and_dispatch_due
 
@@ -566,6 +573,35 @@ def install_default_tasks(service: SchedulerService) -> None:
             name="memory_bridge_sync",
             coro=_job_memory_bridge_sync,
             cron="*/15 * * * *",
+        )
+    )
+
+    # Claude Code session archive — promote coord sessions into the permanent
+    # `agent.session_artifacts` corpus BEFORE coord's prune deletes them.
+    #
+    # HOURLY, not daily, and the cadence is set by the thing it races rather
+    # than by convenience. coord's `prune_closed_sessions` deletes closed
+    # session rows past COORD_SESSION_RETENTION_DAYS (default 7) and runs every
+    # 5 minutes; a daily beat would give this job 7 chances to win that race,
+    # and a single missed day (a redeploy landing on the cron minute, a coord
+    # blip) would spend one of them. Hourly costs nothing when there is nothing
+    # to promote: with no tenant consented (QONTINUI_SESSION_ARCHIVE_TENANTS,
+    # empty by default) the whole cycle is INERT — it makes no coord call and
+    # no database write at all.
+    #
+    # `run_at_boot` for the same reason every other periodic sweep here has it:
+    # this backend redeploys more often than hourly, and a cadence a redeploy
+    # can perpetually reset is a cadence that never fires (see memory_reindex
+    # above, and the Sunday memory_consolidate slot that had NEVER run).
+    #
+    # Offset to :35 so it never contends with the */10 memory sweeps for a tick.
+    service.register(
+        ScheduledTask(
+            name="session_archive",
+            coro=_job_session_archive,
+            cron="35 * * * *",
+            timeout_seconds=600.0,
+            run_at_boot=True,
         )
     )
 

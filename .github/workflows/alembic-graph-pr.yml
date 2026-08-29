@@ -20,6 +20,9 @@
 #
 #   * this workflow, step "Count alembic heads"
 #   * .qontinui/ci.toml, step `alembic-single-head`
+#   * .pre-commit-config.yaml, hook `alembic-single-head` (shift-left only —
+#     it would have caught 0 of the 3 forks on record, all post-authoring
+#     races; what it buys is the correct `down_revision` token, locally)
 #
 # The extraction collapsed the old "Count alembic heads" + "Fail if chain has
 # more than one head" pair into a single step: the two existed only so the
@@ -79,9 +82,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Fetch the baseline for the remediation message
+        # `actions/checkout` clones at depth 1, so `origin/main` does not exist
+        # and the gate cannot tell WHICH of the two heads already landed — and
+        # naming that head is the whole remedy (it was the entire fix in 3 of 3
+        # recorded forks). One shallow fetch with an explicit refspec buys it;
+        # the default remote refspec on a PR checkout does not cover main.
+        #
+        # `continue-on-error`, not `|| true`: if the fetch fails, that must be
+        # VISIBLE in the job rather than swallowed. It cannot change the
+        # verdict either way — the gate's pass/fail is a pure function of the
+        # revision files, and with no baseline it reports the remediation as
+        # UNKNOWN instead of guessing.
+        continue-on-error: true
+        run: git fetch --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+
       - name: Count alembic heads
-        # Exits 1 when the chain has more than one head (printing the heads and
-        # the `alembic merge` remediation), and 2 when the scan proved nothing —
-        # no revision files, no parseable revisions, or a zero-head chain (a
-        # cycle). None of those are a pass.
-        run: python scripts/ci/count_alembic_heads.py
+        # Exits 1 when the chain has more than one head — printing the exact
+        # `down_revision` token to re-point at, resolved against the baseline
+        # fetched above — and 2 when the scan proved nothing: no revision
+        # files, no parseable revisions, or a zero-head chain (a cycle). None
+        # of those are a pass.
+        run: python scripts/ci/count_alembic_heads.py --baseline-ref origin/main

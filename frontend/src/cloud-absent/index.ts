@@ -11,9 +11,10 @@
  * surface.
  *
  * Registering nothing here is the whole point: an OSS-only build leaves
- * every slot in `@/lib/extension-slots` empty, and every consumer
- * (`getService` / `getComponent`) already treats an empty slot as "not the
- * cloud deployment". The module is intentionally side-effect-free and
+ * every slot in `@/lib/extension-slots` empty, and every consumer already
+ * treats an empty slot as "not the cloud deployment" — `getService` and
+ * `getComponent` return `undefined`, and `CloudProviders` renders its
+ * children untouched. The module is intentionally side-effect-free and
  * value-free so webpack tree-shakes it to nothing and no cloud-control
  * chunk appears in the OSS client bundle.
  *

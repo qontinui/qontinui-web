@@ -11,11 +11,11 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
-# Four gates are stronger than "mirrored": web-boundary-lint, forbid-public-
-# schema, alembic-single-head and gitignore-tracked-files invoke the SAME
-# committed script the workflow invokes (scripts/ci/*.py), so there is nothing
-# left to keep in sync — the two lanes cannot drift because there is only one
-# copy of the logic. That is the
+# Five gates are stronger than "mirrored": web-boundary-lint, forbid-public-
+# schema, alembic-single-head, gitignore-tracked-files and ruff-version-parity
+# invoke the SAME committed script the workflow invokes (scripts/ci/*.py), so
+# there is nothing left to keep in sync — the two lanes cannot drift because
+# there is only one copy of the logic. That is the
 # preferred shape for any future gate here; the string-mirroring above is what
 # you settle for when the workflow step is a third-party action or a package.json
 # script this lane must name for itself.
@@ -114,8 +114,15 @@
 #    here rather than to declare a lie.
 #
 #    THE REPO-WIDE GATE STEPS ADD TWO MORE PATH ASSUMPTIONS, recorded here for
-#    the same reason: a bare `python` (>= 3.9; the scripts use only the standard
-#    library) and `git`. `python` is what the workflows themselves invoke on
+#    the same reason: a bare `python` (>= 3.11; the scripts use only the standard
+#    library) and `git`. The floor was >= 3.9 until `ruff-version-parity` was
+#    added: it reads the lockfiles with `tomllib`, which is stdlib only from
+#    3.11. Raising it is stated rather than absorbed, because a floor nobody
+#    restates is a floor nobody can check — though it costs this repo nothing in
+#    practice, since every other lane here already pins 3.12 (backend-ci.yml's
+#    PYTHON_VERSION, `python = "^3.12"`, ruff's `target-version = "py312"`) and
+#    3.9 went end-of-life in October 2025. `python` is what the workflows
+#    themselves invoke on
 #    ubuntu-latest, and `poetry` cannot exist without an interpreter behind it,
 #    so this is not a new class of assumption — but it IS a new name on PATH and
 #    a manifest that silently assumed it would be lying by omission. `git` was
@@ -209,12 +216,14 @@ pin = "default-branch"
 # an offline scan of the checked-out tree taking a few seconds (measured on this
 # lane's own platform, 2026-08-18: 2.6-3.8s apiece, ~9s for the first three;
 # `gitignore-tracked-files` was added later and is the same order of magnitude —
-# two `git ls-files` calls over the index), against minutes for the installs
-# that follow. So putting them ahead of
+# two `git ls-files` calls over the index; `ruff-version-parity` later still and
+# cheaper than either — one `git ls-files`, then a read of the pre-commit config
+# and of each lockfile it named), against minutes for the installs that follow.
+# So putting them ahead of
 # `frontend-install` means a dispatch that is going to fail on one of them fails
 # before it pays for a dependency install.
 #
-# These four are NOT string-mirrors of their workflows — both lanes invoke the
+# These five are NOT string-mirrors of their workflows — both lanes invoke the
 # same committed script, so they cannot drift.
 #
 # Each script exits 1 on the violation it checks for and 2 when it COULD NOT
@@ -255,6 +264,14 @@ name = "alembic-single-head"
 # backend/alembic/versions/*.py — it never imports env.py, so it costs nothing
 # and needs no database, which is exactly why this gate CAN live here while the
 # rest of backend-ci.yml's `test` job (gap 1 above) cannot.
+#
+# FOUR lanes now share this script: the required PR check, this manifest, the
+# post-land companion (alembic-graph-check.yml), and .pre-commit-config.yaml's
+# `alembic-single-head` hook. The workflow passes `--baseline-ref origin/main`
+# explicitly because its depth-1 checkout has no such ref until it fetches one;
+# here the default already IS `origin/main` and a runner checkout has it, so
+# the argv stays bare. `--baseline-ref` only selects the remediation text — it
+# cannot move the verdict — so the two lanes are the same gate.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
 
 [[steps]]
@@ -265,6 +282,20 @@ name = "gitignore-tracked-files"
 # forbid-public-schema, it reads the index, so it needs the dispatch checkout to
 # be a real git worktree, which it is.
 command = ["python", "scripts/ci/check_tracked_ignored.py"]
+
+[[steps]]
+name = "ruff-version-parity"
+# ruff-version-parity.yml, step "Compare the pre-commit ruff pin against the
+# lockfiles". Fails if `.pre-commit-config.yaml`'s ruff-pre-commit `rev` is not
+# the ruff version poetry.lock resolves — i.e. if the ruff a developer's hooks
+# run is not the ruff backend-ci.yml's `lint` job runs. That split is what
+# `505f5738` left open when it added the `ruff-format` hook.
+#
+# This lane is the reason the script is stdlib-only: it reads the pre-commit
+# config with a line scan and the lockfiles with `tomllib`, so it needs no venv
+# and no PyYAML — the same "runs on a clean user machine" constraint the
+# manifest header states for the backend suite it CANNOT express.
+command = ["python", "scripts/ci/check_ruff_version_parity.py"]
 
 # ---------------------------------------------------------------------------
 # FRONTEND — mirrors frontend-ci.yml's `lint-and-typecheck` job, step for step

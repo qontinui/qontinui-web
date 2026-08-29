@@ -10,13 +10,66 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.0
+    # NOT a free-floating pin: this must be the ruff version `poetry.lock`
+    # resolves, because that is the ruff `backend-ci.yml` executes. A hook and a
+    # CI gate running different formatters reproduce, one level up, exactly the
+    # defect the `ruff-format` hook below was added to prevent. The
+    # `ruff-version-parity` local hook enforces it and prints the token to write
+    # here; move this line only together with the lockfiles.
+    rev: v0.14.14
     hooks:
-      - id: ruff
+      # `ruff-check`, not `ruff`: upstream renamed this hook and kept `ruff` as
+      # a "Legacy alias" whose entry is byte-identical (`ruff check
+      # --force-exclude`). Running it under the old id changes nothing except
+      # that pre-commit prints the hook as "ruff (legacy alias)" — so the rename
+      # rides the rev bump rather than waiting for the alias to be dropped, and
+      # the two hooks now read as the matched pair they are.
+      - id: ruff-check
         args: [--fix]
+      # `ruff-check` above is the LINTER only. backend-ci.yml runs BOTH
+      # `ruff check .` and `ruff format --check .`, so without this hook a
+      # backend change can pass every local gate and still red CI on
+      # formatting alone -- which has happened at least four times, once
+      # breaking `main` and blocking four PRs for 40+ merge-train cycles
+      # (`0bb156dd`, "style: ruff format operations.py to unbreak main").
+      # Formatting is the cheapest possible thing to get wrong and the most
+      # expensive place to discover it.
+      #
+      # `files: ^backend/` mirrors the CI step's SCOPE, not just its command:
+      # that job runs with `working-directory: ./backend`, so `ruff format
+      # --check .` covers `backend/**` and nothing else. Unscoped, this hook
+      # reformats six repo-root Python files CI has never checked
+      # (`.github/scripts/`, `.pre-commit-hooks/`, `research_env/`,
+      # `scripts/`) — unrelated churn in whatever PR happens to touch them
+      # next, enforcing a rule no gate actually applies. Widen this only
+      # together with the CI step, so the two cannot drift apart again.
+      - id: ruff-format
+        files: ^backend/
 
   - repo: local
     hooks:
+      - id: ruff-version-parity
+        name: pre-commit ruff pin == the ruff CI runs
+        # SAME SCRIPT as .github/workflows/ruff-version-parity.yml and
+        # .qontinui/ci.toml's `ruff-version-parity` step — the shape plan
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity Phase 5
+        # established, and the one .qontinui/ci.toml's header calls preferred:
+        # three lanes, one copy of the logic, so the lanes cannot drift.
+        #
+        # Guards the `rev:` in the block above against `poetry.lock`. Stdlib
+        # only (no PyYAML): the ci_node lane runs it on a checkout with nothing
+        # installed. See the script's docstring for why the pin is not free.
+        entry: python scripts/ci/check_ruff_version_parity.py
+        language: system
+        pass_filenames: false
+        # A NARROW `files:`, unlike gitignore-tracked-files below, which needs
+        # `always_run`. That hook guards a property of the (rules, index) pair,
+        # which any commit can break. This one guards a property of two FILES:
+        # nothing but an edit to the pre-commit config or to a lockfile can put
+        # the two versions out of step, so the glob is exact, not a coverage
+        # hole. The script reads both sides itself, hence `pass_filenames: false`.
+        files: ^(\.pre-commit-config\.yaml|(.*/)?poetry\.lock)$
+
       - id: eslint
         name: ESLint (frontend)
         entry: bash -c 'args=(); for f in "$@"; do args+=("${f#frontend/}"); done; cd frontend && npx eslint --no-warn-ignored "${args[@]}"' --
@@ -65,6 +118,40 @@ repos:
         # here buys nothing and misdescribes the coverage. It previously
         # also named `_staged_consolidation/`, which the transplant
         # removed from both the tree and SCOPED_DIRS.
+
+      - id: alembic-single-head
+        name: Alembic chain has exactly one head
+        entry: python scripts/ci/count_alembic_heads.py
+        language: system
+        pass_filenames: false
+        files: ^backend/alembic/versions/.*\.py$
+        # SAME SCRIPT as .github/workflows/alembic-graph-pr.yml's required
+        # `alembic-heads-pr` check, .qontinui/ci.toml's `alembic-single-head`
+        # step, and alembic-graph-check.yml's post-land companion. A fourth
+        # lane on one script, the pattern Phase 5 of
+        # 2026-08-08-ci-tool-registry-and-canonical-configuration-parity
+        # established.
+        #
+        # `pass_filenames: false` with a NARROW `files:`, unlike
+        # gitignore-tracked-files below, which needs `always_run`. That hook
+        # guards a property of the (rules, index) pair, which any commit can
+        # break. This one guards a property of the REVISION SET, which only a
+        # commit touching backend/alembic/versions/ can break — so the glob is
+        # exact, not a coverage hole. The scan is over the whole dir either
+        # way, hence `pass_filenames: false`.
+        #
+        # THIS HOOK IS SHIFT-LEFT CONVENIENCE, NOT THE GUARD. Do not describe
+        # it as what closes the loop: it does not run in CI, it is bypassable
+        # with --no-verify, and — measured — it would have caught 0 of the 3
+        # forks on record, because in all three the declared parent WAS the
+        # single head at `git commit` time and a sibling landed 83 minutes to
+        # days later. The guard is the required CI check plus
+        # scripts/ci/notify_forked_open_prs.py, which sweeps open PRs on every
+        # land. What this hook buys is the genuinely-stale-parent path (a
+        # branch that sat before the revision was written) and, more usefully,
+        # a 2-second local reproduction that PRINTS THE CORRECT
+        # `down_revision` TOKEN instead of a 17-minute wait for a red check —
+        # naming that token was the entire fix in 3 of 3 cases.
 
       - id: gitignore-tracked-files
         name: no tracked file is gitignored

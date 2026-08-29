@@ -134,14 +134,33 @@ async function handleResponse<T>(
   return response.json() as Promise<T>;
 }
 
-/** The current user's effective agent list. */
+/** The current user's effective agent list.
+ *
+ *  Throws rather than returning `[]` when the response carries no `agents`
+ *  array. `?? []` here was the same laundering the backend removed from
+ *  `_effective_rows` (`payload.get("agents") or []`): the page renders an
+ *  empty list as "No agents are registered for your tenant yet.", so a
+ *  response that never carried a registry becomes a confident claim that the
+ *  tenant has none. The backend's `response_model` makes `agents` a list on
+ *  every 2xx it produces, which is exactly why anything else reaching here is
+ *  a broken response — a proxy error page, a rewritten body — and not a
+ *  tenant with no agents. An empty ARRAY is still a legitimate answer and
+ *  passes through untouched. */
 export async function listAgentRegistry(): Promise<AgentRegistryEntry[]> {
   const response = await httpClient.fetch(AGENT_REGISTRY_API);
   const body = await handleResponse<{ agents: AgentRegistryEntry[] }>(
     response,
     "Failed to load agent registry"
   );
-  return body.agents ?? [];
+  if (!Array.isArray(body?.agents)) {
+    throw new AgentPrefError(
+      "The agent registry response carried no agent list; refusing to show " +
+        "an empty registry.",
+      null,
+      response.status
+    );
+  }
+  return body.agents;
 }
 
 /** Upsert the caller's pref for one agent. Throws `AgentPrefError` with
@@ -199,14 +218,29 @@ export interface AgentRegistryDefaultsUpdate {
   policy_required?: boolean;
 }
 
-/** ADMIN: the tenant's raw registry rows with their override counts. */
+/** ADMIN: the tenant's raw registry rows with their override counts.
+ *
+ *  Throws rather than returning `[]` on a response carrying no `agents`
+ *  array, for the same reason `listAgentRegistry` does — and this one shipped
+ *  with the `?? []` that function had already had removed. An admin reading
+ *  an empty registry concludes the tenant has no agents to configure; a
+ *  response that never carried a list is not that fact. An empty ARRAY still
+ *  passes through untouched. */
 export async function listAdminAgentRegistry(): Promise<AdminAgentRegistryRow[]> {
   const response = await httpClient.fetch(`${AGENT_REGISTRY_API}/admin/registry`);
   const body = await handleResponse<{ agents: AdminAgentRegistryRow[] }>(
     response,
     "Failed to load the agent registry"
   );
-  return body.agents ?? [];
+  if (!Array.isArray(body?.agents)) {
+    throw new AgentPrefError(
+      "The agent registry response carried no agent list; refusing to show " +
+        "an empty registry.",
+      null,
+      response.status
+    );
+  }
+  return body.agents;
 }
 
 /** ADMIN: set one agent's tenant default. */

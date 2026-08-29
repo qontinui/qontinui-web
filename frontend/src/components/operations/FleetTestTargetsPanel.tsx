@@ -21,7 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Rocket, Server, Trash2, Save, RefreshCw } from "lucide-react";
 import { httpClient } from "@/services/service-factory";
-import { CollapsiblePanel } from "@/components/operations/CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

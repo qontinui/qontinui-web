@@ -18,6 +18,8 @@ import {
   containsUuid,
   detailActor,
   humanKind,
+  linkedRefNotice,
+  matchesNotificationRef,
   isContractError,
   isMigrationPending,
   isUnread,
@@ -326,5 +328,102 @@ describe("isContractError", () => {
       false
     );
     expect(isContractError(new Error("coord is not reachable"))).toBe(false);
+  });
+});
+
+/**
+ * The `?ref=` deep link the landed-write feed uses to reach one event's
+ * reasoning (plan `2026-08-27-tenant-level-agent-authorable-stores.md`,
+ * Phase 4).
+ *
+ * The link is built by a page that cannot know which id coord's payload
+ * carries, so the matcher accepts both readings. What it must never do is
+ * match loosely — a blank ref selecting the first row would silently open an
+ * unrelated event and present it as the write's stated reasoning.
+ */
+describe("matchesNotificationRef", () => {
+  const row = (over: Partial<CoordNotificationRow> = {}): CoordNotificationRow => ({
+    notification_id: "11111111-1111-4111-8111-111111111111",
+    kind: "policy_document_changed",
+    ...over,
+  });
+
+  it("matches the notification's own id", () => {
+    expect(
+      matchesNotificationRef(row(), "11111111-1111-4111-8111-111111111111")
+    ).toBe(true);
+  });
+
+  it("matches a notification_ref carried in the payload", () => {
+    expect(
+      matchesNotificationRef(
+        row({ detail: { notification_ref: "fec41291-67ed-4cf8-b331-888ad1126b45" } }),
+        "fec41291-67ed-4cf8-b331-888ad1126b45"
+      )
+    ).toBe(true);
+  });
+
+  it("matches nothing for a blank, absent or whitespace ref", () => {
+    expect(matchesNotificationRef(row(), null)).toBe(false);
+    expect(matchesNotificationRef(row(), undefined)).toBe(false);
+    expect(matchesNotificationRef(row(), "")).toBe(false);
+    expect(matchesNotificationRef(row(), "   ")).toBe(false);
+    // Including against a row whose payload has an empty ref of its own.
+    expect(matchesNotificationRef(row({ detail: { notification_ref: "" } }), "")).toBe(
+      false
+    );
+  });
+
+  it("is exact — a prefix or a different id does not match", () => {
+    expect(matchesNotificationRef(row(), "11111111")).toBe(false);
+    expect(
+      matchesNotificationRef(row(), "22222222-2222-4222-8222-222222222222")
+    ).toBe(false);
+  });
+
+  it("ignores a non-string payload value rather than coercing it", () => {
+    expect(matchesNotificationRef(row({ detail: { notification_ref: 42 } }), "42")).toBe(
+      false
+    );
+    expect(matchesNotificationRef(row({ detail: null }), "x")).toBe(false);
+  });
+});
+
+/**
+ * The `?ref=` banner's wording.
+ *
+ * "Not found" must be the LAST arm. The operator arrives here by clicking
+ * through from a landed write, so on the first render — nothing fetched yet —
+ * a default "not found" tells him the event is missing before anything was
+ * looked for, and on a failed load it tells him to clear filters when coord is
+ * the thing that failed. Both report UNKNOWN as fact.
+ */
+describe("linkedRefNotice", () => {
+  it("says it FOUND the event when it did, whatever else is true", () => {
+    expect(
+      linkedRefNotice({ found: true, loading: true, error: true })
+    ).toMatch(/expanded below/i);
+  });
+
+  it("says it is still looking before anything has been read", () => {
+    expect(
+      linkedRefNotice({ found: false, loading: true, error: false })
+    ).toMatch(/looking for/i);
+    // And never the not-found wording.
+    expect(
+      linkedRefNotice({ found: false, loading: true, error: false })
+    ).not.toMatch(/not on the page/i);
+  });
+
+  it("blames the failed load, not the filters, when the feed errored", () => {
+    const line = linkedRefNotice({ found: false, loading: false, error: true });
+    expect(line).toMatch(/failed to load/i);
+    expect(line).not.toMatch(/clear them or load more/i);
+  });
+
+  it("only claims 'not on this page' once a page was actually read", () => {
+    expect(
+      linkedRefNotice({ found: false, loading: false, error: false })
+    ).toMatch(/not on the page that is loaded/i);
   });
 });

@@ -61,6 +61,26 @@ EXIT_VACUOUS = 2
 ANNOTATIONS = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def repo_relative(path: Path | None, fallback: str = "") -> str:
+    """``path`` relative to the repo root, or a sane string if it is not under it.
+
+    ``Path.relative_to`` RAISES rather than falling back, so an unguarded call
+    turns a formatting detail into an aborted run. An absolute ``/home/...``
+    path is also noise in a CI log and unusable to anyone reading it on
+    another machine.
+
+    ONE home on purpose: this had already been copied into two gate scripts
+    and was diverging (one called ``.resolve()`` and the other did not, so the
+    same input rendered two different strings).
+    """
+    if path is None:
+        return fallback
+    try:
+        return str(path.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def err(message: str) -> None:
     """Print an error line, annotated on Actions and plain everywhere else."""
     prefix = "::error::" if ANNOTATIONS else "ERROR: "

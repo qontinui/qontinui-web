@@ -488,6 +488,61 @@ class TestTheRawRowsAreRenderedWithOverrideCounts:
 
         assert resp.status_code == 502
 
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("default_enabled", "false"),
+            ("default_enabled", "no"),
+            ("default_enabled", 0),
+            ("default_enabled", 1),
+            ("policy_required", "false"),
+            ("policy_required", 0),
+        ],
+    )
+    def test_a_wrong_typed_authz_field_is_a_502(self, field: str, value):
+        """The TYPE half of the rule, which this route shipped without.
+
+        ``test_an_off_contract_payload_is_a_502`` already pins ``None`` for
+        both fields — and the route's guard was written to exactly that
+        shape: ``row.get(k) is None``, then ``bool(...)``. ``bool`` cannot
+        fail, so every case here returned **200**: ``default_enabled:
+        "false"`` rendered as ``true``, badging an agent the tenant had
+        defaulted OFF as on, on the page whose whole job is that decision.
+
+        This is the same defect the effective route was fixed for twice
+        (#1042, then the wrong-type follow-up), reappearing on a route added
+        afterwards — which is why both paths now read through one function.
+        """
+        payload = {"agents": [_registry_row(**{field: value})], "prefs": []}
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 502, (
+            f"{field}={value!r} must fail loudly — coercing it states a "
+            "tenant default that is not the system's"
+        )
+        detail = str(resp.json()["detail"])
+        assert field in detail
+        assert type(value).__name__ in detail
+
+    def test_a_correctly_typed_row_still_renders(self):
+        """Companion: strictness must not cost the legitimate row.
+
+        ``default_enabled=False`` is the value a naive falsiness check breaks,
+        and it is the seeded default for ``code-reviewer``, so without this the
+        class above would pass against a route that refused everything.
+        """
+        payload = {"agents": [_registry_row()], "prefs": []}
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        (row,) = resp.json()["agents"]
+        assert row["default_enabled"] is False
+        assert row["policy_required"] is True
+
     def test_empty_404_from_the_raw_door_becomes_a_502(self):
         app = _build_app()
         with patch(
@@ -498,6 +553,185 @@ class TestTheRawRowsAreRenderedWithOverrideCounts:
 
         assert resp.status_code == 502
         assert "GET /coord/agent-registry" in resp.json()["detail"]
+
+
+class TestAdminDescriptiveFieldsDegradeRatherThanCrashOrInvent:
+    """The permissive half, on this route, under the same rule.
+
+    The wrong-type sweep that reached ``default_enabled`` / ``policy_required``
+    stopped at the AUTHORIZATION fields. The descriptive ones on the same row
+    kept the two behaviours the strict half had just had removed — measured
+    against this route:
+
+    * ``model: 42`` / ``effort: 0`` raised ``ValidationError`` out of
+      :class:`AdminAgentRegistryRow`: a **500** on the admin page.
+    * ``purpose: {"a": 1}`` rendered the Python repr ``"{'a': 1}"``, and a
+      non-string in ``allowed_dispositions`` became a pickable option coord
+      never declared.
+
+    ``fanout_bound`` was already guarded here — correctly, and alone. That
+    carve-out is now the rule for every descriptive field rather than the one
+    it happened to be spelled out for.
+    """
+
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        [
+            ("model", 42, None),
+            ("model", ["opus"], None),
+            ("effort", 0, None),
+            ("effort", {"x": 1}, None),
+            ("fanout_bound", True, None),
+            ("fanout_bound", "15", None),
+            ("purpose", {"a": 1}, ""),
+            ("purpose", 42, ""),
+            ("trigger_condition", 7, ""),
+            ("spawn_path", ["subagent"], ""),
+        ],
+    )
+    def test_a_wrong_typed_descriptive_field_degrades(self, field, value, expected):
+        payload = {"agents": [_registry_row(**{field: value})], "prefs": []}
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert resp.status_code == 200, (
+            f"`{field}` is descriptive; an off-contract value must degrade, "
+            "not 500 the admin page"
+        )
+        assert resp.json()["agents"][0][field] == expected
+
+    def test_a_non_string_disposition_is_dropped_not_reprd(self):
+        """These are the options the page offers an admin to CHOOSE.
+
+        ``[str(d) for d in ...]`` turned a non-string into a pickable
+        disposition coord never declared — which coord's own
+        ``invalid_disposition`` would then refuse on save, with the page
+        having invited the choice.
+        """
+        payload = {
+            "agents": [
+                _registry_row(allowed_dispositions=["block", {"x": 1}, 7, "degrade"])
+            ],
+            "prefs": [],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["agents"][0]["allowed_dispositions"] == [
+            "block",
+            "degrade",
+        ]
+
+    def test_the_authz_fields_on_the_same_row_are_still_loud(self):
+        """Degrading the cosmetic half must not soften the strict half."""
+        payload = {
+            "agents": [_registry_row(model=42, default_enabled="false")],
+            "prefs": [],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app, raise_server_exceptions=False).get(
+                "/api/v1/agent-registry/admin/registry"
+            )
+
+        assert resp.status_code == 502
+        assert "default_enabled" in str(resp.json()["detail"])
+
+    def test_correctly_typed_descriptive_fields_still_render(self):
+        """The companion: degrading everything would otherwise pass."""
+        payload = {
+            "agents": [
+                _registry_row(model="claude-opus-5", effort="high", fanout_bound=15)
+            ],
+            "prefs": [],
+        }
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        (row,) = resp.json()["agents"]
+        assert row["model"] == "claude-opus-5"
+        assert row["effort"] == "high"
+        assert row["fanout_bound"] == 15
+        assert row["purpose"] == "Reviews code changes."
+        assert row["trigger_condition"] == "before opening a PR"
+
+
+class TestTheAdminContractKeepsTheAuthzFieldsRequired:
+    """The admin model's stated invariant, finally pinned.
+
+    :class:`AdminAgentRegistryRow` carries a comment saying its two authz
+    fields are "strict for the same reason ``_AUTHZ_FIELDS`` are on the read
+    path... a default here would let a future construction path publish a wrong
+    one silently". The effective route has
+    :class:`TestTheResponseContractKeepsTheAuthzFieldsRequired` enforcing
+    exactly that; this route had the comment and no test.
+
+    That asymmetry is the same shape as the defect the route was just fixed
+    for — the rule existed, nothing made this surface hold it.
+    """
+
+    def test_the_admin_authz_fields_are_required_with_no_default(self):
+        from app.api.v1.endpoints.agent_registry import (
+            _ADMIN_AUTHZ_FIELD_TYPES,
+            AdminAgentRegistryRow,
+        )
+
+        for name in _ADMIN_AUTHZ_FIELD_TYPES:
+            field = AdminAgentRegistryRow.model_fields[name]
+            assert field.is_required(), (
+                f"`{name}` asserts the tenant default; a default here lets a "
+                "future construction path omit it silently and publishes it "
+                "to clients as optional"
+            )
+
+    def test_the_admin_descriptive_fields_stay_permissive(self):
+        """Pin both halves of the split, as the effective suite does."""
+        from app.api.v1.endpoints.agent_registry import (
+            _ADMIN_DESCRIPTIVE,
+            AdminAgentRegistryRow,
+        )
+
+        for name in _ADMIN_DESCRIPTIVE:
+            assert not AdminAgentRegistryRow.model_fields[name].is_required(), (
+                f"`{name}` is cosmetic; a coord that drops it must not take "
+                "the admin page down"
+            )
+
+    def test_the_openapi_schema_marks_them_required(self):
+        from app.api.v1.endpoints.agent_registry import (
+            _ADMIN_AUTHZ_FIELD_TYPES,
+            AdminAgentRegistryRow,
+        )
+
+        required = set(AdminAgentRegistryRow.model_json_schema()["required"])
+        assert set(_ADMIN_AUTHZ_FIELD_TYPES) <= required
+        assert "agent_name" in required
+
+    def test_the_two_field_maps_do_not_overlap(self):
+        """A field is strict or permissive, never both.
+
+        The two maps are the whole contract for a route; a name appearing in
+        both would mean the row 502s AND degrades on the same field, and which
+        one wins would be an ordering accident rather than a decision.
+        """
+        from app.api.v1.endpoints.agent_registry import (
+            _ADMIN_AUTHZ_FIELD_TYPES,
+            _ADMIN_DESCRIPTIVE,
+            _AUTHZ_FIELD_TYPES,
+            _EFFECTIVE_DESCRIPTIVE,
+        )
+
+        assert not set(_AUTHZ_FIELD_TYPES) & set(_EFFECTIVE_DESCRIPTIVE)
+        assert not set(_ADMIN_AUTHZ_FIELD_TYPES) & set(_ADMIN_DESCRIPTIVE)
 
 
 class TestTheTenantDefaultWrite:

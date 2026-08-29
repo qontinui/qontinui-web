@@ -24,13 +24,44 @@
  * to the API): Administrator ↔ `admin`, Developer ↔ `operator`. (A future
  * "Viewer" tier also maps to `operator` today; we keep the selector to the two
  * primary choices.)
+ *
+ * ## Console style (Phase 3 Wave 4, commit B) — D2 + D7
+ *
+ * Plan `2026-08-16-coord-console-ui-unification-pipeline-style.md` sequences
+ * this route LAST and in its own commit (D7): at 1500 lines it is the largest
+ * file in the console, and keeping it independently revertible is worth more
+ * than folding it in with the other five Family-C routes.
+ *
+ * D2 keeps the tables. What the route gains:
+ *
+ * - **R1** — a `<StatCluster>` above the members table, derived from the rows
+ *   already loaded, answering how access is distributed. Unfetched counts
+ *   render `–`, never `0` (R6's absence-is-not-zero rule).
+ * - **R5** — the members table had NO per-record detail, so the operator id,
+ *   the SSO provider and the account age were simply not on the page at all,
+ *   and the revoke controls padded every row by however many roles the member
+ *   held. A click now expands a full-width `<tr><td colSpan={5}>`
+ *   `<RecordDetail>` carrying all of it.
+ * - **R3** — `memberStatus.ts` replaces the bag of identical grey role badges
+ *   with one audited badge answering *what can this person do?* — which is the
+ *   only way the page can render "holds nothing at all" as a shape rather than
+ *   as an absence.
+ * - **R7** — this page stacked FIVE unconditional sections, four of which are
+ *   secondary to the members table an administrator came for. They now sit
+ *   BELOW it in `<CollapsiblePanel>`s that keep their signal on the header.
+ * - **R9** — the five `<Card><CardHeader><CardTitle>` wrappers are gone.
+ *
+ * `CognitoGroupItem` already did D2 before this plan reached it — a clickable
+ * row expanding a `<td colSpan>`. It keeps its behaviour and moves onto the
+ * shared `<RecordDetail>` host so the console has ONE detail presentation.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDestructiveDialog } from "@/components/ui/confirm-destructive-dialog";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,6 +100,15 @@ import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { useAuth } from "@/contexts/auth-context";
 import { OPERATIONS_API, relativeTime } from "@/components/operations/utils";
+import {
+  CollapsiblePanel,
+  RecordDetail,
+  StatCluster,
+  StatusBadge,
+  rowAccentClass,
+  type Stat,
+} from "@/components/console";
+import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
 
 const log = createLogger("CoordMembersPage");
 
@@ -224,14 +264,31 @@ function MyTenantsCard() {
   }, [load]);
 
   return (
-    <Card data-testid="coord-members-my-tenants">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="h-4 w-4" />
-          Your tenant &amp; roles
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    // R7 — secondary material collapses, but its SIGNAL does not: the home
+    // tenant's NAME stays on the header while closed, which is the one fact
+    // this section carries that an administrator might need at a glance.
+    //
+    // The section testid rides the WRAPPER, not the content: `CollapsiblePanel`
+    // unmounts its children when closed (that is the point of R7), and an
+    // authored testid that vanishes with the fold would be a testid this wave
+    // removed rather than moved.
+    <div data-testid="coord-members-my-tenants">
+    <CollapsiblePanel
+      title="Your tenant & roles"
+      icon={<Building2 className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-my-tenants"
+      summary={
+        data ? (
+          <Badge variant="outline" className="font-mono text-[11px]">
+            {homeTenantName(data)}
+          </Badge>
+        ) : undefined
+      }
+      contentClassName="space-y-3"
+    >
+      <>
         {loading ? (
           <Skeleton className="h-10 w-full" />
         ) : error ? (
@@ -276,8 +333,9 @@ function MyTenantsCard() {
             )}
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -298,6 +356,9 @@ function MembersTable({
   // Pending role selection per operator (defaults to Administrator).
   const [pendingRole, setPendingRole] = useState<Record<string, CoordRole>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  // R5 — one row open at a time, the same model `<RecordList>` holds for a row
+  // list, spelled out here because a `<TableBody>` cannot host that primitive.
+  const [openMember, setOpenMember] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -377,34 +438,82 @@ function MembersTable({
     [load, onChanged]
   );
 
+  // R1 — the count cluster, derived from the rows already on the page (never a
+  // second fetch). It answers the question an administrator opens this page
+  // with, which the old header ("Members") did not: how is access distributed,
+  // and is anybody sitting here unable to do anything?
+  const stats = useMemo((): Stat[] => {
+    let admins = 0;
+    let devs = 0;
+    let none = 0;
+    for (const op of operators) {
+      const k = deriveMemberStatus(op.roles).kind;
+      if (k === "administrator") admins += 1;
+      else if (k === "developer") devs += 1;
+      else none += 1;
+    }
+    return [
+      {
+        key: "members",
+        label: "members ",
+        // `null` while the first load is in flight — R6's absence-is-not-zero
+        // rule, which `<StatCluster>` renders as `–`. Claiming "0 members"
+        // before the fetch lands would be a lie about a page whose whole
+        // subject is who exists.
+        value: loading ? null : operators.length,
+        "data-testid": "coord-members-count",
+      },
+      {
+        key: "admins",
+        label: "administrators ",
+        value: loading ? null : admins,
+        "data-testid": "coord-members-count-admins",
+      },
+      {
+        key: "devs",
+        label: "developers ",
+        value: loading ? null : devs,
+        "data-testid": "coord-members-count-developers",
+      },
+      {
+        key: "no-access",
+        label: "no access ",
+        // Muted, NOT `attention`: nobody must act now (see `memberStatus.ts`).
+        tone: "muted",
+        value: loading ? null : none,
+        title:
+          "Members holding no role in this tenant. Nothing is broken — they simply cannot reach anything until an administrator grants a tier.",
+        "data-testid": "coord-members-count-no-access",
+      },
+    ];
+  }, [operators, loading]);
+
   return (
-    <Card data-testid="coord-members-table-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="h-4 w-4" />
-          Members
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-          </div>
-        ) : error ? (
-          <p className="text-sm text-destructive flex items-center gap-1.5">
-            <AlertTriangle className="h-4 w-4" /> {error}
-          </p>
-        ) : operators.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No members yet.</p>
-        ) : (
+    // R9 — no page-level Card/CardHeader/CardTitle. "Members" duplicated the
+    // console shell's own title bar; the counts that replace it say something
+    // the word did not.
+    <div className="space-y-3" data-testid="coord-members-table-card">
+      <StatCluster stats={stats} data-testid="coord-members-summary" />
+      {loading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ) : error ? (
+        <p className="text-sm text-destructive flex items-center gap-1.5">
+          <AlertTriangle className="h-4 w-4" /> {error}
+        </p>
+      ) : operators.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No members yet.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
           <Table data-testid="coord-members-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Email</TableHead>
                 <TableHead>Display name</TableHead>
-                <TableHead>Roles</TableHead>
+                <TableHead>Access</TableHead>
                 <TableHead>Last login</TableHead>
                 <TableHead className="text-right">Grant tier</TableHead>
               </TableRow>
@@ -413,87 +522,180 @@ function MembersTable({
               {operators.map((op) => {
                 const sel = pendingRole[op.operator_id] ?? "admin";
                 const isBusy = busy === op.operator_id;
+                const expanded = openMember === op.operator_id;
+                const status = deriveMemberStatus(op.roles);
+                const Chevron = expanded ? ChevronDown : ChevronRight;
                 return (
-                  <TableRow key={op.operator_id}>
-                    <TableCell className="font-medium">{op.email}</TableCell>
-                    <TableCell>{op.display_name ?? "—"}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {op.roles.length === 0 ? (
-                          <span className="text-muted-foreground text-xs">
-                            none
-                          </span>
-                        ) : (
-                          op.roles.map((r) => (
-                            <Badge
-                              key={r}
-                              variant="secondary"
-                              className="gap-1 pr-0.5"
-                            >
-                              {tierLabel(r)}
-                              <DestructiveButton
-                                size="icon"
-                                aria-label={`Revoke ${tierLabel(r)}`}
-                                title={`Revoke ${tierLabel(r)}`}
-                                disabled={isBusy}
-                                onClick={() => revokeRole(op.operator_id, r)}
-                                className="ml-0.5 size-4 rounded-sm bg-transparent text-muted-foreground shadow-none hover:bg-destructive hover:text-white"
-                                data-testid={`revoke-${op.operator_id}-${r}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </DestructiveButton>
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                      {relativeTime(op.last_login_at)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-2">
-                        <Select
-                          value={sel}
-                          onValueChange={(v) =>
-                            setPendingRole((p) => ({
-                              ...p,
-                              [op.operator_id]: v as CoordRole,
-                            }))
-                          }
-                        >
-                          <SelectTrigger
-                            size="sm"
-                            className="w-[150px]"
-                            data-testid={`tier-select-${op.operator_id}`}
+                  <Fragment key={op.operator_id}>
+                    <TableRow
+                      data-testid={`member-row-${op.operator_id}`}
+                      data-expanded={expanded ? "true" : "false"}
+                      onClick={() =>
+                        setOpenMember(expanded ? null : op.operator_id)
+                      }
+                      className={`cursor-pointer ${rowAccentClass(status)}`}
+                    >
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Chevron
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          {op.email}
+                        </span>
+                      </TableCell>
+                      <TableCell>{op.display_name ?? "—"}</TableCell>
+                      <TableCell>
+                        {/* R3 — ONE badge answering "what can this person do?".
+                            The per-role revoke chips move into the expansion:
+                            they are an ACTION on a grant, not a description of
+                            the member, and rendering N of them made the row as
+                            tall as the number of grants. */}
+                        <StatusBadge
+                          status={status}
+                          palette={MEMBER_STATUS_PALETTE}
+                        />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+                        {relativeTime(op.last_login_at)}
+                      </TableCell>
+                      <TableCell
+                        // The grant controls are a Select and a Button; a
+                        // click on either must not toggle the row under them.
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          <Select
+                            value={sel}
+                            onValueChange={(v) =>
+                              setPendingRole((p) => ({
+                                ...p,
+                                [op.operator_id]: v as CoordRole,
+                              }))
+                            }
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TIER_OPTIONS.map((t) => (
-                              <SelectItem key={t.role} value={t.role}>
-                                {t.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          size="sm"
-                          disabled={isBusy}
-                          onClick={() => grantRole(op.operator_id, sel)}
-                          data-testid={`grant-${op.operator_id}`}
-                        >
-                          Grant
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                            <SelectTrigger
+                              size="sm"
+                              className="w-[150px]"
+                              data-testid={`tier-select-${op.operator_id}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TIER_OPTIONS.map((t) => (
+                                <SelectItem key={t.role} value={t.role}>
+                                  {t.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            disabled={isBusy}
+                            onClick={() => grantRole(op.operator_id, sel)}
+                            data-testid={`grant-${op.operator_id}`}
+                          >
+                            Grant
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expanded && (
+                      // D2 — a full-width cell spanning all five columns.
+                      <TableRow
+                        data-testid={`member-row-detail-${op.operator_id}`}
+                        className="hover:bg-transparent"
+                      >
+                        <TableCell colSpan={5} className="p-0">
+                          <MemberDetail
+                            op={op}
+                            isBusy={isBusy}
+                            onRevoke={revokeRole}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })}
             </TableBody>
           </Table>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * R5's detail for one member, in the shared host and the fixed slot order.
+ *
+ * `actions` is where the per-role revoke chips live now. They were on the
+ * collapsed row, which conflated two different things — *what this member can
+ * do* (a description, one badge) and *take a grant away from them* (an action,
+ * one control per grant) — and made a row's height a function of how many
+ * roles somebody holds. `raw` carries the operator id and the SSO subject,
+ * which is the only place R8 allows them.
+ */
+function MemberDetail({
+  op,
+  isBusy,
+  onRevoke,
+}: {
+  op: OperatorRow;
+  isBusy: boolean;
+  onRevoke: (operatorId: string, role: string) => void;
+}) {
+  const status = deriveMemberStatus(op.roles);
+  return (
+    <RecordDetail
+      className="rounded-none border-x-0 border-b-0"
+      data-testid="member-row-detail"
+      why={
+        <p className="text-xs text-muted-foreground">
+          {/* §4.2 clause 4 — a calm kind that is nonetheless owed something
+              says so HERE, in words, never by borrowing amber. */}
+          {status.reason ??
+            `${op.display_name ?? op.email} holds ${op.roles.length} role${op.roles.length === 1 ? "" : "s"} in this tenant.`}
+        </p>
+      }
+      actions={
+        op.roles.length > 0 ? (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Revoke a grant:</p>
+            <div className="flex flex-wrap gap-1">
+              {op.roles.map((r) => (
+                <Badge key={r} variant="secondary" className="gap-1 pr-0.5">
+                  {tierLabel(r)}
+                  <DestructiveButton
+                    size="icon"
+                    aria-label={`Revoke ${tierLabel(r)}`}
+                    title={`Revoke ${tierLabel(r)}`}
+                    disabled={isBusy}
+                    onClick={() => onRevoke(op.operator_id, r)}
+                    className="ml-0.5 size-4 rounded-sm bg-transparent text-muted-foreground shadow-none hover:bg-destructive hover:text-white"
+                    data-testid={`revoke-${op.operator_id}-${r}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </DestructiveButton>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        ) : undefined
+      }
+      history={
+        <p className="text-[11px] text-muted-foreground">
+          Account created {relativeTime(op.created_at)} · last login{" "}
+          {relativeTime(op.last_login_at)}
+        </p>
+      }
+      raw={
+        <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+          operator_id: {op.operator_id} · roles: [{op.roles.join(", ")}]
+          {op.sso_provider ? ` · sso: ${op.sso_provider}` : ""}
+        </div>
+      }
+    />
   );
 }
 
@@ -549,14 +751,20 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
   }, [email, displayName, ssoSubject, ssoProvider, role, onInvited]);
 
   return (
-    <Card data-testid="coord-members-invite">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UserPlus className="h-4 w-4" />
-          Invite / pre-provision a member
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — a WRITE form is the clearest case of secondary material: it
+    // is never what an administrator is reading, only what they came to
+    // do occasionally, and it cost ~330px above the group/Cognito
+    // sections on every visit. Testid on the wrapper — see MyTenantsCard.
+    <div data-testid="coord-members-invite">
+    <CollapsiblePanel
+      title="Invite / pre-provision a member"
+      icon={<UserPlus className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-invite"
+      contentClassName="space-y-4"
+    >
+      <>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label htmlFor="invite-email">Email</Label>
@@ -639,8 +847,9 @@ function InviteForm({ onInvited }: { onInvited: () => void }) {
             Invite
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -808,14 +1017,25 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
   );
 
   return (
-    <Card data-testid="coord-members-group-roles">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldCheck className="h-4 w-4" />
-          Group → tenant → role mappings
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — infrastructural SSO wiring, below the members table and behind a
+    // click. The mapping COUNT stays on the header while closed: an empty
+    // mapping set is the thing a reader might need to notice without opening.
+    <div data-testid="coord-members-group-roles">
+    <CollapsiblePanel
+      title="Group → tenant → role mappings"
+      icon={<ShieldCheck className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-group-roles"
+      summary={(
+        <Badge variant="outline" className="font-mono text-[11px]">
+          <span className="font-normal text-muted-foreground">mappings&nbsp;</span>
+          {loading ? "–" : rows.length}
+        </Badge>
+      )}
+      contentClassName="space-y-4"
+    >
+      <>
         <p className="text-xs text-muted-foreground">
           Binds a Cognito group to a tenant + role.{" "}
           {isSuperuser
@@ -967,8 +1187,9 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -982,7 +1203,14 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
  * Lazily fetches `GET /coord/cognito/groups/{name}/users` when first opened and
  * supports removing a user by email via `DELETE .../users {email}`.
  */
-function CognitoGroupMembers({ groupName }: { groupName: string }) {
+function CognitoGroupMembers({
+  groupName,
+  onChanged,
+}: {
+  groupName: string;
+  /** Tell the section its member counts are stale (a removal happened). */
+  onChanged?: () => void;
+}) {
   const [users, setUsers] = useState<CognitoGroupUserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1028,6 +1256,7 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
         }
         toast.success(`Removed ${email} from ${groupName}`);
         await load();
+        onChanged?.();
       } catch (err) {
         log.warn("remove cognito group user failed", err);
         toast.error(
@@ -1037,7 +1266,7 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
         setBusy(null);
       }
     },
-    [groupName, load]
+    [groupName, load, onChanged]
   );
 
   if (loading) {
@@ -1107,24 +1336,96 @@ function CognitoGroupMembers({ groupName }: { groupName: string }) {
   );
 }
 
+/** Suffix coord treats as a home-tenant pin (`auth_sso::HOME_GROUP_SUFFIX`). */
+const HOME_GROUP_SUFFIX = "-home";
+
+/**
+ * The human sentence out of a backend error response.
+ *
+ * The group-delete guards answer 409 with a STRUCTURED detail
+ * (`{error, tenants, message}`) so the caller can branch on `error`, while
+ * every other route on this page answers with a plain-string detail. Rendering
+ * `[object Object]` at the one place an operator most needs to read the reason
+ * is exactly the failure this helper exists to prevent.
+ */
+async function backendErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    const detail = parsed?.detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (detail && typeof detail === "object") {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === "string" && message) return message;
+    }
+  } catch {
+    // Not JSON — fall through to the raw body.
+  }
+  return text.trim() || `HTTP ${res.status}`;
+}
+
 /**
  * A single Cognito group row: name / description / created columns, an
  * expand toggle that reveals members, an inline "add user by email" form, and a
  * delete-group action.
+ *
+ * The delete is the dangerous one, so two things are true of this row that were
+ * not before plan
+ * `2026-08-27-members-page-delete-paths-authorization-and-blast-radius`
+ * Phase 2:
+ *
+ *  - **Blast radius is on the COLLAPSED row.** The member list only mounts
+ *    inside `{expanded && …}`, so a collapsed row used to show name,
+ *    description and a creation time — zero information about what the Delete
+ *    button beside it would affect. Member count and coord's tenant mappings
+ *    are now rendered next to the name, at the moment of decision.
+ *  - **Delete goes through {@link ConfirmDestructiveDialog}** and requires
+ *    typing the group name. `DestructiveButton` alone only blocks synthetic
+ *    clicks; it never asked a human anything.
  */
 function CognitoGroupItem({
   group,
+  mappings,
+  mappingsError,
+  memberCount,
+  membersError,
   onDeleted,
+  onMembersChanged,
 }: {
   group: CognitoGroupRow;
+  /**
+   * coord `group_tenant_roles` rows whose `group_id` is this group; `null`
+   * while the section's read is still in flight (or has not run), so an
+   * un-arrived answer is never mistaken for an empty one.
+   */
+  mappings: GroupTenantRoleRow[] | null;
+  /**
+   * Set when the `group-tenant-roles` read FAILED — unknown, NOT "no
+   * mappings". The same distinction `membersError` draws, for the other half
+   * of the blast radius.
+   */
+  mappingsError: boolean;
+  /** Members in this group; `null` while loading, `undefined` if unknown. */
+  memberCount: number | null | undefined;
+  /** Set when the member-count probe failed — unknown, NOT zero. */
+  membersError: boolean;
   onDeleted: () => void;
+  /** Refresh the section's counts after an add/remove in this group. */
+  onMembersChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [allowHomeGroup, setAllowHomeGroup] = useState(false);
   // Bump to force the members sub-list to refetch after an add.
   const [membersKey, setMembersKey] = useState(0);
+
+  const isHomeGroup = group.group_name.endsWith(HOME_GROUP_SUFFIX);
+  const homeTenantSlug = isHomeGroup
+    ? group.group_name.slice(0, -HOME_GROUP_SUFFIX.length)
+    : null;
 
   const addUser = useCallback(async () => {
     const email = addEmail.trim();
@@ -1151,13 +1452,13 @@ function CognitoGroupItem({
         return;
       }
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        throw new Error(await backendErrorMessage(res));
       }
       toast.success(`Added ${email} to ${group.group_name}`);
       setAddEmail("");
       setExpanded(true);
       setMembersKey((k) => k + 1);
+      onMembersChanged();
     } catch (err) {
       log.warn("add cognito group user failed", err);
       toast.error(
@@ -1166,36 +1467,48 @@ function CognitoGroupItem({
     } finally {
       setAdding(false);
     }
-  }, [addEmail, group.group_name]);
+  }, [addEmail, group.group_name, onMembersChanged]);
 
   const deleteGroup = useCallback(async () => {
     setDeleting(true);
     try {
+      // `allow_home_group` is the ONE override the dashboard offers. There is
+      // deliberately no `allow_mapped` control: when coord maps the group the
+      // backend 409s and the fix is to remove the mapping first — that
+      // ordering is the guard's whole purpose, and a checkbox would erase it.
+      const query = allowHomeGroup ? "?allow_home_group=true" : "";
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
           group.group_name
-        )}`,
+        )}${query}`,
         { method: "DELETE" }
       );
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        throw new Error(await backendErrorMessage(res));
       }
       toast.success(`Deleted group ${group.group_name}`);
+      setConfirmOpen(false);
       onDeleted();
     } catch (err) {
       log.warn("delete cognito group failed", err);
       toast.error(
-        `Delete failed: ${err instanceof Error ? err.message : String(err)}`
+        `Delete failed: ${err instanceof Error ? err.message : String(err)}`,
+        { duration: 12_000 }
       );
       setDeleting(false);
     }
-  }, [group.group_name, onDeleted]);
+  }, [group.group_name, allowHomeGroup, onDeleted]);
+
+  const memberLabel = membersError
+    ? "members unknown"
+    : memberCount == null
+      ? "counting members…"
+      : `${memberCount} member${memberCount === 1 ? "" : "s"}`;
 
   return (
     <>
       <TableRow data-testid={`cognito-group-row-${group.group_name}`}>
-        <TableCell className="font-medium">
+        <TableCell className="font-medium align-top">
           <button
             type="button"
             className="flex items-center gap-1.5 hover:underline"
@@ -1210,18 +1523,88 @@ function CognitoGroupItem({
             )}
             {group.group_name}
           </button>
+          {/* Blast radius — visible WITHOUT expanding the row, because the
+              Delete button beside it is visible without expanding too. */}
+          <div
+            className="mt-1 flex flex-wrap items-center gap-1 pl-[1.375rem]"
+            data-testid={`cognito-group-blast-${group.group_name}`}
+          >
+            <Badge
+              variant={membersError ? "outline" : "secondary"}
+              className="text-[0.7rem] font-normal"
+              data-testid={`cognito-group-members-count-${group.group_name}`}
+            >
+              <Users className="h-3 w-3" />
+              {memberLabel}
+            </Badge>
+            {mappingsError ? (
+              // A FAILED read is not an empty one. Rendering "no tenant
+              // mappings" here would turn a suppressed error into the single
+              // most reassuring thing this row can say, right beside Delete.
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                data-testid={`cognito-group-mappings-unknown-${group.group_name}`}
+              >
+                <Building2 className="h-3 w-3" />
+                tenant mappings unknown
+              </Badge>
+            ) : mappings === null ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-muted-foreground"
+                data-testid={`cognito-group-mappings-loading-${group.group_name}`}
+              >
+                <Building2 className="h-3 w-3" />
+                reading tenant mappings…
+              </Badge>
+            ) : mappings.length === 0 ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-muted-foreground"
+                data-testid={`cognito-group-unmapped-${group.group_name}`}
+              >
+                no tenant mappings
+              </Badge>
+            ) : (
+              mappings.map((m) => (
+                <Badge
+                  key={`${m.tenant_slug}:${m.role}`}
+                  variant="outline"
+                  className="text-[0.7rem] font-normal"
+                  data-testid={`cognito-group-mapping-${group.group_name}-${m.tenant_slug}-${m.role}`}
+                >
+                  <Building2 className="h-3 w-3" />
+                  {m.tenant_slug} · {tierLabel(m.role)}
+                </Badge>
+              ))
+            )}
+            {isHomeGroup ? (
+              <Badge
+                variant="outline"
+                className="text-[0.7rem] font-normal text-amber-600 dark:text-amber-400"
+                data-testid={`cognito-group-home-pin-${group.group_name}`}
+              >
+                <ShieldCheck className="h-3 w-3" />
+                pins home → {homeTenantSlug}
+              </Badge>
+            ) : null}
+          </div>
         </TableCell>
-        <TableCell className="text-muted-foreground">
+        <TableCell className="text-muted-foreground align-top">
           {group.description || "—"}
         </TableCell>
-        <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
+        <TableCell className="text-muted-foreground text-xs whitespace-nowrap align-top">
           {relativeTime(group.creation_date)}
         </TableCell>
-        <TableCell className="text-right">
+        <TableCell className="text-right align-top">
           <DestructiveButton
             size="sm"
             disabled={deleting}
-            onClick={deleteGroup}
+            onClick={() => {
+              setAllowHomeGroup(false);
+              setConfirmOpen(true);
+            }}
             data-testid={`cognito-delete-group-${group.group_name}`}
           >
             <Trash2 className="h-4 w-4" />
@@ -1229,14 +1612,147 @@ function CognitoGroupItem({
           </DestructiveButton>
         </TableCell>
       </TableRow>
-      {expanded && (
-        <TableRow data-testid={`cognito-group-detail-${group.group_name}`}>
-          <TableCell colSpan={4} className="bg-muted/30">
-            <div className="space-y-3">
-              <CognitoGroupMembers
-                key={membersKey}
-                groupName={group.group_name}
+
+      <ConfirmDestructiveDialog
+        open={confirmOpen}
+        onOpenChange={(o) => {
+          if (!o) setAllowHomeGroup(false);
+          setConfirmOpen(o);
+        }}
+        title={`Delete the Cognito group ${group.group_name}?`}
+        description={
+          <>
+            This deletes the group from the <strong>shared</strong> Cognito
+            pool. Cognito has no undo — re-creating the group does not restore
+            its members, and every tenant keyed off this pool is affected.
+            Members do not lose the roles it grants right away: each person&apos;s
+            token stops carrying the group at their <strong>next login</strong>,
+            so the effect arrives one person at a time, whenever they next sign
+            in.
+          </>
+        }
+        confirmLabel="Delete group"
+        confirmPhrase={group.group_name}
+        busy={deleting}
+        // The `-home` acknowledgement is a HARD gate in the UI, not a hint:
+        // the backend refuses without `allow_home_group`, and shipping a
+        // confirm that is guaranteed to 409 would teach operators to click
+        // through the dialog and read the toast instead.
+        confirmDisabled={isHomeGroup && !allowHomeGroup}
+        onConfirm={() => void deleteGroup()}
+        extra={
+          isHomeGroup ? (
+            <label
+              className="flex items-start gap-2 text-sm"
+              htmlFor={`cognito-allow-home-${group.group_name}`}
+            >
+              <Checkbox
+                id={`cognito-allow-home-${group.group_name}`}
+                checked={allowHomeGroup}
+                onCheckedChange={(v) => setAllowHomeGroup(v === true)}
+                data-testid={`cognito-allow-home-${group.group_name}`}
               />
+              <span>
+                I understand this un-pins the home tenant for everyone in{" "}
+                <span className="font-mono">{group.group_name}</span>.
+              </span>
+            </label>
+          ) : null
+        }
+        testId={`cognito-delete-confirm-${group.group_name}`}
+      >
+        <p className="font-medium">What this affects</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li data-testid={`cognito-delete-confirm-members-${group.group_name}`}>
+            {membersError
+              ? "Member count could not be read — treat it as unknown, not zero."
+              : memberCount == null
+                ? "Counting members…"
+                : `${memberCount} member${
+                    memberCount === 1 ? "" : "s"
+                  } lose this group at their next login.`}
+          </li>
+          {mappingsError ? (
+            // The bullet that would otherwise say "nothing references this
+            // group" is the one an operator reads as permission to proceed.
+            // When the read failed we do not know that, so we say so — and we
+            // name the guard that DOES know, so "unknown" does not read as
+            // "unguarded". The confirm stays enabled deliberately: the backend
+            // re-runs this check server-side and answers 502
+            // `mapping_check_unavailable` if IT cannot read the table either,
+            // so blocking here would only convert a recoverable delete into a
+            // dead end while implying the dashboard is the guard.
+            <li
+              className="text-amber-700 dark:text-amber-400"
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              coord&apos;s tenant mappings could not be read — treat this as
+              unknown, not as &ldquo;none&rdquo;. The delete is still checked
+              server-side and will be refused if any mapping exists.
+            </li>
+          ) : mappings === null ? (
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              Reading coord&apos;s tenant mappings…
+            </li>
+          ) : mappings.length === 0 ? (
+            <li
+              data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+            >
+              No coord tenant mappings reference this group.
+            </li>
+          ) : (
+            // The SAME testid rides every arm, this one included, so a query
+            // for it is total over the state space. Leaving it off here would
+            // make `queryByTestId(...) === null` mean "there ARE mappings" —
+            // the opposite of what a reader assumes, and a way for a future
+            // `toBeNull()` assertion to pass vacuously on the mapped path.
+            //
+            // NOTE for tests: this arm is the ONLY one that can render the id
+            // more than once (one `<li>` per mapping), and `getByTestId`
+            // THROWS on multiple matches. A test that reaches the mapped path
+            // with more than one mapping must use `getAllByTestId`. The other
+            // three arms are always single, which is why the singular query is
+            // safe there.
+            mappings.map((m) => (
+              <li
+                key={`${m.tenant_slug}:${m.role}`}
+                data-testid={`cognito-delete-confirm-mappings-${group.group_name}`}
+              >
+                Grants <strong>{tierLabel(m.role)}</strong> in{" "}
+                <span className="font-mono">{m.tenant_slug}</span> — the backend
+                will refuse this delete until that mapping is removed above.
+              </li>
+            ))
+          )}
+          {isHomeGroup ? (
+            <li>
+              Pins its members&apos; home tenant to{" "}
+              <span className="font-mono">{homeTenantSlug}</span>. Their home
+              re-resolves at their next login.
+            </li>
+          ) : null}
+        </ul>
+      </ConfirmDestructiveDialog>
+
+      {expanded && (
+        // D2 — this row ALREADY expanded a full-width `colSpan` cell before
+        // this plan reached it. What changes is only the host: the ad-hoc
+        // `bg-muted/30` div becomes the shared `<RecordDetail>`, so a click on
+        // a record looks the same here as on every other console page.
+        <TableRow data-testid={`cognito-group-detail-${group.group_name}`}>
+          <TableCell colSpan={4} className="p-0">
+            <RecordDetail
+              className="rounded-none border-x-0 border-b-0"
+              why={
+                <CognitoGroupMembers
+                  key={membersKey}
+                  groupName={group.group_name}
+                  onChanged={onMembersChanged}
+                />
+              }
+              actions={
               <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
                 <div className="space-y-1 flex-1 min-w-[200px]">
                   <Label htmlFor={`cognito-add-${group.group_name}`}>
@@ -1261,12 +1777,37 @@ function CognitoGroupItem({
                   Add
                 </Button>
               </div>
-            </div>
+              }
+              raw={
+                <div className="break-all font-mono text-[10px] text-muted-foreground/60">
+                  group: {group.group_name}
+                  {group.precedence != null
+                    ? ` · precedence: ${group.precedence}`
+                    : ""}
+                </div>
+              }
+            />
           </TableCell>
         </TableRow>
       )}
     </>
   );
+}
+
+/**
+ * Calls `onMount` once, the first time it renders. Renders nothing.
+ *
+ * `CollapsiblePanel` UNMOUNTS its children while closed (Radix
+ * `CollapsibleContent`, no `forceMount`), so a child's mount IS the "the
+ * operator opened this panel" event. The panel owns its open state and
+ * exposes no callback, and reaching for one would mean forking a shared
+ * console primitive to serve one caller.
+ */
+function MountedOnce({ onMount }: { onMount: () => void }) {
+  useEffect(() => {
+    onMount();
+  }, [onMount]);
+  return null;
 }
 
 /**
@@ -1278,6 +1819,31 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [groups, setGroups] = useState<CognitoGroupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Blast-radius inputs for the group ROWS. Section-level, not per-row,
+  // because the row that needs them is the one that has NOT been expanded —
+  // a per-row lazy fetch would arrive only after the operator had already
+  // expanded, which is after the decision the numbers exist to inform.
+  // `null` until the read lands: an initial `[]` would render as the positive
+  // claim "no tenant mappings" for every group during the first paint, which
+  // is the same fabrication a failed read makes, just shorter-lived.
+  const [mappings, setMappings] = useState<GroupTenantRoleRow[] | null>(null);
+  // Set when the `group-tenant-roles` read FAILED. Kept apart from `mappings`
+  // for the same reason `memberErrors` is kept apart from `memberCounts` — a
+  // failed read must render as "unknown", never as "none".
+  const [mappingsError, setMappingsError] = useState(false);
+  const [memberCounts, setMemberCounts] = useState<Record<string, number>>({});
+  // Groups whose member probe FAILED. Kept apart from `memberCounts` so a
+  // failed read renders as "unknown" rather than as a confident zero.
+  const [memberErrors, setMemberErrors] = useState<Record<string, true>>({});
+  const [countsToken, setCountsToken] = useState(0);
+  // Wave 4 folded this section (`CollapsiblePanel defaultOpen={false}`) as
+  // "the least-often-read section on the page". The group LIST still loads
+  // eagerly, because the folded header badge counts it — but the blast-radius
+  // reads are one coord query plus one AWS `list_users_in_group` PER GROUP,
+  // and spending those on a panel nobody opened is pure waste. They wait for
+  // the first open, which is also the first moment their output can be seen.
+  const [panelOpened, setPanelOpened] = useState(false);
+  const markPanelOpened = useCallback(() => setPanelOpened(true), []);
 
   // Create-group form state.
   const [newName, setNewName] = useState("");
@@ -1305,6 +1871,98 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   useEffect(() => {
     if (isSuperuser) void load();
   }, [load, isSuperuser]);
+
+  // coord's group -> tenant -> role mappings. Read here as well as in the
+  // section above: this is the reason the backend refuses a delete, so the
+  // row that offers the delete has to show it.
+  useEffect(() => {
+    if (!isSuperuser || !panelOpened) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await httpClient.fetch(
+          `${OPERATIONS_API}/coord/group-tenant-roles`
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as GroupTenantRolesResponse;
+        // A successful STATUS is not a successful READ. `group_tenant_roles`
+        // is declared non-optional, so a `?? []` here is dead per the types
+        // and live at runtime — and what it would fabricate is precisely the
+        // absence claim this whole change exists to make unreachable. Treat a
+        // malformed 200 as the failure it is and let the `catch` route it to
+        // the unknown arm. (It also stops a non-array body throwing later,
+        // inside the `.filter()` at the render site.)
+        const rows = json?.group_tenant_roles;
+        if (!Array.isArray(rows)) {
+          throw new Error("malformed group-tenant-roles payload");
+        }
+        if (!cancelled) {
+          setMappings(rows);
+          setMappingsError(false);
+        }
+      } catch (err) {
+        // Non-fatal: the group list still renders. The backend enforces the
+        // referential guard regardless of what this panel managed to show.
+        //
+        // But do NOT collapse the failure to `[]`. `mappings.length === 0` is
+        // what renders "no tenant mappings" and "No coord tenant mappings
+        // reference this group." beside a Delete button, so an emptied array
+        // here would publish a suppressed error as a confident all-clear about
+        // the exact blast radius this panel exists to show. Flag it instead.
+        //
+        // The flag WINS at both render sites, so on a failed REFRESH a row
+        // that had shown real mappings degrades to "unknown" rather than
+        // continuing to display rows we can no longer vouch for. That is the
+        // same trade `memberCounts` makes (its map is replaced wholesale, so a
+        // known count degrades to "members unknown" too), and it is the safe
+        // direction: unknown is never a weaker warning than the truth.
+        log.warn("load group-tenant-roles for blast radius failed", err);
+        if (!cancelled) setMappingsError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperuser, panelOpened, countsToken]);
+
+  // Member counts, one probe per group, in parallel.
+  useEffect(() => {
+    if (!isSuperuser || !panelOpened || groups.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const counts: Record<string, number> = {};
+      const errors: Record<string, true> = {};
+      await Promise.all(
+        groups.map(async (g) => {
+          try {
+            const res = await httpClient.fetch(
+              `${OPERATIONS_API}/coord/cognito/groups/${encodeURIComponent(
+                g.group_name
+              )}/users`
+            );
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = (await res.json()) as CognitoGroupUsersResponse;
+            counts[g.group_name] = (json.users ?? []).length;
+          } catch (err) {
+            log.warn("member count probe failed", g.group_name, err);
+            errors[g.group_name] = true;
+          }
+        })
+      );
+      if (!cancelled) {
+        setMemberCounts(counts);
+        setMemberErrors(errors);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperuser, panelOpened, groups, countsToken]);
+
+  const refreshBlastRadius = useCallback(
+    () => setCountsToken((t) => t + 1),
+    []
+  );
 
   const createGroup = useCallback(async () => {
     const group_name = newName.trim();
@@ -1343,14 +2001,27 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   }, [newName, newDescription, load]);
 
   return (
-    <Card data-testid="coord-members-cognito-groups">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <KeyRound className="h-4 w-4" />
-          Cognito Groups
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    // R7 — the identity-provider surface: the least-often-read section on the
+    // page and, at a table plus a create form, one of the tallest.
+    <div data-testid="coord-members-cognito-groups">
+    <CollapsiblePanel
+      title="Cognito Groups"
+      icon={<KeyRound className="h-4 w-4" />}
+      titleAs="h2"
+      defaultOpen={false}
+      storageKey="coord-members-cognito-groups"
+      summary={(
+        <Badge variant="outline" className="font-mono text-[11px]">
+          <span className="font-normal text-muted-foreground">groups&nbsp;</span>
+          {loading ? "–" : groups.length}
+        </Badge>
+      )}
+      contentClassName="space-y-4"
+    >
+      <>
+        {/* Mounts only while the panel is open — that is the signal the
+            blast-radius probes wait on. */}
+        <MountedOnce onMount={markPanelOpened} />
         {!isSuperuser ? (
           <p
             className="text-sm text-muted-foreground"
@@ -1394,7 +2065,20 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                     <CognitoGroupItem
                       key={g.group_name}
                       group={g}
+                      mappings={
+                        mappings === null
+                          ? null
+                          : mappings.filter((m) => m.group_id === g.group_name)
+                      }
+                      mappingsError={mappingsError}
+                      memberCount={
+                        memberErrors[g.group_name]
+                          ? undefined
+                          : (memberCounts[g.group_name] ?? null)
+                      }
+                      membersError={memberErrors[g.group_name] === true}
                       onDeleted={load}
+                      onMembersChanged={refreshBlastRadius}
                     />
                   ))}
                 </TableBody>
@@ -1441,8 +2125,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+      </>
+    </CollapsiblePanel>
+    </div>
   );
 }
 
@@ -1492,8 +2177,15 @@ export default function MembersPage() {
       className="p-3 sm:p-6 space-y-4 max-w-5xl"
       data-testid="coord-members-page"
     >
-      <MyTenantsCard />
+      {/* R7 — the members table FIRST and unconditional; the four secondary
+          sections below it and folded. Ordering matters as much as folding:
+          "Your tenant & roles" used to sit ABOVE the table, so an
+          administrator arriving to change somebody's access read their own
+          roles first. Each panel keeps its signal on the header while closed
+          (the home tenant's name, the mapping count, the group count), which
+          is R7's actual contract — the panel folds, its signal does not. */}
       <MembersTable refreshKey={refreshKey} onChanged={bump} />
+      <MyTenantsCard />
       <InviteForm onInvited={bump} />
       <GroupTenantRolesSection isSuperuser={user?.is_superuser === true} />
       <CognitoGroupsSection isSuperuser={user?.is_superuser === true} />

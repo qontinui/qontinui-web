@@ -497,6 +497,90 @@ filter input. A count that has **not been fetched renders `–`, never `0`** —
 absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 `silent-empty-is-unknown` policy, applied to a badge.
 
+> **"Not fetched" includes "fetched and FAILED", and the rule does not stop at
+> the badge.** Read narrowly — as only the in-flight window — R6 leaves the
+> larger hole open: a `catch` that swallows its error leaves the list at the
+> `[]` its `useState` initializer put there, which is byte-identical to a
+> successful empty read, and `loading` is already false by then. Every
+> consumer downstream then states the absence as fact — the tab count, the
+> health-strip level and headline, and the `empty=` copy, which is where the
+> claim is actually made in words. `/admin/coord/questions` shipped exactly
+> that: `fetchGaps` failing rendered a GREEN strip reading *"No agent is
+> waiting on an answer"*. So a failed read needs its **own flag**, separate
+> from the list, and every surface derived from that list has to consult it —
+> `RecordList`'s `empty` slot included. `loading` cannot stand in for it.
+>
+> **Two arms, not one — and the failure arm goes FIRST.** A read that failed
+> when coord has *never* answered is UNKNOWN: dash the counts. A read that
+> failed after any successful one is STALE: those rows are real and still
+> actionable, so they keep rendering and the detail line says they are old.
+> Blanking them would discard a count the operator can act on. The order
+> matters because a *first* load that errors leaves `loaded` false as well, so
+> a `!loaded`-first deriver renders "Waiting for coord…" over a request that is
+> never arriving.
+>
+> **Key UNKNOWN on `loaded`, never on the list being empty.** The obvious
+> spelling — `readFailed && rows.length === 0` — cannot tell a list coord
+> confirmed EMPTY from one that never arrived, so a single blipped poll on a
+> genuinely-empty window flips the page to "unknown" and back on the next tick.
+> It is also inconsistent with the stale arm: a retained count of 7 is kept and
+> labelled old while a retained 0 would be thrown away, though both are equally
+> fetched. The predicate is `console/readFailure.ts` `readIsUnknown`; import it
+> rather than respelling it, because the strip and the `empty=` slot have to
+> agree about the same read and two spellings drift invisibly.
+>
+> `/admin/coord/questions` — the route this rule was WRITTEN from — still
+> hand-spells the older list-is-empty form four times
+> (`questions/page.tsx:263-268`). It predates the shared predicate and is not
+> yet converted; do not copy it, and do not read its survival as an exemption.
+>
+> **A 404 is an ANSWER, and belongs on the "not found" side.** `httpClient`
+> throws on every non-2xx, so coord's 404 — the most definitive answer it
+> gives — reaches the page through the same `catch` as a dead socket. A detail
+> route that reads "there is an error" as "we could not read" therefore reports
+> every mistyped slug, and every soft-deleted memory, as an outage: the
+> inversion of this whole rule, and the more corrosive one, because it teaches
+> an operator that the console cries wolf. Split them with
+> `readFailure.ts` `isNotFoundError`.
+>
+> Worked examples: `agentLogHealth.tsx` and `plans/plansHealth.tsx` for the
+> strips (`/agents/[agent_id]`, `/plans`, `/spawn`); `plans/[slug]`,
+> `questions/[id]`, `memory/[name]` and `memory/[name]/version/[version]` for
+> the 404 split. **What is pinned by test**: both derivers' arms
+> (`agentLogHealth.test.tsx`, `plansHealth.test.tsx`), the predicates
+> themselves (`console/readFailure.test.ts`), and the 404-vs-unreadable split
+> end to end on `plans/[slug]` (`page.readFailure.test.tsx`). The other three
+> detail routes carry the same wiring with no route-level test of their own —
+> stated rather than implied, because "their tests pin every arm" is exactly
+> the kind of unenforced claim this section exists to stop.
+>
+> **Retaining a record across a param change defeats all of this.** Both arms
+> live behind `record === null`, so a route that keeps the previous record when
+> the next id 404s renders the OLD record under the NEW heading and reaches
+> neither arm. Reset the record where the route param changes — not in the
+> `catch`, which would blank a loaded page on a transient blip.
+
+> **And "fetched and failed" is still not the last case: a read can SUCCEED and
+> not carry the number.** `loaded` true, no error, count still `null` — a state
+> the two clauses above both step over, because both are about a read that did
+> not produce an answer, and this is a read that produced a *partial* one.
+> Reached whenever a page guards its envelope (`if (typeof body.x ===
+> "number")`, the correct way to treat an absent scalar as UNKNOWN) while
+> flipping `loaded` on the response as a whole — a coord build that predates the
+> field, or a partial degrade, lands there. `/admin/coord/notifications` shipped
+> exactly that: `deriveNotificationsHealth` wrote `unreadCount ?? 0` and painted
+> a GREEN strip headlined *"Nothing unread"* with the detail *"you have seen
+> everything coord recorded"*, one element away from its own badge correctly
+> reading `–`.
+>
+> The rule that covers all three: **`?? 0` on a value whose `null` means UNKNOWN
+> is the bug, wherever it appears** — and a strip's `level`, `headline` and
+> `detail` are consumers of that value exactly as much as the badge is. A badge
+> that says `–` beside a headline that says "nothing" has not applied R6; it has
+> applied it to the one element where the dash was easy. Derive every part of a
+> strip from the same `null`, and scalars are **independent** — a missing
+> `unread_count` does not make a `total` you were sent unknown.
+
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
 composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved
@@ -554,7 +638,7 @@ closed panel costs zero polling, and a red state never hides behind a click.
 When a panel is collapsed, check whether anything else depended on its polling side
 effect. If so, hoist the fetch to the page.
 
-✅ `src/components/operations/CollapsiblePanel.tsx:3-22` states the contract in its
+✅ `src/components/console/CollapsiblePanel.tsx:3-22` states the contract in its
 own module doc, and the two properties are structural:
 
 ```tsx
@@ -837,21 +921,35 @@ existing importers are untouched (13 via `@/components/operations/utils`, 10 via
 `./utils`). The lesson generalises: **check this property when adding a
 primitive**, because the import that broke it looked completely harmless.
 
-> **Later-wave debt, discovered while counting those 23.** Six more files
-> declare their OWN `relativeTime` and import nothing, so the shim does not
-> reach them and this move did not touch them:
+> **That debt is PAID — and how it got paid is the reusable part.** Phase 1
+> found six more files declaring their OWN `relativeTime` and importing nothing,
+> so the `operations/utils.ts` shim never reached them, plus
+> `operations/gatesPredicate.ts`'s `relativeAgo` — a same-shape copy under
+> another name that disclosed itself in its own comment. All were left as
+> later-wave debt. **No wave collected any of them**, because none of them sits
+> on a `/admin/coord/*` route the Phase 3 census counted; they were collected by
+> Phase 1's post-merge follow-up instead.
+>
+> **Publishing a primitive is not enough to retire its copies.** Four of those
+> files were byte-identical to each other and still could not call
+> `console/time`, because the primitive was missing the two things they needed:
+> a **caller-chosen absent placeholder** (they render `—`; the console renders
+> `never`) and an **injectable clock** (`gatesPredicate` names its absence, in
+> its own comment, as the reason it kept a copy). Both are now optional
+> parameters, so the five real duplicates —
 > `admin/agent-claims/AgentClaimsDashboard.tsx`,
 > `admin/agent-sessions/AgentSessionsDashboard.tsx`,
-> `admin/coord/TreeCard.tsx`,
 > `admin/prompt-injections/PromptInjectionsDashboard.tsx`,
-> `execute/ScheduleListItem.tsx`, `sessions/LineageTimeline.tsx` — plus
-> `operations/gatesPredicate.ts`'s `relativeAgo`, a same-shape copy under
-> another name that discloses itself in its own comment. Three of them
-> (`/admin/agent-claims`, `/admin/agent-sessions`, `TreeCard` on the coord
-> console) are surfaces [§1](#1-scope) explicitly claims, so these are six
-> live instances of the duplicate-helper defect this plan exists to remove.
-> **Migrate each onto `console/time` as its wave reaches it**, and do not read
-> "23 importers" as "every caller".
+> `sessions/LineageTimeline.tsx` and `gatesPredicate`'s `relativeAgo` — now
+> delegate. When a copy will not adopt your primitive, **ask what the primitive
+> is missing** before recording it as somebody else's debt.
+>
+> Two corrections to Phase 1's list of six. `admin/coord/TreeCard.tsx` no longer
+> exists — Phase 3 deleted it. And **`execute/ScheduleListItem.tsx` was never a
+> duplicate**: same name, different behaviour — it *rounds* where this one
+> floors (`119s` → `2m`, not `1m`) and renders future stamps as `in 5m`. It
+> stays where it is. A same-name helper is not automatically a copy; diff the
+> bodies before folding one in.
 
 ### 3.2 The console primitives
 
@@ -867,9 +965,9 @@ same table. Every module doc cites its rule number and links this file.
 | `RecordList` | R2, R5 | `{ items, itemKey, renderRow, loaded?, skeletonRows?, empty?, className? }` &plus; a `RecordListExpansion` **union**: either neither of `{expandedKey, onExpandedKeyChange}` or **both** | The loading / empty / rows trichotomy is ONE decision, so it is one component. Unloaded renders skeletons, never an empty list. `empty` is the caller's, because an honest empty state names *which* question came back empty. One open at a time. Expansion state is internal unless hoisted, and the hoisting props are a UNION so supplying one without the other is a type error rather than a silently-ignored prop. |
 | `FilterTabs` | R6 | `{ tabs, active, onChange, testIdPrefix?, query?, onQueryChange?, queryPlaceholder?, queryTestId?, className? }` where `tabs: { id, label, count?, attention?, testId? }[]` | **`count == null` → `–`; `count === 0` → `0`.** The rule lives in the primitive precisely because it is the clause a page author will not think to reproduce. A caller expresses "unknown" by passing `null`, which is what an unfetched value already is. |
 | `FilterChips` | R6 | `{ label, options, selected, onToggle, onClear, allLabel?, maxVisible?, testIdPrefix?, title?, className? }` where `options: { value, label, count?, testId?, title? }[]` | The MULTI-select sibling. **`selected: []` is NO filter, not an option** — a synthetic `"any"` member would be a value the server vocabulary does not have, and every caller would have to strip it before the query string. The `all` chip is a clear action, pressed exactly when nothing is selected and **inert while it is** (`aria-disabled` with no handler, never the real `disabled` attribute, which would drop it out of the tab order on the one interaction it exists for and dim the page's default state) — a caller's `onClear` is a `setState([])`, so a no-op click would hand every selection-keyed `useCallback` a fresh array and refetch, discarding whatever the operator had paged into. Counts are a GROUP decision: a strip where no option carries one renders no count slot, and inside a strip where any does, R6's `–`-not-`0` reading is identical to `FilterTabs`'. `maxVisible` caps a SERVER vocabulary behind a `+N more` disclosure, with every selected option exempt: coord's alert corpus was 43 distinct live kinds on 2026-08-24 against the ~10 the alerts page was written for, and forty-three chips is §5's density budget spent on a control. Split from `FilterTabs` rather than widening `active` to `Id \| Id[]`, which would have given one component two different empty states. |
-| `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx`; a re-export shim stays at the old path for its ~15 relative importers, plus one in `operations/index.ts` (D3). |
+| `CollapsiblePanel` | R7 | unchanged | **Moved** from `operations/CollapsiblePanel.tsx` (D3). Phase 1's re-export shim at the old path is **deleted**: its seven callers were repointed at this barrel in Phase 1's post-merge follow-up. The re-export in `operations/index.ts` stays — that is the barrel, not the shim. |
 | `statusRow` atoms | R2, R3, R4 | see §3.1 | **Moved**, not re-extracted. |
-| `time.ts` | supports R2 | `relativeTime(iso)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime`, so its **23** importers are untouched — but six other files declare their own copy and are NOT among them (see §3.1). |
+| `time.ts` | supports R2 | `relativeTime(iso, { absent?, now? }?)`, `absoluteTime(iso)` | Moved out of `operations/utils.ts` so `console/` carries no runtime edge into the merge-train route catalogue. `operations/utils.ts` re-exports `relativeTime` as a binding, so the options parameter travels to its **23** importers and none of them changed. **`absent`** (default `"never"`) is rendered for a timestamp that is missing *or unparseable* — an unparseable one is not `"just now"`, which is reserved for a genuinely negative delta (clock skew). **`now`** (default `Date.now()`) makes a caller's test deterministic. Both exist because their absence was what kept five private copies alive; see §3.1. |
 | `attention.ts` | R3 | `Attention`, `AttentionMap<K>`, `attentionOf(map, kind, floor?)`, `escalateAttention(a, b)`, `ATTENTION_RANK`, `paletteDisagreements(attentionByKind, palette, {perRowKinds?})` | Import-free by design: `Attention` is **declared here** and re-exported by `prPipeline.ts`, so the severity vocabulary sits in the base layer instead of inside the merge-train module. `attentionOf` floors an unrecognised kind at `"waiting"`, never `"none"` — see §4.2. |
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests

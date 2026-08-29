@@ -357,9 +357,49 @@ export interface PromptDocumentSummary {
    */
   agent_write_effective?: boolean;
   /**
-   * Where `agent_write_effective` came from: `"operator"` when this document
-   * carries an explicit setting, `"default"` when coord's built-in protection
-   * rule decided.
+   * The operator's per-document setting as a TIER, unprojected — `null` (or
+   * absent) for "this document carries no setting of its own".
+   *
+   * Read for one thing only, and deliberately not more: whether PROTECTING this
+   * document would discard a notification tier that no control on this page can
+   * put back. `agent_writable` is the lossy projection of this field, and the
+   * two-state toggle writes through that projection, so coord resolves a legacy
+   * `true` as "at least allow" — a stored `allow_with_notification` survives a
+   * re-open only while it is still stored, and closing the document unstores it.
+   *
+   * Typed `string`, not `AgentWriteTier`: this interface is a cast over
+   * `JSON.parse` output rather than a check, so a tier this build predates
+   * arrives here as an arbitrary string. Narrow with `isAgentWriteTier`.
+   */
+  agent_write_tier?: string | null;
+  /**
+   * **The resolved TIER coord will actually enforce** — the unprojected form of
+   * `agent_write_effective`, derived server-side by coord's own resolver.
+   *
+   * This is the field to render. `agent_write_effective` is its LEGACY two-state
+   * projection, and coord's own wire docs call that projection lossy on purpose:
+   * `allow_with_notification` projects to `true`, so a surface reading the
+   * boolean shows a document on the notification tier as plainly open. Once an
+   * operator sets a KIND to `allow_with_notification` from the per-kind control
+   * on this page, every document of that kind resolves to it — so the lossy read
+   * is not a theoretical window, it is the state that control produces.
+   *
+   * Typed `string` for the same cast-not-check reason as `agent_write_tier`, and
+   * optional because a coord that predates the tier schema omits it. Absent is
+   * UNKNOWN; unrecognized is UNKNOWN. Neither is "open".
+   */
+  agent_write_effective_tier?: string;
+  /**
+   * WHICH level produced `agent_write_effective_tier`: `"operator"` when this
+   * document carries a setting of its own, `"operator_kind"` when a tenant
+   * setting on its KIND decided, `"default"` when coord's compile-time rule did.
+   *
+   * The three are not two. `"operator_kind"` collapsed into `"default"` renders
+   * as "no operator has ruled on this document, so coord's built-in default
+   * applies" — which is false in both halves at once: an operator did rule, and
+   * the badge's promise that the row "tracks the default" is the opposite of
+   * what a stored kind tier does. It also misdirects the remedy, because the
+   * setting that decided is not on this row and cannot be changed from it.
    *
    * Computed server-side ON PURPOSE. Deriving it here would mean shipping a
    * second copy of coord's `AGENT_UNWRITABLE_DOCUMENTS` list into the browser,
@@ -369,7 +409,7 @@ export interface PromptDocumentSummary {
    * briefings were added, and this page needed no change precisely because it
    * derives nothing.
    */
-  agent_write_source?: "operator" | "default";
+  agent_write_source?: "operator" | "operator_kind" | "default";
   /**
    * What coord's built-in rule says, IGNORING any operator override — `false`
    * exactly for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list.
@@ -392,6 +432,39 @@ export interface PromptDocumentSummary {
   agent_write_builtin_default?: boolean;
   updated_by: string | null;
   updated_at: string;
+}
+
+/**
+ * Coord's three-state agent authorship TIER — the vocabulary stored in
+ * `coord.prompt_documents.agent_write_tier` and
+ * `coord.prompt_document_kind_tiers.tier`.
+ *
+ * These strings are a WIRE contract with coord's `AgentWriteTier::as_str`, not
+ * display labels: coord's DB CHECK constrains the column to exactly these, and
+ * a value outside the set resolves fail-closed to `deny` on the enforcement
+ * path. Renaming one here does not rename it there — it just stops matching.
+ *
+ * ⚠️ `allow_with_notification` currently BEHAVES as `allow`. Coord resolves the
+ * tier but does not yet enforce the notification precondition (Phase 2 of plan
+ * `2026-08-27-tenant-level-agent-authorable-stores`), which is why every
+ * kind-tier response carries `notification_enforced` and a prose `warning`
+ * saying so. Do not render this tier's NAME without that disclosure.
+ */
+export type AgentWriteTier = "deny" | "allow" | "allow_with_notification";
+
+/** Every tier, least permissive first — matches coord's `AgentWriteTier::ALL`. */
+export const AGENT_WRITE_TIERS: readonly AgentWriteTier[] = [
+  "deny",
+  "allow",
+  "allow_with_notification",
+] as const;
+
+/** Narrow an arbitrary coord string to a tier this console knows. */
+export function isAgentWriteTier(value: unknown): value is AgentWriteTier {
+  return (
+    typeof value === "string" &&
+    (AGENT_WRITE_TIERS as readonly string[]).includes(value)
+  );
 }
 
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */

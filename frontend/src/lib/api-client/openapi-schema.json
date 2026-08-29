@@ -10015,6 +10015,40 @@
         "title": "ContextUpdate",
         "type": "object"
       },
+      "CoordSignal": {
+        "description": "A coord-owned signal, or an explicit statement that it is UNKNOWN.\n\nCopied from the plan library's invariant 5 posture: an unavailable coord\ndegrades to ``available=False`` with a stated reason, and NEVER to an\nempty payload. \"coord is down\" and \"coord says there is nothing\" are\ndifferent answers, and rendering the first as the second is how a\nmonitoring surface reports an outage as good news.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unavailable Reason"
+          }
+        },
+        "required": [
+          "available"
+        ],
+        "title": "CoordSignal",
+        "type": "object"
+      },
       "CoreSettingsSchema": {
         "description": "Core framework settings schema.",
         "properties": {
@@ -37489,6 +37523,1616 @@
         "title": "SemanticSearchResultItem",
         "type": "object"
       },
+      "SessionArtifactDetail": {
+        "description": "Head row plus the turn index.\n\n``turn_index_state`` is not decoration. ``not_requested`` and\n``unavailable`` are both distinct from ``present`` with an empty list,\nbecause \"we did not look\" and \"the body is gone\" must never render as\n\"this session has no turns\".",
+        "properties": {
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "ai_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Title"
+          },
+          "body_object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Object Key"
+          },
+          "body_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Source"
+          },
+          "byte_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Count"
+          },
+          "claude_session_id": {
+            "title": "Claude Session Id",
+            "type": "string"
+          },
+          "closeout_state": {
+            "title": "Closeout State",
+            "type": "string"
+          },
+          "config_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Dir"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "coord_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Session Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "decoded_turn_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decoded Turn Count"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "digest_verifiable": {
+            "default": false,
+            "title": "Digest Verifiable",
+            "type": "boolean"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "first_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Prompt"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Branch"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "last_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Prompt"
+          },
+          "launch_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Command"
+          },
+          "machine_hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Hostname"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "name_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Source"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "restore_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Tier"
+          },
+          "secret_finding_count": {
+            "title": "Secret Finding Count",
+            "type": "integer"
+          },
+          "secret_finding_kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Finding Kinds"
+          },
+          "session_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Name"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "task_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Run Id"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
+          "turn_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Count"
+          },
+          "turn_index": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SessionTurnIndexEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index"
+          },
+          "turn_index_state": {
+            "default": "not_requested",
+            "enum": [
+              "present",
+              "truncated",
+              "not_requested",
+              "unavailable"
+            ],
+            "title": "Turn Index State",
+            "type": "string"
+          },
+          "turn_index_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Index Unavailable Reason"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          },
+          "working_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Dir"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "claude_session_id",
+          "account_label",
+          "tenant_id",
+          "tenant_source",
+          "device_id",
+          "machine_hostname",
+          "coord_session_id",
+          "work_unit_slug",
+          "task_run_id",
+          "config_dir",
+          "working_dir",
+          "repo",
+          "git_branch",
+          "provider",
+          "launch_command",
+          "restore_tier",
+          "machine_id",
+          "permission_mode",
+          "body_object_key",
+          "content_sha256",
+          "byte_count",
+          "turn_count",
+          "first_prompt",
+          "last_prompt",
+          "ai_title",
+          "session_name",
+          "name_source",
+          "body_source",
+          "started_at",
+          "last_activity_at",
+          "ended_at",
+          "state",
+          "closeout_state",
+          "secret_finding_count",
+          "secret_finding_kinds",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionArtifactDetail",
+        "type": "object"
+      },
+      "SessionArtifactListResponse": {
+        "description": "A page of list rows.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionArtifactSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "SessionArtifactListResponse",
+        "type": "object"
+      },
+      "SessionArtifactSummary": {
+        "description": "One list row \u2014 every head-row field except the (large) body.\n\n``tenant_source`` and ``body_source`` are on EVERY row on purpose. They\nare the two honesty signals the plan makes load-bearing: the first lets a\nUI render a guessed tenant as visibly weaker than a declared one, the\nsecond is what stops a digest over redacted bytes being presented as\nverifiable.",
+        "properties": {
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "ai_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Title"
+          },
+          "body_object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Object Key"
+          },
+          "body_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Source"
+          },
+          "byte_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Count"
+          },
+          "claude_session_id": {
+            "title": "Claude Session Id",
+            "type": "string"
+          },
+          "closeout_state": {
+            "title": "Closeout State",
+            "type": "string"
+          },
+          "config_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Dir"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "coord_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Session Id"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "first_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Prompt"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Branch"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "last_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Prompt"
+          },
+          "launch_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Command"
+          },
+          "machine_hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Hostname"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "name_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Source"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "restore_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Tier"
+          },
+          "secret_finding_count": {
+            "title": "Secret Finding Count",
+            "type": "integer"
+          },
+          "secret_finding_kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Finding Kinds"
+          },
+          "session_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Name"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "task_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Run Id"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "title": "Tenant Source",
+            "type": "string"
+          },
+          "turn_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Count"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          },
+          "working_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Dir"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "claude_session_id",
+          "account_label",
+          "tenant_id",
+          "tenant_source",
+          "device_id",
+          "machine_hostname",
+          "coord_session_id",
+          "work_unit_slug",
+          "task_run_id",
+          "config_dir",
+          "working_dir",
+          "repo",
+          "git_branch",
+          "provider",
+          "launch_command",
+          "restore_tier",
+          "machine_id",
+          "permission_mode",
+          "body_object_key",
+          "content_sha256",
+          "byte_count",
+          "turn_count",
+          "first_prompt",
+          "last_prompt",
+          "ai_title",
+          "session_name",
+          "name_source",
+          "body_source",
+          "started_at",
+          "last_activity_at",
+          "ended_at",
+          "state",
+          "closeout_state",
+          "secret_finding_count",
+          "secret_finding_kinds",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SessionArtifactSummary",
+        "type": "object"
+      },
+      "SessionArtifactUpsert": {
+        "description": "Upsert payload for one archived session.\n\nIdentity is ``(claude_session_id, account_label)`` \u2014 both of them here,\nand nothing else. A Claude Code session id is unique per ACCOUNT HOME\nrather than globally, which is why ``account_label`` is part of the key and\nnot decoration. The organization is NOT part of it: it is server-derived\nscoping (see :class:`app.models.session_artifact.SessionArtifact`), so this\npayload addresses a session rather than a session-within-an-organization,\nand the web archiver's principal-less write can converge on the same row.\n\n**Omitted means untouched.** See the module docstring: two writers share\nthis row, so only the fields present in the request are written.\n\nNOTE the absence of ``organization_id``, and the deliberate PRESENCE of\n``tenant_id`` \u2014 also the module docstring.",
+        "properties": {
+          "account_label": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "ai_title": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Title"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "body_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Base64"
+          },
+          "body_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "disk_verbatim",
+                  "coord_redacted"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Source"
+          },
+          "byte_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byte Count"
+          },
+          "claude_session_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Claude Session Id",
+            "type": "string"
+          },
+          "closeout_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "clean",
+                  "unfinished",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closeout State"
+          },
+          "config_dir": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Dir"
+          },
+          "content_sha256": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Sha256"
+          },
+          "coord_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Session Id"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "first_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Prompt"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Branch"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "last_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Prompt"
+          },
+          "launch_command": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Command"
+          },
+          "machine_hostname": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Hostname"
+          },
+          "machine_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Machine Id"
+          },
+          "name_source": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Source"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "repo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo"
+          },
+          "restore_tier": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Tier"
+          },
+          "secret_finding_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Finding Count"
+          },
+          "secret_finding_kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret Finding Kinds"
+          },
+          "session_name": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Name"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "closed",
+                  "abandoned"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "task_run_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Run Id"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "tenant_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "declared",
+                  "derived_repo",
+                  "derived_sole_binding",
+                  "ambiguous",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Source"
+          },
+          "turn_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Count"
+          },
+          "work_unit_slug": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Slug"
+          },
+          "working_dir": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Dir"
+          }
+        },
+        "required": [
+          "claude_session_id"
+        ],
+        "title": "SessionArtifactUpsert",
+        "type": "object"
+      },
+      "SessionArtifactUpsertResponse": {
+        "description": "Upsert outcome.\n\n``body_written`` distinguishes the runner's body-carrying write from the\narchiver's metadata promotion, which is the distinction plan \u00a75 turns on:\nonly the first may move ``body_object_key`` / ``content_sha256``.",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/SessionArtifactSummary"
+          },
+          "body_written": {
+            "title": "Body Written",
+            "type": "boolean"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "created",
+          "changed",
+          "body_written",
+          "artifact"
+        ],
+        "title": "SessionArtifactUpsertResponse",
+        "type": "object"
+      },
+      "SessionRelaunchRequest": {
+        "description": "Ask for a session back \u2014 as a resume, or as a transfer.\n\nThe two are NOT interchangeable (plan \u00a73.5). ``resume`` restores the\nconversation on the account and machine that owns it; ``transfer`` cannot,\nbecause a Claude Code transcript is account-scoped and no other account\ncan ``claude --resume`` it. Labelling the second a resume is how state gets\nsilently lost, so the mode is required and the response carries the tier.",
+        "properties": {
+          "context_turns": {
+            "default": 20,
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Context Turns",
+            "type": "integer"
+          },
+          "mode": {
+            "default": "resume",
+            "enum": [
+              "resume",
+              "transfer"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "target_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Device Id"
+          }
+        },
+        "title": "SessionRelaunchRequest",
+        "type": "object"
+      },
+      "SessionRelaunchResponse": {
+        "description": "The outcome of a relaunch request, with its honest tier.\n\nA ``transfer`` never reports ``dispatched=True``: there is no mechanism\nthat can resume another account's session id, so the response carries the\nreplay context and the two ``resume-foreign`` notices instead of pretending\na spawn happened.",
+        "properties": {
+          "account_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Label"
+          },
+          "claude_session_id": {
+            "title": "Claude Session Id",
+            "type": "string"
+          },
+          "config_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Dir"
+          },
+          "context_turns": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SessionTurn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Turns"
+          },
+          "coord_response": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Response"
+          },
+          "coord_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coord Session Id"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "launch_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launch Command"
+          },
+          "mode": {
+            "enum": [
+              "resume",
+              "transfer"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notices",
+            "type": "array"
+          },
+          "restore_tier": {
+            "enum": [
+              "full",
+              "replay_as_context"
+            ],
+            "title": "Restore Tier",
+            "type": "string"
+          },
+          "session_artifact_id": {
+            "format": "uuid",
+            "title": "Session Artifact Id",
+            "type": "string"
+          },
+          "target_device_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Device Id"
+          },
+          "working_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Dir"
+          }
+        },
+        "required": [
+          "mode",
+          "restore_tier",
+          "dispatched",
+          "session_artifact_id",
+          "claude_session_id"
+        ],
+        "title": "SessionRelaunchResponse",
+        "type": "object"
+      },
       "SessionStats": {
         "description": "Session statistics and metrics.",
         "properties": {
@@ -37582,6 +39226,293 @@
           "total_events"
         ],
         "title": "SessionTimeline",
+        "type": "object"
+      },
+      "SessionTurn": {
+        "description": "One decoded turn out of the archived JSONL.\n\n``raw`` is omitted unless the caller asks for it: the whole reason\n``/turns`` exists is that an agent must be able to read a 4 MB transcript\nwithout swallowing it whole, and returning every parsed record by default\nwould hand back the same 4 MB in a more expensive encoding.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "line_number": {
+            "title": "Line Number",
+            "type": "integer"
+          },
+          "parent_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Uuid"
+          },
+          "parse_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Error"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uuid"
+          }
+        },
+        "required": [
+          "index",
+          "line_number"
+        ],
+        "title": "SessionTurn",
+        "type": "object"
+      },
+      "SessionTurnIndexEntry": {
+        "description": "A cheap pointer at one turn, for the detail read's index.",
+        "properties": {
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "line_number": {
+            "title": "Line Number",
+            "type": "integer"
+          },
+          "parse_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Error"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "index",
+          "line_number"
+        ],
+        "title": "SessionTurnIndexEntry",
+        "type": "object"
+      },
+      "SessionTurnsResponse": {
+        "description": "A page of decoded turns.",
+        "properties": {
+          "body_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Source"
+          },
+          "claude_session_id": {
+            "title": "Claude Session Id",
+            "type": "string"
+          },
+          "digest_verifiable": {
+            "default": false,
+            "title": "Digest Verifiable",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionTurn"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "session_artifact_id": {
+            "format": "uuid",
+            "title": "Session Artifact Id",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_artifact_id",
+          "claude_session_id",
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "SessionTurnsResponse",
+        "type": "object"
+      },
+      "SessionUnfinishedResponse": {
+        "description": "``GET /unfinished`` \u2014 the capability the operator asked for by name.\n\nTwo buckets, reported separately and never merged:\n\n* ``items`` \u2014 rows whose derived ``closeout_state`` is ``unfinished``.\n* ``unknown_count`` \u2014 rows nobody has evaluated yet. These are NOT\n  evidence of clean closeout; an empty ``items`` beside a large\n  ``unknown_count`` means the derivation has not run, which is a different\n  fact from \"everything was closed out\" and must not read like it.",
+        "properties": {
+          "clean_count": {
+            "title": "Clean Count",
+            "type": "integer"
+          },
+          "coord_outstanding": {
+            "$ref": "#/components/schemas/CoordSignal"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SessionArtifactSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unknown_count": {
+            "title": "Unknown Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "unknown_count",
+          "clean_count",
+          "coord_outstanding"
+        ],
+        "title": "SessionUnfinishedResponse",
         "type": "object"
       },
       "SetCanonicalRequest": {
@@ -51306,6 +53237,7 @@
           "description": {
             "anyOf": [
               {
+                "maxLength": 2048,
                 "type": "string"
               },
               {
@@ -77564,7 +79496,7 @@
     },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
-        "description": "List every Cognito group in the shared pool. Superuser-gated.",
+        "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
         "operationId": "api_v1_operations_coord_cognito_groups_get",
         "responses": {
           "200": {
@@ -77591,7 +79523,7 @@
         ]
       },
       "post": {
-        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated.",
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated, rate-limited, audited.\n\n``request`` is here because slowapi requires it on a limited endpoint,\nnot because the handler reads it.",
         "operationId": "api_v1_operations_coord_cognito_groups_post",
         "requestBody": {
           "content": {
@@ -77640,16 +79572,42 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.",
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
+            }
+          },
+          {
+            "description": "Delete even though coord maps this group to one or more tenants. The last-admin guard still applies and has no override.",
+            "in": "query",
+            "name": "allow_mapped",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Delete even though coord maps this group to one or more tenants. The last-admin guard still applies and has no override.",
+              "title": "Allow Mapped",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Delete even though this is a `<slug>-home` group that pins operators' home tenant.",
+            "in": "query",
+            "name": "allow_home_group",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Delete even though this is a `<slug>-home` group that pins operators' home tenant.",
+              "title": "Allow Home Group",
+              "type": "boolean"
             }
           }
         ],
@@ -77690,14 +79648,16 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -77748,14 +79708,16 @@
         ]
       },
       "get": {
-        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.",
+        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.\n\nRead-only, so no audit row and no rate limit \u2014 but it does take the\ngroup name in the path, so it gets the 400 validator like its three\nmutating siblings.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_get",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -77796,14 +79758,16 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -78511,7 +80475,7 @@
     },
     "/api/v1/operations/coord/policies": {
       "get": {
-        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.\n\n``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``\nfilters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when\nPRESENT \u2014 including as an empty string, which is a real filter to coord and\nnot a synonym for \"unfiltered\" (``?repo=`` selects the degenerate\nempty-repo rows; ``?kind=`` earns coord's 400 for an unknown kind, which is\na better answer than silently listing everything). Until this route\naccepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and\na tenant's DISABLED rules were **not listable from the console** \u2014 the\n``/admin/coord/automation-rules`` enable/disable switch could therefore\nwrite a row it could never read back, and the row was unrecoverable through\nthe product.\n\n``enabled`` is an EQUALITY filter server-side, not a \"show everything\"\nswitch: coord's resolver binds it as ``AND enabled = $2`` against the\ntenant's own rules. ``enabled=false`` therefore lists the DISABLED rules\nonly. A caller wanting both states issues both requests and unions them by\n``policy_id`` \u2014 coord's system built-ins come back on BOTH arms (its\nsystem-band query hardcodes ``enabled = true``), so the union must dedupe.",
+        "description": "List the tenant's automation policies (rules).\n\nRead-only, any authenticated tenant member (``get_tenant_id``, NOT\n``require_coord_tenant_admin``): coord's ``GET /coord/policies`` gates on\ntenant MEMBERSHIP only (its ``TenantId`` extractor), not the admin role,\nand scopes the list to the caller's tenant \u2014 so the console's read view is\nvisible to developers. Writes below stay admin-gated.\n\n``kind`` / ``repo`` / ``enabled`` are coord's own ``ListPoliciesQuery``\nfilters (coord ``policies/routes.rs::ListPoliciesQuery``), forwarded when\nPRESENT.\n\nFor the two STRING filters that includes an empty string, which is a real\nfilter to coord and not a synonym for \"unfiltered\" (``?repo=`` selects the\ndegenerate empty-repo rows; ``?kind=`` earns coord's 400 for an unknown\nkind, which is a better answer than silently listing everything).\n``enabled`` is the exception and is NOT reachable that way: it is a\n``bool``, so FastAPI rejects ``?enabled=`` with a 422 before this function\nruns (measured \u2014 ``?repo=`` and ``?kind=`` reach the handler as ``\"\"``;\n``?enabled=`` does not reach it at all). Only ``?enabled=true`` /\n``?enabled=false`` are expressible, which costs nothing: an empty\n``enabled`` has no meaning to coord, whose own field is an\n``Option<bool>``. Until this route\naccepted them no query string reached coord at all, so coord applied its ``enabled`` default of ``true`` on every call and\na tenant's DISABLED rules were **not listable from the console** \u2014 the\n``/admin/coord/automation-rules`` enable/disable switch could therefore\nwrite a row it could never read back, and the row was unrecoverable through\nthe product.\n\n``enabled`` is an EQUALITY filter server-side, not a \"show everything\"\nswitch: coord's resolver binds it as ``AND enabled = $2`` against the\ntenant's own rules. ``enabled=false`` therefore lists the DISABLED rules\nonly. A caller wanting both states issues both requests and unions them by\n``policy_id`` \u2014 coord's system built-ins come back on BOTH arms (its\nsystem-band query hardcodes ``enabled = true``), so the union must dedupe.",
         "operationId": "api_v1_operations_coord_policies_get",
         "parameters": [
           {
@@ -79078,6 +81042,134 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-document-kind-tiers": {
+      "get": {
+        "description": "This tenant's per-kind agent authorship tiers. Any tenant member.\n\nOne row per KIND, not one per stored row: \"no row\" is a meaningful state\n(coord's compile-time default answers instead), and the two facts that\nmatter most \u2014 the unliftable ``floor`` and the liftable\n``builtin_default_denies`` \u2014 are not in coord's table at all.\n\nRead-only for any tenant member, matching the sibling document reads; the\nPUT/DELETE below are tenant-admin-gated and coord re-checks.\n\nCoord answers **503** rather than an empty list when the store is not\nprovisioned, and that distinction is load-bearing: an empty list reads as\n\"no kind has a setting\", which is a claim about the operator's\nconfiguration nothing has evidence for. The 503 passes through.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Kind Tiers Api V1 Operations Coord Prompt Document Kind Tiers Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Prompt Document Kind Tiers",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-kind-tiers/{kind}": {
+      "delete": {
+        "description": "Clear this tenant's per-kind tier for ``kind``, returning it to \"no\noperator opinion\" so coord's compile-time default answers again.\nTenant-admin only.\n\nA separate verb rather than a nullable ``tier`` on the PUT: JSON ``null``\nis indistinguishable from omission on the way through, so a nullable field\ncannot express a clear at all.\n\nIdempotent \u2014 coord answers 200 for a kind that held no row, because \"this\nkind holds no tenant setting\" is the state being requested and it is\nequally true either way. A caller reconciling state must not read a\nsuccessful no-op as a failure.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_kind_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Clear Prompt Document Kind Tier Api V1 Operations Coord Prompt Document Kind Tiers  Kind  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Clear Prompt Document Kind Tier",
+        "tags": [
+          "operations"
+        ]
+      },
+      "put": {
+        "description": "Set this tenant's authorship tier for every document of ``kind``.\nTenant-admin only.\n\nBody: ``{tier}`` \u2014 one of ``deny``, ``allow``, ``allow_with_notification``.\nOnly ``tier`` is forwarded: coord stamps ``updated_by`` from its own\nauthenticated ``OperatorContext`` on this route, so forwarding a client\nclaim would add another client-asserted-provenance site of the kind plan\n``2026-07-27-prompt-document-writes-operator-gated`` exists to remove.\n\n\u26a0\ufe0f **``allow_with_notification`` currently behaves exactly as ``allow``.**\nCoord resolves the tier but does not yet enforce the notification\nprecondition (Phase 2 of plan\n``2026-08-27-tenant-level-agent-authorable-stores``). Coord's response\ncarries ``notification_enforced: false`` and a prose ``warning`` saying so\non every call, and the UI must surface it \u2014 a control whose NAME promises\nmore than the deployed build delivers, in the permissive direction, is\nworse than no control.\n\nCoord 4xx passes through: 400 for an unknown kind or an unrecognized tier\n(naming the vocabulary), and **409 for a kind that is an unliftable\nFLOOR** \u2014 ``claude_settings``, whose documents a machine copies into its own\nharness configuration. That one is refused rather than stored-and-ignored,\nso the store's contents and its meaning stay the same thing.",
+        "operationId": "api_v1_operations_coord_prompt_document_kind_tiers_kind_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Set Prompt Document Kind Tier Api V1 Operations Coord Prompt Document Kind Tiers  Kind  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Set Prompt Document Kind Tier",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-document-proposals": {
       "get": {
         "description": "List the tenant's policy-edit proposals, newest first. Any tenant member.\n\n``status`` is forwarded verbatim (coord owns the ``pending`` | ``approved`` |\n``rejected`` vocabulary \u2014 the web tier deliberately does not re-encode it, so\na coord-side vocabulary addition needs no web change). Coord returns\n``{\"proposals\": [...]}``.\n\nDegrades rather than 502s while coord's Phase 5 half is undeployed: the\nresponse then carries an empty list plus an ``unavailable`` note (and its\n``unavailable_kind``, so the page can style a benign pre-deploy window\ndifferently from coord actually being down), so an unreadable queue is never\ndisplayed as an empty one.",
@@ -79256,7 +81348,7 @@
     },
     "/api/v1/operations/coord/prompt-document-writes": {
       "get": {
-        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim. Deliberately no\n\"agent writes only\" filter: the provenance tag coord's write tool stamps is\nnot fixed until its Phase 5 half lands, and filtering on a guessed prefix\nwould silently hide writes \u2014 the exact failure this feed exists to prevent.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.",
+        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
         "operationId": "api_v1_operations_coord_prompt_document_writes_get",
         "parameters": [
           {
@@ -79462,7 +81554,7 @@
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_writable?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_writable`` is the per-document agent write access flag\n(``true`` = agents may write this document via\n``coord_write_prompt_document``, ``false`` = they may not). It is\ndeliberately NOT attrs-shaped: supplying it takes coord's **versioning**\npath even when nothing else changes, because who may write a policy\ndocument is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting it leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
+        "description": "Edit a prompt document's description/body/attrs/authorship tier.\nTenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,\nagent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_write_tier`` is the per-document authorship setting \u2014 one of\n``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is\ncoord's LEGACY two-state spelling of the same setting, kept on the wire for\na client that predates the tier; coord resolves a legacy ``true`` as \"at\nleast allow\", so a stored ``allow_with_notification`` survives it, and a\nlegacy ``false`` is an unambiguous ``deny``. Send the tier when the caller\ncan name one \u2014 only an explicit tier can move a document ONTO, or DOWN off,\nthe notification tier. Both are forwarded verbatim; neither is synthesised\nfrom the other here, because collapsing them at this hop would strip a\nprecondition the operator set with no error and no audit signal.\n\nEither field is deliberately NOT attrs-shaped: supplying one takes coord's\n**versioning** path even when nothing else changes, because who may write a\npolicy document is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting them leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {
@@ -81250,7 +83342,7 @@
     },
     "/api/v1/operations/fleet/resource-samples": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``)\nand ``headroom`` (``ok | warn | breach | unknown``). All are passed\nthrough untouched on purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
+        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``)\nand ``headroom`` (``ok | warn | breach | unknown``). All are passed\nthrough untouched on purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
         "operationId": "api_v1_operations_fleet_resource_samples_get",
         "parameters": [
           {
@@ -100257,6 +102349,773 @@
         "summary": "Cross Entity Semantic Search",
         "tags": [
           "semantic-search"
+        ]
+      }
+    },
+    "/api/v1/session-repository": {
+      "get": {
+        "description": "A filtered page of archived sessions.\n\nEvery row carries ``tenant_source`` and ``body_source`` so a consumer can\nrender a guessed attribution and a non-verifiable digest as the weaker\nthings they are (invariant 3).",
+        "operationId": "api_v1_session_repository_get",
+        "parameters": [
+          {
+            "description": "Exact match on the account home's label",
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the account home's label",
+              "title": "Account"
+            }
+          },
+          {
+            "description": "Exact match on the recorded repo",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the recorded repo",
+              "title": "Repo"
+            }
+          },
+          {
+            "description": "open | closed | abandoned",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "open | closed | abandoned",
+              "title": "State"
+            }
+          },
+          {
+            "description": "clean | unfinished | unknown",
+            "in": "query",
+            "name": "closeout_state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "clean | unfinished | unknown",
+              "title": "Closeout State"
+            }
+          },
+          {
+            "description": "The coord tenant the session ran against",
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The coord tenant the session ran against",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "description": "How the tenant was established: declared | derived_repo | derived_sole_binding | ambiguous | unknown. Filterable because plan \u00a73.6 rule 2 requires a GUESSED attribution to be separable from a declared one rather than rendering identically to it.",
+            "in": "query",
+            "name": "tenant_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How the tenant was established: declared | derived_repo | derived_sole_binding | ambiguous | unknown. Filterable because plan \u00a73.6 rule 2 requires a GUESSED attribution to be separable from a declared one rather than rendering identically to it.",
+              "title": "Tenant Source"
+            }
+          },
+          {
+            "description": "disk_verbatim | coord_redacted. A coord_redacted body's digest can never be verified against the original transcript.",
+            "in": "query",
+            "name": "body_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "disk_verbatim | coord_redacted. A coord_redacted body's digest can never be verified against the original transcript.",
+              "title": "Body Source"
+            }
+          },
+          {
+            "description": "Exact match on machine_id",
+            "in": "query",
+            "name": "machine_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on machine_id",
+              "title": "Machine Id"
+            }
+          },
+          {
+            "description": "Soft link to a coord work unit. Never resolved; a slug with no matching work unit simply returns its sessions.",
+            "in": "query",
+            "name": "work_unit_slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soft link to a coord work unit. Never resolved; a slug with no matching work unit simply returns its sessions.",
+              "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Audit filter over the Phase 1 detector's output. It selects rows \u2014 it never hides them, and it never masks a body.",
+            "in": "query",
+            "name": "has_secret_findings",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Audit filter over the Phase 1 detector's output. It selects rows \u2014 it never hides them, and it never masks a body.",
+              "title": "Has Secret Findings"
+            }
+          },
+          {
+            "description": "Sessions whose secret_finding_kinds contains this kind",
+            "in": "query",
+            "name": "secret_finding_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sessions whose secret_finding_kinds contains this kind",
+              "title": "Secret Finding Kind"
+            }
+          },
+          {
+            "description": "true = the detector ran (kinds is non-NULL, possibly empty); false = it never ran. The two are deliberately distinct: an unscanned row is not a clean one.",
+            "in": "query",
+            "name": "detector_ran",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "true = the detector ran (kinds is non-NULL, possibly empty); false = it never ran. The two are deliberately distinct: an unscanned row is not a clean one.",
+              "title": "Detector Ran"
+            }
+          },
+          {
+            "description": "Only sessions with last_activity_at at/after this timestamp. A row with no recorded activity is excluded.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only sessions with last_activity_at at/after this timestamp. A row with no recorded activity is excluded.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "Full-text query over the title, session name and the first/last prompts",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Full-text query over the title, session name and the first/last prompts",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionArtifactListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List archived Claude Code sessions",
+        "tags": [
+          "session-repository"
+        ]
+      },
+      "post": {
+        "description": "Insert or update one session head row, and archive its bytes.\n\n**This is the runner's PRIMARY door, not a fallback** (plan \u00a75). The runner\nholds the verbatim transcript and is the sole writer of\n``body_object_key`` + ``content_sha256``; the web archiver uses the same\nroute for metadata promotion. Both are authenticated by\n:func:`~app.api.deps.get_audit_actor_user`, which accepts the device JWT\nthe runner actually holds \u2014 see invariant 7 for why a Cognito-only door\nhere would leave the corpus permanently empty.\n\n**Omitted fields are left alone.** With two writers on one row, treating an\nabsent field as ``NULL`` would have the archiver's next metadata pass erase\nthe runner's archived body. Only fields present in the request are written\n(``model_fields_set`` \u2192 ``crud.UPSERTABLE_COLUMNS``).\n\n``organization_id`` is not a field on the payload and is not in the\nupsertable column set \u2014 it comes from the principal (invariant 1), and\n``tenant_id`` deliberately does NOT (invariant 2).\n\n**The row is addressed by ``(claude_session_id, account_label)``, without\nthe organization.** So a session the web archiver already promoted\norg-less is UPDATED here, not duplicated, and this authenticated write is\nwhat finally scopes it: ``crud.upsert_artifact`` fills the organization in\non a row that has none, and never moves a row that already has one.",
+        "operationId": "api_v1_session_repository_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionArtifactUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionArtifactUpsertResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upsert an archived session by (session id, account home)",
+        "tags": [
+          "session-repository"
+        ]
+      }
+    },
+    "/api/v1/session-repository/unfinished": {
+      "get": {
+        "description": "\"Which sessions were never closed out?\" \u2014 the capability plan \u00a73.4\nnames, answered from the DERIVED ``closeout_state`` column.\n\nTwo things this route refuses to do, both because they would turn a\nreporting surface into a reassuring one:\n\n* **It does not merge the ``unknown`` bucket into the answer.**\n  ``closeout_state`` defaults to ``unknown`` \u2014 \"nobody has evaluated this\n  session\" \u2014 which is not evidence of clean closeout. It is reported as\n  its own count beside the results, so an empty ``items`` next to a large\n  ``unknown_count`` reads as \"the derivation has not run\" rather than\n  \"everything is fine\".\n\n* **It does not silently drop coord's half.** coord's outstanding-work\n  ledger is attached as a signal that degrades to ``available=False`` with\n  a stated reason (invariant 6).",
+        "operationId": "api_v1_session_repository_unfinished_get",
+        "parameters": [
+          {
+            "description": "Exact match on account label",
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on account label",
+              "title": "Account"
+            }
+          },
+          {
+            "description": "Exact match on the recorded repo",
+            "in": "query",
+            "name": "repo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the recorded repo",
+              "title": "Repo"
+            }
+          },
+          {
+            "description": "Only sessions active at/after this timestamp",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only sessions active at/after this timestamp",
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionUnfinishedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sessions that were never closed out",
+        "tags": [
+          "session-repository"
+        ]
+      }
+    },
+    "/api/v1/session-repository/{artifact_id}": {
+      "get": {
+        "description": "The head row, with a bounded index of the transcript's turns.\n\nThe index is bounded and its state is explicit for the same reason\n``/turns`` exists at all: a transcript's p99 is 4 MB, and a detail read\nthat returns the whole thing is unusable by the agents this repository is\nbuilt for.",
+        "operationId": "api_v1_session_repository_artifact_id_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Decode a bounded index of turns from the archived body. Set false to read the head row alone; the response then reports turn_index_state='not_requested' rather than an empty list, because 'we did not look' is not 'there are no turns'.",
+            "in": "query",
+            "name": "include_turn_index",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Decode a bounded index of turns from the archived body. Set false to read the head row alone; the response then reports turn_index_state='not_requested' rather than an empty list, because 'we did not look' is not 'there are no turns'.",
+              "title": "Include Turn Index",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Ceiling on indexed turns. Truncation is reported via turn_index_state='truncated', never applied silently.",
+            "in": "query",
+            "name": "turn_index_limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Ceiling on indexed turns. Truncation is reported via turn_index_state='truncated', never applied silently.",
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Turn Index Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionArtifactDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "One archived session \u2014 head row plus its turn index",
+        "tags": [
+          "session-repository"
+        ]
+      }
+    },
+    "/api/v1/session-repository/{artifact_id}/export": {
+      "get": {
+        "description": "One session's transcript, back out as the JSONL it came from.\n\n**The bytes are emitted verbatim** \u2014 no re-encoding, no normalisation.\nFidelity is the product: a ``disk_verbatim`` archive is supposed to hash\nto the same digest as the file the runner read.\n\nThree headers carry the provenance, and the distinction between them is\nthe whole point:\n\n``X-Content-Sha256``\n    The digest of the bytes ON THIS RESPONSE, recomputed here. It is\n    always a true statement about what was sent.\n``X-Content-Sha256-Stored``/``X-Content-Sha256-Match``\n    The digest recorded on the row, and whether it agrees. Plan \u00a73's exit\n    criterion is that no row carries a digest that fails to verify against\n    its stored body; recomputing on export is what turns that criterion\n    into an enforced, observable property instead of a one-off audit.\n``X-Digest-Verifiable``\n    Whether the digest can be checked against the ORIGINAL transcript at\n    all. ``false`` for a ``coord_redacted`` body, whose bytes passed\n    through ``redact_secrets`` on the way into coord's stream \u2014 a digest\n    over redacted bytes can never be compared with the file on disk, and\n    presenting it as a verification would be a lie the caller has no way\n    to detect (plan \u00a75).",
+        "operationId": "api_v1_session_repository_artifact_id_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-ndjson": {}
+            },
+            "description": "The stored transcript, byte-for-byte."
+          },
+          "404": {
+            "description": "No such session artifact."
+          },
+          "409": {
+            "description": "The session has no archived body."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "The archived JSONL, byte-verbatim",
+        "tags": [
+          "session-repository"
+        ]
+      }
+    },
+    "/api/v1/session-repository/{artifact_id}/relaunch": {
+      "post": {
+        "description": "Bring a session back, with the tier stated honestly (plan \u00a73.5).\n\nTwo genuinely different operations, deliberately not one:\n\n``mode=\"resume\"`` \u2192 tier ``full``\n    Dispatched through the SHIPPED ``POST /sessions/:id/handoff`` subject,\n    which coord already records as a durable ``handoff_request`` event and\n    publishes to the target machine, where ``session/handoff.rs``\n    re-acquires claims and replays warm-tier scrollback into a new PTY.\n    **No new spawn channel is built here** \u2014 the plan is explicit that one\n    must not be.\n\n``mode=\"transfer\"`` \u2192 tier ``replay_as_context``\n    NOT a resume, and never reported as one. Claude Code cannot resume\n    another account's session id: the transcript is account-scoped. What\n    this returns is what the shipped ``resume-foreign`` skill does by hand\n    \u2014 the trailing turns rendered as context for a NEW session, plus the\n    two notices that make the seam visible. ``dispatched`` is ``false``,\n    because nothing was dispatched; claiming otherwise would let a UI\n    present a context replay as a restored conversation and silently lose\n    every bit of state after the transcript's last line.\n\nAdmin-gated where every other route here is dual-auth (invariant 7): this\nis the only route that acts on the fleet rather than on the archive, and\nthe shipped handoff proxy it reuses gates the same way.",
+        "operationId": "api_v1_session_repository_artifact_id_relaunch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRelaunchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionRelaunchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Relaunch a session \u2014 as a resume, or as a transfer",
+        "tags": [
+          "session-repository"
+        ]
+      }
+    },
+    "/api/v1/session-repository/{artifact_id}/turns": {
+      "get": {
+        "description": "Paged, decoded turns \u2014 for the UI, and for agents that must not swallow\na 4 MB body.\n\nOnly the requested window is parsed. Malformed lines come back as turns\ncarrying ``parse_error`` rather than being skipped, so a gap in the\narchive is visible instead of looking like silence.",
+        "operationId": "api_v1_session_repository_artifact_id_turns_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Zero-based turn index to start at",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Zero-based turn index to start at",
+              "minimum": 0,
+              "title": "From",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Include each record's full parsed JSON. Off by default: returning every raw record would hand back the same megabytes this route exists to avoid.",
+            "in": "query",
+            "name": "include_raw",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include each record's full parsed JSON. Off by default: returning every raw record would hand back the same megabytes this route exists to avoid.",
+              "title": "Include Raw",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionTurnsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "A page of decoded turns from an archived session",
+        "tags": [
+          "session-repository"
         ]
       }
     },

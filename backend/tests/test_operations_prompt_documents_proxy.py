@@ -454,3 +454,203 @@ class TestRestorePromptDocumentDefault:
             )
 
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /operations/coord/prompt-document-kind-tiers  (the PER-KIND authorship tier)
+# ---------------------------------------------------------------------------
+#
+# The sibling lever to the per-document tier on the PATCH above, and the only
+# one that can be expressed for a document that does not exist yet. What has to
+# hold at this layer:
+#
+# * the SIBLING path reaches coord verbatim — a nested `/prompt-documents/...`
+#   spelling would address a document called `kind-tiers`;
+# * only `tier` is forwarded on the PUT, because coord stamps `updated_by` from
+#   its own OperatorContext on this route and a forwarded client claim would be
+#   another client-asserted-provenance site;
+# * coord's 409 FLOOR refusal and its 503 store-unprovisioned answer pass
+#   through rather than becoming a 500 or, worse, an empty list.
+
+
+class TestPromptDocumentKindTiers:
+    def test_list_reaches_coord_on_the_sibling_path(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={
+                    "kinds": [
+                        {
+                            "kind": "audience_profile",
+                            "tier": "allow",
+                            "unreadable": False,
+                            "builtin_default_denies": True,
+                            "floor": False,
+                            "settable": True,
+                            # The SERVER-DERIVED answer. Present in the fixture
+                            # because the console renders THIS rather than
+                            # re-deriving from the booleans above, so a proxy
+                            # that dropped it would strip the field the badge
+                            # depends on.
+                            "effective_tier": "allow",
+                            "effective_source": "kind",
+                        }
+                    ],
+                    "vocabulary": ["deny", "allow", "allow_with_notification"],
+                    "notification_enforced": False,
+                    "warning": "behaves EXACTLY as `allow`",
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(f"{API_PREFIX}/coord/prompt-document-kind-tiers")
+
+        assert resp.status_code == 200
+        # The disclosure must survive the proxy — the console renders coord's
+        # own words, so dropping it here would silently remove the only notice
+        # that `allow_with_notification` does not yet do what its name says.
+        assert resp.json()["notification_enforced"] is False
+        assert "allow" in resp.json()["warning"]
+        assert resp.json()["kinds"][0]["effective_tier"] == "allow"
+        assert resp.json()["kinds"][0]["effective_source"] == "kind"
+        assert instance.get.call_args.args[0].endswith(
+            "/coord/prompt-document-kind-tiers"
+        )
+
+    def test_put_forwards_only_the_tier(self, auth_client: TestClient):
+        """`updated_by` is coord's to stamp. A forwarded client claim would add
+        another client-asserted-provenance site of the kind plan
+        `2026-07-27-prompt-document-writes-operator-gated` exists to remove."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.put.return_value = _mock_response(
+                json_data={
+                    "kind": "audience_profile",
+                    "tier": "allow_with_notification",
+                    "updated_by": "operator:...",
+                    "notification_enforced": False,
+                    "warning": "behaves EXACTLY as `allow`",
+                }
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.put(
+                f"{API_PREFIX}/coord/prompt-document-kind-tiers/audience_profile",
+                json={
+                    "tier": "allow_with_notification",
+                    "updated_by": "somebody-else@evil.example",
+                },
+            )
+
+        assert resp.status_code == 200
+        sent = instance.put.call_args.kwargs["json"]
+        assert sent == {"tier": "allow_with_notification"}
+        assert instance.put.call_args.args[0].endswith(
+            "/coord/prompt-document-kind-tiers/audience_profile"
+        )
+
+    def test_a_body_with_no_tier_forwards_no_tier_key(self, auth_client: TestClient):
+        """`{"tier": None}` is the payload that carries no meaning — the DELETE
+        docstring says so. Synthesising it from an absent key would make a
+        typo'd key name reach coord as an explicit null instead of a missing
+        field, and coord's 400 (which names the vocabulary) is the better
+        answer."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.put.return_value = _mock_response(
+                status_code=400, json_data={"error": "unknown tier"}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            auth_client.put(
+                f"{API_PREFIX}/coord/prompt-document-kind-tiers/domain_spec",
+                json={"teir": "allow"},
+            )
+
+        assert instance.put.call_args.kwargs["json"] == {}
+
+    def test_a_kind_carrying_a_slash_is_escaped_not_reshaped(self):
+        """`quote(kind, safe='')` is the whole reason that call is there. Every
+        other test here passes a kind for which it is a no-op, so without this
+        one a proxy that dropped the escaping would look identical — while a
+        kind carrying `/` silently addressed a DIFFERENT coord path.
+
+        Driven by calling the endpoint directly rather than through
+        ``TestClient``: the client normalises ``%2F`` back to ``/`` before
+        routing, so the request never reaches the handler and the test would
+        pass vacuously on a 404. FastAPI hands the handler the DECODED value,
+        which is exactly the input this asserts about.
+        """
+        import asyncio
+
+        from app.api.v1.endpoints.operations import (
+            clear_prompt_document_kind_tier,
+        )
+
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.delete.return_value = _mock_response(
+                json_data={"kind": "a/b", "tier": None, "removed": 0}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            asyncio.run(
+                clear_prompt_document_kind_tier(kind="a/b", tenant_id=TEST_TENANT_ID)
+            )
+
+        sent = instance.delete.call_args.args[0]
+        assert sent.endswith("/coord/prompt-document-kind-tiers/a%2Fb"), sent
+
+    def test_floor_conflict_passes_through(self, auth_client: TestClient):
+        """`claude_settings` is an unliftable floor and coord refuses rather
+        than storing. A 500 here would read as a transient fault and invite a
+        retry that can never succeed."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.put.return_value = _mock_response(
+                status_code=409,
+                json_data={"error": "`claude_settings` is an unliftable FLOOR"},
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.put(
+                f"{API_PREFIX}/coord/prompt-document-kind-tiers/claude_settings",
+                json={"tier": "allow"},
+            )
+
+        assert resp.status_code == 409
+        assert "FLOOR" in str(resp.json())
+
+    def test_store_unprovisioned_503_passes_through(self, auth_client: TestClient):
+        """UNKNOWN, never an empty list. An empty list reads as "no kind has a
+        setting", which is a claim about the operator's configuration nothing
+        has evidence for."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                status_code=503,
+                json_data={"error": "not provisioned", "degraded": "absent"},
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(f"{API_PREFIX}/coord/prompt-document-kind-tiers")
+
+        assert resp.status_code == 503
+
+    def test_delete_clears_the_kind(self, auth_client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.delete.return_value = _mock_response(
+                json_data={"kind": "domain_spec", "tier": None, "removed": 1}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.delete(
+                f"{API_PREFIX}/coord/prompt-document-kind-tiers/domain_spec"
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["removed"] == 1
+        assert instance.delete.call_args.args[0].endswith(
+            "/coord/prompt-document-kind-tiers/domain_spec"
+        )

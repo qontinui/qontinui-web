@@ -60,6 +60,7 @@ import {
   CollapsiblePanel,
   RowTime,
   StatusBadge,
+  isNotFoundError,
   rowAccentClass,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
@@ -100,6 +101,9 @@ export default function CoordQuestionDetailPage() {
   const [question, setQuestion] = useState<AgentQuestionRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The read failed with coord's own 404 — it answered, and the answer was
+   *  "no such question". See `isNotFoundError`. */
+  const [notFound, setNotFound] = useState(false);
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [response, setResponse] = useState("");
@@ -113,14 +117,26 @@ export default function CoordQuestionDetailPage() {
       );
       setQuestion(body);
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      // coord's own 404 means it ANSWERED "no such question" — the opposite of
+      // an unreadable read, and `httpClient` throws both the same way.
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
+    // Drop the previous id's question first: the catch never nulls
+    // `question`, so a 404 after a successful load would render the OLD
+    // question under the new id — and both arms below sit behind
+    // `question === null`, so neither could be reached. `fetchOne` keys on
+    // `id`, and this route does not poll.
+    setQuestion(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchOne();
   }, [fetchOne]);
@@ -334,8 +350,22 @@ export default function CoordQuestionDetailPage() {
               )}
           </section>
         </>
+      ) : error !== null && !notFound ? (
+        // R6 — a read that never landed supports no claim about coord's corpus.
+        // This route is where an operator lands to unblock a stopped agent, so
+        // "not found" here reads as "that agent's question is gone". A 404 IS
+        // coord saying exactly that, and keeps the sentence below.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-question-detail-unknown"
+        >
+          Could not read question {id} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-question-detail-missing"
+        >
           Question {id} not found.
         </p>
       )}
