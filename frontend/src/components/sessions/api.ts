@@ -16,6 +16,7 @@
 
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API } from "../operations/utils";
+import type { ConsolidatedSessionsResponse } from "./sessionConsoleStatus";
 import type {
   AgentStatusResponse,
   LineageResponse,
@@ -69,6 +70,60 @@ export async function listSessions(
     throw new SessionsApiError(`GET ${url} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as SessionListResponse;
+}
+
+/**
+ * Filters for {@link listConsolidatedSessions} — the param vocabulary the three
+ * redirected routes bring with them (plan §3's redirect table).
+ */
+export interface ListConsolidatedSessionsOptions {
+  /** coord device uuid. `/environments/sessions?device=` maps here 1:1. */
+  device?: string;
+  /** Free text. The agent half is searched coord-side; the lifecycle half web-side. */
+  q?: string;
+  /** coord's own agent-session lifecycle vocabulary. */
+  status?: "live" | "stale" | "closed";
+  /** Tenant breadth. Same axis as {@link ListSessionsOptions.tenantScope}. */
+  tenantScope?: ListSessionsTenantScope;
+  signal?: AbortSignal;
+}
+
+/**
+ * The consolidated list — `GET /operations/sessions?shape=consolidated`.
+ *
+ * Plan `2026-08-26-sessions-console-consolidation` D1: ONE list read, joined
+ * backend-side across `coord.sessions` and `coord.agent_sessions`, with a
+ * first-class `row_class` discriminant per row.
+ *
+ * There is no session-state `scope` here and that is deliberate: the
+ * consolidated shape always reads `scope=all` (the `agent_only` class is a set
+ * difference and is only sound over the complete lifecycle set), and `status`
+ * is the narrowing the caller actually wants.
+ */
+export async function listConsolidatedSessions(
+  opts: ListConsolidatedSessionsOptions = {}
+): Promise<ConsolidatedSessionsResponse> {
+  const params = new URLSearchParams({ shape: "consolidated" });
+  if (opts.device) params.set("device", opts.device);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.status) params.set("status", opts.status);
+  if (opts.tenantScope) params.set("tenant_scope", opts.tenantScope);
+
+  const url = `${OPERATIONS_API}/sessions?${params.toString()}`;
+  const res = await httpClient.fetch(url, { signal: opts.signal });
+  if (!res.ok) {
+    // `<verb> <url> failed: <status> - <body>` — the shape `httpClient` itself
+    // formats, and the ONE shape `console/readFailure.ts::isNotFoundError`
+    // can recover a status from. The older helpers in this file stop at the
+    // status, so a 404 through them is indistinguishable from a dead socket;
+    // this path does not inherit that.
+    const body = await res.text().catch(() => "");
+    throw new SessionsApiError(
+      `GET ${url} failed: ${res.status} - ${body}`,
+      res.status
+    );
+  }
+  return (await res.json()) as ConsolidatedSessionsResponse;
 }
 
 export async function getSession(
