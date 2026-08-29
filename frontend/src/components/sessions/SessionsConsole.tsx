@@ -56,13 +56,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import Link from "next/link";
 
 import {
   FilterChips,
   FilterTabs,
   HealthStrip,
-  RecordDetail,
   RecordList,
   RecordRow,
   RowTime,
@@ -89,11 +87,21 @@ import {
   hasLifecycleHalf,
   lastHeartbeatAt,
   lifecycleState,
-  rowClassExplanation,
   rowTimestamp,
   type ConsolidatedSessionRow,
   type ConsolidatedSessionsResponse,
 } from "./sessionConsoleStatus";
+import {
+  SessionRowExpansion,
+  useSessionCoordination,
+  type CoordinationReaders,
+} from "./SessionRowExpansion";
+import { useTranscriptStores } from "./TranscriptStores";
+import {
+  liveTranscriptIndicator,
+  type ArtifactLister,
+  type OutputReader,
+} from "./transcriptStores";
 
 /**
  * One list poll, and the cadence is a stated decision rather than an accident:
@@ -141,6 +149,15 @@ export interface SessionsConsoleProps {
   fetcher?: typeof listConsolidatedSessions;
   /** Injected for tests so `relativeTime` and the heartbeat bands are stable. */
   now?: number;
+  /**
+   * The three coordination reads an OPEN row makes. Injected for tests; the
+   * defaults are the real proxy clients. Nothing fetches while a row is shut.
+   */
+  coordinationReaders?: CoordinationReaders;
+  /** Injected for tests — coord's transcript-stream read. */
+  readOutput?: OutputReader;
+  /** Injected for tests — the permanent archive's list read. */
+  listArtifacts?: ArtifactLister;
 }
 
 export function SessionsConsole({
@@ -149,6 +166,9 @@ export function SessionsConsole({
   pollEnabled = true,
   fetcher,
   now,
+  coordinationReaders,
+  readOutput,
+  listArtifacts,
 }: SessionsConsoleProps) {
   const doFetch = fetcher ?? listConsolidatedSessions;
 
@@ -455,6 +475,9 @@ export function SessionsConsole({
             rowKey={ctx.rowKey}
             machineLabel={machineLabel}
             now={now}
+            coordinationReaders={coordinationReaders}
+            readOutput={readOutput}
+            listArtifacts={listArtifacts}
           />
         )}
       />
@@ -473,6 +496,9 @@ function SessionConsoleRow({
   rowKey,
   machineLabel,
   now,
+  coordinationReaders,
+  readOutput,
+  listArtifacts,
 }: {
   row: ConsolidatedSessionRow;
   expanded: boolean;
@@ -480,6 +506,9 @@ function SessionConsoleRow({
   rowKey: string;
   machineLabel: (deviceId: string | null | undefined) => string | null;
   now?: number;
+  coordinationReaders?: CoordinationReaders;
+  readOutput?: OutputReader;
+  listArtifacts?: ArtifactLister;
 }) {
   const status = deriveSessionStatus(row, { now });
   const machine = machineLabel(row.device_id);
@@ -489,6 +518,29 @@ function SessionConsoleRow({
   const beat = lastHeartbeatAt(row);
   const state = lifecycleState(row);
   const timestamp = rowTimestamp(row);
+  const agentId = agentSessionId(row);
+
+  // Both stores, probed ONLY while the row is open. A 40-row fleet must not
+  // issue 80 requests to draw two five-character labels — and the plan is
+  // explicit that an unprobed row reads `–` because *a row that has not been
+  // probed has not answered*, which is unknown, never "no transcript".
+  const stores = useTranscriptStores({
+    liveSessionId: row.id,
+    sessionClosed: status.kind === "closed",
+    claudeSessionId: agentId,
+    coordSessionId: hasLifecycleHalf(row) === true ? row.id : null,
+    liveApplicable: lineage,
+    enabled: expanded,
+    read: readOutput,
+    list: listArtifacts,
+  });
+  const transcriptTier = liveTranscriptIndicator(stores.live);
+
+  const coordination = useSessionCoordination(
+    row.id,
+    expanded,
+    coordinationReaders ?? {}
+  );
 
   return (
     <RecordRow
@@ -525,7 +577,7 @@ function SessionConsoleRow({
               />
             )}
           </span>
-          {/* D2's two cells. Each dash carries the sentence that says which
+          {/* D2's cells. Each dash carries the sentence that says which
               unknown it is — "not applicable", "unknown" and "we did not look"
               are three different claims. */}
           <span
@@ -533,7 +585,7 @@ function SessionConsoleRow({
             data-testid="sessions-console-row-lineage"
           >
             {lineage === true ? (
-              "transcript"
+              "lineage"
             ) : (
               <Dash
                 title={
@@ -542,6 +594,20 @@ function SessionConsoleRow({
                     : "the agent half did not answer for this row — unknown, not absent"
                 }
               />
+            )}
+          </span>
+          {/* The per-row transcript indicator (Phase 2): `warm` | `cold` | `–`.
+              The dash is UNKNOWN, never "no transcript" — warm rows are
+              garbage-collected 7 days after a session ends and the cold object
+              is the durable copy, and a row nobody probed has not answered. */}
+          <span
+            className="hidden lg:inline shrink-0 w-20 truncate text-xs text-muted-foreground"
+            data-testid="sessions-console-row-transcript"
+          >
+            {transcriptTier.unknown ? (
+              <Dash title={transcriptTier.title} />
+            ) : (
+              <span title={transcriptTier.title}>{transcriptTier.label}</span>
             )}
           </span>
           <span
@@ -577,48 +643,12 @@ function SessionConsoleRow({
         />
       }
     >
-      <RecordDetail
-        data-testid="sessions-console-detail"
-        why={
-          <p className="text-muted-foreground">{rowClassExplanation(row)}</p>
-        }
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {/* The permalink Phase 2 turns into the nine-section detail view.
-                It resolves across both id spaces coord-side already. */}
-            <Link
-              href={`/sessions/${encodeURIComponent(row.id)}`}
-              className="text-xs underline underline-offset-2"
-              data-testid="sessions-console-open-full"
-            >
-              Open full view ↗
-            </Link>
-          </div>
-        }
-        raw={
-          <dl className="grid grid-cols-[10rem_1fr] gap-x-3 gap-y-0.5 font-mono text-[10px] text-muted-foreground/60">
-            <dt>row_class</dt>
-            <dd>{row.row_class ?? "unknown"}</dd>
-            <dt>coord.sessions.id</dt>
-            <dd>
-              {hasLifecycleHalf(row) === true ? (
-                row.id
-              ) : (
-                <Dash title="no coord.sessions row for this session" />
-              )}
-            </dd>
-            <dt>agent_sessions.id</dt>
-            <dd>
-              {agentSessionId(row) ?? (
-                <Dash title="no agent-session id is known for this row" />
-              )}
-            </dd>
-            <dt>device_id</dt>
-            <dd>
-              {row.device_id ?? <Dash title="coord recorded no device" />}
-            </dd>
-          </dl>
-        }
+      {/* R5 / D3: the detail expands IN PLACE, sharing this row's border. */}
+      <SessionRowExpansion
+        row={row}
+        coordination={coordination}
+        stores={stores}
+        now={now}
       />
     </RecordRow>
   );
