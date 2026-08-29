@@ -354,6 +354,20 @@ function RuleRow({
   const isDisabled = builtIn && rule.override_state === "disabled";
 
   return (
+    /*
+     * Known debt, disclosed rather than migrated. This row wears the console's
+     * card silhouette by hand instead of adopting `<RecordRow>`, so it gets no
+     * R4 left-edge accent and no R5 expand-in-place detail.
+     *
+     * It is NOT migrated here because plan
+     * `2026-08-16-coord-console-ui-unification-pipeline-style` deliberately
+     * scoped `/automation-rules` to R9 only (its closeout, #1064), and states
+     * that no sixth wave is owed. Converting it is that plan's call, not this
+     * lint rule's — and unlike the fat cards the rule exists for, this row is
+     * already a single visual line, so the cost of leaving it is cosmetic
+     * rather than a density regression.
+     */
+    // eslint-disable-next-line @qontinui-web/no-handrolled-record-row -- see above: R9-only by plan decision, migration is a separate wave
     <div className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3">
       <KindIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
 

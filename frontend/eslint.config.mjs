@@ -62,6 +62,25 @@ const eslintConfig = [
     },
   },
   {
+    // Phase 4.3 of plan
+    // `2026-08-16-coord-console-ui-unification-pipeline-style` — the one
+    // mechanical rule that stops "Family B" (a record rendered as its own
+    // bordered, rounded, padded card) from growing back into the coord
+    // console after 29 routes were migrated off it.
+    //
+    // **The scope is the enforcement.** The rule matches a SILHOUETTE, and
+    // that silhouette is legitimate almost everywhere else — a summary panel,
+    // an error banner and a settings block all wear it correctly. Restricting
+    // it here rather than inside the rule also keeps `src/components/console/**`
+    // structurally out of range: `RecordDetail` matches all four class clauses
+    // itself and escapes today only because it is not named `…Card`/`…Row`,
+    // which is name luck, not a design.
+    files: ["src/app/(app)/admin/coord/**/*.tsx"],
+    rules: {
+      "@qontinui-web/no-handrolled-record-row": "error",
+    },
+  },
+  {
     // API clients under `src/lib/api/` must go through `httpClient` (see
     // `@/services/service-factory`), never a bare `fetch`. A bare fetch sends
     // no `Authorization: Bearer` header, so in prod (Cognito bearer auth) the

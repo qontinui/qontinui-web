@@ -399,6 +399,15 @@ function DocumentRow({
    */
   const inertBriefing = isInertSessionBriefing(doc.kind, doc.name);
   return (
+    /*
+     * Known debt, disclosed rather than migrated — see the identical note on
+     * `automation-rules/_components/RuleList.tsx`. `/prompt-documents` is one
+     * of the four form/dialog routes plan
+     * `2026-08-16-coord-console-ui-unification-pipeline-style` took at R9 only
+     * (#1064), and that plan states no sixth wave is owed. Adopting
+     * `<RecordRow>` here is its call to make.
+     */
+    // eslint-disable-next-line @qontinui-web/no-handrolled-record-row -- see above: R9-only by plan decision, migration is a separate wave
     <div
       className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-3"
       data-testid={`doc-row-${doc.kind}-${doc.name}`}

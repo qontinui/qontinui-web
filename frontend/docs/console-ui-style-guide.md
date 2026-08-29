@@ -247,6 +247,35 @@ stacked lines inside. ~96px per record against the Pipeline row's ~34px.
 The `space-y-1.5` on the inner `<Link>` is the tell: it exists to separate the
 three stacked lines (slug row, title, dates) that R2 says should be one.
 
+#### R2 is enforced, and the enforcement keys on the silhouette
+
+`@qontinui-web/no-handrolled-record-row` (`frontend/eslint-rules/`, `error` under
+`src/app/(app)/admin/coord/**`) flags a record wrapper that combines **a border,
+a `rounded-*`, `bg-card`, and block padding ≥ `p-3`** — plus `<Card>` itself,
+which carries that silhouette in its own definition. "Record wrapper" means the
+element is inside a `.map()` callback, **or** is the outermost element returned
+by a component named `…Card` / `…Row` / `…Item`.
+
+Two things about it are worth knowing before you change it:
+
+- **The name-suffix trigger is the one that works.** A `.map()`-only rule — the
+  form this was first specified in — is structurally blind to every *extracted*
+  row component, because the offending element lives in `ProposalCard.tsx` while
+  the `.map()` lives in `ReviewFeed.tsx`, a different file and a different AST.
+  That is exactly the shape of the defect the rule was written for.
+- **`p-3` is the line between a row and a card, and it is measured.**
+  `<RecordRow>` wears three of the four clauses (`border border-border
+  rounded-md bg-card/30`) and passes only because its padding is `py-2`; every
+  console status strip sits at `py-2`/`py-2.5`. Raise the threshold and the
+  historical `ProposalCard` (`py-3.5`) comes back through; lower it and the rule
+  flags the primitive it tells you to adopt.
+
+Three rows on `main` are disclosed exceptions, each with an inline disable naming
+why: `automation-rules`' `RuleRow`, and `/prompt-documents`' `DocumentRow` and
+`ClauseRow`. All three are already one visual line — they are not fat cards —
+and both routes were deliberately taken at R9 only by the unification plan's
+closeout, so adopting `<RecordRow>` there is that plan's call, not the rule's.
+
 ### R3 — Colour encodes who must act
 
 Three families only:

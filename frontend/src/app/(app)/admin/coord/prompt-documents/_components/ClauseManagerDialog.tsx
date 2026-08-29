@@ -347,6 +347,14 @@ function ClauseRow({
   }).length;
 
   return (
+    /*
+     * Known debt, disclosed rather than migrated — see the note on
+     * `PromptDocumentList.tsx`, the sibling row on this same R9-only route.
+     * This one sits inside a dialog as well, where the console's row
+     * primitives have no precedent yet, so migrating it is strictly more than
+     * a swap.
+     */
+    // eslint-disable-next-line @qontinui-web/no-handrolled-record-row -- see above: R9-only by plan decision, migration is a separate wave
     <div
       className="group flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-3"
       data-testid={`clause-row-${clause.clause_id}`}

@@ -15,11 +15,13 @@
 
 import noUnwrappedDestructiveHandler from "./no-unwrapped-destructive-handler.mjs";
 import noUnredactedSensitiveInput from "./no-unredacted-sensitive-input.mjs";
+import noHandrolledRecordRow from "./no-handrolled-record-row.mjs";
 
 const qontinuiWebPlugin = {
   rules: {
     "no-unwrapped-destructive-handler": noUnwrappedDestructiveHandler,
     "no-unredacted-sensitive-input": noUnredactedSensitiveInput,
+    "no-handrolled-record-row": noHandrolledRecordRow,
   },
 };
 
