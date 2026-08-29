@@ -34,6 +34,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 export interface RecordListRenderContext {
   expanded: boolean;
   onToggle: () => void;
+  /**
+   * The key `itemKey` returned for this row — the same string the expansion
+   * state is keyed on, handed back so `<RecordRow rowKey>` can be set without
+   * the caller recomputing it.
+   *
+   * Named `rowKey`, not `key`, to match the prop it feeds and to keep it
+   * clearly distinct from React's reserved one. Callers whose rows carry a
+   * natural id (a slug, a question id) can keep passing that directly; this
+   * exists for the ones whose key is a composite the list already built, which
+   * previously had no way to reach it and so shipped rows with no
+   * `data-row-key` at all.
+   */
+  rowKey: string;
 }
 
 export interface RecordListBaseProps<T> {
@@ -123,6 +136,7 @@ export function RecordList<T>({
               expanded: openKey === key,
               // One open at a time: opening a row closes the previous one.
               onToggle: () => setOpenKey(openKey === key ? null : key),
+              rowKey: key,
             })}
           </Fragment>
         );

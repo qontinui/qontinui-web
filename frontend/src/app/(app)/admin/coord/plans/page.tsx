@@ -49,7 +49,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
-import { CollapsiblePanel, HealthStrip, RecordList } from "@/components/console";
+import {
+  CollapsiblePanel,
+  HealthStrip,
+  RecordList,
+  readIsUnknown,
+} from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
@@ -139,9 +144,14 @@ export default function CoordPlansListPage() {
   const truncated = plans.length >= FETCH_LIMIT;
   const missingCreated = plans.filter((p) => !p.created_at).length;
   const loaded = data !== null;
+  // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
+  // this arm for `/spawn`; this route reads the same list from the same
+  // endpoint and had the same hole, so it consults it too.
+  const readFailed = error !== null;
+  const plansUnknown = readIsUnknown(loaded, readFailed);
   const health = useMemo(
-    () => derivePlansHealth(plans, loaded),
-    [plans, loaded]
+    () => derivePlansHealth(plans, loaded, readFailed),
+    [plans, loaded, readFailed]
   );
 
   return (
@@ -253,9 +263,22 @@ export default function CoordPlansListPage() {
         loaded={!(loading && !data)}
         skeletonRows={6}
         empty={
-          <p className="text-sm text-muted-foreground italic">
-            No plans matching status={status === "any" ? "any" : status}.
-          </p>
+          plansUnknown ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-unknown"
+            >
+              Could not read the work-unit list — whether any plan matches
+              status={status === "any" ? "any" : status} is unknown, not none.
+            </p>
+          ) : (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-empty"
+            >
+              No plans matching status={status === "any" ? "any" : status}.
+            </p>
+          )
         }
         renderRow={(p, ctx) => (
           <PlanRow

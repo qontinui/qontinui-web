@@ -53,7 +53,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
-import { RowTime, StatusBadge, rowAccentClass } from "@/components/console";
+import {
+  RowTime,
+  StatusBadge,
+  isNotFoundError,
+  rowAccentClass,
+} from "@/components/console";
 import {
   MEMORY_STATUS_PALETTE,
   deriveMemoryStatus,
@@ -92,6 +97,9 @@ export default function CoordMemoryVersionPage() {
   const [entry, setEntry] = useState<CoordMemoryVersionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The read failed with coord's own 404 — "no version N of this memory".
+   *  See `isNotFoundError` for why a status code is needed here at all. */
+  const [notFound, setNotFound] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
   const fetchVersion = useCallback(async () => {
@@ -102,14 +110,24 @@ export default function CoordMemoryVersionPage() {
       );
       setEntry(body);
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
   }, [name, version]);
 
   useEffect(() => {
+    // Drop the previous version's entry first: the catch never nulls `entry`,
+    // so a 404 after a successful load would render v3's content under v4's
+    // heading — the worst possible failure on a route whose entire job is
+    // "what did this memory say at version N?". Both arms below sit behind
+    // `entry === null`. This route does not poll.
+    setEntry(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchVersion();
   }, [fetchVersion]);
@@ -197,6 +215,20 @@ export default function CoordMemoryVersionPage() {
                 <RowTime at={entry.written_at} verb="Written" />
               )}
             </div>
+            {/* The version's own `description`. It is fetched by this route
+                and was rendered by neither — so the one-line summary the
+                `/memory/[name]` frontmatter panel shows disappeared one click
+                deeper, on the page whose entire job is "what did this memory
+                say at v{n}?". A version's description can differ from head's;
+                showing head's would be worse than showing none. */}
+            {entry.description && (
+              <p
+                data-testid="coord-memory-version-description"
+                className="text-xs text-muted-foreground"
+              >
+                {entry.description}
+              </p>
+            )}
             {/* R8 — the raw provenance ids sit last, muted and mono. */}
             <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
               {entry.written_by_agent && (
@@ -259,8 +291,23 @@ export default function CoordMemoryVersionPage() {
             </div>
           </section>
         </>
+      ) : error !== null && !notFound ? (
+        // R6 — this route exists to answer "what did this memory say before?".
+        // A read that never landed must not answer it with "that version never
+        // existed". Coord's own 404 does answer exactly that, and keeps the
+        // sentence below.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-version-unknown"
+        >
+          Could not read version {version} of memory {name} — whether it exists
+          is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-version-missing"
+        >
           Version {version} of memory {name} not found.
         </p>
       )}

@@ -20,7 +20,10 @@ from fastapi.security import HTTPAuthorizationCredentials
 from app.api.v1.endpoints import memory as memory_ep
 from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
+    CoordTokenExpiredError,
+    CoordTokenForeignIssuerError,
     CoordTokenInvalidError,
+    CoordTokenNotYetValidError,
 )
 
 
@@ -207,3 +210,113 @@ async def test_unverifiable_bearer_and_no_user_is_401(
             request=MagicMock(), user=None, credentials=_creds()
         )
     assert exc.value.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# WHICH coord failures fall through to Cognito, and which stop here.
+#
+# The fall-through is a PROBE: `get_memory_tenant` runs every bearer through
+# the coord verifier purely to ask "is this coord-signed?", so a Cognito
+# bearer necessarily fails it on the way to a SUCCESSFUL request. That makes
+# swallowing the failure correct for the arms that prove nothing.
+#
+# It is NOT correct for the two arms reached only after the signature
+# verified against a key this coord serves. Those prove the bearer IS
+# coord-signed, so falling through reports a stale device JWT as the generic
+# "Authentication required." — the same misdiagnosis the error split in
+# `coord_jwks` exists to remove, just relocated one layer up.
+#
+# Each test below pins the SIDE of that line, and the two stopping tests pass
+# `user=MagicMock()` deliberately: with an operator user present the
+# fall-through path would otherwise SUCCEED, so a regression that reinstates
+# it fails these tests loudly instead of silently downgrading a device
+# caller to an operator principal.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_expired_coord_token_is_401_naming_expiry_not_fallthrough(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An expired device JWT must say so, not fall through to Cognito.
+
+    `CoordTokenExpiredError` is raised only after PyJWT verified the
+    signature against a JWK this coord published, so the bearer is provably
+    coord-signed and cannot also be a Cognito token. The presenter's remedy
+    is to re-mint, which "Authentication required." does not convey.
+    """
+    _mock_verify(monkeypatch, CoordTokenExpiredError("token expired: ..."))
+    identity = MagicMock()
+    identity.home_tenant_id = uuid4()
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await memory_ep.get_memory_tenant(
+            request=MagicMock(), user=MagicMock(), credentials=_creds()
+        )
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Device token has expired."
+
+
+@pytest.mark.asyncio
+async def test_not_yet_valid_coord_token_is_401_naming_clock_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A not-yet-valid device JWT must point at clock drift.
+
+    Same proof as the expired arm — the signature verified — but a different
+    remedy, so it must not be collapsed into the expired message either.
+    """
+    _mock_verify(monkeypatch, CoordTokenNotYetValidError("token not yet valid: ..."))
+    identity = MagicMock()
+    identity.home_tenant_id = uuid4()
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await memory_ep.get_memory_tenant(
+            request=MagicMock(), user=MagicMock(), credentials=_creds()
+        )
+
+    assert exc.value.status_code == 401
+    assert "clock drift" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_foreign_issuer_still_falls_through_to_the_operator_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The foreign-issuer arm MUST keep falling through.
+
+    This is the regression guard on the narrowness of the two tests above.
+    A Cognito bearer carries a Cognito `kid`, which is absent from coord's
+    JWKS, so EVERY successful operator request lands in this arm first.
+    Promoting it to a hard 401 alongside the expired/not-yet-valid arms
+    would 401 the entire dashboard.
+    """
+    tenant_id = uuid4()
+    _mock_verify(
+        monkeypatch,
+        CoordTokenForeignIssuerError(
+            "no JWK with kid=...",
+            coord_url="http://localhost:9870",
+            token_kid="cognito-rsa-key-id",
+            served_kids=["coord-ed25519-v1"],
+        ),
+    )
+    identity = MagicMock()
+    identity.home_tenant_id = tenant_id
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    principal = await memory_ep.get_memory_tenant(
+        request=MagicMock(), user=MagicMock(), credentials=_creds()
+    )
+
+    assert principal.tenant_id == tenant_id
+    assert principal.actor == "operator"

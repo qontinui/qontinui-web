@@ -15,6 +15,11 @@
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import {
+  UNKNOWN_COUNTS_DETAIL,
+  readIsUnknown,
+  staleDetail,
+} from "@/components/console";
 import { describePlanStatus } from "@/components/admin/coord/planStatus";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 
@@ -40,11 +45,40 @@ export interface PlansHealth {
  *
  * The reason the rule matters at all: a page that has not heard from coord yet
  * must not claim there are no blocked plans.
+ *
+ * **`readFailed` is the other half of that rule**, and it is a separate
+ * argument because `loaded` cannot express it. R6 covers "fetched and FAILED"
+ * as well as "still in flight": a first load that errors leaves `loaded` false
+ * and renders "Waiting for coord…" over a request that is never arriving,
+ * while a poll that errors after a good load leaves `loaded` true and paints
+ * "No plan is blocked" — the sentence that tells an operator to stop looking —
+ * off a list of unknown age.
+ *
+ * A failed read from a page coord has NEVER answered is UNKNOWN and dashes its
+ * counts. A failed read after any successful one is STALE: those rows are real
+ * and still actionable — including a real, fetched count of ZERO — so they keep
+ * rendering and the detail says they are old. `readIsUnknown` carries why the
+ * split is `loaded` and not `plans.length`.
+ *
+ * @param readFailed the page's last fetch threw.
  */
 export function derivePlansHealth(
   plans: CoordPlanRow[],
-  loaded: boolean
+  loaded: boolean,
+  readFailed = false
 ): PlansHealth {
+  if (readIsUnknown(loaded, readFailed)) {
+    return {
+      level: "amber",
+      headline: "Could not read the work-unit list — unknown, not empty",
+      detail: UNKNOWN_COUNTS_DETAIL,
+      badges: [
+        { key: "total", label: <>plans –</>, tone: "muted" },
+        { key: "blocked", label: <>blocked –</>, tone: "muted" },
+      ],
+    };
+  }
+
   if (!loaded) {
     return {
       level: "amber",
@@ -77,10 +111,12 @@ export function derivePlansHealth(
       : plans.length === 0
         ? "No work units in this window"
         : "No plan is blocked";
-  const detail =
+  const window =
     unrecognised > 0
       ? `${unrecognised} carry a status this build has no label for — shown verbatim`
       : `${active} in progress, ${shipped} shipped`;
+  // Stale, not unknown: the rows are real, only their age is not.
+  const detail = readFailed ? staleDetail(window) : window;
 
   return {
     level,
