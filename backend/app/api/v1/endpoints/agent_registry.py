@@ -303,8 +303,26 @@ _AUTHZ_FIELD_TYPES: dict[str, type] = {
 #: The names alone, in declaration order.
 _AUTHZ_FIELDS = tuple(_AUTHZ_FIELD_TYPES)
 
+#: The same rule for the ADMIN route's raw ``AgentRegistryRow``. Different
+#: field names — the raw row carries the tenant DEFAULT (``default_enabled``)
+#: rather than the folded ``enabled``, and no ``disposition`` / ``source``,
+#: which exist only after coord's fold — but identically an authorization
+#: claim, so identically strict.
+#:
+#: It is a second MAP, deliberately not a second IMPLEMENTATION. This route
+#: shipped with the presence-only guard plus ``bool(...)`` that
+#: :func:`_unusable_authz_fields` had already been written to remove, because
+#: nothing made the two paths share the rule. Adding a name here is now the
+#: whole cost of getting it right on a third one.
+_ADMIN_AUTHZ_FIELD_TYPES: dict[str, type] = {
+    "default_enabled": bool,
+    "policy_required": bool,
+}
 
-def _unusable_authz_fields(row: dict[str, Any]) -> list[str]:
+
+def _unusable_authz_fields(
+    row: dict[str, Any], field_types: dict[str, type] | None = None
+) -> list[str]:
     """Name every authorization field this row cannot be rendered from.
 
     Three ways a field is unusable, all of them the same defect — the page
@@ -325,9 +343,21 @@ def _unusable_authz_fields(row: dict[str, Any]) -> list[str]:
     Booleans are checked with :func:`isinstance`, which is exact for ``bool``
     here: JSON decodes only ``True``/``False`` to it, and the reverse hazard
     (``isinstance(True, int)``) is not one this uses.
+
+    ``field_types`` selects which contract to read the row under — coord's
+    folded ``EffectiveAgent`` (the default) or the admin route's raw
+    ``AgentRegistryRow`` (:data:`_ADMIN_AUTHZ_FIELD_TYPES`). One rule, two
+    field maps: the routes assert the same thing about different names, and
+    giving them separate implementations is what let the admin one ship with
+    the coercion this function exists to remove.
     """
+    # `is None`, not `or`: an empty map must mean "check nothing" rather than
+    # silently falling back to the effective contract, which on a raw admin
+    # row would 502 on four fields that route never carries.
+    if field_types is None:
+        field_types = _AUTHZ_FIELD_TYPES
     unusable: list[str] = []
-    for field, expected in _AUTHZ_FIELD_TYPES.items():
+    for field, expected in field_types.items():
         value = row.get(field)
         if value is None:
             unusable.append(f"{field} (missing or null)")
@@ -842,24 +872,32 @@ def _render_admin_rows(
                     "registry with agents silently dropped from it"
                 ),
             )
-        missing = [
-            k for k in ("default_enabled", "policy_required") if row.get(k) is None
-        ]
-        if missing:
+        # Read under the SAME rule `_render_effective` applies, via the same
+        # function: absent, null, or the wrong TYPE. The presence-only check
+        # that shipped here (`row.get(k) is None`) followed by `bool(...)` is
+        # exactly the pair removed from the effective path, and it laundered
+        # identically — `default_enabled: "false"` is `bool("false")` is
+        # `True`, so the admin page badged an agent the tenant had defaulted
+        # OFF as on, which is the claim this whole module exists not to make.
+        unusable = _unusable_authz_fields(row, _ADMIN_AUTHZ_FIELD_TYPES)
+        if unusable:
             logger.error(
-                "agent_registry_admin_row_missing_authz_fields",
+                "agent_registry_admin_row_unusable_authz_fields",
                 agent_name=name,
-                missing=missing,
+                unusable=unusable,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=(
                     "coord returned an off-contract agent registry row "
-                    f"(agent {name!r} missing or null: {missing}); refusing to "
+                    f"(agent {name!r}: {'; '.join(unusable)}); refusing to "
                     "render an authorization state that is not the system's"
                 ),
             )
-        default_enabled = bool(row["default_enabled"])
+        # No coercion: the guard above has already refused anything that is
+        # not a real bool, so `bool(...)` here could only launder a wrong
+        # value back in if that guard were ever weakened.
+        default_enabled = row["default_enabled"]
         rows_for_agent = by_agent.get(name, [])
         dispositions = row.get("allowed_dispositions")
         entries.append(
@@ -871,7 +909,7 @@ def _render_admin_rows(
                 model=row.get("model"),
                 effort=row.get("effort"),
                 default_enabled=default_enabled,
-                policy_required=bool(row["policy_required"]),
+                policy_required=row["policy_required"],
                 allowed_dispositions=(
                     [str(d) for d in dispositions]
                     if isinstance(dispositions, list)

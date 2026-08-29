@@ -488,6 +488,61 @@ class TestTheRawRowsAreRenderedWithOverrideCounts:
 
         assert resp.status_code == 502
 
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("default_enabled", "false"),
+            ("default_enabled", "no"),
+            ("default_enabled", 0),
+            ("default_enabled", 1),
+            ("policy_required", "false"),
+            ("policy_required", 0),
+        ],
+    )
+    def test_a_wrong_typed_authz_field_is_a_502(self, field: str, value):
+        """The TYPE half of the rule, which this route shipped without.
+
+        ``test_an_off_contract_payload_is_a_502`` already pins ``None`` for
+        both fields — and the route's guard was written to exactly that
+        shape: ``row.get(k) is None``, then ``bool(...)``. ``bool`` cannot
+        fail, so every case here returned **200**: ``default_enabled:
+        "false"`` rendered as ``true``, badging an agent the tenant had
+        defaulted OFF as on, on the page whose whole job is that decision.
+
+        This is the same defect the effective route was fixed for twice
+        (#1042, then the wrong-type follow-up), reappearing on a route added
+        afterwards — which is why both paths now read through one function.
+        """
+        payload = {"agents": [_registry_row(**{field: value})], "prefs": []}
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 502, (
+            f"{field}={value!r} must fail loudly — coercing it states a "
+            "tenant default that is not the system's"
+        )
+        detail = str(resp.json()["detail"])
+        assert field in detail
+        assert type(value).__name__ in detail
+
+    def test_a_correctly_typed_row_still_renders(self):
+        """Companion: strictness must not cost the legitimate row.
+
+        ``default_enabled=False`` is the value a naive falsiness check breaks,
+        and it is the seeded default for ``code-reviewer``, so without this the
+        class above would pass against a route that refused everything.
+        """
+        payload = {"agents": [_registry_row()], "prefs": []}
+        app = _build_app()
+        with patch(f"{MODULE}._coord_request", new=AsyncMock(return_value=payload)):
+            resp = TestClient(app).get("/api/v1/agent-registry/admin/registry")
+
+        assert resp.status_code == 200
+        (row,) = resp.json()["agents"]
+        assert row["default_enabled"] is False
+        assert row["policy_required"] is True
+
     def test_empty_404_from_the_raw_door_becomes_a_502(self):
         app = _build_app()
         with patch(
