@@ -176,14 +176,23 @@ const UnifiedSidebarContent: React.FC<UnifiedSidebarProps> = ({
  * 1. Mount only while `open`. A dialog that isn't on screen has no business
  *    running its hooks, and cloud-control's dialog calls `useOrganization()`
  *    unconditionally at the top of its body.
- * 2. Fault-isolate behind an ErrorBoundary. This registry transports
- *    components and services but NOT providers, so a slot component that
- *    reads its own package's React context finds no Provider and throws —
- *    as cloud-control's `useOrganization` does (it throws rather than
- *    returning the OSS stub's safe default). Unguarded, that throw reached
- *    the root boundary in `app/layout.tsx` and white-screened every
+ * 2. Fault-isolate behind an ErrorBoundary. The registry originally
+ *    transported components and services but NOT providers, so a slot
+ *    component that read its own package's React context found no Provider
+ *    and threw — as cloud-control's `useOrganization` does (it throws rather
+ *    than returning the OSS stub's safe default). Unguarded, that throw
+ *    reached the root boundary in `app/layout.tsx` and white-screened every
  *    authenticated page, which is exactly what it did in production.
- *    Degrading one optional dialog to nothing beats losing the whole app.
+ *
+ *    The `providers` slot has since closed that specific hole (see
+ *    `lib/extension-slots.ts` and `components/CloudProviders`), and this
+ *    boundary still stays. It is not a workaround for the missing slot kind:
+ *    a slot component is foreign code the host cannot typecheck against its
+ *    own provider tree, so it can throw for reasons the host never sees —
+ *    including the window where cloud-control has registered a component but
+ *    not the provider it depends on, which is a one-line mistake in a
+ *    different repo. Degrading one optional dialog to nothing beats losing
+ *    the whole app.
  */
 export function CreateOrganizationDialogSlot(
   props: CreateOrganizationDialogProps
