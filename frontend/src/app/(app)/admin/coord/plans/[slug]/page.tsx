@@ -71,6 +71,7 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
+  isNotFoundError,
   rowAccentClass,
 } from "@/components/console";
 import {
@@ -150,6 +151,17 @@ export default function CoordPlanDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
+   * The last detail read failed with coord's own 404 — i.e. coord ANSWERED,
+   * and the answer was "no such work unit".
+   *
+   * `httpClient.get` throws on every non-2xx, so a 404 arrives through the same
+   * `catch` as a dead socket; without this the two are indistinguishable and
+   * the page must either call every genuine 404 an outage or every outage a
+   * 404. Both are wrong, and the first is the one that trains an operator to
+   * distrust the console.
+   */
+  const [notFound, setNotFound] = useState(false);
+  /**
    * R6 — the history read gets its OWN flag. It used to fail into a bare
    * `catch {}`, leaving `history` at the `[]` its initializer put there, which
    * is byte-identical to the array coord returns for a work unit that has never
@@ -164,6 +176,12 @@ export default function CoordPlanDetailPage() {
 
   const fetchAll = useCallback(async () => {
     if (!slug) return;
+    // Cleared at the START of the cycle, not only on the inner success path.
+    // Left to the success path, a `historyError` raised for a DIFFERENT slug —
+    // or by a previous poll whose detail read then threw, skipping the inner
+    // try entirely — survives into the next render and mislabels rows it was
+    // never computed from.
+    setHistoryError(false);
     try {
       const planBody = await httpClient.get<CoordPlanDetailResponse>(
         `${API}/plans/${encodeURIComponent(slug)}`
@@ -187,8 +205,10 @@ export default function CoordPlanDetailPage() {
         setHistoryError(true);
       }
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
@@ -225,6 +245,9 @@ export default function CoordPlanDetailPage() {
   /** The history read failed AND left nothing behind. Stale-but-present rows
    *  from the detail envelope are real, so they keep rendering. */
   const historyUnknown = historyError && history.length === 0;
+  /** The detail read failed in a way that is NOT coord answering "no such
+   *  work unit" — so nothing is known about whether this plan exists. */
+  const readUnreadable = error !== null && !notFound;
 
   return (
     <div
@@ -368,9 +391,13 @@ export default function CoordPlanDetailPage() {
                       : undefined
                 }
               >
-                {/* R6 — `–`, never `0`, for a count nobody managed to fetch. */}
+                {/* R6 — `–`, never `0`, for a count nobody managed to fetch.
+                    A count that IS fetched but possibly incomplete stays a
+                    plain number: the console spells partial counts `N/M`
+                    (`rows 1/400`) and there is no M here, so the caveat goes
+                    in words below the list rather than as notation with no
+                    legend. */}
                 {historyUnknown ? "–" : history.length}
-                {historyError && !historyUnknown ? "+" : ""}
               </Badge>
             }
             data-testid="coord-plan-history"
@@ -485,13 +512,27 @@ export default function CoordPlanDetailPage() {
                 );
               }}
             />
+            {/* The rows above are real — the detail envelope's `recent_history`
+                seeded them — but the endpoint that would have completed the
+                list did not answer, so the list may be short. Said in words,
+                under the list it qualifies. */}
+            {historyError && !historyUnknown && (
+              <p
+                className="mt-1.5 text-[11px] text-muted-foreground"
+                data-testid="coord-plan-history-partial"
+              >
+                The history endpoint did not answer. These transitions came
+                from the plan envelope and may be incomplete.
+              </p>
+            )}
           </CollapsiblePanel>
 
         </>
-      ) : error ? (
-        // R6 — "not found" is a claim about coord's CORPUS; a read that failed
-        // supports no such claim. The red line above says what broke; this line
-        // must not turn it into a verdict about whether the plan exists.
+      ) : readUnreadable ? (
+        // R6 — "not found" is a claim about coord's CORPUS; a read that never
+        // landed supports no such claim. The red line above says what broke;
+        // this line must not turn it into a verdict about whether the plan
+        // exists. A 404 is the opposite case and keeps the sentence below.
         <p
           className="text-sm text-muted-foreground italic"
           data-testid="coord-plan-detail-unknown"

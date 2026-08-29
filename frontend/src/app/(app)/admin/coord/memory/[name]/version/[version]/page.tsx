@@ -53,7 +53,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
-import { RowTime, StatusBadge, rowAccentClass } from "@/components/console";
+import {
+  RowTime,
+  StatusBadge,
+  isNotFoundError,
+  rowAccentClass,
+} from "@/components/console";
 import {
   MEMORY_STATUS_PALETTE,
   deriveMemoryStatus,
@@ -92,6 +97,9 @@ export default function CoordMemoryVersionPage() {
   const [entry, setEntry] = useState<CoordMemoryVersionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The read failed with coord's own 404 — "no version N of this memory".
+   *  See `isNotFoundError` for why a status code is needed here at all. */
+  const [notFound, setNotFound] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
   const fetchVersion = useCallback(async () => {
@@ -102,8 +110,10 @@ export default function CoordMemoryVersionPage() {
       );
       setEntry(body);
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
@@ -273,9 +283,11 @@ export default function CoordMemoryVersionPage() {
             </div>
           </section>
         </>
-      ) : error ? (
+      ) : error !== null && !notFound ? (
         // R6 — this route exists to answer "what did this memory say before?".
-        // A failed read must not answer it with "that version never existed".
+        // A read that never landed must not answer it with "that version never
+        // existed". Coord's own 404 does answer exactly that, and keeps the
+        // sentence below.
         <p
           className="text-sm text-muted-foreground italic"
           data-testid="coord-memory-version-unknown"

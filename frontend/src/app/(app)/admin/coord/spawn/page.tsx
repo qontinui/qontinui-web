@@ -69,7 +69,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Filter, Plus, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList } from "@/components/console";
+import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
@@ -136,7 +136,7 @@ export default function CoordSpawnPage() {
   // R6 — "not fetched" includes "fetched and FAILED", and every surface derived
   // from the list has to consult it, the `empty=` slot included.
   const readFailed = error !== null;
-  const plansUnknown = readFailed && plans.length === 0;
+  const plansUnknown = readIsUnknown(loaded, readFailed);
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]

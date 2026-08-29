@@ -49,7 +49,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
-import { CollapsiblePanel, HealthStrip, RecordList } from "@/components/console";
+import {
+  CollapsiblePanel,
+  HealthStrip,
+  RecordList,
+  readIsUnknown,
+} from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
@@ -143,7 +148,7 @@ export default function CoordPlansListPage() {
   // this arm for `/spawn`; this route reads the same list from the same
   // endpoint and had the same hole, so it consults it too.
   const readFailed = error !== null;
-  const plansUnknown = readFailed && plans.length === 0;
+  const plansUnknown = readIsUnknown(loaded, readFailed);
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]
