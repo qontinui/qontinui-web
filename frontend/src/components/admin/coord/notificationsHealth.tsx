@@ -21,12 +21,27 @@
  *
  * ## What it IS loud about
  *
- * Not knowing. `migrationPending` (coord answers `503
- * schema_migration_pending` until the `coord.notifications` revision deploys),
- * a failed read, and the pre-first-response state are all *we cannot tell you
+ * Not knowing, in all five of its shapes. `migrationPending` (coord answers
+ * `503 schema_migration_pending` until the `coord.notifications` revision
+ * deploys), a first read that failed, the pre-first-response state, **a read
+ * that succeeded without carrying `unread_count`**, and **counts left standing
+ * by a poll that has since stopped succeeding** are all *we cannot tell you
  * what happened while you were away* — R3's ignorance floor, the same amber
  * `attentionOf` defaults to and the same discipline that makes an unfetched
  * count render `–` rather than `0`.
+ *
+ * The last two are the ones this module originally missed, and they are missed
+ * in opposite directions:
+ *
+ *  - `loaded && unreadCount === null` is a REACHABLE pair, not a
+ *    contradiction, and collapsing it with `?? 0` made the strip claim
+ *    "Nothing unread" beside a badge that said `–`. A fabricated fact.
+ *  - `loaded && failed` left a green "137 unread events" sitting above the
+ *    page's own "Failed to load…" line, because the old input said `failed`
+ *    only when NOTHING had ever loaded. A stale fact, reported as current.
+ *
+ * Both are the same error — the strip stating more than it knows — so both get
+ * the same colour and a sentence naming which one it is.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -47,50 +62,79 @@ export interface NotificationsHealthInput {
   loaded: boolean;
   /** coord has the routes but not the table yet. */
   migrationPending: boolean;
-  /** The last read failed. */
+  /**
+   * The MOST RECENT feed read failed — not "a read has ever failed", and not
+   * "something on this page errored".
+   *
+   * Crossed with `loaded` this is a two-arm split, and both arms are amber for
+   * different reasons:
+   *
+   * | `loaded` | `failed` | what the strip owes the operator |
+   * |---|---|---|
+   * | false | true | nothing was ever read — the counts are UNKNOWN, `–` |
+   * | true  | true | the counts we hold are from an EARLIER read and may be out of date |
+   *
+   * The second arm is the one a `loading`-shaped flag cannot express, and the
+   * one this page shipped without: a poll that fails after a good first load
+   * leaves real numbers on screen with nothing saying they stopped moving.
+   */
   failed: boolean;
 }
 
 /**
- * `loaded=false`, `migrationPending` and `failed` each return EARLY with badge
- * labels that spell the dash literally. `<HealthStrip>` renders `badge.label`
- * verbatim, so a `null` label renders NOTHING rather than `–`; R6's
- * absence-is-not-zero rule is held by these early returns, not by any
- * null-coalescing below them.
+ * The two badges, for any pair of scalars — including the pair we do not have.
+ *
+ * They carry the page's FROZEN authored testids
+ * (`coord-notifications-unread-count`, `coord-notifications-total`) — they were
+ * on the `<Badge>`s in the deleted `<CardTitle>` and this is where those counts
+ * moved (D4a). Every branch below emits BOTH, including the unknown ones, so a
+ * consumer that looks them up finds a dash rather than nothing: an absent
+ * element and a `0` are the two answers this page must never give for a count
+ * it does not have.
+ *
+ * `<HealthStrip>` renders `badge.label` verbatim, so a `null` label would
+ * render NOTHING rather than `–` — which is why the dash is spelled into the
+ * label here rather than left to the strip.
+ *
+ * The label reads `"137 unread"` rather than `"unread 137"` — the word order
+ * the deleted `<CardTitle>` badges used, and the one
+ * `notifications/page.test.tsx` asserts by text. The strip's own convention is
+ * label-then-number, so this is a deliberate exception in service of a frozen
+ * contract, not an oversight.
+ *
+ * The two scalars are INDEPENDENT: coord can answer with one and not the
+ * other, and each renders what is known about itself. A shared "both are
+ * unknown" badge pair would throw away a `total` we actually hold.
  */
+function countBadges(
+  unreadCount: number | null,
+  total: number | null
+): HealthBadge[] {
+  return [
+    {
+      key: "unread",
+      label: <>{unreadCount == null ? "–" : unreadCount} unread</>,
+      tone: unreadCount != null && unreadCount > 0 ? "default" : "muted",
+      "data-testid": "coord-notifications-unread-count",
+    },
+    {
+      key: "total",
+      label: <>{total == null ? "–" : total} total</>,
+      tone: "muted",
+      "data-testid": "coord-notifications-total",
+    },
+  ];
+}
+
 export function deriveNotificationsHealth(
   input: NotificationsHealthInput
 ): NotificationsHealth {
   const { unreadCount, total, loaded, migrationPending, failed } = input;
   /**
-   * The two badges carry the page's FROZEN authored testids
-   * (`coord-notifications-unread-count`, `coord-notifications-total`) — they
-   * were on the `<Badge>`s in the deleted `<CardTitle>` and this is where those
-   * counts moved (D4a). They are emitted in EVERY branch, including the
-   * unknown ones, so a consumer that looks them up finds a dash rather than
-   * nothing: an absent element and a `0` are the two answers this page must
-   * never give for a count it does not have.
-   *
-   * The label reads `"137 unread"` rather than `"unread 137"` — the word order
-   * the deleted `<CardTitle>` badges used, and the one
-   * `notifications/page.test.tsx` asserts by text. The strip's own convention
-   * is label-then-number, so this is a deliberate exception in service of a
-   * frozen contract, not an oversight.
+   * Nothing has been read, or what was read cannot be trusted — neither scalar
+   * is reportable, so neither is reported.
    */
-  const unknownBadges: HealthBadge[] = [
-    {
-      key: "unread",
-      label: <>– unread</>,
-      tone: "muted",
-      "data-testid": "coord-notifications-unread-count",
-    },
-    {
-      key: "total",
-      label: <>– total</>,
-      tone: "muted",
-      "data-testid": "coord-notifications-total",
-    },
-  ];
+  const unknownBadges = countBadges(null, null);
 
   if (migrationPending) {
     return {
@@ -101,6 +145,20 @@ export function deriveNotificationsHealth(
     };
   }
   if (failed) {
+    // Arm 2 of the split: we DID read once, and the numbers on screen are from
+    // that read. They are real, so they are shown — but they stopped moving,
+    // and only the strip can say so. Reporting them silently is the same
+    // confident-false-claim as `?? 0`, made with a stale fact instead of a
+    // fabricated one.
+    if (loaded) {
+      return {
+        level: "amber",
+        headline: "These counts stopped updating",
+        detail:
+          "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+        badges: countBadges(unreadCount, total),
+      };
+    }
     return {
       level: "amber",
       headline: "Could not read the feed",
@@ -117,32 +175,48 @@ export function deriveNotificationsHealth(
     };
   }
 
-  const unread = unreadCount ?? 0;
+  /**
+   * A read SUCCEEDED and still did not carry `unread_count`.
+   *
+   * This is not the same state as `!loaded`, and it is the one the first cut of
+   * this module got wrong: it wrote `unreadCount ?? 0`, so the badge said `–`
+   * while the headline one element to its left said *"Nothing unread"* and the
+   * detail said *"you have seen everything coord recorded"*. The strip made two
+   * incompatible claims at once, and the confident one was the false one.
+   *
+   * It is reachable rather than theoretical. `notifications/page.tsx`'s
+   * `applyEnvelope` writes each scalar only `if (typeof … === "number")` — it
+   * treats an absent one as UNKNOWN and leaves the previous value standing —
+   * while `setLoaded(true)` fires on any successful GET. An envelope missing
+   * the scalar (a coord build that predates it, a partial degrade) therefore
+   * lands here with `loaded` true and `unreadCount` still `null`.
+   *
+   * So it takes the same arm as every other *we cannot tell you what happened
+   * while you were away* state: amber, and say which. `total` is reported if we
+   * DO have it — one missing scalar does not make the other unknown.
+   */
+  if (unreadCount == null) {
+    return {
+      level: "amber",
+      headline: "The unread count did not come back",
+      detail:
+        "the feed answered but without an unread count — how much you have not seen is UNKNOWN, not zero",
+      badges: countBadges(null, total),
+    };
+  }
+
   return {
     // Green even with a backlog — see the module doc. An event nobody is
     // blocked on does not get to spend amber.
     level: "green",
     headline:
-      unread > 0
-        ? `${unread} unread event${unread === 1 ? "" : "s"}`
+      unreadCount > 0
+        ? `${unreadCount} unread event${unreadCount === 1 ? "" : "s"}`
         : "Nothing unread",
     detail:
-      unread > 0
+      unreadCount > 0
         ? "nothing is blocked by these — they are what happened while you were away"
         : "you have seen everything coord recorded",
-    badges: [
-      {
-        key: "unread",
-        label: <>{unreadCount == null ? "–" : unreadCount} unread</>,
-        tone: unread > 0 ? "default" : "muted",
-        "data-testid": "coord-notifications-unread-count",
-      },
-      {
-        key: "total",
-        label: <>{total == null ? "–" : total} total</>,
-        tone: "muted",
-        "data-testid": "coord-notifications-total",
-      },
-    ],
+    badges: countBadges(unreadCount, total),
   };
 }
