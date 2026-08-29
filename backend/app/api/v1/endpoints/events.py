@@ -32,11 +32,45 @@ from app.models.user import User
 from app.models.workflow_event import WorkflowEvent, WorkflowEventType
 from app.schemas.phase_result import PhaseResultIngestRequest, PhaseResultResponse
 from app.schemas.workflow_event import WorkflowEventCreate, WorkflowEventResponse
+from app.services.coord_jwks import token_rejection_examples
 from app.services.push_notifications import dispatch_push_for_event
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+# The 401 bodies a ``get_authenticated_device`` door can actually return.
+#
+# This block used to be transcribed: it named a "runner token" (retired with
+# the legacy ``qontinui_runner_<random>`` bearer, Phase 5 of the unified
+# devices registry) and documented ``"Invalid or expired token"``, a sentence
+# `coord_jwks` stopped emitting when its failure classification landed. The
+# committed OpenAPI snapshots are generated from this declaration, so the
+# dead string was carried into every client generated from them, and nothing
+# failed when it went stale.
+#
+# The per-failure examples are therefore DERIVED from
+# ``describe_token_rejection`` rather than copied out of it. Only the
+# missing-bearer arm is written by hand, because it is not this backend's
+# string at all: ``HTTPBearer(auto_error=True)`` raises it before any
+# handler runs. A test pins both halves.
+_DEVICE_TOKEN_401 = {
+    "description": (
+        "No device-token bearer, or one this backend would not accept. The "
+        "body names WHICH failure it was — an expired token, a not-yet-valid "
+        "one (clock drift), a token minted by a different coord, or a "
+        "verification failure with no single cause worth naming."
+    ),
+    "content": {
+        "application/json": {
+            "examples": {
+                "missing_bearer": {"value": {"detail": "Not authenticated"}},
+                **token_rejection_examples(),
+            }
+        }
+    },
+}
 
 
 @router.post(
@@ -154,12 +188,7 @@ async def _dispatch_push_for_event_id(event_id: PyUUID) -> None:
     status_code=status.HTTP_202_ACCEPTED,
     responses={
         202: {"description": "Phase result accepted and persisted"},
-        401: {
-            "description": "Missing or invalid runner token",
-            "content": {
-                "application/json": {"example": {"detail": "Invalid or expired token"}}
-            },
-        },
+        401: _DEVICE_TOKEN_401,
     },
 )
 async def ingest_phase_completed(
@@ -172,7 +201,10 @@ async def ingest_phase_completed(
     """
     Ingest a phase-completion result from a server-mode runner.
 
-    Authenticated with a runner bearer token (phase 3A auth). The handler:
+    Authenticated with the coord-issued device-token JWT, like its
+    ``/workflow`` sibling. (The legacy ``qontinui_runner_<random>`` bearer
+    this once named was retired in Phase 5 of the unified devices
+    registry.) The handler:
 
     1. Resolves a ``runner_id`` for the row:
        * If ``payload.runner_id`` is set, the handler looks up that runner and
