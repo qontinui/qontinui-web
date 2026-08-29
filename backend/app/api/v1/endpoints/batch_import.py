@@ -76,9 +76,12 @@ class BatchImportRequest(BaseModel):
         )
 
         if not is_allowed:
-            raise ValueError(
-                f"Directory must be under one of: {', '.join(ALLOWED_IMPORT_PATHS)}"
-            )
+            # The allow-list is deliberately NOT echoed. This is a pydantic
+            # validator, so whatever it raises reaches the client in the 422
+            # body — enumerating the server's absolute filesystem layout,
+            # including the operator's home directory, to anyone who guesses one
+            # wrong path. Same defect, same fix, as the export endpoint's 403.
+            raise ValueError("Directory is not under an allowed import root")
 
         return normalized
 

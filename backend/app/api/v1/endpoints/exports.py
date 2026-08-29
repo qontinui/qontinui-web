@@ -25,12 +25,50 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
-# Allowed base directories for local export (security measure)
-# These should be configured based on deployment environment
+
+def _workspace_export_roots() -> list[str]:
+    """Development export roots under the Qontinui workspace, when one is configured.
+
+    This replaced two hardcoded absolute paths on the author's own drive — slice 3
+    of plan ``2026-08-04-remove-hardcoded-machine-paths-from-product-code``. Two
+    reasons, and the second is the important one:
+
+    1. A deployed backend must not carry the author's machine layout.
+    2. On every machine that is *not* the author's, those entries were dead
+       weight in a **security allow-list**. Unauditable entries are worst
+       precisely here: a reader cannot tell whether they widen the surface.
+
+    ``QONTINUI_ROOT`` is the same variable the Rust stack resolves the workspace
+    root from (``qontinui_types::paths``), so the fleet has one name for this
+    rather than a second convention. Unset returns no roots, which is the correct
+    default for a deployed backend — it narrows the allow-list, never widens it.
+    """
+    root = os.environ.get("QONTINUI_ROOT", "").strip()
+    if not root:
+        return []
+    return [os.path.join(root, "exports"), os.path.join(root, "training_data")]
+
+
+def _configured_export_roots() -> list[str]:
+    """Deployment-configured roots from ``QONTINUI_EXPORT_ALLOWED_PATHS``.
+
+    ``os.pathsep``-separated, matching how the platform already spells a path
+    list. Blank entries are dropped so a trailing separator cannot inject an
+    empty string — which would otherwise ``resolve()`` to the process CWD and
+    silently allow writes anywhere beneath it.
+
+    This is what the module's original "should be configured based on deployment
+    environment" comment asked for and never actually had.
+    """
+    raw = os.environ.get("QONTINUI_EXPORT_ALLOWED_PATHS", "")
+    return [entry.strip() for entry in raw.split(os.pathsep) if entry.strip()]
+
+
+# Allowed base directories for local export (security measure).
+# Resolved once at import, as before — changing the environment needs a restart.
 ALLOWED_LOCAL_PATHS: list[str] = [
-    # Development paths
-    "D:/qontinui-root/exports",
-    "D:/qontinui-root/training_data",
+    *_workspace_export_roots(),
+    *_configured_export_roots(),
     # User home exports directory
     os.path.expanduser("~/qontinui_exports"),
     # Temp directory for testing
@@ -266,9 +304,15 @@ async def export_to_local(
             path=request.path,
             allowed_paths=ALLOWED_LOCAL_PATHS,
         )
+        # The allow-list is deliberately NOT echoed to the caller. It was, and
+        # that disclosed the server's absolute filesystem layout — including the
+        # operator's home directory — to any authenticated user who guessed one
+        # wrong path. The denial itself is all the client can act on; the
+        # allow-list stays in the server-side log line above, which already
+        # carries it for the operator.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Export path not allowed. Allowed base directories: {ALLOWED_LOCAL_PATHS}",
+            detail="Export path not allowed.",
         )
 
     try:
