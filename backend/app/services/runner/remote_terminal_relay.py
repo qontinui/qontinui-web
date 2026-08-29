@@ -92,6 +92,7 @@ from app.services.coord_jwks import (
     CoordTokenExpiredError,
     CoordTokenInvalidError,
     coord_jwks_client,
+    jwks_failure_log_fields,
 )
 from app.websockets.safe_send import BENIGN_SEND_EXCEPTIONS
 
@@ -499,11 +500,14 @@ class RemoteTerminalRelay:
             )
             return
         except CoordJWKSUnavailableError as exc:
+            # Same shared field set as every other terminating JWKS handler
+            # (URL dialled, the SETTING that produced it, exception class and
+            # chained cause): ``error=str(exc)`` alone cannot separate a wrong
+            # coord URL from an unreachable coord.
             logger.error(
                 "remote_terminal_verifier_unavailable",
                 source_device_id=session.device_id,
-                error=str(exc),
-                coord_url=coord_jwks_client.coord_url,
+                **jwks_failure_log_fields(exc),
             )
             await self._refuse(
                 session,

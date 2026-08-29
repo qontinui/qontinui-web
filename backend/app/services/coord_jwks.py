@@ -573,3 +573,39 @@ class CoordJWKSClient:
 
 # Process-wide singleton — wired at import time.
 coord_jwks_client = CoordJWKSClient(coord_url=coord_device_base())
+
+
+def jwks_failure_log_fields(exc: CoordJWKSUnavailableError) -> dict[str, Any]:
+    """The structured fields every terminating JWKS-unavailable handler logs.
+
+    Each handler answers its caller with a deliberately vague message —
+    ``"Device authentication temporarily unavailable."`` on the WS handshake
+    and the device-token dependency, ``"Memory authentication temporarily
+    unavailable."`` on the memory router — so the *log line* is the whole
+    diagnostic surface. ``str(exc)`` alone has repeatedly failed to separate
+    a wrong ``COORD_DEVICE_URL`` (a config fix) from a genuinely unreachable
+    coord (an outage), because httpx renders many transport faults with an
+    empty ``str()``.
+
+    Kept here rather than spelled out at each handler because the duplicated
+    version already drifted: the field set shipped to two of the three
+    handlers and the third kept logging ``error=str(exc)`` alone, which is
+    exactly the undiagnosable state this replaced.
+
+    ``coord_url`` names the URL the process-wide :data:`coord_jwks_client`
+    resolved at construction — the same client all three handlers verify
+    against, so it is the URL that was actually dialled.
+
+    ``coord_url_setting`` names the SETTING that produced that URL, DERIVED via
+    :func:`coord_device_setting_name` rather than written out: two settings can
+    produce it (``COORD_URL`` on a single-coord deployment, ``COORD_DEVICE_URL``
+    on a split box) and they are not interchangeable, so the URL alone leaves
+    the reader guessing which knob to turn.
+    """
+    return {
+        "error": str(exc),
+        "failure": type(exc).__name__,
+        "cause": type(exc.__cause__).__name__ if exc.__cause__ else None,
+        "coord_url": coord_jwks_client.coord_url,
+        "coord_url_setting": coord_device_setting_name(),
+    }
