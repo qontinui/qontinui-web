@@ -225,6 +225,27 @@ function disclosureText(data: KindTiersResponse): string {
   );
 }
 
+/**
+ * What CLEARING this kind produces, named rather than implied.
+ *
+ * `builtin_default_denies` is the one wire field on `KindTierRow` that says
+ * which way coord's compile-time answer falls, and it is the only thing that
+ * makes "coord's built-in default applies again" a statement rather than a
+ * gesture. Without it, clearing an OPEN kind whose built-in default denies is a
+ * closing action rendered as a neutral one — and the asymmetry this control is
+ * built on (opening is confirmed, closing and clearing are not) only holds if
+ * the operator can see which direction a click goes.
+ */
+function clearTitle(row: KindTierRow): string {
+  // No floor arm: the button only renders inside `row.settable`, and a floored
+  // kind is not settable. Writing one would add a branch nothing can reach.
+  const base =
+    "Remove the tenant setting so coord's built-in default applies again";
+  return row.builtin_default_denies
+    ? `${base} — for this kind that default DENIES agent authorship, so clearing CLOSES it.`
+    : `${base} — for this kind that default ALLOWS agent authorship, so clearing leaves it open and tracking coord's default.`;
+}
+
 export function KindAuthorshipTierControl() {
   const { data, loading, saving, error, setTier, clearTier } =
     usePromptDocumentKindTiers();
@@ -342,7 +363,7 @@ export function KindAuthorshipTierControl() {
                         disabled={
                           saving || (row.tier === null && !row.unreadable)
                         }
-                        title="Remove the tenant setting so coord's built-in default applies again."
+                        title={clearTitle(row)}
                         onClick={() => void clearTier(row.kind)}
                       >
                         clear
