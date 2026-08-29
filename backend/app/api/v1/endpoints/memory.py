@@ -134,6 +134,7 @@ from app.services.coord_jwks import (
     CoordJWKSUnavailableError,
     CoordTokenInvalidError,
     coord_jwks_client,
+    jwks_failure_log_fields,
 )
 from app.services.memory_redaction import log_redactions, redact_text
 from app.services.memory_retrieval import rrf_fuse
@@ -250,7 +251,11 @@ async def get_memory_tenant(
         try:
             claims = await coord_jwks_client.verify_token(credentials.credentials)
         except CoordJWKSUnavailableError as exc:
-            logger.error("memory_auth_jwks_unavailable", error=str(exc))
+            # Same diagnosability rule as the WS handshake in devices_ws.py
+            # and the device-token dependency in deps.py: the 503 detail
+            # below is deliberately vague, so this line is the whole
+            # diagnostic surface.
+            logger.error("memory_auth_jwks_unavailable", **jwks_failure_log_fields(exc))
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Memory authentication temporarily unavailable.",
