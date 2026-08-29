@@ -10,16 +10,20 @@
  *
  * So the invariant is generalised into `paletteDisagreements` and audited here
  * over a REGISTRY. Adding a console surface means adding one row to
- * {@link CONSOLE_PALETTES}; forgetting to is the one failure this file cannot
- * catch, which is why the registry sits next to the primitive rather than
- * inside a page.
+ * {@link CONSOLE_PALETTES}, which is why the registry sits next to the
+ * primitive rather than inside a page.
  *
- * **That failure had already happened**, which is the best argument for the
- * warning above being load-bearing rather than decorative: Wave 1 shipped three
- * palettes and Wave 2 four, and none of the seven were registered here — each
- * had only its own module-local audit. All seven are registered now. A surface
- * whose palette is audited only beside itself is a surface whose audit can be
- * deleted with it.
+ * **Forgetting that row used to be the one failure this file could not catch,
+ * and it had already happened**: Wave 1 shipped three palettes and Wave 2 four,
+ * and none of the seven were registered here — each had only its own
+ * module-local audit for weeks. A surface whose palette is audited only beside
+ * itself is a surface whose audit can be deleted with it.
+ *
+ * That hole is now closed by the enrolment check further down, which DISCOVERS
+ * every attention table on disk and fails on any that no registry row holds —
+ * so the registry is derived from the tree rather than from whoever remembered.
+ * An audit that depends on being enrolled in is an audit with a hole; this one
+ * enrols its own subjects. See "The registry's own hole, closed."
  *
  * See `frontend/docs/console-ui-style-guide.md` §4.2 (the
  * `ATTENTION_BY_KIND` audit-table contract).
@@ -301,6 +305,149 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     },
   },
 ];
+
+// ---------------------------------------------------------------------------
+// The registry's own hole, closed.
+//
+// Everything above audits the surfaces that are IN `CONSOLE_PALETTES`. None of
+// it can say anything about a surface that was never added — and this file's
+// own header records that exact failure happening: Wave 1 shipped three
+// palettes and Wave 2 four, and none of the seven were enrolled here, so each
+// was audited only beside itself for weeks. Somebody noticing is not a control.
+//
+// So enrolment is derived from the tree instead of remembered. Every module
+// that declares an attention table is discovered by `import.meta.glob` and
+// matched against the registry BY OBJECT IDENTITY — not by name, which would
+// just move the hand-maintained list somewhere else.
+//
+// Both directions are asserted, and the second is the one that keeps this
+// honest:
+//
+//   1. Every DISCOVERED table is registered. This is the hole above.
+//   2. Every REGISTERED table is discovered. This guards the guard: move a
+//      status module to a path the patterns miss and clause (1) goes quiet
+//      while still passing, which is a worse state than not having it. A
+//      discovery that silently stops discovering is the `silent-empty-is-
+//      unknown` failure applied to a test.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where console attention tables live, as Vite-expanded literals.
+ *
+ * The patterns are deliberately shaped around the CONVENTION (a pure
+ * `*Status.ts` module beside the surface, plus the merge pipeline's derivation)
+ * rather than "every `.ts` in the console tree". Eager globbing EXECUTES every
+ * module it matches, so widening this to `.tsx` or to route files would import
+ * React components and route modules into a pure test for no gain — clause (2)
+ * is what catches a surface that files its table somewhere these do not reach.
+ *
+ * Two traps, both of which fail SILENTLY rather than loudly:
+ *
+ * - `(app)` is never written literally in a pattern. Parentheses are extglob
+ *   syntax, so a pattern containing `/(app)/` matches nothing at all — the
+ *   route-group directory has to be crossed with a `**` wildcard instead.
+ * - Vite expands these by reading the literal at build time, so the argument
+ *   must STAY a literal. Hoisting a pattern into a constant, building one by
+ *   template, or wrapping this in a helper all expand to zero modules.
+ *
+ * Either mistake leaves a discovery that finds nothing and an enrolment check
+ * that passes vacuously, which is why clause (2) and the count assertion are
+ * not optional decoration.
+ *
+ * `import.meta.glob` is Vite's, and this file is a TEST: `tsconfig.json`
+ * excludes every test file from `npm run type-check`, and the ESLint config is
+ * not type-aware, so no ambient `ImportMeta` declaration is needed or wanted
+ * here. Declaring one globally would make `import.meta.glob` type-clean in app
+ * code too, where Next/webpack does not implement it — trading an editor
+ * squiggle in one excluded file for a real error going quiet everywhere else.
+ */
+const DISCOVERED_MODULES: Record<string, Record<string, unknown>> = {
+  ...import.meta.glob("../admin/coord/*Status.ts", { eager: true }),
+  ...import.meta.glob("../operations/prPipeline.ts", { eager: true }),
+  ...import.meta.glob("../../app/**/*Status.ts", { eager: true }),
+};
+
+/**
+ * `ATTENTION_BY_KIND`, or a surface-prefixed form of it
+ * (`TREE_ATTENTION_BY_KIND`, `PR_ATTENTION_BY_MERGE_STATUS`, …). Every table in
+ * the registry is spelled one of these two ways.
+ */
+const ATTENTION_TABLE_NAME = /^(?:[A-Z0-9]+(?:_[A-Z0-9]+)*_)?ATTENTION_BY_[A-Z0-9_]+$/;
+
+const ATTENTION_VALUES: ReadonlySet<string> = new Set<Attention>([
+  "author",
+  "waiting",
+  "none",
+]);
+
+/**
+ * A name match alone would be a guess, so the VALUE has to look like a table
+ * too: a non-empty plain object whose every value is one of the three
+ * attentions. That keeps a same-named constant of another shape from being
+ * demanded into the registry.
+ */
+function isAttentionTable(value: unknown): value is AttentionMap<string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const entries = Object.values(value as Record<string, unknown>);
+  return (
+    entries.length > 0 &&
+    entries.every((v) => typeof v === "string" && ATTENTION_VALUES.has(v))
+  );
+}
+
+/** Every attention table on disk, with where it was found, for the message. */
+const DISCOVERED_TABLES: ReadonlyArray<{
+  module: string;
+  exportName: string;
+  table: AttentionMap<string>;
+}> = Object.entries(DISCOVERED_MODULES).flatMap(([module, mod]) =>
+  Object.entries(mod)
+    .filter(([name, value]) => ATTENTION_TABLE_NAME.test(name) && isAttentionTable(value))
+    .map(([exportName, table]) => ({
+      module,
+      exportName,
+      table: table as AttentionMap<string>,
+    }))
+);
+
+describe("the palette registry enrols every surface — mechanically", () => {
+  it("discovery actually reaches modules (a zero here means the patterns rotted)", () => {
+    // Without this, both clauses below pass vacuously the moment the globs stop
+    // matching — an empty discovery agrees with everything.
+    expect(DISCOVERED_TABLES.length).toBeGreaterThanOrEqual(
+      CONSOLE_PALETTES.length
+    );
+  });
+
+  it("every attention table on disk is registered in CONSOLE_PALETTES", () => {
+    const registered = new Set<unknown>(
+      CONSOLE_PALETTES.map((row) => row.attentionByKind)
+    );
+    const unenrolled = DISCOVERED_TABLES.filter(
+      ({ table }) => !registered.has(table)
+    ).map(
+      ({ module, exportName }) =>
+        `${exportName} (${module}) declares an attention table but has no CONSOLE_PALETTES row — ` +
+        `add one so its palette is audited beside every other surface, not only beside itself`
+    );
+    expect(unenrolled).toEqual([]);
+  });
+
+  it("every registered table is reachable by discovery", () => {
+    const discovered = new Set<unknown>(DISCOVERED_TABLES.map((d) => d.table));
+    const unreachable = CONSOLE_PALETTES.filter(
+      (row) => !discovered.has(row.attentionByKind)
+    ).map(
+      (row) =>
+        `${row.surface}: registered, but no discovery pattern reaches the module its ` +
+        `attention table lives in — widen DISCOVERED_MODULES, or the enrolment check ` +
+        `above has quietly stopped covering new surfaces`
+    );
+    expect(unreachable).toEqual([]);
+  });
+});
 
 describe("R3 — every console palette agrees with its attention table", () => {
   for (const { surface, attentionByKind, palette, perRowKinds } of CONSOLE_PALETTES) {
