@@ -316,6 +316,21 @@ export interface RepoSlotSaturation {
    */
   at_repo_cap: boolean;
   /**
+   * How many of this repo's `queued` proposals the per-repo cap will skip on
+   * the next tick: coord's `max(0, in_flight + queued - the cap IN FORCE)`.
+   *
+   * **Non-zero with `at_repo_cap === false` is the case the flag alone hides.**
+   * `at_repo_cap` is scoped to the HEAD of this repo's queue — it answers "is
+   * the next proposal skipped", not "is any proposal skipped". A repo whose
+   * first proposal is admitted while three behind it wait on its own cap
+   * reports `at_repo_cap: false` with `queued_blocked_by_cap: 3`, and reading
+   * only the flag renders that repo as having nothing held by the cap at all.
+   *
+   * Absent on a coord deploy predating the field — coord always serializes it,
+   * so absence is an old producer, never a zero.
+   */
+  queued_blocked_by_cap?: number;
+  /**
    * The A2 candidate-CI distress cap in force for this repo, when coord has
    * narrowed it below `per_repo_cap`. Absent — the overwhelmingly common case —
    * means the configured cap applies unchanged.
