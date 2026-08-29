@@ -21,10 +21,12 @@
  * (trap 5), and a testid must not be renamed in the PR that moves what it
  * points at.
  *
- * **The old list is still mounted, behind a disclosure.** Phase 1 is additive
- * on purpose: the two shapes have to be comparable against a live fleet before
- * Phase 3 deletes anything. `SessionsList` and its 394-line `SessionCard` are
- * removed there, not here.
+ * **Phase 3 removed the old list.** Phase 1 mounted `SessionsList` and its
+ * 394-line `SessionCard` behind a disclosure so the two shapes could be
+ * compared against a live fleet for exactly one phase; both files are deleted
+ * now, along with `/admin/agent-sessions` and `/environments/sessions`, which
+ * 308 here. No compatibility shim survives beyond those redirects
+ * (`operating-rules` delete-over-deprecate).
  *
  * `TenantSwitcher` stays and renders only for operators in more than one
  * tenant (trap 10). Tenant scoping itself is coord's, on the forwarded bearer
@@ -37,9 +39,10 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { useTenant } from "@/contexts/tenant-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CollapsiblePanel } from "@/components/console";
-import { SessionsConsole } from "@/components/sessions/SessionsConsole";
-import { SessionsList } from "@/components/sessions/SessionsList";
+import {
+  SessionsConsole,
+  parseStatusTab,
+} from "@/components/sessions/SessionsConsole";
 import { TenantSwitcher } from "@/components/sessions/TenantSwitcher";
 import { useDeviceStatusStream } from "@/components/operations/useDeviceStatusStream";
 
@@ -52,6 +55,10 @@ export default function SessionsPage() {
   // deep link against `/environments/sessions`, and Phase 3's 308 preserves it
   // verbatim onto this route.
   const device = searchParams.get("device") ?? undefined;
+  // `?status=` — `/admin/agent-sessions?live=true` 308s to `?status=live`.
+  // An unrecognized value is dropped rather than widened to "all", so a
+  // typo'd deep link does not silently render as a working one.
+  const status = parseStatusTab(searchParams.get("status")) ?? undefined;
 
   // Build a device_id → hostname resolver from the live device-status stream.
   // Sessions store device_id (UUID); operators recognize hostnames.
@@ -103,23 +110,11 @@ export default function SessionsPage() {
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="px-6 py-4 space-y-4">
-          <SessionsConsole hostnameFor={hostnameFor} initialDevice={device} />
-
-          {/*
-           * The pre-consolidation surface, kept reachable for exactly one
-           * phase so the two can be compared on a live fleet. It is COLLAPSED,
-           * so its 5s poll and its per-session cards do not mount until an
-           * operator opens it — `CollapsiblePanel` unmounts its children.
-           * Deleted by Phase 3 together with `SessionCard.tsx`.
-           */}
-          <CollapsiblePanel
-            title="Previous card view"
-            summary="the pre-consolidation grouped-card list, for side-by-side comparison — removed in Phase 3"
-            defaultOpen={false}
-            data-testid="sessions-legacy-cards"
-          >
-            <SessionsList hostnameFor={hostnameFor} />
-          </CollapsiblePanel>
+          <SessionsConsole
+            hostnameFor={hostnameFor}
+            initialDevice={device}
+            initialStatus={status}
+          />
         </div>
       </ScrollArea>
     </div>

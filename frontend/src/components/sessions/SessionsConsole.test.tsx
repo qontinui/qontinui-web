@@ -15,7 +15,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { SessionsApiError } from "./api";
-import { SessionsConsole } from "./SessionsConsole";
+import { SessionsConsole, parseStatusTab } from "./SessionsConsole";
 import type {
   ConsolidatedSessionRow,
   ConsolidatedSessionsResponse,
@@ -340,6 +340,33 @@ describe("the request", () => {
     const fetcher = mount(envelope([]));
     await waitFor(() => expect(fetcher).toHaveBeenCalled());
     expect(fetcher.mock.calls[0][0].status).toBeUndefined();
+  });
+
+  // Phase 3: `/admin/agent-sessions?live=true` 308s to `/sessions?status=live`.
+  // Without `initialStatus` the mapped param would land on a page that ignores
+  // it — a redirect that LOOKS like it carried the filter over and did not.
+  it("opens on the status tab the redirect asked for", async () => {
+    const fetcher = mount(envelope([]), { initialStatus: "live" });
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(fetcher.mock.calls[0][0]).toMatchObject({ status: "live" });
+  });
+});
+
+describe("parseStatusTab", () => {
+  it("accepts the four tab ids", () => {
+    expect(parseStatusTab("all")).toBe("all");
+    expect(parseStatusTab("live")).toBe("live");
+    expect(parseStatusTab("stale")).toBe("stale");
+    expect(parseStatusTab("closed")).toBe("closed");
+  });
+
+  it("returns null for anything else rather than widening to `all`", () => {
+    // Widening would make a typo'd deep link render as a working one.
+    expect(parseStatusTab("LIVE")).toBeNull();
+    expect(parseStatusTab("running")).toBeNull();
+    expect(parseStatusTab("")).toBeNull();
+    expect(parseStatusTab(null)).toBeNull();
+    expect(parseStatusTab(undefined)).toBeNull();
   });
 });
 

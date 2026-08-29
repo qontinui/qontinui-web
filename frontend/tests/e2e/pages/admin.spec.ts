@@ -268,7 +268,7 @@ test.describe("Admin - Coord operator console", () => {
   // Plan `2026-05-19-coordinator-production-readiness.md` Phase 2 (Wave 2).
   // The `/admin/coord/*` shell hosts five pages (Fleet / Trees / Plans /
   // Alerts / History) plus cross-links to /admin/agent-claims +
-  // /admin/agent-sessions. Smoke-only: superuser-gated like other admin
+  // /sessions. Smoke-only: superuser-gated like other admin
   // surfaces, so non-admin users redirect away.
 
   test("should load /admin/coord (landing) without errors", async ({ page }) => {
@@ -559,7 +559,7 @@ test.describe("Admin - Coord agents (logs)", () => {
     await expect(sessionLink).toBeVisible();
     await expect(sessionLink).toHaveAttribute(
       "href",
-      `/admin/agent-sessions/${sessionId}`,
+      `/sessions/${sessionId}`,
     );
   });
 });

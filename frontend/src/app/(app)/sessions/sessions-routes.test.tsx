@@ -98,6 +98,98 @@ describe("no redirect may shadow the static segment", () => {
   });
 });
 
+describe("Phase 3's four 308s — the redirect TABLE, not just its safety", () => {
+  /**
+   * This is a shape assertion over the loaded config, not a browser check.
+   * Plan §8 wants each 308 followed once with params; a headless box cannot
+   * discharge that, and this is the honest substitute — it proves the entries
+   * exist, are permanent, and map the params the plan's table names. It does
+   * NOT prove Next serves them.
+   */
+  async function loadRedirects(): Promise<RedirectRule[]> {
+    const mod = await import(/* @vite-ignore */ NEXT_CONFIG);
+    const config = (mod as { default: NextLikeConfig }).default;
+    return (await config.redirects()) as RedirectRule[];
+  }
+
+  function find(rules: RedirectRule[], source: string, hasLive = false) {
+    return rules.find(
+      (r) =>
+        r.source === source &&
+        Boolean(r.has?.some((h) => h.type === "query" && h.key === "live")) ===
+          hasLive
+    );
+  }
+
+  it("308s the two retired list routes onto /sessions", async () => {
+    const rules = await loadRedirects();
+
+    const admin = find(rules, "/admin/agent-sessions");
+    expect(admin).toBeDefined();
+    expect(admin!.destination).toBe("/sessions");
+    expect(admin!.permanent).toBe(true);
+
+    // `?device=` is NOT rewritten: Next passes unmatched query through, which
+    // is exactly what `environments/machines/page.tsx` deep link needs.
+    const envs = find(rules, "/environments/sessions");
+    expect(envs).toBeDefined();
+    expect(envs!.destination).toBe("/sessions");
+    expect(envs!.permanent).toBe(true);
+  });
+
+  it("maps ?live=true onto the console's ?status=live tab", async () => {
+    const rules = await loadRedirects();
+    const live = find(rules, "/admin/agent-sessions", true);
+    expect(live).toBeDefined();
+    expect(live!.destination).toBe("/sessions?status=live");
+    expect(live!.permanent).toBe(true);
+    expect(live!.has).toEqual([{ type: "query", key: "live", value: "true" }]);
+
+    // Ordering is load-bearing: the unconditional entry must come AFTER the
+    // conditional one, or `?live=true` would match the catch-all first and
+    // land on an unfiltered list.
+    const conditional = rules.findIndex(
+      (r) =>
+        r.source === "/admin/agent-sessions" &&
+        Boolean(r.has?.some((h) => h.key === "live"))
+    );
+    const catchAll = rules.findIndex(
+      (r) => r.source === "/admin/agent-sessions" && r.has == null
+    );
+    expect(conditional).toBeGreaterThanOrEqual(0);
+    expect(catchAll).toBeGreaterThan(conditional);
+  });
+
+  it("308s both detail routes onto /sessions/[key], closing the shipped 404", async () => {
+    const rules = await loadRedirects();
+
+    // §2.3.1: /admin/coord/agents/[agent_id] linked here and the route never
+    // existed. Every click was a 404 for as long as the button shipped.
+    const adminDetail = find(rules, "/admin/agent-sessions/:id");
+    expect(adminDetail).toBeDefined();
+    expect(adminDetail!.destination).toBe("/sessions/:id");
+    expect(adminDetail!.permanent).toBe(true);
+
+    const twinDetail = find(rules, "/environments/sessions/:key");
+    expect(twinDetail).toBeDefined();
+    expect(twinDetail!.destination).toBe("/sessions/:key");
+    expect(twinDetail!.permanent).toBe(true);
+  });
+
+  it("routes every Phase 3 source AWAY from the repository corpus", async () => {
+    const rules = await loadRedirects();
+    const phase3 = rules.filter(
+      (r) =>
+        r.source.startsWith("/admin/agent-sessions") ||
+        r.source.startsWith("/environments/sessions")
+    );
+    expect(phase3).toHaveLength(5); // 4 table rows + the ?live= arm
+    for (const rule of phase3) {
+      expect(matchesSessionsRepository(rule.source)).toBe(false);
+    }
+  });
+});
+
 describe("the resolver never treats the literal segment as a session key", () => {
   it("refuses 'repository'", () => {
     expect(isReservedSessionSegment("repository")).toBe(true);
@@ -115,6 +207,18 @@ describe("/sessions/repository still resolves after [key] landed", () => {
 interface RedirectEntry {
   source: string;
   destination: string;
+}
+
+/** One entry as `redirects()` actually returns it. */
+interface RedirectRule {
+  source: string;
+  destination: string;
+  permanent?: boolean;
+  has?: Array<{ type: string; key?: string; value?: string }>;
+}
+
+interface NextLikeConfig {
+  redirects: () => Promise<unknown>;
 }
 
 /**

@@ -316,8 +316,10 @@ export interface AgentStatusResponse {
 /**
  * Lineage action kind — one row of the UNION ALL timeline coord builds
  * across `agent_worktrees` / `claims_audit` / `build_events` /
- * `merge_proposals`. Mirrors the shape in
- * `components/admin/agent-sessions/AgentSessionsDashboard.tsx`.
+ * `merge_proposals`. This was mirrored from
+ * `components/admin/agent-sessions/AgentSessionsDashboard.tsx`, which
+ * `2026-08-26-sessions-console-consolidation` Phase 3 deleted; this is now
+ * the only declaration.
  */
 export type LineageActionKind =
   | "agent_worktree"

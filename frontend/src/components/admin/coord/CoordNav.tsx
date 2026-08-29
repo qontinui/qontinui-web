@@ -505,7 +505,7 @@ const GROUPS: NavGroup[] = [
         external: true,
       },
       {
-        href: "/admin/agent-sessions",
+        href: "/sessions",
         label: "Sessions",
         icon: Users,
         testId: "coord-nav-sessions",
