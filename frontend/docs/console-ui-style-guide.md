@@ -738,6 +738,17 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > halves of the contradiction were on screen in one assertion block, agreeing
 > with the code and with each other about a page that was lying.
 
+> **The slot is not always spelled `empty=`.** #1110 swept for that prop and
+> so missed `/admin/coord/questions/[id]`, one directory down in the same
+> feature, where the same slot is the trailing arm of a `question === null`
+> ternary. It read *"Question {id} not found."* — the inbox's green all-clear
+> in the singular, and a stronger claim: it tells the operator the record is
+> GONE. `null` there covered two unrelated facts, "coord answered and holds no
+> such row" and "coord did not answer", and only the second is unknown. So the
+> thing to grep for is the **claim**, not the prop: any copy that says *none*,
+> *no such*, *not found*, *empty* or *all clear* is a surface that has to
+> consult the failure flag, whatever primitive renders it.
+
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
 composed from `<FilterTabs>` rather than hand-rolled. The **rule itself moved

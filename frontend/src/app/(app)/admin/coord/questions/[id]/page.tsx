@@ -39,6 +39,26 @@
  *   opens by default (you usually need it to answer) and its open/closed
  *   choice persists.
  *
+ * ## Absence is UNKNOWN, not "not found" (follow-up to #1110)
+ *
+ * #1110 removed the false all-clear from the INBOX and amended the style
+ * guide's R6 to say a failed read needs its own flag that every derived
+ * surface consults — "`RecordList`'s `empty` slot included". Its sweep was of
+ * `empty=` slots, so it did not reach the shape here: a bare `: (` arm on a
+ * `question === null` ternary, which is the same slot hand-rolled. That arm
+ * said **"Question {id} not found."** for a read that FAILED, which is the
+ * inbox's green all-clear in the singular — it tells the operator the question
+ * is gone, and nothing else on the page contradicts it.
+ *
+ * The correction has to stop short of the opposite error. A **404 is coord
+ * ANSWERING** — it holds no such row — and is the ordinary outcome of a stale
+ * deep link, so it keeps the calm, definite copy. Only a read that never
+ * landed is unknown. Three things follow: `extractQuestion` refuses an
+ * unrecognised 200 instead of casting it into a live composer; `fetchSeq`
+ * drops a superseded read so an `[id]` change cannot paint the previous
+ * question under the new id; and the empty-`id` bail clears `loading` instead
+ * of leaving the skeleton up forever.
+ *
  * Every authored `data-testid` is carried across unchanged (D4a):
  * `coord-question-detail-page`, `coord-question-back-btn`,
  * `coord-question-meta`, `coord-question-context`, `coord-question-options`,
@@ -46,7 +66,7 @@
  * `coord-question-response-textarea`, `coord-question-submit`.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -76,6 +96,57 @@ import {
 
 const API = "/api/v1/operations";
 
+/**
+ * A 200 whose body is not a question row is UNKNOWN, not a missing question.
+ *
+ * The list route learned this as `extractQuestions` (#1110): `?? []` turned an
+ * unrecognised 200 into a confident zero. The blind `httpClient.get<Row>` cast
+ * here was the same mistake with a worse landing. A wrapper body, a `null`, or
+ * a coord error envelope all pass `typeof body === "object"`, so `question`
+ * became a TRUTHY object with every field `undefined` — which renders an empty
+ * question heading above a LIVE composer, because `responded_at` is undefined
+ * so `answered` is false. An operator can then submit an answer to a question
+ * they were never shown.
+ *
+ * Both fields are required: `question_id` is the identity the composer posts
+ * against, and `question` is the text the operator is answering. A body
+ * missing either is not something to render a composer on top of.
+ */
+function extractQuestion(body: unknown): AgentQuestionRow {
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const row = body as Partial<AgentQuestionRow>;
+    if (typeof row.question_id === "string" && typeof row.question === "string") {
+      return row as AgentQuestionRow;
+    }
+  }
+  throw new Error(
+    "unrecognised agent-question response: no `question_id`/`question`"
+  );
+}
+
+/**
+ * True when coord ANSWERED "not found" rather than failing to answer.
+ *
+ * Reading every failure as unknown would be the over-correction: a 404 is
+ * coord stating that it holds no such row, which is real information and the
+ * ordinary outcome of pasting a stale deep link. Flattening it into "could not
+ * be read" trains the operator to distrust the honest message.
+ *
+ * `httpClient` throws a plain `Error` embedding the upstream status
+ * (`GET <url> failed: 404 - …`), and the operations proxy mirrors coord's
+ * status rather than collapsing it — the same detection
+ * `useSessionCompliance.isRouteUnavailable` uses, and for the same reason.
+ *
+ * What a 404 MEANS stays genuinely ambiguous from here — "no such question",
+ * or "this coord build does not serve the detail route" — so the copy reports
+ * the fact and names both readings rather than picking one and stating it as
+ * diagnosis. What it is NOT, either way, is a failure to reach coord.
+ */
+function coordSaidNotFound(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err);
+  return / failed: 404 /.test(text);
+}
+
 function normalizeOptions(
   raw: AgentQuestionRow["options"]
 ): AgentQuestionOption[] {
@@ -102,29 +173,49 @@ export default function CoordQuestionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** The read failed with coord's own 404 — it answered, and the answer was
-   *  "no such question". See `isNotFoundError`. */
+   *  "no such question". See `isNotFoundError`. Separate from `error` because
+   *  the two absences are different facts: coord ANSWERED and holds no such
+   *  row, versus coord did not answer at all. Only the second is unknown, and
+   *  collapsing them either way misinforms. */
   const [notFound, setNotFound] = useState(false);
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [response, setResponse] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Generation guard, for the same reason #1110 put one on each of the three
+  // list reads — and here it is not only a rendering concern. App Router keeps
+  // this component MOUNTED across an `[id]` change, so navigating A -> B while
+  // A's read is slow lands `setQuestion(A)` after B's. The page would then
+  // render question A's text under B's id, and `onSubmit` posts to `id` — B.
+  // The operator answers the wrong agent, having read the wrong question.
+  const fetchSeq = useRef(0);
+
   const fetchOne = useCallback(async () => {
-    if (!id) return;
+    const seq = ++fetchSeq.current;
+    if (!id) {
+      // Bailing here used to skip the `finally`, so `loading` stayed true and
+      // the page rendered its skeleton forever — no error, no explanation, and
+      // indistinguishable from a read that is merely slow.
+      setError("no question id in the route");
+      setLoading(false);
+      return;
+    }
+    setNotFound(false);
     try {
-      const body = await httpClient.get<AgentQuestionRow>(
+      const body = await httpClient.get<unknown>(
         `${API}/agent-questions/${encodeURIComponent(id)}`
       );
-      setQuestion(body);
+      if (seq !== fetchSeq.current) return;
+      setQuestion(extractQuestion(body));
       setError(null);
       setNotFound(false);
     } catch (e) {
+      if (seq !== fetchSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
-      // coord's own 404 means it ANSWERED "no such question" — the opposite of
-      // an unreadable read, and `httpClient` throws both the same way.
-      setNotFound(isNotFoundError(e));
+      setNotFound(coordSaidNotFound(e));
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   }, [id]);
 
@@ -138,6 +229,15 @@ export default function CoordQuestionDetailPage() {
     setError(null);
     setNotFound(false);
     setLoading(true);
+    // Drop the previous question when the id changes. #1110's rule is that a
+    // retained list is STALE-but-real and worth keeping; that rule turns on the
+    // retained rows still being about the same thing. Here they are not — a
+    // different `[id]` is a different question, and holding A's text under B's
+    // id beside a live composer that posts to B is the wrong-question hazard
+    // the generation guard exists to close, arriving by the other door.
+    setQuestion(null);
+    setError(null);
+    setNotFound(false);
     fetchOne();
   }, [fetchOne]);
 
@@ -190,7 +290,7 @@ export default function CoordQuestionDetailPage() {
         <span className="font-mono text-xs">{id}</span>
       </div>
 
-      {error && (
+      {error && !notFound && (
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
@@ -350,23 +450,34 @@ export default function CoordQuestionDetailPage() {
               )}
           </section>
         </>
-      ) : error !== null && !notFound ? (
-        // R6 — a read that never landed supports no claim about coord's corpus.
-        // This route is where an operator lands to unblock a stopped agent, so
-        // "not found" here reads as "that agent's question is gone". A 404 IS
-        // coord saying exactly that, and keeps the sentence below.
+      ) : notFound ? (
+        /* Coord answered. Keep the calm, definite copy — this is the ordinary
+           outcome of a stale deep link — but name the other reading rather
+           than diagnosing, as `useSessionCompliance` does for the same status.
+           Muted, not destructive: nothing here failed. */
         <p
           className="text-sm text-muted-foreground italic"
-          data-testid="coord-question-detail-unknown"
+          data-testid="coord-question-not-found"
         >
-          Could not read question {id} — whether it exists is unknown, not no.
+          Question {id} not found — coord holds no such question. (A coord build
+          that does not serve the question-detail route answers the same way;
+          this page cannot tell the two apart.)
         </p>
       ) : (
+        /* The absence claim is made HERE, in words — the last place a failed
+           read has to reach, exactly as the style guide's R6 note (added by
+           #1110) says. `question` is null for two unrelated reasons, and this
+           is the arm where coord did NOT answer. Saying "not found" here tells
+           the operator the question is gone — the one sentence that makes them
+           stop looking — off a read that never landed. Same class as the GREEN
+           all-clear #1110 removed from the inbox, one directory down. */
         <p
-          className="text-sm text-muted-foreground italic"
-          data-testid="coord-question-detail-missing"
+          className="text-sm text-destructive italic"
+          data-testid="coord-question-unreadable"
         >
-          Question {id} not found.
+          Question {id} could not be read, so whether it exists — and whether an
+          agent is still stopped on it — is unknown. This is not &ldquo;no such
+          question&rdquo;.
         </p>
       )}
     </div>
