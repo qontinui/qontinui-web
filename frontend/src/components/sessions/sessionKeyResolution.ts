@@ -81,12 +81,42 @@ export function isReservedSessionSegment(key: string): boolean {
  * `absent` is coord's 404 — an ANSWER. `unknown` is any other failure, which
  * is not one. A page that renders the second as the first tells an operator
  * their session does not exist because a proxy blipped.
+ *
+ * `stale` on the `resolved` arm is Phase 4's refresh axis, and it exists for
+ * the same reason `console/readFailure.ts` keeps a retained count: **once
+ * coord has answered, a later failed re-read is a STALENESS condition, not a
+ * return to unknown**. The value is real, just old, and saying so beats
+ * throwing it away and rendering a dash over data we hold. A later `absent`
+ * (coord answering 404) DOES replace it — that is an answer, not a failure.
  */
 export type HalfResult<T> =
   | { state: "loading" }
-  | { state: "resolved"; value: T }
+  | { state: "resolved"; value: T; stale?: boolean }
   | { state: "absent" }
   | { state: "unknown"; detail: string };
+
+/**
+ * Fold a re-read's outcome into what a half already holds (Phase 4).
+ *
+ * Called on every SSE-triggered revalidation, never on the first read. The
+ * three arms are the whole contract:
+ *
+ * | re-read said | previous | result |
+ * |---|---|---|
+ * | `resolved` | anything | the new value, fresh |
+ * | `absent` (coord's 404) | anything | absent — coord ANSWERED |
+ * | `unknown` (the read did not land) | `resolved` | the OLD value, marked stale |
+ * | `unknown` | anything else | unknown |
+ */
+export function foldRevalidation<T>(
+  previous: HalfResult<T>,
+  next: HalfResult<T>
+): HalfResult<T> {
+  if (next.state === "unknown" && previous.state === "resolved") {
+    return { state: "resolved", value: previous.value, stale: true };
+  }
+  return next;
+}
 
 /** The agent half — `{resolved, count}`, newest-first, possibly MANY. */
 export type AgentHalf = HalfResult<ResolveSessionResponse>;
