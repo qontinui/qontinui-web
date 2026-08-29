@@ -53,6 +53,7 @@ import { OPERATIONS_API, relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
   formatDuration,
+  perRepoCapHint,
   type PauseReason,
   type PauseSeverity,
   type RepoTrainRow,
@@ -231,7 +232,14 @@ function TrainHeader({
               hint={
                 (summary.slots.dynamic
                   ? `Cap clamped to ${summary.slots.online_ci_runners ?? "?"} online CI runners (configured ${summary.slots.configured_cap})`
-                  : `COORD_MERGE_SLOTS=${summary.slots.configured_cap}; per-repo cap ${summary.slots.per_repo_cap}`) +
+                  : `COORD_MERGE_SLOTS=${summary.slots.configured_cap}`) +
+                // The per-repo cap belongs in BOTH branches: it is orthogonal
+                // to the dynamic clamp, and dropping it under `dynamic` (the
+                // default) meant the number was usually absent here. It also
+                // goes through `perRepoCapHint`, so this stat stops asserting
+                // the configured cap while the dequeue enforces a narrower one
+                // for some repo in the breakdown below.
+                `; ${perRepoCapHint(summary.slots)}` +
                 ". Occupancy and cap are fleet-wide (the semaphore is); the " +
                 "per-repo breakdown below is scoped to your tenant."
               }

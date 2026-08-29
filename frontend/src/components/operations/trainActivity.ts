@@ -148,6 +148,11 @@ export type PauseReasonCode =
   /** This repo is at its per-repo in-flight cap, so the dequeue skips it —
    *  even when a global slot is free. */
   | "repo-cap-starved"
+  /** This repo's HEAD proposal is admitted, but proposals BEHIND it are
+   *  skipped by the same per-repo cap. `repo-cap-starved` cannot say this:
+   *  it keys off `at_repo_cap`, which coord scopes to the head of the queue,
+   *  so the partial case rendered no cap explanation at all. */
+  | "queued-behind-repo-cap"
   /** Every global merge slot is occupied; nothing can be dispatched. */
   | "slots-saturated"
   | "conflict-strand"
@@ -194,25 +199,31 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // individual PRs' states are not what is holding the queue.
   "repo-cap-starved": 5,
   "slots-saturated": 6,
-  "conflict-strand": 7,
-  "ci-failed": 8,
+  // Below both: the head of this repo's queue IS moving, so this explains a
+  // slower queue rather than a stopped one. It never co-occurs with
+  // `repo-cap-starved` (that arm already states the whole cap story), but it
+  // can sit under `slots-saturated`, where freeing a global slot would still
+  // leave these proposals behind the repo's own cap.
+  "queued-behind-repo-cap": 7,
+  "conflict-strand": 8,
+  "ci-failed": 9,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 9,
-  conflicts: 10,
-  "blast-radius-block": 11,
-  "review-required": 12,
-  "behind-base": 13,
-  "ci-pending": 14,
-  draft: 15,
+  "required-checks-missing": 10,
+  conflicts: 11,
+  "blast-radius-block": 12,
+  "review-required": 13,
+  "behind-base": 14,
+  "ci-pending": 15,
+  draft: 16,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 16,
-  "no-candidates": 17,
+  "unrecognized-status": 17,
+  "no-candidates": 18,
 };
 
 const REASON_META: Record<
@@ -225,6 +236,9 @@ const REASON_META: Record<
     | "hydration-stale"
     | "repo-cap-starved"
     | "slots-saturated"
+    // Same reason as its two capacity siblings above: the label switches on
+    // whether the cap is narrowed, so it cannot be a static row.
+    | "queued-behind-repo-cap"
     // Its label is derived from the raw coord token, so it cannot be a static
     // row here; `deriveReasons` synthesizes the meta inline, the way
     // `orchestrator-stalled` already does.
@@ -368,7 +382,7 @@ function shortRepo(repo: string): string {
  * so a present value is itself the signal. The `< configured` guard is belt and
  * braces against a future producer that stops honouring that.
  */
-function effectiveRepoCap(
+export function effectiveRepoCap(
   repoSlots: RepoSlotSaturation | null | undefined,
   slots: SlotSaturation
 ): { cap: number; narrowed: boolean } {
@@ -377,6 +391,50 @@ function effectiveRepoCap(
     return { cap: n, narrowed: true };
   }
   return { cap: slots.per_repo_cap, narrowed: false };
+}
+
+/**
+ * The repos in `slots.repos` coord has narrowed below the configured cap,
+ * optionally restricted to `only`.
+ *
+ * Exists so "is this repo narrowed" has ONE definition. The fleet banner used
+ * to re-spell {@link effectiveRepoCap}'s predicate inline, which is how the
+ * helper's own promise — *every render site that quotes a per-repo cap goes
+ * through here* — was already untrue in the commit that made it.
+ */
+export function narrowedRepos(
+  slots: SlotSaturation,
+  only?: readonly string[]
+): RepoSlotSaturation[] {
+  return (slots.repos ?? []).filter(
+    (r) =>
+      (only === undefined || only.includes(r.repo)) &&
+      effectiveRepoCap(r, slots).narrowed
+  );
+}
+
+/**
+ * The per-repo cap clause for a FLEET-WIDE readout (the Slots stat's hint) —
+ * the one render site PR #1072 did not reach, because the grep that found the
+ * other three was scoped to this module and never opened the `.tsx`.
+ *
+ * A fleet readout has no single repo, so it cannot print one cap. It prints the
+ * configured one and then says, when it is not the whole truth, which repos are
+ * being held below it — otherwise an operator reads "per-repo cap 2" here and
+ * "1/1 in flight" in the row below and has to guess which is real.
+ */
+export function perRepoCapHint(slots: SlotSaturation): string {
+  const narrowed = narrowedRepos(slots);
+  if (narrowed.length === 0) {
+    return `per-repo cap ${slots.per_repo_cap}`;
+  }
+  const only = narrowed.length === 1 ? narrowed[0]! : undefined;
+  const which = only
+    ? `${shortRepo(only.repo)} is held at ${effectiveRepoCap(only, slots).cap} ` +
+      `while its candidate CI keeps failing`
+    : `${narrowed.length} repos are held below it while their candidate CI ` +
+      `keeps failing`;
+  return `per-repo cap ${slots.per_repo_cap} configured, but ${which}`;
 }
 
 /** The trailing clause that explains a narrowed cap, or "" when it is not. */
@@ -679,12 +737,7 @@ export function buildTrainSummary(
       // cap. Naming COORD_MERGE_PER_REPO_CAP as the count they "already hold" is
       // then wrong twice over: wrong threshold, and it credits the fairness
       // filter for a candidate-CI hold whose remedy is a green run, not patience.
-      const narrowed = (slots.repos ?? []).filter(
-        (r) =>
-          atCap.includes(r.repo) &&
-          typeof r.narrowed_repo_cap === "number" &&
-          r.narrowed_repo_cap < slots.per_repo_cap
-      );
+      const narrowed = narrowedRepos(slots, atCap);
       const capClause =
         narrowed.length > 0 && narrowed.length === atCap.length
           ? `already hold the reduced cap coord is enforcing for them`
@@ -1181,6 +1234,50 @@ function deriveReasons(args: {
         `Fleet queue depth is ${slots.queued_depth}.`,
       prCount: queuedHere,
       oldestSecs: repoSlots?.oldest_queued_wait_seconds ?? null,
+      prNumbers: [],
+    });
+  }
+
+  // The PARTIAL cap case, which neither arm above can state.
+  //
+  // `at_repo_cap` is scoped to the HEAD of this repo's queue by coord's own
+  // definition, so a repo whose first proposal is admitted while three behind
+  // it wait on the same cap reports `at_repo_cap: false` — and the arms above
+  // then say either nothing at all (slots free) or "waiting for a slot" (slots
+  // busy), which points at the global semaphore for work its OWN cap is
+  // skipping. Freeing a global slot does not release these.
+  //
+  // A separate `if`, not another `else if`: when `at_repo_cap` is true the arm
+  // above already tells the whole story and this would only repeat it, but the
+  // saturated case is genuinely two causes at once and deserves both.
+  const blockedBehind = repoSlots?.queued_blocked_by_cap ?? 0;
+  if (slots && repoSlots && !repoSlots.at_repo_cap && blockedBehind > 0) {
+    const eff = effectiveRepoCap(repoSlots, slots);
+    reasons.push({
+      code: "queued-behind-repo-cap",
+      severity: "waiting",
+      label: eff.narrowed
+        ? "Queued behind a narrowed per-repo cap"
+        : "Queued behind the per-repo cap",
+      detail:
+        `This repo's next proposal is admitted, but ${blockedBehind} of its ` +
+        `${repoSlots.queued} queued proposal` +
+        `${repoSlots.queued === 1 ? "" : "s"} sit behind its own per-repo cap ` +
+        `${
+          eff.narrowed
+            ? `(${eff.cap}, narrowed from COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`
+            : `(COORD_MERGE_PER_REPO_CAP=${eff.cap})`
+        } and will be skipped on the next tick. ` +
+        `Freeing a global slot does NOT release them` +
+        `${
+          eff.narrowed
+            ? ` — and neither does this repo's in-flight work finishing, while ` +
+              `the cap stays narrowed; it widens again on its own as candidate ` +
+              `CI recovers.`
+            : `; they move as this repo's own in-flight work finishes.`
+        }`,
+      prCount: blockedBehind,
+      oldestSecs: repoSlots.oldest_queued_wait_seconds ?? null,
       prNumbers: [],
     });
   }

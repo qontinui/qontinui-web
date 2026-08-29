@@ -5,6 +5,7 @@ import {
   effectiveMergeStatus,
   fallbackMergeStatus,
   formatDuration,
+  perRepoCapHint,
 } from "./trainActivity";
 import { redactSecrets } from "./mergeTypes";
 import type { PrRow, ProposalDetail, TrainHealth } from "./mergeTypes";
@@ -1038,6 +1039,246 @@ describe("slot-cap saturation", () => {
     expect(rows[0]!.reasons[0]!.label).toBe("At per-repo cap");
     expect(rows[0]!.reasons[0]!.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
     expect(rows[0]!.reasons[0]!.detail).toContain("until one finishes");
+  });
+
+  // --- The FLEET readout of the per-repo cap (the fourth render site). ------
+  // The Slots stat's hint prints a per-repo cap too. It was not reached by the
+  // narrowing fix above, whose grep stayed inside this module and never opened
+  // `MergeTrainActivity.tsx` — the same too-narrow-grep miss that left this
+  // whole family of sites wrong in the first place.
+
+  it("prints the plain configured per-repo cap when nothing is narrowed", () => {
+    expect(perRepoCapHint(slots())).toBe("per-repo cap 2");
+  });
+
+  it("names the narrowed repo in the fleet per-repo cap hint", () => {
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+        ],
+      })
+    );
+    // "per-repo cap 2" alone contradicts the "1/1 in flight" the row below
+    // prints for the same repo; the operator must not have to guess which is
+    // the number the dequeue is applying.
+    expect(hint).toContain("web is held at 1");
+    expect(hint).toContain("candidate CI");
+  });
+
+  it("counts, rather than lists, several narrowed repos", () => {
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+          {
+            repo: "qontinui/qontinui-runner",
+            in_flight: 1,
+            queued: 2,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+        ],
+      })
+    );
+    expect(hint).toContain("2 repos are held below it");
+  });
+
+  it("ignores a narrowed_repo_cap that is not actually narrower", () => {
+    // coord omits the key rather than echoing the configured cap, so a value
+    // equal to it means a producer that stopped honouring that — and it must
+    // not be announced as a narrowing.
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 2,
+          },
+        ],
+      })
+    );
+    expect(hint).toBe("per-repo cap 2");
+  });
+
+  // --- queued_blocked_by_cap: the partial case `at_repo_cap` cannot state. ---
+  // coord scopes `at_repo_cap` to the HEAD of a repo's queue. A repo whose head
+  // is admitted while proposals behind it are skipped by the same cap reports
+  // `at_repo_cap: false`, and every cap explanation above keys off that flag —
+  // so the console said nothing at all about the cap for those proposals.
+
+  it("explains queued proposals held behind a cap the repo is not AT", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+              oldest_queued_wait_seconds: 900,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    const r = rows[0]!.reasons.find(
+      (x) => x.code === "queued-behind-repo-cap"
+    )!;
+    expect(r).toBeDefined();
+    expect(r.label).toBe("Queued behind the per-repo cap");
+    expect(r.detail).toContain("3 of its 4 queued proposals");
+    expect(r.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
+    // The point of the reason: free slots are not the remedy.
+    expect(r.detail).toContain("Freeing a global slot does NOT release them");
+    expect(r.prCount).toBe(3);
+    expect(r.oldestSecs).toBe(900);
+  });
+
+  it("does not repeat itself on a repo that IS at its cap", () => {
+    // `repo-cap-starved` already tells the whole story there; two reasons for
+    // one cause is how a reason list stops being read.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 3,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 3,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      NOW
+    );
+    const codes = rows[0]!.reasons.map((r) => r.code);
+    expect(codes).toContain("repo-cap-starved");
+    expect(codes).not.toContain("queued-behind-repo-cap");
+  });
+
+  it("names the narrowed cap for proposals held behind it", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 0,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+              narrowed_repo_cap: 1,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    const r = rows[0]!.reasons.find(
+      (x) => x.code === "queued-behind-repo-cap"
+    )!;
+    expect(r.label).toBe("Queued behind a narrowed per-repo cap");
+    expect(r.detail).toContain("narrowed from COORD_MERGE_PER_REPO_CAP=2");
+    // A narrowed cap does not widen when in-flight work finishes.
+    expect(r.detail).toContain("candidate CI recovers");
+  });
+
+  it("adds the cap reason ALONGSIDE a slot wait, not instead of it", () => {
+    // Both are true at once, and they have different remedies: a freed slot
+    // releases the head, the repo's own cap still skips the rest.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+            },
+          ],
+        }),
+      },
+      NOW
+    );
+    const codes = rows[0]!.reasons.map((r) => r.code);
+    expect(codes).toContain("slots-saturated");
+    expect(codes).toContain("queued-behind-repo-cap");
+    // The total stop outranks the partial one.
+    expect(codes.indexOf("slots-saturated")).toBeLessThan(
+      codes.indexOf("queued-behind-repo-cap")
+    );
+  });
+
+  it("stays silent when coord omits queued_blocked_by_cap", () => {
+    // An older coord does not send the field. Absence is an old producer, and
+    // must not be rendered as a cap claim either way.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    expect(rows[0]!.reasons.map((r) => r.code)).not.toContain(
+      "queued-behind-repo-cap"
+    );
   });
 
   it("shows a starved repo even when it has no in-flight leg or PR row", () => {
