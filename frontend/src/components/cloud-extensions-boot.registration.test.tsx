@@ -42,6 +42,19 @@ const CLOUD_COMPONENTS = [
   "betaBanner",
   "subscriptionBadge",
 ] as const;
+/**
+ * The third slot kind. It is the one whose absence caused the 2026-08-26
+ * outage: `createOrganizationDialog` above reads cloud-control's own
+ * `useOrganization()`, and until the `providers` slot existed there was no
+ * way to get its Provider mounted, so the registry shipped the component and
+ * silently dropped its dependency.
+ *
+ * That makes this list the load-bearing half of the pair for that dialog —
+ * a component slot filled with no provider slot behind it is the exact
+ * configuration that broke, and it is a configuration the two lists above
+ * cannot detect on their own.
+ */
+const CLOUD_PROVIDERS = ["organizationProvider"] as const;
 
 const OVERLAY_MANIFEST = path.resolve(
   process.cwd(),
@@ -61,6 +74,7 @@ describe("cloud-control extension registration", () => {
       // reading of some other file's side effect.
       expect(slots.getService("billingService")).toBeUndefined();
       expect(slots.getComponent("organizationSwitcher")).toBeUndefined();
+      expect(slots.getProvider("organizationProvider")).toBeUndefined();
 
       await import("@/components/cloud-extensions-boot");
 
@@ -70,6 +84,18 @@ describe("cloud-control extension registration", () => {
       for (const name of CLOUD_COMPONENTS) {
         expect(slots.getComponent(name), `component slot ${name}`).toBeDefined();
       }
+      for (const name of CLOUD_PROVIDERS) {
+        expect(slots.getProvider(name), `provider slot ${name}`).toBeDefined();
+      }
+
+      // `getProvider` proves the NAME arrived; `getProviders` proves the
+      // registration also reached the array `CloudProviders` actually
+      // mounts from. They are rebuilt at different moments (the Map on
+      // `set`, the array once per `registerCloudExtensions` call), so a
+      // by-name hit does not imply a mountable one.
+      expect(slots.getProviders().length).toBeGreaterThanOrEqual(
+        CLOUD_PROVIDERS.length
+      );
     },
     // This import pulls cloud-control's whole module graph (~45 raw .ts/.tsx
     // files) through vite's transform on demand. That is ~20s on a warm run
@@ -117,6 +143,16 @@ describe("cloud-control extension registration", () => {
           `component slot ${name}`
         ).toBeUndefined();
       }
+      for (const name of CLOUD_PROVIDERS) {
+        expect(slots.getProvider(name), `provider slot ${name}`).toBeUndefined();
+      }
+
+      // OSS-only mounts no cloud provider at all, so `CloudProviders`
+      // reduces to its children. Asserting the array and not just the names
+      // is what pins that: a stray registration under some other name would
+      // pass every by-name check above and still wrap the whole
+      // authenticated tree in foreign code.
+      expect(slots.getProviders()).toHaveLength(0);
     }
   );
 });
