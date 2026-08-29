@@ -197,6 +197,20 @@ export default function CoordMemoryVersionPage() {
                 <RowTime at={entry.written_at} verb="Written" />
               )}
             </div>
+            {/* The version's own `description`. It is fetched by this route
+                and was rendered by neither — so the one-line summary the
+                `/memory/[name]` frontmatter panel shows disappeared one click
+                deeper, on the page whose entire job is "what did this memory
+                say at v{n}?". A version's description can differ from head's;
+                showing head's would be worse than showing none. */}
+            {entry.description && (
+              <p
+                data-testid="coord-memory-version-description"
+                className="text-xs text-muted-foreground"
+              >
+                {entry.description}
+              </p>
+            )}
             {/* R8 — the raw provenance ids sit last, muted and mono. */}
             <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
               {entry.written_by_agent && (
@@ -259,8 +273,21 @@ export default function CoordMemoryVersionPage() {
             </div>
           </section>
         </>
+      ) : error ? (
+        // R6 — this route exists to answer "what did this memory say before?".
+        // A failed read must not answer it with "that version never existed".
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-version-unknown"
+        >
+          Could not read version {version} of memory {name} — whether it exists
+          is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-version-missing"
+        >
           Version {version} of memory {name} not found.
         </p>
       )}

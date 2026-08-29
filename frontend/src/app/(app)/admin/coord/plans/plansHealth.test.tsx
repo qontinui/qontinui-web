@@ -76,4 +76,49 @@ describe("derivePlansHealth", () => {
       "No work units in this window"
     );
   });
+
+  describe("a failed read (R6 — 'not fetched' includes 'fetched and FAILED')", () => {
+    it("is UNKNOWN, not 'waiting', when it left nothing behind", () => {
+      const h = derivePlansHealth([], false, true);
+      // A first load that errors leaves `loaded` false as well, so the failure
+      // arm has to be checked first or the page promises an arrival that is
+      // never coming.
+      expect(h.headline).toMatch(/unknown, not empty/);
+      expect(h.headline).not.toMatch(/Waiting for coord/);
+      render(
+        <HealthStrip
+          level={h.level}
+          headline={h.headline}
+          detail={h.detail}
+          badges={h.badges}
+          data-testid="failed-strip"
+        />
+      );
+      const strip = screen.getByTestId("failed-strip");
+      expect(strip).toHaveTextContent("plans –");
+      expect(strip).toHaveTextContent("blocked –");
+      expect(strip).not.toHaveTextContent("blocked 0");
+    });
+
+    it("does not leave 'No plan is blocked' unqualified over a stale list", () => {
+      const h = derivePlansHealth(
+        [{ slug: "a", status: "shipped" }],
+        true,
+        true
+      );
+      expect(h.headline).toBe("No plan is blocked");
+      expect(h.detail).toMatch(/^Last refresh failed — these counts are stale\./);
+    });
+
+    it("keeps a retained blocked plan red rather than dashing it", () => {
+      // Stale is not unknown — the row is real and still actionable.
+      const h = derivePlansHealth(
+        [{ slug: "c", status: "blocked" }],
+        true,
+        true
+      );
+      expect(h.level).toBe("red");
+      expect(h.headline).toBe("1 plan blocked on a human");
+    });
+  });
 });

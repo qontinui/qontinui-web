@@ -27,6 +27,22 @@
  * The counts are over the FILTERED rows, not the raw window, because the
  * filtered set is what the operator is looking at; the strip's detail names
  * the window so the two numbers can never be confused.
+ *
+ * ## A failed read is not an empty log
+ *
+ * R6's absence-is-not-zero clause covers "fetched and FAILED", not only "still
+ * in flight" — see the style guide's R6 note, which cites `/admin/coord/questions`
+ * shipping a GREEN "No agent is waiting on an answer" off a read that errored.
+ * This strip had the same hole in both directions: with no rows yet it claimed
+ * "Waiting for coord…" forever (nothing was coming — the read had failed), and
+ * with rows retained from an earlier poll it painted the green "No errors or
+ * warnings" off a window of unknown age. `loaded` cannot tell either case
+ * apart, so the failure gets its own argument.
+ *
+ * The split is the one `/questions` settled on: a failed read that left NOTHING
+ * behind is UNKNOWN and dashes its counts, while a failed read over rows an
+ * earlier poll already delivered is STALE — real numbers the operator can still
+ * act on, so they keep rendering and the detail line says they are old.
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
@@ -43,17 +59,44 @@ export interface AgentLogHealth {
 /**
  * The page's health, derived from the rows already on it (R1).
  *
- * `loaded=false` returns EARLY with badge labels that spell the dash
- * literally. `<HealthStrip>` renders `badge.label` verbatim, so a `null` label
- * renders NOTHING rather than `–`; R6's absence-is-not-zero rule is held here
- * by this early return, not by any null-coalescing further down. A page that
- * has not heard from coord yet must not claim this agent logged no errors.
+ * The two early returns spell the dash LITERALLY in their badge labels.
+ * `<HealthStrip>` renders `badge.label` verbatim, so a `null` label renders
+ * NOTHING rather than `–`; R6's absence-is-not-zero rule is held here by these
+ * returns, not by any null-coalescing further down. A page that has not heard
+ * from coord — or that asked and was refused — must not claim this agent logged
+ * no errors.
+ *
+ * They are ordered failure-first on purpose: a first load that ERRORS leaves
+ * `loaded` false as well, so a `!loaded`-first reading renders "Waiting for
+ * coord…" over a request that already came back and is never coming again.
+ *
+ * @param readFailed the page's last fetch threw. Distinct from `!loaded`:
+ *   `loaded` says whether coord has ever answered, this says whether the most
+ *   recent attempt failed.
  */
 export function deriveAgentLogHealth(
   filtered: AgentLogRow[],
   total: number,
-  loaded: boolean
+  loaded: boolean,
+  readFailed = false
 ): AgentLogHealth {
+  // Failed, and left nothing behind: UNKNOWN. Keyed on `total` — the fetched
+  // window, which is the quantity the `rows` badge renders — rather than on
+  // `filtered`, because an empty `filtered` over a non-empty window is the
+  // operator's own filter and says nothing about the read.
+  if (readFailed && total === 0) {
+    return {
+      level: "amber",
+      headline: "Could not read this agent's log — unknown, not empty",
+      detail: "coord did not answer; these counts are a dash, not a zero",
+      badges: [
+        { key: "rows", label: <>rows –</>, tone: "muted" },
+        { key: "warns", label: <>warn –</>, tone: "muted" },
+        { key: "errors", label: <>errors –</>, tone: "muted" },
+      ],
+    };
+  }
+
   if (!loaded) {
     return {
       level: "amber",
@@ -86,10 +129,17 @@ export function deriveAgentLogHealth(
         : warns > 0
           ? `${warns} warning${warns === 1 ? "" : "s"}, no errors`
           : "No errors or warnings";
-  const detail =
+  const window =
     total === filtered.length
       ? `${total} row${total === 1 ? "" : "s"} in the fetched window`
       : `${filtered.length} of ${total} rows shown — filters are active`;
+  // Rows an earlier poll delivered are real, so they keep rendering; what is
+  // unknown is only their AGE. Saying so leads the detail line rather than
+  // trailing it, because the headline above may be the green all-clear and
+  // this is the sentence that qualifies it.
+  const detail = readFailed
+    ? `Last refresh failed — these counts are stale. ${window}`
+    : window;
 
   return {
     level,

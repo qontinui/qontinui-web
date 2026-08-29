@@ -220,9 +220,20 @@ export default function CoordAgentLogPage() {
 
   const sessionId = useMemo(() => deriveSessionId(data?.logs ?? []), [data]);
   const loaded = data !== null;
+  // R6 — "not fetched" includes "fetched and FAILED". Without this the strip
+  // reads "Waiting for coord…" over a first load that already errored, and
+  // green off a window an earlier poll left behind.
+  const readFailed = error !== null;
+  const logsUnknown = readFailed && (data?.logs?.length ?? 0) === 0;
   const health = useMemo(
-    () => deriveAgentLogHealth(filtered, data?.logs?.length ?? 0, loaded),
-    [filtered, data, loaded]
+    () =>
+      deriveAgentLogHealth(
+        filtered,
+        data?.logs?.length ?? 0,
+        loaded,
+        readFailed
+      ),
+    [filtered, data, loaded, readFailed]
   );
 
   return (
@@ -375,6 +386,18 @@ export default function CoordAgentLogPage() {
           })}
           <div ref={listEndRef} />
         </div>
+      ) : logsUnknown ? (
+        // R6 again, at the slot where the claim is actually made in words: with
+        // the read failed and nothing retained, "no log entries" is a statement
+        // about coord's availability wearing the clothes of a statement about
+        // this agent.
+        <p
+          data-testid="coord-agent-log-unknown"
+          className="text-sm text-muted-foreground italic"
+        >
+          Could not read this agent&rsquo;s log — whether it has entries is
+          unknown, not none.
+        </p>
       ) : (
         <p
           data-testid="coord-agent-log-empty"

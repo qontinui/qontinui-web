@@ -205,6 +205,7 @@ export default function CoordMemoryDetailPage() {
 
   const history = memory?.history ?? [];
   const top10 = history.slice(0, 10);
+  const historyTruncated = history.length > top10.length;
 
   return (
     <div
@@ -505,8 +506,18 @@ export default function CoordMemoryDetailPage() {
               icon={<HistoryIcon className="h-3.5 w-3.5" />}
               title="Version history"
               summary={
-                <Badge variant="outline" className="font-mono text-[11px]">
-                  {history.length}
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[11px]"
+                  title={
+                    historyTruncated
+                      ? `${history.length} versions exist; the picker lists the ${top10.length} most recent.`
+                      : undefined
+                  }
+                >
+                  {historyTruncated
+                    ? `${top10.length}/${history.length}`
+                    : history.length}
                 </Badge>
               }
               data-testid="coord-memory-history"
@@ -516,32 +527,69 @@ export default function CoordMemoryDetailPage() {
                   No prior versions.
                 </p>
               ) : (
-                <Select onValueChange={onJumpToVersion}>
-                  <SelectTrigger
-                    className="w-full"
-                    data-testid="coord-memory-version-select"
-                  >
-                    <SelectValue placeholder="Jump to version..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {top10.map((v) => (
-                      <SelectItem
-                        key={v.version}
-                        value={String(v.version)}
-                        data-testid={`coord-memory-version-option-${v.version}`}
-                      >
-                        v{v.version}
-                        {v.written_at ? ` — ${relativeTime(v.written_at)}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Select onValueChange={onJumpToVersion}>
+                    <SelectTrigger
+                      className="w-full"
+                      data-testid="coord-memory-version-select"
+                    >
+                      <SelectValue placeholder="Jump to version..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {top10.map((v) => (
+                        <SelectItem
+                          key={v.version}
+                          value={String(v.version)}
+                          data-testid={`coord-memory-version-option-${v.version}`}
+                        >
+                          v{v.version}
+                          {v.written_at
+                            ? ` — ${relativeTime(v.written_at)}`
+                            : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* The badge used to print `history.length` while the picker
+                      offered ten, so a memory with 42 versions advertised 42
+                      and silently hid 32 — the operator's only cue that a
+                      version was missing would have been failing to find it.
+                      Same disclosure discipline `/plans` uses for its capped
+                      fetch window. */}
+                  {historyTruncated && (
+                    <p
+                      className="mt-1.5 text-[11px] text-muted-foreground"
+                      data-testid="coord-memory-history-truncated"
+                    >
+                      Showing the {top10.length} most recent of {history.length}
+                      {" "}versions. Older ones are reachable by URL:
+                      {" "}
+                      <span className="font-mono">
+                        /admin/coord/memory/{name}/version/&lt;n&gt;
+                      </span>
+                      .
+                    </p>
+                  )}
+                </>
               )}
             </CollapsiblePanel>
           </aside>
         </div>
+      ) : error ? (
+        // R6 — "not found" is a claim about the corpus. A memory that reads as
+        // absent is the one an operator concludes was never written, which is
+        // exactly the wrong conclusion to draw from an unreachable coord.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-detail-unknown"
+        >
+          Could not read memory {name} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-detail-missing"
+        >
           Memory {name} not found.
         </p>
       )}
