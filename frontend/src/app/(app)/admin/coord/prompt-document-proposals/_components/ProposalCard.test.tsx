@@ -43,7 +43,7 @@
  *     `<RecordList>` for that reason, not against a hand-rolled harness.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -51,6 +51,14 @@ const authState = vi.hoisted(() => ({ isCoordAdmin: true }));
 vi.mock("@/contexts/auth-context", () => ({
   useAuth: () => authState,
 }));
+
+// Module-scoped and mutable, so it is reset rather than left to declaration
+// order. The non-admin test below leaves it `false`; without this, every test
+// after it passes only because it happens to reassign the flag first, and a
+// reordering — or a new test inserted between them — turns green into a lie.
+beforeEach(() => {
+  authState.isCoordAdmin = true;
+});
 
 import { RecordList } from "@/components/console";
 import type { PromptDocumentProposal } from "../types";
