@@ -523,4 +523,136 @@ describe("CoordNotificationsPage", () => {
     // The principal id is kept, not scrubbed — it is the paste target.
     expect(detail).toHaveTextContent("merge-train-steward");
   });
+
+  it("a failed first read does not let the LIST claim there is nothing", async () => {
+    // The half of R6 the strip's own fix left behind. `loading` is cleared in a
+    // `finally`, so a first read that throws settles with `rows === []` and
+    // `RecordList`'s `loaded` prop true — which renders the `empty` node. The
+    // page therefore said "Could not read the feed" in the strip and, two
+    // elements below, "No notifications matching filters.": the fabricated
+    // absence the strip was just fixed to stop making, still being made in
+    // words.
+    httpGet.mockRejectedValue(
+      new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+    );
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-unknown")
+    ).toHaveTextContent(/unknown, not none/);
+    expect(
+      screen.queryByText("No notifications matching filters.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing unread.")).not.toBeInTheDocument();
+    // …and the strip agrees, because both now read the same predicate.
+    expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+      /Could not read the feed/
+    );
+  });
+
+  it("a genuinely empty answer still says nothing matches", async () => {
+    // The other direction: the unknown arm must not swallow the honest empty
+    // state. coord answered, and the answer was zero rows.
+    httpGet.mockResolvedValue({
+      notifications: [],
+      next_cursor: null,
+      total: 0,
+      unread_count: 0,
+    });
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByText("No notifications matching filters.")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-notifications-unknown")
+    ).not.toBeInTheDocument();
+  });
+
+  it("a blipped poll on an empty window does not flip the list to unknown", async () => {
+    // Why the slot is keyed on `loaded` and not on `rows.length` — the reason
+    // `readIsUnknown` states, asserted at the surface that would show it. coord
+    // has CONFIRMED this window empty; a single failing poll must not restate
+    // that as "unknown" and back again on the next tick.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [],
+        next_cursor: null,
+        total: 0,
+        unread_count: 0,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await screen.findByText("No notifications matching filters.");
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+
+    // The strip goes amber-stale — that IS its job — while the list holds the
+    // answer coord actually gave.
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        /stopped updating/
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-notifications-unknown")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("No notifications matching filters.")
+    ).toBeInTheDocument();
+  });
+
+  describe("the ?ref= banner", () => {
+    // The banner reads `window.location` once on mount.
+    function withRef(ref: string) {
+      window.history.replaceState({}, "", `/admin/coord/notifications?ref=${ref}`);
+    }
+    beforeEach(() => window.history.replaceState({}, "", "/"));
+
+    it("blames the feed only when the FEED failed, not when mark-read did", async () => {
+      // `error` is the page's one error line and mark-read writes to it, so
+      // consulting it here made a rejected POST report "the feed above failed
+      // to load" about a feed that had loaded perfectly well — and told the
+      // operator the wrong thing to go and fix.
+      httpGet.mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      });
+      httpPost.mockRejectedValue(new Error("mark-read failed: 500 - boom"));
+      withRef(UUID_B);
+      const user = userEvent.setup();
+      render(<CoordNotificationsPage />);
+
+      // UUID_B is not on the page, so the banner starts on its last arm.
+      expect(
+        await screen.findByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/not on the page that is loaded/);
+
+      await user.click(screen.getByTestId("coord-notification-mark-read"));
+      await screen.findByText(/Could not mark read/);
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/not on the page that is loaded/);
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).not.toHaveTextContent(/feed above failed to load/);
+    });
+
+    it("still blames the feed when the feed is what failed", async () => {
+      httpGet.mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+      withRef(UUID_B);
+      render(<CoordNotificationsPage />);
+
+      expect(
+        await screen.findByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/feed above failed to load/);
+    });
+  });
 });

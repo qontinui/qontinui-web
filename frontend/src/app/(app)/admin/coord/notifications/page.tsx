@@ -74,6 +74,16 @@
  *   it produces here is unknown (`–`, nothing ever read) versus stale (the
  *   real numbers, said to have stopped moving).
  *
+ *   **`readFailed` has two other consumers, and both were left behind by the
+ *   commit that added it.** The `empty=` slot below said "No notifications
+ *   matching filters." after a read that never landed — the same fabricated
+ *   absence as `?? 0`, made in words instead of a number, sitting two elements
+ *   under a strip that correctly said it could not read the feed. And the
+ *   `?ref=` banner consulted `error`, which mark-read also writes, so a
+ *   rejected POST made it blame the feed. Both now read the flag that answers
+ *   the question they are asking; the `empty=` one goes through the console's
+ *   shared `readIsUnknown` so the strip and the slot cannot drift apart.
+ *
  * **The strip is never red or amber for a BACKLOG**, and that is the point:
  * this is an append-only EVENT feed, so an unread row blocks nobody and decays
  * into nothing. Amber would promise something else clears it; red would claim
@@ -101,7 +111,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { CheckCheck, Filter, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList } from "@/components/console";
+import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
 import { NotificationRow } from "@/components/admin/coord/NotificationRow";
 import { deriveNotificationsHealth } from "@/components/admin/coord/notificationsHealth";
 import {
@@ -438,6 +448,27 @@ export default function CoordNotificationsPage() {
       ? `Marks ALL ${markAllCount} unread notifications, including kinds not shown here. This cannot be undone.`
       : "Marks ALL unread notifications, including kinds not shown here. This cannot be undone.";
 
+  /**
+   * The read failed and coord has never answered — so the LIST is unknown too,
+   * not empty.
+   *
+   * The same two booleans the strip is derived from, through the same shared
+   * predicate, because they have to agree: the wave shipped a page that would
+   * say "Could not read the feed" in the strip and, two elements below,
+   * "No notifications matching filters." in the list — the very
+   * confident-false-claim the strip was just fixed to stop making, left
+   * standing in the slot that makes it in WORDS.
+   *
+   * It is the ordinary failed-first-load state, not a corner: `loading` is
+   * cleared in a `finally` so it settles on failure, and `rows` is `[]`, so
+   * `RecordList`'s `loaded` prop below is `true` and the `empty` node renders.
+   *
+   * Keyed on `loaded` rather than on `rows.length`, per `readIsUnknown`'s own
+   * reasoning: a filter whose window is genuinely empty must not flip to
+   * "unknown" and back on every blipped poll.
+   */
+  const feedUnknown = readIsUnknown(loaded, readFailed);
+
   const health = deriveNotificationsHealth({
     unreadCount,
     total,
@@ -539,7 +570,12 @@ export default function CoordNotificationsPage() {
             // has been read yet, so "not on this page" would be a claim
             // rather than a fact.
             loading: loading && rows.length === 0,
-            error: Boolean(error),
+            // `readFailed`, not `error`. This arm says "the feed above failed
+            // to load", and `error` is the page's ONE error line — mark-read
+            // writes to it too, so a rejected POST made the banner blame a
+            // feed that had loaded perfectly well. Same folding-in the strip
+            // was fixed for; this is the other consumer of that flag.
+            error: readFailed,
           })}
         </p>
       )}
@@ -565,11 +601,26 @@ export default function CoordNotificationsPage() {
             expandedKey={expanded}
             onExpandedKeyChange={setExpanded}
             empty={
-              <p className="text-sm italic text-muted-foreground">
-                {unreadOnly
-                  ? "Nothing unread."
-                  : "No notifications matching filters."}
-              </p>
+              feedUnknown ? (
+                // R6 at the slot where the claim is actually made in words —
+                // the shape `/spawn`, `/plans` and `/agents/[agent_id]` already
+                // carry. With the read failed and nothing retained, "nothing
+                // unread" is a statement about coord's availability wearing the
+                // clothes of a statement about the feed.
+                <p
+                  className="text-sm italic text-muted-foreground"
+                  data-testid="coord-notifications-unknown"
+                >
+                  Could not read the feed — whether anything is waiting for you
+                  is unknown, not none.
+                </p>
+              ) : (
+                <p className="text-sm italic text-muted-foreground">
+                  {unreadOnly
+                    ? "Nothing unread."
+                    : "No notifications matching filters."}
+                </p>
+              )
             }
             renderRow={(n, ctx) => (
               <NotificationRow
