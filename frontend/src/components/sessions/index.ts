@@ -1,3 +1,4 @@
+export { SessionsConsole } from "./SessionsConsole";
 export { SessionsList } from "./SessionsList";
 export { SessionCard } from "./SessionCard";
 export { SessionDetail } from "./SessionDetail";
@@ -11,5 +12,6 @@ export {
   type ClaimStolenPayload,
   type VisibilityContext,
 } from "./visibility";
+export * from "./sessionConsoleStatus";
 export * from "./types";
 export * from "./api";
