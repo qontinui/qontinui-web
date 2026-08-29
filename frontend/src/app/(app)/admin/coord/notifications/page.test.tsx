@@ -334,6 +334,76 @@ describe("CoordNotificationsPage", () => {
     expect(screen.queryByText(/Failed to load/)).not.toBeInTheDocument();
   });
 
+  it("marks the counts STALE when a poll fails after a good first load", async () => {
+    // The state a 10s poller spends most of its bad time in, and the one the
+    // strip used to get wrong: `failed` was `error !== null && !loaded`, so a
+    // good first load followed by failing polls kept a GREEN "137 unread
+    // events" directly above the page's own "Failed to load…" line. The
+    // numbers are real; what they are not is current.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // The good load.
+    expect(
+      await screen.findByTestId("coord-notifications-unread-count")
+    ).toHaveTextContent("137 unread");
+    expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
+      "data-health-level",
+      "green"
+    );
+
+    // Now a failing read. Driven through Refresh rather than the 10s poller:
+    // it is the same `fetchHead(false)` call, without making the test depend
+    // on fake timers.
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
+        "data-health-level",
+        "amber"
+      )
+    );
+    expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+      /stopped updating/
+    );
+    // …while still showing the real numbers it holds, and the rows it loaded.
+    expect(
+      screen.getByTestId("coord-notifications-unread-count")
+    ).toHaveTextContent("137 unread");
+    expect(screen.getByTestId("coord-notification-row")).toBeInTheDocument();
+  });
+
+  it("a failed MARK-READ does not make the counts look stale", async () => {
+    // `error` is one line shared with mark-read, which is why the strip cannot
+    // read it. A rejected POST says nothing about whether the feed is fresh,
+    // and painting the counts stale for it would train the amber away.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+      unread_count: 137,
+    });
+    httpPost.mockRejectedValue(new Error("mark-read failed: 500 - boom"));
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await user.click(await screen.findByTestId("coord-notification-mark-read"));
+    expect(await screen.findByText(/Could not mark read/)).toBeInTheDocument();
+    expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
+      "data-health-level",
+      "green"
+    );
+  });
+
   it("still reports a genuine failure as an error", async () => {
     httpGet.mockRejectedValue(
       new Error("GET /api/v1/operations/notifications failed: 500 - boom")

@@ -443,6 +443,65 @@ jobs:
       # The pytest invocation above keeps --cov-context=test / --junitxml: those
       # flags are harmless on PRs and keep the two suites byte-identical.
 
+      # Budget-creep tripwire, the same one the coverage producer carries and
+      # for the same reason -- see the long rationale at its site in
+      # .github/workflows/backend-coverage-producer.yml. The `run:` body here is
+      # BYTE-IDENTICAL to that one (a test pins it); everything site-specific is
+      # in `env:` above it.
+      #
+      # This job is the reason it matters most. It runs the byte-identical
+      # pytest invocation on the byte-identical 90-minute budget, but it is the
+      # GATING lane: where creep on the producer costs a coverage export and a
+      # red baseline, creep here blocks every PR. The producer's budget was set
+      # below this suite's own median and nobody noticed for days; the whole
+      # point of a soft budget is to be told while a third of the hard one is
+      # still in hand.
+      - name: Warn if the job is approaching its budget
+        if: success()
+        env:
+          # Comfortably above the 56.9-min worst observed run of this suite,
+          # and 30 min below the job budget.
+          SOFT_BUDGET_MINUTES: '60'
+          JOB_TIMEOUT_MINUTES: '90'
+          # The only per-site text in an otherwise byte-identical body. Keeping
+          # the prose in `env` is what lets the two carriers share one script:
+          # the marker next door is carried by eight copies precisely because
+          # they are identical, and a tripwire that forked its wording at two
+          # sites would start the same drift over again at a smaller scale.
+          JOB_LABEL: Backend CI tests
+          BUDGET_STAKES: >-
+            This is the GATING lane, so a timeout here does not just red a baseline - it blocks every PR behind it.
+        run: |
+          set -uo pipefail
+
+          # All three guards are load-bearing under `-e`. Non-numeric aborts
+          # `$(( ))`; an over-long value overflows int64 and yields a garbage
+          # NEGATIVE "measurement" presented as fact; and `10#` forces base 10,
+          # because bash reads a leading zero as octal where `08` is a hard
+          # error rather than a value. Any of them firing means UNKNOWN.
+          start="${JOB_START_EPOCH:-}"
+          if [ -z "$start" ] || [ -n "${start//[0-9]/}" ] || [ ${#start} -gt 11 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::JOB_START_EPOCH was absent, non-numeric or implausible ('${start}'), so this job's duration could not be measured and the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN - it is specifically NOT a statement that the job is within budget."
+            exit 0
+          fi
+
+          start=$(( 10#$start ))
+          if [ "$start" -lt 1600000000 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::JOB_START_EPOCH='${JOB_START_EPOCH:-}' is not a plausible epoch (it resolves to ${start}, i.e. before 2020), so this job's duration could not be measured and the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN, not a statement that the job is within budget."
+            exit 0
+          fi
+
+          elapsed_min=$(( ( $(date -u +%s) - start ) / 60 ))
+          if [ "$elapsed_min" -lt 0 ]; then
+            echo "::warning title=Job duration UNKNOWN - budget tripwire did not run::Computed a NEGATIVE elapsed time (${elapsed_min} min) from JOB_START_EPOCH='${start}', which cannot be a real measurement, so the ${SOFT_BUDGET_MINUTES}-minute budget-creep check was NOT performed. This is UNKNOWN, not a statement that the job is within budget."
+            exit 0
+          fi
+          echo "Job wall-clock: ${elapsed_min} min (soft budget ${SOFT_BUDGET_MINUTES} min, job budget ${JOB_TIMEOUT_MINUTES} min)."
+
+          if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
+            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
+          fi
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
