@@ -47,8 +47,20 @@ Columns:
   ``active`` → ``merging`` → ``merged`` / ``abandoned``. The state
   machine §4.2 calls out. Sweeper prunes ``merged`` (after grace)
   and ``abandoned`` (after timeout).
-* ``intent`` — TEXT, nullable. Free-text human intent. Not parsed by
-  coord — for human readability in dashboards.
+* ``intent`` — TEXT, nullable. Free-text human intent, and the durable
+  record of the FULL, un-slugified intent — the branch name is capped at
+  ``MAX_SLUG_LEN`` (60) and truncates, this column does not.
+  **Coord parses it.** It was write-only when this migration was authored,
+  which is what the previous "Not parsed by coord — for human readability
+  in dashboards" said. Coord's shepherd-intent resolver
+  (``parse_shepherd_intent`` / ``shepherd_intent_roster``, qontinui-coord
+  ``crates/coord/src/worktree_reclaim.rs``) has read it since #1597, and
+  #1638 gave the prefix roster a single owner beside the producers.
+  Worktree reclaim recovers a shepherd worktree's target PR and tier from
+  HERE rather than from the truncated branch slug, so a value written to
+  this column is load-bearing, not decorative. Still nullable, and the
+  resolver returns ``None`` for anything not matching a registered
+  shepherd prefix — so non-shepherd intents remain free text.
 * ``created_at`` / ``updated_at`` — TIMESTAMPTZ. ``updated_at`` is
   written by application code on every status transition; no
   trigger (the row volume is low and trigger churn risk outweighs
