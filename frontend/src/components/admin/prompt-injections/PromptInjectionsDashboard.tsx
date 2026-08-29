@@ -43,6 +43,7 @@ import {
   ScrollText,
 } from "lucide-react";
 
+import { relativeTime as consoleRelativeTime } from "@/components/console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,18 +91,14 @@ const ALL_SOURCES = "__all__";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * This surface's relative timestamps, rendered through the console primitive.
+ *
+ * Was a fourth byte-identical private copy of the same function. `absent: "—"`
+ * is this surface's choice; the console's own default is `never`.
+ */
 function relativeTime(iso?: string | null): string {
-  if (!iso) return "—";
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "—";
-  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const min = Math.floor(diffSec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
+  return consoleRelativeTime(iso, { absent: "—" });
 }
 
 function shortId(id?: string | null): string {
