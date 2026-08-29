@@ -39,6 +39,7 @@ import {
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
 import {
+  outcomeGlyph,
   VerdictChips,
   VerdictDetail,
 } from "@/components/admin/coord/VerdictChips";
@@ -65,15 +66,16 @@ const API = "/api/v1/operations";
 /**
  * A managed predicted-head-fork keeps its own glyph: coord auto-resolves it,
  * so it is neither a pass nor a failure and must not borrow either glyph.
+ *
+ * Everything BELOW that carve-out is `outcomeGlyph`. It used to be a verbatim
+ * second copy of that ladder — the exact defect this plan exists to remove,
+ * and a live one: `/deploys` and `/lands` render the SAME chip cluster, so a
+ * glyph added to one ladder and not the other would have shown two different
+ * verdicts for one outcome. One `?` fallback, derived in one place.
  */
 function deployGlyph(v: DimensionVerdict): string {
   if (isManagedPredictedHeadFork(v)) return "~";
-  const o = (v.outcome ?? "").toLowerCase();
-  if (o === "confirmed") return "✓";
-  if (o === "failure" || o === "contradiction") return "✕";
-  if (o === "surprise") return "!";
-  if (o === "partial") return "~";
-  return "?";
+  return outcomeGlyph(v.outcome);
 }
 
 export function DeployRow({
