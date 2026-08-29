@@ -612,6 +612,212 @@ class TestTheResponseContractKeepsTheAuthzFieldsRequired:
         assert "agent_name" in required
 
 
+class TestDescriptiveFieldsDegradeRatherThanCrashOrInvent:
+    """The permissive half of the split must actually be permissive.
+
+    :func:`_render_effective` promises that a descriptive field "never takes
+    the settings page down". Permissive was only implemented as "may be
+    ABSENT", so a field that arrived with the wrong TYPE did one of two things
+    instead — both measured against the route before this class existed:
+
+    * ``model: 42``, ``effort: 0``, ``fanout_bound: {...}`` and
+      ``fanout_bound: 1.5`` raised ``ValidationError`` out of the
+      ``AgentRegistryEntry`` constructor: a **500**, i.e. exactly the outcome
+      the docstring rules out. It is also the least diagnosable failure on the
+      route — the 502s beside it carry a ``detail`` naming the field, which the
+      page renders on its error card; a 500 carries nothing.
+    * ``fanout_bound: true`` returned **200** rendering a fan-out bound of
+      ``1`` (``false`` → ``0``), because ``bool`` is a subclass of ``int``; and
+      ``purpose: {"a": 1}`` rendered the Python repr ``"{'a': 1}"``. Those are
+      values coord never sent, displayed as though it had — the same
+      laundering :class:`TestWrongTypedAuthzFieldsAreLoud` closed for the authz
+      fields, still live on the descriptive ones.
+
+    Verified capable of going red: restoring ``model=row.get("model")`` /
+    ``fanout_bound=row.get("fanout_bound")`` and the
+    ``str(row.get("purpose") or "")`` coercions turns this class red — the
+    500 cases 500 again and the invented values come back.
+    """
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("model", 42),
+            ("model", ["opus"]),
+            ("model", {"name": "opus"}),
+            ("effort", 0),
+            ("effort", {"x": 1}),
+            ("fanout_bound", {"max": 1}),
+            ("fanout_bound", 1.5),
+            ("purpose", {"a": 1}),
+            ("spawn_path", ["subagent"]),
+        ],
+    )
+    def test_a_wrong_typed_descriptive_field_does_not_500(self, field, value):
+        """The whole page must survive one off-contract cosmetic field."""
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(
+                return_value={
+                    "agents": [_effective_row(**{field: value})],
+                    "folded_for": str(USER_ID),
+                }
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200, (
+            f"`{field}` is descriptive; an off-contract value must degrade, "
+            "not take the settings page down with a 500 that names nothing"
+        )
+
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        [
+            # `bool` is a subclass of `int`: unguarded, these render as a
+            # fan-out bound of 1 and 0 — numbers coord never sent.
+            ("fanout_bound", True, None),
+            ("fanout_bound", False, None),
+            ("fanout_bound", {"max": 1}, None),
+            ("fanout_bound", 1.5, None),
+            ("model", 42, None),
+            ("model", True, None),
+            ("effort", 0, None),
+            # `str(...)` cannot fail, so these used to render a Python repr.
+            ("purpose", {"a": 1}, ""),
+            ("purpose", 42, ""),
+            ("spawn_path", ["subagent"], ""),
+        ],
+    )
+    def test_a_wrong_typed_descriptive_field_degrades_to_its_default(
+        self, field, value, expected
+    ):
+        """Degrading is not inventing: the fallback, never a coerced value."""
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(
+                return_value={
+                    "agents": [_effective_row(**{field: value})],
+                    "folded_for": str(USER_ID),
+                }
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200
+        assert resp.json()["agents"][0][field] == expected, (
+            f"`{field}: {value!r}` must degrade to {expected!r}, not be "
+            "coerced into a value coord never served"
+        )
+
+    def test_the_authz_fields_on_the_same_row_are_still_loud(self):
+        """Degrading the cosmetic half must not soften the strict half."""
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(
+                return_value={
+                    "agents": [_effective_row(model=42, enabled="false")],
+                    "folded_for": str(USER_ID),
+                }
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 502, (
+            "a wrong-typed `enabled` is an authorization claim and stays a "
+            "502 even when a descriptive field on the same row degrades"
+        )
+        assert "enabled" in str(resp.json()["detail"])
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("model", "claude-opus-5"),
+            ("effort", "high"),
+            ("fanout_bound", 15),
+            # The `str` arm of `int | str | None` is declared, so it is read.
+            ("fanout_bound", "unbounded"),
+            ("purpose", "Reviews code changes."),
+            ("model", None),
+            ("effort", None),
+            ("fanout_bound", None),
+        ],
+    )
+    def test_a_correctly_typed_descriptive_field_still_renders(self, field, value):
+        """The companion: without it, degrading everything would pass.
+
+        ``None`` is included deliberately — absence is the permissiveness
+        working as designed and must not be reported or altered.
+        """
+        app = _build_app()
+        with patch(
+            "app.api.v1.endpoints.agent_registry._coord_request",
+            new=AsyncMock(
+                return_value={
+                    "agents": [_effective_row(**{field: value})],
+                    "folded_for": str(USER_ID),
+                }
+            ),
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200
+        assert resp.json()["agents"][0][field] == value
+
+    def test_a_degraded_field_is_logged(self):
+        """A degrade is the right render and still drift; it must leave a trace."""
+        app = _build_app()
+        with (
+            patch(
+                "app.api.v1.endpoints.agent_registry._coord_request",
+                new=AsyncMock(
+                    return_value={
+                        "agents": [_effective_row(model=42)],
+                        "folded_for": str(USER_ID),
+                    }
+                ),
+            ),
+            patch("app.api.v1.endpoints.agent_registry.logger.warning") as mock_warning,
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200
+        assert mock_warning.called, (
+            "a silently degraded field is how a coord serialization drift "
+            "survives until a column is empty for every user"
+        )
+        assert "model" in str(mock_warning.call_args)
+
+    def test_an_absent_descriptive_field_is_not_reported_as_degraded(self):
+        """`model: null` is legitimate and must not log drift."""
+        app = _build_app()
+        with (
+            patch(
+                "app.api.v1.endpoints.agent_registry._coord_request",
+                new=AsyncMock(
+                    return_value={
+                        "agents": [_effective_row(model=None, effort=None)],
+                        "folded_for": str(USER_ID),
+                    }
+                ),
+            ),
+            patch("app.api.v1.endpoints.agent_registry.logger.warning") as mock_warning,
+        ):
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.get("/api/v1/agent-registry")
+
+        assert resp.status_code == 200
+        assert not mock_warning.called
+
+
 class TestDeployOrderIsSelfDiagnosing:
     """An undeployed coord must say so, not look like a missing web route."""
 
