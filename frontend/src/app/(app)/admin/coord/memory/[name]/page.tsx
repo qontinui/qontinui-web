@@ -86,6 +86,7 @@ import {
   RowTime,
   StatusBadge,
   absoluteTime,
+  isNotFoundError,
   relativeTime,
   rowAccentClass,
 } from "@/components/console";
@@ -132,6 +133,13 @@ export default function CoordMemoryDetailPage() {
   const [memory, setMemory] = useState<CoordMemoryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The read failed with coord's own 404 — it answered, and the answer was
+   * "no live memory by that name". Coord also 404s a SOFT-DELETED memory
+   * (`memories.rs`), so without this every tombstoned memory would read as an
+   * infrastructure fault rather than as the deletion it is.
+   */
+  const [notFound, setNotFound] = useState(false);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -147,14 +155,24 @@ export default function CoordMemoryDetailPage() {
       setMemory(body);
       setDraft(body.content ?? "");
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
   }, [name]);
 
   useEffect(() => {
+    // Drop the previous name's memory first: the catch never nulls `memory`,
+    // so a 404 after a successful load would render the OLD memory's content
+    // under the new name — and both arms below sit behind `memory === null`.
+    // `fetchMemory` keys on `name`, so this fires on a route change and not on
+    // `onSave`'s refresh, which calls it directly; this route does not poll.
+    setMemory(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchMemory();
   }, [fetchMemory]);
@@ -205,6 +223,25 @@ export default function CoordMemoryDetailPage() {
 
   const history = memory?.history ?? [];
   const top10 = history.slice(0, 10);
+  /**
+   * More versions exist than the picker can offer.
+   *
+   * **NOT `history.length > top10.length`.** Coord already caps this array
+   * server-side (`memories.rs`, `ORDER BY version DESC LIMIT 10`) and the web
+   * proxy passes it through, so `history.length` is never above 10 and that
+   * predicate is dead on arrival — it would render the disclosure never, on
+   * exactly the memories that need it.
+   *
+   * The head version number is the signal that survives the cap: versions are
+   * assigned monotonically, so a head of 42 over 10 returned rows means 32 are
+   * not on the wire at all. `?? 0` keeps an older coord that omits `version`
+   * silent rather than guessing.
+   */
+  const headVersion = memory?.version ?? 0;
+  // `top10.length > 0` keeps the badge and the body agreeing: the picker below
+  // is guarded on it, so without it a response carrying `version: 5` and no
+  // `history` at all would print `0/5` beside "No prior versions."
+  const historyTruncated = top10.length > 0 && headVersion > history.length;
 
   return (
     <div
@@ -505,8 +542,18 @@ export default function CoordMemoryDetailPage() {
               icon={<HistoryIcon className="h-3.5 w-3.5" />}
               title="Version history"
               summary={
-                <Badge variant="outline" className="font-mono text-[11px]">
-                  {history.length}
+                <Badge
+                  variant="outline"
+                  className="font-mono text-[11px]"
+                  title={
+                    historyTruncated
+                      ? `${headVersion} versions exist; coord returns and this picker lists the ${top10.length} most recent.`
+                      : undefined
+                  }
+                >
+                  {historyTruncated
+                    ? `${top10.length}/${headVersion}`
+                    : history.length}
                 </Badge>
               }
               data-testid="coord-memory-history"
@@ -516,32 +563,70 @@ export default function CoordMemoryDetailPage() {
                   No prior versions.
                 </p>
               ) : (
-                <Select onValueChange={onJumpToVersion}>
-                  <SelectTrigger
-                    className="w-full"
-                    data-testid="coord-memory-version-select"
-                  >
-                    <SelectValue placeholder="Jump to version..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {top10.map((v) => (
-                      <SelectItem
-                        key={v.version}
-                        value={String(v.version)}
-                        data-testid={`coord-memory-version-option-${v.version}`}
-                      >
-                        v{v.version}
-                        {v.written_at ? ` — ${relativeTime(v.written_at)}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <>
+                  <Select onValueChange={onJumpToVersion}>
+                    <SelectTrigger
+                      className="w-full"
+                      data-testid="coord-memory-version-select"
+                    >
+                      <SelectValue placeholder="Jump to version..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {top10.map((v) => (
+                        <SelectItem
+                          key={v.version}
+                          value={String(v.version)}
+                          data-testid={`coord-memory-version-option-${v.version}`}
+                        >
+                          v{v.version}
+                          {v.written_at
+                            ? ` — ${relativeTime(v.written_at)}`
+                            : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* The badge printed `history.length` while the picker
+                      offered ten — but coord caps the array at ten too, so a
+                      memory with 42 versions advertised TEN and silently hid
+                      32, with the operator's only cue being failing to find a
+                      version. Same disclosure discipline `/plans` uses for its
+                      capped fetch window. */}
+                  {historyTruncated && (
+                    <p
+                      className="mt-1.5 text-[11px] text-muted-foreground"
+                      data-testid="coord-memory-history-truncated"
+                    >
+                      Showing the {top10.length} most recent of {headVersion}
+                      {" "}versions. Older ones are reachable by URL:
+                      {" "}
+                      <span className="font-mono">
+                        /admin/coord/memory/{name}/version/&lt;n&gt;
+                      </span>
+                      .
+                    </p>
+                  )}
+                </>
               )}
             </CollapsiblePanel>
           </aside>
         </div>
+      ) : error !== null && !notFound ? (
+        // R6 — "not found" is a claim about the corpus. A memory that reads as
+        // absent is the one an operator concludes was never written, which is
+        // exactly the wrong conclusion to draw from an unreachable coord — and
+        // exactly the right one to draw from coord's own 404.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-detail-unknown"
+        >
+          Could not read memory {name} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-memory-detail-missing"
+        >
           Memory {name} not found.
         </p>
       )}

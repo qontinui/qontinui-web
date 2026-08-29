@@ -71,6 +71,7 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
+  isNotFoundError,
   rowAccentClass,
 } from "@/components/console";
 import {
@@ -104,6 +105,15 @@ interface CoordWorkUnit {
   slug: string;
   title?: string | null;
   status?: string;
+  /**
+   * coord `work_units.current_phase`. Omitted from this interface until
+   * 2026-08-29, which silently disarmed `derivePlanStatus`'s `reason` — it
+   * reads exactly this field, so the badge could never produce its "phase N"
+   * subtitle here even though `/plans` and `/spawn` show it for the same work
+   * unit. The deriver was doing its job; it was being handed a type that had
+   * thrown the input away.
+   */
+  current_phase?: string | null;
   updated_at?: string | null;
 }
 
@@ -140,6 +150,37 @@ export default function CoordPlanDetailPage() {
   const [history, setHistory] = useState<PlanHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The last detail read failed with coord's own 404 — i.e. coord ANSWERED,
+   * and the answer was "no such work unit".
+   *
+   * `httpClient.get` throws on every non-2xx, so a 404 arrives through the same
+   * `catch` as a dead socket; without this the two are indistinguishable and
+   * the page must either call every genuine 404 an outage or every outage a
+   * 404. Both are wrong, and the first is the one that trains an operator to
+   * distrust the console.
+   */
+  const [notFound, setNotFound] = useState(false);
+  /**
+   * R6 — the history read gets its OWN flag. It used to fail into a bare
+   * `catch {}`, leaving `history` at the `[]` its initializer put there, which
+   * is byte-identical to the array coord returns for a work unit that has never
+   * transitioned. The panel then printed a `0` badge and "No status history
+   * yet." — a confirmed absence, asserted from a read that never answered.
+   */
+  const [historyError, setHistoryError] = useState(false);
+  /**
+   * Something ANSWERED about this plan's history — either the detail envelope
+   * carried a `recent_history` key, or the history endpoint returned.
+   *
+   * This is the history panel's own `loaded`, and it exists for the same
+   * reason `readIsUnknown` keys on `loaded` rather than on a list being empty:
+   * a plan with genuinely zero transitions is a fetched zero, and dashing it
+   * because a supplementary endpoint then failed would report a real answer as
+   * ignorance. Presence of the KEY is the signal, not the length of the array
+   * behind it.
+   */
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const [newStatus, setNewStatus] = useState("in_progress");
   const [note, setNote] = useState("");
@@ -147,6 +188,12 @@ export default function CoordPlanDetailPage() {
 
   const fetchAll = useCallback(async () => {
     if (!slug) return;
+    // Cleared at the START of the cycle, not only on the inner success path.
+    // Left to the success path, a `historyError` raised for a DIFFERENT slug —
+    // or by a previous poll whose detail read then threw, skipping the inner
+    // try entirely — survives into the next render and mislabels rows it was
+    // never computed from.
+    setHistoryError(false);
     try {
       const planBody = await httpClient.get<CoordPlanDetailResponse>(
         `${API}/plans/${encodeURIComponent(slug)}`
@@ -156,23 +203,51 @@ export default function CoordPlanDetailPage() {
       // The detail envelope already carries `recent_history`; seed from it,
       // then refine with the full history endpoint.
       setHistory(planBody.recent_history ?? []);
+      // The envelope answering at all counts, even with an empty array — that
+      // is coord saying "no transitions", not coord saying nothing.
+      if (planBody.recent_history !== undefined) setHistoryLoaded(true);
       try {
         const historyBody = await httpClient.get<PlanHistoryResponse>(
           `${API}/plans/${encodeURIComponent(slug)}/history`
         );
         setHistory(historyBody.history ?? planBody.recent_history ?? []);
+        if (historyBody.history !== undefined) setHistoryLoaded(true);
+        setHistoryError(false);
       } catch {
-        // ignore — history is supplementary
+        // Still supplementary — it must not fail the page — but "supplementary"
+        // is not "unrecordable". The envelope's `recent_history` may have
+        // seeded rows above; if it did they stand, and only their completeness
+        // is unknown.
+        setHistoryError(true);
       }
       setError(null);
+      setNotFound(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      setNotFound(isNotFoundError(e));
     } finally {
       setLoading(false);
     }
   }, [slug]);
 
   useEffect(() => {
+    // Drop the PREVIOUS slug's record before asking about this one. Without
+    // this the catch never nulls `plan`, so navigating to a slug that 404s
+    // renders the last plan's full detail under the new slug's breadcrumb —
+    // and both the "not found" and "unknown" arms below sit behind
+    // `plan === null`, so neither can ever be reached.
+    //
+    // This effect keys on `fetchAll`, which keys on `slug`, so it fires on a
+    // route change and NOT on `onTransition`'s refresh — which calls
+    // `fetchAll()` directly and would otherwise flash a loaded page to a
+    // skeleton. This route does not poll, so a param change is the only time
+    // the retained record belongs to a different question.
+    setPlan(null);
+    setHistory([]);
+    setHistoryLoaded(false);
+    setHistoryError(false);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchAll();
   }, [fetchAll]);
@@ -199,6 +274,14 @@ export default function CoordPlanDetailPage() {
       setTransitioning(false);
     }
   }, [slug, newStatus, note, fetchAll]);
+
+  /** The history read failed and NOTHING has answered about it — the same
+   *  `loaded`-keyed shape as `readIsUnknown`, not the list-is-empty spelling
+   *  that would report a plan's genuine zero transitions as ignorance. */
+  const historyUnknown = historyError && !historyLoaded;
+  /** The detail read failed in a way that is NOT coord answering "no such
+   *  work unit" — so nothing is known about whether this plan exists. */
+  const readUnreadable = error !== null && !notFound;
 
   return (
     <div
@@ -331,8 +414,24 @@ export default function CoordPlanDetailPage() {
             icon={<History className="h-3.5 w-3.5" />}
             title="Status history"
             summary={
-              <Badge variant="outline" className="font-mono text-[11px]">
-                {history.length}
+              <Badge
+                variant="outline"
+                className="font-mono text-[11px]"
+                title={
+                  historyUnknown
+                    ? "The history read failed; how many transitions this plan has is unknown."
+                    : historyError
+                      ? "The history read failed. These rows came from the detail envelope and may be incomplete."
+                      : undefined
+                }
+              >
+                {/* R6 — `–`, never `0`, for a count nobody managed to fetch.
+                    A count that IS fetched but possibly incomplete stays a
+                    plain number: the console spells partial counts `N/M`
+                    (`rows 1/400`) and there is no M here, so the caveat goes
+                    in words below the list rather than as notation with no
+                    legend. */}
+                {historyUnknown ? "–" : history.length}
               </Badge>
             }
             data-testid="coord-plan-history"
@@ -347,9 +446,22 @@ export default function CoordPlanDetailPage() {
               // appended, never used alone (see `RecordList`'s itemKey doc).
               itemKey={(h, i) => `${h.transitioned_at}-${h.to_status}-${i}`}
               empty={
-                <p className="text-sm text-muted-foreground italic">
-                  No status history yet.
-                </p>
+                historyUnknown ? (
+                  <p
+                    className="text-sm text-muted-foreground italic"
+                    data-testid="coord-plan-history-unknown"
+                  >
+                    Could not read this plan&rsquo;s status history — whether it
+                    has transitions is unknown, not none.
+                  </p>
+                ) : (
+                  <p
+                    className="text-sm text-muted-foreground italic"
+                    data-testid="coord-plan-history-empty"
+                  >
+                    No status history yet.
+                  </p>
+                )
               }
               renderRow={(h, ctx) => {
                 const status = derivePlanStatus({ status: h.to_status });
@@ -357,6 +469,11 @@ export default function CoordPlanDetailPage() {
                 return (
                   <RecordRow
                     data-testid="coord-plan-history-row"
+                    // The key `itemKey` already computed. Every other
+                    // `<RecordRow>` in the repo sets this; without it the row
+                    // emits no `data-row-key` and no spec can address one
+                    // specific transition.
+                    rowKey={ctx.rowKey}
                     expanded={ctx.expanded}
                     onToggle={ctx.onToggle}
                     accent={rowAccentClass(status)}
@@ -429,11 +546,38 @@ export default function CoordPlanDetailPage() {
                 );
               }}
             />
+            {/* The rows above are real — the detail envelope's `recent_history`
+                seeded them — but the endpoint that would have completed the
+                list did not answer, so the list may be short. Said in words,
+                under the list it qualifies. */}
+            {historyError && !historyUnknown && (
+              <p
+                className="mt-1.5 text-[11px] text-muted-foreground"
+                data-testid="coord-plan-history-partial"
+              >
+                The history endpoint did not answer. These transitions came
+                from the plan envelope and may be incomplete.
+              </p>
+            )}
           </CollapsiblePanel>
 
         </>
+      ) : readUnreadable ? (
+        // R6 — "not found" is a claim about coord's CORPUS; a read that never
+        // landed supports no such claim. The red line above says what broke;
+        // this line must not turn it into a verdict about whether the plan
+        // exists. A 404 is the opposite case and keeps the sentence below.
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-plan-detail-unknown"
+        >
+          Could not read plan {slug} — whether it exists is unknown, not no.
+        </p>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
+        <p
+          className="text-sm text-muted-foreground italic"
+          data-testid="coord-plan-detail-missing"
+        >
           Plan {slug} not found.
         </p>
       )}

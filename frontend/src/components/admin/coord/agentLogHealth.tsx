@@ -27,9 +27,31 @@
  * The counts are over the FILTERED rows, not the raw window, because the
  * filtered set is what the operator is looking at; the strip's detail names
  * the window so the two numbers can never be confused.
+ *
+ * ## A failed read is not an empty log
+ *
+ * R6's absence-is-not-zero clause covers "fetched and FAILED", not only "still
+ * in flight" — see the style guide's R6 note, which cites `/admin/coord/questions`
+ * shipping a GREEN "No agent is waiting on an answer" off a read that errored.
+ * This strip had the same hole in both directions: with no rows yet it claimed
+ * "Waiting for coord…" forever (nothing was coming — the read had failed), and
+ * with rows retained from an earlier poll it painted the green "No errors or
+ * warnings" off a window of unknown age. `loaded` cannot tell either case
+ * apart, so the failure gets its own argument.
+ *
+ * Two arms: a failure on a page coord has NEVER answered is UNKNOWN and dashes
+ * its counts, while a failure after any successful read is STALE — real numbers
+ * the operator can still act on, so they keep rendering and the detail line
+ * says they are old. `readIsUnknown` carries why the split is `loaded` rather
+ * than "the window is empty".
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import {
+  UNKNOWN_COUNTS_DETAIL,
+  readIsUnknown,
+  staleDetail,
+} from "@/components/console";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import type { AgentLogRow } from "@/components/admin/coord/LogRow";
 
@@ -43,17 +65,44 @@ export interface AgentLogHealth {
 /**
  * The page's health, derived from the rows already on it (R1).
  *
- * `loaded=false` returns EARLY with badge labels that spell the dash
- * literally. `<HealthStrip>` renders `badge.label` verbatim, so a `null` label
- * renders NOTHING rather than `–`; R6's absence-is-not-zero rule is held here
- * by this early return, not by any null-coalescing further down. A page that
- * has not heard from coord yet must not claim this agent logged no errors.
+ * The two early returns spell the dash LITERALLY in their badge labels.
+ * `<HealthStrip>` renders `badge.label` verbatim, so a `null` label renders
+ * NOTHING rather than `–`; R6's absence-is-not-zero rule is held here by these
+ * returns, not by any null-coalescing further down. A page that has not heard
+ * from coord — or that asked and was refused — must not claim this agent logged
+ * no errors.
+ *
+ * They are ordered failure-first on purpose: a first load that ERRORS leaves
+ * `loaded` false as well, so a `!loaded`-first reading renders "Waiting for
+ * coord…" over a request that already came back and is never coming again.
+ *
+ * @param readFailed the page's last fetch threw. Distinct from `!loaded`:
+ *   `loaded` says whether coord has ever answered, this says whether the most
+ *   recent attempt failed.
  */
 export function deriveAgentLogHealth(
   filtered: AgentLogRow[],
   total: number,
-  loaded: boolean
+  loaded: boolean,
+  readFailed = false
 ): AgentLogHealth {
+  // Failed, and coord has never answered: UNKNOWN. See `readIsUnknown` for why
+  // this is keyed on `loaded` and not on the window being empty — an agent that
+  // has genuinely logged nothing would otherwise flip to "unknown" and back on
+  // every blipped poll.
+  if (readIsUnknown(loaded, readFailed)) {
+    return {
+      level: "amber",
+      headline: "Could not read this agent's log — unknown, not empty",
+      detail: UNKNOWN_COUNTS_DETAIL,
+      badges: [
+        { key: "rows", label: <>rows –</>, tone: "muted" },
+        { key: "warns", label: <>warn –</>, tone: "muted" },
+        { key: "errors", label: <>errors –</>, tone: "muted" },
+      ],
+    };
+  }
+
   if (!loaded) {
     return {
       level: "amber",
@@ -86,10 +135,13 @@ export function deriveAgentLogHealth(
         : warns > 0
           ? `${warns} warning${warns === 1 ? "" : "s"}, no errors`
           : "No errors or warnings";
-  const detail =
+  const window =
     total === filtered.length
       ? `${total} row${total === 1 ? "" : "s"} in the fetched window`
       : `${filtered.length} of ${total} rows shown — filters are active`;
+  // Rows an earlier poll delivered are real, so they keep rendering; what is
+  // unknown is only their AGE.
+  const detail = readFailed ? staleDetail(window) : window;
 
   return {
     level,
