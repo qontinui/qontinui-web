@@ -103,6 +103,10 @@ function stubReaders() {
       offset: 0,
       limit: 10,
     })),
+    // Phase 4: an OPEN row follows the session's SSE stream. Stubbed so a test
+    // that expands a row still touches no network — and so "nothing fetches
+    // while shut" can also count subscriptions.
+    revalidation: { subscribe: vi.fn(() => () => {}) },
   };
 }
 

@@ -96,6 +96,7 @@ import {
   useSessionCoordination,
   type CoordinationReaders,
 } from "./SessionRowExpansion";
+import type { SessionRevalidationOptions } from "./liveRevalidation";
 import { useTranscriptStores } from "./TranscriptStores";
 import {
   liveTranscriptIndicator,
@@ -104,11 +105,27 @@ import {
 } from "./transcriptStores";
 
 /**
- * One list poll, and the cadence is a stated decision rather than an accident:
- * a 15s heartbeat that goes stale at 45s does not need a 5s poll, and the
- * three surfaces this consolidates ran 5s / 10s / debounced-300ms between
- * them. 10s is the slower of the two list polls. Plan Phase 4 collapses the
- * remaining pollers onto this one.
+ * **THE list poll. There is exactly one, and 10s is a stated decision — please
+ * do not "optimize" it back to 5s.**
+ *
+ * Plan `2026-08-26-sessions-console-consolidation.md` Phase 4. The three
+ * surfaces this console replaced ran three independent polls between them —
+ * `SessionsList` at 5s, `AgentSessionsDashboard` at 10s for the list plus 5s
+ * for an expanded row's lineage, `/environments/sessions` on a 300ms-debounced
+ * 200-row fetch. They are collapsed onto this one interval.
+ *
+ * **Why 10s and not 5s:** coord's session heartbeat cadence is 15s, a session
+ * is not called stale until 45s and is not auto-closed until 180s (the numbers
+ * `/sessions`' own subtitle states). A 5s poll therefore re-asks the same
+ * question three times per heartbeat and cannot surface a state change any
+ * sooner than the 15s beat that produces it — it buys latency that does not
+ * exist and pays for it with 3x the fleet-wide read volume. 10s is the slower
+ * of the two list polls this consolidates, chosen deliberately as the one that
+ * still samples faster than the signal it observes.
+ *
+ * **What does NOT poll:** an open row. It follows that session's existing SSE
+ * stream (`liveRevalidation.ts`), because a single session already HAS a live
+ * transport and a second timer beside it would only race it.
  */
 const POLL_INTERVAL_MS = 10_000;
 
@@ -178,6 +195,12 @@ export interface SessionsConsoleProps {
   readOutput?: OutputReader;
   /** Injected for tests — the permanent archive's list read. */
   listArtifacts?: ArtifactLister;
+  /**
+   * Injected for tests — the per-session SSE an OPEN row revalidates on. The
+   * default is the shipped `subscribeSessionEvents`; there is no second
+   * transport to configure here.
+   */
+  revalidation?: SessionRevalidationOptions;
 }
 
 export function SessionsConsole({
@@ -190,6 +213,7 @@ export function SessionsConsole({
   coordinationReaders,
   readOutput,
   listArtifacts,
+  revalidation,
 }: SessionsConsoleProps) {
   const doFetch = fetcher ?? listConsolidatedSessions;
 
@@ -253,16 +277,54 @@ export function SessionsConsole({
     [doFetch, appliedQuery, status]
   );
 
+  // The one poll (Phase 4). Every read this effect issues carries the SAME
+  // abort signal, so teardown cancels the in-flight one too — an interval
+  // cleared while its fetch is still open would still resolve and set state on
+  // an unmounted console.
   useEffect(() => {
     const ctrl = new AbortController();
     void refresh(ctrl.signal);
     if (!pollEnabled) return () => ctrl.abort();
-    const id = window.setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, POLL_INTERVAL_MS);
+
+    let timer: number | null = null;
+    const start = () => {
+      // Idempotent: a `visibilitychange` that fires twice must not leave two
+      // intervals racing each other over one list.
+      if (timer !== null) return;
+      timer = window.setInterval(
+        () => void refresh(ctrl.signal),
+        POLL_INTERVAL_MS
+      );
+    };
+    const stop = () => {
+      if (timer === null) return;
+      window.clearInterval(timer);
+      timer = null;
+    };
+
+    // A hidden tab STOPS the timer rather than skipping its body. Skipping
+    // still wakes the event loop every 10s forever on a console an operator
+    // left open in a background tab — 8,640 wake-ups a day to do nothing — and
+    // "the interval is still registered" is exactly the leak this phase is
+    // about. Coming back visible reads ONCE immediately, because the numbers
+    // on screen are by then up to a poll old and making the operator wait out
+    // a tick to find that out is the worse half of the trade.
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stop();
+        return;
+      }
+      void refresh(ctrl.signal);
+      start();
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       ctrl.abort();
-      window.clearInterval(id);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refresh, pollEnabled]);
 
@@ -499,6 +561,7 @@ export function SessionsConsole({
             coordinationReaders={coordinationReaders}
             readOutput={readOutput}
             listArtifacts={listArtifacts}
+            revalidation={revalidation}
           />
         )}
       />
@@ -520,6 +583,7 @@ function SessionConsoleRow({
   coordinationReaders,
   readOutput,
   listArtifacts,
+  revalidation,
 }: {
   row: ConsolidatedSessionRow;
   expanded: boolean;
@@ -530,6 +594,7 @@ function SessionConsoleRow({
   coordinationReaders?: CoordinationReaders;
   readOutput?: OutputReader;
   listArtifacts?: ArtifactLister;
+  revalidation?: SessionRevalidationOptions;
 }) {
   const status = deriveSessionStatus(row, { now });
   const machine = machineLabel(row.device_id);
@@ -557,10 +622,14 @@ function SessionConsoleRow({
   });
   const transcriptTier = liveTranscriptIndicator(stores.live);
 
+  // Open ⇒ read once, then follow THIS session's SSE stream. No timer: the
+  // console's single 10s poll refreshes the list, and a second one here would
+  // race it for the same rows (Phase 4).
   const coordination = useSessionCoordination(
     row.id,
     expanded,
-    coordinationReaders ?? {}
+    coordinationReaders ?? {},
+    revalidation ?? {}
   );
 
   return (
