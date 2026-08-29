@@ -120,6 +120,14 @@ export default function CoordMemoryVersionPage() {
   }, [name, version]);
 
   useEffect(() => {
+    // Drop the previous version's entry first: the catch never nulls `entry`,
+    // so a 404 after a successful load would render v3's content under v4's
+    // heading — the worst possible failure on a route whose entire job is
+    // "what did this memory say at version N?". Both arms below sit behind
+    // `entry === null`. This route does not poll.
+    setEntry(null);
+    setError(null);
+    setNotFound(false);
     setLoading(true);
     fetchVersion();
   }, [fetchVersion]);
