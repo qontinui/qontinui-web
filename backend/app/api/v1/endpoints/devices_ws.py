@@ -48,7 +48,6 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
 
 from app.config.redis_config import get_redis
-from app.core.config import coord_device_setting_name
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
@@ -59,6 +58,7 @@ from app.services.coord_jwks import (
     coord_jwks_client,
     describe_token_rejection,
     identity_mismatch_remedy_fields,
+    jwks_failure_log_fields,
 )
 from app.services.runner import remote_terminal_relay
 from app.services.runner_websocket_manager import get_runner_websocket_manager
@@ -124,15 +124,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # dialled comes from COORD_URL and COORD_DEVICE_URL is unset, so a
         # reader sent to it would find nothing to correct. That is the same
         # drift the identity alarm below was repaired for; a hard-coded
-        # setting name is right for one configuration only.
-        logger.error(
-            "devices_ws_jwks_unavailable",
-            error=str(exc),
-            failure=type(exc).__name__,
-            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
-            coord_url=coord_jwks_client.coord_url,
-            coord_url_setting=coord_device_setting_name(),
-        )
+        # setting name is right for one configuration only. The shared field
+        # set carries it (``coord_url_setting``).
+        logger.error("devices_ws_jwks_unavailable", **jwks_failure_log_fields(exc))
         # 1011 = internal error / service overload.
         await reject(
             websocket,

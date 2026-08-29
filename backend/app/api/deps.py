@@ -173,7 +173,6 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     """Verify a coord-issued device JWT and resolve the owning user."""
     from sqlalchemy import select
 
-    from app.core.config import coord_device_setting_name
     from app.db.session import AsyncSessionLocal
     from app.services.coord_jwks import (
         CoordJWKSUnavailableError,
@@ -182,6 +181,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         coord_jwks_client,
         describe_token_rejection,
         identity_mismatch_remedy_fields,
+        jwks_failure_log_fields,
     )
 
     try:
@@ -196,14 +196,8 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         # ``coord_device_setting_name``), so a reader handed only the URL is
         # left guessing which knob to turn — the same "right about the fault,
         # wrong about what to do next" gap the identity alarm below closed.
-        logger.error(
-            "device_token_jwks_unavailable",
-            error=str(exc),
-            failure=type(exc).__name__,
-            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
-            coord_url=coord_jwks_client.coord_url,
-            coord_url_setting=coord_device_setting_name(),
-        )
+        # The shared field set carries it (``coord_url_setting``).
+        logger.error("device_token_jwks_unavailable", **jwks_failure_log_fields(exc))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Device authentication temporarily unavailable.",
