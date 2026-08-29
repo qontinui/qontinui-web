@@ -88,7 +88,6 @@ describe("a read that never landed is UNKNOWN, not 'not found'", () => {
     expect(
       screen.queryByTestId("coord-question-not-found")
     ).not.toBeInTheDocument();
-    expect(screen.queryByText(/not found\./)).not.toBeInTheDocument();
   });
 
   it("treats a 500 as unreadable too — only a 404 is coord answering", async () => {
@@ -157,9 +156,13 @@ describe("over-correction guards — coord ANSWERING is still real information",
         screen.getByTestId("coord-question-not-found")
       ).toBeInTheDocument();
     });
-    expect(screen.getByTestId("coord-question-not-found")).toHaveTextContent(
-      /coord holds no such question/
-    );
+    // Reports the fact and names the readings; it must NOT diagnose one.
+    // Coord's lookup filters on tenant as well as id, and a 404 can be raised
+    // by something in the chain that never reached coord.
+    const copy = screen.getByTestId("coord-question-not-found");
+    expect(copy).toHaveTextContent(/was not returned/);
+    expect(copy).toHaveTextContent(/no such question exists for this tenant/);
+    expect(copy).toHaveTextContent(/never reached coord/);
     // Not flattened into the unknown arm...
     expect(
       screen.queryByTestId("coord-question-unreadable")
@@ -199,10 +202,13 @@ describe("a route with no id explains itself instead of loading forever", () => 
     const { container } = render(<CoordQuestionDetailPage />);
 
     await waitFor(() => {
-      expect(
-        screen.getByTestId("coord-question-unreadable")
-      ).toBeInTheDocument();
+      expect(screen.getByTestId("coord-question-no-id")).toBeInTheDocument();
     });
+    // Not the generic unreadable copy, which would interpolate an empty id
+    // into "Question  could not be read".
+    expect(
+      screen.queryByTestId("coord-question-unreadable")
+    ).not.toBeInTheDocument();
     // The bail used to skip the `finally`, leaving `loading` true forever:
     // a skeleton, no error, indistinguishable from a slow read.
     expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
@@ -249,7 +255,10 @@ describe("a superseded read cannot paint the previous question under the new id"
     expect(screen.queryByText(A.question)).not.toBeInTheDocument();
   });
 
-  it("does not resurrect the previous question when the new id fails to read", async () => {
+  // Pinned by the `setQuestion(null)` RESET on an id change, not by the seq
+  // guard -- deleting the guards leaves this green. Named so a future editor
+  // removing the reset knows which test guards it.
+  it("[reset] does not resurrect the previous question when the new id fails to read", async () => {
     // The same hazard by the other door: B's read fails, and a retained A
     // would render A's text — beside a live composer that posts to B — under
     // a red banner that looks like it is only about freshness.
@@ -278,5 +287,125 @@ describe("a superseded read cannot paint the previous question under the new id"
     expect(
       screen.queryByTestId("coord-question-response-textarea")
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("the guards a stale read must not get past", () => {
+  it("[finally] does not claim B is unreadable when A's read settles late", async () => {
+    // The `finally` seq guard. Without it, A settling after B was requested
+    // runs `setLoading(false)` while B is still in flight — and `question` is
+    // null (the id-change reset), `notFound` false, so the page renders
+    // "Question q-B could not be read … is unknown". A definite unknown-claim
+    // off a read that has not failed: this PR's own defect, inverted.
+    let releaseA: (v: unknown) => void = () => {};
+    get.mockImplementation((url: string) =>
+      url.includes("q-A")
+        ? new Promise((resolve) => {
+            releaseA = resolve;
+          })
+        : new Promise(() => {}) // B never settles
+    );
+
+    routeId = "q-A";
+    const { container, rerender } = render(<CoordQuestionDetailPage />);
+    routeId = "q-B";
+    rerender(<CoordQuestionDetailPage />);
+
+    releaseA({ question_id: "q-A", question: "Question A" });
+    await waitFor(() => {
+      expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    });
+
+    // B is still in flight — nothing is known yet, and nothing is claimed.
+    expect(
+      screen.queryByTestId("coord-question-unreadable")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-not-found")
+    ).not.toBeInTheDocument();
+  });
+
+  it("[catch] does not paint A's failure over B's displayed question", async () => {
+    // The catch-arm seq guard. Without it, A rejecting after B rendered runs
+    // `setError`/`setNotFound` against the wrong id — a failure banner, or a
+    // "not found", over a question that read fine.
+    let rejectA: (e: unknown) => void = () => {};
+    const B = { question_id: "q-B", question: "Question B — the current one" };
+    get.mockImplementation((url: string) =>
+      url.includes("q-A")
+        ? new Promise((_r, reject) => {
+            rejectA = reject;
+          })
+        : Promise.resolve(B)
+    );
+
+    routeId = "q-A";
+    const { rerender } = render(<CoordQuestionDetailPage />);
+    routeId = "q-B";
+    rerender(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(B.question)).toBeInTheDocument();
+    });
+
+    rejectA(httpError(404));
+    await waitFor(() => {
+      expect(screen.getByText(B.question)).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId("coord-question-not-found")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Failed to load:/)).not.toBeInTheDocument();
+  });
+
+  it("[identity] never renders a question whose id is not the route's", async () => {
+    // The render-time identity check, which closes the SYNCHRONOUS door the
+    // seq guard cannot: the id-change reset lives in an effect, and React
+    // commits the render that ran with the new `id` and the old `question`
+    // before effects fire. That frame would paint A's text, options and a LIVE
+    // composer under breadcrumb B, with `onSubmit` posting to B.
+    //
+    // Asserted directly rather than by frame-timing: a response whose
+    // `question_id` disagrees with the route id is never displayed.
+    get.mockResolvedValue({
+      question_id: "q-OTHER",
+      question: "A different question entirely",
+    });
+
+    const { container } = render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(get).toHaveBeenCalled();
+    });
+    expect(
+      screen.queryByText("A different question entirely")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-question-response-textarea")
+    ).not.toBeInTheDocument();
+    // Treated as "the read for THIS id has not landed", not as an absence.
+    expect(container.querySelector(".animate-pulse")).toBeTruthy();
+    expect(
+      screen.queryByTestId("coord-question-unreadable")
+    ).not.toBeInTheDocument();
+  });
+
+  it("[identity] accepts a canonical-case id against a differently-cased route", async () => {
+    // Coord returns a canonical lowercase uuid; the route id is whatever was
+    // pasted. An exact-match comparison would render a legitimate question as
+    // permanently pending — the over-correction guard for the check above.
+    routeId = "00000000-0000-0000-0000-DEADBEEF0001";
+    get.mockResolvedValue({
+      question_id: "00000000-0000-0000-0000-deadbeef0001",
+      question: "Bump or pin the dependency?",
+    });
+
+    render(<CoordQuestionDetailPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Bump or pin the dependency?")
+      ).toBeInTheDocument();
+    });
   });
 });

@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * /admin/coord/questions/[id] — single agent-question detail + responder.
+ * /admin/coord/questions/[id] â€” single agent-question detail + responder.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 3 (Wave 3a).
  *
  * Renders the full question, free-form context (markdown), and the
  * `options` JSONB as selectable cards. The operator can:
- *   1. Click an option card → its value is staged in the response textarea
+ *   1. Click an option card â†’ its value is staged in the response textarea
  *   2. Edit the textarea freely
- *   3. Submit — POST /api/v1/operations/agent-questions/:id/respond with
+ *   3. Submit â€” POST /api/v1/operations/agent-questions/:id/respond with
  *      `{response, responded_by_operator}` where responded_by_operator is
  *      the current admin's email.
  *
@@ -19,23 +19,23 @@
  *
  * ## Console style (Phase 3 Wave 3)
  *
- * The ROUTE survives (D1 — this page is a workspace: it has its own actions,
+ * The ROUTE survives (D1 â€” this page is a workspace: it has its own actions,
  * its own composer, and a deep link operators paste). What changed is chrome,
  * per `frontend/docs/console-ui-style-guide.md`:
  *
- * - **R9** — the four `<Card><CardHeader><CardTitle>` section wrappers are
+ * - **R9** â€” the four `<Card><CardHeader><CardTitle>` section wrappers are
  *   gone. None of them was a page title, but each cost ~72px of header to
  *   label a section a one-line heading labels just as well, and four of them
- *   stacked pushed the composer — the thing the operator came here to use —
+ *   stacked pushed the composer â€” the thing the operator came here to use â€”
  *   below the fold on a laptop.
- * - **R3/R4** — the question's state is now a `<StatusBadge>` off
+ * - **R3/R4** â€” the question's state is now a `<StatusBadge>` off
  *   `deriveQuestionStatus`, the SAME derivation `/questions` renders, with the
  *   matching left-edge accent. It used to be a hand-rolled
  *   `answered ? "secondary" : "default"` badge saying "pending", which is the
  *   one state R3 files as red: an unanswered question is an agent that has
  *   STOPPED, and nothing but this page clears it. The list said so; the detail
  *   route did not.
- * - **R7** — free-form `Context` is supporting material, so it collapses. It
+ * - **R7** â€” free-form `Context` is supporting material, so it collapses. It
  *   opens by default (you usually need it to answer) and its open/closed
  *   choice persists.
  *
@@ -43,15 +43,15 @@
  *
  * #1110 removed the false all-clear from the INBOX and amended the style
  * guide's R6 to say a failed read needs its own flag that every derived
- * surface consults — "`RecordList`'s `empty` slot included". Its sweep was of
+ * surface consults â€” "`RecordList`'s `empty` slot included". Its sweep was of
  * `empty=` slots, so it did not reach the shape here: a bare `: (` arm on a
  * `question === null` ternary, which is the same slot hand-rolled. That arm
  * said **"Question {id} not found."** for a read that FAILED, which is the
- * inbox's green all-clear in the singular — it tells the operator the question
+ * inbox's green all-clear in the singular â€” it tells the operator the question
  * is gone, and nothing else on the page contradicts it.
  *
  * The correction has to stop short of the opposite error. A **404 is coord
- * ANSWERING** — it holds no such row — and is the ordinary outcome of a stale
+ * ANSWERING** â€” it holds no such row â€” and is the ordinary outcome of a stale
  * deep link, so it keeps the calm, definite copy. Only a read that never
  * landed is unknown. Three things follow: `extractQuestion` refuses an
  * unrecognised 200 instead of casting it into a live composer; `fetchSeq`
@@ -86,6 +86,7 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import {
   QUESTION_STATUS_PALETTE,
   deriveQuestionStatus,
@@ -103,7 +104,7 @@ const API = "/api/v1/operations";
  * unrecognised 200 into a confident zero. The blind `httpClient.get<Row>` cast
  * here was the same mistake with a worse landing. A wrapper body, a `null`, or
  * a coord error envelope all pass `typeof body === "object"`, so `question`
- * became a TRUTHY object with every field `undefined` — which renders an empty
+ * became a TRUTHY object with every field `undefined` â€” which renders an empty
  * question heading above a LIVE composer, because `responded_at` is undefined
  * so `answered` is false. An operator can then submit an answer to a question
  * they were never shown.
@@ -120,31 +121,9 @@ function extractQuestion(body: unknown): AgentQuestionRow {
     }
   }
   throw new Error(
-    "unrecognised agent-question response: no `question_id`/`question`"
+    "coord answered with something that is not a question record " +
+      "(no question id or text)"
   );
-}
-
-/**
- * True when coord ANSWERED "not found" rather than failing to answer.
- *
- * Reading every failure as unknown would be the over-correction: a 404 is
- * coord stating that it holds no such row, which is real information and the
- * ordinary outcome of pasting a stale deep link. Flattening it into "could not
- * be read" trains the operator to distrust the honest message.
- *
- * `httpClient` throws a plain `Error` embedding the upstream status
- * (`GET <url> failed: 404 - …`), and the operations proxy mirrors coord's
- * status rather than collapsing it — the same detection
- * `useSessionCompliance.isRouteUnavailable` uses, and for the same reason.
- *
- * What a 404 MEANS stays genuinely ambiguous from here — "no such question",
- * or "this coord build does not serve the detail route" — so the copy reports
- * the fact and names both readings rather than picking one and stating it as
- * diagnosis. What it is NOT, either way, is a failure to reach coord.
- */
-function coordSaidNotFound(err: unknown): boolean {
-  const text = err instanceof Error ? err.message : String(err);
-  return / failed: 404 /.test(text);
 }
 
 function normalizeOptions(
@@ -184,10 +163,10 @@ export default function CoordQuestionDetailPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Generation guard, for the same reason #1110 put one on each of the three
-  // list reads — and here it is not only a rendering concern. App Router keeps
+  // list reads â€” and here it is not only a rendering concern. App Router keeps
   // this component MOUNTED across an `[id]` change, so navigating A -> B while
   // A's read is slow lands `setQuestion(A)` after B's. The page would then
-  // render question A's text under B's id, and `onSubmit` posts to `id` — B.
+  // render question A's text under B's id, and `onSubmit` posts to `id` â€” B.
   // The operator answers the wrong agent, having read the wrong question.
   const fetchSeq = useRef(0);
 
@@ -195,7 +174,7 @@ export default function CoordQuestionDetailPage() {
     const seq = ++fetchSeq.current;
     if (!id) {
       // Bailing here used to skip the `finally`, so `loading` stayed true and
-      // the page rendered its skeleton forever — no error, no explanation, and
+      // the page rendered its skeleton forever â€” no error, no explanation, and
       // indistinguishable from a read that is merely slow.
       setError("no question id in the route");
       setLoading(false);
@@ -213,7 +192,13 @@ export default function CoordQuestionDetailPage() {
     } catch (e) {
       if (seq !== fetchSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
-      setNotFound(coordSaidNotFound(e));
+      // A 404 is SOMETHING answering "not found" rather than nothing
+      // answering at all - a different fact, and not an unknown. Read off
+      // the status FIELD (`httpStatusOf` is anchored): the unanchored probe
+      // this replaces scanned the response BODY too, so a 500 whose body
+      // echoed a 404 would have shown the calm copy AND suppressed the
+      // banner naming the real status.
+      setNotFound(httpStatusOf(e) === 404);
     } finally {
       if (seq === fetchSeq.current) setLoading(false);
     }
@@ -231,7 +216,7 @@ export default function CoordQuestionDetailPage() {
     setLoading(true);
     // Drop the previous question when the id changes. #1110's rule is that a
     // retained list is STALE-but-real and worth keeping; that rule turns on the
-    // retained rows still being about the same thing. Here they are not — a
+    // retained rows still being about the same thing. Here they are not â€” a
     // different `[id]` is a different question, and holding A's text under B's
     // id beside a live composer that posts to B is the wrong-question hazard
     // the generation guard exists to close, arriving by the other door.
@@ -263,13 +248,30 @@ export default function CoordQuestionDetailPage() {
     }
   }, [id, response, user?.email, router]);
 
-  const options = normalizeOptions(question?.options ?? null);
-  const answered = Boolean(question?.responded_at);
-  // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
+  // The effect below resets `question` on an `[id]` change, but an effect
+  // is PASSIVE: React commits the render that ran with the new `id` and the
+  // OLD `question` before it fires. That frame paints question A's text,
+  // options and LIVE composer under breadcrumb B - and `onSubmit` posts to
+  // `id`, which is B. The generation guard closes the async door onto that
+  // hazard; this closes the synchronous one, at render time, where effect
+  // ordering cannot reach it. Coord returns a canonical lowercase uuid
+  // while the route id is whatever was pasted, so compare case-insensitively.
+  const identityMismatch =
+    question !== null &&
+    question.question_id.toLowerCase() !== id.toLowerCase();
+  const shown = identityMismatch ? null : question;
+  // A mismatch is not "nothing to show" - it is "the read for THIS id has
+  // not landed yet", the same state as loading. It must not fall through to
+  // an absence claim about B derived from A's completed read.
+  const pending = loading || identityMismatch;
+
+  const options = normalizeOptions(shown?.options ?? null);
+  const answered = Boolean(shown?.responded_at);
+  // R3 â€” the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
   // this only renders once it is not.
-  const status = deriveQuestionStatus(question ?? {});
+  const status = deriveQuestionStatus(shown ?? {});
 
   return (
     <div
@@ -294,9 +296,9 @@ export default function CoordQuestionDetailPage() {
         <p className="text-sm text-destructive">Failed to load: {error}</p>
       )}
 
-      {loading && !question ? (
+      {pending && !shown ? (
         <Skeleton className="h-32 w-full" />
-      ) : question ? (
+      ) : shown ? (
         <>
           {/* R9/R4 — the meta block is one bordered strip, not a Card with a
               header. `rowAccentProps` gives an unanswered question the same
@@ -313,27 +315,27 @@ export default function CoordQuestionDetailPage() {
           >
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />
-              {question.plan_phase && (
-                <Badge variant="outline">{question.plan_phase}</Badge>
+              {shown.plan_phase && (
+                <Badge variant="outline">{shown.plan_phase}</Badge>
               )}
-              {question.created_at && (
-                <RowTime at={question.created_at} verb="Posted" />
+              {shown.created_at && (
+                <RowTime at={shown.created_at} verb="Posted" />
               )}
             </div>
-            <p className="text-base font-medium">{question.question}</p>
-            {/* R8 — the raw coord ids live at the bottom, muted and mono, not
+            <p className="text-base font-medium">{shown.question}</p>
+            {/* R8 â€” the raw coord ids live at the bottom, muted and mono, not
                 beside the question they are support material for. */}
             <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
-              {question.agent_id && <span>agent {question.agent_id}</span>}
-              {question.agent_session_id && (
-                <span>session {question.agent_session_id}</span>
+              {shown.agent_id && <span>agent {shown.agent_id}</span>}
+              {shown.agent_session_id && (
+                <span>session {shown.agent_session_id}</span>
               )}
-              {question.device_id && <span>device {question.device_id}</span>}
+              {shown.device_id && <span>device {shown.device_id}</span>}
             </div>
           </div>
 
-          {question.context && (
-            /* R7 — supporting material collapses. It opens by default because
+          {shown.context && (
+            /* R7 â€” supporting material collapses. It opens by default because
                you usually need it to answer, and the choice persists. */
             <CollapsiblePanel
               titleAs="h2"
@@ -346,7 +348,7 @@ export default function CoordQuestionDetailPage() {
             >
               <div className="prose prose-sm max-w-none dark:prose-invert">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {question.context}
+                  {shown.context}
                 </ReactMarkdown>
               </div>
             </CollapsiblePanel>
@@ -412,13 +414,13 @@ export default function CoordQuestionDetailPage() {
               {answered ? (
                 <>
                   <p className="text-sm whitespace-pre-wrap">
-                    {question.response}
+                    {shown.response}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     answered{" "}
-                    {formatRelative(question.responded_at ?? undefined)}
-                    {question.responded_by_operator
-                      ? ` by ${question.responded_by_operator}`
+                    {formatRelative(shown.responded_at ?? undefined)}
+                    {shown.responded_by_operator
+                      ? ` by ${shown.responded_by_operator}`
                       : ""}
                   </p>
                 </>
@@ -451,32 +453,52 @@ export default function CoordQuestionDetailPage() {
           </section>
         </>
       ) : notFound ? (
-        /* Coord answered. Keep the calm, definite copy — this is the ordinary
-           outcome of a stale deep link — but name the other reading rather
-           than diagnosing, as `useSessionCompliance` does for the same status.
-           Muted, not destructive: nothing here failed. */
+        /* Something in the chain ANSWERED. That is a different fact from a
+           read that never landed, and flattening it into "unknown" would be
+           the opposite over-correction - a stale deep link is the ordinary
+           cause and the operator can act on it.
+
+           But the page cannot attribute the status to coord, so it reports
+           the fact and names the readings rather than diagnosing one. Coord's
+           own lookup filters on tenant as well as id, so a question that
+           EXISTS but belongs to another tenant answers exactly like a
+           question that does not exist; and a 404 can be raised anywhere in
+           the chain - an unmounted operations router, a proxy, a CDN - by
+           something that never reached coord at all. This is the framing
+           `ComplianceStateNotice` already uses for the same status; two
+           surfaces in one feature family must not answer it with different
+           confidence. Muted, not destructive: nothing here failed. */
         <p
           className="text-sm text-muted-foreground italic"
           data-testid="coord-question-not-found"
         >
-          Question {id} not found — coord holds no such question. (A coord build
-          that does not serve the question-detail route answers the same way;
-          this page cannot tell the two apart.)
+          Not found: question {id} was not returned. Either no such question
+          exists for this tenant, or this build does not serve the
+          question-detail route, or the request never reached coord. What it is
+          not is an error - something answered.
+        </p>
+      ) : !id ? (
+        <p
+          className="text-sm text-destructive italic"
+          data-testid="coord-question-no-id"
+        >
+          This page was opened without a question id, so there was nothing to
+          look up.
         </p>
       ) : (
-        /* The absence claim is made HERE, in words — the last place a failed
+        /* The absence claim is made HERE, in words - the last place a failed
            read has to reach, exactly as the style guide's R6 note (added by
            #1110) says. `question` is null for two unrelated reasons, and this
-           is the arm where coord did NOT answer. Saying "not found" here tells
-           the operator the question is gone — the one sentence that makes them
-           stop looking — off a read that never landed. Same class as the GREEN
+           is the arm where NOTHING answered. Saying "not found" here tells the
+           operator the question is gone - the one sentence that makes them
+           stop looking - off a read that never landed. Same class as the GREEN
            all-clear #1110 removed from the inbox, one directory down. */
         <p
           className="text-sm text-destructive italic"
           data-testid="coord-question-unreadable"
         >
-          Question {id} could not be read, so whether it exists — and whether an
-          agent is still stopped on it — is unknown. This is not &ldquo;no such
+          Question {id} could not be read, so whether it exists - and whether an
+          agent is still stopped on it - is unknown. This is not &ldquo;no such
           question&rdquo;.
         </p>
       )}
