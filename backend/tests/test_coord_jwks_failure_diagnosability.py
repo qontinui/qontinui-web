@@ -15,10 +15,18 @@ These tests pin both halves, on the raise site and on the handler.
 
 from __future__ import annotations
 
+import ast
+import pathlib
+
 import httpx
 import pytest
 
-from app.services.coord_jwks import CoordJWKSClient, CoordJWKSUnavailableError
+from app.services.coord_jwks import (
+    CoordJWKSClient,
+    CoordJWKSUnavailableError,
+    coord_jwks_client,
+    jwks_failure_log_fields,
+)
 
 
 @pytest.mark.asyncio
@@ -115,29 +123,85 @@ def test_client_exposes_the_resolved_coord_url() -> None:
     assert client.coord_url == "https://coord.example.test"
 
 
-def test_rejection_handlers_log_url_and_exception_class() -> None:
-    """Both ``CoordJWKSUnavailableError`` handlers log the URL and the class.
+def _terminating_jwks_handlers() -> list[tuple[str, str]]:
+    """Every ``except CoordJWKSUnavailableError`` handler that ENDS the error.
 
-    Source-level pin: the runner sees only the vague close reason / 503
-    detail, so losing these fields from the log silently restores the
-    undiagnosable state without failing anything else.
+    Discovered by walking ``app/`` rather than enumerated, because an
+    enumerated list is what let one of the three handlers ship without the
+    fields (``memory.py``'s, which kept ``error=str(exc)`` alone while the
+    other two were fixed). A handler added tomorrow is caught by this walk.
+
+    A bare ``raise`` handler is a pass-through, not a reporting site — the
+    outer handler owns the log line — so it is excluded.
     """
-    import inspect
+    app_root = pathlib.Path(__file__).resolve().parents[1] / "app"
+    found: list[tuple[str, str]] = []
 
-    from app.api import deps
-    from app.api.v1.endpoints import devices_ws
+    for py in sorted(app_root.rglob("*.py")):
+        source = py.read_text(encoding="utf-8")
+        if "CoordJWKSUnavailableError" not in source:
+            continue
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, ast.ExceptHandler) or node.type is None:
+                continue
+            caught = {n.id for n in ast.walk(node.type) if isinstance(n, ast.Name)}
+            if "CoordJWKSUnavailableError" not in caught:
+                continue
+            # A pass-through re-raise reports nothing; the caller does.
+            if all(
+                isinstance(stmt, ast.Raise) and stmt.exc is None for stmt in node.body
+            ):
+                continue
+            body = "\n".join(ast.unparse(stmt) for stmt in node.body)
+            found.append((f"{py.relative_to(app_root.parent)}:{node.lineno}", body))
 
-    for func in (devices_ws.websocket_device_unified_endpoint, deps._verify_device_jwt):
-        source = inspect.getsource(func)
-        # Narrow to the JWKS-unavailable handler.
-        idx = source.index("except CoordJWKSUnavailableError")
-        handler = source[idx : idx + 1200]
-        assert "coord_url=coord_jwks_client.coord_url" in handler, (
-            f"{func.__name__} must log the coord URL it dialled."
+    return found
+
+
+def test_every_terminating_jwks_handler_logs_the_diagnostic_fields() -> None:
+    """Every reporting handler routes its log through the shared field set.
+
+    Source-level pin: the caller sees only the vague close reason / 503
+    detail, so a handler that logs ``error=str(exc)`` alone silently
+    restores the undiagnosable state without failing anything else. That is
+    not hypothetical — it is the state ``memory.py`` was left in.
+    """
+    handlers = _terminating_jwks_handlers()
+
+    # A walk that finds nothing must fail rather than pass vacuously.
+    assert len(handlers) >= 3, (
+        f"expected at least the three known reporting handlers, found "
+        f"{[where for where, _ in handlers]}"
+    )
+
+    for where, body in handlers:
+        assert "jwks_failure_log_fields(exc)" in body, (
+            f"{where}: the JWKS-unavailable handler must log "
+            f"**jwks_failure_log_fields(exc) — logging str(exc) alone cannot "
+            f"separate a wrong COORD_DEVICE_URL from an unreachable "
+            f"coord.\n{body}"
         )
-        assert "failure=type(exc).__name__" in handler, (
-            f"{func.__name__} must log the exception class, not just str(exc)."
-        )
-        assert "cause=" in handler, (
-            f"{func.__name__} must log the chained transport cause."
-        )
+
+
+def test_the_shared_field_set_names_url_class_and_chained_cause() -> None:
+    """The helper carries all four fields, cause included, for a real chain."""
+    try:
+        try:
+            raise httpx.ConnectTimeout("timed out")
+        except httpx.ConnectTimeout as transport_exc:
+            raise CoordJWKSUnavailableError("boom") from transport_exc
+    except CoordJWKSUnavailableError as exc:
+        fields = jwks_failure_log_fields(exc)
+
+    assert fields["error"] == "boom"
+    assert fields["failure"] == "CoordJWKSUnavailableError"
+    assert fields["cause"] == "ConnectTimeout", (
+        "the chained transport class is the half that says WHICH fault it was."
+    )
+    assert fields["coord_url"] == coord_jwks_client.coord_url
+
+
+def test_the_shared_field_set_tolerates_an_unchained_error() -> None:
+    """A raise with no ``from`` reports ``cause=None``, not a crash."""
+    fields = jwks_failure_log_fields(CoordJWKSUnavailableError("no chain"))
+    assert fields["cause"] is None
