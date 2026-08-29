@@ -107,6 +107,17 @@ export interface RecordRowProps {
    * has two anchors, so it deliberately owns no list) and the agent-detail log
    * feed. Keep supplying it: it is what those surfaces, and a standalone
    * render in a unit test, have.
+   *
+   * **Thirteen rows inside lists still pass it, and that is not an oversight
+   * to tidy away.** Every one of the thirteen AGREES with its list's
+   * `itemKey` — checked, one by one — so the prop is inert there rather than
+   * wrong, and it is the row's only identity if anyone renders it standalone,
+   * which two unit tests already do (`GapRow.test.tsx`, `PlanRow.test.tsx`).
+   * The three that were DELETED are exactly the three that disagreed and are
+   * list-only, where a dead expression stating a different identity is worse
+   * than none. The rule, then, is not "no row passes `rowKey`" — it is *a row
+   * may pass it, and the list overrides it*, which is what makes the
+   * disagreement unreachable without a fourteen-file sweep.
    */
   rowKey?: string;
   className?: string;
@@ -131,10 +142,15 @@ export function RecordRow({
   reasonTestId = "row-reason",
 }: RecordRowProps) {
   const Chevron = expanded ? ChevronDown : ChevronRight;
-  // The list's key wins over the prop — see `rowKey`'s doc. `null` (the
-  // context default) means there is no enclosing list, so the prop is the only
-  // source; `??` rather than `||` so a list could legitimately key a row on
-  // the empty string.
+  // The list's key wins over the prop — see `rowKey`'s doc. `null` is the
+  // context default and means "no enclosing list", so the prop is the only
+  // source there. `??` rather than `||` so that `null` is the ONLY thing that
+  // falls through: with `||`, a list that keyed a row on `""` would silently
+  // hand the decision back to the row's own prop, re-opening the disagreement
+  // this context closes. (An empty key still renders an empty attribute, which
+  // `primitives.test.tsx` treats as a hazard — but that is the LIST's bug to
+  // fix in its `itemKey`, and it should surface there rather than be papered
+  // over here.)
   const listKey = useContext(RecordRowKeyContext);
   const resolvedRowKey = listKey ?? rowKey;
   return (
