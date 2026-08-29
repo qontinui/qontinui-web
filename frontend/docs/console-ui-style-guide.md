@@ -511,15 +511,37 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > `RecordList`'s `empty` slot included. `loading` cannot stand in for it.
 >
 > **Two arms, not one — and the failure arm goes FIRST.** A read that failed
-> leaving nothing behind is UNKNOWN: dash the counts. A read that failed over
-> rows an earlier poll delivered is STALE: those rows are real and still
+> when coord has *never* answered is UNKNOWN: dash the counts. A read that
+> failed after any successful one is STALE: those rows are real and still
 > actionable, so they keep rendering and the detail line says they are old.
 > Blanking them would discard a count the operator can act on. The order
 > matters because a *first* load that errors leaves `loaded` false as well, so
 > a `!loaded`-first deriver renders "Waiting for coord…" over a request that is
-> never arriving. `agentLogHealth.tsx` and `plans/plansHealth.tsx` are the
-> worked examples; between them they cover `/agents/[agent_id]`, `/plans` and
-> `/spawn`, and their tests pin both arms.
+> never arriving.
+>
+> **Key UNKNOWN on `loaded`, never on the list being empty.** The obvious
+> spelling — `readFailed && rows.length === 0` — cannot tell a list coord
+> confirmed EMPTY from one that never arrived, so a single blipped poll on a
+> genuinely-empty window flips the page to "unknown" and back on the next tick.
+> It is also inconsistent with the stale arm: a retained count of 7 is kept and
+> labelled old while a retained 0 would be thrown away, though both are equally
+> fetched. The predicate is `console/readFailure.ts` `readIsUnknown`; import it
+> rather than respelling it, because the strip and the `empty=` slot have to
+> agree about the same read and two spellings drift invisibly.
+>
+> **A 404 is an ANSWER, and belongs on the "not found" side.** `httpClient`
+> throws on every non-2xx, so coord's 404 — the most definitive answer it
+> gives — reaches the page through the same `catch` as a dead socket. A detail
+> route that reads "there is an error" as "we could not read" therefore reports
+> every mistyped slug, and every soft-deleted memory, as an outage: the
+> inversion of this whole rule, and the more corrosive one, because it teaches
+> an operator that the console cries wolf. Split them with
+> `readFailure.ts` `isNotFoundError`.
+>
+> Worked examples: `agentLogHealth.tsx` and `plans/plansHealth.tsx` for the
+> strips (`/agents/[agent_id]`, `/plans`, `/spawn`); `plans/[slug]`,
+> `questions/[id]`, `memory/[name]` and `memory/[name]/version/[version]` for
+> the 404 split. Their tests pin every arm.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now

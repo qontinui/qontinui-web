@@ -39,13 +39,19 @@
  * warnings" off a window of unknown age. `loaded` cannot tell either case
  * apart, so the failure gets its own argument.
  *
- * The split is the one `/questions` settled on: a failed read that left NOTHING
- * behind is UNKNOWN and dashes its counts, while a failed read over rows an
- * earlier poll already delivered is STALE — real numbers the operator can still
- * act on, so they keep rendering and the detail line says they are old.
+ * Two arms: a failure on a page coord has NEVER answered is UNKNOWN and dashes
+ * its counts, while a failure after any successful read is STALE — real numbers
+ * the operator can still act on, so they keep rendering and the detail line
+ * says they are old. `readIsUnknown` carries why the split is `loaded` rather
+ * than "the window is empty".
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import {
+  UNKNOWN_COUNTS_DETAIL,
+  readIsUnknown,
+  staleDetail,
+} from "@/components/console";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
 import type { AgentLogRow } from "@/components/admin/coord/LogRow";
 
@@ -80,15 +86,15 @@ export function deriveAgentLogHealth(
   loaded: boolean,
   readFailed = false
 ): AgentLogHealth {
-  // Failed, and left nothing behind: UNKNOWN. Keyed on `total` — the fetched
-  // window, which is the quantity the `rows` badge renders — rather than on
-  // `filtered`, because an empty `filtered` over a non-empty window is the
-  // operator's own filter and says nothing about the read.
-  if (readFailed && total === 0) {
+  // Failed, and coord has never answered: UNKNOWN. See `readIsUnknown` for why
+  // this is keyed on `loaded` and not on the window being empty — an agent that
+  // has genuinely logged nothing would otherwise flip to "unknown" and back on
+  // every blipped poll.
+  if (readIsUnknown(loaded, readFailed)) {
     return {
       level: "amber",
       headline: "Could not read this agent's log — unknown, not empty",
-      detail: "coord did not answer; these counts are a dash, not a zero",
+      detail: UNKNOWN_COUNTS_DETAIL,
       badges: [
         { key: "rows", label: <>rows –</>, tone: "muted" },
         { key: "warns", label: <>warn –</>, tone: "muted" },
@@ -134,12 +140,8 @@ export function deriveAgentLogHealth(
       ? `${total} row${total === 1 ? "" : "s"} in the fetched window`
       : `${filtered.length} of ${total} rows shown — filters are active`;
   // Rows an earlier poll delivered are real, so they keep rendering; what is
-  // unknown is only their AGE. Saying so leads the detail line rather than
-  // trailing it, because the headline above may be the green all-clear and
-  // this is the sentence that qualifies it.
-  const detail = readFailed
-    ? `Last refresh failed — these counts are stale. ${window}`
-    : window;
+  // unknown is only their AGE.
+  const detail = readFailed ? staleDetail(window) : window;
 
   return {
     level,

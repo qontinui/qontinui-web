@@ -65,7 +65,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { RefreshCw, ChevronLeft, Users } from "lucide-react";
-import { HealthStrip } from "@/components/console";
+import { HealthStrip, readIsUnknown } from "@/components/console";
 import { deriveAgentLogHealth } from "@/components/admin/coord/agentLogHealth";
 import { LogRow, type AgentLogRow } from "@/components/admin/coord/LogRow";
 import { normalizeLevel } from "@/components/admin/coord/LevelBadge";
@@ -224,7 +224,7 @@ export default function CoordAgentLogPage() {
   // reads "Waiting for coord…" over a first load that already errored, and
   // green off a window an earlier poll left behind.
   const readFailed = error !== null;
-  const logsUnknown = readFailed && (data?.logs?.length ?? 0) === 0;
+  const logsUnknown = readIsUnknown(loaded, readFailed);
   const health = useMemo(
     () =>
       deriveAgentLogHealth(

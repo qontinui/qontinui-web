@@ -100,6 +100,16 @@ describe("derivePlansHealth", () => {
       expect(strip).not.toHaveTextContent("blocked 0");
     });
 
+    it("does NOT flip a coord-confirmed empty window to unknown", () => {
+      // `/plans?status=blocked` with nothing blocked is a real, fetched zero.
+      // Keying UNKNOWN on `plans.length === 0` would flap it to amber
+      // "unknown, not empty" on every blipped poll and back on the next.
+      const h = derivePlansHealth([], true, true);
+      expect(h.headline).not.toMatch(/unknown/i);
+      expect(h.headline).toBe("No work units in this window");
+      expect(h.detail).toMatch(/^Last refresh failed/);
+    });
+
     it("does not leave 'No plan is blocked' unqualified over a stale list", () => {
       const h = derivePlansHealth(
         [{ slug: "a", status: "shipped" }],

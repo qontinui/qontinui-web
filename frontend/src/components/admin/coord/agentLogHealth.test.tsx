@@ -97,6 +97,18 @@ describe("deriveAgentLogHealth", () => {
       expect(strip).not.toHaveTextContent("errors 0");
     });
 
+    it("does NOT flip a coord-confirmed empty window to unknown", () => {
+      // The regression the obvious spelling (`readFailed && total === 0`)
+      // causes: an agent that has genuinely logged nothing has a fetched,
+      // real count of zero. One blipped poll must not turn it into "unknown"
+      // and back on the next tick — that is a flicker, and it is inconsistent
+      // with the stale arm keeping a count of 7.
+      const h = deriveAgentLogHealth([], 0, true, true);
+      expect(h.headline).not.toMatch(/unknown/i);
+      expect(h.headline).toBe("Nothing matches the current filters");
+      expect(h.detail).toMatch(/^Last refresh failed/);
+    });
+
     it("does not go green off a window an earlier poll left behind", () => {
       const h = deriveAgentLogHealth([row("info")], 1, true, true);
       // The counts are real, so they keep rendering — but "No errors or
