@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useDeliveryVerdict } from "../_hooks/useDeliveryVerdict";
+import { isRetiredCitation } from "../_lib/delivery-citations";
 import { summarizeVerdict } from "../_lib/verdict-formatter";
 import { formatRatio, formatStaleness } from "../_lib/status-presentation";
 import type {
@@ -107,15 +108,17 @@ function anchorPresentation(components: DeliveryComponents | undefined): {
   };
 }
 
-function PrRow({ pr }: { pr: DeliveryPr }) {
+// A RETIRED citation: closed, never merged, no land stamp. It reads
+// `merged: false` permanently but does NOT block delivery, so the amber
+// "unmerged" treatment would contradict the verdict beside it. Rendered as a
+// muted, terminal state instead of a pending one (coord plan
+// `2026-08-18-closed-unmerged-citation-pins-shipped-forever`). `retired` is
+// resolved by the shared citation reader, which reads BOTH the per-citation
+// flag and coord's `terminal_unlanded_prs` list — either may be the only one
+// served. A verdict from an older coord build carries neither and falls back to
+// the old rendering.
+function PrRow({ pr, retired }: { pr: DeliveryPr; retired: boolean }) {
   const merged = pr.merged;
-  // A RETIRED citation: closed, never merged, no land stamp. It reads
-  // `merged: false` permanently but does NOT block delivery, so the amber
-  // "unmerged" treatment would contradict the verdict beside it. Rendered as a
-  // muted, terminal state instead of a pending one (coord plan
-  // `2026-08-18-closed-unmerged-citation-pins-shipped-forever`). Absent on a
-  // verdict from an older coord build, which falls back to the old rendering.
-  const retired = !merged && pr.terminal_unlanded === true;
   const dotClass = merged
     ? "bg-emerald-500"
     : retired
@@ -309,7 +312,11 @@ export function DeliveryVerdictCard() {
               </p>
               <ul className="rounded-md border border-border bg-muted/30 px-3 py-1">
                 {prs.map((pr, i) => (
-                  <PrRow key={`${pr.repo}-${pr.pr ?? i}`} pr={pr} />
+                  <PrRow
+                    key={`${pr.repo}-${pr.pr ?? i}`}
+                    pr={pr}
+                    retired={isRetiredCitation(pr, components)}
+                  />
                 ))}
               </ul>
             </div>
