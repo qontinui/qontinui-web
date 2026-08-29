@@ -72,6 +72,13 @@ const API = "/api/v1/operations";
  * and a live one: `/deploys` and `/lands` render the SAME chip cluster, so a
  * glyph added to one ladder and not the other would have shown two different
  * verdicts for one outcome. One `?` fallback, derived in one place.
+ *
+ * Not QUITE a pure de-duplication, and the difference is worth naming:
+ * `outcomeGlyph` trims before comparing and the copy here did not, so a
+ * whitespace-padded outcome now resolves instead of falling to `?`. That is a
+ * behaviour change on both surfaces, not just this one. It is unreachable
+ * today — coord serialises a serde enum — but it is a change, and a reader
+ * comparing the two ladders should not have to spot it themselves.
  */
 function deployGlyph(v: DimensionVerdict): string {
   if (isManagedPredictedHeadFork(v)) return "~";
