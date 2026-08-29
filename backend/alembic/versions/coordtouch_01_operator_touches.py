@@ -1,7 +1,7 @@
 """coord.operator_touches — one unified store for every time an agent needed a human
 
 Revision ID: coordtouch_01
-Revises: ffland_headsync_01
+Revises: pdann_01
 Create Date: 2026-08-27
 
 Phase 1 of plan ``2026-08-27-instrument-operator-touch-events`` (VETTED
@@ -9,10 +9,14 @@ Phase 1 of plan ``2026-08-27-instrument-operator-touch-events`` (VETTED
 
 coord authors **zero** DDL (``[policy: alembic-sole-authorship]``), so the two
 tables land here, in qontinui-web, and must merge BEFORE the coord PR that
-writes to them. ``down_revision`` is this repo's LOCAL single alembic head at
-authoring time (``ffland_headsync_01``, the head of the 510-revision chain);
-``alembic-graph-pr.yml`` enforces the single chain — do NOT hand-order this
-with coord dependency labels.
+writes to them. ``down_revision`` is this repo's LOCAL single alembic head, and
+is deliberately NOT pinned to the head this revision was authored against:
+``alembic-graph-pr.yml`` serialises alembic PRs by construction, so every
+revision that lands ahead of this one re-forks the chain and this line is
+re-pointed at the new head. Re-point it; do NOT author an ``alembic merge``
+revision (this revision has not landed, so re-pointing leaves nothing behind
+while a merge revision is permanent bookkeeping), and do NOT hand-order it with
+coord dependency labels — the graph gate owns this ordering, not coord.
 
 The gap
 =======
@@ -333,7 +337,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coordtouch_01"
-down_revision: str | Sequence[str] | None = "ffland_headsync_01"
+down_revision: str | Sequence[str] | None = "pdann_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

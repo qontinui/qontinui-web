@@ -33,6 +33,7 @@ test Postgres, skipped when none is reachable.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -50,7 +51,29 @@ from tests._alembic_harness import (
 )
 
 _REVISION_ID = "coordtouch_01"
-_PARENT_REVISION_ID = "ffland_headsync_01"
+_REVISION_FILENAME = "coordtouch_01_operator_touches.py"
+
+
+def _parent_revision_id() -> str:
+    """Parse this revision's own ``down_revision`` at runtime.
+
+    Never hardcode the parent. ``alembic-heads-pr`` serialises alembic PRs by
+    construction, so any revision that lands ahead of this one re-forks the
+    chain and ``down_revision`` is re-pointed at the new head — which already
+    happened once here (``ffland_headsync_01`` → ``pdann_01``). A pinned
+    constant does not merely rot: it makes this test upgrade to a revision that
+    is no longer this one's parent, so the "clean database" it then asserts
+    against is the wrong one.
+    """
+    source = (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r'^down_revision:.*=\s*"([^"]+)"', source, re.MULTILINE)
+    assert match, f"{_REVISION_FILENAME} must declare a down_revision"
+    return match.group(1)
+
+
+_PARENT_REVISION_ID = _parent_revision_id()
 
 _TOUCHES = "operator_touches"
 _CLASSIFICATIONS = "operator_touch_classifications"
