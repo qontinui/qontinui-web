@@ -1493,9 +1493,11 @@ export function FleetResourceStrip({
                         Threads is the signal; sessions only explain it — the
                         same count can be ordinary work or a leak, and only the
                         pair says which. An em dash means <em>not reported</em>,
-                        never zero: a live process cannot have zero threads, so
-                        a zero here would read as maximally idle on the one
-                        column built to catch a saturated one.
+                        which on the threads half is never the same as zero: a
+                        live process cannot have zero threads, so a zero there
+                        would read as maximally idle on the one column built to
+                        catch a saturated one. A zero on the sessions half is a
+                        real reading — an idle runner — and prints as 0.
                       </TooltipContent>
                     </Tooltip>
                   </th>
