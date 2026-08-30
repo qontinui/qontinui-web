@@ -108,14 +108,19 @@ export default function CoordSpawnPage() {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   /**
-   * Generation guard — see `/plans`' copy for the two race arms it closes.
-   * The window here is WIDER: this page polls every 15s, so a superseded
-   * success owns the screen for longer before anything corrects it.
+   * Generation guard — see `/plans`' copy for the two race arms it closes,
+   * for why it counts QUESTIONS rather than requests, and for what
+   * `pollInFlight` is protecting against. The window here is WIDER: this page
+   * polls every 15s, so a superseded success owns the screen for longer before
+   * anything corrects it.
    */
-  const queryGen = useRef(0);
+  const questionGen = useRef(0);
+  const reqGen = useRef(0);
+  const pollInFlight = useRef(false);
 
   const fetchData = useCallback(async () => {
-    const gen = ++queryGen.current;
+    const question = questionGen.current;
+    const req = ++reqGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -123,14 +128,14 @@ export default function CoordSpawnPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
-      if (gen !== queryGen.current) return;
+      if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
-      if (gen !== queryGen.current) return;
+      if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      if (gen === queryGen.current) setLoading(false);
+      if (question === questionGen.current) setLoading(false);
     }
   }, [status]);
 
@@ -142,12 +147,20 @@ export default function CoordSpawnPage() {
     // list renders the previous filter's plans as this filter's answer and a
     // failed first read under the new filter is reported as stale rather than
     // unknown. Not in `fetchData` — the poll calls that, and a poll must never
-    // blank a loaded page.
+    // blank a loaded page. The question generation is bumped here too — this
+    // is the one place the QUESTION changes.
+    questionGen.current += 1;
     setData(null);
     setError(null);
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
+    void fetchData();
+    const id = setInterval(() => {
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void fetchData().finally(() => {
+        pollInFlight.current = false;
+      });
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchData]);
 
@@ -157,6 +170,8 @@ export default function CoordSpawnPage() {
   // from the list has to consult it, the `empty=` slot included.
   const readFailed = error !== null;
   const plansUnknown = readIsUnknown(loaded, readFailed);
+  /** The third state — see `/plans`' note. */
+  const plansStale = readFailed && loaded;
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]
@@ -237,6 +252,14 @@ export default function CoordSpawnPage() {
               >
                 Could not read the work-unit list — whether any plan matches
                 status={status === "any" ? "any" : status} is unknown, not none.
+              </p>
+            ) : plansStale ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-spawn-plans-stale"
+              >
+                No plans matched status={status === "any" ? "any" : status} at
+                the last good read — this list has not refreshed since.
               </p>
             ) : (
               <p

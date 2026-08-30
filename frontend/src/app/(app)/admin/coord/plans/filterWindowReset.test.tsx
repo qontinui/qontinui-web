@@ -22,8 +22,24 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+
+/**
+ * Let a resolved promise's continuation run, and React re-render, before
+ * asserting that it changed nothing.
+ *
+ * A negative assertion needs this and `waitFor` cannot supply it: `waitFor`
+ * invokes its callback synchronously on entry, so `expect(…).toBeNull()`
+ * straight after a `resolve()` passes before the continuation has had a
+ * chance to call `setData` — green whether or not the guard exists.
+ */
+async function flushMicrotasks() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
 
 const get = vi.fn();
 
@@ -78,6 +94,10 @@ interface Surface {
   selectTestId: string;
   emptyTestId: string;
   unknownTestId: string;
+  /** R6's third state: coord answered, a later read over the same window failed. */
+  staleTestId: string;
+  /** The refresh button — re-reads the SAME question, exactly as the poll does. */
+  refreshTestId: string;
 }
 
 const SURFACES: Surface[] = [
@@ -89,6 +109,8 @@ const SURFACES: Surface[] = [
     selectTestId: "coord-plans-status-select",
     emptyTestId: "coord-plans-empty",
     unknownTestId: "coord-plans-unknown",
+    staleTestId: "coord-plans-stale",
+    refreshTestId: "coord-plans-refresh",
   },
   {
     name: "/admin/coord/spawn",
@@ -98,6 +120,8 @@ const SURFACES: Surface[] = [
     selectTestId: "coord-spawn-status-select",
     emptyTestId: "coord-spawn-plans-empty",
     unknownTestId: "coord-spawn-plans-unknown",
+    staleTestId: "coord-spawn-plans-stale",
+    refreshTestId: "coord-spawn-refresh",
   },
 ];
 
@@ -107,7 +131,16 @@ beforeEach(() => {
 
 describe.each(SURFACES)(
   "$name — a filter change resets the window",
-  ({ Page, toLabel, toValue, selectTestId, emptyTestId, unknownTestId }) => {
+  ({
+    Page,
+    toLabel,
+    toValue,
+    selectTestId,
+    emptyTestId,
+    unknownTestId,
+    staleTestId,
+    refreshTestId,
+  }) => {
     /**
      * Route by URL, never by call ORDER.
      *
@@ -217,6 +250,32 @@ describe.each(SURFACES)(
       expect(screen.queryByTestId(unknownTestId)).toBeNull();
     });
 
+    it("dates the empty copy once a later read over the same window fails", async () => {
+      // R6's third state, in the slot where the absence claim is made in
+      // words. A poll deliberately does not blank a loaded page, so `data`
+      // stays non-null and `plansUnknown` is false — which left the plain
+      // present-tense "No plans matching status=X." on screen while the read
+      // was currently failing. The style guide rule this change adds says
+      // three arms, not two, and these two pages are the first place it has to
+      // hold.
+      let call = 0;
+      get.mockImplementation(async () => {
+        call += 1;
+        if (call === 1) return { work_units: [] };
+        throw new Error("coord unreachable");
+      });
+      const user = userEvent.setup();
+      render(<Page />);
+
+      await screen.findByTestId(emptyTestId);
+      await user.click(screen.getByTestId(refreshTestId));
+
+      const stale = await screen.findByTestId(staleTestId);
+      expect(stale).toHaveTextContent(/at the last good read/i);
+      expect(screen.queryByTestId(emptyTestId)).toBeNull();
+      expect(screen.queryByTestId(unknownTestId)).toBeNull();
+    });
+
     /**
      * The ordering the reset alone does not survive.
      *
@@ -247,10 +306,13 @@ describe.each(SURFACES)(
 
         // Now the superseded read lands, with rows.
         releaseFirstRead?.({ work_units: [FIRST_WINDOW] });
+        // Flush explicitly. `waitFor` runs its callback synchronously on
+        // entry, so asserting straight after the resolve would pass before
+        // the continuation had a chance to call `setData` — a green that
+        // proves nothing.
+        await flushMicrotasks();
 
-        await waitFor(() =>
-          expect(screen.queryByText(TITLE_RE)).toBeNull()
-        );
+        expect(screen.queryByText(TITLE_RE)).toBeNull();
         expect(screen.getByTestId(emptyTestId)).toBeInTheDocument();
       });
 
@@ -276,12 +338,56 @@ describe.each(SURFACES)(
         await screen.findByTestId(unknownTestId);
 
         releaseFirstRead?.({ work_units: [FIRST_WINDOW] });
+        await flushMicrotasks();
 
-        await waitFor(() =>
-          expect(screen.queryByText(TITLE_RE)).toBeNull()
-        );
+        expect(screen.queryByText(TITLE_RE)).toBeNull();
         expect(screen.getByTestId(unknownTestId)).toBeInTheDocument();
         expect(screen.queryByTestId(emptyTestId)).toBeNull();
+      });
+
+      it("still reports a failure when a NEWER read of the same question overtook it", async () => {
+        // Superseding must be scoped to the QUESTION, not the request — which
+        // is why there are two counters and not one.
+        //
+        // With a single per-request counter, a read is superseded by the next
+        // one whenever latency exceeds the gap between them, and it is then
+        // silenced in all three arms at once: no data, no error, and no
+        // `setLoading(false)`. The arithmetic makes that the normal case under
+        // a sick backend rather than a corner — `httpClient`'s request timeout
+        // is 60s and a retried 5xx spends ~7s in backoff, against a 10s poll —
+        // so the page sits on skeletons and "Waiting for coord…" with the
+        // failure never surfaced. That is precisely the state `readFailed`
+        // exists to prevent, re-created by the fix for a different bug.
+        //
+        // Here: the first read is still out when the refresh button issues a
+        // second, which lands first. The first then FAILS. Its failure is live
+        // information about the filter still on screen, so it must be
+        // reported — the deliberate asymmetry `/questions` also takes, because
+        // over-reporting trouble fails safe and silencing it does not.
+        let rejectFirstRead: ((err: Error) => void) | undefined;
+        let call = 0;
+        get.mockImplementation(async () => {
+          call += 1;
+          if (call === 1) {
+            return new Promise((_resolve, reject) => {
+              rejectFirstRead = reject;
+            });
+          }
+          return { work_units: [] };
+        });
+        const user = userEvent.setup();
+        render(<Page />);
+
+        // The refresh button calls `fetchData` directly, exactly as the poll
+        // does, and without touching `status`.
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+        await user.click(screen.getByTestId(refreshTestId));
+        // The second read lands first and answers the page.
+        await screen.findByTestId(emptyTestId);
+
+        rejectFirstRead?.(new Error("coord unreachable"));
+
+        await screen.findByText(/Failed to load/i);
       });
     });
   }

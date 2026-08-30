@@ -241,7 +241,14 @@ export default function CoordQuestionsPage() {
 
   useEffect(() => {
     setLoading(true);
-    void fetchAll();
+    // The FIRST load holds the poll lock too. Without this a tick 10s in
+    // supersedes the initial reads, whose resolutions are then dropped by the
+    // seq guards while `fetchAll` clears `loading` anyway — the fourth state
+    // above, arrived at on an ordinary slow first load rather than a race.
+    pollInFlight.current = true;
+    void fetchAll().finally(() => {
+      pollInFlight.current = false;
+    });
     // Poll the pending list; the answered list is operator-driven and doesn't
     // need 10s churn — EXCEPT while a verdict-bearing read is unread, when the
     // whole point of the poll is to find out that it no longer is.
@@ -281,9 +288,27 @@ export default function CoordQuestionsPage() {
   // need separate predicates: the two used to diverge only because each was
   // keyed on its own rendered count, and "did the gap read land?" is one
   // question for both.
-  const pendingUnknown = readIsUnknown(pendingLoaded, error !== null);
-  const answeredUnknown = readIsUnknown(answeredLoaded, answeredError);
-  const gapsUnknown = readIsUnknown(gapsLoaded, gapsError);
+  //
+  // There is a FOURTH state, and it is the one that reaches the all-clear:
+  // a read whose resolution the seq guard DROPPED sets neither flag, while
+  // `fetchAll` clears `loading` regardless. So a list can be "not loading",
+  // carry no error, and still have heard nothing — `[]`, green, "No agent is
+  // waiting on an answer", off a read that never landed. Reachable on the
+  // first load alone: the initial `fetchAll` did not hold `pollInFlight`, so a
+  // tick could supersede its own reads (that hole is closed below too).
+  //
+  // It is unknown for the same reason a failure is — there is no answer — so
+  // it joins the same predicate rather than growing a fifth rendering. Named
+  // separately from `readIsUnknown` because the cause is OURS (we discarded
+  // the resolution), not coord's.
+  const neverAnswered = (loadedFlag: boolean) => !loading && !loadedFlag;
+  const pendingUnknown =
+    readIsUnknown(pendingLoaded, error !== null) || neverAnswered(pendingLoaded);
+  const answeredUnknown =
+    readIsUnknown(answeredLoaded, answeredError) ||
+    neverAnswered(answeredLoaded);
+  const gapsUnknown =
+    readIsUnknown(gapsLoaded, gapsError) || neverAnswered(gapsLoaded);
 
   // STALE is the other half, and it is the half this page never had: a read
   // that failed AFTER coord had answered. The counts are real measurements
@@ -380,9 +405,16 @@ export default function CoordQuestionsPage() {
             blockingGaps === 1 ? "" : "s"
           } still blocking${alsoNotCurrent}`
         : waitingUnknown
-          ? `Could not read the ${waitingUnreadable.join(" and ")} ${inboxWord(
+          ? // The stale clause rides along here too. Dropping it was the
+            // defect corrected in the detail line and in `alsoNotCurrent`,
+            // and this arm is the third place it could have been left behind.
+            `Could not read the ${waitingUnreadable.join(" and ")} ${inboxWord(
               waitingUnreadable.length
-            )} — unknown, not clear`
+            )} — unknown, not clear${
+              waitingStale
+                ? `; ${waitingStaleNames.join(" and ")} not refreshed`
+                : ""
+            }`
           : waitingStale
             ? // The stale all-clear, said as a measurement with a timestamp
               // attached rather than as a verdict. "Nothing was waiting" is
@@ -644,8 +676,13 @@ export default function CoordQuestionsPage() {
                   className="text-sm text-muted-foreground italic"
                   data-testid="coord-questions-gaps-stale"
                 >
-                  No policy gaps as of the last good read — this inbox has not
-                  refreshed since, so this is not an all-clear either.
+                  {/* Deliberately does NOT say "no gaps at the last good
+                      read": `visibleGaps` is that read MINUS anything handled
+                      in this session, so the claim could be false about the
+                      read it names. It says what is true — there is nothing
+                      to show, and nothing has been re-read. */}
+                  Nothing to show here, and the gap inbox has not refreshed
+                  since the last good read — so this is not an all-clear.
                 </p>
               ) : (
                 <p

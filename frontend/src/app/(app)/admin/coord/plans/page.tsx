@@ -128,11 +128,43 @@ export default function CoordPlansListPage() {
    * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
    * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
    * job here — `http-client.ts` overwrites the caller's `signal`.
+   *
+   * **TWO counters, because the three things being gated are not one
+   * question.** A single per-request counter silences a read in all three
+   * arms, and that is how a page ends up stuck: `httpClient`'s request timeout
+   * is 60s and its 5xx retry spends ~7s in backoff over four round trips, both
+   * far longer than this page's 10s tick, so under a slow or retrying backend
+   * every read is superseded before it settles, `setLoading(false)` never
+   * runs, and the page sits on skeletons and "Waiting for coord…" with the
+   * error never surfaced. That is exactly the defect `readFailed` exists to
+   * prevent — `plansHealth.tsx`: *"a first load that errors leaves `loaded`
+   * false and renders 'Waiting for coord…' over a request that is never
+   * arriving"* — re-created by the fix for a different one.
+   *
+   * So:
+   *
+   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
+   *     error and the loading flag. "This read failed" and "stop showing
+   *     skeletons" are true for any read of the filter currently on screen,
+   *     whether or not a newer request has overtaken it.
+   *   - `reqGen` (bumped per call) gates `setData` alone, so the newest
+   *     response is the one rendered and two overlapping reads cannot land out
+   *     of order.
+   *
+   * The residue is the asymmetry `/questions` states and accepts: a stale
+   * FAILURE landing after a fresh success shows a banner the newest read
+   * disagrees with. That fails safe — it over-reports trouble — where the
+   * opposite silences it. `pollInFlight` keeps same-question ticks from
+   * overlapping in the first place, so the window is the refresh button.
    */
-  const queryGen = useRef(0);
+  const questionGen = useRef(0);
+  const reqGen = useRef(0);
+  /** One poll at a time — see the retry arithmetic above. */
+  const pollInFlight = useRef(false);
 
   const fetchData = useCallback(async () => {
-    const gen = ++queryGen.current;
+    const question = questionGen.current;
+    const req = ++reqGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -141,18 +173,18 @@ export default function CoordPlansListPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
-      if (gen !== queryGen.current) return;
+      if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
-      if (gen !== queryGen.current) return;
+      if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      // Only the newest read may say the page has finished loading. A
-      // superseded one clearing it drops the skeletons while the read that
-      // will actually answer is still out — an empty list, briefly, as the
-      // answer to a question nobody has heard back on.
-      if (gen === queryGen.current) setLoading(false);
+      // A read of a filter the operator has left may not say the page has
+      // finished loading: the reset has just put the skeletons back up for the
+      // NEW question, and clearing them here would answer it with the empty
+      // list nobody has fetched yet. Any read of the CURRENT filter may.
+      if (question === questionGen.current) setLoading(false);
     }
   }, [status]);
 
@@ -170,11 +202,24 @@ export default function CoordPlansListPage() {
     //
     // It is cleared HERE and not in `fetchData`, which the poll also calls: a
     // poll must never blank a loaded page.
+    //
+    // The question generation is bumped here for the same reason — this is the
+    // one place the QUESTION changes.
+    questionGen.current += 1;
     setData(null);
     setError(null);
     setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
+    void fetchData();
+    const id = setInterval(() => {
+      // A tick that outruns the previous read would otherwise stack: the
+      // request timeout is 60s against a 10s interval, so a hung backend
+      // accumulates six concurrent reads a minute for nothing.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void fetchData().finally(() => {
+        pollInFlight.current = false;
+      });
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [fetchData]);
 
@@ -194,6 +239,12 @@ export default function CoordPlansListPage() {
   // endpoint and had the same hole, so it consults it too.
   const readFailed = error !== null;
   const plansUnknown = readIsUnknown(loaded, readFailed);
+  // ...and the third state, for the `empty=` slot. A poll that fails over a
+  // window coord confirmed EMPTY leaves `data` non-null (the poll does not
+  // blank a loaded page, deliberately), so the plain copy would otherwise
+  // claim "No plans matching status=X" in the present tense while the read is
+  // currently failing.
+  const plansStale = readFailed && loaded;
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]
@@ -315,6 +366,14 @@ export default function CoordPlansListPage() {
             >
               Could not read the work-unit list — whether any plan matches
               status={status === "any" ? "any" : status} is unknown, not none.
+            </p>
+          ) : plansStale ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-stale"
+            >
+              No plans matched status={status === "any" ? "any" : status} at the
+              last good read — this list has not refreshed since.
             </p>
           ) : (
             <p
