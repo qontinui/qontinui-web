@@ -390,7 +390,7 @@ function shortRepo(repo: string): string {
  * so a present value is itself the signal. The `< configured` guard is belt and
  * braces against a future producer that stops honouring that.
  */
-export function effectiveRepoCap(
+function effectiveRepoCap(
   repoSlots: RepoSlotSaturation | null | undefined,
   slots: SlotSaturation
 ): { cap: number; narrowed: boolean } {
@@ -410,7 +410,7 @@ export function effectiveRepoCap(
  * helper's own promise — *every render site that quotes a per-repo cap goes
  * through here* — was already untrue in the commit that made it.
  */
-export function narrowedRepos(
+function narrowedRepos(
   slots: SlotSaturation,
   only?: readonly string[]
 ): RepoSlotSaturation[] {
@@ -482,6 +482,30 @@ export function slotScopeNote(slots: SlotSaturation): string {
     `report whether the cap was computed for your tenant or for the whole ` +
     `fleet, so treat the scope as unknown rather than either one.`
   );
+}
+
+/**
+ * The trailing A2 clause naming the repos coord has TEMPORARILY narrowed, or
+ * "" when none is.
+ *
+ * Shared by both arms of the fleet cap banner so they cannot drift: the copy is
+ * identical whether the banner was keyed off `queued_blocked_by_cap` or off the
+ * legacy `at_repo_cap` flag, because the narrowing it describes is the same
+ * fact either way.
+ */
+function narrowedRepoNote(narrowed: readonly RepoSlotSaturation[]): string {
+  const only = narrowed.length === 1 ? narrowed[0] : undefined;
+  if (narrowed.length === 0) {
+    return ` Fairness filter, by design — it stops one busy repo monopolising the train.`;
+  }
+  return only
+    ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
+        `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
+        `been failing repeatedly; that cap widens again on its own as candidate ` +
+        `CI recovers.`
+    : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
+        `because their recent candidate CI has been failing repeatedly; those ` +
+        `caps widen again on their own as candidate CI recovers.`;
 }
 
 /** The trailing clause that explains a narrowed cap, or "" when it is not. */
@@ -807,16 +831,91 @@ export function buildTrainSummary(
           `This is a capacity limit, not a fault.`,
       });
     }
-    // Orthogonal to global saturation: free slots + starved repos is the case
-    // operators consistently misread as "coord is broken".
+    // Per-repo starvation, at the fleet level. ORTHOGONAL to global saturation
+    // in BOTH directions: free slots + starved repos is the case operators
+    // misread as "coord is broken", and a saturated train can be starved at the
+    // same time — freeing a slot does nothing for work the repo's OWN cap will
+    // skip anyway.
+    //
+    // Keyed off `queued_blocked_by_cap`, the COUNT of proposals the dequeue
+    // will skip, rather than off `at_repo_cap`. #1147 mirrored that field and
+    // read it on the per-repo row but left this banner on the flag — the same
+    // shape of error it was fixing. `at_repo_cap` is `in_flight >= cap`, so a
+    // repo with 0 in flight and 3 queued against a cap of 2 has one proposal
+    // skipped while the flag is (correctly) false, and this banner said nothing
+    // at all. coord's own `compute_headline` had already corrected exactly this
+    // in itself: *"gating on that flag alone left the partial case with no
+    // headline at all — the exact stall this field was added to make legible."*
+    //
+    // Present-vs-absent, not truthy-vs-zero: coord ALWAYS serializes the field,
+    // so a payload without it is an older producer saying nothing rather than
+    // one asserting zero. With no count to read, fall back to the flag-keyed
+    // banner verbatim — degrading to silence would lose today's signal against
+    // that deploy.
+    const repoSlotRows = slots.repos ?? [];
+    const capCountKnown = repoSlotRows.some(
+      (r) => typeof r.queued_blocked_by_cap === "number"
+    );
+    const capBlockedRepos = repoSlotRows.filter(
+      (r) => (r.queued_blocked_by_cap ?? 0) > 0
+    );
+    const capBlocked = capBlockedRepos.reduce(
+      (n, r) => n + (r.queued_blocked_by_cap ?? 0),
+      0
+    );
     // Derived from `repos[]` when coord omits the summary list: both fields are
     // optional on the wire, and keying the banner off one while the per-repo
     // reason keys off the other means a deploy that sends only one gives half
     // the signal.
     const atCap =
       slots.repos_at_cap ??
-      (slots.repos ?? []).filter((r) => r.at_repo_cap).map((r) => r.repo);
-    if (atCap.length > 0 && slots.available > 0) {
+      repoSlotRows.filter((r) => r.at_repo_cap).map((r) => r.repo);
+
+    if (capCountKnown && capBlocked > 0) {
+      const names = capBlockedRepos.map((r) => r.repo);
+      const narrowed = narrowedRepos(slots, names);
+      // NOT gated on `slots.available > 0`. That guard was this banner's other
+      // defect: a saturated train has `available === 0` by construction, so the
+      // one banner saying "a free slot will not release these" was suppressed
+      // exactly while `slots-saturated` sat above it telling the operator to
+      // raise COORD_MERGE_SLOTS. coord hit the identical guard and fixed it on
+      // 2026-08-25 — *"the saturated branch returned and stranded the per-repo
+      // clause exactly when it mattered: false saturation forced `available` to
+      // 0, which is also this branch's own guard."* Both causes can hold at
+      // once, so both are said.
+      const lead =
+        slots.available > 0
+          ? `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
+            `free, but `
+          : `Every global merge slot is busy — and even once one frees, `;
+      // The threshold these repos are at or past. Naming
+      // COORD_MERGE_PER_REPO_CAP when coord's A2 term has narrowed every one of
+      // them is wrong twice over: wrong number, and it credits the fairness
+      // filter for a candidate-CI hold whose remedy is a green run, not
+      // patience.
+      const capClause =
+        narrowed.length > 0 && narrowed.length === capBlockedRepos.length
+          ? `the reduced cap coord is enforcing for them`
+          : `the per-repo cap (COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`;
+      banners.push({
+        code: "repo-cap-starved",
+        severity: "waiting",
+        label: "Repos at their per-repo cap",
+        detail:
+          `${lead}${capBlocked} queued proposal${capBlocked === 1 ? "" : "s"} ` +
+          `across ${names.length} repo${names.length === 1 ? "" : "s"} ` +
+          `(${names.map(shortRepo).join(", ")}) ` +
+          `${capBlocked === 1 ? "is" : "are"} skipped by the dequeue: ` +
+          `${names.length === 1 ? "it is" : "they are"} at or past ${capClause}, ` +
+          `so that work waits on ${names.length === 1 ? "its" : "their"} own ` +
+          `in-flight proposals rather than on a merge slot.` +
+          narrowedRepoNote(narrowed),
+      });
+    } else if (!capCountKnown && atCap.length > 0 && slots.available > 0) {
+      // Legacy arm — a coord predating `queued_blocked_by_cap`. Byte-identical
+      // to what this banner rendered before the count existed: a producer that
+      // tells us less must not make the copy worse.
+      //
       // Both sources of `atCap` are derived against each repo's EFFECTIVE cap,
       // so a repo coord's A2 term has narrowed appears here BELOW the configured
       // cap. Naming COORD_MERGE_PER_REPO_CAP as the count they "already hold" is
@@ -827,18 +926,6 @@ export function buildTrainSummary(
         narrowed.length > 0 && narrowed.length === atCap.length
           ? `already hold the reduced cap coord is enforcing for them`
           : `already hold COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals`;
-      const only = narrowed.length === 1 ? narrowed[0] : undefined;
-      const a2Clause =
-        narrowed.length === 0
-          ? ` Fairness filter, by design — it stops one busy repo monopolising the train.`
-          : only
-            ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
-              `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
-              `been failing repeatedly; that cap widens again on its own as candidate ` +
-              `CI recovers.`
-            : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
-              `because their recent candidate CI has been failing repeatedly; those ` +
-              `caps widen again on their own as candidate CI recovers.`;
       banners.push({
         code: "repo-cap-starved",
         severity: "waiting",
@@ -847,7 +934,7 @@ export function buildTrainSummary(
           `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
           `free, but ${atCap.length} repo${atCap.length === 1 ? "" : "s"} ` +
           `(${atCap.map(shortRepo).join(", ")}) ${capClause}, ` +
-          `so the dequeue skips their queued work.${a2Clause}`,
+          `so the dequeue skips their queued work.${narrowedRepoNote(narrowed)}`,
       });
     }
   }

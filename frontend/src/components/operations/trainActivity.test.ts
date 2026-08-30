@@ -1362,6 +1362,201 @@ describe("slot-cap saturation", () => {
     expect(covered).toContain(2);
   });
 
+  // --- The fleet banner keys off the cap-blocked COUNT, not the flag. -------
+  // #1147 mirrored `queued_blocked_by_cap` and read it on the per-repo ROW but
+  // left this banner keyed off `at_repo_cap` and gated on `available > 0` — the
+  // two corrections coord had already made to its own `compute_headline`.
+
+  it("banners the partial cap case, where no repo is AT its cap", () => {
+    // 0 in flight + 3 queued against a cap of 2: the dequeue skips one, and
+    // `at_repo_cap` is (correctly) false because `in_flight >= cap` is false.
+    // Keyed off the flag, this banner rendered nothing at all.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          queued_depth: 3,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 0,
+              queued: 3,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 1,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b).toBeDefined();
+    expect(b!.detail).toContain("2 slots are free");
+    expect(b!.detail).toContain("1 queued proposal across 1 repo (web)");
+    // Number agreement follows the SUBJECT of each clause: the proposals for
+    // "is skipped", the repos for "it is at or past".
+    expect(b!.detail).toContain("is skipped by the dequeue: it is at or past");
+    expect(b!.detail).toContain("waits on its own in-flight proposals");
+    expect(b!.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
+  });
+
+  it("still banners the cap when every slot is busy", () => {
+    // The guard `available > 0` is FALSE for a saturated train by construction,
+    // so the one banner saying "a free slot will not release these" was
+    // suppressed exactly when `slots-saturated` was telling the operator to
+    // raise COORD_MERGE_SLOTS. Both causes hold at once; both must be said.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          repos_at_cap: ["qontinui/web"],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 4,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 4,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const codes = s.banners.map((b) => b.code);
+    expect(codes).toContain("slots-saturated");
+    expect(codes).toContain("repo-cap-starved");
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("Every global merge slot is busy");
+    expect(b!.detail).toContain("even once one frees");
+    expect(b!.detail).toContain("4 queued proposals");
+    // The saturated lead must NOT claim free slots it does not have.
+    expect(b!.detail).not.toContain("slots are free");
+  });
+
+  it("names only the repos the cap is actually skipping", () => {
+    // A repo at its cap with NOTHING queued has `queued_blocked_by_cap: 0`:
+    // the dequeue is skipping none of its work, so naming it under "the
+    // dequeue skips their queued work" was a claim coord was not making.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos_at_cap: ["qontinui/idle", "qontinui/web"],
+          repos: [
+            {
+              repo: "qontinui/idle",
+              in_flight: 2,
+              queued: 0,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 0,
+            },
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 2,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 2,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("across 1 repo (web)");
+    expect(b!.detail).not.toContain("idle");
+  });
+
+  it("carries the A2 narrowing clause into the count-keyed banner", () => {
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 4,
+              narrowed_repo_cap: 1,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("the reduced cap coord is enforcing for them");
+    expect(b!.detail).toContain("narrowed cap of 1");
+    expect(b!.detail).not.toContain("COORD_MERGE_PER_REPO_CAP=2");
+    expect(b!.detail).not.toContain("by design");
+  });
+
+  it("says nothing when coord reports the cap skipping nothing", () => {
+    // A zero coord ASSERTS is not the same as a field it never sent. With the
+    // count present and 0, there is no cap story to tell.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 0,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 0,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    expect(s.banners.map((b) => b.code)).not.toContain("repo-cap-starved");
+  });
+
+  it("keeps the legacy flag-keyed copy byte-identical", () => {
+    // A coord predating `queued_blocked_by_cap` sends the flag and nothing
+    // else. Degrading to silence there would lose today's signal, and a
+    // producer that tells us less must not make the copy worse.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos_at_cap: ["qontinui/qontinui-runner"],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toBe(
+      "1 slot is free, but 1 repo (qontinui-runner) already hold " +
+        "COORD_MERGE_PER_REPO_CAP=2 in-flight proposals, so the dequeue skips " +
+        "their queued work. Fairness filter, by design \u2014 it stops one busy " +
+        "repo monopolising the train."
+    );
+  });
+
   it("treats absent slot data as unknown, never as not-saturated", () => {
     const s = buildTrainSummary({ last_merged_at: ago(60) }, [], NOW);
     expect(s.slots).toBeNull();
