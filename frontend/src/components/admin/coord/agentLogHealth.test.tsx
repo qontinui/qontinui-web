@@ -105,7 +105,11 @@ describe("deriveAgentLogHealth", () => {
       // with the stale arm keeping a count of 7.
       const h = deriveAgentLogHealth([], 0, true, true);
       expect(h.headline).not.toMatch(/unknown/i);
-      expect(h.headline).toBe("Nothing matches the current filters");
+      // The COUNT stays a real, fetched zero — that is what this test is
+      // about. The present-tense HEADLINE does not survive: "nothing matches"
+      // is a claim about now, off a read that is failing now.
+      expect(renderStrip(h)).toHaveTextContent("rows 0");
+      expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toMatch(/^Last refresh failed/);
     });
 
@@ -113,10 +117,32 @@ describe("deriveAgentLogHealth", () => {
       const h = deriveAgentLogHealth([row("info")], 1, true, true);
       // The counts are real, so they keep rendering — but "No errors or
       // warnings" is the sentence that tells an operator to stop looking, and
-      // it must not stand unqualified over a read that failed.
-      expect(h.headline).toBe("No errors or warnings");
+      // it must not stand unqualified over a read that failed. It used to
+      // stand with only the detail line qualifying it, which is one line of
+      // small print under a pulsing green dot; the dot is what gets scanned,
+      // so the level and the headline give way together.
+      expect(h.headline).not.toBe("No errors or warnings");
+      expect(h.level).toBe("amber");
       expect(h.detail).toMatch(/^Last refresh failed — these counts are stale\./);
       expect(renderStrip(h)).toHaveTextContent("rows 1");
+    });
+
+    it("keeps the all-clear green while the window is current", () => {
+      // The guard against over-correcting: a healthy, current read must still
+      // reach the real green state, or the fix is indistinguishable from
+      // breaking it.
+      const h = deriveAgentLogHealth([row("info")], 1, true, false);
+      expect(h.level).toBe("green");
+      expect(h.headline).toBe("No errors or warnings");
+    });
+
+    it("names a stale warning count rather than replacing it", () => {
+      // Warnings outrank staleness in the headline: those rows are real and
+      // still worth naming. Only the two arms that claim an ABSENCE give way.
+      const h = deriveAgentLogHealth([row("warn")], 1, true, true);
+      expect(h.level).toBe("amber");
+      expect(h.headline).toBe("1 warning, no errors");
+      expect(h.detail).toMatch(/^Last refresh failed/);
     });
 
     it("still reports a retained error window rather than dashing it", () => {

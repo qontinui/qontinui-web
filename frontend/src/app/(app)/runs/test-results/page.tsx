@@ -7,6 +7,7 @@ import {
   type PlaywrightResult,
 } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -283,14 +284,15 @@ function SpecResultCard({ result }: { result: PlaywrightResult }) {
 
 export default function TestResultsPage() {
   const {
-    data: runsData,
+    runs: runningRuns,
+    scope,
     isLoading: runsLoading,
     error: runsError,
     isOffline,
     refetch,
   } = useRunningTaskRuns();
 
-  const runs = (runsData || []).slice(0, 20);
+  const runs = runningRuns.slice(0, 20);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
@@ -345,6 +347,10 @@ export default function TestResultsPage() {
                   Execute tasks with Playwright tests in the Runner to see
                   results here.
                 </p>
+                <TaskRunScopeNote
+                  scope={scope}
+                  className="mt-3 max-w-md mx-auto text-left"
+                />
               </div>
             </CardContent>
           </Card>
