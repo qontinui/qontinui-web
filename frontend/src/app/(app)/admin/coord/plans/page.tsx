@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 /**
  * /admin/coord/plans — list coord work-units, filter by status.
@@ -206,6 +206,21 @@ export default function CoordPlansListPage() {
     // The question generation is bumped here for the same reason — this is the
     // one place the QUESTION changes.
     questionGen.current += 1;
+    const question = questionGen.current;
+    /**
+     * Release the poll lock only if it is still the one this read took.
+     *
+     * A read superseded by a filter change settles LATE — after the cleanup
+     * has released the lock and the new question has taken it — so an
+     * unconditional release would free a lock the NEW question's read is still
+     * holding, and the next tick would issue a second concurrent read. Not
+     * harmful (`reqGen` still picks the winner), but it would quietly falsify
+     * the "one poll at a time" claim after every filter change, and a guard is
+     * only worth having while its comment is true.
+     */
+    const releaseLock = () => {
+      if (question === questionGen.current) pollInFlight.current = false;
+    };
     setData(null);
     setError(null);
     // The FIRST read holds the lock too. Without that a tick 10s in issues a
@@ -213,18 +228,14 @@ export default function CoordPlansListPage() {
     // first is then dropped for being superseded — which is only ever safe
     // when nothing downstream mistakes "no answer yet" for "no answer".
     pollInFlight.current = true;
-    void fetchData().finally(() => {
-      pollInFlight.current = false;
-    });
+    void fetchData().finally(releaseLock);
     const id = setInterval(() => {
       // A tick that outruns the previous read would otherwise stack: the
       // request timeout is 60s against a 10s interval, so a hung backend
       // accumulates six concurrent reads a minute for nothing.
       if (pollInFlight.current) return;
       pollInFlight.current = true;
-      void fetchData().finally(() => {
-        pollInFlight.current = false;
-      });
+      void fetchData().finally(releaseLock);
     }, POLL_INTERVAL_MS);
     return () => {
       clearInterval(id);

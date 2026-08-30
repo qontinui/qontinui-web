@@ -205,8 +205,24 @@ export default function CoordQuestionsPage() {
     }
   }, []);
 
+  /**
+   * `fetchAll` needs its own generation for the same reason its three legs do.
+   *
+   * The refresh button calls it directly, so a click during the first load
+   * runs two `fetchAll`s at once. The superseded one's three reads are each
+   * dropped by their `*Seq` guard — leaving every `*Loaded` flag false — and
+   * then it clears `loading` anyway, which is exactly the `neverAnswered`
+   * state: all three lists render the red "could not be read" for reads that
+   * merely got overtaken, attributing to coord a discard that was ours.
+   * Skeletons are the honest rendering there, and keeping `loading` true is
+   * what produces them.
+   */
+  const allSeq = useRef(0);
+
   const fetchAll = useCallback(async () => {
+    const seq = ++allSeq.current;
     await Promise.all([fetchPending(), fetchAnswered(), fetchGaps()]);
+    if (seq !== allSeq.current) return;
     setLoading(false);
   }, [fetchPending, fetchAnswered, fetchGaps]);
 

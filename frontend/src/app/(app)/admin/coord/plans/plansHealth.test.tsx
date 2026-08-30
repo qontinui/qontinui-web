@@ -106,7 +106,12 @@ describe("derivePlansHealth", () => {
       // "unknown, not empty" on every blipped poll and back on the next.
       const h = derivePlansHealth([], true, true);
       expect(h.headline).not.toMatch(/unknown/i);
-      expect(h.headline).toBe("No work units in this window");
+      // The COUNTS survive — that zero was really fetched — and the badges
+      // below still render it rather than a dash. What does not survive is the
+      // present-tense headline: "No work units in this window" is a claim
+      // about now, off a read that is currently failing.
+      expect(h.badges.map((b) => b.key)).toContain("total");
+      expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toMatch(/^Last refresh failed/);
     });
 
@@ -116,8 +121,30 @@ describe("derivePlansHealth", () => {
         true,
         true
       );
-      expect(h.headline).toBe("No plan is blocked");
+      // A stale verdict is not a green verdict. The all-clear is the sentence
+      // that tells an operator to stop looking, and it may only be painted off
+      // a read that both landed AND is current — so `readFailed` reaches the
+      // level and the headline, not just the detail line. Qualifying it in one
+      // line of small print under a pulsing green dot is not qualifying it.
+      expect(h.headline).not.toBe("No plan is blocked");
+      expect(h.level).toBe("amber");
       expect(h.detail).toMatch(/^Last refresh failed — these counts are stale\./);
+    });
+
+    it("keeps the all-clear green while the read is current", () => {
+      // The other half of the pin: the stale arm must not swallow the real
+      // green state, or the fix would be indistinguishable from breaking it.
+      const h = derivePlansHealth([{ slug: "a", status: "shipped" }], true, false);
+      expect(h.level).toBe("green");
+      expect(h.headline).toBe("No plan is blocked");
+    });
+
+    it("still outranks staleness with a blocked plan", () => {
+      // Red is about a row, not about the window's age: a blocked plan stays
+      // red whether or not the last refresh landed.
+      const h = derivePlansHealth([{ slug: "a", status: "blocked" }], true, true);
+      expect(h.level).toBe("red");
+      expect(h.headline).toMatch(/1 plan blocked on a human/);
     });
 
     it("keeps a retained blocked plan red rather than dashing it", () => {
