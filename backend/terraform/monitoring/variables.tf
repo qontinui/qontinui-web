@@ -10,18 +10,23 @@ variable "application_name" {
   default     = "qontinui-backend"
 }
 
-# ⚠️ WRONG REGION — see the warning at the top of README.md.
-# This default feeds provider "aws" in main.tf, so it decides which region EVERY
-# alarm in this root is created in. The RDS instance and ALB this root alarms on
-# live in us-east-1; eu-central-1 holds only the SSM secrets store. The three
-# AWS/RDS alarms are therefore watching metrics that cannot exist where they are
-# created, and can never leave INSUFFICIENT_DATA.
+# ⚠️ STALE REGION — see the warning at the top of README.md.
+# This default feeds provider "aws" in main.tf, so it decides the region EVERY
+# alarm in this root is created in. The RDS instance it alarms on lives in
+# us-east-1; eu-central-1 holds only the SSM secrets store.
 #
-# Deliberately NOT corrected in place: whether the fix is "change this" or
-# "delete this whole root" depends on whether it was ever applied, which is not
-# knowable from the repo. Changing the default alone would leave a Beanstalk
-# monitoring stack looking current for an ECS production. The correctly-regioned
-# monitoring that IS live is qontinui-stack/aws/modules/observability.
+# This does NOT silently create wrong-region alarms. main.tf:166 looks the
+# database up via `data "aws_db_instance"`, and a data block errors when it finds
+# nothing -- so with this default, `terraform plan` aborts before creating
+# anything. The root is un-appliable as configured, which is louder and safer
+# than the alternative.
+#
+# Deliberately NOT corrected in place: this root also alarms on Elastic
+# Beanstalk (qontinui-prod-py), which production no longer runs, so changing the
+# region alone would leave a stale stack looking current. Whether the fix is
+# "retarget this" or "delete this whole root" depends on whether it was ever
+# applied. The correctly-regioned monitoring that IS live is
+# qontinui-stack/aws/modules/observability.
 variable "region" {
   description = "AWS region"
   type        = string
