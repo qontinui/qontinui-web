@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import type { TaskRun } from "@/lib/runner-api";
+import type { TaskRun, RunningTaskRunsResponse } from "@/lib/runner-api";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import type { WidgetId } from "../_lib";
 
 export interface ActiveRunStateResult {
   runs: TaskRun[];
+  /**
+   * The /task-runs/running envelope's scope statement — what an empty `runs`
+   * actually means. Render it with any idle/empty state.
+   */
+  scope: string | null;
   isLoading: boolean;
   isOffline: boolean;
   selectedRunId: string | null;
@@ -22,14 +27,17 @@ export interface ActiveRunStateResult {
 
 export function useActiveRunState(): ActiveRunStateResult {
   const {
-    data: activeRuns,
+    data: runningTaskRuns,
     isLoading,
     isOffline,
     refetch: refetchRuns,
-  } = useEventTriggeredFetch<TaskRun[]>(
+  } = useEventTriggeredFetch<RunningTaskRunsResponse>(
     "task-run-update",
     "/task-runs/running"
   );
+
+  const activeRuns: TaskRun[] | null = runningTaskRuns?.task_runs ?? null;
+  const scope = runningTaskRuns?.scope ?? null;
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [activeWidget, setActiveWidget] = useState<WidgetId>("timeline");
@@ -51,6 +59,7 @@ export function useActiveRunState(): ActiveRunStateResult {
 
   return {
     runs,
+    scope,
     isLoading,
     isOffline,
     selectedRunId: currentRunId,

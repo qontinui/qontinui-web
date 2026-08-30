@@ -68,6 +68,7 @@ export function PageAnalyzer({
     loadSavedRequests,
     runApiRequestAnalysis,
     taskRuns,
+    taskRunsScope,
     selectedTaskRunId,
     setSelectedTaskRunId,
     loadingTaskRuns,
@@ -161,6 +162,7 @@ export function PageAnalyzer({
         <TabsContent value="step_output" className="mt-3">
           <StepOutputTab
             taskRuns={taskRuns}
+            taskRunsScope={taskRunsScope}
             selectedTaskRunId={selectedTaskRunId}
             setSelectedTaskRunId={setSelectedTaskRunId}
             loadingTaskRuns={loadingTaskRuns}
