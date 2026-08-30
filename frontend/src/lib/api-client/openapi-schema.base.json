@@ -20940,6 +20940,166 @@
         "title": "FlagAnchor",
         "type": "object"
       },
+      "FleetDeferredQuestionListResponse": {
+        "description": "Envelope for the fleet-wide deferred-question read.\n\nDeliberately an envelope rather than a bare list: an empty ``questions``\narray is then unambiguously \"nothing is pending\", distinguishable from a\ntransport failure at the client. Same reason\n``GET /task-runs/running`` carries its ``scope``.",
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/FleetDeferredQuestionResponse"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "questions",
+          "total"
+        ],
+        "title": "FleetDeferredQuestionListResponse",
+        "type": "object"
+      },
+      "FleetDeferredQuestionResponse": {
+        "description": "A deferred question plus the task-run context needed to act on it.\n\nThe per-task-run list route already answers \"what is pending on THIS run\".\nThe fleet-wide question \u2014 \"what is waiting for me anywhere\" \u2014 needs to name\nwhich run and which machine raised it, or a reviewer holding a list of bare\nquestions cannot tell two runs apart.\n\n``runner_id`` is the runner instance identifier recorded on the task run;\nit is nullable because a task run synced before the column was populated\ngenuinely does not know, and inventing a machine name would be worse than\nsaying so.",
+        "properties": {
+          "auto_decision_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Decision Detail"
+          },
+          "auto_decision_type": {
+            "title": "Auto Decision Type",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "context_json": {
+            "title": "Context Json",
+            "type": "string"
+          },
+          "contingent_iterations": {
+            "title": "Contingent Iterations",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "git_checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Checkpoint"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "iteration": {
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewer_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Comment"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "runner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_run_id": {
+            "format": "uuid",
+            "title": "Task Run Id",
+            "type": "string"
+          },
+          "task_run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Run Name"
+          }
+        },
+        "required": [
+          "id",
+          "task_run_id",
+          "iteration",
+          "question",
+          "context_json",
+          "auto_decision_type",
+          "auto_decision_detail",
+          "confidence",
+          "risk_level",
+          "status",
+          "git_checkpoint",
+          "contingent_iterations",
+          "reviewer_comment",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "FleetDeferredQuestionResponse",
+        "type": "object"
+      },
       "FleetPolicyPut": {
         "additionalProperties": false,
         "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
@@ -68294,7 +68454,7 @@
     },
     "/api/v1/events/phase-completed": {
       "post": {
-        "description": "Ingest a phase-completion result from a server-mode runner.\n\nAuthenticated with a runner bearer token (phase 3A auth). The handler:\n\n1. Resolves a ``runner_id`` for the row:\n   * If ``payload.runner_id`` is set, the handler looks up that runner and\n     verifies it is owned by the authenticated token's user (else 403).\n     This is the Phase 3B path \u2014 the runner passes its own id after\n     registration, avoiding cross-runner misattribution for users with\n     multiple runners.\n   * Otherwise, the handler falls back to the legacy \"most-recently\n     heartbeated runner owned by this user\" heuristic so older runners\n     still attribute correctly until they upgrade.\n2. Persists a ``PhaseResult`` row (runner_id may be NULL if the user has\n   no registered runner yet).\n3. Also writes a companion ``WorkflowEvent`` row with\n   ``event_type=\"phase_completed\"``, keeping the existing SSE / push\n   notification pipeline simple \u2014 each subscriber receives a slim event\n   payload with the phase_result id and can fetch the full record via the\n   read endpoints if needed.\n4. Fan-outs a push notification in the background.\n\nReturns ``202 Accepted`` with the created phase-result record. Duplicates\nare not deduplicated; repeated deliveries create additional rows.",
+        "description": "Ingest a phase-completion result from a server-mode runner.\n\nAuthenticated with the coord-issued device-token JWT, like its\n``/workflow`` sibling. (The legacy ``qontinui_runner_<random>`` bearer\nthis once named was retired in Phase 5 of the unified devices\nregistry.) The handler:\n\n1. Resolves a ``runner_id`` for the row:\n   * If ``payload.runner_id`` is set, the handler looks up that runner and\n     verifies it is owned by the authenticated token's user (else 403).\n     This is the Phase 3B path \u2014 the runner passes its own id after\n     registration, avoiding cross-runner misattribution for users with\n     multiple runners.\n   * Otherwise, the handler falls back to the legacy \"most-recently\n     heartbeated runner owned by this user\" heuristic so older runners\n     still attribute correctly until they upgrade.\n2. Persists a ``PhaseResult`` row (runner_id may be NULL if the user has\n   no registered runner yet).\n3. Also writes a companion ``WorkflowEvent`` row with\n   ``event_type=\"phase_completed\"``, keeping the existing SSE / push\n   notification pipeline simple \u2014 each subscriber receives a slim event\n   payload with the phase_result id and can fetch the full record via the\n   read endpoints if needed.\n4. Fan-outs a push notification in the background.\n\nReturns ``202 Accepted`` with the created phase-result record. Duplicates\nare not deduplicated; repeated deliveries create additional rows.",
         "operationId": "api_v1_events_phase_completed_post",
         "requestBody": {
           "content": {
@@ -68320,12 +68480,36 @@
           "401": {
             "content": {
               "application/json": {
-                "example": {
-                  "detail": "Invalid or expired token"
+                "examples": {
+                  "expired": {
+                    "value": {
+                      "detail": "Device token has expired."
+                    }
+                  },
+                  "foreign_issuer": {
+                    "value": {
+                      "detail": "Device token was issued by a different coord than this backend verifies against."
+                    }
+                  },
+                  "invalid": {
+                    "value": {
+                      "detail": "Device token failed verification."
+                    }
+                  },
+                  "missing_bearer": {
+                    "value": {
+                      "detail": "Not authenticated"
+                    }
+                  },
+                  "not_yet_valid": {
+                    "value": {
+                      "detail": "Device token is not valid yet \u2014 check clock drift."
+                    }
+                  }
                 }
               }
             },
-            "description": "Missing or invalid runner token"
+            "description": "No device-token bearer, or one this backend would not accept. The body names WHICH failure it was \u2014 an expired token, a not-yet-valid one (clock drift), a token minted by a different coord, or a verification failure with no single cause worth naming."
           },
           "422": {
             "content": {
@@ -103200,6 +103384,71 @@
           }
         ],
         "summary": "Create a new task run",
+        "tags": [
+          "task-runs"
+        ]
+      }
+    },
+    "/api/v1/task-runs/deferred-questions/pending": {
+      "get": {
+        "description": "Deferred questions awaiting review across EVERY task run the caller owns, newest last. The fleet-wide counterpart to `/task-runs/{task_run_id}/deferred-questions`.",
+        "operationId": "api_v1_task_runs_deferred_questions_pending_get",
+        "parameters": [
+          {
+            "description": "Review status to filter on. Pass an empty string for all.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "description": "Review status to filter on. Pass an empty string for all.",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum questions to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Maximum questions to return",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDeferredQuestionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Fleet-wide deferred-question queue",
         "tags": [
           "task-runs"
         ]
