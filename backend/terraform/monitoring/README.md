@@ -34,8 +34,18 @@ This Terraform configuration sets up comprehensive monitoring for the Qontinui p
 > alarms are created, not even the Beanstalk ones. The corollary is worth stating
 > plainly, because it is the opposite of what you might assume: this root did
 > **not** ship silently-inert wrong-region alarms. Either it was applied back when
-> the database really was in `eu-central-1` and the alarms were correct at the
-> time, or it was never successfully applied at all.
+> a database called `qontinui-db` really was in `eu-central-1`, or it was never
+> successfully applied at all.
+>
+> **And the region is not the only thing stale about that lookup.** No instance
+> named `qontinui-db` exists anywhere in this fleet's configuration — the live
+> database is `qontinui-staging`, from
+> `qontinui-stack/aws/modules/postgres/main.tf:94` (`identifier =
+> "qontinui-${var.environment}"`). The string `qontinui-db` appears only here and
+> in this file's own troubleshooting section. So **switching `region` to
+> `us-east-1` would not make this root appliable either** — the data source would
+> fail there too. Anyone reaching for the one-line region fix should know it does
+> not work before they try it.
 >
 > Three other places carry the same stale region and will mislead a reader
 > independently of the terraform. Named by section, not line, since this warning
