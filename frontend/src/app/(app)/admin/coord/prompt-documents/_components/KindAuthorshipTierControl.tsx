@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Lock, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, Lock, ShieldCheck, ShieldQuestion } from "lucide-react";
 import {
   usePromptDocumentKindTiers,
   type KindTierRow,
@@ -48,12 +48,20 @@ import {
  *
  * ## Three things the operator must be able to read off it
  *
- * **1. `allow_with_notification` does not do what its name says — yet.** Coord
- * resolves the tier and does not enforce the notification precondition; every
- * response says so in `notification_enforced` / `warning`, and this component
- * renders coord's own words rather than a local paraphrase that could drift out
- * of date the moment Phase 2 lands. A control that misreports what the click
- * does, in the permissive direction, is worse than no control.
+ * **1. What `allow_with_notification` actually does, in coord's own words.**
+ * Every response carries `notification_enforced` + `warning`, and this component
+ * renders that prose rather than a local paraphrase — in BOTH directions. That
+ * matters more now than it did when the flag was always `false`: coord#1702
+ * shipped the precondition, so `notification_enforced` is `true` and the
+ * `warning` became a positive statement PLUS one residual the tier genuinely
+ * cannot promise away — the subtractive `policy_write` dial, applied after
+ * authorization, which can still refuse a write the tier permitted.
+ *
+ * Hiding the box on the enforced arm dropped that residual entirely, and three
+ * hardcoded copies of "NOT YET ENFORCED" went on asserting the old world. A
+ * control that misreports what the click does is worse than no control, and
+ * that is true in both directions: the permissive one is more dangerous, the
+ * restrictive one just makes the operator distrust the console.
  *
  * **2. A FLOOR is not a setting.** `claude_settings` is denied kind-wide by a
  * rule no stored tier lifts, because a document of that kind is a permission
@@ -70,14 +78,28 @@ import {
  * `unreadable` separates them, and it is rendered as its own state.
  */
 
-/** What each tier means, in the operator's terms. */
-const TIER_HELP: Record<AgentWriteTier, string> = {
-  deny: "Agents may not author documents of this kind. Coord refuses the write and names the remedy.",
-  allow:
-    "Agents may author documents of this kind, including names that do not exist yet. Every write is versioned and attributed.",
-  allow_with_notification:
-    "Intended: agents may author, but only with a notification reference. NOT YET ENFORCED — see the notice above.",
-};
+/**
+ * What each tier means, in the operator's terms.
+ *
+ * `allow_with_notification` is a FUNCTION of what coord reports, not a
+ * constant: its meaning changed under this console when coord#1702 shipped the
+ * precondition, and the string that lived here went on saying "NOT YET
+ * ENFORCED — see the notice above" against a notice that no longer rendered.
+ * A local constant describing a server behaviour is a copy that cannot follow
+ * the server; taking the flag as an argument is what makes it follow.
+ */
+function tierHelp(tier: AgentWriteTier, enforced: boolean): string {
+  switch (tier) {
+    case "deny":
+      return "Agents may not author documents of this kind. Coord refuses the write and names the remedy.";
+    case "allow":
+      return "Agents may author documents of this kind, including names that do not exist yet. Every write is versioned and attributed.";
+    case "allow_with_notification":
+      return enforced
+        ? "Agents may author documents of this kind, but only with a notification reference: coord refuses the write unless it names a recent finding the same session posted about the document."
+        : "Intended: agents may author, but only with a notification reference. NOT ENFORCED by the coord this console is talking to — it behaves as `allow`.";
+  }
+}
 
 /** Tiers whose selection is confirmed rather than applied on the click. */
 const CONFIRMED_TIERS: readonly AgentWriteTier[] = [
@@ -116,7 +138,10 @@ function tierLabel(tier: AgentWriteTier): string {
  * dial's own out-of-vocabulary case, and for the same reason: rendering the raw
  * value would show a row coord refuses every write to as the state in force.
  */
-function describe(row: KindTierRow): {
+function describe(
+  row: KindTierRow,
+  enforced: boolean
+): {
   label: string;
   variant: "outline" | "secondary" | "destructive" | "success";
   title: string;
@@ -200,29 +225,70 @@ function describe(row: KindTierRow): {
     variant: "success",
     title:
       row.effective_tier === "allow_with_notification"
-        ? "The operator has opened this kind. The notification precondition is " +
-          "NOT enforced by the deployed coord — this behaves as `allow`."
+        ? enforced
+          ? "The operator has opened this kind. Coord enforces the notification " +
+            "precondition: a write is refused unless it names a recent finding " +
+            "the same session posted about the document."
+          : "The operator has opened this kind. The notification precondition is " +
+            "NOT enforced by this coord — the tier behaves as `allow`."
         : "The operator has opened this kind to agent authorship.",
   };
 }
 
 /**
- * Coord's own disclosure prose, with a local fallback.
+ * Is the notification precondition ENFORCED by the coord that answered?
  *
- * `notification_enforced` being ABSENT is falsy, so a coord that omits both
- * fields takes the warning branch — which is the right direction (fail toward
- * saying something, not toward silence) and the wrong content: it rendered an
- * amber box containing an icon and no text, which reads as a rendering bug
- * rather than as a disclosure. The fallback keeps the box meaningful if coord
- * ever drops the prose while keeping the flag.
+ * Strict `=== true`, so an ABSENT flag is not enforced. `KindTierRow` and its
+ * response are casts over `JSON.parse`, not checks: a coord that predates the
+ * field sends nothing, and reading that absence as enforcement would claim a
+ * guarantee off a missing key — in the permissive direction, which is the one
+ * that matters.
+ */
+function isEnforced(data: KindTiersResponse): boolean {
+  return data.notification_enforced === true;
+}
+
+/**
+ * Coord's own disclosure prose, with a local fallback per enforcement state.
+ *
+ * The box renders in BOTH states now, and that is the fix rather than a
+ * cosmetic change. Coord#1702 shipped the precondition and deliberately KEPT
+ * this field rather than deleting it with the caveat it used to carry, because
+ * the honest answer became a positive fact plus one residual: the subtractive
+ * `policy_write` dial runs AFTER authorization and can still refuse a write the
+ * tier permitted, with its own codes. Rendering only the un-enforced arm threw
+ * that residual away the moment it became the only thing left to say.
+ *
+ * The fallbacks keep the box meaningful if coord ever drops the prose while
+ * keeping the flag — an amber box containing an icon and no text reads as a
+ * rendering bug rather than as a disclosure.
  */
 function disclosureText(data: KindTiersResponse): string {
-  return (
-    data.warning ??
-    "`allow_with_notification` is not enforced by this coord: the tier resolves, " +
-      "but the notification precondition is not checked, so a kind on that tier " +
-      "accepts unannounced agent writes."
-  );
+  if (data.warning) return data.warning;
+  return isEnforced(data)
+    ? "`allow_with_notification` is enforced by this coord: a write on that tier " +
+        "is refused unless it carries a notification reference naming a recent " +
+        "finding the same session posted about the document."
+    : "`allow_with_notification` is not enforced by this coord: the tier resolves, " +
+        "but the notification precondition is not checked, so a kind on that tier " +
+        "accepts unannounced agent writes.";
+}
+
+/**
+ * The names under a kind that a kind-wide `allow` will NOT reach — coord's
+ * compiled-in per-document denies, answered at resolution step 2b, ABOVE the
+ * per-kind table.
+ *
+ * Read defensively rather than trusted: this is a cast over `JSON.parse`, so a
+ * coord that predates the field sends nothing (which is UNKNOWN, and rendering
+ * nothing is the honest answer for it) and a malformed value must not throw
+ * inside a render.
+ */
+function protectedDocuments(row: KindTierRow): string[] {
+  const raw = row.protected_documents;
+  return Array.isArray(raw)
+    ? raw.filter((n): n is string => typeof n === "string")
+    : [];
 }
 
 /**
@@ -254,6 +320,17 @@ export function KindAuthorshipTierControl() {
     tier: AgentWriteTier;
   } | null>(null);
 
+  // The pending kind's named denies, resolved from the SAME read the rows
+  // render — not carried on `pending`, so a reload between opening the dialog
+  // and confirming shows the fresh answer rather than the one that was true
+  // when the button was clicked.
+  const pendingReserved = pending
+    ? protectedDocuments(
+        data?.kinds.find((k) => k.kind === pending.kind) ??
+          ({ kind: pending.kind } as KindTierRow)
+      )
+    : [];
+
   // COORD'S vocabulary, intersected with what this console knows how to label.
   // Rendering the local constant instead offers a button coord will 400 the
   // moment the two sets diverge, and hides a tier coord accepts — and
@@ -263,6 +340,11 @@ export function KindAuthorshipTierControl() {
   const offeredTiers: readonly AgentWriteTier[] = data?.vocabulary
     ? data.vocabulary.filter(isAgentWriteTier)
     : AGENT_WRITE_TIERS;
+
+  // ONE read of the flag, threaded into every place that describes what the
+  // tier does. Three separate hardcoded copies is how this console ended up
+  // asserting "NOT YET ENFORCED" for a precondition coord had already shipped.
+  const enforced = data ? isEnforced(data) : false;
 
   return (
     <section
@@ -290,18 +372,39 @@ export function KindAuthorshipTierControl() {
       </div>
 
       {/*
-        Coord's OWN words, not a local paraphrase. When Phase 2 lands and coord
-        starts sending `notification_enforced: true`, this notice disappears on
-        its own — a hardcoded copy here would have to be found and deleted, and
-        would sit there being wrong in the permissive direction until it was.
+        Coord's OWN words, not a local paraphrase — in BOTH enforcement states.
+
+        This used to render only while `notification_enforced` was falsy, on the
+        reasoning that the notice would disappear on its own once Phase 2
+        landed. Phase 2 landed (coord#1702) and the field did NOT become
+        content-free: coord kept it deliberately, because the honest answer is
+        now a positive fact PLUS one residual the tier cannot promise away — the
+        subtractive `policy_write` dial runs after authorization and can still
+        refuse a write this tier permitted, with its own codes. Hiding the box
+        threw that away and left the operator with three stale hardcoded
+        paraphrases instead.
+
+        The STYLING is what keys off the flag, not the presence: amber and a
+        warning icon while the precondition is unenforced, neutral and a shield
+        while it is. `data-enforced` carries the same fact to the tests so they
+        pin which arm rendered rather than only that something did.
       */}
-      {data && !data.notification_enforced && (
+      {data && (
         <div
-          className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+          className={
+            enforced
+              ? "flex items-start gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm"
+              : "flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+          }
           data-testid="kind-tier-notification-disclosure"
+          data-enforced={enforced ? "true" : "false"}
           role="status"
         >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          {enforced ? (
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+          )}
           <p className="text-muted-foreground">{disclosureText(data)}</p>
         </div>
       )}
@@ -324,7 +427,8 @@ export function KindAuthorshipTierControl() {
       {data && (
         <ul className="divide-y divide-border rounded-md border border-border">
           {data.kinds.map((row) => {
-            const badge = describe(row);
+            const badge = describe(row, enforced);
+            const reserved = protectedDocuments(row);
             return (
               <li
                 key={row.kind}
@@ -336,6 +440,37 @@ export function KindAuthorshipTierControl() {
                   {row.floor && <Lock className="mr-1 size-3" />}
                   {badge.label}
                 </Badge>
+                {/*
+                  The names a kind-wide `allow` does NOT reach. Coord answers
+                  these at resolution step 2b, ABOVE the per-kind table, and
+                  sends them precisely so this control stops reading as "allow
+                  opens every document of this kind" — `policy` renders
+                  `settable: true` and `floor: false`, so without this an
+                  operator would reasonably read an `allow` as opening
+                  `policy/session-protocol`, `policy/security-and-autonomy` and
+                  `policy/escalation-bar`, the three documents that ARE the
+                  authority interpreting every other document. It does not.
+
+                  Empty for most kinds, including all six intent kinds, whose
+                  compiled-in answer is the liftable `KindDefault` this lever
+                  exists to lift — so this renders nothing in the common case.
+                */}
+                {reserved.length > 0 && (
+                  <span
+                    className="text-xs text-muted-foreground"
+                    data-testid={`kind-tier-protected-${row.kind}`}
+                    title={
+                      "Coord denies these documents BY NAME, above the per-kind " +
+                      "tier. Opening this kind does not reach them; their only " +
+                      "lever is the per-document tier on each row."
+                    }
+                  >
+                    <Lock className="mr-1 inline size-3" />
+                    {reserved.length} document
+                    {reserved.length === 1 ? "" : "s"} stay closed:{" "}
+                    <code>{reserved.join(", ")}</code>
+                  </span>
+                )}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   {row.settable ? (
                     <>
@@ -345,7 +480,7 @@ export function KindAuthorshipTierControl() {
                           size="sm"
                           variant={row.tier === tier ? "default" : "outline"}
                           disabled={saving || row.tier === tier}
-                          title={TIER_HELP[tier]}
+                          title={tierHelp(tier, enforced)}
                           onClick={() => {
                             if (CONFIRMED_TIERS.includes(tier)) {
                               setPending({ kind: row.kind, tier });
@@ -407,11 +542,35 @@ export function KindAuthorshipTierControl() {
                   versioned and attributed, and this setting is reversible from
                   this page.
                 </p>
-                {pending?.tier === "allow_with_notification" &&
-                  data &&
-                  !data.notification_enforced && (
-                    <p className="text-amber-600">{disclosureText(data)}</p>
-                  )}
+                {/*
+                  What the kind-wide `allow` will NOT reach, named at the moment
+                  of the click. This is the confirmation for the one action that
+                  grants authorship over every name under a kind, so the carve-
+                  out belongs HERE and not only in the row above it: an operator
+                  opening `policy` is entitled to know, before confirming, that
+                  the three meta-policies stay closed — and equally that nothing
+                  else does.
+                */}
+                {pendingReserved.length > 0 && (
+                  <p data-testid="kind-tier-dialog-protected">
+                    Coord denies <code>{pendingReserved.join(", ")}</code> by
+                    name, above this setting — opening the kind does not reach{" "}
+                    {pendingReserved.length === 1 ? "it" : "them"}.
+                  </p>
+                )}
+                {/*
+                  Coord's own prose on the tier being confirmed, in either
+                  enforcement state. The amber styling is the part that keys off
+                  the flag; the TEXT is shown either way, because on the
+                  enforced arm it carries the residual `policy_write` dial
+                  caveat and that is exactly what an operator picking this tier
+                  needs before the click rather than after.
+                */}
+                {pending?.tier === "allow_with_notification" && data && (
+                  <p className={enforced ? undefined : "text-amber-600"}>
+                    {disclosureText(data)}
+                  </p>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
