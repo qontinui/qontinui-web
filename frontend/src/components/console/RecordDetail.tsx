@@ -78,7 +78,16 @@ export function RecordDetail({
       {problems}
       {actions}
       {history}
-      {raw}
+      {/*
+        The one slot that gets a wrapper, and only when it is occupied.
+        `data-console-raw` is R8's slot made addressable: a style rule, a spec
+        selector or a `/visual-audit` assertion can now find "the raw-ids
+        block" instead of guessing at a class string. Rendered conditionally so
+        the module doc's promise above still holds — an absent slot costs
+        nothing and leaves no gap — and the wrapper is one child either way, so
+        the container's `space-y-3` spaces it exactly as the bare node was.
+      */}
+      {raw != null && raw !== false && <div data-console-raw="">{raw}</div>}
     </div>
   );
 }

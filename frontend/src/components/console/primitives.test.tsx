@@ -27,6 +27,7 @@ import { HealthStrip } from "./HealthStrip";
 import { RecordDetail } from "./RecordDetail";
 import { RecordList } from "./RecordList";
 import { RecordRow } from "./RecordRow";
+import { rowAccentClass } from "./statusRow";
 import { StatCluster } from "./StatCluster";
 
 // ----------------------------------------------------------------------------
@@ -371,6 +372,72 @@ describe("RecordRow (R2, R4)", () => {
     expect(text.indexOf("waiting on CI")).toBeLessThan(text.indexOf("2h"));
   });
 
+  /**
+   * The machine-readable half of the console style — the precondition Phase 4
+   * step 1 of the console plan names before its rules may be written.
+   *
+   * The point of asserting these in a RENDER rather than by grep: a style rule
+   * or a spec selector matches the DOM, and a rule with a live evaluator and a
+   * dead selector reports PASS. A grep over the source proves an attribute is
+   * spelled somewhere; only a render proves it reaches an element, on the one
+   * that carries the property the rule is about.
+   */
+  describe("emits the selectors the style rules address", () => {
+    it("marks the row LINE — the element that owns the padding and the size", () => {
+      render(
+        <RecordRow
+          {...base}
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      const row = document.querySelector("[data-console-row]");
+      expect(row).not.toBeNull();
+      // Not the wrapper: the density budget is about this element's box.
+      expect(row?.tagName).toBe("BUTTON");
+      expect(row?.className).toContain("py-2");
+      expect(row?.className).toContain("px-3");
+      // Stated rather than inherited, so `[data-console-row]{font-size}` is a
+      // rule about something this element actually declares.
+      expect(row?.className).toContain("text-sm");
+    });
+
+    it("declares the attention its accent paints, and only when it has one", () => {
+      const { unmount } = render(
+        <RecordRow
+          {...base}
+          accent={rowAccentClass({ attention: "author" })}
+          attention="author"
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      const row = document.querySelector("[data-console-row]");
+      expect(row).toHaveAttribute("data-attention", "author");
+      // The colour and the attribute are the same fact in two channels; a rule
+      // keyed on one must find the other on the same element.
+      expect(row?.className).toContain("border-l-red-500/80");
+      unmount();
+
+      // Absent, not `"none"`, when the surface classifies nothing: "this row
+      // is calm" and "this surface has no severity model" are different
+      // claims, and an audit that conflates them reads the second as the first.
+      render(
+        <RecordRow
+          {...base}
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      expect(
+        document.querySelector("[data-console-row]")
+      ).not.toHaveAttribute("data-attention");
+    });
+  });
+
   it("truncates rather than wraps, and carries the full text in a title", () => {
     render(
       <RecordRow
@@ -488,6 +555,29 @@ describe("RecordDetail (R5)", () => {
     render(<RecordDetail data-testid="detail" why={<p>only why</p>} />);
     // Five always-present wrappers would make `space-y-3` add gaps for
     // sections that are not there.
+    expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it("marks the raw-ids block, and only when there is one", () => {
+    // R8's slot, made addressable: a style rule or a spec selector can find
+    // "the raw block" instead of guessing at a class string. Phase 4 step 1 of
+    // the console plan writes a rule keyed on `[data-console-raw]`, and a rule
+    // whose selector matches nothing reports PASS.
+    const { unmount } = render(
+      <RecordDetail data-testid="detail" why={<p>WHY</p>} raw={<p>RAW</p>} />
+    );
+    const raw = document.querySelector("[data-console-raw]");
+    expect(raw).not.toBeNull();
+    expect(raw).toHaveTextContent("RAW");
+    // It is ONE child of the container either way, so `space-y-3` spaces the
+    // wrapper exactly as it spaced the bare node.
+    expect(screen.getByTestId("detail").children).toHaveLength(2);
+    unmount();
+
+    // Conditional, so the "an absent slot costs nothing" promise above still
+    // holds — an always-present wrapper would reintroduce the gap.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} />);
+    expect(document.querySelector("[data-console-raw]")).toBeNull();
     expect(screen.getByTestId("detail").children).toHaveLength(1);
   });
 });

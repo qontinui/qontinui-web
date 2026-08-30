@@ -122,6 +122,7 @@ export function ReleaseRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={
         <span data-testid="coord-release-expand-btn">
           {releaseIdentity(entry)}

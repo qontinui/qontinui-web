@@ -33,6 +33,7 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import type { Attention } from "./attention";
 
 export interface RecordRowProps {
   /** Mono identity chip: `repo#123`, a worktree name, a drive letter. */
@@ -51,6 +52,25 @@ export interface RecordRowProps {
   time?: ReactNode;
   /** `rowAccentClass(status)` — R4's 2px left border, or "" for none. */
   accent?: string;
+  /**
+   * The attention `accent` was derived from, written to `data-attention`.
+   *
+   * The same fact as the accent colour, in a channel a stylesheet rule or a
+   * spec selector can address — the colour is for the operator, this is for
+   * everything that has to CHECK the colour. Phase 4 of the console plan adds
+   * style rules keyed on `[data-attention="author"]`, and a rule whose selector
+   * matches nothing reports PASS, so the attribute must land first.
+   *
+   * Optional because a row may have no severity model at all. Absent when
+   * unknown rather than defaulted to `"none"`: "this row is calm" and "this
+   * surface does not classify rows" are different claims, and an audit that
+   * cannot tell them apart would read the second as the first.
+   *
+   * Prefer `rowAccentProps(status)` where the row is a plain element — it
+   * returns the class and this value together, so they cannot be derived from
+   * different statuses.
+   */
+  attention?: Attention;
   expanded: boolean;
   onToggle: () => void;
   /**
@@ -74,6 +94,7 @@ export function RecordRow({
   reason,
   time,
   accent,
+  attention,
   expanded,
   onToggle,
   children,
@@ -88,8 +109,18 @@ export function RecordRow({
       <button
         type="button"
         onClick={onToggle}
+        // `data-console-row` marks THE row line — the element that owns the
+        // padding, the font size and the accent — so a style rule keyed on
+        // `[data-console-row]` selects the thing §5's density budget is about
+        // rather than the wrapper around it. `text-sm` is added here to make
+        // the row's own font size explicit rather than inherited: it is what
+        // the label already renders at, and every other child sets its own
+        // size, so this is visually inert and turns an inherited value into a
+        // stated one.
+        data-console-row=""
+        data-attention={attention}
         className={[
-          "w-full flex items-center gap-3 px-3 py-2 border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left",
+          "w-full flex items-center gap-3 px-3 py-2 text-sm border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left",
           accent ?? "",
           expanded ? "rounded-b-none bg-accent/60" : "",
         ]

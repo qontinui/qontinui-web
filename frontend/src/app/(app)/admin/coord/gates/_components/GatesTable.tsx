@@ -63,7 +63,7 @@ import { GateActions } from "./GateActions";
 import {
   RecordDetail,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import { deriveGateStatus, GATE_STATUS_PALETTE } from "../gateStatus";
 
@@ -486,7 +486,7 @@ export function GatesTable({
                       }
                       // R4 — a 2px left border, not a coloured row: the body
                       // stays neutral so 40 rows read when 6 are red.
-                      className={`cursor-pointer ${rowAccentClass(status)}`}
+                      {...rowAccentProps(status, "cursor-pointer")}
                     >
                       <TableCell className="max-w-[18rem]">
                         <div className="flex items-center gap-1.5">

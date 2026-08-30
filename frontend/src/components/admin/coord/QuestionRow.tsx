@@ -62,6 +62,7 @@ export function QuestionRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       className={answered ? "opacity-70 hover:opacity-100" : undefined}
       identity={questionIdentity(question)}
       label={<span title={question.question}>{truncate(question.question, 160)}</span>}
