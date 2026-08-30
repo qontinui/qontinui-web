@@ -102,6 +102,45 @@ interface EffectiveProfile {
   // Red-main auto-remediation Phase 3 (D6) — resolved opt-in for
   // auto-spawning a fix session when this repo's main goes red.
   auto_fix_red_main: boolean;
+  // ff-land head-ref sync (plan
+  // `2026-08-26-coord-ff-land-records-merged-on-github`, Phase 1) — resolved
+  // opt-in for updating the PR's head ref to the rebased tip as part of the
+  // land, so GitHub records the PR as **Merged** instead of grey Closed.
+  //
+  // OPTIONAL, and the `?` is load-bearing — see `ffLandHeadSyncSupported`.
+  ff_land_head_sync_enabled?: boolean;
+}
+
+/**
+ * Whether the coord build behind this dashboard carries the ff-land head-sync
+ * dial on its **settings wire** — i.e. whether the controls below may write it.
+ *
+ * The storage and the wire landed apart, and the gap is still open:
+ * `qontinui-web#1092` added the two nullable BOOLEAN columns
+ * (`coord.tenant_merge_settings.ff_land_head_sync_enabled` and
+ * `coord.tenant_repo_profiles.ff_land_head_sync_enabled`), and
+ * `qontinui-coord#1660` added the RESOLVER that reads them — but neither added
+ * the field to `PatchTenantSettings` / `PatchRepoProfile` or to the
+ * `EffectiveProfile` those routes serve. So for now the columns have **no
+ * writer anywhere in the fleet** and this dial can only be set by hand-SQL.
+ *
+ * That is why this probe exists rather than an unconditional send, and why it
+ * is a probe on the READ shape. Both PATCH structs carry
+ * `#[serde(deny_unknown_fields)]` (`qontinui-coord/crates/coord/src/pr_merge/
+ * settings_wire.rs`), so posting a field coord does not know **400s the entire
+ * save** — every other field on the card with it, not just this dial. The
+ * `line_budget_override` note in `RepoOverrideCard.handleSave` is the same trap,
+ * already paid for once.
+ *
+ * The probe is the field's PRESENCE in the profile coord serves back, because a
+ * coord build that serves it is by construction one that accepts it: the two
+ * halves live in the same struct pair, and the sibling dial `auto_fix_red_main`
+ * shipped them together. Until such a build is deployed the controls render
+ * disabled and say why, and the moment one is, they go live with no further
+ * change here.
+ */
+function ffLandHeadSyncSupported(profile: EffectiveProfile | null): boolean {
+  return typeof profile?.ff_land_head_sync_enabled === "boolean";
 }
 
 interface TenantSettingsResponse {
@@ -336,6 +375,14 @@ function TenantDefaultsCard({
   const [autoFixRedMain, setAutoFixRedMain] = useState<boolean>(
     profile.auto_fix_red_main
   );
+  // `?? false` is the RESOLVED default, not a placeholder: coord's
+  // `Defaults::FF_LAND_HEAD_SYNC_ENABLED` is `false`, so a build that does not
+  // serve the field is a build on which the dial is off. Rendering OFF there is
+  // the true answer; what the operator must not be told is that they can CHANGE
+  // it, which `ffLandHeadSyncSupported` handles.
+  const [ffLandHeadSync, setFfLandHeadSync] = useState<boolean>(
+    profile.ff_land_head_sync_enabled ?? false
+  );
   const [escalatePathsText, setEscalatePathsText] = useState<string>(
     (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
   );
@@ -352,6 +399,7 @@ function TenantDefaultsCard({
     setConfidence(String(profile.confidence_threshold));
     setAutoMerge(profile.auto_merge_enabled);
     setAutoFixRedMain(profile.auto_fix_red_main);
+    setFfLandHeadSync(profile.ff_land_head_sync_enabled ?? false);
     setEscalatePathsText(
       (profile.escalate_policies ?? []).map((p) => p.glob).join("\n")
     );
@@ -386,6 +434,14 @@ function TenantDefaultsCard({
           .map((s) => s.trim())
           .filter((s) => s.length > 0),
       };
+      // Conditional, unlike every sibling above it. `PatchTenantSettings` is
+      // `deny_unknown_fields`, and this body is sent on EVERY save — so an
+      // unconditional key here would 400 the whole tenant-defaults save on any
+      // coord build that has not yet grown the field, taking dwell, confidence,
+      // auto-merge and the escalate paths down with it.
+      if (ffLandHeadSyncSupported(profile)) {
+        body.ff_land_head_sync_enabled = ffLandHeadSync;
+      }
       const res = await httpClient.fetch(
         `${OPERATIONS_API}/pr-merge/settings`,
         {
@@ -408,6 +464,8 @@ function TenantDefaultsCard({
     confidence,
     autoMerge,
     autoFixRedMain,
+    ffLandHeadSync,
+    profile,
     shadowFloor,
     escalatePathsText,
     onSaved,
@@ -514,6 +572,44 @@ function TenantDefaultsCard({
             data-testid="settings-auto-fix-red-main"
           />
         </div>
+        <div className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+          <div>
+            <Label htmlFor="ff-land-head-sync">
+              Record coord&apos;s lands as Merged on GitHub
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              coord lands a PR by rebasing its commits onto the base branch and
+              pushing them straight there. When the rebase rewrites the shas —
+              69.4% of lands, measured over the 90 days to 2026-08-26 — the PR&apos;s
+              head ref is left behind, so GitHub shows grey{" "}
+              <span className="font-mono">Closed</span> on work that demonstrably
+              landed. With this on, coord also moves the head ref to the rebased
+              tip, and GitHub marks the PR{" "}
+              <span className="font-mono">Merged</span> by itself. Off by default
+              — it is a force-update on a branch coord does not own, so it is
+              graduated per repo below rather than flipped fleet-wide.
+            </p>
+            {!ffLandHeadSyncSupported(profile) && (
+              <p
+                className="text-xs text-amber-400 mt-1"
+                data-testid="settings-ff-land-head-sync-unsupported"
+              >
+                Not settable on this coord build: the columns exist
+                (qontinui-web#1092) and coord&apos;s resolver reads them
+                (qontinui-coord#1660), but the settings API does not carry the
+                field yet, so there is no writer for it. Shown here so the dial
+                is discoverable, and it goes live by itself once coord serves it.
+              </p>
+            )}
+          </div>
+          <Switch
+            id="ff-land-head-sync"
+            checked={ffLandHeadSync}
+            onCheckedChange={setFfLandHeadSync}
+            disabled={!ffLandHeadSyncSupported(profile)}
+            data-testid="settings-ff-land-head-sync"
+          />
+        </div>
         <div className="space-y-1">
           <Label htmlFor="escalate-paths">Escalate paths (one per line)</Label>
           <Textarea
@@ -553,10 +649,22 @@ function TenantDefaultsCard({
 function RepoOverrideCard({
   repoRow,
   tenantPaused,
+  ffLandHeadSyncWritable,
   onSaved,
 }: {
   repoRow: TenantRepoRow;
   tenantPaused: boolean;
+  /**
+   * Whether coord's settings wire carries `ff_land_head_sync_enabled` — see
+   * {@link ffLandHeadSyncSupported}.
+   *
+   * Threaded down from the TENANT profile rather than probed off this card's
+   * own `repoProfile` fetch, deliberately: the capability is a property of the
+   * coord BUILD, not of the repo, so deriving it per card would give one answer
+   * per in-flight fetch and leave the control briefly enabled-then-disabled on
+   * every mount. One read, one answer, every card.
+   */
+  ffLandHeadSyncWritable: boolean;
   onSaved: () => void;
 }) {
   const [repoProfile, setRepoProfile] = useState<RepoProfileResponse | null>(
@@ -604,6 +712,12 @@ function RepoOverrideCard({
     setMergePin(storedPin);
   }, [storedPin]);
   const [autoFixRedMainOverride, setAutoFixRedMainOverride] = useState<
+    "inherit" | "true" | "false"
+  >("inherit");
+  // Write-only like its siblings above (coord serves the RESOLVED profile, not
+  // the raw per-repo override), so it starts at "inherit" — which is also the
+  // stored default, every column being NULL until someone graduates a repo.
+  const [ffLandHeadSyncOverride, setFfLandHeadSyncOverride] = useState<
     "inherit" | "true" | "false"
   >("inherit");
   // Body keys the operator has edited this session; only these are PATCHed.
@@ -681,6 +795,15 @@ function RepoOverrideCard({
             ? null
             : autoFixRedMainOverride === "true";
       }
+      // Guarded on the capability as well as on `dirty`: the control is
+      // disabled without it, so this can only be reached by a stale `dirty`
+      // entry, and `deny_unknown_fields` would 400 the whole PATCH.
+      if (ffLandHeadSyncWritable && dirty.has("ff_land_head_sync_enabled")) {
+        body.ff_land_head_sync_enabled =
+          ffLandHeadSyncOverride === "inherit"
+            ? null
+            : ffLandHeadSyncOverride === "true";
+      }
 
       // Skip the PATCH entirely when no profile field changed (e.g. a
       // merge-enablement-only save) — an empty body is a wasted round-trip and
@@ -737,6 +860,8 @@ function RepoOverrideCard({
     mergePin,
     storedPin,
     autoFixRedMainOverride,
+    ffLandHeadSyncOverride,
+    ffLandHeadSyncWritable,
     onSaved,
   ]);
 
@@ -873,6 +998,30 @@ function RepoOverrideCard({
               Per-repo override of the tenant-wide auto-spawn setting. On red
               main, coord opens a visible fix session on your device; the fix
               lands via coord&apos;s audited recovery lane.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Merged-on-GitHub override</Label>
+            <select
+              className="w-full h-9 rounded-md border bg-background px-3 text-sm"
+              value={ffLandHeadSyncOverride}
+              disabled={!ffLandHeadSyncWritable}
+              onChange={(e) => {
+                setFfLandHeadSyncOverride(
+                  e.target.value as "inherit" | "true" | "false"
+                );
+                markDirty("ff_land_head_sync_enabled");
+              }}
+              data-testid={`repo-ff-land-head-sync-${repoRow.repo}`}
+            >
+              <option value="inherit">inherit tenant</option>
+              <option value="true">true (sync the head ref on a land)</option>
+              <option value="false">false (leave the head ref behind)</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              {ffLandHeadSyncWritable
+                ? "This is the per-repo graduation knob: turn it on for one repo, watch a window of lands, then move to the next. The benefit is very uneven per repo — 87.0% of qontinui-runner's lands rewrite shas against 9.7% of ui-bridge's — which is why it is graduated here and not tenant-wide."
+                : "Not settable on this coord build — coord's settings API does not carry the field yet, so nothing can write it. See the tenant switch above."}
             </p>
           </div>
         </div>
@@ -1532,6 +1681,12 @@ export function MergeOrchestrationSettings() {
                     key={r.repo}
                     repoRow={r}
                     tenantPaused={tenantPaused}
+                    // `profile` is null while the tenant read is in flight, and
+                    // these cards render anyway (only the tenant card gets a
+                    // skeleton). Unknown capability reads as NOT writable —
+                    // fail-closed, since the cost of guessing wrong is a 400
+                    // that takes the whole per-repo save with it.
+                    ffLandHeadSyncWritable={ffLandHeadSyncSupported(profile)}
                     onSaved={triggerReload}
                   />
                 ))}
