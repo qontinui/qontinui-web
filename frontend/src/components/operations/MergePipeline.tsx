@@ -624,6 +624,7 @@ function PipelineRowDisplay({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(row.status)}
+      attention={row.status.attention}
       identity={
         row.members
           ? `${row.members.length}-repo change`

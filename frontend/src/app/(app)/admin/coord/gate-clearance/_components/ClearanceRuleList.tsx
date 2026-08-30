@@ -322,6 +322,7 @@ function RuleRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={gateClass ?? "no class"}
       label={
         <span title={rule.rationale ?? rule.name}>

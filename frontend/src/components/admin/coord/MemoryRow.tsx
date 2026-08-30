@@ -76,6 +76,7 @@ export function MemoryRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={
         <span title="version head — memories are event-sourced, so this is the latest version number, not a count">
           {memoryIdentity(memory)}

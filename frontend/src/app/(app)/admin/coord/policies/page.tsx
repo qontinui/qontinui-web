@@ -56,7 +56,7 @@ import {
   HealthStrip,
   RecordDetail,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
   type HealthBadge,
   type HealthStripLevel,
 } from "@/components/console";
@@ -319,7 +319,7 @@ function TenantRow({
         data-testid={`policy-row-${tenant.slug}`}
         data-expanded={expanded ? "true" : "false"}
         onClick={onToggle}
-        className={`cursor-pointer ${rowAccentClass(status)}`}
+        {...rowAccentProps(status, "cursor-pointer")}
       >
         <TableCell>
           <span className="inline-flex items-center gap-1.5">
