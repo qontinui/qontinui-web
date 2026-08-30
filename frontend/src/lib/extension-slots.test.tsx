@@ -210,15 +210,19 @@ describe("extension-slots — the providers slot", () => {
   });
 
   it("has the providers ARRAY rebuilt before subscribers are notified", async () => {
-    const { registerCloudExtensions, subscribeToSlots, getProvider, getProviders } =
-      await freshSlots();
+    const {
+      registerCloudExtensions,
+      subscribeToSlots,
+      getProvider,
+      getProviders,
+    } = await freshSlots();
 
     // The hazard the registration test names but only checks in the composed
     // job: `registerCloudExtensions` sets the Map and rebuilds the array in
-    // two separate statements, and only the Map write is unconditional. A
-    // subscriber that re-reads on notification — which is every
-    // `useSyncExternalStore` consumer, i.e. `CloudProviders` — must already
-    // see BOTH.
+    // two separate statements, and the rebuild can be reordered relative to
+    // the notify loop. A subscriber that re-reads on notification — which is
+    // every `useSyncExternalStore` consumer, i.e. `CloudProviders` — must
+    // already see BOTH.
     let byNameAtNotify: unknown;
     let arrayAtNotify: readonly unknown[] = [];
     const unsubscribe = subscribeToSlots(() => {
@@ -240,10 +244,12 @@ describe("extension-slots — the providers slot", () => {
     const { useSlotProviders } = await freshSlots();
 
     // React compares the snapshot it hydrated with (`getServerSnapshot`)
-    // against `getSnapshot()` afterwards by identity. Two empty-but-distinct
-    // frozen arrays would pass every length check here and still force a
-    // re-render of `CloudProviders` — the root of the authenticated tree —
-    // on every OSS-only page load, for a value that did not change.
+    // against `getSnapshot()` afterwards by identity (`Object.is`). Two
+    // empty-but-distinct frozen arrays pass every length check here and
+    // still count as a change, scheduling a re-render for a value that did
+    // not move. Nothing hydrates a `CloudProviders` today — `AppAuthGate`
+    // withholds it — so this is the cheap half of the pair: it costs one
+    // shared constant instead of a design commitment.
     let fromServer: readonly unknown[] | undefined;
     let fromClient: readonly unknown[] | undefined;
     function Probe({ sink }: { sink: (v: readonly unknown[]) => void }) {
@@ -256,6 +262,32 @@ describe("extension-slots — the providers slot", () => {
 
     expect(fromServer).toHaveLength(0);
     expect(fromServer).toBe(fromClient);
+  });
+
+  it("keeps that identity through a registration that adds no provider", async () => {
+    const { registerCloudExtensions, getProviders, useSlotProviders } =
+      await freshSlots();
+
+    const before = getProviders();
+
+    // `{ providers: {} }` still enters the rebuild branch — a composed build
+    // whose cloud-control ships no provider this release is exactly this
+    // call. Allocating a fresh `Object.freeze([])` there would leave the
+    // client snapshot empty but no longer identical to the server's, which
+    // is the single state the shared constant exists to prevent, reached by
+    // the one path that looks like a no-op.
+    registerCloudExtensions({ providers: {} });
+
+    expect(getProviders()).toHaveLength(0);
+    expect(getProviders()).toBe(before);
+
+    let fromServer: readonly unknown[] | undefined;
+    function Probe({ sink }: { sink: (v: readonly unknown[]) => void }) {
+      sink(useSlotProviders());
+      return null;
+    }
+    renderToString(<Probe sink={(v) => (fromServer = v)} />);
+    expect(fromServer).toBe(getProviders());
   });
 
   it("mounts nothing on the server even when a provider is registered", async () => {

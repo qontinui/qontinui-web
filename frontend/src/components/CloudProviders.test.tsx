@@ -175,43 +175,74 @@ describe("CloudProviders", () => {
  *
  * Everything above renders `<CloudProviders>` by hand, and
  * `cloud-extensions-boot.registration.test.tsx` only proves the registry
- * gets filled. Neither notices if `app/(app)/layout.tsx` stops rendering
- * `<CloudProviders>` at all — cloud-control would keep registering
- * `organizationProvider`, every test would stay green, and the composed
- * build would go straight back to the 2026-08-26 configuration: a component
- * slot filled with no provider mounted behind it. That is the same
- * ships-completely-inert failure class the loader-liveness guard exists for,
- * one layer up, and it was the one layer with no guard.
+ * gets filled — it reaches the boot module by `await import(...)`, so it
+ * never looks at a mount site either. Neither notices if
+ * `app/(app)/layout.tsx` stops rendering `<CloudProviders>` at all:
+ * cloud-control would keep registering `organizationProvider`, every test
+ * would stay green, and the composed build would go straight back to the
+ * 2026-08-26 configuration — a component slot filled with no provider
+ * mounted behind it.
+ *
+ * That is the same ships-completely-inert failure class the loader-liveness
+ * guard exists for, one layer up. The OTHER mount site in that class is
+ * `<CloudExtensionsBoot />` in `app/layout.tsx`, which is what puts the
+ * package in the client graph at all; it is guarded by the matching block in
+ * `cloud-extensions-boot.registration.test.tsx`. The two are a pair — an
+ * inert boot registers nothing, an absent `CloudProviders` mounts nothing —
+ * and neither had a mount-site assertion before.
  *
  * Read as source rather than rendered because the layout is the app's real
  * client shell: importing it pulls a dozen context providers, `next/dynamic`
  * chunks and `useAuth`, and mocking all of that would leave the assertion
- * testing the mocks. The structural facts here are exactly the ones a
- * refactor can drop silently, and they are cheap to read literally.
+ * testing the mocks.
+ *
+ * KNOW WHAT THIS IS. It is a token-presence-and-ordering scan over one
+ * file's text, not a structural check on the exported component. It is
+ * satisfiable by dead code in that file, and extracting the provider stack
+ * into a sibling module would red it while the app stayed correct. It buys
+ * the case that actually happens — someone deletes or hoists a wrapper they
+ * do not recognise as load-bearing — and it is deliberately worded so that
+ * a benign refactor's failure reads as "confirm the invariant, then update
+ * this scan" rather than as a bug report.
  */
 describe("CloudProviders — mount site", () => {
-  const LAYOUT = path.resolve(process.cwd(), "src/app/(app)/layout.tsx");
-  const raw = fs.readFileSync(LAYOUT, "utf8");
-
   /**
-   * Comments stripped, because the doc blocks in that file name
-   * `<CloudProviders>` and `AppAuthGate` in prose — including the block that
-   * explains this very nesting. Scanning the raw text would match the
-   * explanation instead of the code and report the ordering backwards.
+   * Read per test, not once in the `describe` body: a collection-time throw
+   * here would fail the six rendering cases above too, which have nothing to
+   * do with the layout.
+   *
+   * Comments are stripped because that file's doc blocks name
+   * `<CloudProviders>` and `AppAuthGate` in prose — including the block
+   * explaining this very nesting, which sits ABOVE the JSX. Scanning raw
+   * text reports the ordering backwards. Block comments go first, so a
+   * future `// … /*` would swallow real code; if this scan ever fails while
+   * the layout visibly still renders the component, suspect that before
+   * suspecting the layout.
    */
-  const source = raw
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "");
+  function layoutSource(): string {
+    const file = path.resolve(process.cwd(), "src/app/(app)/layout.tsx");
+    return fs
+      .readFileSync(file, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  }
+
+  // Tag matchers allow attributes: `<CloudProviders>` gaining a prop is not
+  // a regression, and a scan that reds on one trains people to delete it.
+  const OPEN_PROVIDERS = /<CloudProviders[\s>]/;
+  const OPEN_GATE = /<AppAuthGate[\s>]/;
 
   it("is imported and rendered by the authenticated layout", () => {
+    const source = layoutSource();
+
     expect(source).toContain(
       'import { CloudProviders } from "@/components/CloudProviders";'
     );
     expect(
       source,
-      "app/(app)/layout.tsx must render <CloudProviders>, or cloud-control's providers are registered and never mounted"
-    ).toMatch(/<CloudProviders>/);
-    expect(source).toMatch(/<\/CloudProviders>/);
+      "app/(app)/layout.tsx no longer renders <CloudProviders> - if that was deliberate, cloud-control's providers are now registered and never mounted"
+    ).toMatch(OPEN_PROVIDERS);
+    expect(source).toContain("</CloudProviders>");
   });
 
   it("renders CloudProviders INSIDE AppAuthGate, not around it", () => {
@@ -223,8 +254,9 @@ describe("CloudProviders — mount site", () => {
     // build page load would mount zero providers, swap to the real snapshot,
     // and remount the entire authenticated tree. See `CloudProviders.tsx`
     // and `AppAuthGate`'s own doc block.
-    const gateOpen = source.indexOf("<AppAuthGate>");
-    const providersOpen = source.indexOf("<CloudProviders>");
+    const source = layoutSource();
+    const gateOpen = source.search(OPEN_GATE);
+    const providersOpen = source.search(OPEN_PROVIDERS);
     const providersClose = source.indexOf("</CloudProviders>");
     const gateClose = source.indexOf("</AppAuthGate>");
 
@@ -239,22 +271,30 @@ describe("CloudProviders — mount site", () => {
     // read, a synchronous `localStorage` seed, an optimistic
     // `loading: false` — `CloudProviders` joins the hydration render and the
     // nesting assertion above stops being worth anything.
+    const source = layoutSource();
     const start = source.indexOf("function AppAuthGate(");
     expect(start).toBeGreaterThanOrEqual(0);
     const end = source.indexOf("\n}", start);
-    const body = source.slice(start, end);
 
-    // Read the condition guarding the early return, not merely "the word
-    // `loading` appears somewhere in the function" — it also appears in the
-    // redirect effect, so a looser match stays green when the gate is
-    // narrowed to `if (!user)` and children start rendering during load.
+    // Bracket contents blanked FIRST: the redirect effect's dependency array
+    // ends `[loading, user, ...]` immediately above the early return, so
+    // scanning the raw text finds `loading` there and stays green on a gate
+    // narrowed to `if (!user)` — the exact regression. (That is how the
+    // first draft of this assertion failed to catch its own falsification.)
+    const body = source.slice(start, end).replace(/\[[^\]]*\]/g, "[]");
+
     const returnAt = body.indexOf("return <AuthLoadingShell");
     expect(returnAt).toBeGreaterThan(0);
+
+    // A window rather than a shape: `if (loading || !user)`,
+    // `if (isBlocked(loading))` and a hoisted `const showShell = loading ||
+    // !user` are all correct, and a regex pinning one of them reds on the
+    // other two.
     const guard = body.slice(Math.max(0, returnAt - 120), returnAt);
 
     expect(
       guard,
-      "AppAuthGate's early return must still be keyed on `loading`, or CloudProviders joins the hydration render - see its doc block"
-    ).toMatch(/if\s*\([^)]*\bloading\b[^)]*\)\s*\{\s*$/);
+      "AppAuthGate's early return is no longer keyed on `loading` - if you restructured it, confirm children are still withheld while useAuth() reports loading (see AppAuthGate's doc block), then update this scan"
+    ).toMatch(/\bloading\b/);
   });
 });
