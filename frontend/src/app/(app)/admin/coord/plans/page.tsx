@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 /**
  * /admin/coord/plans — list coord work-units, filter by status.

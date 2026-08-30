@@ -19,8 +19,12 @@ const rows: CoordPlanRow[] = [
   { slug: "d", status: "weird_new_state" },
 ];
 
-function renderBadges(loaded: boolean, plans: CoordPlanRow[] = rows) {
-  const h = derivePlansHealth(plans, loaded);
+function renderBadges(
+  loaded: boolean,
+  plans: CoordPlanRow[] = rows,
+  readFailed = false
+) {
+  const h = derivePlansHealth(plans, loaded, readFailed);
   render(
     <HealthStrip
       level={h.level}
@@ -104,13 +108,17 @@ describe("derivePlansHealth", () => {
       // `/plans?status=blocked` with nothing blocked is a real, fetched zero.
       // Keying UNKNOWN on `plans.length === 0` would flap it to amber
       // "unknown, not empty" on every blipped poll and back on the next.
-      const h = derivePlansHealth([], true, true);
+      const h = renderBadges(true, [], true);
       expect(h.headline).not.toMatch(/unknown/i);
-      // The COUNTS survive — that zero was really fetched — and the badges
-      // below still render it rather than a dash. What does not survive is the
-      // present-tense headline: "No work units in this window" is a claim
-      // about now, off a read that is currently failing.
-      expect(h.badges.map((b) => b.key)).toContain("total");
+      // The COUNTS survive — that zero was really fetched — so this asserts
+      // the RENDERED value, not merely that a `total` badge exists. Every
+      // non-unknown return carries that key, dashed ones included, so a
+      // key-only check would pass on exactly the rendering it means to reject.
+      const strip = screen.getByTestId("strip");
+      expect(strip).toHaveTextContent("plans 0");
+      expect(strip).not.toHaveTextContent("plans –");
+      // What does NOT survive is the present-tense headline: "No work units in
+      // this window" is a claim about now, off a read that is failing now.
       expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toMatch(/^Last refresh failed/);
     });

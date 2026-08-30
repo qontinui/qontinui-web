@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Changing the server-side status filter must discard the previous window.
  *
  * `/plans` and `/spawn` both hold coord's answer in one `data` state, key
