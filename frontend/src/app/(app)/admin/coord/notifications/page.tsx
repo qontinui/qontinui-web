@@ -74,15 +74,27 @@
  *   it produces here is unknown (`–`, nothing ever read) versus stale (the
  *   real numbers, said to have stopped moving).
  *
- *   **`readFailed` has two other consumers, and both were left behind by the
- *   commit that added it.** The `empty=` slot below said "No notifications
- *   matching filters." after a read that never landed — the same fabricated
- *   absence as `?? 0`, made in words instead of a number, sitting two elements
- *   under a strip that correctly said it could not read the feed. And the
- *   `?ref=` banner consulted `error`, which mark-read also writes, so a
- *   rejected POST made it blame the feed. Both now read the flag that answers
- *   the question they are asking; the `empty=` one goes through the console's
- *   shared `readIsUnknown` so the strip and the slot cannot drift apart.
+ *   **A failed read has FOUR consumers on this page, and the commit that added
+ *   `readFailed` wired one.** The others each made the same
+ *   confident-false-claim in their own idiom:
+ *
+ *   - the `empty=` slot said "No notifications matching filters." after a read
+ *     that never landed — the fabricated absence, made in words instead of a
+ *     number, two elements under a strip that correctly said it could not read
+ *     the feed. It now goes through the console's shared `readIsUnknown`, so
+ *     the strip and the slot cannot drift apart;
+ *   - the `?ref=` banner consulted `error`, which mark-read also writes, so a
+ *     rejected POST made it blame the feed;
+ *   - the mark-all tooltip promised "Marks ALL 137 unread… cannot be undone"
+ *     off a count the strip was simultaneously labelling frozen — a stale
+ *     number in front of an IRREVERSIBLE action.
+ *
+ *   **And one flag was the wrong grain.** `loaded` is page-lifetime, so a
+ *   success under one filter licensed an empty-state claim about a DIFFERENT
+ *   filter whose read had failed — the same bug, one state over. The list is
+ *   query-scoped and now reads `queryLoaded`; the strip keeps `loaded`,
+ *   because its `unread_count` is a per-principal scalar that does not move
+ *   with the filter.
  *
  * **The strip is never red or amber for a BACKLOG**, and that is the point:
  * this is an append-only EVENT feed, so an unread row blocks nobody and decays
@@ -186,6 +198,37 @@ export default function CoordNotificationsPage() {
    * recovers un-stales the strip without a reload.
    */
   const [readFailed, setReadFailed] = useState(false);
+  /**
+   * Has the query CURRENTLY on screen answered? Reset by the filter effect.
+   *
+   * `loaded` above is page-lifetime — it is never set back to false — which is
+   * right for the strip, whose `unread_count` is a per-principal scalar that
+   * does not move with the filter. It is wrong for the LIST, which is entirely
+   * query-scoped: a success under `kind=policy_change` says nothing about
+   * whether `kind=gate_opened` has rows, so carrying that `loaded` across the
+   * switch lets a failed read of the NEW filter render "No notifications
+   * matching filters." — the same fabricated absence, one state over.
+   *
+   * This is what makes `readIsUnknown`'s "coord has CONFIRMED this window
+   * empty" premise actually true at the slot that relies on it: the
+   * confirmation has to be about the window being described, not about an
+   * earlier one. Within a generation it behaves exactly like `loaded`, so the
+   * anti-flicker property is unchanged — a blipped poll on a genuinely empty
+   * filter still reads "nothing matches", not "unknown".
+   */
+  const [queryLoaded, setQueryLoaded] = useState(false);
+  /**
+   * The last PAGING read failed. Deliberately not folded into `readFailed`.
+   *
+   * `readFailed` is the state of the last HEAD read, and the strip is derived
+   * from it: a failed "Load more" must not paint the head counts stale, since
+   * the 10s poller is still refreshing them. But the `?ref=` banner asks a
+   * different question — *did we manage to look everywhere* — and for that a
+   * failed page IS a failed look. Without this it tells the operator the event
+   * "may be older than these — load more", pointing at the button that just
+   * failed.
+   */
+  const [pagingFailed, setPagingFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,6 +302,8 @@ export default function CoordNotificationsPage() {
         applyEnvelope(body);
         setMigrationPending(false);
         setLoaded(true);
+        // This query has now answered — the list may speak for it.
+        setQueryLoaded(true);
         setError(null);
         setReadFailed(false);
       } catch (e) {
@@ -311,13 +356,20 @@ export default function CoordNotificationsPage() {
       setNextCursor(page.length === 0 ? null : (body.next_cursor ?? null));
       applyEnvelope(body);
       setError(null);
+      setPagingFailed(false);
     } catch (e) {
       if (queryGenRef.current !== gen) return;
       if (isMigrationPending(e)) setMigrationPending(true);
-      else
+      else {
         setError(
           `Failed to load: ${e instanceof Error ? e.message : String(e)}`
         );
+        // NOT `setReadFailed` — the head counts are still being refreshed by
+        // the poller, so staling the strip for a failed page would be a claim
+        // of its own. What this does invalidate is "we looked at everything
+        // that is loadable".
+        setPagingFailed(true);
+      }
     } finally {
       if (queryGenRef.current === gen) setLoadingMore(false);
     }
@@ -330,6 +382,10 @@ export default function CoordNotificationsPage() {
     queryGenRef.current += 1;
     setLoading(true);
     setRows([]);
+    // The new query has answered nothing yet, and no page of it has failed.
+    // `loaded` is deliberately NOT reset — see its declaration.
+    setQueryLoaded(false);
+    setPagingFailed(false);
     setNextCursor(null);
     setExpanded(null);
     fetchHead(false);
@@ -435,7 +491,27 @@ export default function CoordNotificationsPage() {
     () => rows.filter((n) => !n.read_at).map((n) => n.notification_id),
     [rows]
   );
-  const markAllCount = filterActive ? loadedUnreadIds.length : unreadCount;
+  /**
+   * The number the tooltip is allowed to promise — the FOURTH consumer of that
+   * failed poll, and the one where being confidently wrong costs the most.
+   *
+   * Unfiltered, this is coord's `unread_count`, and `readFailed` means it is
+   * whatever an earlier read left behind. The strip is already labelling it
+   * frozen; a tooltip one element away saying "Marks ALL 137 unread
+   * notifications… This cannot be undone" spends that stale number in front of
+   * an IRREVERSIBLE action. So when the count is stale the tooltip drops the
+   * figure and keeps the warning — the unfiltered arm marks every unread row
+   * for this principal regardless of what the number says, which is exactly
+   * why the number must not be the reassuring part.
+   *
+   * The filtered arm is unaffected: it counts LOADED rows, which are not a
+   * coord scalar and cannot go stale behind our back.
+   */
+  const markAllCount = filterActive
+    ? loadedUnreadIds.length
+    : readFailed
+      ? null
+      : unreadCount;
   const markAllDisabled = filterActive
     ? loadedUnreadIds.length === 0
     : !((unreadCount ?? 0) > 0 || rows.some((n) => !n.read_at));
@@ -463,11 +539,14 @@ export default function CoordNotificationsPage() {
    * cleared in a `finally` so it settles on failure, and `rows` is `[]`, so
    * `RecordList`'s `loaded` prop below is `true` and the `empty` node renders.
    *
-   * Keyed on `loaded` rather than on `rows.length`, per `readIsUnknown`'s own
-   * reasoning: a filter whose window is genuinely empty must not flip to
-   * "unknown" and back on every blipped poll.
+   * Keyed on `queryLoaded` rather than on `rows.length`, per `readIsUnknown`'s
+   * own reasoning: a filter whose window is genuinely empty must not flip to
+   * "unknown" and back on every blipped poll. `queryLoaded` rather than
+   * `loaded` because the premise that reasoning rests on — "coord has
+   * CONFIRMED this window empty" — is only true of the window currently being
+   * described; see its declaration.
    */
-  const feedUnknown = readIsUnknown(loaded, readFailed);
+  const feedUnknown = readIsUnknown(queryLoaded, readFailed);
 
   const health = deriveNotificationsHealth({
     unreadCount,
@@ -570,12 +649,15 @@ export default function CoordNotificationsPage() {
             // has been read yet, so "not on this page" would be a claim
             // rather than a fact.
             loading: loading && rows.length === 0,
-            // `readFailed`, not `error`. This arm says "the feed above failed
-            // to load", and `error` is the page's ONE error line — mark-read
-            // writes to it too, so a rejected POST made the banner blame a
-            // feed that had loaded perfectly well. Same folding-in the strip
-            // was fixed for; this is the other consumer of that flag.
-            error: readFailed,
+            // Not `error`. This arm says "the feed above failed to load", and
+            // `error` is the page's ONE error line — mark-read writes to it
+            // too, so a rejected POST made the banner blame a feed that had
+            // loaded perfectly well. But the question here is wider than the
+            // strip's: the banner's fallback tells the operator to "load
+            // more", so a failed PAGE is a failed look even though it leaves
+            // the head counts fresh.
+            error: readFailed || pagingFailed,
+            migrationPending,
           })}
         </p>
       )}
