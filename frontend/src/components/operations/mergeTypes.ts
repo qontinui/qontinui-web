@@ -316,6 +316,21 @@ export interface RepoSlotSaturation {
    */
   at_repo_cap: boolean;
   /**
+   * How many of this repo's `queued` proposals the per-repo cap will skip on
+   * the next tick: coord's `max(0, in_flight + queued - the cap IN FORCE)`.
+   *
+   * **Non-zero with `at_repo_cap === false` is the case the flag alone hides.**
+   * `at_repo_cap` is scoped to the HEAD of this repo's queue — it answers "is
+   * the next proposal skipped", not "is any proposal skipped". A repo whose
+   * first proposal is admitted while three behind it wait on its own cap
+   * reports `at_repo_cap: false` with `queued_blocked_by_cap: 3`, and reading
+   * only the flag renders that repo as having nothing held by the cap at all.
+   *
+   * Absent on a coord deploy predating the field — coord always serializes it,
+   * so absence is an old producer, never a zero.
+   */
+  queued_blocked_by_cap?: number;
+  /**
    * The A2 candidate-CI distress cap in force for this repo, when coord has
    * narrowed it below `per_repo_cap`. Absent — the overwhelmingly common case —
    * means the configured cap applies unchanged.
@@ -348,11 +363,50 @@ export interface SlotSaturation {
   occupied: number;
   available: number;
   saturated: boolean;
+  /**
+   * `max(0, occupied - configured_cap)` — an INVARIANT TRIPWIRE coord documents
+   * as having to read 0 forever.
+   *
+   * Compared by coord against `configured_cap`, NEVER `effective_cap`:
+   * `occupied > effective_cap` is legitimate (the dynamic cap shrinks the
+   * instant a CI runner drops out, and in-flight work is never preempted), but
+   * the GLOBAL semaphore is built once and never resized, so more
+   * permit-holding rows than `configured_cap` cannot exist. Non-zero means
+   * coord's DB-derived count and the real semaphore have DIVERGED — the
+   * 2026-08-25 defect, where `occupied: 4` against a ceiling of 3 sat on a
+   * Prometheus gauge through three incidents and alerted nothing.
+   *
+   * Which is why the console must read it: without it the Slots stat renders
+   * that impossible `4/3` as an ordinary ratio, and the surface repeats the
+   * silence the gauge already kept.
+   *
+   * Optional HERE only because a coord predating the field omits it — coord
+   * always serializes it, including 0, so absence is an old producer and never
+   * an assertion that the invariant holds.
+   */
+  occupancy_over_cap?: number;
   queued_depth: number;
   /** Seconds the oldest queued proposal has waited for a slot. The number that
    *  separates a throughput ceiling from a healthy train at full rate. */
   oldest_queued_wait_seconds?: number | null;
   per_repo_cap: number;
+  /**
+   * True when coord computed this observation under ONE tenant, so the cap
+   * fields describe that tenant's fleet rather than the whole control plane.
+   *
+   * `/pr-merge/health` always passes a tenant (`observe(state,
+   * Some(tenant_id))`), so on this endpoint it is true against any coord that
+   * sends it — which makes the scope claim the Slots stat used to hardcode
+   * ("occupancy and cap are fleet-wide") wrong about the cap. `occupied` IS
+   * fleet-wide in both scopes; `effective_cap` and `online_ci_runners` are the
+   * TENANT's under a tenant scope. coord reads this same field in its own
+   * `compute_headline` for exactly this reason.
+   *
+   * Optional HERE only because a coord predating the field omits it. Absence is
+   * UNKNOWN scope, not a fleet-wide claim — so the copy hedges rather than
+   * asserting either scope.
+   */
+  tenant_scoped?: boolean;
   repos?: RepoSlotSaturation[];
   repos_at_cap?: string[];
   /**

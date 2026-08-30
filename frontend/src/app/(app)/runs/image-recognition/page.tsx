@@ -7,6 +7,7 @@ import {
   type TaskRunEvent,
 } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -68,14 +69,14 @@ function extractRecognitionFields(event: TaskRunEvent) {
 
 export default function ImageRecognitionPage() {
   const {
-    data: runs,
+    runs: runList,
+    scope,
     isLoading: runsLoading,
     isOffline,
   } = useRunningTaskRuns();
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
-  const runList = runs || [];
   const activeRunId = selectedRunId || runList[0]?.id || null;
 
   const { data: events, isLoading: eventsLoading } =
@@ -116,12 +117,15 @@ export default function ImageRecognitionPage() {
                 <Loader2 className="size-4 animate-spin" />
               </div>
             ) : runList.length === 0 ? (
-              <div
-                data-content-role="status"
-                data-content-label="empty state"
-                className="px-3 py-6 text-center text-muted-foreground text-xs"
-              >
-                No active runs
+              <div className="px-3 py-6 space-y-2">
+                <div
+                  data-content-role="status"
+                  data-content-label="empty state"
+                  className="text-center text-muted-foreground text-xs"
+                >
+                  No active runs
+                </div>
+                <TaskRunScopeNote scope={scope} />
               </div>
             ) : (
               <div className="p-2 space-y-1">

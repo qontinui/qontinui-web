@@ -146,6 +146,17 @@ export interface TaskRunSummary {
   created_at: string;
 }
 
+/**
+ * Envelope returned by `GET /task-runs/running`.
+ *
+ * `scope` is the runner's statement of what the list covers — port-filtered
+ * workflow task-runs, NOT a census of live agent sessions.
+ */
+export interface RunningTaskRunsResponse {
+  scope: string;
+  task_runs: TaskRunSummary[];
+}
+
 /** Props for the PageAnalyzer component */
 export interface PageAnalyzerProps {
   /** Called when analysis data is ready for consumption */
