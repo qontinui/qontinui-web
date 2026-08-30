@@ -121,26 +121,18 @@ _TIER_COLUMN = "agent_write_tier"
 # `pdaw_01`'s comment bodies, VERBATIM, restored with the column so the catalog
 # reads the same as it did before `pdtier_01` took them with the DROP.
 #
-# Verbatim is the point, and it was not free: this dict first shipped holding
-# two paraphrases. The parent's dropped `pdaw_01`'s "NULL is NOT false"
-# sentence - the one that revision exists to carry, and the one a three-state
-# setting restored as a two-state boolean needs most, because during this shim
-# window NULL is exactly what an operator is most likely to read as "false".
-# The snapshot's dropped the reason the version row is the ATTRIBUTABLE record
-# (`edited_by` survives the next agent append; the parent's `updated_by` does
-# not). `pdtier_01`'s downgrade restores both character-for-character, so the
-# reverse path and the forward path disagreed about what the catalog says -
-# and production took the forward one.
+# VERBATIM is a requirement, not a style note. `pdtier_01`'s downgrade restores
+# these same two bodies character-for-character, so a paraphrase here makes the
+# forward and reverse paths disagree about what the catalog says - and the
+# forward one is the path production takes. A paraphrase already cost the
+# parent's "NULL is NOT false", which is the sentence `pdaw_01` exists to carry
+# and the one a three-state setting stored in a two-state column needs most.
+# `test_pdtier_02_restore_agent_writable_migration.py` compares both bodies
+# against `pdaw_01`'s SOURCE, so the next paraphrase fails rather than lands.
 #
-# A database already at `pdtier_02` keeps the paraphrase until `pdtier_03`
-# drops the column outright and the comment with it; alembic re-runs no
-# revision. Nothing reads these bodies at runtime - coord reads the column, not
-# `col_description` - so the correction is worth no revision of its own, and
-# the divergence is bounded by the same window the shim is.
-#
-# Apostrophes appear ONCE here and are doubled by `_comment_sql` at format
-# time. Writing `''` into these strings would store the doubled form: only the
-# SQL parser collapses it, and this dict is read by the test as plain text.
+# Apostrophes are written ONCE here and doubled by `_comment_sql`. Writing `''`
+# into these strings would store the doubled form: only the SQL parser
+# collapses it.
 _COMMENTS = {
     "coord.prompt_documents": (
         "May an agent write this document via coord_write_prompt_document? "
@@ -165,16 +157,16 @@ _COMMENTS = {
 def _comment_sql(table: str) -> str:
     """``COMMENT ON COLUMN`` for ``table``, with the body quoted safely.
 
-    Two hazards, both of which `pdaw_01` hit and wrote down:
+    The bodies carry apostrophes (``coord's``, ``parent's``, ``row's``), which
+    `_COMMENTS` stores singly so the dict reads as prose and can be compared
+    against `pdaw_01`'s source as prose. The doubling happens here, once.
 
-    * The bodies carry apostrophes (``coord's``, ``parent's``, ``row's``). They
-      are stored here singly and doubled here, so the dict stays readable to a
-      human and to the test that compares it against `pdaw_01`'s source.
-    * `op.execute` of a plain string routes through SQLAlchemy's ``text()``,
-      which reads ``:word`` as a BIND PARAMETER. `pdaw_01` spells the route
-      ``{kind}/{name}`` rather than ``:kind/:name`` for exactly that reason,
-      and these bodies inherit that spelling. The braces survive because the
-      body is a runtime value here, not part of the f-string's own literal.
+    Separately, and NOT what the doubling is for: `op.execute` of a plain
+    string routes through SQLAlchemy's ``text()``, which reads ``:word`` as a
+    BIND PARAMETER. `pdaw_01` spells the route ``{kind}/{name}`` rather than
+    ``:kind/:name`` for exactly that reason, and these bodies inherit that
+    spelling. The test asserts no such token can re-enter them, using
+    SQLAlchemy's own compiler rather than a second regex to decide what counts.
     """
     body = _COMMENTS[table].replace("'", "''")
     return f"COMMENT ON COLUMN {table}.{_LEGACY_COLUMN} IS '{body}'"
