@@ -748,6 +748,32 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > thing to grep for is the **claim**, not the prop: any copy that says *none*,
 > *no such*, *not found*, *empty* or *all clear* is a surface that has to
 > consult the failure flag, whatever primitive renders it.
+>
+> **A surface that splits the failure into kinds must read the status FIELD,
+> never the message.** Several do, because "coord answered 404" and "nothing
+> answered" want different copy, and `httpClient` throws a plain `Error` — so
+> the status is only available as text: `<METHOD> <url> failed: <status> -
+> <body>`. That `<body>` is `await response.text()`, raw upstream prose the
+> operations proxy fills with coord's own `resp.text`, and it can quote a whole
+> inner failure. Every unanchored probe therefore reads a status the request
+> never got. Four had grown independently — `/ failed: (404|405|501) /`,
+> `/404/`, `/failed:\s*503\b/`, `/failed:\s*4(?:00|22)\b/` — and the loosest
+> also matched the **URL**, so `DeployRow` read the digits `404` out of a hex
+> deploy id and told the operator that row had no rollback proposal for as long
+> as the id existed. `components/admin/coord/httpStatus.ts` is the one reader:
+> anchored to the verb, first field, body out of the decision. It returns the
+> **status only** — what the status MEANS stays a named predicate at the call
+> site, because the surfaces legitimately disagree (`/questions/[id]` reads 404
+> as "coord holds no such row"; `useSessionCompliance` reads it as "this build
+> does not deploy the route"). `null` means "no status", and it must never fall
+> into the calm arm.
+>
+> The direction of the failure is what makes this R6's business rather than a
+> parsing nicety. `useSessionCompliance` writes `error: isRouteUnavailable(err)
+> ? null : message(err)`: a misread does not mislabel the error, it **deletes**
+> it, and the page renders the quiet "coord doesn't serve this yet" over a 500.
+> That is the same false all-clear as the green strip, reached through the
+> status probe instead of through the empty slot.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now

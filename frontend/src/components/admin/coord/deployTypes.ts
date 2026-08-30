@@ -13,6 +13,7 @@
  * `landTypes` (same {dimension, drift_class, outcome, detail} shape).
  */
 
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type { DimensionVerdict } from "@/components/admin/coord/landTypes";
 
 export interface DeployVerification {
@@ -88,6 +89,40 @@ export function rollbackProposalPossible(
   if (!ver?.settled) return false;
   const o = (ver.composed_outcome ?? "").toLowerCase();
   return o === "failure" || o === "contradiction";
+}
+
+/**
+ * True when coord ANSWERED "there is no proposal for this deploy", as opposed
+ * to the rollback-proposal read never landing.
+ *
+ * Coord 404s that endpoint when the latest verification does not justify a
+ * rollback — an unclean rollback, or no prior artifact to go back to. That is
+ * real information and the ordinary outcome, so `DeployRow` renders it as calm
+ * explanatory copy rather than as an error.
+ *
+ * ## Why the status FIELD, not the message (#1110 follow-up)
+ *
+ * `DeployRow` used to decide this with `/404/.test(msg)` — the loosest of the
+ * four probes the console had grown, and the only one that could fire off
+ * something that is not a status at all. `httpClient` formats the message as
+ * `GET <url> failed: <status> - <body>`, so `/404/` scanned two upstream-owned
+ * regions:
+ *
+ * - the BODY, so a 500 whose text quoted a 404 read as "no proposal";
+ * - the URL, which is `${API}/deploys/${sig.id}/rollback-proposal`. Deploy ids
+ *   are hex, so an id containing the digits `404` turned EVERY failure on that
+ *   one row — a 500, a timeout, coord being down — into the calm "coord does
+ *   not consider this rollback-justified". A row that told the operator no
+ *   rollback was available, forever, chosen by its own id.
+ *
+ * Both readings say the same wrong thing in the same direction: an absence
+ * claimed off a read that failed. `httpStatusOf` is anchored to the verb and
+ * reads the status field once, so neither region is in the decision. A message
+ * with no status yields `null`, which is not 404, so an unreachable coord keeps
+ * showing its real message.
+ */
+export function isNoProposalAnswer(err: unknown): boolean {
+  return httpStatusOf(err) === 404;
 }
 
 // ---- Schema-drift subclass → badge variant + label ------------------------

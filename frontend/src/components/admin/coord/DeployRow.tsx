@@ -44,6 +44,7 @@ import {
 } from "@/components/admin/coord/VerdictChips";
 import {
   isManagedPredictedHeadFork,
+  isNoProposalAnswer,
   rollbackProposalPossible,
   shortTarget,
   verdictChipLabel,
@@ -105,10 +106,15 @@ export function DeployRow({
     } catch (e) {
       setProposal(null);
       // Coord 404s when the latest verification does not justify a rollback
-      // (e.g. unclean / no prior artifact) — render that honestly.
+      // (e.g. unclean / no prior artifact) — render that honestly. The probe
+      // used to be `/404/` over the whole message, which is `GET <url> failed:
+      // <status> - <body>`: it matched the BODY, and it matched the deploy id
+      // inside the URL, so any failure on a row whose hex id contains "404"
+      // claimed there was no proposal. `isNoProposalAnswer` reads the status
+      // field (see its doc); anything else keeps its real message.
       const msg = e instanceof Error ? e.message : String(e);
       setProposalMsg(
-        /404/.test(msg)
+        isNoProposalAnswer(e)
           ? "No rollback proposal: coord does not consider this verification rollback-justified (unclean rollback or no prior artifact)."
           : msg
       );
