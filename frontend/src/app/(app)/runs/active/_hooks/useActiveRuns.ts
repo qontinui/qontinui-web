@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { runnerApi, type TaskRun } from "@/lib/runner";
+import {
+  runnerApi,
+  type TaskRun,
+  type RunningTaskRunsResponse,
+} from "@/lib/runner";
 import { useEventTriggeredFetch } from "@/contexts/RunnerEventContext";
 import { runnerFetch } from "@/lib/runner/api-client";
 import { toast } from "sonner";
@@ -12,14 +16,17 @@ import {
 
 export function useActiveRuns() {
   const {
-    data: activeRuns,
+    data: runningTaskRuns,
     isLoading,
     isOffline,
     refetch: refetchRuns,
-  } = useEventTriggeredFetch<TaskRun[]>(
+  } = useEventTriggeredFetch<RunningTaskRunsResponse>(
     "task-run-update",
     "/task-runs/running"
   );
+
+  const activeRuns: TaskRun[] | null = runningTaskRuns?.task_runs ?? null;
+  const scope = runningTaskRuns?.scope ?? null;
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const lastKnownRunIds = useRef<Set<string>>(new Set());
@@ -124,6 +131,7 @@ export function useActiveRuns() {
 
   return {
     runs,
+    scope,
     isLoading,
     isOffline,
     selectedRunId: currentRunId,

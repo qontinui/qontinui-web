@@ -64,12 +64,23 @@
  *   for: `loading` settles on FAILURE too (it is cleared in a `finally`),
  *   which is right for the skeleton and wrong for a count.
  *
+ *   **A THIRD flag, `readFailed`, was added by the post-merge audit of this
+ *   wave.** `loaded` answers "did anything ever arrive" and `error` answers "is
+ *   anything wrong on this page" — and neither answers the question a 10s
+ *   poller makes urgent: *are the numbers on screen still current?* Without it
+ *   a good first load followed by failing polls left a GREEN "137 unread
+ *   events" sitting directly above this page's own "Failed to load…" line.
+ *   R6's own note in the style guide now carries the general rule; the split
+ *   it produces here is unknown (`–`, nothing ever read) versus stale (the
+ *   real numbers, said to have stopped moving).
+ *
  * **The strip is never red or amber for a BACKLOG**, and that is the point:
  * this is an append-only EVENT feed, so an unread row blocks nobody and decays
  * into nothing. Amber would promise something else clears it; red would claim
- * "act now". Both are false. It IS amber when we cannot say what happened —
- * migration-pending, a failed read, or before the first answer. See
- * `notificationsHealth.tsx`.
+ * "act now". Both are false. It IS amber whenever it cannot say what happened —
+ * migration-pending, a first read that failed, before the first answer, a read
+ * that answered without `unread_count`, and counts a since-failing poll left
+ * standing. See `notificationsHealth.tsx`.
  *
  * **The kind filter and the unread-only switch deliberately stay a `<Select>`
  * and a `<Switch>`, not `<FilterTabs>`.** Both are SERVER-side (`?kind=`,
@@ -150,6 +161,21 @@ export default function CoordNotificationsPage() {
    * /releases.
    */
   const [loaded, setLoaded] = useState(false);
+  /**
+   * True while the MOST RECENT head read failed. Not `error`, and not `!loaded`.
+   *
+   * `error` is the page's one error line and mark-read writes to it too, so it
+   * answers "is anything wrong here", which is a different question from "are
+   * the counts in the strip still current". `loaded` answers "did anything ever
+   * arrive". Neither can express the state that matters most on a 10s poller:
+   * a first load that WORKED followed by polls that stopped working, which
+   * leaves real numbers on screen with nothing saying they froze.
+   *
+   * Crossed with `loaded`, this is the strip's two-arm unknown-vs-stale split —
+   * see `notificationsHealth.tsx`. Cleared on every success, so a poll that
+   * recovers un-stales the strip without a reload.
+   */
+  const [readFailed, setReadFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,19 +250,24 @@ export default function CoordNotificationsPage() {
         setMigrationPending(false);
         setLoaded(true);
         setError(null);
+        setReadFailed(false);
       } catch (e) {
         // The guard covers the failure arms too: a stale 503 must not flip the
         // new query's view to "not available yet", and a stale 500 must not
         // stamp an error over a query that is fine.
         if (queryGenRef.current !== gen) return;
         if (isMigrationPending(e)) {
-          // Expected until the coord migration deploys — not an error.
+          // Expected until the coord migration deploys — not an error, and not
+          // a stale-counts state either: `migrationPending` is checked first by
+          // the strip and speaks for itself.
           setMigrationPending(true);
           setError(null);
+          setReadFailed(false);
         } else {
           setError(
             `Failed to load: ${e instanceof Error ? e.message : String(e)}`
           );
+          setReadFailed(true);
         }
       } finally {
         if (queryGenRef.current === gen) setLoading(false);
@@ -412,7 +443,13 @@ export default function CoordNotificationsPage() {
     total,
     loaded,
     migrationPending,
-    failed: error !== null && !loaded,
+    // `readFailed`, not `error !== null && !loaded`. The old expression could
+    // only ever describe a FIRST read that failed, so the far more common
+    // state — a good first load followed by polls that stopped succeeding —
+    // fell through to the green arm and reported frozen counts as current.
+    // It also folded in mark-read failures, which say nothing about whether
+    // the counts are fresh.
+    failed: readFailed,
   });
 
   return (

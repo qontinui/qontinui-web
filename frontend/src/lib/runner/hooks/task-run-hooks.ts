@@ -1,12 +1,16 @@
 "use client";
 
+import { useMemo } from "react";
+
 import {
   useRunnerQuery,
   useRunnerMutation,
   DEFAULT_POLL_INTERVAL,
 } from "../api-client";
+import type { UseRunnerQueryResult } from "../api-client";
 import type {
   TaskRun,
+  RunningTaskRunsResponse,
   TaskRunOutput,
   TaskRunKnowledge,
   Finding,
@@ -32,10 +36,27 @@ export function useTaskRuns(params?: { limit?: number; status?: string }) {
   return useRunnerQuery<TaskRun[]>(`/task-runs${qs ? `?${qs}` : ""}`);
 }
 
-export function useRunningTaskRuns() {
-  return useRunnerQuery<TaskRun[]>("/task-runs/running", {
+export interface UseRunningTaskRunsResult
+  extends UseRunnerQueryResult<RunningTaskRunsResponse> {
+  /** The envelope's task runs, or `[]` before the first response lands. */
+  runs: TaskRun[];
+  /**
+   * The endpoint's own description of what `runs` covers — workflow
+   * task-runs on one API port, NOT a census of live agent sessions. `null`
+   * until the first response lands. Render it beside any empty state so an
+   * empty list is never read as "the runner is idle".
+   */
+  scope: string | null;
+}
+
+export function useRunningTaskRuns(): UseRunningTaskRunsResult {
+  const query = useRunnerQuery<RunningTaskRunsResponse>("/task-runs/running", {
     pollInterval: DEFAULT_POLL_INTERVAL,
   });
+  // Stable identity between polls that return the same object, so callers can
+  // use `runs` as an effect dependency without re-running every render.
+  const runs = useMemo(() => query.data?.task_runs ?? [], [query.data]);
+  return { ...query, runs, scope: query.data?.scope ?? null };
 }
 
 export function useTaskRun(id: string | number | null) {

@@ -17,7 +17,7 @@ import {
 import { httpClient } from "@/services/service-factory";
 import { devActionDetailUrl, relativeTime } from "./utils";
 import { useDevActionsStream } from "./useDevActionsStream";
-import { CollapsiblePanel } from "./CollapsiblePanel";
+import { CollapsiblePanel } from "@/components/console";
 import type {
   DevAction,
   DevActionCategory,

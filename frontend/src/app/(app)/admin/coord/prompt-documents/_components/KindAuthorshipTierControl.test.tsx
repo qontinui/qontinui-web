@@ -337,4 +337,44 @@ describe("KindAuthorshipTierControl", () => {
     expect(notice.textContent?.trim().length ?? 0).toBeGreaterThan(40);
     expect(notice).toHaveTextContent(/allow_with_notification/);
   });
+
+  /**
+   * `builtin_default_denies` is the only field that says which way "coord's
+   * built-in default applies again" falls. On the six intent kinds it falls to
+   * DENY, so clearing an opened kind CLOSES it — and the page's whole asymmetry
+   * (opening is confirmed, closing and clearing are not) is only defensible if
+   * the operator can see that before the click.
+   */
+  it("names what clearing produces, in the direction the built-in default falls", async () => {
+    getMock.mockResolvedValue(
+      response([
+        row({
+          kind: "audience_profile",
+          tier: "allow",
+          builtin_default_denies: true,
+          effective_tier: "allow",
+          effective_source: "kind",
+        }),
+        row({
+          kind: "prompt_template",
+          tier: "deny",
+          builtin_default_denies: false,
+          effective_tier: "deny",
+          effective_source: "kind",
+        }),
+      ])
+    );
+    render(<KindAuthorshipTierControl />);
+
+    await screen.findByTestId("kind-tier-row-audience_profile");
+    const clears = screen.getAllByRole("button", { name: "clear" });
+    expect(clears[0]).toHaveAttribute(
+      "title",
+      expect.stringContaining("DENIES agent authorship, so clearing CLOSES it")
+    );
+    expect(clears[1]).toHaveAttribute(
+      "title",
+      expect.stringContaining("ALLOWS agent authorship")
+    );
+  });
 });

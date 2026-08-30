@@ -305,6 +305,14 @@ jobs:
           # and 30 min below the job budget.
           SOFT_BUDGET_MINUTES: '60'
           JOB_TIMEOUT_MINUTES: '90'
+          # The only per-site text in an otherwise byte-identical body. Keeping
+          # the prose in `env` is what lets the two carriers share one script:
+          # the marker next door is carried by eight copies precisely because
+          # they are identical, and a tripwire that forked its wording at two
+          # sites would start the same drift over again at a smaller scale.
+          JOB_LABEL: Backend Coverage Producer
+          BUDGET_STAKES: >-
+            This lane is non-gating, so a timeout here does not block a PR - it costs the coverage export and reds the main baseline instead.
         run: |
           set -uo pipefail
 
@@ -333,7 +341,7 @@ jobs:
           echo "Job wall-clock: ${elapsed_min} min (soft budget ${SOFT_BUDGET_MINUTES} min, job budget ${JOB_TIMEOUT_MINUTES} min)."
 
           if [ "$elapsed_min" -ge "$SOFT_BUDGET_MINUTES" ]; then
-            echo "::warning title=Coverage producer is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. Act on it before it becomes a timeout: this job's budget was previously set below the suite's own median, and every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
+            echo "::warning title=${JOB_LABEL} is approaching its job budget::This job took ${elapsed_min} min, at or past the ${SOFT_BUDGET_MINUTES}-minute soft budget and closing on the ${JOB_TIMEOUT_MINUTES}-minute job budget. This run PASSED - this is an early warning, not a failure. ${BUDGET_STAKES} Act on it before it becomes a timeout: this repo has already paid for a budget set below this suite's own median - every main push then produced a 'cancelled' run, no coverage export, and a red main baseline. Either make the suite faster (sharding is the obvious lever) or raise BOTH 'timeout-minutes' and 'JOB_TIMEOUT_MINUTES' together."
           fi
 
       # Per-test -> touched-file coverage producer. Best-effort (the script

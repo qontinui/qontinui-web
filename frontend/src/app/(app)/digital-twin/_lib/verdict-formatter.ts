@@ -5,8 +5,9 @@
  * touches where the components shape is well-known.
  */
 
+import { citationCounts } from "./delivery-citations";
 import { formatRatio, formatStaleness } from "./status-presentation";
-import type { DriftVerdict } from "./types";
+import type { DeliveryComponents, DriftVerdict } from "./types";
 
 /** Plain-language reading of the canonical drift_class. */
 function driftClassPhrase(driftClass: string | undefined): string {
@@ -85,47 +86,48 @@ function instanceClause(verdict: DriftVerdict): string | null {
       const statusLabel =
         anchorKind === "work_unit" ? "Unit status" : "Plan status";
       const status = comp.status;
-      const prs = Array.isArray(comp.prs) ? comp.prs : [];
+      // Every citation bucket is resolved by ONE reader shared with the card
+      // (`delivery-citations.ts`) — count first, list second — so the prose and
+      // the per-PR badges can never disagree about which citations blocked.
+      const counts = citationCounts(c as DeliveryComponents);
       // `all_merged` is coord's DELIVERY PREDICATE, not the literal "every
       // citation merged" its name suggests — a closed-never-merged citation is
       // retired rather than counted (coord plan
       // `2026-08-18-closed-unmerged-citation-pins-shipped-forever`). Rendering
       // it as the words "all merged" would state something false about a unit
       // that delivered with a dead duplicate still cited, so the retired count
-      // is named separately and `unmerged_prs` — which now carries only the
-      // BLOCKING citations — is what the "still unmerged" clause counts.
+      // is named separately and only the BLOCKING citations feed the "still
+      // unmerged" clause.
       const delivered = comp.all_merged;
-      const unmerged = Array.isArray(comp.unmerged_prs)
-        ? comp.unmerged_prs.length
-        : 0;
-      const retired =
-        typeof comp.terminal_unlanded_count === "number"
-          ? comp.terminal_unlanded_count
-          : Array.isArray(comp.terminal_unlanded_prs)
-            ? comp.terminal_unlanded_prs.length
-            : 0;
-      if (prs.length === 0) {
+      if (counts.total === 0) {
         return status !== undefined && status !== null
           ? `${statusLabel} “${String(status)}”; no cited PRs found.`
           : `No cited PRs found for this ${noun}.`;
       }
       const retiredClause =
-        retired > 0 ? `, ${retired} closed without landing` : "";
+        counts.retired > 0 ? `, ${counts.retired} closed without landing` : "";
+      // Below the predicate, the clause states the LITERAL breakdown. "none
+      // landed" is a claim about `landed_count`, so it is only made when that
+      // count says so — the predicate being absent or false is not evidence
+      // that nothing landed, and asserting it there is the same class of
+      // falsehood as saying "all merged" over a retired citation.
       const mergeClause =
         delivered === true
-          ? retired > 0
+          ? counts.retired > 0
             ? `delivered${retiredClause}`
             : "all merged"
-          : unmerged > 0
-            ? `${unmerged} still unmerged${retiredClause}`
-            : retired > 0
-              ? `none landed${retiredClause}`
-              : "merge state mixed";
+          : counts.blocking > 0
+            ? `${counts.blocking} still unmerged${retiredClause}`
+            : counts.landed > 0
+              ? `${counts.landed} landed${retiredClause}`
+              : counts.retired > 0
+                ? `none landed${retiredClause}`
+                : "merge state mixed";
       const statusPart =
         status !== undefined && status !== null
           ? `${statusLabel} “${String(status)}”; `
           : "";
-      return `${statusPart}${prs.length} cited PR${prs.length === 1 ? "" : "s"}, ${mergeClause}.`;
+      return `${statusPart}${counts.total} cited PR${counts.total === 1 ? "" : "s"}, ${mergeClause}.`;
     }
     default:
       return null;

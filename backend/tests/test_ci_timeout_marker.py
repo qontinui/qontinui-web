@@ -57,6 +57,17 @@ MARKER_WORKFLOWS = [
     "verify-frontend-deploy.yml",
 ]
 
+TRIPWIRE_STEP_NAME = "Warn if the job is approaching its budget"
+
+# The tripwire is carried by every job on the 90-minute backend-suite budget:
+# the non-gating producer it was written for, and `backend-ci`'s `test` job,
+# which runs the byte-identical suite as the GATING lane. Asserted against a
+# glob, exactly like MARKER_WORKFLOWS.
+TRIPWIRE_WORKFLOWS = [
+    "backend-ci.yml",
+    "backend-coverage-producer.yml",
+]
+
 EXTERNAL_CANCEL_NOTE = "a newer push to the same ref supersedes the run"
 
 # Annotation titles, spelled out as literals. Asserting against a constant the
@@ -73,7 +84,10 @@ TITLE_SOFT_FAILED_DOWNSTREAM = "A soft-failed apt step may have red this job dow
 TITLE_APT_MID_FLIGHT_SHORT = "Cancelled with an apt step mid-flight"
 TITLE_APT_CANNOT_RULE = "Cannot rule the apt stall in or out"
 TITLE_TRIPWIRE_UNKNOWN = "Job duration UNKNOWN - budget tripwire did not run"
-TITLE_TRIPWIRE_WARN = "Coverage producer is approaching its job budget"
+# The warn title now carries each site's own `JOB_LABEL`, so the invariant tail
+# is what can be asserted against any carrier; `_tripwire_warn_title` builds the
+# full per-site string where a test needs it.
+TITLE_TRIPWIRE_WARN_TAIL = "is approaching its job budget"
 GENUINE_RED = "This job's failure is a real one"
 
 
@@ -97,6 +111,41 @@ def _marker_body(workflow: str) -> str:
     return _find_step(workflow, MARKER_STEP_NAME)[2]["run"]
 
 
+def _marker_steps():
+    """Every marker step in every carrier -- not just the first one per file.
+
+    `_find_step` stops at the first match, so a SECOND marker step added to
+    another job of an already-listed carrier is invisible to it: the carrier
+    set still matches, and the body it compares is the original. That copy
+    would then be exempt from both the byte-identity pin and the job-start
+    stamp pin -- the same "one site out of N" drift the identity test exists
+    to catch, wearing a shape the file-level census cannot see.
+
+    Yields (workflow, job_id, job, step).
+    """
+    for workflow in MARKER_WORKFLOWS:
+        for job_id, job, steps in _steps(workflow):
+            for step in steps:
+                if step.get("name") == MARKER_STEP_NAME:
+                    yield workflow, job_id, job, step
+
+
+def _cancel_in_progress(workflow: str, job: dict):
+    """Resolve the `cancel-in-progress` that actually governs this job.
+
+    A job-level `concurrency:` block overrides the workflow-level one. Returns
+    the bool, or None when no block applies -- and the string itself when it is
+    an unevaluated `${{ }}` expression, which is neither.
+    """
+    doc = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
+    conc = job.get("concurrency")
+    if conc is None:
+        conc = doc.get("concurrency")
+    if not isinstance(conc, dict):
+        return None
+    return conc.get("cancel-in-progress")
+
+
 # --- structural pins --------------------------------------------------------
 
 
@@ -106,9 +155,13 @@ def test_marker_carriers_are_exactly_the_expected_set():
     Round 1 of this fix shipped to 6 of 8 carriers because the census that
     found them was truncated. A glob is what makes that class of miss visible.
     """
+    # `*.y*ml`, not `*.yml`: GitHub Actions reads `.yaml` and `.yml` alike, so
+    # a carrier added under the other extension would be a real carrier that
+    # this census cannot see -- reintroducing, through a spelling, exactly the
+    # invisible-miss this test was written to prevent.
     found = sorted(
         p.name
-        for p in WORKFLOWS.glob("*.yml")
+        for p in WORKFLOWS.glob("*.y*ml")
         if MARKER_STEP_NAME in p.read_text(encoding="utf-8")
     )
     assert found == sorted(MARKER_WORKFLOWS), (
@@ -124,8 +177,16 @@ def test_all_marker_bodies_are_identical():
     repo has already paid for twice: commit 2ee1ac21 exists because an earlier
     guard "shipped at ONE of seven sites", and round 1 of this fix reached 6
     of 8.
+
+    Compared per marker STEP rather than per carrier file: a second copy in
+    another job of an already-listed workflow is still a copy, and comparing
+    only the first one per file would exempt it.
     """
-    bodies = {wf: _marker_body(wf) for wf in MARKER_WORKFLOWS}
+    bodies = {f"{wf}:{jid}": step["run"] for wf, jid, _, step in _marker_steps()}
+    assert len(bodies) >= len(MARKER_WORKFLOWS), (
+        f"found only {len(bodies)} marker steps across "
+        f"{len(MARKER_WORKFLOWS)} carriers; the scan missed some"
+    )
     distinct = set(bodies.values())
     assert len(distinct) == 1, (
         "the marker body has drifted across carriers; "
@@ -140,8 +201,8 @@ def test_every_carrier_stamps_its_job_start_as_the_first_step():
     on a `needs:`-gated job overstates elapsed by the upstream job plus queue
     time -- enough to report a late external cancel as a timeout.
     """
-    for workflow in MARKER_WORKFLOWS:
-        job_id, job, _ = _find_step(workflow, MARKER_STEP_NAME)
+    checked = 0
+    for workflow, job_id, job, _ in _marker_steps():
         steps = job["steps"]
         assert steps[0].get("name") == STAMP_STEP_NAME, (
             f"{workflow} job {job_id!r}: first step is "
@@ -149,6 +210,11 @@ def test_every_carrier_stamps_its_job_start_as_the_first_step():
             f"expected {STAMP_STEP_NAME!r}"
         )
         assert "JOB_START_EPOCH" in steps[0]["run"]
+        checked += 1
+    assert checked >= len(MARKER_WORKFLOWS), (
+        f"only {checked} marker steps scanned across "
+        f"{len(MARKER_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
 
 
 def test_the_stamp_step_does_not_inherit_a_repo_relative_working_directory():
@@ -164,8 +230,7 @@ def test_the_stamp_step_does_not_inherit_a_repo_relative_working_directory():
     invariant is: whenever the job declares a repo-relative default, the stamp
     step must override it.
     """
-    for workflow in MARKER_WORKFLOWS:
-        job_id, job, _ = _find_step(workflow, MARKER_STEP_NAME)
+    for workflow, job_id, job, _ in _marker_steps():
         stamp = job["steps"][0]
         job_default = ((job.get("defaults") or {}).get("run") or {}).get(
             "working-directory"
@@ -217,14 +282,83 @@ def test_every_declared_job_timeout_matches_its_job():
     )
 
 
+def test_every_external_cancel_note_matches_its_workflow_concurrency():
+    """`EXTERNAL_CANCEL_NOTE` must describe the concurrency this job ACTUALLY has.
+
+    The note is the second hand-copied fact in this step, and it is copied for
+    the same reason as the first: GitHub exposes no expression for a workflow's
+    own `concurrency:` config, so each carrier states it in prose. The budget
+    number is already pinned to its job by
+    `test_every_declared_job_timeout_matches_its_job`; nothing pinned this one.
+
+    Drift here is not cosmetic. The note is interpolated into the arm that
+    RULES an external cancel, so a workflow that gains
+    `cancel-in-progress: true` while its note still reads "declares NO
+    `concurrency:` block, so GitHub never auto-supersedes it" would tell every
+    reader to go find the human who cancelled their job -- when GitHub had
+    superseded it automatically. That is the same misattribution class this
+    whole marker exists to remove: a diagnostic confidently naming the wrong
+    cause, which teaches readers to discard the right ones too.
+    """
+    checked = 0
+    for workflow, job_id, job, step in _marker_steps():
+        note = " ".join(
+            str((step.get("env") or {}).get("EXTERNAL_CANCEL_NOTE", "")).split()
+        )
+        assert note, f"{workflow} job {job_id!r}: declares no EXTERNAL_CANCEL_NOTE"
+        cip = _cancel_in_progress(workflow, job)
+
+        if cip is None:
+            expected = "declares NO `concurrency:` block"
+        elif cip is True:
+            expected = "declares `concurrency: cancel-in-progress: true`"
+        elif cip is False:
+            expected = "declares `concurrency: cancel-in-progress: false`"
+        else:
+            # An unevaluated `${{ }}` expression: the value is decided at run
+            # time, so no static prose can be true of every run. Asserting
+            # either branch would be a guess stated as fact -- the failure mode
+            # this marker exists to remove -- so require the note to claim
+            # NEITHER rather than silently accepting a coin flip.
+            for forbidden in (
+                "cancel-in-progress: true",
+                "cancel-in-progress: false",
+                "NO `concurrency:` block",
+            ):
+                assert forbidden not in note, (
+                    f"{workflow} job {job_id!r}: cancel-in-progress is the "
+                    f"expression {cip!r}, decided per run, but the note "
+                    f"asserts {forbidden!r} as though it were fixed"
+                )
+            checked += 1
+            continue
+
+        assert expected in note, (
+            f"{workflow} job {job_id!r}: EXTERNAL_CANCEL_NOTE has drifted from "
+            f"the workflow's real concurrency config. Expected the note to say "
+            f"{expected!r}, got: {note!r}"
+        )
+        checked += 1
+
+    assert checked >= len(MARKER_WORKFLOWS), (
+        f"only {checked} notes checked across {len(MARKER_WORKFLOWS)} carriers; "
+        "the scan matched nothing and would have passed vacuously"
+    )
+
+
 def test_soft_budget_is_below_the_job_budget():
     """A soft budget at or above the hard one could never warn in time."""
-    _, job, step = _find_step(
-        "backend-coverage-producer.yml", "Warn if the job is approaching its budget"
-    )
-    soft = int(step["env"]["SOFT_BUDGET_MINUTES"])
-    hard = int(job["timeout-minutes"])
-    assert 0 < soft < hard, f"soft budget {soft} must sit strictly inside {hard}"
+    for workflow in TRIPWIRE_WORKFLOWS:
+        _, job, step = _find_step(workflow, TRIPWIRE_STEP_NAME)
+        soft = int(step["env"]["SOFT_BUDGET_MINUTES"])
+        hard = int(job["timeout-minutes"])
+        assert 0 < soft < hard, (
+            f"{workflow}: soft budget {soft} must sit strictly inside {hard}"
+        )
+        assert step["env"]["JOB_TIMEOUT_MINUTES"] == str(hard), (
+            f"{workflow}: the tripwire's JOB_TIMEOUT_MINUTES has drifted from "
+            f"the job's own timeout-minutes ({hard})"
+        )
 
 
 # --- execution harness ------------------------------------------------------
@@ -616,11 +750,66 @@ def test_every_carrier_routes_identically_against_its_own_budget(tmp_path):
 # --- the budget tripwire ----------------------------------------------------
 
 
-def _tripwire_body() -> tuple[str, dict[str, str]]:
-    _, _, step = _find_step(
-        "backend-coverage-producer.yml", "Warn if the job is approaching its budget"
-    )
+def _tripwire_body(
+    workflow: str = "backend-coverage-producer.yml",
+) -> tuple[str, dict[str, str]]:
+    _, _, step = _find_step(workflow, TRIPWIRE_STEP_NAME)
     return step["run"], {k: str(v) for k, v in step["env"].items()}
+
+
+def _tripwire_warn_title(workflow: str) -> str:
+    """The warn title is per-site: the body interpolates `$JOB_LABEL`."""
+    _, env = _tripwire_body(workflow)
+    return f"{env['JOB_LABEL']} is approaching its job budget"
+
+
+def test_tripwire_carriers_are_exactly_the_expected_set():
+    """Derived by glob, for the same reason the marker's carrier set is.
+
+    The tripwire started at one site and now has two; the next person adding a
+    90-minute job to this repo is the one this census is for.
+    """
+    found = sorted(
+        p.name
+        for p in WORKFLOWS.glob("*.y*ml")
+        if TRIPWIRE_STEP_NAME in p.read_text(encoding="utf-8")
+    )
+    assert found == sorted(TRIPWIRE_WORKFLOWS), (
+        "the set of workflows carrying the budget tripwire has changed; "
+        f"glob found {found}, list expects {sorted(TRIPWIRE_WORKFLOWS)}"
+    )
+
+
+def test_all_tripwire_bodies_are_identical():
+    """Two copies drift exactly like eight do, only quieter.
+
+    Everything site-specific -- the label, the stakes sentence, both budgets --
+    is in `env:`, so the `run:` body itself has nothing legitimate to differ
+    about.
+    """
+    bodies = {wf: _tripwire_body(wf)[0] for wf in TRIPWIRE_WORKFLOWS}
+    distinct = set(bodies.values())
+    assert len(distinct) == 1, (
+        "the tripwire body has drifted across carriers; "
+        f"{len(distinct)} distinct versions across {sorted(bodies)}"
+    )
+
+
+def test_every_tripwire_carrier_declares_its_own_site_text():
+    """`JOB_LABEL` and `BUDGET_STAKES` are what make one body serve two sites.
+
+    If a copy-paste leaves both carriers with the same label, the annotation
+    stops naming which job is creeping -- which is the only thing it is for.
+    """
+    labels = {}
+    for workflow in TRIPWIRE_WORKFLOWS:
+        _, env = _tripwire_body(workflow)
+        for key in ("JOB_LABEL", "BUDGET_STAKES"):
+            assert env.get(key), f"{workflow}: tripwire declares no {key}"
+        labels[workflow] = env["JOB_LABEL"]
+    assert len(set(labels.values())) == len(labels), (
+        f"tripwire carriers must not share a JOB_LABEL, got {labels}"
+    )
 
 
 @requires_bash
@@ -643,7 +832,7 @@ def test_tripwire_reports_unknown_and_never_fails_the_job(tmp_path, bad):
     out = _exec(body, env, tmp_path)
     assert TITLE_TRIPWIRE_UNKNOWN in out
     assert "UNKNOWN" in out
-    assert TITLE_TRIPWIRE_WARN not in out
+    assert TITLE_TRIPWIRE_WARN_TAIL not in out
 
 
 @requires_bash
@@ -652,7 +841,7 @@ def test_tripwire_is_quiet_on_a_fast_job(tmp_path):
     env["PATH"] = "/usr/bin:/bin"
     env["JOB_START_EPOCH"] = str(int(time.time()) - 10 * 60)
     out = _exec(body, env, tmp_path)
-    assert TITLE_TRIPWIRE_WARN not in out
+    assert TITLE_TRIPWIRE_WARN_TAIL not in out
     assert TITLE_TRIPWIRE_UNKNOWN not in out
     assert "Job wall-clock: 10 min" in out
 
@@ -665,8 +854,39 @@ def test_tripwire_warns_at_and_past_the_soft_budget(tmp_path, minutes):
     env["PATH"] = "/usr/bin:/bin"
     env["JOB_START_EPOCH"] = str(int(time.time()) - minutes * 60)
     out = _exec(body, env, tmp_path)
-    assert TITLE_TRIPWIRE_WARN in out
+    assert _tripwire_warn_title("backend-coverage-producer.yml") in out
     assert f"took {minutes} min" in out
+
+
+@requires_bash
+def test_every_tripwire_carrier_warns_against_its_own_soft_budget(tmp_path):
+    """The shared body must route per-site, not just parse per-site.
+
+    Byte-identity is necessary but not sufficient: each carrier supplies its own
+    soft budget, label and stakes sentence, and those are what the warn arm
+    interpolates. This is the tripwire's counterpart to
+    `test_every_carrier_routes_identically_against_its_own_budget`.
+    """
+    for workflow in TRIPWIRE_WORKFLOWS:
+        body, env = _tripwire_body(workflow)
+        soft = int(env["SOFT_BUDGET_MINUTES"])
+        env["PATH"] = "/usr/bin:/bin"
+
+        env["JOB_START_EPOCH"] = str(int(time.time()) - soft * 60)
+        at_soft = _exec(body, env, tmp_path)
+        # Five minutes below, not one: the body measures against `date` at the
+        # moment it runs, so a slow runner can burn a whole minute between the
+        # stamp being computed here and the comparison happening there, and a
+        # one-minute margin would flip. The inclusive boundary itself is pinned
+        # exactly by `test_tripwire_warns_at_and_past_the_soft_budget`; what
+        # this test is for is that each carrier routes on its OWN budget.
+        env["JOB_START_EPOCH"] = str(int(time.time()) - (soft - 5) * 60)
+        below = _exec(body, env, tmp_path)
+
+        title = _tripwire_warn_title(workflow)
+        assert title in at_soft, workflow
+        assert env["BUDGET_STAKES"].strip() in at_soft, workflow
+        assert title not in below, workflow
 
 
 @requires_bash

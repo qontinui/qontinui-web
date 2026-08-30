@@ -20,6 +20,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.services.cognito_jwks import (
+    _MAX_KID_CHARS,
     CognitoJWKSClient,
     CognitoTokenInvalidError,
 )
@@ -281,6 +282,39 @@ async def test_unknown_kid_after_refresh_rejected() -> None:
     assert "never-present" in str(exc.value) or "no jwk" in str(exc.value).lower()
     # Cold fetch + one forced refresh = 2.
     assert client.fetch_count == 2
+
+
+@pytest.mark.asyncio
+async def test_unknown_kid_is_capped_before_it_reaches_the_message() -> None:
+    """The rejection message must not carry an unbounded caller-chosen kid.
+
+    `kid` is read from an UNVERIFIED header on a PRE-AUTH path, and the
+    unknown-kid message is logged verbatim by
+    ``cognito_user.verify_cognito_token_and_resolve_user`` at WARNING. Without
+    a cap the caller picks both the content and the size of a log write and
+    can repeat it at will — an amplifier, not merely noise.
+
+    The sibling ``coord_jwks`` already caps at ``_MAX_KID_CHARS`` for exactly
+    this reason; this pins that the Cognito door does too. Asserting on the
+    message rather than on the constant is deliberate: the message is the
+    thing that reaches the log, so a cap applied after formatting would still
+    fail here.
+    """
+    private, jwk = _rsa_keypair(kid="present")
+    client = _FakeClient({"keys": [jwk]})
+
+    oversized = "A" * (_MAX_KID_CHARS * 20)
+    token = _mint(private, _id_token_claims(), kid=oversized)
+
+    with pytest.raises(CognitoTokenInvalidError) as exc:
+        await client.verify_token(token)
+
+    message = str(exc.value)
+    assert oversized not in message
+    # The truncated prefix is still present, so the message stays useful for
+    # diagnosing a real rotation miss.
+    assert "A" * _MAX_KID_CHARS in message
+    assert "A" * (_MAX_KID_CHARS + 1) not in message
 
 
 @pytest.mark.asyncio

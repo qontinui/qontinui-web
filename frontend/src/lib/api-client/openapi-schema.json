@@ -53237,6 +53237,7 @@
           "description": {
             "anyOf": [
               {
+                "maxLength": 2048,
                 "type": "string"
               },
               {
@@ -79495,7 +79496,7 @@
     },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
-        "description": "List every Cognito group in the shared pool. Superuser-gated.",
+        "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
         "operationId": "api_v1_operations_coord_cognito_groups_get",
         "responses": {
           "200": {
@@ -79522,7 +79523,7 @@
         ]
       },
       "post": {
-        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated.",
+        "description": "Create a Cognito group. 409 if a group with that name already\nexists, 400 if the name cannot satisfy Cognito's ``groupName``\nconstraint. Superuser-gated, rate-limited, audited.\n\n``request`` is here because slowapi requires it on a limited endpoint,\nnot because the handler reads it.",
         "operationId": "api_v1_operations_coord_cognito_groups_post",
         "requestBody": {
           "content": {
@@ -79571,14 +79572,16 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
+        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -79645,14 +79648,16 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -79703,14 +79708,16 @@
         ]
       },
       "get": {
-        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.",
+        "description": "List the members of a Cognito group. 404 if no such group.\nSuperuser-gated.\n\nRead-only, so no audit row and no rate limit \u2014 but it does take the\ngroup name in the path, so it gets the 400 validator like its three\nmutating siblings.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_get",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -79751,14 +79758,16 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
+            "description": "Cognito group name.",
             "in": "path",
             "name": "group_name",
             "required": true,
             "schema": {
+              "description": "Cognito group name.",
               "title": "Group Name",
               "type": "string"
             }
@@ -81339,7 +81348,7 @@
     },
     "/api/v1/operations/coord/prompt-document-writes": {
       "get": {
-        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim. Deliberately no\n\"agent writes only\" filter: the provenance tag coord's write tool stamps is\nnot fixed until its Phase 5 half lands, and filtering on a guessed prefix\nwould silently hide writes \u2014 the exact failure this feed exists to prevent.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.",
+        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
         "operationId": "api_v1_operations_coord_prompt_document_writes_get",
         "parameters": [
           {
@@ -81545,7 +81554,7 @@
         ]
       },
       "patch": {
-        "description": "Edit a prompt document's description/body/attrs/agent_writable. Tenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_writable?,\nchange_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_writable`` is the per-document agent write access flag\n(``true`` = agents may write this document via\n``coord_write_prompt_document``, ``false`` = they may not). It is\ndeliberately NOT attrs-shaped: supplying it takes coord's **versioning**\npath even when nothing else changes, because who may write a policy\ndocument is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting it leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
+        "description": "Edit a prompt document's description/body/attrs/authorship tier.\nTenant-admin only.\n\nThe body is forwarded as ``{description?, body?, attrs?, agent_write_tier?,\nagent_writable?, change_description?}`` with ``updated_by`` stamped from the authenticated\nsession (see :func:`_editor_identity`) \u2014 a body-supplied ``updated_by`` is\nignored, so the version snapshot coord writes carries the real editor. Coord\ncreates a new immutable version on every successful description/body edit;\nnothing is overwritten in place. A supplied ``attrs`` REPLACES the stored\nattrs object wholesale (the client merges before sending), and an attrs-only\nedit is document configuration, not content \u2014 coord updates it in place\nwithout creating a version.\n\n``agent_write_tier`` is the per-document authorship setting \u2014 one of\n``deny``, ``allow``, ``allow_with_notification``. ``agent_writable`` is\ncoord's LEGACY two-state spelling of the same setting, kept on the wire for\na client that predates the tier; coord resolves a legacy ``true`` as \"at\nleast allow\", so a stored ``allow_with_notification`` survives it, and a\nlegacy ``false`` is an unambiguous ``deny``. Send the tier when the caller\ncan name one \u2014 only an explicit tier can move a document ONTO, or DOWN off,\nthe notification tier. Both are forwarded verbatim; neither is synthesised\nfrom the other here, because collapsing them at this hop would strip a\nprecondition the operator set with no error and no audit signal.\n\nEither field is deliberately NOT attrs-shaped: supplying one takes coord's\n**versioning** path even when nothing else changes, because who may write a\npolicy document is authority rather than configuration and the record of who\nchanged it has to outlive the next agent append (which overwrites the\nparent row's mutable ``updated_by``).\n\nOmitting them leaves the current setting alone. There is no wire\nrepresentation for clearing it back to \"no operator opinion\" \u2014 coord has\nnone either.",
         "operationId": "api_v1_operations_coord_prompt_documents_kind_name_patch",
         "parameters": [
           {
@@ -83333,7 +83342,7 @@
     },
     "/api/v1/operations/fleet/resource-samples": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``)\nand ``headroom`` (``ok | warn | breach | unknown``). All are passed\nthrough untouched on purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
+        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``)\nand ``headroom`` (``ok | warn | breach | unknown``). All are passed\nthrough untouched on purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
         "operationId": "api_v1_operations_fleet_resource_samples_get",
         "parameters": [
           {
