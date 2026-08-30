@@ -9,6 +9,7 @@ import type {
   StepOutput,
   SavedApiRequest,
   TaskRunSummary,
+  RunningTaskRunsResponse,
   AnalysisData,
 } from "../page-analyzer-types";
 import { generateId, generatePromptContext } from "../page-analyzer-utils";
@@ -53,6 +54,8 @@ export function usePageAnalyzer({
 
   // ---- Step Output state ----
   const [taskRuns, setTaskRuns] = useState<TaskRunSummary[]>([]);
+  /** `scope` from the /task-runs/running envelope — what an empty list means. */
+  const [taskRunsScope, setTaskRunsScope] = useState<string | null>(null);
   const [selectedTaskRunId, setSelectedTaskRunId] = useState<string>("");
   const [loadingTaskRuns, setLoadingTaskRuns] = useState(false);
   const [taskRunOutput, setTaskRunOutput] = useState<string | null>(null);
@@ -102,7 +105,12 @@ export function usePageAnalyzer({
     try {
       let runs: TaskRunSummary[] = [];
       try {
-        runs = await runnerFetch<TaskRunSummary[]>("/task-runs/running");
+        const running =
+          await runnerFetch<RunningTaskRunsResponse>("/task-runs/running");
+        runs = running.task_runs;
+        // An empty ledger is not an idle runner — keep the endpoint's own
+        // statement of what it covers so the empty state can show it.
+        setTaskRunsScope(running.scope);
       } catch {
         // Ignore - endpoint may not have running tasks
       }
@@ -412,6 +420,7 @@ export function usePageAnalyzer({
 
     // Step Output
     taskRuns,
+    taskRunsScope,
     selectedTaskRunId,
     setSelectedTaskRunId,
     loadingTaskRuns,

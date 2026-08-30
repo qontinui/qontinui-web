@@ -19,6 +19,13 @@
  *   network, not about the machines. Painting it red would invent an incident.
  * - **Red is reserved for coord saying it cannot reach a device**
  *   (`partitioned` / `abandoned`) — a condition, not a gap.
+ * - **`stale` is its own bucket, and it is amber.** Coord's fifth
+ *   `DeviceState` means the heartbeat is fine and the resource SAMPLER has
+ *   gone quiet. It is neither healthy nor unreachable, and folding it into
+ *   either would be a lie in a different direction each time: green would hide
+ *   a publisher that has stopped, red would report a network partition that is
+ *   not happening. It is also not the `unknown` catch-all — coord OBSERVED
+ *   this, it did not fail to say anything.
  */
 
 import type { FleetHealthDevice } from "./useFleetHealth";
@@ -36,12 +43,28 @@ export interface FleetLivenessSummary {
   degraded: number;
   /** `partitioned` + `abandoned` — coord cannot reach the device. */
   unreachable: number;
+  /**
+   * `stale` — coord reaches the device, but its resource sampler has gone
+   * quiet. Counted apart from both `degraded` and `unknown` because the
+   * operator's next move differs: this one is a publisher to look at, not a
+   * machine.
+   */
+  stale: number;
   /** No state, or a state this build does not recognise. Never `healthy`. */
   unknown: number;
 }
 
 /** Coord `DeviceState` values that mean "coord cannot reach this device". */
 const UNREACHABLE_STATES = new Set(["partitioned", "abandoned"]);
+
+/**
+ * Coord's `stale`: the heartbeat is fine, the SAMPLER is not.
+ *
+ * Kept as a named constant beside `UNREACHABLE_STATES` so the two are read as
+ * the deliberately different claims they are — the boundary between them is
+ * the whole reason coord added a fifth variant rather than reusing the fourth.
+ */
+const SAMPLER_QUIET_STATE = "stale";
 
 export function summarizeFleetLiveness(input: {
   devices: FleetHealthDevice[];
@@ -52,10 +75,12 @@ export function summarizeFleetLiveness(input: {
   let healthy = 0;
   let degraded = 0;
   let unreachable = 0;
+  let stale = 0;
   let unknown = 0;
   for (const d of devices) {
     if (d.state === "healthy") healthy++;
     else if (d.state === "degraded") degraded++;
+    else if (d.state === SAMPLER_QUIET_STATE) stale++;
     else if (d.state && UNREACHABLE_STATES.has(d.state)) unreachable++;
     else unknown++;
   }
@@ -64,6 +89,7 @@ export function summarizeFleetLiveness(input: {
     healthy,
     degraded,
     unreachable,
+    stale,
     unknown,
   };
 
@@ -107,18 +133,26 @@ export function summarizeFleetLiveness(input: {
         "routed to them will not run.",
     };
   }
-  if (degraded > 0 || unknown > 0) {
+  if (degraded > 0 || stale > 0 || unknown > 0) {
     const parts: string[] = [];
     if (degraded > 0) parts.push(`${degraded} degraded`);
+    if (stale > 0) parts.push(`${stale} with a silent sampler`);
     if (unknown > 0) parts.push(`${unknown} with no reported state`);
+    // Most specific first: `stale` names an observation coord made, and would
+    // be drowned by the generic sentence about the machines being "off".
+    const detail =
+      stale > 0
+        ? "A machine coord still reaches whose resource sampler has gone " +
+          "quiet is STALE: unknown, not healthy and not unreachable. The " +
+          "telemetry stopped, which says nothing yet about the machine."
+        : unknown > 0
+          ? "A machine coord reports no state for is unknown, not healthy."
+          : "Coord still reaches them; something about them is off.";
     return {
       ...counts,
       level: "amber",
       headline: `${devices.length} machines, ${parts.join(" and ")}`,
-      detail:
-        unknown > 0
-          ? "A machine coord reports no state for is unknown, not healthy."
-          : "Coord still reaches them; something about them is off.",
+      detail,
     };
   }
   return {
