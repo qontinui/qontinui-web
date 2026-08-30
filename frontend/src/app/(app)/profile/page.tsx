@@ -25,10 +25,17 @@ import type { User } from "@/types/auth-types";
 
 /**
  * Renders cloud-control's subscription-tier badge if registered, or nothing
- * in OSS-only mode. `useSlotComponent` subscribes to the slot registry, so
- * the `registerCloudExtensions` call carried by the fire-and-forget
- * `import(CLOUD_CONTROL_PKG)` in the root layout can land after this page
- * has mounted and still cause the badge to appear.
+ * in OSS-only mode.
+ *
+ * `useSlotComponent` subscribes rather than reading once, so a registration
+ * that lands after this page has mounted still causes the badge to appear.
+ * That used to be the common case: the package was loaded by a
+ * fire-and-forget `import(CLOUD_CONTROL_PKG)` in the root layout, which in
+ * fact never loaded it at all. It is now a static import in
+ * `components/cloud-extensions-boot.tsx`, so in the composed build the slot
+ * is filled before hydration — but the subscription is still required,
+ * because the boot module lives in the client graph and a server render sees
+ * empty slots either way. See `lib/extension-slots.ts`.
  */
 function SubscriptionBadgeSlot() {
   const Slot = useSlotComponent<SubscriptionBadgeProps>("subscriptionBadge");
