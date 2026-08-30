@@ -143,12 +143,17 @@ _RELAY_EXCLUDED_RESPONSE_HEADERS = frozenset(
 # Timeout (seconds) for the co-located legacy proxy hop to 127.0.0.1:<port>.
 _LOCAL_PROXY_TIMEOUT_S = 30.0
 
-# Request headers dropped on the co-located legacy proxy path. Beyond the
-# hop-by-hop set, ``accept-encoding`` is dropped so the runner replies
-# uncompressed: httpx decodes response bodies transparently (and needs the
-# matching codec installed to do it), whereas the ``urllib`` call this
-# replaced neither negotiated nor decoded. Asking for identity is simpler
-# than re-labelling a decoded body, and this hop is loopback.
+# Request headers dropped on the co-located legacy proxy path — the caller's
+# values, only. Beyond the hop-by-hop set, the caller's ``accept-encoding`` is
+# dropped because this hop is loopback and compressing it buys nothing.
+#
+# Dropping it is NOT, on its own, enough to make the runner answer
+# uncompressed, and the comment here used to claim it was. ``httpx`` MERGES
+# its own client defaults into whatever ``headers=`` you pass, and one of
+# those defaults is ``accept-encoding: gzip, deflate`` — so removing the key
+# just hands the runner httpx's default instead of the caller's. The request
+# is sent with ``_LOCAL_PROXY_FORCED_REQUEST_HEADERS`` below to actually
+# negotiate identity; see :func:`runner_proxy`.
 _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = frozenset(
     {
         "host",
@@ -158,6 +163,12 @@ _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS = frozenset(
         "accept-encoding",
     }
 )
+
+# Request headers this path SETS rather than forwards. ``identity`` overrides
+# httpx's merged-in default (see above) so the loopback hop is uncompressed.
+# The response-side ``content-encoding`` strip stays regardless: a runner is
+# free to ignore the negotiation, and httpx would decode the body anyway.
+_LOCAL_PROXY_FORCED_REQUEST_HEADERS = {"accept-encoding": "identity"}
 
 # Response headers stripped on the co-located legacy proxy path. Beyond the
 # hop-by-hop set, ``content-encoding`` MUST go: httpx transparently decodes
@@ -818,6 +829,10 @@ async def runner_proxy(
             for k, v in request.headers.items()
             if k.lower() not in _LOCAL_PROXY_EXCLUDED_REQUEST_HEADERS
         }
+        # Set, not forwarded — httpx merges its own ``accept-encoding`` default
+        # into ``headers=``, so dropping the caller's key above does not by
+        # itself ask the runner for identity. This does.
+        headers.update(_LOCAL_PROXY_FORCED_REQUEST_HEADERS)
         # ``httpx.AsyncClient`` rather than ``urllib.request.urlopen``: the
         # latter is a SYNCHRONOUS call on the event loop, so a slow or hung
         # runner stalled EVERY other request served by this worker for up to
@@ -838,16 +853,24 @@ async def runner_proxy(
         # Non-2xx is a normal response for httpx (no ``HTTPError`` raise), so
         # the former ``urllib.error.HTTPError`` arm — which passed the runner's
         # status and body straight through — is subsumed here.
-        resp_headers = {
-            k: v
-            for k, v in resp.headers.items()
-            if k.lower() not in _LOCAL_PROXY_EXCLUDED_RESPONSE_HEADERS
-        }
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            headers=resp_headers,
-        )
+        #
+        # ``multi_items()``, NOT ``items()``: httpx's ``Headers.items()`` emits
+        # each name once and joins repeats with ", ". That is lossless for the
+        # comma-list headers of RFC 7230 §3.2.2 but NOT for ``Set-Cookie``,
+        # which is exempt precisely because its value may itself contain a
+        # comma (``Expires=Wed, 09 Jun 2027 …``). Two cookies collapsed that way
+        # reach the caller as one unparseable header, and the cookie is silently
+        # lost. Building the response from ``raw_headers`` is what preserves a
+        # repeated name — Starlette's ``headers=`` argument takes a Mapping and
+        # would collapse it right back.
+        response = Response(content=resp.content, status_code=resp.status_code)
+        for name, value in resp.headers.multi_items():
+            if name.lower() in _LOCAL_PROXY_EXCLUDED_RESPONSE_HEADERS:
+                continue
+            response.raw_headers.append(
+                (name.lower().encode("latin-1"), value.encode("latin-1"))
+            )
+        return response
     except httpx.HTTPError:
         # Transport-level failure (connect refused, DNS, timeout, protocol
         # error) — the ``urllib.error.URLError`` equivalent.
