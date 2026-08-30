@@ -45,6 +45,7 @@
  */
 
 import type { HealthBadge, HealthStripLevel } from "@/components/console";
+import { readIsUnknown } from "@/components/console";
 
 export interface NotificationsHealth {
   level: HealthStripLevel;
@@ -77,6 +78,10 @@ export interface NotificationsHealthInput {
    * The second arm is the one a `loading`-shaped flag cannot express, and the
    * one this page shipped without: a poll that fails after a good first load
    * leaves real numbers on screen with nothing saying they stopped moving.
+   *
+   * The first arm is spelled by the console's shared `readIsUnknown`, not here
+   * — the page's `empty=` slot has to reach the same verdict from the same two
+   * booleans, and one imported predicate is the only way that stays true.
    */
   failed: boolean;
 }
@@ -144,26 +149,33 @@ export function deriveNotificationsHealth(
       badges: unknownBadges,
     };
   }
+  // Arm 1 of the split, through the console's SHARED predicate rather than a
+  // fourth spelling of it. `readFailure.ts` exists because the strip and the
+  // page's `empty=` slot have to agree about the same read, and a hand-rolled
+  // `failed && !loaded` here would be the drift that module was written to
+  // stop — invisible precisely because both spellings look right. The three
+  // console surfaces that grew this arm before us (`/plans`, `/spawn`,
+  // `/agents/[agent_id]`) call the same function.
+  if (readIsUnknown(loaded, failed)) {
+    return {
+      level: "amber",
+      headline: "Could not read the feed",
+      detail: "what happened while you were away is UNKNOWN, not nothing",
+      badges: unknownBadges,
+    };
+  }
   if (failed) {
     // Arm 2 of the split: we DID read once, and the numbers on screen are from
     // that read. They are real, so they are shown — but they stopped moving,
     // and only the strip can say so. Reporting them silently is the same
     // confident-false-claim as `?? 0`, made with a stale fact instead of a
     // fabricated one.
-    if (loaded) {
-      return {
-        level: "amber",
-        headline: "These counts stopped updating",
-        detail:
-          "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
-        badges: countBadges(unreadCount, total),
-      };
-    }
     return {
       level: "amber",
-      headline: "Could not read the feed",
-      detail: "what happened while you were away is UNKNOWN, not nothing",
-      badges: unknownBadges,
+      headline: "These counts stopped updating",
+      detail:
+        "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+      badges: countBadges(unreadCount, total),
     };
   }
   if (!loaded) {
