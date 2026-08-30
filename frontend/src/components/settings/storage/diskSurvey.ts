@@ -362,6 +362,23 @@ export interface DiskScanStats {
    * subtree reports thousands and this page would have said exactly `100`.
    */
   readErrorsTotal: number | null;
+  /**
+   * `scan.depth_limited_dirs` — directories the walk did not descend into
+   * because it hit its depth bound, or `null` from a build that predates the
+   * field.
+   *
+   * The FIFTH way a walk can fall short, and the only one this page had no name
+   * for. It is not folded into `truncated`, and — while items are present — the
+   * runner deliberately keeps it out of `bytes_incomplete` too (the bound bites
+   * on any deep tree, so folding it in would leave that flag permanently true).
+   * So a walk can be short for this reason alone while every other counter
+   * reads clean, and a UI that explains WHY without reading this asserts a
+   * cause the payload does not carry.
+   *
+   * The runner's own `census_note` names the bound in that state; this field is
+   * how the panel beside it can say the same thing.
+   */
+  depthLimitedDirs: number | null;
   rootsWithUnknownBytes: number | null;
   rootsWithPartialBytes: number | null;
 }
@@ -672,6 +689,7 @@ export function parseScanStats(raw: unknown): DiskScanStats | null {
     hasTruncatedField: Object.hasOwn(raw, "truncated"),
     readErrors,
     readErrorsTotal: count(raw.read_errors_total),
+    depthLimitedDirs: count(raw.depth_limited_dirs),
     rootsWithUnknownBytes: count(raw.roots_with_unknown_bytes),
     rootsWithPartialBytes: count(raw.roots_with_partial_bytes),
   };
