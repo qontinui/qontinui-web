@@ -529,10 +529,25 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > rather than respelling it, because the strip and the `empty=` slot have to
 > agree about the same read and two spellings drift invisibly.
 >
-> `/admin/coord/questions` — the route this rule was WRITTEN from — still
-> hand-spells the older list-is-empty form four times
-> (`questions/page.tsx:263-268`). It predates the shared predicate and is not
-> yet converted; do not copy it, and do not read its survival as an exemption.
+> `/admin/coord/questions` — the route this rule was WRITTEN from — was the
+> last holder of the older list-is-empty form, four times. It is **converted**:
+> three per-list `loaded` flags, `readIsUnknown` at each of the four sites, and
+> the gaps tab and gaps badge collapsed onto one predicate (they diverged only
+> because each was keyed on its own rendered count, and *"did the gap read
+> land?"* is one question for both).
+>
+> **And the conversion surfaced the arm the two-state reading hides: a STALE
+> verdict is not a green verdict.** Dropping the count-keyed form moves a
+> retained-and-then-failed read from UNKNOWN to STALE — correct for the
+> *counts*, and a regression if the level rides along, because
+> `/admin/coord/questions` would then paint the green all-clear off the last
+> good read. The counts and the verdict are different claims: a count says what
+> was measured, and STALE keeps it while UNKNOWN dashes it; **the dot says what
+> is true NOW, and the last good read is not now.** So the two states are told
+> apart everywhere except the level, where both alike disqualify green — the
+> one place they must not be distinguished. A surface with a verdict needs the
+> third state spelled out, and it reads as a measurement with a timestamp
+> (*"Nothing was waiting at the last good read"*), never as an all-clear.
 >
 > **A 404 is an ANSWER, and belongs on the "not found" side.** `httpClient`
 > throws on every non-2xx, so coord's 404 — the most definitive answer it

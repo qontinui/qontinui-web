@@ -127,6 +127,21 @@ export default function CoordPlansListPage() {
   }, [status]);
 
   useEffect(() => {
+    // `status` is `fetchData`'s only dependency, so this effect re-runs
+    // exactly when the QUESTION changes — and the rows still in `data` answer
+    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
+    // null`, so keeping them leaves every read-state derivation on this page
+    // reporting the OLD query while the new one is in flight — the list shows
+    // the previous filter's records instead of skeletons, the strip describes
+    // the previous window, and a new fetch that FAILS lands on the STALE arm
+    // ("the last counts that landed") when nothing has ever landed for this
+    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
+    // one level up from a count.
+    //
+    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
+    // poll must never blank a loaded page.
+    setData(null);
+    setError(null);
     setLoading(true);
     fetchData();
     const id = setInterval(fetchData, POLL_INTERVAL_MS);

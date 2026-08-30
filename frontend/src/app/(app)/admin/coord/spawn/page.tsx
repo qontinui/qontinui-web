@@ -125,6 +125,16 @@ export default function CoordSpawnPage() {
   }, [status]);
 
   useEffect(() => {
+    // Same reset as `/plans`, for the same reason and against the same
+    // `derivePlansHealth`: `status` is `fetchData`'s only dependency, so a
+    // re-run means the QUESTION changed, and the retained rows answer the old
+    // one. Left in place they keep `loaded` true across the change, so the
+    // list renders the previous filter's plans as this filter's answer and a
+    // failed first read under the new filter is reported as stale rather than
+    // unknown. Not in `fetchData` — the poll calls that, and a poll must never
+    // blank a loaded page.
+    setData(null);
+    setError(null);
     setLoading(true);
     fetchData();
     const id = setInterval(fetchData, POLL_INTERVAL_MS);
