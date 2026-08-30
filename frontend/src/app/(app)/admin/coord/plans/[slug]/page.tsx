@@ -73,6 +73,7 @@ import {
   StatusBadge,
   isNotFoundError,
   rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import {
   PLAN_STATUS_PALETTE,
@@ -314,12 +315,10 @@ export default function CoordPlanDetailPage() {
               left-edge accent `/plans` renders, not a Card with a header. */}
           <div
             data-testid="coord-plan-meta"
-            className={[
-              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-1.5",
-              rowAccentClass(derivePlanStatus(plan)),
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            {...rowAccentProps(
+              derivePlanStatus(plan),
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-1.5"
+            )}
           >
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="font-mono text-xs shrink-0">
@@ -477,6 +476,7 @@ export default function CoordPlanDetailPage() {
                     expanded={ctx.expanded}
                     onToggle={ctx.onToggle}
                     accent={rowAccentClass(status)}
+                    attention={status.attention}
                     identity={h.by_actor ? "by" : "→"}
                     label={
                       <span className="inline-flex items-center gap-1.5">

@@ -82,6 +82,7 @@ export function PlanRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={planIdentity(plan.slug)}
       label={
         <span title={plan.title ? `${plan.slug} — ${plan.title}` : plan.slug}>
