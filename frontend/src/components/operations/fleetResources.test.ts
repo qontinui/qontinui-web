@@ -16,6 +16,12 @@ import {
   effectiveAgeSecs,
   buildMachineGroups,
   classifyFreshness,
+  classifySaturation,
+  formatSaturationCounts,
+  hasSaturationValue,
+  saturationCounts,
+  saturationSourceLabel,
+  SATURATION_REPORT_MEANING,
   coupledWslHeadroomBytes,
   describeFloor,
   describePressureFloor,
@@ -643,6 +649,11 @@ describe("§C3 — a threshold nothing enforces must not inherit a verb", () => 
   it("derives the axis label and the swap-suppression gate from the basis", () => {
     expect(pressureAxisLabel("swap_ratio")).toBe("swap");
     expect(pressureAxisIsSwap("swap_ratio")).toBe(true);
+    // The saturation ceiling gets its own word, and is NOT gated by the
+    // swap-suppression rule — coord reports it on every lane including the
+    // Windows host, which is the lane the 2026-08-27 incident was on.
+    expect(pressureAxisLabel("thread_ratio")).toBe("saturation");
+    expect(pressureAxisIsSwap("thread_ratio")).toBe(false);
     // A future basis must not be labelled "swap" NOR gated by the swap rule.
     expect(pressureAxisLabel("psi_some_avg10")).toBe("psi_some_avg10");
     expect(pressureAxisIsSwap("psi_some_avg10")).toBe(false);
@@ -820,5 +831,120 @@ describe("the red/amber boundary has ONE definition, and it is the server's", ()
     // a measurement is current, which is a client-side question about the
     // transport, not a verdict coord owns.
     expect(names).toContain("STALE_AFTER_SECS");
+  });
+});
+
+/**
+ * The SATURATION axis — plan
+ * `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`, Phase 5.
+ *
+ * These pin the presentation rules, not the arithmetic: the ratio and the
+ * threshold are both coord's, and this module's only jobs are (a) never to
+ * render an unmeasured axis as green, and (b) to say WHICH absence it is
+ * looking at, because the operator's next move differs by cause.
+ */
+describe("the saturation axis renders unknown, never green", () => {
+  /** The literal 2026-08-27 host-lane row, as coord serializes it. */
+  const INCIDENT = {
+    saturation: { ratio: 190840 / 192146, basis: "threads" as const },
+    threads_used: 190840,
+    threads_max: 192146,
+    pids_used: null,
+    pids_max: null,
+    saturation_source: "cgroup",
+  };
+
+  it("classifies a measured row, and captions it with the counts it came from", () => {
+    expect(classifySaturation(INCIDENT)).toBe("measured");
+    expect(hasSaturationValue(INCIDENT.saturation)).toBe(true);
+    expect(formatSaturationCounts(INCIDENT)).toBe("190,840 / 192,146 threads");
+    expect(saturationCounts(INCIDENT)).toEqual({
+      used: 190840,
+      max: 192146,
+      kind: "threads",
+    });
+  });
+
+  it("separates a publisher that predates the probe from one whose probe FAILED", () => {
+    // All-NULL: the activation window. Every runner in the fleet reads this
+    // way until it is next rebuilt, and coord skips GRADING the axis rather
+    // than pinning every row in the fleet to unknown.
+    const unmeasured = {
+      saturation: null,
+      threads_used: null,
+      threads_max: null,
+      pids_used: null,
+      pids_max: null,
+      saturation_source: null,
+    };
+    expect(classifySaturation(unmeasured)).toBe("unmeasured");
+
+    // A ceiling with no count is a REAL gap — a probe that ran and failed —
+    // and must not be filed under the same word as a publisher that has no
+    // probe at all. Coord grades this one unknown; it does not skip it.
+    expect(classifySaturation({ ...unmeasured, threads_max: 192146 })).toBe(
+      "gap"
+    );
+    // …and so is the reverse, a count with no ceiling to divide it by.
+    expect(classifySaturation({ ...unmeasured, threads_used: 190840 })).toBe(
+      "gap"
+    );
+
+    // No keys at all: a coord that predates the axis. Absent and null are
+    // different claims and this module keeps them apart everywhere else too.
+    expect(classifySaturation({})).toBe("unreported");
+    expect(classifySaturation(undefined)).toBe("unreported");
+  });
+
+  it("never lets an unmeasured axis read as fine, in any of its wordings", () => {
+    for (const report of ["gap", "unmeasured", "unreported"] as const) {
+      const text = SATURATION_REPORT_MEANING[report];
+      expect(text).toBeTruthy();
+      // Not one of the three may end on a reassurance. `unmeasured` is the
+      // dangerous one: it is the whole fleet's state for the entire
+      // activation window, and it is the reading a hurried author is most
+      // tempted to default to ok.
+      expect(text).not.toMatch(/\bhealthy\b(?![^.]*not)/i);
+    }
+    expect(SATURATION_REPORT_MEANING.unmeasured).toMatch(/NOT healthy/);
+    expect(SATURATION_REPORT_MEANING.unmeasured).toMatch(/NOT zero/);
+    // The four wordings are genuinely four, not one repeated.
+    expect(new Set(Object.values(SATURATION_REPORT_MEANING)).size).toBe(4);
+  });
+
+  it("prefers the threads pair over pids, the same way coord does", () => {
+    // coord's `lane_saturation` is `threads.or_else(pids)`. Captioning a
+    // threads-derived ratio with the pids counts would print numbers the
+    // ratio did not come from — and coord is explicit that tasks and
+    // thread-group leaders are different quantities.
+    const both = {
+      saturation: { ratio: 0.5, basis: "threads" as const },
+      threads_used: 100,
+      threads_max: 200,
+      pids_used: 3,
+      pids_max: 4096,
+    };
+    expect(saturationCounts(both)?.kind).toBe("threads");
+    // Only when the threads pair is unusable does the pids pair caption it.
+    expect(saturationCounts({ ...both, threads_max: null })?.kind).toBe("pids");
+    // A non-positive ceiling is not a ceiling: it would divide by zero into a
+    // fabricated 0%, which would rank an unmeasured machine FIRST.
+    expect(saturationCounts({ ...both, threads_max: 0 })?.kind).toBe("pids");
+    expect(formatSaturationCounts({})).toBe("—");
+  });
+
+  it("says which instrument produced the counts, and admits when it was not told", () => {
+    // Not bookkeeping: a cgroup reading counts TASKS and a /proc reading
+    // counts thread-group leaders, so a publisher whose cgroup probe fails
+    // and falls back emits a number that changes meaning with nothing else in
+    // the row saying so.
+    expect(saturationSourceLabel("cgroup")).toMatch(/task|thread/i);
+    expect(saturationSourceLabel("proc")).toMatch(/leader/i);
+    expect(saturationSourceLabel("job_object")).toMatch(/job object/i);
+    expect(saturationSourceLabel(null)).toMatch(/not reported/i);
+    // A value this build cannot read is surfaced WITH the raw string, never
+    // silently folded into one of the known three.
+    expect(saturationSourceLabel("psi")).toMatch(/psi/);
+    expect(saturationSourceLabel("psi")).toMatch(/unknown/i);
   });
 });

@@ -71,6 +71,31 @@ export interface KindTierRow {
    * constant did it.
    */
   effective_source?: string;
+  /**
+   * The document NAMES under this kind that a kind-wide `allow` will NOT reach
+   * — coord's compiled-in per-document denies, answered at resolution step 2b,
+   * ABOVE the per-kind table this control writes.
+   *
+   * Without it the control misreports in the permissive direction, which is the
+   * one that matters: `policy` arrives with `settable: true` and
+   * `floor: false`, so an operator setting it to `allow` would reasonably read
+   * that as opening every policy document — including
+   * `policy/session-protocol`, `policy/security-and-autonomy` and
+   * `policy/escalation-bar`, the three documents that ARE the authority
+   * interpreting every other document. It does not, and coord's resolver is
+   * what makes that true; this field is what makes it VISIBLE.
+   *
+   * Empty for most kinds, including all six intent kinds — their compiled-in
+   * answer is a liftable `KindDefault`, which is exactly what this lever exists
+   * to lift.
+   *
+   * Optional because a coord that predates the field sends nothing. Absent is
+   * UNKNOWN, and the honest render for UNKNOWN here is nothing at all — an
+   * empty carve-out list would be a positive claim that a kind-wide `allow`
+   * reaches every document, which is the exact overstatement this field exists
+   * to prevent.
+   */
+  protected_documents?: string[];
 }
 
 export interface KindTiersResponse {
@@ -78,10 +103,30 @@ export interface KindTiersResponse {
   vocabulary: AgentWriteTier[];
   /**
    * Whether the deployed coord ENFORCES the `allow_with_notification`
-   * precondition. Coord sends this on every response, and it is `false` today.
+   * precondition. Coord sends it on every response.
+   *
+   * It was `false` when this hook was written and is `true` from coord#1702,
+   * which shipped the precondition. Read it, never assume either value — the
+   * console talks to whatever coord is deployed, and a stale local belief about
+   * this flag is how three hardcoded "NOT YET ENFORCED" strings went on
+   * describing a world that had already changed.
+   *
+   * Typed `boolean` but arriving through `JSON.parse`, so a coord that predates
+   * the field sends nothing. Absent is NOT enforced — see the consumer's
+   * `isEnforced`.
    */
   notification_enforced: boolean;
-  /** Coord's own prose statement of what `allow_with_notification` does today. */
+  /**
+   * Coord's own prose statement of what `allow_with_notification` does on the
+   * coord that answered.
+   *
+   * NOT content-free once the precondition is enforced, which is why coord kept
+   * the field rather than deleting it with the caveat it used to carry: the
+   * enforced text states the positive fact AND the one residual the tier cannot
+   * promise away — the subtractive `policy_write` dial, applied after
+   * authorization, which can still refuse a write the tier permitted. Render it
+   * in both states.
+   */
   warning: string;
 }
 

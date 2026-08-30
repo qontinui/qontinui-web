@@ -60,6 +60,12 @@ export interface PlansHealth {
  * rendering and the detail says they are old. `readIsUnknown` carries why the
  * split is `loaded` and not `plans.length`.
  *
+ * **The two states differ in the COUNTS and agree about the DOT.** Stale counts
+ * render; a stale verdict does not. Green is a claim about now, so it needs a
+ * read that landed AND is current, and `readFailed` therefore reaches the level
+ * as well as the detail. Blocked still outranks both: a red row is red whether
+ * or not the window refreshed.
+ *
  * @param readFailed the page's last fetch threw.
  */
 export function derivePlansHealth(
@@ -103,14 +109,34 @@ export function derivePlansHealth(
     if (!tag.recognised) unrecognised += 1;
   }
 
+  // A STALE verdict is not a GREEN verdict. The counts survive a failed
+  // refresh — they were really measured — but the dot is a claim about NOW,
+  // and the last good read is not now. `readFailed` used to reach only the
+  // detail line, so `/plans` and `/spawn` pulsed the green all-clear under the
+  // headline "No plan is blocked" — the sentence that tells an operator to
+  // stop looking — off a list of unknown age, qualified by one line of small
+  // print. UNKNOWN and STALE differ in what the COUNTS say and are alike in
+  // disqualifying green; that is R6's third state, and this is the deriver
+  // both routes get it from.
   const level: HealthStripLevel =
-    blocked > 0 ? "red" : unrecognised > 0 ? "amber" : "green";
+    blocked > 0
+      ? "red"
+      : unrecognised > 0 || readFailed
+        ? "amber"
+        : "green";
   const headline =
     blocked > 0
       ? `${blocked} plan${blocked === 1 ? "" : "s"} blocked on a human`
-      : plans.length === 0
-        ? "No work units in this window"
-        : "No plan is blocked";
+      : readFailed
+        ? // Names the read that has not come back, and stops there. "No plan
+          // was blocked at the last good read" would be the tempting phrasing
+          // and is a claim about a moment, off counts this window may have
+          // truncated (`FETCH_LIMIT`) — so it says the one thing that is
+          // certainly true.
+          "Last refresh failed — these counts are not current"
+        : plans.length === 0
+          ? "No work units in this window"
+          : "No plan is blocked";
   const window =
     unrecognised > 0
       ? `${unrecognised} carry a status this build has no label for — shown verbatim`

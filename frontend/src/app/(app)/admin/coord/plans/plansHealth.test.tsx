@@ -19,8 +19,12 @@ const rows: CoordPlanRow[] = [
   { slug: "d", status: "weird_new_state" },
 ];
 
-function renderBadges(loaded: boolean, plans: CoordPlanRow[] = rows) {
-  const h = derivePlansHealth(plans, loaded);
+function renderBadges(
+  loaded: boolean,
+  plans: CoordPlanRow[] = rows,
+  readFailed = false
+) {
+  const h = derivePlansHealth(plans, loaded, readFailed);
   render(
     <HealthStrip
       level={h.level}
@@ -104,9 +108,18 @@ describe("derivePlansHealth", () => {
       // `/plans?status=blocked` with nothing blocked is a real, fetched zero.
       // Keying UNKNOWN on `plans.length === 0` would flap it to amber
       // "unknown, not empty" on every blipped poll and back on the next.
-      const h = derivePlansHealth([], true, true);
+      const h = renderBadges(true, [], true);
       expect(h.headline).not.toMatch(/unknown/i);
-      expect(h.headline).toBe("No work units in this window");
+      // The COUNTS survive — that zero was really fetched — so this asserts
+      // the RENDERED value, not merely that a `total` badge exists. Every
+      // non-unknown return carries that key, dashed ones included, so a
+      // key-only check would pass on exactly the rendering it means to reject.
+      const strip = screen.getByTestId("strip");
+      expect(strip).toHaveTextContent("plans 0");
+      expect(strip).not.toHaveTextContent("plans –");
+      // What does NOT survive is the present-tense headline: "No work units in
+      // this window" is a claim about now, off a read that is failing now.
+      expect(h.headline).toBe("Last refresh failed — these counts are not current");
       expect(h.detail).toMatch(/^Last refresh failed/);
     });
 
@@ -116,8 +129,30 @@ describe("derivePlansHealth", () => {
         true,
         true
       );
-      expect(h.headline).toBe("No plan is blocked");
+      // A stale verdict is not a green verdict. The all-clear is the sentence
+      // that tells an operator to stop looking, and it may only be painted off
+      // a read that both landed AND is current — so `readFailed` reaches the
+      // level and the headline, not just the detail line. Qualifying it in one
+      // line of small print under a pulsing green dot is not qualifying it.
+      expect(h.headline).not.toBe("No plan is blocked");
+      expect(h.level).toBe("amber");
       expect(h.detail).toMatch(/^Last refresh failed — these counts are stale\./);
+    });
+
+    it("keeps the all-clear green while the read is current", () => {
+      // The other half of the pin: the stale arm must not swallow the real
+      // green state, or the fix would be indistinguishable from breaking it.
+      const h = derivePlansHealth([{ slug: "a", status: "shipped" }], true, false);
+      expect(h.level).toBe("green");
+      expect(h.headline).toBe("No plan is blocked");
+    });
+
+    it("still outranks staleness with a blocked plan", () => {
+      // Red is about a row, not about the window's age: a blocked plan stays
+      // red whether or not the last refresh landed.
+      const h = derivePlansHealth([{ slug: "a", status: "blocked" }], true, true);
+      expect(h.level).toBe("red");
+      expect(h.headline).toMatch(/1 plan blocked on a human/);
     });
 
     it("keeps a retained blocked plan red rather than dashing it", () => {
