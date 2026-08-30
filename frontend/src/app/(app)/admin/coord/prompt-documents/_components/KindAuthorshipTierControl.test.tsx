@@ -2,13 +2,24 @@
  * KindAuthorshipTierControl — what the operator can read off the per-kind
  * authorship tier, and what it refuses to do on one click.
  *
- * Four properties, each one a case where the tier value ALONE would leave the
+ * Five properties, each one a case where the tier value ALONE would leave the
  * operator with a wrong belief that nothing else on the page corrects:
  *
- * 1. **`allow_with_notification` is disclosed as not-yet-enforced**, in coord's
- *    own words. The setting's NAME promises an announced write; the deployed
- *    build delivers an unannounced one. A control that misreports what the
- *    click does, in the permissive direction, is worse than no control.
+ * 1. **`allow_with_notification` is disclosed in COORD'S words, in BOTH
+ *    enforcement states.** The setting's NAME promises an announced write, and
+ *    whether the deployed build delivers one is a fact only coord holds. This
+ *    used to be "disclosed as not-yet-enforced" and the disclosure was hidden
+ *    once coord reported it enforced — which was wrong twice after coord#1702
+ *    shipped the precondition: it dropped the residual caveat coord keeps
+ *    sending (the subtractive `policy_write` dial can still refuse a write the
+ *    tier permitted), and it left three hardcoded "NOT YET ENFORCED" strings
+ *    describing a world that had changed. A control that misreports what the
+ *    click does is worse than no control, in either direction.
+ * 5. **A kind-wide `allow` does not reach coord's named denies, and the control
+ *    says so.** `policy` arrives `settable: true` / `floor: false`, so without
+ *    `protected_documents` an operator would read an `allow` as opening
+ *    `policy/session-protocol` and its two siblings — the documents that ARE
+ *    the authority interpreting every other document.
  * 2. **An unreadable stored value is not rendered as "not set".** Both arrive
  *    as `tier: null` and they resolve in OPPOSITE directions — unset falls
  *    through to coord's built-in default, unreadable fail-closes to `deny`.
@@ -57,6 +68,21 @@ const COORD_WARNING =
   "`allow_with_notification` currently behaves EXACTLY as `allow`: this build " +
   "resolves the tier but does not enforce the notification precondition.";
 
+/**
+ * The prose coord sends once the precondition IS enforced — a positive fact
+ * plus the one residual the tier cannot promise away.
+ *
+ * Kept close in shape to the real string rather than reduced to a token,
+ * because the property under test is that the console shows COORD'S sentence:
+ * a fixture trimmed to "enforced" would pass against a console that rendered a
+ * local paraphrase containing the same word.
+ */
+const COORD_WARNING_ENFORCED =
+  "`allow_with_notification` is ENFORCED by this build: a write on that tier is " +
+  "refused unless it carries a `notification_ref`. What a tier CANNOT promise " +
+  "is that the write then lands: the per-tenant `policy_write` dial is applied " +
+  "AFTER authorization and only ever takes capability away.";
+
 function row(over: Partial<KindTierRow> = {}): KindTierRow {
   return {
     kind: "audience_profile",
@@ -100,21 +126,104 @@ describe("KindAuthorshipTierControl", () => {
     const notice = await screen.findByTestId(
       "kind-tier-notification-disclosure"
     );
-    // Coord's WORDS, not a local paraphrase: when Phase 2 lands and coord stops
-    // sending them, the notice must disappear on its own rather than sitting
-    // here being wrong in the permissive direction until someone finds it.
+    // Coord's WORDS, not a local paraphrase.
     expect(notice).toHaveTextContent("behaves EXACTLY as `allow`");
+    expect(notice).toHaveAttribute("data-enforced", "false");
   });
 
-  it("hides the disclosure once coord reports the precondition enforced", async () => {
+  /**
+   * The disclosure SURVIVES enforcement, and this test replaces one that
+   * asserted the opposite.
+   *
+   * That older test read `notification_enforced: true` as "there is nothing
+   * left to disclose". Coord#1702 shipped the precondition and deliberately
+   * KEPT the field rather than deleting it with the caveat it used to carry,
+   * because the honest answer became a positive fact plus one residual: the
+   * subtractive `policy_write` dial runs AFTER authorization and can still
+   * refuse a write this tier permitted, with its own codes. Hiding the box
+   * threw that residual away at exactly the moment it was the only thing left
+   * to say.
+   *
+   * What keys off the flag is the STYLING — `data-enforced`, asserted in both
+   * arms so this pins which one rendered rather than only that something did.
+   */
+  it("keeps showing coord's disclosure once the precondition is enforced", async () => {
     getMock.mockResolvedValue(
-      response([row()], { notification_enforced: true })
+      response([row()], {
+        notification_enforced: true,
+        warning: COORD_WARNING_ENFORCED,
+      })
     );
+    render(<KindAuthorshipTierControl />);
+
+    const notice = await screen.findByTestId(
+      "kind-tier-notification-disclosure"
+    );
+    expect(notice).toHaveAttribute("data-enforced", "true");
+    expect(notice).toHaveTextContent("is ENFORCED by this build");
+    // The RESIDUAL is the half that only exists on this arm, and the half a
+    // console that merely swapped one hardcoded sentence for another would
+    // lose. An operator picking this tier needs it before the click.
+    expect(notice).toHaveTextContent("policy_write");
+  });
+
+  /**
+   * The names a kind-wide `allow` does NOT reach, on the row and again in the
+   * confirmation.
+   *
+   * Coord answers these at resolution step 2b, ABOVE the per-kind table this
+   * control writes, and sends them precisely so the control stops reading as
+   * "allow opens every document of this kind". `policy` arrives
+   * `settable: true` and `floor: false`, so nothing else on the row corrects
+   * that reading.
+   */
+  it("names the documents a kind-wide allow will not reach", async () => {
+    getMock.mockResolvedValue(
+      response([
+        row({
+          kind: "policy",
+          tier: null,
+          builtin_default_denies: false,
+          effective_tier: "allow",
+          effective_source: "default",
+          protected_documents: [
+            "session-protocol",
+            "security-and-autonomy",
+            "escalation-bar",
+          ],
+        }),
+      ])
+    );
+    render(<KindAuthorshipTierControl />);
+
+    const carveOut = await screen.findByTestId("kind-tier-protected-policy");
+    expect(carveOut).toHaveTextContent("session-protocol");
+    expect(carveOut).toHaveTextContent("security-and-autonomy");
+    expect(carveOut).toHaveTextContent("escalation-bar");
+
+    // And AGAIN at the moment of the click, which is where the operator is
+    // actually deciding. The row is a reference; the dialog is the decision.
+    await userEvent.click(screen.getByRole("button", { name: "allow" }));
+    const inDialog = await screen.findByTestId("kind-tier-dialog-protected");
+    expect(inDialog).toHaveTextContent("session-protocol");
+  });
+
+  /**
+   * NON-VACUITY for the test above: a kind with no named denies renders no
+   * carve-out at all.
+   *
+   * An empty list rendered as "0 documents stay closed" would be a positive
+   * claim that the kind-wide `allow` reaches everything — which is what a coord
+   * predating the field cannot support, since it sends nothing and absence is
+   * UNKNOWN.
+   */
+  it("renders no carve-out for a kind coord reports none for", async () => {
+    getMock.mockResolvedValue(response([row({ kind: "audience_profile" })]));
     render(<KindAuthorshipTierControl />);
 
     await screen.findByTestId("kind-tier-row-audience_profile");
     expect(
-      screen.queryByTestId("kind-tier-notification-disclosure")
+      screen.queryByTestId("kind-tier-protected-audience_profile")
     ).not.toBeInTheDocument();
   });
 
@@ -336,6 +445,9 @@ describe("KindAuthorshipTierControl", () => {
     // toward saying nothing visible is not.
     expect(notice.textContent?.trim().length ?? 0).toBeGreaterThan(40);
     expect(notice).toHaveTextContent(/allow_with_notification/);
+    // An ABSENT flag is NOT enforcement. This is the permissive direction, so
+    // it is pinned rather than left to the strictness of one `===`.
+    expect(notice).toHaveAttribute("data-enforced", "false");
   });
 
   /**
