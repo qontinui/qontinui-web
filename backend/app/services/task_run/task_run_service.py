@@ -635,6 +635,13 @@ class TaskRunService:
         limit: int = 200,
     ) -> FleetDeferredQuestionListResponse:
         """Fleet-wide deferred-question queue for one user."""
+        # Local import, matching every sibling delegate in this class: the
+        # module-level import would be circular (DeferredQuestionService
+        # imports from this package).
+        from app.services.task_run.deferred_question_service import (
+            DeferredQuestionService,
+        )
+
         svc = DeferredQuestionService(question_repo=self.deferred_question_repo)
         return await svc.list_pending_for_user(
             db, user_id, status_filter=status_filter, limit=limit
