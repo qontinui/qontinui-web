@@ -416,25 +416,21 @@ export default function CoordQuestionsPage() {
                 : ""
             }`
           : waitingStale
-            ? // The stale all-clear, said as a measurement with a timestamp
-              // attached rather than as a verdict. "Nothing was waiting" is
-              // true and useful; "no agent is waiting" would be a claim about
-              // a moment nobody has read.
-              //
-              // One honest imprecision, recorded rather than papered over:
-              // `blockingGaps` counts `visibleGaps`, which `handledGaps`
-              // filters optimistically, so if the operator handled the last
-              // blocking gap and the next gap read failed, "nothing was
-              // waiting at the last good read" reports the last good read PLUS
-              // this session's own optimistic edit. The pre-existing green arm
-              // had the same shape; naming a moment is what makes it visible.
-              // Closing it needs the handled set reconciled against a read,
-              // which is a change to the optimistic update, not to this line.
-              `Nothing was waiting at the last good read — the ${waitingStaleNames.join(
-                " and "
-              )} ${inboxWord(waitingStaleNames.length)} ${
+            ? // Not a verdict, and deliberately not a claim about the last
+              // good read either. The obvious phrasing — "nothing was waiting
+              // at the last good read" — names a moment and then says
+              // something that can be false about it: `blockingGaps` counts
+              // `visibleGaps`, which `handledGaps` filters optimistically, so
+              // after the operator clears the last blocking gap the sentence
+              // reports that read PLUS this session's own edit. The gaps
+              // `empty=` copy dodges the same trap the same way. What is left
+              // is the only thing the page actually knows: which reads have
+              // not come back, and that this is therefore not an all-clear.
+              `The ${waitingStaleNames.join(" and ")} ${inboxWord(
+                waitingStaleNames.length
+              )} ${
                 waitingStaleNames.length === 1 ? "has" : "have"
-              } not refreshed since`
+              } not refreshed since the last good read — not clear, just not re-read`
             : "No agent is waiting on an answer";
 
   return (

@@ -389,6 +389,56 @@ describe.each(SURFACES)(
 
         await screen.findByText(/Failed to load/i);
       });
+
+      it("claims no absence while the overtaking read is still out", async () => {
+        // The other side of that split, and the trap in it. The loading flag
+        // is question-scoped while the DATA is request-scoped, so a read
+        // superseded by a newer one of the same question skips `setData` and
+        // still clears `loading` — leaving `data` null, `error` null and
+        // `loading` false. A slot keyed on `loading` renders the plain "No
+        // plans matching status=X." there: a present-tense absence claim for a
+        // question coord has never answered, under a strip still reading
+        // "Waiting for coord…". Keyed on whether an ANSWER exists, that state
+        // is still waiting, and still skeletons.
+        //
+        // Reachable by clicking Refresh during the first load — no exotic
+        // timing.
+        let releaseFirstRead: ((body: unknown) => void) | undefined;
+        let releaseSecondRead: ((body: unknown) => void) | undefined;
+        let call = 0;
+        get.mockImplementation(async () => {
+          call += 1;
+          if (call === 1) {
+            return new Promise((resolve) => {
+              releaseFirstRead = resolve;
+            });
+          }
+          return new Promise((resolve) => {
+            releaseSecondRead = resolve;
+          });
+        });
+        const user = userEvent.setup();
+        render(<Page />);
+
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+        await user.click(screen.getByTestId(refreshTestId));
+        await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+        // The FIRST read lands — it was issued first — and is dropped as
+        // superseded while the second is still out.
+        releaseFirstRead?.({ work_units: [FIRST_WINDOW] });
+        await flushMicrotasks();
+
+        // Nothing may be claimed here. Not the discarded rows, and — the part
+        // that regressed — not an absence either.
+        expect(screen.queryByText(TITLE_RE)).toBeNull();
+        expect(screen.queryByTestId(emptyTestId)).toBeNull();
+        expect(screen.queryByTestId(staleTestId)).toBeNull();
+        expect(screen.queryByTestId(unknownTestId)).toBeNull();
+
+        releaseSecondRead?.({ work_units: [] });
+        await screen.findByTestId(emptyTestId);
+      });
     });
   }
 );
