@@ -118,17 +118,67 @@ _TABLES = ("coord.prompt_documents", "coord.prompt_document_versions")
 _LEGACY_COLUMN = "agent_writable"
 _TIER_COLUMN = "agent_write_tier"
 
-# `pdaw_01`'s comment bodies, restored with the column so the catalog reads the
-# same as it did before `pdtier_01` took them with the DROP.
+# `pdaw_01`'s comment bodies, VERBATIM, restored with the column so the catalog
+# reads the same as it did before `pdtier_01` took them with the DROP.
+#
+# Verbatim is the point, and it was not free: this dict first shipped holding
+# two paraphrases. The parent's dropped `pdaw_01`'s "NULL is NOT false"
+# sentence - the one that revision exists to carry, and the one a three-state
+# setting restored as a two-state boolean needs most, because during this shim
+# window NULL is exactly what an operator is most likely to read as "false".
+# The snapshot's dropped the reason the version row is the ATTRIBUTABLE record
+# (`edited_by` survives the next agent append; the parent's `updated_by` does
+# not). `pdtier_01`'s downgrade restores both character-for-character, so the
+# reverse path and the forward path disagreed about what the catalog says -
+# and production took the forward one.
+#
+# A database already at `pdtier_02` keeps the paraphrase until `pdtier_03`
+# drops the column outright and the comment with it; alembic re-runs no
+# revision. Nothing reads these bodies at runtime - coord reads the column, not
+# `col_description` - so the correction is worth no revision of its own, and
+# the divergence is bounded by the same window the shim is.
+#
+# Apostrophes appear ONCE here and are doubled by `_comment_sql` at format
+# time. Writing `''` into these strings would store the doubled form: only the
+# SQL parser collapses it, and this dict is read by the test as plain text.
 _COMMENTS = {
     "coord.prompt_documents": (
-        "Operator-controlled per-document agent write access. NULL = no operator "
-        "opinion (the compile-time default decides)."
+        "May an agent write this document via coord_write_prompt_document? "
+        "TRUE = allow, FALSE = deny, NULL = no operator opinion — fall back to "
+        "coord's compile-time AGENT_UNWRITABLE_DOCUMENTS default (the three "
+        "meta-policies deny, every other document allows). NULL is NOT false. "
+        "Operator-settable only, via the admin-gated PATCH "
+        "/coord/prompt-documents/{kind}/{name}; coord_write_prompt_document has "
+        "no argument that can reach it, which is what keeps the control "
+        "non-circular."
     ),
     "coord.prompt_document_versions": (
-        "Snapshot of the parent agent_writable at the time this version was written."
+        "Snapshot of the parent's agent_writable at this version. Carried "
+        "forward by every version write including append, so a flip is "
+        "attributable to the operator via this row's edited_by — which the "
+        "parent's mutable updated_by cannot be, since the next agent append "
+        "overwrites it."
     ),
 }
+
+
+def _comment_sql(table: str) -> str:
+    """``COMMENT ON COLUMN`` for ``table``, with the body quoted safely.
+
+    Two hazards, both of which `pdaw_01` hit and wrote down:
+
+    * The bodies carry apostrophes (``coord's``, ``parent's``, ``row's``). They
+      are stored here singly and doubled here, so the dict stays readable to a
+      human and to the test that compares it against `pdaw_01`'s source.
+    * `op.execute` of a plain string routes through SQLAlchemy's ``text()``,
+      which reads ``:word`` as a BIND PARAMETER. `pdaw_01` spells the route
+      ``{kind}/{name}`` rather than ``:kind/:name`` for exactly that reason,
+      and these bodies inherit that spelling. The braces survive because the
+      body is a runtime value here, not part of the f-string's own literal.
+    """
+    body = _COMMENTS[table].replace("'", "''")
+    return f"COMMENT ON COLUMN {table}.{_LEGACY_COLUMN} IS '{body}'"
+
 
 # Guarded on the TIER column, because that is the one the UPDATE READS.
 # `pdtier_01` shipped a defect of exactly this shape - a probe naming one table
@@ -169,9 +219,7 @@ def upgrade() -> None:
         op.execute(
             _BACKFILL.format(table=table, tier=_TIER_COLUMN, legacy=_LEGACY_COLUMN)
         )
-        op.execute(
-            f"COMMENT ON COLUMN {table}.{_LEGACY_COLUMN} IS '{_COMMENTS[table]}'"
-        )
+        op.execute(_comment_sql(table))
 
 
 def downgrade() -> None:
