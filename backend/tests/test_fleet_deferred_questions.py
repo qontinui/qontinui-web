@@ -20,6 +20,7 @@ These tests pin the two things that can silently go wrong:
 
 from __future__ import annotations
 
+from fastapi.dependencies.utils import get_flat_dependant
 from fastapi.routing import APIRoute
 
 from app.main import app
@@ -57,11 +58,38 @@ def test_route_resolves_before_the_task_run_id_parameter_route() -> None:
     )
 
 
+def _security_schemes(route: APIRoute) -> set[str]:
+    """Security scheme names FastAPI will enforce on a route.
+
+    Read from the FLAT dependant — requirements are collected recursively, so
+    the top-level `dependant.dependencies` does not carry them — and via the
+    same field FastAPI's own OpenAPI generator uses.
+    """
+    flat = get_flat_dependant(route.dependant, skip_repeats=True)
+    return {r.security_scheme.scheme_name for r in flat.security_requirements}
+
+
 def test_route_is_authenticated() -> None:
-    """A fleet queue with no auth dependency would be a cross-tenant leak."""
+    """A fleet queue with no auth dependency would be a cross-tenant leak.
+
+    Asserted on the SECURITY REQUIREMENT rather than on a dependency function
+    name. The first version of this test looked for `current_active_user` in
+    `dependant.dependencies` and failed: `current_active_user` is
+    fastapi-users' dependency FACTORY, and the callable actually installed is
+    named `current_user_dependency`. Matching on an internal name tests the
+    auth library's naming, not this route's protection — and it would break
+    again on the next fastapi-users refactor while a genuinely public route
+    slipped through.
+
+    Parity with an already-authenticated sibling is the real invariant: this
+    route must be gated exactly as `/task-runs/{task_run_id}` is.
+    """
     route = next(r for r in _routes() if r.path == ROUTE_PATH)
-    dep_names = {d.call.__name__ for d in route.dependant.dependencies if d.call}
-    assert "current_active_user" in dep_names, dep_names
+    schemes = _security_schemes(route)
+    assert schemes, "route has no security requirement — it would be public"
+
+    sibling = next(r for r in _routes() if r.path == "/api/v1/task-runs/{task_run_id}")
+    assert schemes == _security_schemes(sibling), (schemes, _security_schemes(sibling))
 
 
 def test_response_model_carries_the_task_run_context() -> None:
