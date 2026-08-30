@@ -21,10 +21,10 @@
  * `status` and `time` are ReactNode SLOTS rather than typed data, deliberately:
  * each surface renders its own `<StatusBadge status palette={…}>` from
  * `./statusRow`, so the row primitive never needs to know a surface's kind
- * union or own a palette. `accent` is the class string from
- * `rowAccentClass(status)` — R4 lives in that function, and passing its result
- * keeps the row body neutral, which is what keeps 40 rows readable when 6 are
- * red.
+ * union or own a palette. R4's accent is NOT a slot, though — the row takes an
+ * `attention` and derives the border from it (see that prop's doc for why it
+ * is one prop and not two), which keeps the row body neutral and is what keeps
+ * 40 rows readable when 6 are red.
  *
  * The whole line is ONE `<button>`: R5's "clicking the row expands it" has to
  * be reachable by keyboard, and a div with an onClick is not.

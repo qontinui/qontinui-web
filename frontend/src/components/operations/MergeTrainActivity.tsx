@@ -783,7 +783,29 @@ function RepoRow({
         active,
         "rounded-md border border-border bg-card px-2.5 py-2"
       )}
-      data-console-row=""
+      // NO `data-console-row` here, deliberately — and the reason is the same
+      // one that makes the marker worth having.
+      //
+      // Its contract is "the element that owns the row's padding, font size
+      // and accent" (`RecordRow`), because that is what a density or
+      // font-size rule is about. This `<div>` owns the padding and the accent
+      // but declares no font size, and — unlike `<RecordRow>` and
+      // `agent-registry`, which keep the detail as a SIBLING — it also
+      // contains the expanded `<RepoDetail>`, so with a row open the marked
+      // box is the whole panel.
+      //
+      // Marking it would raise the selector's count and lower its meaning:
+      // a rule asserting `font-size: .875rem` would report drift on a surface
+      // whose ambient size is 16px, and one asserting a row's box would be
+      // measuring a detail panel. A selector that matches the wrong element is
+      // the same defect class as one that matches nothing — it just fails
+      // loudly instead of silently. `data-attention` above IS emitted: that
+      // one is about severity, which this row does carry.
+      //
+      // The fix is to migrate this row onto `<RecordRow>`, which is Phase 3
+      // shaped work rather than Phase 4's precondition; it inherits the marker
+      // for free at that point. Recorded in the plan's Phase 4 section so the
+      // gap is a measurement rather than an oversight.
       data-testid={`train-row-${row.repo}`}
       data-activity={row.activity.kind}
       data-severity={row.severity}

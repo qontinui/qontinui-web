@@ -593,6 +593,7 @@ describe("RecordDetail (R5)", () => {
     ["true", true],
     ["an empty string", ""],
     ["an empty array", []],
+    ["an array of nothing-values", [false, null, ""]],
   ])("emits no wrapper — and no gap — when raw is %s", (_name, raw) => {
     // Every value React itself renders as nothing. The obvious guard
     // (`raw != null && raw !== false`) covers three of them and lets the rest

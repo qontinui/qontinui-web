@@ -59,7 +59,11 @@ import type { ReactNode } from "react";
  */
 function rendersSomething(node: ReactNode): boolean {
   if (node == null || typeof node === "boolean" || node === "") return false;
-  if (Array.isArray(node)) return node.length > 0;
+  // Recursive, not `length > 0`: `[a && <X/>, b && <Y/>]` with both conditions
+  // false is `[false, false]` — two entries, nothing rendered. No `raw=` call
+  // site passes an array today, so this is the cheap way to keep the guard
+  // honest rather than a fix for a live bug.
+  if (Array.isArray(node)) return node.some(rendersSomething);
   return true;
 }
 
