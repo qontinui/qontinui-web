@@ -150,19 +150,20 @@ export default function CoordSpawnPage() {
     // blank a loaded page. The question generation is bumped here too — this
     // is the one place the QUESTION changes.
     questionGen.current += 1;
+    const question = questionGen.current;
+    /** Release only if the lock is still this question's — see `/plans`. */
+    const releaseLock = () => {
+      if (question === questionGen.current) pollInFlight.current = false;
+    };
     setData(null);
     setError(null);
     // The first read holds the lock too — see `/plans`.
     pollInFlight.current = true;
-    void fetchData().finally(() => {
-      pollInFlight.current = false;
-    });
+    void fetchData().finally(releaseLock);
     const id = setInterval(() => {
       if (pollInFlight.current) return;
       pollInFlight.current = true;
-      void fetchData().finally(() => {
-        pollInFlight.current = false;
-      });
+      void fetchData().finally(releaseLock);
     }, POLL_INTERVAL_MS);
     return () => {
       clearInterval(id);
