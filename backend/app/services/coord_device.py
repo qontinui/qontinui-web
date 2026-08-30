@@ -26,8 +26,12 @@ Endpoints (all GET, bearer-authed, + ``x-qontinui-user-id`` header):
 
 Transport failures map to 502 (ConnectError) / 504 (TimeoutException),
 the same posture as ``operations.py::_proxy_coord_get`` and
-``coord_identity.py``. Coord's own ``>= 400`` statuses (notably 404 for an
-unowned device) are surfaced verbatim.
+``coord_identity.py``. Coord's own **4xx** statuses (notably 404 for an
+unowned device) are surfaced verbatim; a coord **5xx** is translated to
+``502 upstream_error`` rather than passed through, so a coord fault can
+never be mistaken for the device-bridge relay's ``503 runner not
+connected`` — which means ``coord.devices.ws_session_id IS NULL`` and
+nothing else.
 """
 
 from __future__ import annotations
@@ -100,6 +104,21 @@ async def _get(
             ) from exc
     if allow_404 and resp.status_code == 404:
         return None
+    if resp.status_code >= 500:
+        # A coord-side 5xx is an UPSTREAM fault, not a statement about the
+        # caller's device. Passing it through verbatim collided head-on with
+        # the device-bridge relay's own 503, whose ONLY meaning is
+        # ``coord.devices.ws_session_id IS NULL`` — so a coord outage and a
+        # disconnected runner were indistinguishable to the client (and to
+        # anyone reading the logs). 502 says "the thing behind me broke";
+        # 503 stays reserved for "your runner is not connected".
+        logger.warning(
+            "coord_device_upstream_error",
+            path=path,
+            upstream_status=resp.status_code,
+            body_preview=resp.text[:200],
+        )
+        raise HTTPException(status_code=502, detail="upstream_error")
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     try:
