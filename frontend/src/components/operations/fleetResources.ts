@@ -275,6 +275,32 @@ export interface ResourceSampleRow {
    * of magnitude with nothing else in the row saying so.
    */
   saturation_source?: string | null;
+  /**
+   * OS thread count of the **publishing process** (the runner) — process
+   * scoped, not the lane-wide kernel figure. The direct proxy for how close
+   * that process is to exhausting tokio's blocking-thread pool (default
+   * ceiling 512), which is the resource that wedged the primary runner on
+   * 2026-08-29 at 540 threads while every memory, commit and disk figure on
+   * this row read healthy *and accurate*.
+   *
+   * Optional on the wire, like `floor`/`headroom`: absent from any coord that
+   * predates alembic `lasac_01`, and from any device whose runner build
+   * predates the publisher. **Absent and `null` both mean UNKNOWN and render
+   * as an em dash — never `0`**, which on this axis does not under-report but
+   * inverts: a live process cannot have zero threads, and zero reads as
+   * maximally idle on the one column built to catch a saturated one.
+   */
+  thread_count?: number | null;
+  /**
+   * Live terminal sessions on the device at sample time — the EXPLANATORY
+   * half carried beside `thread_count`, never a trip condition of its own. A
+   * machine can carry N sessions comfortably or N sessions each leaking a
+   * stuck spawn; only the thread count separates those, and only the pair
+   * answers "was this a lot of work, or a leak?".
+   *
+   * Same absence rule as `thread_count`: `null`/absent is UNKNOWN, never `0`.
+   */
+  active_terminal_sessions?: number | null;
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;

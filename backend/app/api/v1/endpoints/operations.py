@@ -4273,6 +4273,29 @@ async def get_fleet_resource_samples(
       ``headroom`` is then the worst of the two axes it does send; the
       caller renders the third as *unreported* rather than inferring that
       it is clear.
+    * The **spawn-capacity** fields — ``thread_count`` and
+      ``active_terminal_sessions`` (alembic ``lasac_01``) — are a FOURTH
+      axis and, unlike ``threads_used``, are scoped to the *publishing
+      process* rather than to the lane. That distinction is the whole
+      point: on 2026-08-29 the primary runner wedged carrying 540 OS
+      threads against tokio's 512-slot blocking pool, 119 of them parked
+      mid-``CreateProcess``, so new spawns silently stopped while the box
+      sat at a few percent of its kernel thread ceiling and every memory,
+      commit and disk figure on this row read healthy *and accurate*. A
+      lane-wide saturation number cannot see that; a per-process thread
+      count is the direct proxy for it. Passed through untouched, with
+      the same NULL rule doing the same extra work: a fabricated ``0``
+      inverts rather than under-reports, since a live process cannot have
+      zero threads and zero renders as *maximally idle* on the one column
+      built to catch a saturated one.
+    * ``active_terminal_sessions`` is the EXPLANATORY half and is never a
+      trip condition on its own — a machine can carry N sessions
+      comfortably or N sessions each leaking a stuck ``spawn_blocking``
+      call, and only the thread count separates those. It travels beside
+      ``thread_count`` for the same reason ``EffectiveFloor`` carries both
+      the threshold and the raw value: a verdict that prints only the
+      number it tripped on leaves the next incident's forensics unable to
+      ask whether it was work or a leak.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
