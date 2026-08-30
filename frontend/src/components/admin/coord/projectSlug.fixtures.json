@@ -1,0 +1,96 @@
+{
+  "_comment": [
+    "The shared fixture table for the project-name -> slug rule.",
+    "",
+    "The RULE lives in Rust: `slugify_user_tenant_name`, qontinui-coord",
+    "`crates/coord/src/tenant_self_service.rs`. `projectSlug.ts` is a MIRROR of it,",
+    "and a mirror of a validation rule is exactly the thing plan",
+    "`2026-08-27-tenant-creation-fix-and-members-page-ux` Phase 1 #7 warns about:",
+    "it must be 'pinned by a shared fixture table, not by eyeball'.",
+    "",
+    "So this file is DATA, not TypeScript, and every accept/reject case below was",
+    "transcribed from coord's own `slugify_rejects_rather_than_mangles` unit test",
+    "plus the boundaries that test asserts by constant rather than by literal",
+    "(MIN_SLUG_LEN = 3, MAX_SLUG_LEN = 63, MAX_DISPLAY_NAME_CHARS = 200). Being a",
+    "language-neutral file, coord can read the same table if that pin is ever",
+    "closed from the Rust side too — which is the remaining half of #7's",
+    "requirement and is a coord change, out of scope for this plan (see Non-goals).",
+    "",
+    "`reason` values are `TenantNameError::reason()` verbatim — the discriminator",
+    "coord puts on the wire beside `invalid_name`."
+  ],
+  "source": {
+    "repo": "qontinui/qontinui-coord",
+    "path": "crates/coord/src/tenant_self_service.rs",
+    "fn": "slugify_user_tenant_name",
+    "test": "slugify_rejects_rather_than_mangles",
+    "constants": {
+      "MIN_SLUG_LEN": 3,
+      "MAX_SLUG_LEN": 63,
+      "MAX_DISPLAY_NAME_CHARS": 200
+    }
+  },
+  "accepts": [
+    { "input": "My Pizzeria!", "slug": "my-pizzeria", "from": "coord test" },
+    { "input": "  Spaced   Out  ", "slug": "spaced-out", "from": "coord test" },
+    { "input": "Hello---World", "slug": "hello-world", "from": "coord test" },
+    { "input": "a1b", "slug": "a1b", "from": "coord test" },
+    { "input": "9lives", "slug": "9lives", "from": "coord test" },
+    { "input": "UPPER Case", "slug": "upper-case", "from": "coord test" },
+    { "input": "9 Lives", "slug": "9-lives", "from": "coord test — a leading DIGIT is legal" },
+    { "input": "---lead", "slug": "lead", "from": "coord test — a leading separator is stripped, not rejected" },
+    { "input": "trail---", "slug": "trail", "from": "coord test" },
+    { "input": "a_b_c", "slug": "a-b-c", "from": "coord property probe" },
+    {
+      "input": "Ünïcödé Café",
+      "slug": "n-c-d-caf",
+      "from": "coord property probe — non-ASCII maps to `-` like any other non-[a-z0-9] char, which is why the docstring calls a wholly non-Latin name an honest `no_slug_characters` rejection rather than a mangled slug"
+    },
+    { "input": "  ...Weird///Name...  ", "slug": "weird-name", "from": "coord property probe" },
+    { "input": "abc", "slug": "abc", "from": "boundary — exactly MIN_SLUG_LEN" },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "from": "boundary — exactly MAX_SLUG_LEN (63)"
+    }
+  ],
+  "rejects": [
+    {
+      "input": "...",
+      "reason": "no_slug_characters",
+      "from": "coord test — must be rejected, not become `---`"
+    },
+    {
+      "input": "   ",
+      "reason": "empty",
+      "from": "coord test — must be rejected, not become an EMPTY insertable slug"
+    },
+    { "input": "", "reason": "empty", "from": "coord test" },
+    { "input": "ab", "reason": "too_short", "from": "coord test — MIN_SLUG_LEN - 1" },
+    {
+      "input": "!!!ok!!!",
+      "reason": "too_short",
+      "from": "coord property probe — slugifies to `ok`, which is 2 chars; the probe only asserts cleanliness WHEN Ok, so this case is the one it silently skips"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason": "too_long",
+      "from": "coord test — MAX_SLUG_LEN + 1 (64)"
+    },
+    {
+      "input": "repeat:a:400",
+      "reason": "display_name_too_long",
+      "from": "coord test — a 400-char name must be rejected, not become a 400-char slug. `repeat:<char>:<count>` is expanded by the test loader; a 400-char JSON literal is unreadable."
+    },
+    {
+      "input": "repeat:a:201",
+      "reason": "display_name_too_long",
+      "from": "boundary — MAX_DISPLAY_NAME_CHARS + 1. Ordering matters: this is checked BEFORE slugification, so it wins over `too_long` even though the slug would also be over-length."
+    },
+    {
+      "input": "repeat:a:200",
+      "reason": "too_long",
+      "from": "boundary — exactly MAX_DISPLAY_NAME_CHARS passes the display-name gate and is then rejected by the SLUG gate. This pair is what pins the order of the two length checks."
+    }
+  ]
+}

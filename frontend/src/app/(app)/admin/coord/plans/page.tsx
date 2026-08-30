@@ -39,7 +39,7 @@
  * health strip, derived from the window that WAS fetched.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -105,10 +105,72 @@ export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("created_desc");
   const [data, setData] = useState<PlansListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // There is deliberately no `loading` flag. It used to gate the list's
+  // `loaded` prop, and the two questions it conflated are what let a
+  // fabricated absence through: "is a request outstanding?" is not "has this
+  // question been answered?", and only the second one may decide whether the
+  // page is allowed to say "no plans match". `data !== null || error !== null`
+  // answers the second directly, so the flag had no reader left.
+
+  /**
+   * Generation guard — a read may only speak while it is still the newest one.
+   *
+   * Without it the reset below narrows the bug instead of closing it: the read
+   * issued under the PREVIOUS `status` is still live, still holds its own
+   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
+   * reachable by changing the filter while the first load is in flight, which
+   * is the ordinary case, not a corner:
+   *
+   *   - the superseded SUCCESS repaints the discarded window under the new
+   *     filter, for a whole poll interval;
+   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
+   *     clears the banner, `loaded` flips true, and the old window is stated
+   *     as a confident answer to a question that errored. That is the
+   *     fabricated-answer class this change exists to close, re-created in a
+   *     race window.
+   *
+   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
+   * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
+   * job here — `http-client.ts` overwrites the caller's `signal`.
+   *
+   * **TWO counters, because the two things being gated are not one question.**
+   * A single per-request counter silences a read in every arm at once, and
+   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
+   * and its 5xx retry spends ~7s in backoff over four round trips, both far
+   * longer than this page's 10s tick, so under a slow or retrying backend
+   * every read is superseded before it settles and the failure is never
+   * surfaced at all — the page waits on coord forever with nothing to show for
+   * it. That is exactly the defect `readFailed` exists to prevent —
+   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
+   * renders 'Waiting for coord…' over a request that is never arriving"* —
+   * re-created by the fix for a different one.
+   *
+   * So:
+   *
+   *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
+   *     ERROR. "This read failed" is true of the filter currently on screen
+   *     whether or not a newer request has overtaken it, so an overtaken
+   *     failure still gets to speak; a failure belonging to a filter the
+   *     operator has left does not.
+   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
+   *     response is the one rendered and two overlapping reads cannot land out
+   *     of order.
+   *
+   * The residue is the asymmetry `/questions` states and accepts: a stale
+   * FAILURE landing after a fresh success shows a banner the newest read
+   * disagrees with. That fails safe — it over-reports trouble — where the
+   * opposite silences it. `pollInFlight` keeps same-question ticks from
+   * overlapping in the first place, so the window is the refresh button.
+   */
+  const questionGen = useRef(0);
+  const reqGen = useRef(0);
+  /** One poll at a time — see the retry arithmetic above. */
+  const pollInFlight = useRef(false);
 
   const fetchData = useCallback(async () => {
+    const question = questionGen.current;
+    const req = ++reqGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -117,20 +179,71 @@ export default function CoordPlansListPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
+      if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
     }
   }, [status]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // `status` is `fetchData`'s only dependency, so this effect re-runs
+    // exactly when the QUESTION changes — and the rows still in `data` answer
+    // the previous one. Dropping them is not cosmetic: `loaded` is `data !==
+    // null`, so keeping them leaves every read-state derivation on this page
+    // reporting the OLD query while the new one is in flight — the list shows
+    // the previous filter's records instead of skeletons, the strip describes
+    // the previous window, and a new fetch that FAILS lands on the STALE arm
+    // ("the last counts that landed") when nothing has ever landed for this
+    // query. That is R6's own `loaded`-means-"answered-THIS-question" clause,
+    // one level up from a count.
+    //
+    // It is cleared HERE and not in `fetchData`, which the poll also calls: a
+    // poll must never blank a loaded page.
+    //
+    // The question generation is bumped here for the same reason — this is the
+    // one place the QUESTION changes.
+    questionGen.current += 1;
+    const question = questionGen.current;
+    /**
+     * Release the poll lock only if it is still the one this read took.
+     *
+     * A read superseded by a filter change settles LATE — after the cleanup
+     * has released the lock and the new question has taken it — so an
+     * unconditional release would free a lock the NEW question's read is still
+     * holding, and the next tick would issue a second concurrent read. Not
+     * harmful (`reqGen` still picks the winner), but it would quietly falsify
+     * the "one poll at a time" claim after every filter change, and a guard is
+     * only worth having while its comment is true.
+     */
+    const releaseLock = () => {
+      if (question === questionGen.current) pollInFlight.current = false;
+    };
+    setData(null);
+    setError(null);
+    // The FIRST read holds the lock too. Without that a tick 10s in issues a
+    // second read of the same question while the first is still out, and the
+    // first is then dropped for being superseded — which is only ever safe
+    // when nothing downstream mistakes "no answer yet" for "no answer".
+    pollInFlight.current = true;
+    void fetchData().finally(releaseLock);
+    const id = setInterval(() => {
+      // A tick that outruns the previous read would otherwise stack: the
+      // request timeout is 60s against a 10s interval, so a hung backend
+      // accumulates six concurrent reads a minute for nothing.
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void fetchData().finally(releaseLock);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(id);
+      // The lock was taken for a question that is over. Leaving it set would
+      // have the new question's first few ticks skip while a read nobody is
+      // waiting for finishes — bounded by the 60s timeout, but pointless.
+      pollInFlight.current = false;
+    };
   }, [fetchData]);
 
   const plans = useMemo(
@@ -149,6 +262,12 @@ export default function CoordPlansListPage() {
   // endpoint and had the same hole, so it consults it too.
   const readFailed = error !== null;
   const plansUnknown = readIsUnknown(loaded, readFailed);
+  // ...and the third state, for the `empty=` slot. A poll that fails over a
+  // window coord confirmed EMPTY leaves `data` non-null (the poll does not
+  // blank a loaded page, deliberately), so the plain copy would otherwise
+  // claim "No plans matching status=X" in the present tense while the read is
+  // currently failing.
+  const plansStale = readFailed && loaded;
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]
@@ -260,7 +379,16 @@ export default function CoordPlansListPage() {
       <RecordList
         items={sorted}
         itemKey={(p) => p.slug}
-        loaded={!(loading && !data)}
+        // "Has this question been ANSWERED, one way or the other?" — never
+        // "is a request outstanding?". The two diverge, and the gap is where a
+        // fabricated absence gets in: a read overtaken by a newer request of
+        // the SAME question is dropped without setting `data` or `error`, so a
+        // flag tracking requests would report "not loading" over a question
+        // coord has never answered, and this slot would render the plain "No
+        // plans matching status=X." underneath a strip still reading "Waiting
+        // for coord…". Derived from the answer instead, that state is what it
+        // is — still waiting, so still skeletons.
+        loaded={data !== null || error !== null}
         skeletonRows={6}
         empty={
           plansUnknown ? (
@@ -270,6 +398,14 @@ export default function CoordPlansListPage() {
             >
               Could not read the work-unit list — whether any plan matches
               status={status === "any" ? "any" : status} is unknown, not none.
+            </p>
+          ) : plansStale ? (
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-stale"
+            >
+              No plans matched status={status === "any" ? "any" : status} at the
+              last good read — this list has not refreshed since.
             </p>
           ) : (
             <p

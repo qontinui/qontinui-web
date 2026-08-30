@@ -125,16 +125,29 @@ export function deriveAgentLogHealth(
     else if (lvl === "warn") warns += 1;
   }
 
+  // A STALE verdict is not a GREEN verdict — R6's third state, the same clause
+  // `derivePlansHealth` carries. The counts survive a failed refresh because
+  // they were really measured, but the dot is a claim about NOW and the last
+  // good read is not now. `readFailed` used to reach only the detail line, so
+  // an agent log that loaded cleanly and then went dark pulsed green under
+  // "No errors or warnings" — the sentence that tells an operator to stop
+  // looking — off a window of unknown age.
+  //
+  // Errors and warnings both outrank it: those rows are real, and a real error
+  // is red whether or not the window refreshed. Only the two arms that claim
+  // an ABSENCE give way.
   const level: HealthStripLevel =
-    errors > 0 ? "red" : warns > 0 ? "amber" : "green";
+    errors > 0 ? "red" : warns > 0 || readFailed ? "amber" : "green";
   const headline =
     errors > 0
       ? `${errors} error${errors === 1 ? "" : "s"} in this window`
-      : filtered.length === 0
-        ? "Nothing matches the current filters"
-        : warns > 0
-          ? `${warns} warning${warns === 1 ? "" : "s"}, no errors`
-          : "No errors or warnings";
+      : warns > 0
+        ? `${warns} warning${warns === 1 ? "" : "s"}, no errors`
+        : readFailed
+          ? "Last refresh failed — these counts are not current"
+          : filtered.length === 0
+            ? "Nothing matches the current filters"
+            : "No errors or warnings";
   const window =
     total === filtered.length
       ? `${total} row${total === 1 ? "" : "s"} in the fetched window`
