@@ -3,8 +3,16 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Inbox, CheckCircle2, History, Rocket, WifiOff } from "lucide-react";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 
-export function IdleState({ isOffline = false }: { isOffline?: boolean }) {
+export function IdleState({
+  isOffline = false,
+  scope = null,
+}: {
+  isOffline?: boolean;
+  /** `scope` from the /task-runs/running envelope — what "no active runs" means. */
+  scope?: string | null;
+}) {
   const router = useRouter();
 
   return (
@@ -25,6 +33,7 @@ export function IdleState({ isOffline = false }: { isOffline?: boolean }) {
               ? "Connect a runner and start a workflow to see the live dashboard."
               : "Start a workflow to see the live dashboard, or view your run history."}
           </p>
+          <TaskRunScopeNote scope={scope} className="mt-3 text-left" />
         </div>
         {isOffline && (
           <div className="flex items-center justify-center gap-2 text-xs text-amber-400/80">
