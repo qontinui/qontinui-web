@@ -10,6 +10,18 @@ variable "application_name" {
   default     = "qontinui-backend"
 }
 
+# ⚠️ WRONG REGION — see the warning at the top of README.md.
+# This default feeds provider "aws" in main.tf, so it decides which region EVERY
+# alarm in this root is created in. The RDS instance and ALB this root alarms on
+# live in us-east-1; eu-central-1 holds only the SSM secrets store. The three
+# AWS/RDS alarms are therefore watching metrics that cannot exist where they are
+# created, and can never leave INSUFFICIENT_DATA.
+#
+# Deliberately NOT corrected in place: whether the fix is "change this" or
+# "delete this whole root" depends on whether it was ever applied, which is not
+# knowable from the repo. Changing the default alone would leave a Beanstalk
+# monitoring stack looking current for an ECS production. The correctly-regioned
+# monitoring that IS live is qontinui-stack/aws/modules/observability.
 variable "region" {
   description = "AWS region"
   type        = string
