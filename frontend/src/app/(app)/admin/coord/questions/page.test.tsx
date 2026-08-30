@@ -154,13 +154,21 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(strip.textContent ?? "").not.toMatch(/gaps\s*0/);
   });
 
-  it("does not go green when a failed gap read left only ANSWERED gaps behind", async () => {
-    // The narrow window the first cut of this fix missed. The gap list unions
+  it("does not go green when a gap read that HAD landed then failed", async () => {
+    // The narrow window the first cut of this fix missed: the gap list unions
     // `pending?gap=true` with `answered?gap=true`, so a retained list can be
-    // NON-empty while `blockingGaps` is 0 — every row already answered. An
-    // "unknown" predicate keyed on `visibleGaps.length` reads "known" there,
-    // and the strip prints `gaps 0` and the all-clear off a read that failed.
-    // Each predicate must be keyed on the quantity ITS OWN surface renders.
+    // NON-empty while `blockingGaps` is 0 — every row already answered.
+    //
+    // The predicates are now keyed on whether the READ landed (`readIsUnknown`)
+    // rather than on the count each surface renders, so this scenario moved
+    // from UNKNOWN to STALE — coord did answer, and its answer was "one gap,
+    // already answered". The count therefore SURVIVES as `gaps 0` instead of
+    // dashing, and the detail line labels it as the last one that landed.
+    //
+    // What must NOT change is the dot and the headline. A stale verdict is not
+    // a green verdict: `gaps 0` is a measurement, while green is a claim about
+    // now, and nobody has read now. This test is the pin on that distinction —
+    // the count relaxes, the all-clear does not.
     let gapCalls = 0;
     get.mockImplementation(async (url: string) => {
       if (url.includes("gap=true")) {
@@ -190,11 +198,103 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     await waitFor(() =>
       expect(strip).toHaveAttribute("data-health-level", "amber")
     );
-    expect(strip).toHaveTextContent(/could not read/i);
     expect(strip.textContent ?? "").not.toMatch(
       /No agent is waiting on an answer/i
     );
-    expect(strip).toHaveTextContent(/gaps\s*–/);
+    // The stale headline names the READ that has not come back, and stops
+    // there. It deliberately does not say what was waiting at the last good
+    // read: `blockingGaps` counts `visibleGaps`, which `handledGaps` filters
+    // optimistically, so that sentence could be false about the read it names.
+    expect(strip).toHaveTextContent(
+      /gaps inbox has not refreshed since the last good read/i
+    );
+    expect(strip).toHaveTextContent(/not clear, just not re-read/i);
+    // The count coord DID answer survives, named as stale rather than dashed.
+    expect(strip).toHaveTextContent(/gaps\s*0/);
+    expect(strip).toHaveTextContent(/Last refresh failed for: gaps/);
+    expect(strip.textContent ?? "").not.toMatch(/gaps\s*–/);
+  });
+
+  it("does not dash a count coord confirmed EMPTY when a later poll fails", async () => {
+    // The flicker the older `readFailed && count === 0` spelling produced. An
+    // inbox coord has answered as empty is indistinguishable from one that
+    // never arrived if the predicate keys on the count, so one blipped poll
+    // flipped this page from "No pending questions" to "could not be read" and
+    // back on the next tick — off no new information at all. Keyed on
+    // `loaded`, the empty answer holds and the failure reads as stale.
+    let pendingCalls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) return { questions: [] };
+      if (url.includes("/pending")) {
+        pendingCalls += 1;
+        if (pendingCalls > 1) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveAttribute("data-health-level", "green")
+    );
+
+    await user.click(screen.getByTestId("coord-questions-refresh"));
+
+    // The count coord confirmed is kept, and named as no longer current.
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/Last refresh failed for: pending/)
+    );
+    expect(strip).toHaveTextContent(/0\s*pending/);
+    expect(strip.textContent ?? "").not.toMatch(/–\s*pending/);
+    // The list keeps coord's answer rather than claiming it is unreadable —
+    // and dates it. The bare "No pending questions." would be a present-tense
+    // claim off a read that is currently failing, which is the same
+    // over-claim as the green dot, one element down.
+    const stale = screen.getByTestId("coord-questions-pending-stale");
+    expect(stale).toHaveTextContent(/as of the last good read/i);
+    expect(screen.queryByTestId("coord-questions-pending-unreadable")).toBeNull();
+    expect(screen.queryByTestId("coord-questions-pending-empty")).toBeNull();
+    // …and the verdict still steps down, because stale is not current.
+    expect(strip).toHaveAttribute("data-health-level", "amber");
+    expect(strip.textContent ?? "").not.toMatch(
+      /No agent is waiting on an answer/i
+    );
+  });
+
+  it("reports an unknown read and a stale one in the same detail line", async () => {
+    // The previous `anyStale && !anyUnknown` form dropped the stale clause
+    // entirely whenever anything was unknown, so a page with an unread pending
+    // inbox said nothing about a gaps count that had quietly gone out of date.
+    let gapCalls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        // Two reads make one `fetchGaps`: the first lands, the rest fail.
+        if (gapCalls > 2) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      // Pending never lands at all — unknown, not stale.
+      if (url.includes("/pending")) throw new Error("coord unreachable");
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    const strip = await screen.findByTestId("coord-questions-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/coord did not answer for: pending/)
+    );
+    await user.click(screen.getByTestId("coord-questions-refresh"));
+
+    await waitFor(() =>
+      expect(strip).toHaveTextContent(/Last refresh failed for: gaps/)
+    );
+    // Both clauses, at once — a read is in exactly one of the two lists.
+    expect(strip).toHaveTextContent(/coord did not answer for: pending/);
+    expect(strip).toHaveTextContent(/–\s*pending/);
+    expect(strip).toHaveTextContent(/gaps\s*0/);
   });
 
   it("dashes the pending badge and every tab count that could not be read", async () => {
@@ -291,6 +391,51 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(
       screen.getByTestId("coord-questions-health")
     ).toHaveTextContent(/answered\s*–/);
+  });
+
+  it("dates the gaps and answered lists too when their reads go stale", async () => {
+    // The two stale slots behind a tab click. Both lists answer once and then
+    // go dark, so each falls in the STALE arm rather than the unknown one —
+    // the plain copy would claim "No policy gaps reported." and "No
+    // recently-answered questions." in the present tense off reads that are
+    // currently failing.
+    let gapCalls = 0;
+    let answeredCalls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        // Two reads make one `fetchGaps`; the first pair lands, the rest fail.
+        if (gapCalls > 2) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      if (url.includes("/answered")) {
+        answeredCalls += 1;
+        if (answeredCalls > 1) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    await screen.findByTestId("coord-questions-health");
+    await user.click(screen.getByTestId("coord-questions-refresh"));
+
+    await user.click(screen.getByTestId("coord-questions-tab-gaps"));
+    const gapsStale = await screen.findByTestId("coord-questions-gaps-stale");
+    expect(gapsStale).toHaveTextContent(/not an all-clear/i);
+    expect(screen.queryByTestId("coord-questions-gaps-empty")).toBeNull();
+    expect(screen.queryByTestId("coord-questions-gaps-unreadable")).toBeNull();
+
+    await user.click(screen.getByTestId("coord-questions-tab-answered"));
+    const answeredStale = await screen.findByTestId(
+      "coord-questions-answered-stale"
+    );
+    expect(answeredStale).toHaveTextContent(/as of the last good read/i);
+    expect(screen.queryByTestId("coord-questions-answered-empty")).toBeNull();
+    expect(
+      screen.queryByTestId("coord-questions-answered-unreadable")
+    ).toBeNull();
   });
 
   it("says the pending list is unreadable instead of 'No pending questions'", async () => {
@@ -393,7 +538,12 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     await screen.findByText(/Failed to load/i);
 
     const strip = screen.getByTestId("coord-questions-health");
-    expect(strip).toHaveTextContent(/coord did not answer for: pending/);
+    // The stale clause opens with its own verb now. It used to share the
+    // unknown clause's "coord did not answer for:", which was serviceable
+    // while only one of the two could render — the detail line now emits both
+    // when both apply, and two sentences with the same opening would read as
+    // one repeated claim rather than two different ones.
+    expect(strip).toHaveTextContent(/Last refresh failed for: pending/);
     expect(strip).toHaveTextContent(/last ones that landed/);
     // Not the UNKNOWN copy \u2014 the count is real, just old.
     expect(strip.textContent ?? "").not.toMatch(/a dash, not a zero/);
