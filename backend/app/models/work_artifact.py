@@ -98,13 +98,25 @@ NOTE_TRIM_CHARS = " \t\n\r\f\v"
 #: CRUD dedup lookup can be served by that index and shares its grain.
 NOTE_TRIM_SQL = r"btrim(note, E' \t\n\r\f\v')"
 
-#: The indexed full-text expression, spelled once. The API's ``?q=`` filter
-#: reuses this string verbatim so the predicate matches the index expression
-#: exactly and the GIN index is actually usable.
+#: The indexed full-text expression, spelled once and reused.
+#:
+#: BOTH consumers are built from this one string: ``ix_work_artifacts_search``
+#: below, and the API's ``?q=`` predicate in
+#: :func:`app.crud.work_artifact._apply_filters`. PostgreSQL matches an
+#: expression index by the PARSED expression, so a predicate that merely
+#: resembles the indexed expression yields a perfectly healthy-looking index
+#: that is never used; reusing the constant is the only thing that keeps the
+#: two identical under edits.
+#:
+#: Spelled UNQUALIFIED (``title``, not ``work_artifacts.title``) because that
+#: is what the deployed index actually holds. PostgreSQL *accepts* a
+#: table-qualified column reference in ``CREATE INDEX`` but normalizes it away
+#: on the way in, so the qualified spelling this constant used to carry was
+#: never the thing stored — it only ever agreed with the index by accident of
+#: parse-tree equality. Every statement that embeds this string selects from
+#: ``work_artifacts`` alone, so the bare column names are unambiguous.
 SEARCH_TSVECTOR_SQL = (
-    "to_tsvector('english', "
-    "coalesce(work_artifacts.title, '') || ' ' || "
-    "coalesce(work_artifacts.body, ''))"
+    "to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''))"
 )
 
 _IDENTITY_ORG_EXPR = f"coalesce(organization_id, '{NIL_ORGANIZATION_ID}'::uuid)"
@@ -172,12 +184,13 @@ class WorkArtifact(Base):
         Index("ix_work_artifacts_work_unit_slug", "work_unit_slug"),
         Index("ix_work_artifacts_kind_slug", "kind", "slug"),
         Index("ix_work_artifacts_repos", "repos", postgresql_using="gin"),
+        # The body is SEARCH_TSVECTOR_SQL itself, never a copy of it — a
+        # second spelling here is exactly the drift the constant exists to
+        # prevent, and it stayed invisible for as long as it existed because
+        # PostgreSQL compares parse trees rather than strings.
         Index(
             "ix_work_artifacts_search",
-            text(
-                "to_tsvector('english', "
-                "coalesce(title, '') || ' ' || coalesce(body, ''))"
-            ),
+            text(SEARCH_TSVECTOR_SQL),
             postgresql_using="gin",
         ),
         {"schema": "agent"},
