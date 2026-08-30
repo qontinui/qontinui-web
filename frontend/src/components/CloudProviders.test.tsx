@@ -14,6 +14,8 @@
  *   - the snapshot is reference-stable, so useSyncExternalStore cannot loop
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import React from "react";
 import { describe, expect, it } from "vitest";
 import { render, screen, act } from "@testing-library/react";
@@ -160,5 +162,94 @@ describe("CloudProviders", () => {
     registerCloudExtensions({ providers: { s2: makeProvider("s2") } });
     expect(getProviders()).not.toBe(first);
     expect(getProviders()).toHaveLength(first.length + 1);
+  });
+});
+
+/**
+ * The mount site, guarded at the source.
+ *
+ * Everything above renders `<CloudProviders>` by hand, and
+ * `cloud-extensions-boot.registration.test.tsx` only proves the registry
+ * gets filled. Neither notices if `app/(app)/layout.tsx` stops rendering
+ * `<CloudProviders>` at all — cloud-control would keep registering
+ * `organizationProvider`, every test would stay green, and the composed
+ * build would go straight back to the 2026-08-26 configuration: a component
+ * slot filled with no provider mounted behind it. That is the same
+ * ships-completely-inert failure class the loader-liveness guard exists for,
+ * one layer up, and it was the one layer with no guard.
+ *
+ * Read as source rather than rendered because the layout is the app's real
+ * client shell: importing it pulls a dozen context providers, `next/dynamic`
+ * chunks and `useAuth`, and mocking all of that would leave the assertion
+ * testing the mocks. The structural facts here are exactly the ones a
+ * refactor can drop silently, and they are cheap to read literally.
+ */
+describe("CloudProviders — mount site", () => {
+  const LAYOUT = path.resolve(process.cwd(), "src/app/(app)/layout.tsx");
+  const raw = fs.readFileSync(LAYOUT, "utf8");
+
+  /**
+   * Comments stripped, because the doc blocks in that file name
+   * `<CloudProviders>` and `AppAuthGate` in prose — including the block that
+   * explains this very nesting. Scanning the raw text would match the
+   * explanation instead of the code and report the ordering backwards.
+   */
+  const source = raw
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  it("is imported and rendered by the authenticated layout", () => {
+    expect(source).toContain(
+      'import { CloudProviders } from "@/components/CloudProviders";'
+    );
+    expect(
+      source,
+      "app/(app)/layout.tsx must render <CloudProviders>, or cloud-control's providers are registered and never mounted"
+    ).toMatch(/<CloudProviders>/);
+    expect(source).toMatch(/<\/CloudProviders>/);
+  });
+
+  it("renders CloudProviders INSIDE AppAuthGate, not around it", () => {
+    // The nesting is the load-bearing part, not just the presence.
+    // `AppAuthGate` withholds its children while `useAuth()` is loading —
+    // which on the server is always — so a `CloudProviders` inside it never
+    // takes part in the hydration render. Hoisted outside the gate it would,
+    // and `useSlotProviders`' server snapshot is empty, so every composed
+    // build page load would mount zero providers, swap to the real snapshot,
+    // and remount the entire authenticated tree. See `CloudProviders.tsx`
+    // and `AppAuthGate`'s own doc block.
+    const gateOpen = source.indexOf("<AppAuthGate>");
+    const providersOpen = source.indexOf("<CloudProviders>");
+    const providersClose = source.indexOf("</CloudProviders>");
+    const gateClose = source.indexOf("</AppAuthGate>");
+
+    expect(gateOpen).toBeGreaterThanOrEqual(0);
+    expect(providersOpen).toBeGreaterThan(gateOpen);
+    expect(providersClose).toBeGreaterThan(providersOpen);
+    expect(gateClose).toBeGreaterThan(providersClose);
+  });
+
+  it("keeps AppAuthGate withholding children while auth loads", () => {
+    // The condition itself. If this early return goes away — an SSR cookie
+    // read, a synchronous `localStorage` seed, an optimistic
+    // `loading: false` — `CloudProviders` joins the hydration render and the
+    // nesting assertion above stops being worth anything.
+    const start = source.indexOf("function AppAuthGate(");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const end = source.indexOf("\n}", start);
+    const body = source.slice(start, end);
+
+    // Read the condition guarding the early return, not merely "the word
+    // `loading` appears somewhere in the function" — it also appears in the
+    // redirect effect, so a looser match stays green when the gate is
+    // narrowed to `if (!user)` and children start rendering during load.
+    const returnAt = body.indexOf("return <AuthLoadingShell");
+    expect(returnAt).toBeGreaterThan(0);
+    const guard = body.slice(Math.max(0, returnAt - 120), returnAt);
+
+    expect(
+      guard,
+      "AppAuthGate's early return must still be keyed on `loading`, or CloudProviders joins the hydration render - see its doc block"
+    ).toMatch(/if\s*\([^)]*\bloading\b[^)]*\)\s*\{\s*$/);
   });
 });

@@ -88,6 +88,29 @@ function AuthLoadingShell() {
   );
 }
 
+/**
+ * Bounces unauthenticated visitors to `/login`, and renders
+ * `AuthLoadingShell` in place of `children` until `useAuth()` has resolved.
+ *
+ * THIS GATE IS LOAD-BEARING FOR SOMETHING OTHER THAN AUTH. `useAuth()`
+ * reports `loading` on the server always, so `children` — and therefore
+ * `<CloudProviders>` just below — are never part of the server render or of
+ * the HYDRATION render. That is what keeps the composed build off the
+ * whole-tree remount: `useSyncExternalStore` must read `getServerSnapshot`
+ * when hydrating, and `useSlotProviders`' is an empty array, so a
+ * `CloudProviders` present at hydration would mount zero providers and then
+ * swap to the real snapshot — changing the element type at that position and
+ * making React tear down and rebuild the entire authenticated tree, on every
+ * page load.
+ *
+ * So making auth resolve synchronously — an SSR cookie read, a
+ * `localStorage` seed, an optimistic `loading: false` — is not a local
+ * change. It reintroduces that remount with no visible connection to
+ * extension slots. `components/CloudProviders.tsx`,
+ * `lib/extension-slots.ts` and `docs/composed-cloud-build.md` carry the full
+ * argument; `CloudProviders.test.tsx` pins both the remount itself and this
+ * file's structure.
+ */
 function AppAuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
