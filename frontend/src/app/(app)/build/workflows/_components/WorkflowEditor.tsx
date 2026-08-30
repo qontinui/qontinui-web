@@ -15,6 +15,10 @@ import { GenerateFromStatesModal } from "@/components/workflow-builder/GenerateF
 import { Button } from "@/components/ui/button";
 import { generateStepId, type UnifiedStep, type WorkflowPhase } from "@/types/unified-workflow";
 import { useRunnerHealth } from "@/lib/runner/hooks/misc-hooks";
+import {
+  RUNNER_API_BASE,
+  type RunningTaskRunsResponse,
+} from "@/lib/runner-api";
 import { PhaseStepRenderer } from "./PhaseStepRenderer";
 import { DispatchWorkflowButton } from "@/components/server-runners/DispatchWorkflowButton";
 import { RunOnRunnerButton } from "@/components/runners";
@@ -186,26 +190,27 @@ export function WorkflowEditor({
   const handleStop = useCallback(async () => {
     setIsStopping(true);
     try {
-      const res = await fetch("http://localhost:9876/task-runs/running");
+      const res = await fetch(`${RUNNER_API_BASE}/task-runs/running`);
       if (!res.ok) {
         toast.error("Failed to fetch running tasks");
         return;
       }
-      const runningTasks = await res.json();
-      const matchingRun = Array.isArray(runningTasks)
-        ? runningTasks.find(
-            (run: { workflow_id?: string }) =>
-              run.workflow_id === state.workflow.id,
-          )
-        : null;
+      const running = (await res.json()) as RunningTaskRunsResponse;
+      const matchingRun =
+        running.task_runs.find((run) => run.workflow_id === state.workflow.id) ??
+        null;
 
       if (!matchingRun) {
-        toast.info("No running task found for this workflow");
+        // `scope` says what the ledger covers, so a miss here is never read
+        // as "the runner is idle".
+        toast.info("No running task found for this workflow", {
+          description: running.scope,
+        });
         return;
       }
 
       const stopRes = await fetch(
-        `http://localhost:9876/task-runs/${matchingRun.id}/stop`,
+        `${RUNNER_API_BASE}/task-runs/${matchingRun.id}/stop`,
         { method: "POST" },
       );
       if (stopRes.ok) {

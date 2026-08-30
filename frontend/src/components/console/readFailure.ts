@@ -61,6 +61,13 @@ export const UNKNOWN_COUNTS_DETAIL =
  * The detail line for counts an earlier poll delivered and a later one failed
  * to refresh. It LEADS with the failure because the headline above it may be
  * the green all-clear, and that is the sentence being qualified.
+ *
+ * **On both console derivers that pairing is now impossible** — a stale read
+ * forces amber and replaces the all-clear headline outright, because one line
+ * of small print under a pulsing green dot is not a qualification. This line
+ * still LEADS with the failure, because the headline above it can be a loud
+ * one that is itself stale (`3 errors in this window`, `2 plans blocked`), and
+ * that sentence is the one being qualified.
  */
 export function staleDetail(window: string): string {
   return `Last refresh failed — these counts are stale. ${window}`;

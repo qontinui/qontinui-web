@@ -91,9 +91,12 @@ describe("cloud-control extension registration", () => {
       // `getProvider` proves each NAME arrived; `getProviders` proves the
       // registration also reached the array `CloudProviders` actually mounts
       // from. `registerCloudExtensions` fills the Map and rebuilds that array
-      // in two separate statements, and only the Map write is unconditional —
-      // so a refactor that updates one and not the other leaves every by-name
-      // check green while nothing mounts.
+      // in two separate statements, so a refactor that updates one and not
+      // the other leaves every by-name check green while nothing mounts.
+      // (This used to read "only the Map write is unconditional". Both are
+      // inside the same `if (partial.providers)` block and always have been;
+      // the real asymmetry is that they can be REORDERED relative to the
+      // notify loop, which `extension-slots.test.tsx` pins directly.)
       //
       // Exact, not `>=`, for the reason stated at the top of this file: a
       // provider added to cloud-control's `index.ts` and not listed here must
@@ -159,4 +162,40 @@ describe("cloud-control extension registration", () => {
       expect(slots.getProviders()).toHaveLength(0);
     }
   );
+});
+
+/**
+ * The boot module's own mount site.
+ *
+ * Every case above reaches the registration by `await import(...)`, which
+ * proves the module registers when something loads it — not that anything
+ * does. The only thing that loads it in the app is `<CloudExtensionsBoot />`
+ * rendered in `app/layout.tsx`; that render is what pulls
+ * `import "@qontinui/cloud-control"` into the client entry graph.
+ *
+ * Delete that one line and this whole file stays green while the extension
+ * surface ships completely inert — which is precisely the state this file
+ * was written to make impossible, reached by the one route its own
+ * assertions cannot see. `CloudProviders.test.tsx` carries the matching
+ * block for the other mount site; see its header for what a source scan is
+ * and is not.
+ */
+describe("cloud-control extension registration — boot mount site", () => {
+  function rootLayoutSource(): string {
+    const file = path.resolve(process.cwd(), "src/app/layout.tsx");
+    return fs
+      .readFileSync(file, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  }
+
+  it("is imported and rendered by the root layout", () => {
+    const source = rootLayoutSource();
+
+    expect(source).toMatch(/import\s*\{\s*CloudExtensionsBoot\s*\}/);
+    expect(
+      source,
+      "app/layout.tsx no longer renders <CloudExtensionsBoot /> - without it nothing imports @qontinui/cloud-control and every slot stays empty in production, with no test in this file able to tell"
+    ).toMatch(/<CloudExtensionsBoot[\s/>]/);
+  });
 });

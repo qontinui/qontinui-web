@@ -3,10 +3,13 @@
 import { Loader2, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 import type { TaskRunSummary } from "../page-analyzer-types";
 
 interface StepOutputTabProps {
   taskRuns: TaskRunSummary[];
+  /** `scope` from the /task-runs/running envelope; null before it loads. */
+  taskRunsScope: string | null;
   selectedTaskRunId: string;
   setSelectedTaskRunId: (id: string) => void;
   loadingTaskRuns: boolean;
@@ -18,6 +21,7 @@ interface StepOutputTabProps {
 
 export function StepOutputTab({
   taskRuns,
+  taskRunsScope,
   selectedTaskRunId,
   setSelectedTaskRunId,
   loadingTaskRuns,
@@ -59,6 +63,10 @@ export function StepOutputTab({
           <p className="text-xs text-muted-foreground mt-1">
             Run a workflow in the runner first.
           </p>
+          <TaskRunScopeNote
+            scope={taskRunsScope}
+            className="mt-2 justify-center text-left"
+          />
         </div>
       ) : (
         <select
