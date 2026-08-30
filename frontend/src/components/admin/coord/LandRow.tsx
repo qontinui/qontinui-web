@@ -56,7 +56,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -256,7 +255,6 @@ export function LandRow({
       rowKey={sig.id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={
         <span title={`${action} — ${sig.repo ?? "no repo recorded"}`}>

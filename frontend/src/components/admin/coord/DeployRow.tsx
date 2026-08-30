@@ -36,7 +36,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import { httpClient } from "@/services/service-factory";
 import {
@@ -124,7 +123,6 @@ export function DeployRow({
       rowKey={sig.id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={
         <span title={sig.service ?? "no service recorded"}>

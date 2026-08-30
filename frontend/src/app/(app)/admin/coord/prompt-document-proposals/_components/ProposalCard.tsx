@@ -9,7 +9,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import {
   CoordAdminOnly,
@@ -117,7 +116,6 @@ export function ProposalCard({
       rowKey={proposal.id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={proposal.doc_kind}
       label={

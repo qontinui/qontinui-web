@@ -72,7 +72,6 @@ import {
   RowTime,
   StatusBadge,
   isNotFoundError,
-  rowAccentClass,
   rowAccentProps,
 } from "@/components/console";
 import {
@@ -475,7 +474,6 @@ export default function CoordPlanDetailPage() {
                     rowKey={ctx.rowKey}
                     expanded={ctx.expanded}
                     onToggle={ctx.onToggle}
-                    accent={rowAccentClass(status)}
                     attention={status.attention}
                     identity={h.by_actor ? "by" : "→"}
                     label={
