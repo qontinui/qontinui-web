@@ -59,7 +59,11 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg15
+        # Kept identical to the Frontend E2E job in e2e-tests.yml, which this
+        # workflow was split out of, and to production (16.13). This job also
+        # runs `alembic upgrade heads` against the service. See e2e-tests.yml
+        # for why the pin is pg16 and why it is the pgvector image.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
