@@ -403,11 +403,10 @@ describe("RecordRow (R2, R4)", () => {
       expect(row?.className).toContain("text-sm");
     });
 
-    it("declares the attention its accent paints, and only when it has one", () => {
+    it("paints and declares from ONE prop, so the two cannot disagree", () => {
       const { unmount } = render(
         <RecordRow
           {...base}
-          accent={rowAccentClass({ attention: "author" })}
           attention="author"
           expanded={false}
           onToggle={() => {}}
@@ -416,8 +415,11 @@ describe("RecordRow (R2, R4)", () => {
       );
       const row = document.querySelector("[data-console-row]");
       expect(row).toHaveAttribute("data-attention", "author");
-      // The colour and the attribute are the same fact in two channels; a rule
-      // keyed on one must find the other on the same element.
+      // The colour and the attribute are the same fact in two channels, and
+      // both come off the same prop — so a rule keyed on one always finds the
+      // other on the same element. The accent is the SHARED one, byte for
+      // byte: §4.1 says nothing outside `statusRow` may mint a red.
+      expect(row?.className).toContain(rowAccentClass({ attention: "author" }));
       expect(row?.className).toContain("border-l-red-500/80");
       unmount();
 
@@ -492,7 +494,10 @@ describe("RecordRow (R2, R4)", () => {
     render(
       <RecordRow
         {...base}
-        accent="border-l-2 border-l-red-500/80"
+        // The accent is derived from `attention` rather than passed as a
+        // class — one prop, so the border and `data-attention` cannot
+        // disagree. See the prop's own doc.
+        attention="author"
         expanded={false}
         onToggle={() => {}}
         data-testid="row"
@@ -579,6 +584,39 @@ describe("RecordDetail (R5)", () => {
     render(<RecordDetail data-testid="detail" why={<p>WHY</p>} />);
     expect(document.querySelector("[data-console-raw]")).toBeNull();
     expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    ["false", false],
+    ["true", true],
+    ["an empty string", ""],
+    ["an empty array", []],
+  ])("emits no wrapper — and no gap — when raw is %s", (_name, raw) => {
+    // Every value React itself renders as nothing. The obvious guard
+    // (`raw != null && raw !== false`) covers three of them and lets the rest
+    // through as an EMPTY wrapper, which is a non-first child of `space-y-3`
+    // and therefore a 12px gap at the foot of the panel. Two of the misses
+    // arrive by ordinary means: `str && <div/>` yields `""`, and a `||` chain
+    // over a nullable string yields it too — which is the exact shape of
+    // `<AlertRow>`'s raw slot over a `device_id` typed `string | null`.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} raw={raw} />);
+    expect(document.querySelector("[data-console-raw]")).toBeNull();
+    expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it("does NOT detect an empty fragment — the one gap, named", () => {
+    // `<></>` is a real React element that happens to render nothing, and
+    // telling that apart from a fragment with content means reading
+    // `props.children` off an element — walking React's internals to save a
+    // 12px gap. The values above are the ones a caller reaches by ORDINARY
+    // means (`cond &&`, a nullable string, an empty list); a bare empty
+    // fragment is not one of them, and no `raw=` call site in the repo passes
+    // one. Asserted so the limit is a measurement rather than an assumption:
+    // if this ever starts passing, the guard grew and this test should go.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} raw={<></>} />);
+    expect(document.querySelector("[data-console-raw]")).not.toBeNull();
   });
 });
 

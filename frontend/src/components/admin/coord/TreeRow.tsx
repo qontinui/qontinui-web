@@ -37,7 +37,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import {
   TREE_STATUS_PALETTE,
@@ -73,7 +72,6 @@ export function TreeRow({
       rowKey={`${tree.device_id ?? "no-device"}:${tree.repo}`}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={tree.repo}
       label={
