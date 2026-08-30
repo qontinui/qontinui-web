@@ -1,7 +1,7 @@
 /**
  * MergeOrchestrationSettings — the merge calibration console.
  *
- * Two things under test here:
+ * Three things under test here:
  *
  * 1. The auto_fix_red_main tenant toggle round-trip (red-main auto-remediation
  *    Phase 3 / D6, plan
@@ -16,6 +16,12 @@
  *    `POST /pr-merge/merge-enabled`. The load-bearing assertions are the ones
  *    about PINNED vs INHERITED: the old card rendered only the resolved value,
  *    so every per-repo control read "inherit" whatever was actually stored.
+ *
+ * 3. The `ff_land_head_sync_enabled` dial (plan
+ *    `2026-08-26-coord-ff-land-records-merged-on-github`). Its storage landed
+ *    ahead of coord's settings wire, so the controls are capability-gated on
+ *    the field's presence in the served profile and the assertions that matter
+ *    are the ones proving the key stays OFF the wire until then.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -216,6 +222,120 @@ describe("<MergeOrchestrationSettings> auto_fix_red_main toggle", () => {
       expect(patch).toBeTruthy();
       const body = JSON.parse((patch![1] as RequestInit).body as string);
       expect(body.escalate_paths).toEqual(["alembic/**", "**/credentials*"]);
+    });
+  });
+});
+
+/**
+ * ff_land_head_sync_enabled — the dial that makes coord's lands read as Merged
+ * on GitHub (plan `2026-08-26-coord-ff-land-records-merged-on-github`, Phase 1;
+ * storage landed as `qontinui-web#1092`).
+ *
+ * The load-bearing assertions here are the NEGATIVE ones. coord's
+ * `PatchTenantSettings` is `#[serde(deny_unknown_fields)]` and the tenant body
+ * is sent on every save, so a build that does not carry the field must never
+ * see the key — otherwise adding this control 400s dwell, confidence,
+ * auto-merge and the escalate paths along with it. `makeProfile()` omits the
+ * field precisely so "old coord build" is the DEFAULT the rest of this file
+ * already runs under.
+ */
+describe("<MergeOrchestrationSettings> ff_land_head_sync dial", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it("is disabled, and says why, when coord does not serve the field", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(routeGet(url, {}))
+    );
+    render(<MergeOrchestrationSettings />);
+
+    const toggle = await screen.findByTestId("settings-ff-land-head-sync");
+    expect(toggle).toBeDisabled();
+    // Discoverable rather than hidden — and honest about why it cannot move.
+    expect(
+      screen.getByTestId("settings-ff-land-head-sync-unsupported")
+    ).toBeInTheDocument();
+  });
+
+  it("omits the key from the tenant PATCH when coord does not serve it", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            profile: makeProfile(),
+          })
+        );
+      }
+      return Promise.resolve(routeGet(url, {}));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId("settings-ff-land-head-sync");
+
+    fireEvent.click(screen.getByTestId("settings-save"));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as RequestInit).body as string);
+      // The whole point: an unknown key here is a 400 for the ENTIRE save.
+      expect("ff_land_head_sync_enabled" in body).toBe(false);
+      // ...while the fields coord does know are still sent.
+      expect(body.auto_fix_red_main).toBe(false);
+    });
+  });
+
+  it("reflects the resolved value (ON) once coord serves the field", async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(routeGet(url, { ff_land_head_sync_enabled: true }))
+    );
+    render(<MergeOrchestrationSettings />);
+
+    const toggle = await screen.findByTestId("settings-ff-land-head-sync");
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-checked")).toBe("true")
+    );
+    expect(toggle).not.toBeDisabled();
+    expect(
+      screen.queryByTestId("settings-ff-land-head-sync-unsupported")
+    ).toBeNull();
+  });
+
+  it("PATCHes the toggled value once coord serves the field", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Promise.resolve(
+          jsonResponse({
+            tenant_id: "00000000-0000-0000-0000-000000000001",
+            profile: makeProfile({ ff_land_head_sync_enabled: true }),
+          })
+        );
+      }
+      return Promise.resolve(
+        routeGet(url, { ff_land_head_sync_enabled: false })
+      );
+    });
+    render(<MergeOrchestrationSettings />);
+
+    const toggle = await screen.findByTestId("settings-ff-land-head-sync");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle.getAttribute("aria-checked")).toBe("true")
+    );
+
+    fireEvent.click(screen.getByTestId("settings-save"));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === "PATCH"
+      );
+      expect(patch).toBeTruthy();
+      const body = JSON.parse((patch![1] as RequestInit).body as string);
+      expect(body.ff_land_head_sync_enabled).toBe(true);
     });
   });
 });
@@ -543,6 +663,75 @@ describe("<MergeOrchestrationSettings> RepoOverrideCard save", () => {
       expect("dry_run_override" in body).toBe(false);
       expect("merge_enabled" in body).toBe(false);
       expect("auto_fix_red_main" in body).toBe(false);
+      // Same class as line_budget_override: coord does not carry this field on
+      // PatchRepoProfile yet, so it must never reach the wire.
+      expect("ff_land_head_sync_enabled" in body).toBe(false);
+    });
+  });
+
+  // The per-repo graduation knob. Disabled until coord's settings wire carries
+  // the field, because `deny_unknown_fields` makes an unknown key a 400 for the
+  // WHOLE per-repo save, not just for this control.
+  it("disables the ff-land override when coord does not serve the field", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      Promise.resolve(routeRepoCard(url, init))
+    );
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    expect(screen.getByTestId(`repo-ff-land-head-sync-${REPO}`)).toBeDisabled();
+  });
+
+  it("PATCHes the ff-land override tri-state once coord serves the field", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/pr-merge/settings")) {
+        return Promise.resolve(
+          routeGet(url, { ff_land_head_sync_enabled: false })
+        );
+      }
+      return Promise.resolve(routeRepoCard(url, init));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    const select = screen.getByTestId(`repo-ff-land-head-sync-${REPO}`);
+    await waitFor(() => expect(select).not.toBeDisabled());
+    fireEvent.change(select, { target: { value: "true" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      const body = patchBody();
+      expect(body.ff_land_head_sync_enabled).toBe(true);
+      // Still only the edited field — graduating one repo must not reset its
+      // untouched overrides.
+      expect(Object.keys(body)).toEqual(["ff_land_head_sync_enabled"]);
+    });
+  });
+
+  it("sends null for the ff-land override when set back to inherit", async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes("/pr-merge/settings")) {
+        return Promise.resolve(
+          routeGet(url, { ff_land_head_sync_enabled: false })
+        );
+      }
+      return Promise.resolve(routeRepoCard(url, init));
+    });
+    render(<MergeOrchestrationSettings />);
+    await screen.findByTestId(`repo-card-${REPO}`);
+
+    const select = screen.getByTestId(`repo-ff-land-head-sync-${REPO}`);
+    await waitFor(() => expect(select).not.toBeDisabled());
+    // Move off "inherit" and back, so the field is dirty but resolves to null.
+    fireEvent.change(select, { target: { value: "true" } });
+    fireEvent.change(select, { target: { value: "inherit" } });
+    fireEvent.click(screen.getByTestId(`repo-save-${REPO}`));
+
+    await waitFor(() => {
+      const body = patchBody();
+      // `null` is a real write here — it CLEARS the per-repo pin so the repo
+      // follows the tenant tier again. Not the same as omitting the key.
+      expect(body.ff_land_head_sync_enabled).toBeNull();
     });
   });
 
