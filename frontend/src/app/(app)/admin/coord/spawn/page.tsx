@@ -59,7 +59,7 @@
  * authored testid (D4a).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -98,8 +98,10 @@ interface PlansListResponse {
 export default function CoordSpawnPage() {
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // No `loading` flag, for the reason `/plans` gives: "a request is
+  // outstanding" is not "this question has been answered", and only the second
+  // may decide whether the page is allowed to state an absence.
 
   const [spawnTarget, setSpawnTarget] = useState<CoordPlanRow | null>(null);
   /** Unanchored spawn — the modal opens with no plan seeded at all. Kept
@@ -107,7 +109,20 @@ export default function CoordSpawnPage() {
    *  mistake it for a plan row with an empty slug. */
   const [newSessionOpen, setNewSessionOpen] = useState(false);
 
+  /**
+   * Generation guard — see `/plans`' copy for the two race arms it closes,
+   * for why it counts QUESTIONS rather than requests, and for what
+   * `pollInFlight` is protecting against. The window here is WIDER: this page
+   * polls every 15s, so a superseded success owns the screen for longer before
+   * anything corrects it.
+   */
+  const questionGen = useRef(0);
+  const reqGen = useRef(0);
+  const pollInFlight = useRef(false);
+
   const fetchData = useCallback(async () => {
+    const question = questionGen.current;
+    const req = ++reqGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -115,20 +130,45 @@ export default function CoordSpawnPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
+      if (question !== questionGen.current || req !== reqGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
     }
   }, [status]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchData();
-    const id = setInterval(fetchData, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    // Same reset as `/plans`, for the same reason and against the same
+    // `derivePlansHealth`: `status` is `fetchData`'s only dependency, so a
+    // re-run means the QUESTION changed, and the retained rows answer the old
+    // one. Left in place they keep `loaded` true across the change, so the
+    // list renders the previous filter's plans as this filter's answer and a
+    // failed first read under the new filter is reported as stale rather than
+    // unknown. Not in `fetchData` — the poll calls that, and a poll must never
+    // blank a loaded page. The question generation is bumped here too — this
+    // is the one place the QUESTION changes.
+    questionGen.current += 1;
+    const question = questionGen.current;
+    /** Release only if the lock is still this question's — see `/plans`. */
+    const releaseLock = () => {
+      if (question === questionGen.current) pollInFlight.current = false;
+    };
+    setData(null);
+    setError(null);
+    // The first read holds the lock too — see `/plans`.
+    pollInFlight.current = true;
+    void fetchData().finally(releaseLock);
+    const id = setInterval(() => {
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
+      void fetchData().finally(releaseLock);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(id);
+      pollInFlight.current = false;
+    };
   }, [fetchData]);
 
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
@@ -137,6 +177,8 @@ export default function CoordSpawnPage() {
   // from the list has to consult it, the `empty=` slot included.
   const readFailed = error !== null;
   const plansUnknown = readIsUnknown(loaded, readFailed);
+  /** The third state — see `/plans`' note. */
+  const plansStale = readFailed && loaded;
   const health = useMemo(
     () => derivePlansHealth(plans, loaded, readFailed),
     [plans, loaded, readFailed]
@@ -207,7 +249,12 @@ export default function CoordSpawnPage() {
         <RecordList
           items={plans}
           itemKey={(p) => p.slug}
-          loaded={!(loading && !data)}
+          // Answered, never "not loading" — see `/plans`' note. A read
+          // overtaken by a newer one of the same question is dropped without
+          // setting either, and a request-tracking flag would let this slot
+          // claim "No plans matching status=X." for a question coord has never
+          // answered.
+          loaded={data !== null || error !== null}
           skeletonRows={6}
           empty={
             plansUnknown ? (
@@ -217,6 +264,14 @@ export default function CoordSpawnPage() {
               >
                 Could not read the work-unit list — whether any plan matches
                 status={status === "any" ? "any" : status} is unknown, not none.
+              </p>
+            ) : plansStale ? (
+              <p
+                className="text-sm text-muted-foreground italic"
+                data-testid="coord-spawn-plans-stale"
+              >
+                No plans matched status={status === "any" ? "any" : status} at
+                the last good read — this list has not refreshed since.
               </p>
             ) : (
               <p
