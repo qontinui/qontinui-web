@@ -12,6 +12,11 @@
  *   - registration order decides nesting (first registered = outermost)
  *   - a provider registered LATE still reaches an already-mounted consumer
  *   - the snapshot is reference-stable, so useSyncExternalStore cannot loop
+ *
+ * A second `describe` at the bottom covers the MOUNT SITE — that
+ * `app/(app)/layout.tsx` renders this component at all, and where. Those
+ * read the layout as source rather than rendering it; see that block's own
+ * header for why.
  */
 
 import fs from "node:fs";
