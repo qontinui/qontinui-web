@@ -342,12 +342,28 @@ def test_relay_503_is_the_ws_session_id_branch() -> None:
     source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
     lines = source.splitlines()
 
-    idx = next(i for i, line in enumerate(lines) if "status_code=503" in line)
-    # Walk back to the nearest guard; it must be the ws_session_id read.
-    preceding = "\n".join(lines[max(0, idx - 4) : idx])
-    assert 'row.get("ws_session_id") is None' in preceding, (
+    emitters = [i for i, line in enumerate(lines) if "status_code=503" in line]
+    assert len(emitters) == 1, (
+        f"the relay must have exactly ONE 503 emitter; found {len(emitters)}"
+    )
+    idx = emitters[0]
+
+    # Walk back to the nearest CONDITIONAL; it must be the ws_session_id read.
+    # A fixed line-distance lookback was the earlier spelling of this check and
+    # it broke the moment the branch grew a body (the W-A structured log + the
+    # W-B ``last_seen_at`` decoration) — the invariant is which guard governs
+    # the emitter, not how many lines away it sits.
+    guard = next(
+        (
+            lines[i]
+            for i in range(idx - 1, -1, -1)
+            if lines[i].strip().startswith(("if ", "elif "))
+        ),
+        None,
+    )
+    assert guard is not None and 'row.get("ws_session_id") is None' in guard, (
         "the relay's only 503 must be the ws_session_id IS NULL branch; "
-        f"found instead:\n{preceding}"
+        f"nearest governing conditional was:\n{guard}"
     )
 
 
@@ -365,6 +381,18 @@ async def test_relay_returns_503_when_ws_session_id_is_null(monkeypatch):
         raising=True,
     )
 
+    # The 503 branch decorates its body with ``last_seen_at`` from the
+    # full-row coord read (W-B). Stub it so this test attempts no network.
+    async def _fake_owned(request, device_id_, user_id):
+        return {"device_id": str(device_id_), "last_seen_at": "2026-08-27T09:15:00Z"}
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_owned_device",
+        _fake_owned,
+        raising=True,
+    )
+
     device_id = "c79a07d5-7e40-49b4-87fa-554c749f9644"
     resp = await device_bridge_ws._runner_proxy_relay(
         _FakeRequest(headers={"X-Qontinui-Device-Id": device_id}),
@@ -375,6 +403,9 @@ async def test_relay_returns_503_when_ws_session_id_is_null(monkeypatch):
 
     assert resp.status_code == 503
     assert b"runner not connected" in resp.body
+    # W-B: additive diagnosis fields ride alongside the unchanged ``detail``.
+    assert device_id.encode() in resp.body
+    assert b"2026-08-27T09:15:00Z" in resp.body
 
 
 @pytest.mark.asyncio
