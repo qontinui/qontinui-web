@@ -329,17 +329,55 @@ const CONSOLE_PALETTES: ReadonlyArray<{
 //      while still passing, which is a worse state than not having it. A
 //      discovery that silently stops discovering is the `silent-empty-is-
 //      unknown` failure applied to a test.
+//
+// A third clause guards what the first two cannot. Clause (2) only binds a
+// table somebody REGISTERED — which is precisely the case where the author did
+// the right thing. For the case this file exists for, an UNREGISTERED table,
+// anything the discovery fails to see is seen by nothing at all, and passes.
+// So every remembered thing in the discovery is a hole in clause (1), and the
+// discovery has to have as few of them as possible:
+//
+//   - The DIRECTORY list was one, and it is gone. The first cut named
+//     `admin/coord/` and `app/` explicitly, so the hand-maintained list was
+//     relocated rather than removed — and the very next surface (#1142, the
+//     sessions console) landed outside both. The component arm is now recursive
+//     over the `*Status.ts` convention instead.
+//   - The NAME convention is the other, and it cannot go — the shape alone is
+//     too loose to discover on. So clause (3) reports the asymmetry rather than
+//     skipping it: an export shaped like an attention table but not named like
+//     one is named, not ignored.
 // ---------------------------------------------------------------------------
 
 /**
  * Where console attention tables live, as Vite-expanded literals.
  *
- * The patterns are deliberately shaped around the CONVENTION (a pure
- * `*Status.ts` module beside the surface, plus the merge pipeline's derivation)
- * rather than "every `.ts` in the console tree". Eager globbing EXECUTES every
- * module it matches, so widening this to `.tsx` or to route files would import
- * React components and route modules into a pure test for no gain — clause (2)
- * is what catches a surface that files its table somewhere these do not reach.
+ * The patterns are shaped around the CONVENTION — a pure `*Status.ts` module
+ * beside the surface, plus the merge pipeline's derivation, which predates it —
+ * and NOT around the directories those modules happen to sit in today. That
+ * distinction is the whole point, and the first cut of this got it wrong: the
+ * patterns named `../admin/coord/` and `../../app/` as directories, so a
+ * surface filing its table anywhere else was invisible to clause (1). That did
+ * not close the hand-maintained list, it MOVED it — out of
+ * {@link CONSOLE_PALETTES}, where a reviewer of a new surface reads it, and
+ * into a glob line in a test's internals, where nobody thinks to look. Both
+ * spellings fail the same silent way; the second is merely harder to notice.
+ *
+ * That is not hypothetical. The consolidated sessions console (qontinui-web
+ * #1142, plan `2026-08-26-sessions-console-consolidation`) files its table in
+ * `components/sessions/` — the very next surface after this check shipped — and
+ * had to hand-add a fourth directory line to be seen at all.
+ *
+ * So the component arm is recursive over `src/components/**`. What bounds it is
+ * the `*Status.ts` suffix, not the directory: eager globbing EXECUTES every
+ * module it matches, and widening to `.tsx` or to route files would import
+ * React components into a pure test for no gain. A `*Status.ts` module is by
+ * convention a pure kind→presentation table, which is exactly what is safe to
+ * import and exactly what can hold an attention table.
+ *
+ * The `app/` arm stays separate because it crosses out of `components/`; the
+ * `prPipeline.ts` arm stays a literal because it is the one attention table
+ * that predates the naming convention. Those are the two named exceptions, and
+ * neither grows with a new surface.
  *
  * Two traps, both of which fail SILENTLY rather than loudly:
  *
@@ -362,9 +400,14 @@ const CONSOLE_PALETTES: ReadonlyArray<{
  * squiggle in one excluded file for a real error going quiet everywhere else.
  */
 const DISCOVERED_MODULES: Record<string, Record<string, unknown>> = {
-  ...import.meta.glob("../admin/coord/*Status.ts", { eager: true }),
-  ...import.meta.glob("../operations/prPipeline.ts", { eager: true }),
+  // Every `*Status.ts` under `src/components/**`, at ANY depth — `admin/coord/`
+  // holds all ten today, but a surface filing its table beside itself is
+  // reached without a line being added here. That is the point.
+  ...import.meta.glob("../**/*Status.ts", { eager: true }),
+  // Every `*Status.ts` under `src/app/**` — the route-colocated half.
   ...import.meta.glob("../../app/**/*Status.ts", { eager: true }),
+  // The one table that predates the `*Status.ts` convention.
+  ...import.meta.glob("../operations/prPipeline.ts", { eager: true }),
 };
 
 /**
@@ -412,6 +455,35 @@ const DISCOVERED_TABLES: ReadonlyArray<{
     }))
 );
 
+/**
+ * Exports that LOOK like an attention table but are not NAMED like one.
+ *
+ * With the directory list gone, {@link ATTENTION_TABLE_NAME} is the last
+ * remembered convention left in the discovery, and it fails the same silent way
+ * the directory list did: name a table `SESSION_ATTENTION_FOR_STATE` or
+ * `ATTENTION_TABLE` and it is not discovered, so clause (1) never demands a
+ * registry row for it and nothing anywhere goes red.
+ *
+ * Relaxing discovery to shape ALONE is the wrong fix — the shape is three
+ * string literals, and a `Record<K, "none">` that means something else entirely
+ * would then be dragged into the registry, which is the false positive the name
+ * filter exists to prevent. So the name stays load-bearing for discovery, and
+ * the asymmetry is reported instead: a `*Status.ts` export whose VALUE is a
+ * well-formed attention table and whose NAME is not the convention is either a
+ * table that needs renaming or a constant that needs a different shape, and
+ * both are a decision for a human rather than something to silently skip.
+ *
+ * Empty today across all nineteen discovered modules — which is what makes it
+ * safe to assert on, and what makes a future non-empty result a real signal
+ * rather than accumulated noise.
+ */
+const SHAPED_BUT_UNNAMED: ReadonlyArray<{ module: string; exportName: string }> =
+  Object.entries(DISCOVERED_MODULES).flatMap(([module, mod]) =>
+    Object.entries(mod)
+      .filter(([name, value]) => !ATTENTION_TABLE_NAME.test(name) && isAttentionTable(value))
+      .map(([exportName]) => ({ module, exportName }))
+  );
+
 describe("the palette registry enrols every surface — mechanically", () => {
   it("discovery actually reaches modules (a zero here means the patterns rotted)", () => {
     // Without this, both clauses below pass vacuously the moment the globs stop
@@ -442,10 +514,25 @@ describe("the palette registry enrols every surface — mechanically", () => {
     ).map(
       (row) =>
         `${row.surface}: registered, but no discovery pattern reaches the module its ` +
-        `attention table lives in — widen DISCOVERED_MODULES, or the enrolment check ` +
-        `above has quietly stopped covering new surfaces`
+        `attention table lives in — the table belongs in a \`*Status.ts\` module under ` +
+        `\`src/components/\` or \`src/app/\`; widening DISCOVERED_MODULES for one more ` +
+        `directory is what this check exists to stop, because the next surface then has ` +
+        `to remember to do it too`
     );
     expect(unreachable).toEqual([]);
+  });
+
+  it("no *Status.ts export is an attention table under a non-conventional name", () => {
+    // The last remembered convention in the discovery. A shape-matched export
+    // that the name filter rejects is invisible to clause (1) above, and
+    // invisible in the same silent way the directory list used to be.
+    const misnamed = SHAPED_BUT_UNNAMED.map(
+      ({ module, exportName }) =>
+        `${exportName} (${module}) has the shape of an attention table but not the name — ` +
+        `rename it to \`<SURFACE>_ATTENTION_BY_<KIND>\` so the enrolment check above can ` +
+        `see it, or change its shape if it is not one`
+    );
+    expect(misnamed).toEqual([]);
   });
 });
 
