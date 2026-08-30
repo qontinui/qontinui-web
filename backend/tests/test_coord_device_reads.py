@@ -141,6 +141,49 @@ async def test_connect_error_maps_502(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_coord_503_maps_502_upstream_error(monkeypatch):
+    """W-C: a coord 5xx must NOT pass through as a 503.
+
+    503 out of the device-bridge relay means exactly one thing —
+    ``coord.devices.ws_session_id IS NULL``. Letting coord's own 503 through
+    verbatim made a coord outage indistinguishable from a disconnected
+    runner, both to the mobile client and in the logs.
+    """
+    from fastapi import HTTPException
+
+    _patch_httpx(
+        monkeypatch, lambda url, hdr: httpx.Response(503, text="coord is on fire")
+    )
+    with pytest.raises(HTTPException) as exc:
+        await coord_device.get_device_routing(DEVICE_ID, bearer="tok", user_id=USER_ID)
+    assert exc.value.status_code == 502
+    assert exc.value.detail == "upstream_error"
+
+
+@pytest.mark.asyncio
+async def test_coord_500_maps_502_upstream_error(monkeypatch):
+    from fastapi import HTTPException
+
+    _patch_httpx(monkeypatch, lambda url, hdr: httpx.Response(500, text="PG: boom"))
+    with pytest.raises(HTTPException) as exc:
+        await coord_device.get_owned_device(_FakeRequest(), DEVICE_ID, USER_ID)
+    assert exc.value.status_code == 502
+    assert exc.value.detail == "upstream_error"
+
+
+@pytest.mark.asyncio
+async def test_coord_4xx_still_passes_through_verbatim(monkeypatch):
+    """The 5xx translation must not swallow coord's 4xx signals."""
+    from fastapi import HTTPException
+
+    _patch_httpx(monkeypatch, lambda url, hdr: httpx.Response(400, text="bad header"))
+    with pytest.raises(HTTPException) as exc:
+        await coord_device.get_owned_device(_FakeRequest(), DEVICE_ID, USER_ID)
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "bad header"
+
+
+@pytest.mark.asyncio
 async def test_list_devices_for_user_unwraps_envelope(monkeypatch):
     _patch_httpx(
         monkeypatch,
