@@ -20,7 +20,6 @@ These tests pin the two things that can silently go wrong:
 
 from __future__ import annotations
 
-from fastapi.dependencies.utils import get_flat_dependant
 from fastapi.routing import APIRoute
 
 from app.main import app
@@ -58,38 +57,36 @@ def test_route_resolves_before_the_task_run_id_parameter_route() -> None:
     )
 
 
-def _security_schemes(route: APIRoute) -> set[str]:
-    """Security scheme names FastAPI will enforce on a route.
+def _openapi_security(path: str) -> list[dict]:
+    """Security requirements FastAPI publishes for a GET, from its own schema.
 
-    Read from the FLAT dependant — requirements are collected recursively, so
-    the top-level `dependant.dependencies` does not carry them — and via the
-    same field FastAPI's own OpenAPI generator uses.
+    Deliberately reads the GENERATED OPENAPI rather than poking at `Dependant`.
+    Two earlier versions of this test asserted on FastAPI internals and were
+    wrong twice: first on a dependency function's `__name__`
+    (`current_active_user` is fastapi-users' FACTORY; the installed callable is
+    `current_user_dependency`), then on `Dependant.security_requirements`,
+    which does not exist on this FastAPI version at all.
+
+    `app.openapi()` is the framework's public, versioned output — and it is the
+    thing that actually decides whether a client is told to authenticate, so it
+    is also the more meaningful assertion. The repo already gates on this
+    document: `Check OpenAPI snapshot is up to date` in CI.
     """
-    flat = get_flat_dependant(route.dependant, skip_repeats=True)
-    return {r.security_scheme.scheme_name for r in flat.security_requirements}
+    spec = app.openapi()
+    return spec["paths"][path]["get"].get("security", [])
 
 
 def test_route_is_authenticated() -> None:
-    """A fleet queue with no auth dependency would be a cross-tenant leak.
+    """A fleet queue with no auth requirement would be a cross-tenant leak.
 
-    Asserted on the SECURITY REQUIREMENT rather than on a dependency function
-    name. The first version of this test looked for `current_active_user` in
-    `dependant.dependencies` and failed: `current_active_user` is
-    fastapi-users' dependency FACTORY, and the callable actually installed is
-    named `current_user_dependency`. Matching on an internal name tests the
-    auth library's naming, not this route's protection — and it would break
-    again on the next fastapi-users refactor while a genuinely public route
-    slipped through.
-
-    Parity with an already-authenticated sibling is the real invariant: this
-    route must be gated exactly as `/task-runs/{task_run_id}` is.
+    Parity with an already-authenticated sibling is the invariant: this route
+    must be gated exactly as `/task-runs/{task_run_id}` is.
     """
-    route = next(r for r in _routes() if r.path == ROUTE_PATH)
-    schemes = _security_schemes(route)
-    assert schemes, "route has no security requirement — it would be public"
+    security = _openapi_security(ROUTE_PATH)
+    assert security, "route publishes no security requirement — it would be public"
 
-    sibling = next(r for r in _routes() if r.path == "/api/v1/task-runs/{task_run_id}")
-    assert schemes == _security_schemes(sibling), (schemes, _security_schemes(sibling))
+    sibling = _openapi_security("/api/v1/task-runs/{task_run_id}")
+    assert security == sibling, (security, sibling)
 
 
 def test_response_model_carries_the_task_run_context() -> None:
