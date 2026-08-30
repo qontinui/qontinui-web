@@ -31,10 +31,9 @@ What this pins, and why each one can break quietly
    — and would silently destroy the per-kind table.
 4. **The backfill maps all four states, on both tables.** ``'allow'`` → TRUE,
    ``'deny'`` → FALSE, ``NULL`` → NULL, and **``'allow_with_notification'`` →
-   FALSE**. The last is the security-relevant one and it is asserted twice: once
-   for the value, once for ``is not True``. A collapse to TRUE would restore an
-   *unconditional* grant where the operator asked for one conditioned on
-   disclosure — a repair that silently widens authority.
+   FALSE**. That last is the security-relevant one: a collapse to TRUE would
+   restore an *unconditional* grant where the operator asked for one conditioned
+   on disclosure — a repair that silently widens authority.
 5. **The comment bodies really are ``pdaw_01``'s.** Read back out of
    ``col_description`` and compared against ``pdaw_01``'s own source rather than
    a third copy typed into this file. This revision first shipped holding two
@@ -65,15 +64,18 @@ Use that variable, **not** ``DATABASE_URL``: ``conftest.py`` overwrites
 ``QONTINUI_TEST_PG``, so setting ``DATABASE_URL`` on the command line is
 silently discarded and every database-backed test below skips — which looks
 exactly like a green run in the summary line.
+
+Each ephemeral database replays the whole revision chain from base, which costs
+~25-45s, so the three tests that only READ the catalog share one
+(``upgraded_engine``). The three that write, downgrade or re-invoke the revision
+each take their own, because their substrate is the thing under test.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import re
 import uuid
+from collections.abc import Iterator
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 import sqlalchemy
@@ -86,8 +88,13 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    column_comment,
+    column_info,
+    comment_body_from_source,
     ephemeral_database,
+    load_revision_module,
     run_alembic,
+    scalar,
     table_exists,
 )
 
@@ -127,10 +134,6 @@ _needs_pg = pytest.mark.skipif(
     reason="test Postgres unreachable (set QONTINUI_TEST_PG=host:port)",
 )
 
-# A SQL string literal, with `''` as the escaped apostrophe. Used to reassemble
-# `pdaw_01`'s adjacent-literal comment bodies.
-_SQL_LITERAL = re.compile(r"'((?:[^']|'')*)'")
-
 
 def _versions_dir() -> Path:
     return backend_root() / "alembic" / "versions"
@@ -144,85 +147,48 @@ def _revision_source() -> str:
     return _revision_path().read_text(encoding="utf-8")
 
 
-def _load_revision_module() -> ModuleType:
-    """Import the revision file directly, so ``upgrade()`` can be re-invoked.
+def _revision_module():
+    return load_revision_module(_revision_path(), "pdtier_02_revision")
 
-    Alembic's own runner will not do this: once ``alembic_version`` names the
-    revision, a second ``upgrade pdtier_02`` is a no-op. Loading the module by
-    path is the only way to exercise the guards the revision relies on.
+
+def _pdaw_body(table: str) -> str:
+    """``pdaw_01``'s comment body for ``coord.<table>.agent_writable``."""
+    return comment_body_from_source(
+        (_versions_dir() / _PDAW_FILENAME).read_text(encoding="utf-8"),
+        f"coord.{table}.{_LEGACY_COLUMN}",
+    )
+
+
+@pytest.fixture(scope="module")
+def upgraded_engine() -> Iterator[Engine]:
+    """One database at ``pdtier_02``, shared by the read-only tests.
+
+    Module-scoped on purpose: replaying ~500 revisions from base is the cost
+    here, and the three tests that use this only read ``pg_catalog`` /
+    ``information_schema``. The one that writes does so inside a
+    ``pytest.raises`` block whose transaction rolls back, so it leaves nothing
+    behind for its neighbours to trip over. Any test that mutates state, walks
+    the chain, or re-invokes the revision takes its own database instead.
     """
-    spec = importlib.util.spec_from_file_location(
-        "pdtier_02_revision", _revision_path()
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    with ephemeral_database(admin_database_url(), "pdtier02_ro") as (engine, db_url):
+        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
+        yield engine
 
 
-def _pdaw_comment_body(qualified_column: str) -> str:
-    """``pdaw_01``'s ``COMMENT ON COLUMN`` body for ``qualified_column``.
-
-    Reassembled from that revision's SOURCE — PostgreSQL concatenates adjacent
-    string literals separated by a newline, and `pdaw_01` writes each body as
-    one such run. The doubled apostrophes are collapsed the way the SQL parser
-    collapses them, so the result is what ``col_description`` will return.
-
-    Deliberately not a constant in this file: the whole assertion is that ONE
-    author owns these bodies, and a copy here would be the second one.
-    """
-    source = (_versions_dir() / _PDAW_FILENAME).read_text(encoding="utf-8")
-    marker = f"COMMENT ON COLUMN {qualified_column} IS"
-    start = source.find(marker)
-    assert start >= 0, (
-        f"{_PDAW_FILENAME} no longer contains {marker!r}; this test can no "
-        "longer derive the body it compares against"
-    )
-    start += len(marker)
-    end = source.find('"""', start)
-    assert end > start, f"unterminated COMMENT block for {qualified_column}"
-
-    parts = _SQL_LITERAL.findall(source[start:end])
-    assert parts, f"no SQL string literals found after {marker!r}"
-    return "".join(part.replace("''", "'") for part in parts)
-
-
-def _column(
-    engine: Engine, table: str, column: str
-) -> tuple[str, str, str | None] | None:
-    """``(data_type, is_nullable, column_default)`` for the column, or None."""
-    sql = text(
-        """
-        SELECT data_type, is_nullable, column_default
-          FROM information_schema.columns
-         WHERE table_schema = 'coord'
-           AND table_name = :table
-           AND column_name = :column
-        """
-    )
-    with engine.connect() as conn:
-        row = conn.execute(sql, {"table": table, "column": column}).fetchone()
-    return (row[0], row[1], row[2]) if row else None
-
-
-def _scalar(engine: Engine, sql: str, **params: object) -> object:
-    with engine.connect() as conn:
-        return conn.execute(text(sql), params).scalar_one()
-
-
-def _column_comment(engine: Engine, table: str, column: str) -> str | None:
-    return _scalar(  # type: ignore[return-value]
+def _legacy_of(engine: Engine, doc_id: uuid.UUID, table: str) -> object:
+    if table == _PARENT_TABLE:
+        return scalar(
+            engine,
+            f"SELECT {_LEGACY_COLUMN} FROM coord.{_PARENT_TABLE} WHERE id = :id",
+            id=doc_id,
+        )
+    return scalar(
         engine,
-        """
-        SELECT col_description(att.attrelid, att.attnum)
-          FROM pg_attribute att
-         WHERE att.attrelid = to_regclass('coord.' || :table)
-           AND att.attname = :column
-           AND att.attnum > 0
-           AND NOT att.attisdropped
+        f"""
+        SELECT {_LEGACY_COLUMN} FROM coord.{_VERSIONS_TABLE}
+         WHERE document_id = :doc AND version_number = 1
         """,
-        table=table,
-        column=column,
+        doc=doc_id,
     )
 
 
@@ -273,23 +239,6 @@ def _seed_tiered_documents(
     return ids
 
 
-def _legacy_of(engine: Engine, doc_id: uuid.UUID, table: str) -> object:
-    if table == _PARENT_TABLE:
-        return _scalar(
-            engine,
-            f"SELECT {_LEGACY_COLUMN} FROM coord.{_PARENT_TABLE} WHERE id = :id",
-            id=doc_id,
-        )
-    return _scalar(
-        engine,
-        f"""
-        SELECT {_LEGACY_COLUMN} FROM coord.{_VERSIONS_TABLE}
-         WHERE document_id = :doc AND version_number = 1
-        """,
-        doc=doc_id,
-    )
-
-
 def test_pin_matches_the_revisions_own_down_revision() -> None:
     """A stale `_PARENT_REVISION_ID` rewinds too far and replays foreign DDL."""
     source = _revision_source()
@@ -311,8 +260,9 @@ def test_upgrade_touches_only_the_boolean() -> None:
     ``DROP COLUMN`` legitimately appears is ``downgrade()``.
     """
     source = _revision_source()
-
     upgrade_body = source[source.index("def upgrade()") : source.index("def downgrade")]
+    downgrade_body = source[source.index("def downgrade") :]
+
     assert "DROP COLUMN" not in upgrade_body, (
         "the deploy-window shim's upgrade must drop nothing: it exists because "
         "a DROP landed before its last reader was gone"
@@ -326,16 +276,20 @@ def test_upgrade_touches_only_the_boolean() -> None:
         "rather than to the operator's actual setting"
     )
 
+    # Scoped to the two function bodies rather than scanned over the whole file:
+    # the module docstring discusses dropping this column at length, and a
+    # future sentence there quoting `ALTER TABLE ... DROP COLUMN` would red this
+    # test while pointing at a documentation edit.
     drop_lines = [
         line
-        for line in source.splitlines()
+        for line in downgrade_body.splitlines()
         if "DROP COLUMN" in line
         and "ALTER TABLE" in line
         and not line.lstrip().startswith("#")
     ]
     assert len(drop_lines) == 1, (
-        "expected exactly one DROP COLUMN statement — the downgrade's, applied "
-        f"to both tables from one list; found {len(drop_lines)}: {drop_lines!r}"
+        "expected exactly one DROP COLUMN statement in downgrade(), applied to "
+        f"both tables from one list; found {len(drop_lines)}: {drop_lines!r}"
     )
 
 
@@ -351,8 +305,7 @@ def test_backfill_guard_reads_pg_catalog_and_names_the_column_it_reads() -> None
     ``information_schema`` is privilege-filtered and so a false-negative source
     in front of a conditional write; ``pg_attribute``/``to_regclass`` are not.
     """
-    module = _load_revision_module()
-    template = module._BACKFILL
+    template = _revision_module()._BACKFILL
 
     assert "pg_attribute" in template and "to_regclass" in template, (
         "the backfill's existence predicate must read pg_catalog, not "
@@ -373,6 +326,41 @@ def test_backfill_guard_reads_pg_catalog_and_names_the_column_it_reads() -> None
     )
 
 
+def test_comment_sql_quotes_the_bodies_and_binds_nothing() -> None:
+    """The one function this revision adds, exercised without a database.
+
+    Everything else that reaches `_comment_sql` is `@_needs_pg`, and a local run
+    with no Postgres skips all of it while still reporting green — so a deleted
+    ``.replace("'", "''")`` would be invisible until CI.
+
+    Both hazards are checked against real machinery rather than a hand-rolled
+    regex: SQLAlchemy's own compiler decides what a bind parameter is, and its
+    rule admits digits and ``$`` that a naive ``:[a-zA-Z_]`` scan would miss.
+    """
+    module = _revision_module()
+
+    for table in module._TABLES:
+        sql = module._comment_sql(table)
+
+        assert "''" in sql, (
+            f"{table}'s body carries apostrophes and none were doubled — the "
+            "statement would terminate its own literal early"
+        )
+        assert sql.count("'") % 2 == 0, (
+            f"unbalanced quotes in the COMMENT statement for {table}: {sql!r}"
+        )
+        assert module._COMMENTS[table].replace("'", "''") in sql, (
+            f"the body reaching the catalog for {table} is not the one "
+            "`_COMMENTS` holds"
+        )
+        assert not text(sql).compile().params, (
+            f"{table}'s comment body contains a token SQLAlchemy's text() reads "
+            "as a bind parameter. pdaw_01 spells the route {kind}/{name} rather "
+            "than :kind/:name for exactly this reason, and the failure mode is "
+            "'A value is required for bind parameter' at migration time."
+        )
+
+
 def test_comment_bodies_are_pdaw_01s_verbatim_in_source() -> None:
     """The cheap half of the comment check; the DB test is the half that binds.
 
@@ -381,14 +369,11 @@ def test_comment_bodies_are_pdaw_01s_verbatim_in_source() -> None:
     and the catalog quietly stops saying "NULL is NOT false" on a column whose
     NULL is not false.
     """
-    module = _load_revision_module()
+    comments = _revision_module()._COMMENTS
 
-    for table, column in (
-        (_PARENT_TABLE, f"coord.{_PARENT_TABLE}.{_LEGACY_COLUMN}"),
-        (_VERSIONS_TABLE, f"coord.{_VERSIONS_TABLE}.{_LEGACY_COLUMN}"),
-    ):
-        want = _pdaw_comment_body(column)
-        got = module._COMMENTS[f"coord.{table}"]
+    for table in (_PARENT_TABLE, _VERSIONS_TABLE):
+        want = _pdaw_body(table)
+        got = comments[f"coord.{table}"]
         assert got == want, (
             f"coord.{table}.{_LEGACY_COLUMN}'s restored comment is not "
             f"{_PDAW_FILENAME}'s body.\n  want: {want!r}\n  got:  {got!r}"
@@ -397,105 +382,133 @@ def test_comment_bodies_are_pdaw_01s_verbatim_in_source() -> None:
             "apostrophes are doubled by _comment_sql at format time; storing "
             "the doubled form here would put `''` in the catalog verbatim"
         )
-        assert not re.search(r":[a-zA-Z_]", got), (
-            "op.execute routes a plain string through SQLAlchemy's text(), "
-            "which reads `:word` as a bind parameter — pdaw_01 spells the "
-            "route {kind}/{name} for exactly this reason"
+
+
+@_needs_pg
+def test_boolean_is_restored_on_both_tables_with_pdaw_01s_shape(
+    upgraded_engine: Engine,
+) -> None:
+    for table in (_PARENT_TABLE, _VERSIONS_TABLE):
+        restored = column_info(upgraded_engine, table, _LEGACY_COLUMN)
+        assert restored is not None, (
+            f"coord.{table}.{_LEGACY_COLUMN} was not restored. A parent-only "
+            "shim makes the enforcement read work again, so nothing would "
+            "point at the snapshot half still being absent."
+        )
+        data_type, is_nullable, default = restored
+        assert data_type == "boolean", (
+            f"coord.{table}.{_LEGACY_COLUMN} is {data_type!r}. ADD COLUMN IF "
+            "NOT EXISTS is type-blind, so a pre-existing column of another "
+            "type makes the ADD a silent no-op."
+        )
+        assert is_nullable == "YES", (
+            f"coord.{table}.{_LEGACY_COLUMN} must stay NULLABLE: NULL is 'no "
+            "operator opinion', the state coord's compile-time default resolves"
+        )
+        assert default is None, (
+            f"coord.{table}.{_LEGACY_COLUMN} must have NO default — a DEFAULT "
+            "would give every unset row an operator opinion it never had, on "
+            "the column the enforcement read consults"
         )
 
 
 @_needs_pg
-def test_boolean_is_restored_on_both_tables_with_pdaw_01s_shape() -> None:
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_shape") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-
-        for table in (_PARENT_TABLE, _VERSIONS_TABLE):
-            restored = _column(engine, table, _LEGACY_COLUMN)
-            assert restored is not None, (
-                f"coord.{table}.{_LEGACY_COLUMN} was not restored. A "
-                "parent-only shim makes the enforcement read work again, so "
-                "nothing would point at the snapshot half still being absent."
-            )
-            data_type, is_nullable, default = restored
-            assert data_type == "boolean", (
-                f"coord.{table}.{_LEGACY_COLUMN} is {data_type!r}. ADD COLUMN "
-                "IF NOT EXISTS is type-blind, so a pre-existing column of "
-                "another type makes the ADD a silent no-op."
-            )
-            assert is_nullable == "YES", (
-                f"coord.{table}.{_LEGACY_COLUMN} must stay NULLABLE: NULL is "
-                "'no operator opinion', the state coord's compile-time default "
-                "resolves"
-            )
-            assert default is None, (
-                f"coord.{table}.{_LEGACY_COLUMN} must have NO default — a "
-                "DEFAULT would give every unset row an operator opinion it "
-                "never had, on the column the enforcement read consults"
-            )
-
-
-@_needs_pg
-def test_pdtier_01s_work_survives_the_shim() -> None:
+def test_pdtier_01s_work_survives_the_shim(upgraded_engine: Engine) -> None:
     """The revision's first paragraph, asserted: this does NOT undo `pdtier_01`."""
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_survive") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-
-        for table in (_PARENT_TABLE, _VERSIONS_TABLE):
-            tier = _column(engine, table, _TIER_COLUMN)
-            assert tier is not None and tier[0] == "text", (
-                f"coord.{table}.{_TIER_COLUMN} did not survive the shim; the "
-                "boolean is back, so the enforcement path looks healthy while "
-                f"the tier {table} is silently gone"
-            )
-            assert tier[1] == "YES"
-
-        assert table_exists(engine, "coord", _KIND_TIER_TABLE), (
-            f"coord.{_KIND_TIER_TABLE} did not survive the shim — nothing in "
-            "the enforcement path reads it, so its loss would surface only "
-            "when the coord consumer finally deploys"
+    for table in (_PARENT_TABLE, _VERSIONS_TABLE):
+        tier = column_info(upgraded_engine, table, _TIER_COLUMN)
+        assert tier is not None and tier[0] == "text", (
+            f"coord.{table}.{_TIER_COLUMN} did not survive the shim; the "
+            "boolean is back, so the enforcement path looks healthy while the "
+            f"tier on {table} is silently gone"
         )
+        assert tier[1] == "YES"
 
-        # The tier CHECKs are not merely present, they are still ENFORCING.
-        tenant = uuid.uuid4()
-        with pytest.raises(sqlalchemy.exc.IntegrityError) as excinfo:
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"""
-                        INSERT INTO coord.prompt_documents
-                            (id, tenant_id, kind, name, body, format,
-                             current_version, {_TIER_COLUMN})
-                        VALUES (:id, :tenant, 'policy', 'bogus', 'b',
-                                'markdown', 1, 'maybe')
-                        """
-                    ),
-                    {"id": uuid.uuid4(), "tenant": tenant},
-                )
-        assert "ck_prompt_documents_agent_write_tier" in str(excinfo.value)
+    assert table_exists(upgraded_engine, "coord", _KIND_TIER_TABLE), (
+        f"coord.{_KIND_TIER_TABLE} did not survive the shim — nothing in the "
+        "enforcement path reads it, so its loss would surface only when the "
+        "coord consumer finally deploys"
+    )
 
-        with pytest.raises(sqlalchemy.exc.IntegrityError) as excinfo:
-            with engine.begin() as conn:
-                conn.execute(
-                    text(
-                        f"INSERT INTO coord.{_KIND_TIER_TABLE} "
-                        "(tenant_id, kind, tier) "
-                        "VALUES (:tenant, 'policy', 'maybe')"
-                    ),
-                    {"tenant": tenant},
-                )
-        assert "ck_prompt_document_kind_tiers_tier" in str(excinfo.value)
+    # The tier CHECKs are not merely present, they are still ENFORCING. Both
+    # inserts fail, so both transactions roll back and this test leaves the
+    # shared database exactly as it found it.
+    tenant = uuid.uuid4()
+    with pytest.raises(sqlalchemy.exc.IntegrityError) as excinfo:
+        with upgraded_engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"""
+                    INSERT INTO coord.prompt_documents
+                        (id, tenant_id, kind, name, body, format,
+                         current_version, {_TIER_COLUMN})
+                    VALUES (:id, :tenant, 'policy', 'bogus', 'b', 'markdown',
+                            1, 'maybe')
+                    """
+                ),
+                {"id": uuid.uuid4(), "tenant": tenant},
+            )
+    assert "ck_prompt_documents_agent_write_tier" in str(excinfo.value)
+
+    with pytest.raises(sqlalchemy.exc.IntegrityError) as excinfo:
+        with upgraded_engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO coord.{_KIND_TIER_TABLE} "
+                    "(tenant_id, kind, tier) VALUES (:tenant, 'policy', 'maybe')"
+                ),
+                {"tenant": tenant},
+            )
+    assert "ck_prompt_document_kind_tiers_tier" in str(excinfo.value)
+
+
+@_needs_pg
+def test_restored_comments_are_pdaw_01s_bodies_in_the_catalog(
+    upgraded_engine: Engine,
+) -> None:
+    """Read back off the database, not off this test's own expectation."""
+    parent = column_comment(upgraded_engine, _PARENT_TABLE, _LEGACY_COLUMN)
+    assert parent == _pdaw_body(_PARENT_TABLE), (
+        f"the restored parent comment must be pdaw_01's body verbatim; got {parent!r}"
+    )
+    assert parent is not None and "NULL is NOT false" in parent, (
+        "the one sentence pdaw_01 exists to carry. During this shim window a "
+        "three-state setting is stored in a two-state column, which is "
+        "precisely when a reader is most likely to take NULL for false."
+    )
+
+    versions = column_comment(upgraded_engine, _VERSIONS_TABLE, _LEGACY_COLUMN)
+    assert versions == _pdaw_body(_VERSIONS_TABLE), (
+        f"the restored snapshot comment must be pdaw_01's body verbatim; got "
+        f"{versions!r}"
+    )
+    assert versions is not None and "edited_by" in versions, (
+        "the snapshot comment's job is to say why the version row is the "
+        "ATTRIBUTABLE record; a paraphrase that drops edited_by drops the only "
+        "reason the column is on this table at all"
+    )
+
+    # These four look subsumed by the equality above — they are not. `want` is
+    # derived from pdaw_01's SOURCE, so an edit to pdaw_01 moves BOTH sides of
+    # that comparison and it stays green. These name the content directly.
+    assert "''" not in parent and "coord's compile-time" in parent, (
+        "the apostrophes round-tripped as apostrophes. A body carrying `''` "
+        "parses and stores without error, so only a read-back catches it."
+    )
+    assert "''" not in versions and "parent's mutable" in versions
+
+    # And the braces survived: `{kind}/{name}` is pdaw_01's deliberate spelling
+    # of a route whose `:kind/:name` form SQLAlchemy's text() would eat.
+    assert "/coord/prompt-documents/{kind}/{name}" in parent
 
 
 @_needs_pg
 def test_backfill_maps_every_tier_state_on_both_tables() -> None:
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_data") as (engine, db_url):
+    with ephemeral_database(admin_database_url(), "pdtier02_data") as (engine, db_url):
         # Stop at the parent so the rows exist while the tier is the only
         # setting — the ordering production was actually in.
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
-        assert _column(engine, _PARENT_TABLE, _LEGACY_COLUMN) is None, (
+        assert column_info(engine, _PARENT_TABLE, _LEGACY_COLUMN) is None, (
             "the parent revision must not already carry the boolean, or this "
             "test proves nothing about the backfill"
         )
@@ -508,6 +521,10 @@ def test_backfill_maps_every_tier_state_on_both_tables() -> None:
         for tier, want in _MAPPING.items():
             for table in (_PARENT_TABLE, _VERSIONS_TABLE):
                 got = _legacy_of(engine, docs[tier], table)
+                # `is`, not `==`: psycopg2 maps PG boolean to the True/False
+                # singletons, and `1 == True` would pass where `1 is True`
+                # will not. A driver that stopped doing so should fail here
+                # loudly rather than pass on a coincidence.
                 assert got is want, (
                     f"coord.{table}: tier {tier!r} restored as {got!r}, "
                     f"expected {want!r} — the two tables are migrated from one "
@@ -517,18 +534,18 @@ def test_backfill_maps_every_tier_state_on_both_tables() -> None:
         # Restated on its own, because it is the assertion with teeth: the
         # notification tier must collapse to a REFUSAL. Mapping it to TRUE
         # would restore an unconditional grant where the operator asked for one
-        # conditioned on disclosure — a repair that widens authority.
+        # conditioned on disclosure. `is False` rather than `is not True`, which
+        # NULL would also satisfy.
         for table in (_PARENT_TABLE, _VERSIONS_TABLE):
             collapsed = _legacy_of(engine, docs["allow_with_notification"], table)
-            assert collapsed is not True, (
-                f"coord.{table}: 'allow_with_notification' must never restore "
-                f"as TRUE, got {collapsed!r}"
+            assert collapsed is False, (
+                f"coord.{table}: 'allow_with_notification' must restore as "
+                f"FALSE and never as TRUE, got {collapsed!r}"
             )
-            assert collapsed is False
 
         # And no row without a tier gained an opinion. Tenant-scoped so an
         # unrelated seeding revision cannot break it for another reason.
-        opinionated = _scalar(
+        opinionated = scalar(
             engine,
             f"SELECT count(*) FROM coord.{_PARENT_TABLE} "
             f"WHERE tenant_id = :t AND {_LEGACY_COLUMN} IS NOT NULL",
@@ -538,51 +555,6 @@ def test_backfill_maps_every_tier_state_on_both_tables() -> None:
             "exactly the three tiered rows may carry a restored boolean; "
             f"{opinionated} of this tenant's rows do"
         )
-
-
-@_needs_pg
-def test_restored_comments_are_pdaw_01s_bodies_in_the_catalog() -> None:
-    """Read back off the database, not off this test's own expectation."""
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_comments") as (engine, db_url):
-        run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
-
-        parent = _column_comment(engine, _PARENT_TABLE, _LEGACY_COLUMN)
-        assert parent == _pdaw_comment_body(
-            f"coord.{_PARENT_TABLE}.{_LEGACY_COLUMN}"
-        ), (
-            "the restored parent comment must be pdaw_01's body verbatim; got "
-            f"{parent!r}"
-        )
-        assert parent is not None and "NULL is NOT false" in parent, (
-            "the one sentence pdaw_01 exists to carry. During this shim window "
-            "a three-state setting is stored in a two-state column, which is "
-            "precisely when a reader is most likely to take NULL for false."
-        )
-
-        versions = _column_comment(engine, _VERSIONS_TABLE, _LEGACY_COLUMN)
-        assert versions == _pdaw_comment_body(
-            f"coord.{_VERSIONS_TABLE}.{_LEGACY_COLUMN}"
-        ), (
-            "the restored snapshot comment must be pdaw_01's body verbatim; "
-            f"got {versions!r}"
-        )
-        assert versions is not None and "edited_by" in versions, (
-            "the snapshot comment's job is to say why the version row is the "
-            "ATTRIBUTABLE record; a paraphrase that drops edited_by drops the "
-            "only reason the column is on this table at all"
-        )
-
-        # The apostrophes round-tripped as apostrophes. A body carrying `''`
-        # parses and stores without error, so nothing but a read-back catches it.
-        assert parent is not None and "''" not in parent
-        assert "coord's compile-time" in parent
-        assert "''" not in versions and "parent's mutable" in versions
-
-        # And the braces survived: `{kind}/{name}` is pdaw_01's deliberate
-        # spelling of a route whose `:kind/:name` form would be eaten as bind
-        # parameters by SQLAlchemy's text().
-        assert "/coord/prompt-documents/{kind}/{name}" in parent
 
 
 @_needs_pg
@@ -601,8 +573,7 @@ def test_upgrade_is_schema_idempotent_and_re_derives_the_boolean() -> None:
     direction before dropping. Asserted here so the direction of loss is a
     tested fact rather than a docstring.
     """
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_rerun") as (engine, db_url):
+    with ephemeral_database(admin_database_url(), "pdtier02_rerun") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
 
         tenant = uuid.uuid4()
@@ -621,17 +592,17 @@ def test_upgrade_is_schema_idempotent_and_re_derives_the_boolean() -> None:
                 {"id": doc_id, "tenant": tenant},
             )
 
-        module = _load_revision_module()
+        module = _revision_module()
         with engine.begin() as conn:
             with Operations.context(MigrationContext.configure(conn)):
                 module.upgrade()
 
-        # Schema: still exactly one boolean per table, still commented.
+        # Schema: the boolean is still there on both tables, still commented.
         for table in (_PARENT_TABLE, _VERSIONS_TABLE):
-            assert _column(engine, table, _LEGACY_COLUMN) is not None
-            assert _column_comment(engine, table, _LEGACY_COLUMN) == (
-                _pdaw_comment_body(f"coord.{table}.{_LEGACY_COLUMN}")
-            ), "a re-run must leave the comment as pdaw_01's body, not mangle it"
+            assert column_info(engine, table, _LEGACY_COLUMN) is not None
+            assert column_comment(engine, table, _LEGACY_COLUMN) == _pdaw_body(table), (
+                "a re-run must leave the comment as pdaw_01's body, not mangle it"
+            )
 
         # Data: the operator's TRUE is gone, re-derived from the 'deny' tier.
         assert _legacy_of(engine, doc_id, _PARENT_TABLE) is False, (
@@ -645,7 +616,7 @@ def test_upgrade_is_schema_idempotent_and_re_derives_the_boolean() -> None:
         # The tier itself is never rewritten by this revision, in either
         # direction. It is the only surviving record of the pre-window state.
         assert (
-            _scalar(
+            scalar(
                 engine,
                 f"SELECT {_TIER_COLUMN} FROM coord.{_PARENT_TABLE} WHERE id = :id",
                 id=doc_id,
@@ -656,8 +627,10 @@ def test_upgrade_is_schema_idempotent_and_re_derives_the_boolean() -> None:
 
 @_needs_pg
 def test_downgrade_drops_only_the_boolean_and_re_upgrade_restores_it() -> None:
-    admin_url = admin_database_url()
-    with ephemeral_database(admin_url, "pdtier02_reverse") as (engine, db_url):
+    with ephemeral_database(admin_database_url(), "pdtier02_reverse") as (
+        engine,
+        db_url,
+    ):
         run_alembic(backend_root(), db_url, "upgrade", _PARENT_REVISION_ID)
         tenant = uuid.uuid4()
         docs = _seed_tiered_documents(engine, tenant)
@@ -670,10 +643,13 @@ def test_downgrade_drops_only_the_boolean_and_re_upgrade_restores_it() -> None:
                 f"downgrade dropped coord.{table} itself; it belongs to an "
                 "earlier revision and must survive"
             )
-            assert _column(engine, table, _LEGACY_COLUMN) is None, (
+            assert column_info(engine, table, _LEGACY_COLUMN) is None, (
                 f"downgrade left coord.{table}.{_LEGACY_COLUMN} behind"
             )
-            assert _column(engine, table, _TIER_COLUMN) is not None, (
+            assert column_comment(engine, table, _LEGACY_COLUMN) is None, (
+                f"coord.{table}.{_LEGACY_COLUMN}'s comment outlived its column"
+            )
+            assert column_info(engine, table, _TIER_COLUMN) is not None, (
                 f"downgrade took coord.{table}.{_TIER_COLUMN} with it. The "
                 "revision calls its downgrade lossless with respect to itself, "
                 "which holds only while the tier is genuinely untouched."
@@ -684,7 +660,7 @@ def test_downgrade_drops_only_the_boolean_and_re_upgrade_restores_it() -> None:
             "pdtier_01 and is outside this revision's reach"
         )
         assert (
-            _scalar(
+            scalar(
                 engine,
                 f"SELECT tier FROM coord.{_KIND_TIER_TABLE} "
                 "WHERE tenant_id = :t AND kind = 'initiative'",

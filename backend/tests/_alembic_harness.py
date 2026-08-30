@@ -26,12 +26,15 @@ tests skip unless one is reachable. Point them at a different instance with
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import os
+import re
 import subprocess
 import sys
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
+from types import ModuleType
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -191,3 +194,120 @@ def index_exists(engine: Engine, index_name: str, schema: str = "coord") -> bool
     )
     with engine.connect() as conn:
         return bool(conn.execute(sql, {"schema": schema, "idx": index_name}).scalar())
+
+
+# --------------------------------------------------------------------------
+# Catalog readers
+#
+# These four were copied into every migration test that needed them, which is
+# the drift this module's docstring was written about. They live here now.
+# `_column`/`_scalar`/`_column_comment` still exist as private copies in the
+# older suites; new tests use these, and moving the remaining copies is a
+# mechanical follow-up rather than a reason to keep adding new ones.
+# --------------------------------------------------------------------------
+
+
+def column_info(
+    engine: Engine, table: str, column: str, schema: str = "coord"
+) -> tuple[str, str, str | None] | None:
+    """``(data_type, is_nullable, column_default)`` for the column, or None."""
+    sql = text(
+        """
+        SELECT data_type, is_nullable, column_default
+          FROM information_schema.columns
+         WHERE table_schema = :schema
+           AND table_name = :table
+           AND column_name = :column
+        """
+    )
+    with engine.connect() as conn:
+        row = conn.execute(
+            sql, {"schema": schema, "table": table, "column": column}
+        ).fetchone()
+    return (row[0], row[1], row[2]) if row else None
+
+
+def scalar(engine: Engine, sql: str, **params: object) -> object:
+    """One value from a one-row query. Raises if the query returns no row."""
+    with engine.connect() as conn:
+        return conn.execute(text(sql), params).scalar_one()
+
+
+def column_comment(
+    engine: Engine, table: str, column: str, schema: str = "coord"
+) -> str | None:
+    """``col_description`` for the column: its comment, or None.
+
+    ``scalar_one_or_none``, not ``scalar_one``: an ABSENT column yields no row
+    at all, and the caller asking "what comment does this carry" is entitled to
+    ``None`` for both "no comment" and "no column". The copies this replaced
+    used ``scalar_one`` under a ``str | None`` annotation, so
+    ``assert column_comment(...) is None`` after a drop raised ``NoResultFound``
+    instead of failing on its own terms.
+    """
+    with engine.connect() as conn:
+        return conn.execute(  # type: ignore[return-value]
+            text(
+                """
+                SELECT col_description(att.attrelid, att.attnum)
+                  FROM pg_attribute att
+                 WHERE att.attrelid = to_regclass(:schema || '.' || :table)
+                   AND att.attname = :column
+                   AND att.attnum > 0
+                   AND NOT att.attisdropped
+                """
+            ),
+            {"schema": schema, "table": table, "column": column},
+        ).scalar_one_or_none()
+
+
+def load_revision_module(path: Path, module_name: str) -> ModuleType:
+    """Import a revision file directly, so its functions can be re-invoked.
+
+    Alembic's own runner will not do this: once ``alembic_version`` names the
+    revision, a second ``upgrade <rev>`` is a no-op. Loading by path is the only
+    way to exercise a revision's idempotency guards.
+    """
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# A SQL string literal, with `''` as the escaped apostrophe.
+_SQL_LITERAL = re.compile(r"'((?:[^']|'')*)'")
+
+
+def comment_body_from_source(source: str, qualified_column: str) -> str:
+    """The ``COMMENT ON COLUMN`` body a revision's SOURCE emits for a column.
+
+    PostgreSQL concatenates adjacent string literals separated by a newline, and
+    the revisions here write each comment as one such run inside a triple-quoted
+    block. The doubled apostrophes are collapsed the way the SQL parser collapses
+    them, so the result is what ``col_description`` will return.
+
+    Exists so a test can compare against the ONE author of a body rather than
+    holding a copy of it: two revisions restore ``pdaw_01``'s two comments, and a
+    third copy in a test is the divergence such a test exists to catch.
+    """
+    marker = f"COMMENT ON COLUMN {qualified_column} IS"
+    start = source.find(marker)
+    assert start >= 0, f"source no longer contains {marker!r}"
+    assert source.find(marker, start + 1) < 0, (
+        f"{marker!r} appears more than once; this reader would silently pick "
+        "the first, which is not necessarily the one the caller meant"
+    )
+    start += len(marker)
+    end = source.find('"""', start)
+    assert end > start, f"unterminated COMMENT block for {qualified_column}"
+
+    remainder = _SQL_LITERAL.sub("", source[start:end])
+    assert not remainder.strip(), (
+        "the COMMENT block holds something other than adjacent string "
+        f"literals, so this reader cannot reassemble it: {remainder!r}"
+    )
+
+    parts = _SQL_LITERAL.findall(source[start:end])
+    assert parts, f"no SQL string literals found after {marker!r}"
+    return "".join(part.replace("''", "'") for part in parts)
