@@ -7,6 +7,7 @@ import {
   type TaskRun,
 } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Bot, MessageSquare } from "lucide-react";
@@ -182,10 +183,12 @@ function UserMessage({ content }: { content: string }) {
 
 function RunListPanel({
   runs,
+  scope,
   selectedRunId,
   onSelect,
 }: {
   runs: TaskRun[];
+  scope: string | null;
   selectedRunId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -199,9 +202,12 @@ function RunListPanel({
       <ScrollArea className="flex-1">
         <div className="p-2 space-y-1">
           {runs.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-8 px-2">
-              No active runs found.
-            </p>
+            <div className="py-8 px-2 space-y-2">
+              <p className="text-xs text-muted-foreground text-center">
+                No active runs found.
+              </p>
+              <TaskRunScopeNote scope={scope} />
+            </div>
           ) : (
             runs.map((run) => (
               <button
@@ -402,14 +408,13 @@ function EmptySelectionState() {
 
 export default function AiOutputPage() {
   const {
-    data: activeRuns,
+    runs,
+    scope,
     isLoading: runsLoading,
     isOffline,
   } = useRunningTaskRuns();
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-
-  const runs = useMemo(() => activeRuns || [], [activeRuns]);
 
   // Auto-select first run if none selected
   useEffect(() => {
@@ -446,6 +451,7 @@ export default function AiOutputPage() {
           {/* Left panel: run list */}
           <RunListPanel
             runs={runs}
+            scope={scope}
             selectedRunId={selectedRunId}
             onSelect={setSelectedRunId}
           />

@@ -45,9 +45,20 @@ export interface FleetHealthDevice {
   hostname?: string;
   /**
    * Coord liveness state — `DeviceHealthSnapshot.state` (Rust
-   * `DeviceState`, serde-lowercase): healthy | degraded | partitioned |
-   * abandoned. Absent on a device coord has no verdict for, which renders as
-   * `unknown` — never as healthy.
+   * `DeviceState`, serde-lowercase): healthy | degraded | **stale** |
+   * partitioned | abandoned. Absent on a device coord has no verdict for,
+   * which renders as `unknown` — never as healthy.
+   *
+   * `stale` is the fifth and newest, a DERIVED overlay coord never persists
+   * (its `devices.state` CHECK admits only the other four). It means the
+   * device is heartbeating fine and its resource SAMPLER has gone quiet, so
+   * it is neither healthy nor unreachable — see `summarizeFleetLiveness` and
+   * `deviceStateBadgeVariant`, which are the two places this string is turned
+   * into something an operator reads.
+   *
+   * Typed as a bare `string` deliberately: a union here would make a coord
+   * newer than this build fail to parse instead of rendering `unknown`, and
+   * unknown-not-healthy is the rule the whole surface rests on.
    */
   state?: string;
 }

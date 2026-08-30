@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { runnerApi, type TaskRun } from "@/lib/runner-api";
+import {
+  runnerApi,
+  type TaskRun,
+  type RunningTaskRunsResponse,
+} from "@/lib/runner-api";
 import {
   useEventTriggeredFetch,
   useRunnerEvent,
@@ -30,14 +34,19 @@ import { IdleState, CompletedState } from "./EmptyStates";
 
 export function ActiveRunsContent() {
   const {
-    data: activeRuns,
+    data: runningTaskRuns,
     isLoading: runsLoading,
     isOffline: runsOffline,
     refetch: refetchRuns,
-  } = useEventTriggeredFetch<TaskRun[]>(
+  } = useEventTriggeredFetch<RunningTaskRunsResponse>(
     "task-run-update",
     "/task-runs/running"
   );
+
+  // The endpoint is an envelope, not a bare array. `null` means "no response
+  // yet" — distinct from an empty list, which `scope` explains.
+  const activeRuns: TaskRun[] | null = runningTaskRuns?.task_runs ?? null;
+  const runsScope = runningTaskRuns?.scope ?? null;
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const lastKnownRunIds = useRef<Set<string>>(new Set());
@@ -188,7 +197,7 @@ export function ActiveRunsContent() {
         lastKnownRunIds.current.size > 0 && !isOffline ? (
           <CompletedState lastRunId={[...lastKnownRunIds.current][0]!} />
         ) : (
-          <IdleState isOffline={isOffline} />
+          <IdleState isOffline={isOffline} scope={runsScope} />
         )
       ) : selectedRun ? (
         <SharedRunnerDataProvider runId={currentRunId}>
