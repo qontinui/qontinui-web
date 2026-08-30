@@ -2,6 +2,43 @@
 
 This Terraform configuration sets up comprehensive monitoring for the Qontinui production environment on AWS Elastic Beanstalk.
 
+> ## ⚠️ Do not apply this without reading first (2026-08-30)
+>
+> Two things about this root are known-wrong. Neither has been corrected here,
+> because correcting them safely depends on whether it was ever applied — and
+> that cannot be determined from inside the repo.
+>
+> **1. `region` defaults to the wrong region.** `variables.tf` sets
+> `default = "eu-central-1"`, and `main.tf` wires it straight into
+> `provider "aws"`. But this account's RDS instance and ALB live in
+> **`us-east-1`** (`eu-central-1` holds only the SSM secrets store). CloudWatch
+> metrics are regional, so the three `AWS/RDS` alarms below — `rds_cpu_high`,
+> `rds_storage_low`, `rds_connections_high` — watch metrics that do not exist in
+> the region they are created in. **They cannot fire.** An alarm stuck forever in
+> `INSUFFICIENT_DATA` looks exactly like a healthy quiet system, which is why
+> this went unnoticed. The dashboard URL at line ~150 below and the state-backend
+> example near the end carry the same wrong region.
+>
+> **2. It monitors Elastic Beanstalk, which is not what production runs.**
+> The five `AWS/ElasticBeanstalk` / `AWS/EC2` alarms target the environment
+> `qontinui-prod-py`. Production is now ECS, provisioned by `qontinui-stack`
+> (`aws/staging/`, despite the name). The live, correctly-regioned monitoring is
+> `qontinui-stack/aws/modules/observability` — region inherited from a provider
+> defaulting to `us-east-1`, no region literals anywhere.
+>
+> **Before you touch this:** check whether it was ever applied —
+> `aws cloudwatch describe-alarms --region eu-central-1` and again for
+> `us-east-1`, looking for `qontinui-prod-py-*`. If nothing matches, this whole
+> directory should be deleted rather than fixed. If alarms DO exist, they are
+> live resources whose terraform state is local and uncommitted (see "State
+> Management" below), so deleting the source would orphan them — run
+> `terraform destroy` instead.
+>
+> Do **not** simply change the default to `us-east-1` and apply: that would make
+> a Beanstalk monitoring stack look current for an architecture production does
+> not run. Context: `qontinui-dev-notes` plan
+> `2026-08-30-cloudwatch-module-hardcodes-eu-central-1-for-us-east-1-resources`.
+
 ## What This Creates
 
 ### SNS Topic & Email Alerts
