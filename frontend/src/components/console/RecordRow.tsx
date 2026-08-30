@@ -34,6 +34,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { Attention } from "./attention";
+import { rowAccentClass } from "./statusRow";
 
 export interface RecordRowProps {
   /** Mono identity chip: `repo#123`, a worktree name, a drive letter. */
@@ -50,25 +51,26 @@ export interface RecordRowProps {
   reason?: string;
   /** The timestamp element, e.g. `<RowTime at verb />`. */
   time?: ReactNode;
-  /** `rowAccentClass(status)` — R4's 2px left border, or "" for none. */
-  accent?: string;
   /**
-   * The attention `accent` was derived from, written to `data-attention`.
+   * Who must act on this row — R4's left-edge accent AND its machine-readable
+   * twin, from one prop.
    *
-   * The same fact as the accent colour, in a channel a stylesheet rule or a
-   * spec selector can address — the colour is for the operator, this is for
-   * everything that has to CHECK the colour. Phase 4 of the console plan adds
-   * style rules keyed on `[data-attention="author"]`, and a rule whose selector
-   * matches nothing reports PASS, so the attribute must land first.
+   * **It replaced a separate `accent: string`, and that is the point.** The
+   * colour is the operator's channel; `data-attention` is the same fact in a
+   * channel a stylesheet rule, a spec selector or a `/visual-audit` assertion
+   * can address. Two props meant every caller wrote the fact twice —
+   * `accent={rowAccentClass(status)} attention={status.attention}` — and both
+   * ways of getting that wrong are SILENT: pass the accent and forget the
+   * attribute and Phase 4's `[data-attention="author"]` rule selects nothing
+   * and reports PASS; derive them from different statuses and the rule passes
+   * while the DOM misreports which rows need action. Deriving the class here
+   * makes both unrepresentable, which is what `rowAccentProps` does for the
+   * plain elements that are not `<RecordRow>`s.
    *
-   * Optional because a row may have no severity model at all. Absent when
-   * unknown rather than defaulted to `"none"`: "this row is calm" and "this
-   * surface does not classify rows" are different claims, and an audit that
-   * cannot tell them apart would read the second as the first.
-   *
-   * Prefer `rowAccentProps(status)` where the row is a plain element — it
-   * returns the class and this value together, so they cannot be derived from
-   * different statuses.
+   * Optional, and ABSENT rather than `"none"` when the caller omits it: "this
+   * row is calm" and "this surface does not classify rows" are different
+   * claims, and an audit that cannot tell them apart reads the second as the
+   * first.
    */
   attention?: Attention;
   expanded: boolean;
@@ -93,7 +95,6 @@ export function RecordRow({
   status,
   reason,
   time,
-  accent,
   attention,
   expanded,
   onToggle,
@@ -121,7 +122,7 @@ export function RecordRow({
         data-attention={attention}
         className={[
           "w-full flex items-center gap-3 px-3 py-2 text-sm border border-border rounded-md bg-card/30 hover:bg-accent/60 transition-colors text-left",
-          accent ?? "",
+          attention ? rowAccentClass({ attention }) : "",
           expanded ? "rounded-b-none bg-accent/60" : "",
         ]
           .filter(Boolean)

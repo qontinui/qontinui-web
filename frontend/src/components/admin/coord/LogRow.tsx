@@ -51,7 +51,6 @@ import {
   RecordDetail,
   RecordRow,
   RowTime,
-  rowAccentClass,
   type Attention,
 } from "@/components/console";
 
@@ -143,7 +142,6 @@ export function LogRow({
       rowKey={String(log.log_id ?? `${log.agent_id}-${occurredAt ?? ""}`)}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass({ attention: levelAttention(log.level) })}
       attention={levelAttention(log.level)}
       // The level IS this row's identity chip: it is the one short token that
       // classifies a log line, and `<RecordRow>` supplies the chip chrome

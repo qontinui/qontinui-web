@@ -47,7 +47,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { httpClient } from "@/services/service-factory";
@@ -181,7 +180,6 @@ export function GapRow({
       rowKey={question.question_id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={category}
       label={

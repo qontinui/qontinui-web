@@ -19,9 +19,19 @@
 
 import { describe, expect, it } from "vitest";
 import { rowAccentClass, rowAccentProps } from "./statusRow";
+import { ATTENTION_RANK } from "./attention";
 import type { Attention } from "./attention";
 
-const ALL: Attention[] = ["author", "waiting", "none"];
+/**
+ * Derived from `ATTENTION_RANK`, not hand-listed.
+ *
+ * `ATTENTION_RANK` is a `Record<Attention, number>`, so TypeScript makes it
+ * total over the union: a fourth attention value cannot be added without
+ * appearing here. A literal array would have compiled fine and quietly left
+ * the new value untested by every "for every value" case below — the same
+ * shape of gap as a palette table that forgets a kind.
+ */
+const ALL = Object.keys(ATTENTION_RANK) as Attention[];
 
 describe("rowAccentProps", () => {
   it("returns the SHARED accent byte for byte, never a second spelling", () => {

@@ -37,7 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, Rocket } from "lucide-react";
 import { RecordDetail, RecordRow } from "@/components/console";
-import { RowTime, StatusBadge, rowAccentClass } from "@/components/console";
+import { RowTime, StatusBadge } from "@/components/console";
 import {
   PLAN_STATUS_PALETTE,
   describePlanStatus,
@@ -81,7 +81,6 @@ export function PlanRow({
       rowKey={plan.slug}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
       attention={status.attention}
       identity={planIdentity(plan.slug)}
       label={
