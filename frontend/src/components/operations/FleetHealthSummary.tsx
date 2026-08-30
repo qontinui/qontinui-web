@@ -31,10 +31,33 @@ type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 /**
  * Map a coord `DeviceState` value to a badge variant. Unrecognized /
  * missing states fall back to "outline" (rendered as "unknown").
+ *
+ * The mapping is a three-tier rule, not five ad-hoc choices:
+ *
+ * * `destructive` — **coord cannot reach the device at all.** Reserved for
+ *   `partitioned` / `abandoned`; nothing else may borrow it.
+ * * `secondary` — **coord still reaches it, and something about it is off.**
+ *   `degraded`, and now `stale`.
+ * * `outline` — **coord has no verdict**: an absent or unrecognized state.
+ *
+ * `stale` is coord's FIFTH `DeviceState` (plan
+ * `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`,
+ * Phase 4) and it is a derived overlay, never persisted. It means **the
+ * heartbeat is fine and the SAMPLER has gone quiet** — coord hears the machine
+ * and has stopped hearing its resource telemetry. That is deliberately NOT
+ * `partitioned`, whose whole meaning is that the device stopped heartbeating:
+ * on 2026-08-27 the fleet-health read said `{healthy: 4}` beside a WSL-lane
+ * sample 22 minutes old, and calling that a network partition would have sent
+ * an operator to debug the wrong layer. Painting the two the same red would
+ * make the same mistake in one glyph.
+ *
+ * It is equally not `outline`: staleness is a positive observation coord made,
+ * not an absence of one. **Stale is UNKNOWN — never healthy, and never dead.**
  */
 const STATE_BADGE_VARIANT: Record<string, BadgeVariant> = {
   healthy: "default",
   degraded: "secondary",
+  stale: "secondary",
   partitioned: "destructive",
   abandoned: "destructive",
 };

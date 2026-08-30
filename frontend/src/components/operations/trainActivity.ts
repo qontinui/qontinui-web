@@ -148,6 +148,11 @@ export type PauseReasonCode =
   /** This repo is at its per-repo in-flight cap, so the dequeue skips it —
    *  even when a global slot is free. */
   | "repo-cap-starved"
+  /** This repo's HEAD proposal is admitted, but proposals BEHIND it are
+   *  skipped by the same per-repo cap. `repo-cap-starved` cannot say this:
+   *  it keys off `at_repo_cap`, which coord scopes to the head of the queue,
+   *  so the partial case rendered no cap explanation at all. */
+  | "queued-behind-repo-cap"
   /** Every global merge slot is occupied; nothing can be dispatched. */
   | "slots-saturated"
   | "conflict-strand"
@@ -194,25 +199,31 @@ const REASON_RANK: Record<PauseReasonCode, number> = {
   // individual PRs' states are not what is holding the queue.
   "repo-cap-starved": 5,
   "slots-saturated": 6,
-  "conflict-strand": 7,
-  "ci-failed": 8,
+  // Below both: the head of this repo's queue IS moving, so this explains a
+  // slower queue rather than a stopped one. It never co-occurs with
+  // `repo-cap-starved` (that arm already states the whole cap story), but it
+  // can sit under `slots-saturated`, where freeing a global slot would still
+  // leave these proposals behind the repo's own cap.
+  "queued-behind-repo-cap": 7,
+  "conflict-strand": 8,
+  "ci-failed": 9,
   // Sits with the CI-dimension reasons rather than beside `review-required`,
   // matching coord's own dimension mapping for this code
   // (`merge_verdict.rs`: `"required-checks-missing" => Some("ci")`). The whole
   // point of the split is that this block belongs to CI, not to a reviewer, so
   // ranking it next to `review-required` would re-tell the story we removed.
-  "required-checks-missing": 9,
-  conflicts: 10,
-  "blast-radius-block": 11,
-  "review-required": 12,
-  "behind-base": 13,
-  "ci-pending": 14,
-  draft: 15,
+  "required-checks-missing": 10,
+  conflicts: 11,
+  "blast-radius-block": 12,
+  "review-required": 13,
+  "behind-base": 14,
+  "ci-pending": 15,
+  draft: 16,
   // Last before `no-candidates`: a token we cannot name explains less than any
   // reason we CAN name, so it never outranks a real diagnosis — but it still
   // sorts above "nothing to do", which would be a false all-clear.
-  "unrecognized-status": 16,
-  "no-candidates": 17,
+  "unrecognized-status": 17,
+  "no-candidates": 18,
 };
 
 const REASON_META: Record<
@@ -225,6 +236,9 @@ const REASON_META: Record<
     | "hydration-stale"
     | "repo-cap-starved"
     | "slots-saturated"
+    // Same reason as its two capacity siblings above: the label switches on
+    // whether the cap is narrowed, so it cannot be a static row.
+    | "queued-behind-repo-cap"
     // Its label is derived from the raw coord token, so it cannot be a static
     // row here; `deriveReasons` synthesizes the meta inline, the way
     // `orchestrator-stalled` already does.
@@ -310,7 +324,15 @@ export interface RepoTrainRow {
 }
 
 export interface TrainBanner {
-  code: PauseReasonCode | "suppressed-train" | "healthy";
+  code:
+    | PauseReasonCode
+    | "suppressed-train"
+    /** coord's occupancy count exceeds the ceiling that admitted it — a coord
+     *  defect that makes every slot number on the tab suspect. Not a
+     *  `PauseReasonCode`: it is never a per-repo row, and it explains why the
+     *  capacity readings cannot be trusted rather than why one repo paused. */
+    | "occupancy-over-cap"
+    | "healthy";
   severity: PauseSeverity;
   label: string;
   detail: string;
@@ -377,6 +399,113 @@ function effectiveRepoCap(
     return { cap: n, narrowed: true };
   }
   return { cap: slots.per_repo_cap, narrowed: false };
+}
+
+/**
+ * The repos in `slots.repos` coord has narrowed below the configured cap,
+ * optionally restricted to `only`.
+ *
+ * Exists so "is this repo narrowed" has ONE definition. The fleet banner used
+ * to re-spell {@link effectiveRepoCap}'s predicate inline, which is how the
+ * helper's own promise — *every render site that quotes a per-repo cap goes
+ * through here* — was already untrue in the commit that made it.
+ */
+function narrowedRepos(
+  slots: SlotSaturation,
+  only?: readonly string[]
+): RepoSlotSaturation[] {
+  return (slots.repos ?? []).filter(
+    (r) =>
+      (only === undefined || only.includes(r.repo)) &&
+      effectiveRepoCap(r, slots).narrowed
+  );
+}
+
+/**
+ * The per-repo cap clause for a FLEET-WIDE readout (the Slots stat's hint) —
+ * the one render site PR #1072 did not reach, because the grep that found the
+ * other three was scoped to this module and never opened the `.tsx`.
+ *
+ * A fleet readout has no single repo, so it cannot print one cap. It prints the
+ * configured one and then says, when it is not the whole truth, which repos are
+ * being held below it — otherwise an operator reads "per-repo cap 2" here and
+ * "1/1 in flight" in the row below and has to guess which is real.
+ */
+export function perRepoCapHint(slots: SlotSaturation): string {
+  const narrowed = narrowedRepos(slots);
+  if (narrowed.length === 0) {
+    return `per-repo cap ${slots.per_repo_cap}`;
+  }
+  const only = narrowed.length === 1 ? narrowed[0]! : undefined;
+  const which = only
+    ? `${shortRepo(only.repo)} is held at ${effectiveRepoCap(only, slots).cap} ` +
+      `while its candidate CI keeps failing`
+    : `${narrowed.length} repos are held below it while their candidate CI ` +
+      `keeps failing`;
+  return `per-repo cap ${slots.per_repo_cap} configured, but ${which}`;
+}
+
+/**
+ * The scope clause for the Slots stat — which of `occupied` and `effective_cap`
+ * is fleet-wide and which is not.
+ *
+ * The stat used to hardcode *"Occupancy and cap are fleet-wide (the semaphore
+ * is)"*. Only the first half is true. coord's `/pr-merge/health` observes slot
+ * saturation with a tenant ALWAYS (`observe(state, Some(tenant_id))`), and under
+ * a tenant scope `effective_cap` and `online_ci_runners` describe THAT TENANT's
+ * fleet, while `occupied` stays fleet-wide in both scopes. So the stat printed a
+ * fleet-wide numerator over a tenant-scoped denominator and called the pair
+ * fleet-wide — the same shape of error as quoting the configured per-repo cap
+ * beside a flag derived against a narrowed one.
+ *
+ * Absence is UNKNOWN, not fleet-wide: a coord predating `tenant_scoped` omits
+ * it, and asserting either scope on no evidence is what this whole module exists
+ * to avoid. The undecided case therefore names both possibilities instead.
+ */
+export function slotScopeNote(slots: SlotSaturation): string {
+  if (slots.tenant_scoped === true) {
+    return (
+      `Occupancy is fleet-wide (the global semaphore is), but the cap beside ` +
+      `it is YOUR TENANT's — coord sized it from your own CI runners. The ` +
+      `per-repo breakdown below is tenant-scoped too.`
+    );
+  }
+  if (slots.tenant_scoped === false) {
+    return (
+      `Occupancy and cap are both fleet-wide — coord reported this ` +
+      `observation untenanted, so the cap is not the one any single tenant ` +
+      `dispatches under.`
+    );
+  }
+  return (
+    `Occupancy is fleet-wide (the global semaphore is). This coord does not ` +
+    `report whether the cap was computed for your tenant or for the whole ` +
+    `fleet, so treat the scope as unknown rather than either one.`
+  );
+}
+
+/**
+ * The trailing A2 clause naming the repos coord has TEMPORARILY narrowed, or
+ * "" when none is.
+ *
+ * Shared by both arms of the fleet cap banner so they cannot drift: the copy is
+ * identical whether the banner was keyed off `queued_blocked_by_cap` or off the
+ * legacy `at_repo_cap` flag, because the narrowing it describes is the same
+ * fact either way.
+ */
+function narrowedRepoNote(narrowed: readonly RepoSlotSaturation[]): string {
+  const only = narrowed.length === 1 ? narrowed[0] : undefined;
+  if (narrowed.length === 0) {
+    return ` Fairness filter, by design — it stops one busy repo monopolising the train.`;
+  }
+  return only
+    ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
+        `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
+        `been failing repeatedly; that cap widens again on its own as candidate ` +
+        `CI recovers.`
+    : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
+        `because their recent candidate CI has been failing repeatedly; those ` +
+        `caps widen again on their own as candidate CI recovers.`;
 }
 
 /** The trailing clause that explains a narrowed cap, or "" when it is not. */
@@ -634,6 +763,35 @@ export function buildTrainSummary(
   //     train the operator to ignore this banner.
   const slots = health?.slots ?? null;
   if (slots) {
+    // The invariant tripwire, ABOVE every capacity reading below it: when
+    // coord's occupancy count exceeds the ceiling that admitted it, the count
+    // and the real semaphore have diverged, and every "N/M slots" number on
+    // this tab is derived from the same suspect count. Saying so first stops an
+    // operator chasing a throughput ceiling that may not exist.
+    //
+    // `> 0` rather than truthiness, and no fallback when the field is absent: a
+    // coord predating it says nothing about the invariant, and inferring the
+    // breach from `occupied > configured_cap` ourselves would re-derive the
+    // comparison coord documents as ITS to make (against `configured_cap`,
+    // never `effective_cap`, which legitimately shrinks under in-flight work).
+    const overCap = slots.occupancy_over_cap ?? 0;
+    if (overCap > 0) {
+      banners.push({
+        code: "occupancy-over-cap",
+        severity: "blocking",
+        label: "Slot count exceeds the ceiling",
+        detail:
+          `coord counts ${slots.occupied} permit-holding proposal` +
+          `${slots.occupied === 1 ? "" : "s"} against a global ceiling of ` +
+          `${slots.configured_cap} — ${overCap} over, which ` +
+          `is IMPOSSIBLE: the global semaphore is built once and never ` +
+          `resized, so this count and the real semaphore have diverged. Every ` +
+          `slot number on this tab comes from that count, so read them as ` +
+          `suspect until it clears. This is a coord defect, not a capacity ` +
+          `limit — it sat on a Prometheus gauge through three incidents ` +
+          `before anything asserted it.`,
+      });
+    }
     if (slots.dynamic && slots.effective_cap === 0) {
       banners.push({
         code: "no-ci-runners",
@@ -642,7 +800,16 @@ export function buildTrainSummary(
         detail:
           `The slot cap is dynamic (COORD_MERGE_SLOT_CAP_DYNAMIC=1) and no CI ` +
           `runner is online, so the effective cap is 0 — the train cannot ` +
-          `dispatch anything at all, regardless of how many PRs are ready.`,
+          `dispatch anything at all, regardless of how many PRs are ready.` +
+          // Scope changes the remedy AND the blast radius. Tenanted, the runners
+          // to bring back are the tenant's OWN and other tenants keep landing
+          // normally; written fleet-wide the same sentence tells an operator the
+          // whole control plane is down. coord's own `compute_headline` splits
+          // on this field for the same reason.
+          (slots.tenant_scoped === true
+            ? ` coord sized this cap from YOUR TENANT's runners, so it is your ` +
+              `fleet that has stopped — other tenants may be landing normally.`
+            : ""),
       });
     } else if (slots.saturated && slots.queued_depth > 0) {
       const waited = slots.oldest_queued_wait_seconds ?? null;
@@ -664,43 +831,101 @@ export function buildTrainSummary(
           `This is a capacity limit, not a fault.`,
       });
     }
-    // Orthogonal to global saturation: free slots + starved repos is the case
-    // operators consistently misread as "coord is broken".
+    // Per-repo starvation, at the fleet level. ORTHOGONAL to global saturation
+    // in BOTH directions: free slots + starved repos is the case operators
+    // misread as "coord is broken", and a saturated train can be starved at the
+    // same time — freeing a slot does nothing for work the repo's OWN cap will
+    // skip anyway.
+    //
+    // Keyed off `queued_blocked_by_cap`, the COUNT of proposals the dequeue
+    // will skip, rather than off `at_repo_cap`. #1147 mirrored that field and
+    // read it on the per-repo row but left this banner on the flag — the same
+    // shape of error it was fixing. `at_repo_cap` is `in_flight >= cap`, so a
+    // repo with 0 in flight and 3 queued against a cap of 2 has one proposal
+    // skipped while the flag is (correctly) false, and this banner said nothing
+    // at all. coord's own `compute_headline` had already corrected exactly this
+    // in itself: *"gating on that flag alone left the partial case with no
+    // headline at all — the exact stall this field was added to make legible."*
+    //
+    // Present-vs-absent, not truthy-vs-zero: coord ALWAYS serializes the field,
+    // so a payload without it is an older producer saying nothing rather than
+    // one asserting zero. With no count to read, fall back to the flag-keyed
+    // banner verbatim — degrading to silence would lose today's signal against
+    // that deploy.
+    const repoSlotRows = slots.repos ?? [];
+    const capCountKnown = repoSlotRows.some(
+      (r) => typeof r.queued_blocked_by_cap === "number"
+    );
+    const capBlockedRepos = repoSlotRows.filter(
+      (r) => (r.queued_blocked_by_cap ?? 0) > 0
+    );
+    const capBlocked = capBlockedRepos.reduce(
+      (n, r) => n + (r.queued_blocked_by_cap ?? 0),
+      0
+    );
     // Derived from `repos[]` when coord omits the summary list: both fields are
     // optional on the wire, and keying the banner off one while the per-repo
     // reason keys off the other means a deploy that sends only one gives half
     // the signal.
     const atCap =
       slots.repos_at_cap ??
-      (slots.repos ?? []).filter((r) => r.at_repo_cap).map((r) => r.repo);
-    if (atCap.length > 0 && slots.available > 0) {
+      repoSlotRows.filter((r) => r.at_repo_cap).map((r) => r.repo);
+
+    if (capCountKnown && capBlocked > 0) {
+      const names = capBlockedRepos.map((r) => r.repo);
+      const narrowed = narrowedRepos(slots, names);
+      // NOT gated on `slots.available > 0`. That guard was this banner's other
+      // defect: a saturated train has `available === 0` by construction, so the
+      // one banner saying "a free slot will not release these" was suppressed
+      // exactly while `slots-saturated` sat above it telling the operator to
+      // raise COORD_MERGE_SLOTS. coord hit the identical guard and fixed it on
+      // 2026-08-25 — *"the saturated branch returned and stranded the per-repo
+      // clause exactly when it mattered: false saturation forced `available` to
+      // 0, which is also this branch's own guard."* Both causes can hold at
+      // once, so both are said.
+      const lead =
+        slots.available > 0
+          ? `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
+            `free, but `
+          : `Every global merge slot is busy — and even once one frees, `;
+      // The threshold these repos are at or past. Naming
+      // COORD_MERGE_PER_REPO_CAP when coord's A2 term has narrowed every one of
+      // them is wrong twice over: wrong number, and it credits the fairness
+      // filter for a candidate-CI hold whose remedy is a green run, not
+      // patience.
+      const capClause =
+        narrowed.length > 0 && narrowed.length === capBlockedRepos.length
+          ? `the reduced cap coord is enforcing for them`
+          : `the per-repo cap (COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`;
+      banners.push({
+        code: "repo-cap-starved",
+        severity: "waiting",
+        label: "Repos at their per-repo cap",
+        detail:
+          `${lead}${capBlocked} queued proposal${capBlocked === 1 ? "" : "s"} ` +
+          `across ${names.length} repo${names.length === 1 ? "" : "s"} ` +
+          `(${names.map(shortRepo).join(", ")}) ` +
+          `${capBlocked === 1 ? "is" : "are"} skipped by the dequeue: ` +
+          `${names.length === 1 ? "it is" : "they are"} at or past ${capClause}, ` +
+          `so that work waits on ${names.length === 1 ? "its" : "their"} own ` +
+          `in-flight proposals rather than on a merge slot.` +
+          narrowedRepoNote(narrowed),
+      });
+    } else if (!capCountKnown && atCap.length > 0 && slots.available > 0) {
+      // Legacy arm — a coord predating `queued_blocked_by_cap`. Byte-identical
+      // to what this banner rendered before the count existed: a producer that
+      // tells us less must not make the copy worse.
+      //
       // Both sources of `atCap` are derived against each repo's EFFECTIVE cap,
       // so a repo coord's A2 term has narrowed appears here BELOW the configured
       // cap. Naming COORD_MERGE_PER_REPO_CAP as the count they "already hold" is
       // then wrong twice over: wrong threshold, and it credits the fairness
       // filter for a candidate-CI hold whose remedy is a green run, not patience.
-      const narrowed = (slots.repos ?? []).filter(
-        (r) =>
-          atCap.includes(r.repo) &&
-          typeof r.narrowed_repo_cap === "number" &&
-          r.narrowed_repo_cap < slots.per_repo_cap
-      );
+      const narrowed = narrowedRepos(slots, atCap);
       const capClause =
         narrowed.length > 0 && narrowed.length === atCap.length
           ? `already hold the reduced cap coord is enforcing for them`
           : `already hold COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap} in-flight proposals`;
-      const only = narrowed.length === 1 ? narrowed[0] : undefined;
-      const a2Clause =
-        narrowed.length === 0
-          ? ` Fairness filter, by design — it stops one busy repo monopolising the train.`
-          : only
-            ? ` ${shortRepo(only.repo)} is TEMPORARILY held at a narrowed cap ` +
-              `of ${only.narrowed_repo_cap} because its recent candidate CI has ` +
-              `been failing repeatedly; that cap widens again on its own as candidate ` +
-              `CI recovers.`
-            : ` ${narrowed.length} of them are TEMPORARILY held at a narrowed cap ` +
-              `because their recent candidate CI has been failing repeatedly; those ` +
-              `caps widen again on their own as candidate CI recovers.`;
       banners.push({
         code: "repo-cap-starved",
         severity: "waiting",
@@ -709,7 +934,7 @@ export function buildTrainSummary(
           `${slots.available} slot${slots.available === 1 ? " is" : "s are"} ` +
           `free, but ${atCap.length} repo${atCap.length === 1 ? "" : "s"} ` +
           `(${atCap.map(shortRepo).join(", ")}) ${capClause}, ` +
-          `so the dequeue skips their queued work.${a2Clause}`,
+          `so the dequeue skips their queued work.${narrowedRepoNote(narrowed)}`,
       });
     }
   }
@@ -1181,6 +1406,50 @@ function deriveReasons(args: {
         `Fleet queue depth is ${slots.queued_depth}.`,
       prCount: queuedHere,
       oldestSecs: repoSlots?.oldest_queued_wait_seconds ?? null,
+      prNumbers: [],
+    });
+  }
+
+  // The PARTIAL cap case, which neither arm above can state.
+  //
+  // `at_repo_cap` is scoped to the HEAD of this repo's queue by coord's own
+  // definition, so a repo whose first proposal is admitted while three behind
+  // it wait on the same cap reports `at_repo_cap: false` — and the arms above
+  // then say either nothing at all (slots free) or "waiting for a slot" (slots
+  // busy), which points at the global semaphore for work its OWN cap is
+  // skipping. Freeing a global slot does not release these.
+  //
+  // A separate `if`, not another `else if`: when `at_repo_cap` is true the arm
+  // above already tells the whole story and this would only repeat it, but the
+  // saturated case is genuinely two causes at once and deserves both.
+  const blockedBehind = repoSlots?.queued_blocked_by_cap ?? 0;
+  if (slots && repoSlots && !repoSlots.at_repo_cap && blockedBehind > 0) {
+    const eff = effectiveRepoCap(repoSlots, slots);
+    reasons.push({
+      code: "queued-behind-repo-cap",
+      severity: "waiting",
+      label: eff.narrowed
+        ? "Queued behind a narrowed per-repo cap"
+        : "Queued behind the per-repo cap",
+      detail:
+        `This repo's next proposal is admitted, but ${blockedBehind} of its ` +
+        `${repoSlots.queued} queued proposal` +
+        `${repoSlots.queued === 1 ? "" : "s"} sit behind its own per-repo cap ` +
+        `${
+          eff.narrowed
+            ? `(${eff.cap}, narrowed from COORD_MERGE_PER_REPO_CAP=${slots.per_repo_cap})`
+            : `(COORD_MERGE_PER_REPO_CAP=${eff.cap})`
+        } and will be skipped on the next tick. ` +
+        `Freeing a global slot does NOT release them` +
+        `${
+          eff.narrowed
+            ? ` — and neither does this repo's in-flight work finishing, while ` +
+              `the cap stays narrowed; it widens again on its own as candidate ` +
+              `CI recovers.`
+            : `; they move as this repo's own in-flight work finishes.`
+        }`,
+      prCount: blockedBehind,
+      oldestSecs: repoSlots.oldest_queued_wait_seconds ?? null,
       prNumbers: [],
     });
   }

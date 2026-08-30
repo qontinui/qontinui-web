@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRunningTaskRuns } from "@/lib/runner-api";
 import { RunnerPartialState } from "@/components/runner/RunnerPartialState";
+import { TaskRunScopeNote } from "@/components/runner/TaskRunScopeNote";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Database, Brain, ShieldCheck, Wrench } from "lucide-react";
 import {
@@ -13,11 +14,11 @@ import {
 } from "./_components";
 
 export default function AiDataPage() {
-  const { data: runs, isLoading, isOffline } = useRunningTaskRuns();
+  const { runs, scope, isLoading, isOffline } = useRunningTaskRuns();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const effectiveRunId =
-    selectedRunId ?? (runs && runs.length > 0 ? String(runs[0]!.id) : null);
+    selectedRunId ?? (runs.length > 0 ? String(runs[0]!.id) : null);
 
   return (
     <div className="h-[calc(100vh-44px)] flex flex-col bg-background overflow-hidden">
@@ -45,6 +46,12 @@ export default function AiDataPage() {
                 <p className="text-sm">
                   Select a run from the left panel to view its AI data.
                 </p>
+                {runs.length === 0 && (
+                  <TaskRunScopeNote
+                    scope={scope}
+                    className="mt-3 max-w-sm mx-auto text-left"
+                  />
+                )}
               </div>
             </div>
           ) : (

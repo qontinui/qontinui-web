@@ -45,8 +45,17 @@
 // Wire types — mirror coord's `device_resource_samples` serde shapes exactly
 // ---------------------------------------------------------------------------
 
-/** Which instrument produced a pressure ratio. Server-decided, per lane. */
-export type PressureBasis = "swap" | "commit";
+/**
+ * Which instrument produced a ratio. Server-decided, per lane.
+ *
+ * `swap` and `commit` are the two MEMORY instruments and are the only two
+ * `pressure` ever carries. `threads` is the SATURATION axis and rides the
+ * row's `saturation` field instead — coord says so at its own definition
+ * (`PressureBasis::Threads`: *"Never produced by `lane_pressure`"*). The two
+ * are separate fields because one `basis` cannot describe a `max()` across two
+ * instruments, which is exactly why coord refused to fold them.
+ */
+export type PressureBasis = "swap" | "commit" | "threads";
 
 /**
  * A lane's normalized saturation in [0, 1], with the instrument that produced
@@ -146,8 +155,16 @@ export interface EffectiveFloor {
   reject_source?: "policy" | "default" | null;
 }
 
-/** The quantity a pressure threshold is measured on. */
-export type PressureFloorBasis = "swap_ratio";
+/**
+ * The quantity a ratio threshold is measured on.
+ *
+ * `swap_ratio` governs `pressure` on the Linux lanes. `thread_ratio` governs
+ * the SATURATION axis and is present on EVERY lane — a task table is a task
+ * table on Windows and Linux alike, and the 2026-08-27 incident was a
+ * *container* exhausting the *host's* `kernel.threads-max`, so restricting it
+ * to the Linux lanes would have left the arm that actually broke ungraded.
+ */
+export type PressureFloorBasis = "swap_ratio" | "thread_ratio";
 
 /**
  * A threshold expressed as a **ratio on the same axis `pressure` already
@@ -199,7 +216,7 @@ export type Headroom = "ok" | "warn" | "breach" | "unknown";
  * rejects at its floor — so the strip says it.
  */
 export const HEADROOM_MEANING: Record<Headroom, string> = {
-  ok: "above both floors — work is being accepted",
+  ok: "above every floor coord could evaluate — memory, disk and task saturation — so work is being accepted",
   warn: "at or below the deferring floor (or within the server's amber margin above it) — work waits for headroom rather than failing",
   breach:
     "at or below the rejecting floor — a guard is refusing work right now, so builds fail here",
@@ -233,6 +250,31 @@ export interface ResourceSampleRow {
   build_slots_busy: number | null;
   build_queue_depth: number | null;
   ci_jobs_running: number | null;
+  /**
+   * Raw saturation counts, carried so the row can print the MAGNITUDE
+   * ("190,840 / 192,146") the ratio alone cannot convey.
+   *
+   * `null` until the device's runner is next rebuilt — **unmeasured, never
+   * zero**. Optional on the wire because a coord that predates the saturation
+   * axis sends no such key at all, and "the publisher has no probe" and "coord
+   * never mentioned it" are different facts (`classifySaturation`).
+   */
+  threads_max?: number | null;
+  threads_used?: number | null;
+  /** A cgroup (`pids.max`) or Windows job-object ceiling, where one binds. */
+  pids_max?: number | null;
+  pids_used?: number | null;
+  /**
+   * WHICH instrument produced the counts — `"cgroup"` | `"proc"` |
+   * `"job_object"`, or null.
+   *
+   * Not bookkeeping. Coord's own words: `"cgroup"` counts **tasks (threads)**
+   * and `"proc"` counts **thread-group leaders**, and they are different
+   * quantities — so a publisher whose cgroup probe fails and falls back to
+   * `/proc` emits a number that can differ from the previous tick by an order
+   * of magnitude with nothing else in the row saying so.
+   */
+  saturation_source?: string | null;
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
@@ -255,8 +297,34 @@ export interface ResourceSampleRow {
    */
   pressure_floor?: EffectivePressureFloor | null;
   /**
-   * SERVER-decided admission state. The row's colour comes from THIS, not
-   * from `pressure` — see the module header.
+   * **SERVER-computed** — the THIRD axis, and the one instrumentally
+   * independent of memory. `threads_used / threads_max`, falling back to the
+   * `pids_*` pair where a cgroup or job-object ceiling is the binding one.
+   *
+   * Sibling to `pressure`, never folded into it. `null` = no saturation
+   * opinion (absent or non-positive ceiling, absent count, a lane coord does
+   * not rank) and renders as **unknown, never healthy**.
+   *
+   * On 2026-08-27 this read 0.993 while every memory instrument on the same
+   * machine read ≤ 21%. That independence is the whole justification for the
+   * axis: a metric that co-varies with an existing one adds no coverage.
+   */
+  saturation?: LanePressure | null;
+  /**
+   * The lane's effective SATURATION threshold. Present on every lane, with a
+   * REAL verdict — coord's dispatch ranking reads this axis, so a machine at
+   * or above it is ranked last and the dispatch re-homed.
+   *
+   * **The number lives here and nowhere else.** This module holds no
+   * saturation threshold of its own; putting coord's 0.80 in TypeScript is
+   * §C1's exact defect (a correctly-shared ratio with an unshared threshold,
+   * where the strip disagreed with the dispatcher anyway) one axis over.
+   */
+  saturation_floor?: EffectivePressureFloor | null;
+  /**
+   * SERVER-decided admission state — worst-of across ALL THREE axes. The
+   * row's colour comes from THIS, not from `pressure` and not from
+   * `saturation` — see the module header.
    */
   headroom?: Headroom | null;
 }
@@ -403,9 +471,11 @@ export function classifyFreshness(
 // Pressure presentation — label it, tone it, NEVER recompute it
 // ---------------------------------------------------------------------------
 
-/** Short column label for the instrument a row's pressure came from. */
+/** Short column label for the instrument a row's ratio came from. */
 export function pressureLabel(basis: PressureBasis): string {
-  return basis === "swap" ? "swap used" : "commit used";
+  if (basis === "swap") return "swap used";
+  if (basis === "threads") return "tasks used";
+  return "commit used";
 }
 
 /**
@@ -413,11 +483,17 @@ export function pressureLabel(basis: PressureBasis): string {
  * showing: the lead column means `swap_used/swap_total` on `wsl`/`container`
  * and `1 − commit_available/commit_total` on `host`, and a strip that hides
  * that is a new version of the dashboard this plan exists to end.
+ *
+ * The saturation axis needs it for a further reason coord states outright: a
+ * `threads` ratio and a `pids` ratio are DIFFERENT QUANTITIES (tasks vs
+ * thread-group leaders), so the row has to say which pair it divided.
  */
 export function pressureFormula(basis: PressureBasis): string {
-  return basis === "swap"
-    ? "swap_used / swap_total"
-    : "1 − commit_available / commit_total";
+  if (basis === "swap") return "swap_used / swap_total";
+  if (basis === "threads") {
+    return "threads_used / threads_max (or pids_used / pids_max)";
+  }
+  return "1 − commit_available / commit_total";
 }
 
 /**
@@ -449,6 +525,184 @@ export function hasPressureValue(
     freshness !== "unknown" && !!pressure && Number.isFinite(pressure.ratio)
   );
 }
+
+// ---------------------------------------------------------------------------
+// Saturation — the THIRD axis, and the one the 2026-08-27 incident was on
+// ---------------------------------------------------------------------------
+//
+// Plan `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`,
+// Phase 5. On that date the operator box sat at 190,840 / 192,146 kernel tasks
+// — 99.3% — and no process in the WSL VM could `fork()`. Every reading this
+// surface showed was ACCURATE and every one was about MEMORY: 73.3 GB of
+// 125.6 GB free commit on the host lane, `vmmemWSL` at ~21% of its ceiling.
+// The fleet had a dimension it could saturate while every gauge read healthy.
+//
+// Everything below is presentation. The ratio is coord's (`lane_saturation`),
+// the threshold is coord's (`saturation_floor`), and the verdict is coord's
+// (`headroom`, now worst-of over three axes). **This module still holds no
+// threshold constant of its own** — that is the §C1 defect, and adding one for
+// the new axis would reintroduce it exactly.
+
+/**
+ * What a row can say about the saturation axis. FOUR states, because they have
+ * four causes and only one of them is a measurement.
+ *
+ * * `measured` — coord sent a ratio.
+ * * `gap` — the publisher measured SOMETHING (a ceiling, or a count) but coord
+ *   could not form a ratio. A REAL gap: a ceiling with a missing count is a
+ *   probe that failed, and coord grades it `unknown` rather than skipping it.
+ * * `unmeasured` — coord reported the fields and every one is null: a
+ *   publisher that predates the saturation probe entirely. **Every machine in
+ *   the fleet is such a publisher until its runner is next rebuilt**, and no
+ *   running runner may be restarted to hurry that. This is the expected state
+ *   of the whole fleet during the activation window.
+ * * `unreported` — the row carries no saturation keys at all: a coord that
+ *   predates the axis.
+ *
+ * All four that are not `measured` render **unknown, and never green**. The
+ * split only picks the wording, exactly as `headroomReport` does one field
+ * over — but the wording is what tells an operator whether to rebuild a
+ * runner, chase a failing probe, or upgrade coord.
+ */
+export type SaturationReport = "measured" | "gap" | "unmeasured" | "unreported";
+
+/** The wire fields that carry a raw saturation count or ceiling. */
+const SATURATION_COUNT_KEYS = [
+  "threads_used",
+  "threads_max",
+  "pids_used",
+  "pids_max",
+] as const;
+
+type SaturationCarrier = Partial<
+  Pick<
+    ResourceSampleRow,
+    | "saturation"
+    | "threads_used"
+    | "threads_max"
+    | "pids_used"
+    | "pids_max"
+    | "saturation_source"
+  >
+>;
+
+/**
+ * Whether coord actually formed a saturation ratio for this row.
+ *
+ * Mirrors `hasPressureValue`: a non-finite ratio is also "no magnitude", and
+ * it would otherwise print as `NaN%`.
+ */
+export function hasSaturationValue(
+  saturation: LanePressure | null | undefined
+): saturation is LanePressure {
+  return !!saturation && Number.isFinite(saturation.ratio);
+}
+
+export function classifySaturation(
+  row: SaturationCarrier | null | undefined
+): SaturationReport {
+  if (!row) return "unreported";
+  if (hasSaturationValue(row.saturation)) return "measured";
+  const counts = SATURATION_COUNT_KEYS.map((k) => row[k]);
+  if (row.saturation === undefined && counts.every((v) => v === undefined)) {
+    return "unreported";
+  }
+  // Null-but-present on every instrument: nothing to measure yet, as opposed
+  // to a measurement that failed. Coord draws the same distinction server-side
+  // (`SaturationInputs::is_unmeasured`) and uses it to skip GRADING the axis,
+  // so that a fleet-wide activation window does not destroy every row's
+  // memory and disk verdicts.
+  if (counts.every((v) => v == null)) return "unmeasured";
+  return "gap";
+}
+
+/**
+ * Which `used / max` pair coord divided, resolved the SAME way coord resolves
+ * it — threads first, `pids` only as the fallback.
+ *
+ * Spelled to match `lane_saturation`'s `.or_else` rather than "whichever is
+ * populated": printing the pids pair beside a ratio computed from threads
+ * would caption the number with counts it did not come from, and coord is
+ * explicit that the two are different quantities.
+ */
+export function saturationCounts(row: SaturationCarrier | null | undefined): {
+  used: number;
+  max: number;
+  kind: "threads" | "pids";
+} | null {
+  if (!row) return null;
+  const pairs = [
+    { used: row.threads_used, max: row.threads_max, kind: "threads" as const },
+    { used: row.pids_used, max: row.pids_max, kind: "pids" as const },
+  ];
+  for (const p of pairs) {
+    if (
+      typeof p.used === "number" &&
+      Number.isFinite(p.used) &&
+      typeof p.max === "number" &&
+      Number.isFinite(p.max) &&
+      p.max > 0
+    ) {
+      return { used: p.used, max: p.max, kind: p.kind };
+    }
+  }
+  return null;
+}
+
+const COUNT_FORMAT = new Intl.NumberFormat("en-US");
+
+/**
+ * `"190,840 / 192,146 threads"` — the magnitude the ratio cannot convey.
+ *
+ * §C1's rule ("a ratio against its own ceiling, never a bare count") is
+ * honoured by construction: the ceiling is printed beside the count, and this
+ * only ever appears alongside the percentage coord computed.
+ */
+export function formatSaturationCounts(
+  row: SaturationCarrier | null | undefined
+): string {
+  const c = saturationCounts(row);
+  if (!c) return "—";
+  return `${COUNT_FORMAT.format(c.used)} / ${COUNT_FORMAT.format(c.max)} ${c.kind}`;
+}
+
+/**
+ * The instrument label for `saturation_source`, or an explicit statement that
+ * coord did not say.
+ *
+ * Withheld rather than guessed on purpose: without it `threads_used` changes
+ * meaning silently when a publisher's cgroup probe fails and falls back to
+ * `/proc`, and a reader who assumes one scope compares two different
+ * quantities across ticks.
+ */
+export function saturationSourceLabel(
+  source: string | null | undefined
+): string {
+  if (source === "cgroup") return "cgroup (counts tasks/threads)";
+  if (source === "proc") return "/proc (counts thread-group leaders)";
+  if (source === "job_object") return "Windows job object";
+  if (source == null) return "instrument not reported";
+  return `instrument unknown (${source})`;
+}
+
+/** Operator-facing wording for a saturation axis that carries no ratio. */
+export const SATURATION_REPORT_MEANING: Record<SaturationReport, string> = {
+  measured: "coord computed this ratio from the counts this row carries.",
+  gap:
+    "this publisher HAS a saturation probe and coord could not form a ratio " +
+    "from what it sent — a ceiling without its count, or a count without a " +
+    "ceiling. A failed measurement, not an absent one, and coord grades it " +
+    "unknown rather than skipping it.",
+  unmeasured:
+    "this machine's publisher predates the saturation probe: it reports no " +
+    "task count and no ceiling. Every runner reads this way until it is next " +
+    "rebuilt, and no running runner may be restarted to hurry that. Unknown " +
+    "is the correct reading for this window — it is NOT healthy, and it is " +
+    "NOT zero.",
+  unreported:
+    "coord did not report this axis at all — a coord that predates it. " +
+    "Unknown, not unguarded.",
+};
 
 // ---------------------------------------------------------------------------
 // Admission — the VERDICT, which the server owns end to end
@@ -559,6 +813,7 @@ export function formatWarnMargin(margin: number | null | undefined): string {
 
 export const PRESSURE_FLOOR_BASIS_LABEL: Record<PressureFloorBasis, string> = {
   swap_ratio: "swap used",
+  thread_ratio: "of the task ceiling",
 };
 
 /**
@@ -571,7 +826,9 @@ export const PRESSURE_FLOOR_BASIS_LABEL: Record<PressureFloorBasis, string> = {
 export function pressureAxisLabel(
   basis: PressureFloorBasis | string | null | undefined
 ): string {
-  return basis === "swap_ratio" ? "swap" : String(basis ?? "pressure");
+  if (basis === "swap_ratio") return "swap";
+  if (basis === "thread_ratio") return "saturation";
+  return String(basis ?? "pressure");
 }
 
 /** True when this basis is the derived-on-Windows swap figure §C1 suppresses. */
