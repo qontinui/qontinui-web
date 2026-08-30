@@ -301,6 +301,22 @@ export interface ResourceSampleRow {
    * Same absence rule as `thread_count`: `null`/absent is UNKNOWN, never `0`.
    */
   active_terminal_sessions?: number | null;
+  /**
+   * SERVER-computed grade of `thread_count` against `thread_ceiling` — the
+   * graded twin of the raw count, and the only honest way to colour it.
+   *
+   * Deliberately its OWN field and deliberately NOT folded into `headroom`.
+   * `headroom` means "a guard is acting on this" — `HEADROOM_MEANING.breach`
+   * tells the operator work is being refused and builds fail here. Nothing
+   * enforces the thread ceiling on the coord side: this axis is observability,
+   * and the throttle that acts on it is runner-local and invisible from here.
+   * Folding it in would have announced a refusal that is not happening, which
+   * is the §C3 disagreement in mirror form — so the grade travels beside
+   * `headroom`, never inside it.
+   *
+   * Absent from any coord that predates it, and absent is UNKNOWN, never `ok`.
+   */
+  thread_headroom?: Headroom | null;
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
@@ -749,6 +765,25 @@ export function rowHeadroom(
   row: Pick<ResourceSampleRow, "headroom"> | null | undefined
 ): Headroom {
   const h = row?.headroom;
+  if (typeof h !== "string" || !HEADROOM_VALUES.has(h)) return "unknown";
+  return h as Headroom;
+}
+
+/**
+ * The THREAD axis's own grade, read with exactly the same discipline as
+ * [`rowHeadroom`]: an absent field (a coord that predates it) and an
+ * unrecognised word (a coord ahead of this build) both read `unknown`, never
+ * `ok`. A client that reads silence as "fine" is the false-safe §C3 forbids.
+ *
+ * Kept separate from `rowHeadroom` rather than parameterised over the key,
+ * because the two answer different questions — one is "is a guard refusing
+ * work", the other is "how close is that process to the ceiling nothing
+ * enforces" — and a shared accessor would invite folding them back together.
+ */
+export function threadHeadroom(
+  row: Pick<ResourceSampleRow, "thread_headroom"> | null | undefined
+): Headroom {
+  const h = row?.thread_headroom;
   if (typeof h !== "string" || !HEADROOM_VALUES.has(h)) return "unknown";
   return h as Headroom;
 }

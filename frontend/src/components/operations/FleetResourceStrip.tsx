@@ -128,6 +128,7 @@ import {
   SATURATION_REPORT_MEANING,
   saturationSourceLabel,
   STALE_AFTER_SECS,
+  threadHeadroom,
 } from "./fleetResources";
 import type {
   FleetDeviceRef,
@@ -149,6 +150,21 @@ const TONE_DOT: Record<RowTone, string> = {
   warn: "bg-yellow-500",
   critical: "bg-red-500",
   unknown: "bg-muted-foreground/50",
+};
+
+/**
+ * Tone for a NUMBER rendered inline, used by the threads cell.
+ *
+ * `ok` is deliberately not green: the row stripe already carries the admission
+ * verdict, and a green number here would read as a second all-clear for an
+ * axis no guard enforces. An ordinary reading gets ordinary type; only warn
+ * and breach earn colour.
+ */
+const TONE_NUMBER: Record<RowTone, string> = {
+  ok: "",
+  warn: "text-yellow-600 dark:text-yellow-500",
+  critical: "text-red-600 dark:text-red-500",
+  unknown: "text-muted-foreground",
 };
 
 // There is deliberately no tone map for the PRESSURE text any more. Colouring
@@ -1665,8 +1681,21 @@ export function FleetResourceStrip({
                         <td className="py-1.5 pr-3 tabular-nums text-[11px]">
                           {s ? (
                             <Aged freshness={row.freshness}>
-                              {s.thread_count ?? (
+                              {s.thread_count == null ? (
                                 <span className="text-muted-foreground">—</span>
+                              ) : (
+                                <span
+                                  className={
+                                    TONE_NUMBER[
+                                      headroomTone(
+                                        row.freshness,
+                                        threadHeadroom(s)
+                                      )
+                                    ]
+                                  }
+                                >
+                                  {s.thread_count}
+                                </span>
                               )}
                               <span className="text-muted-foreground">
                                 {" / "}
