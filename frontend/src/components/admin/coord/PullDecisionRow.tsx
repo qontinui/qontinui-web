@@ -71,6 +71,7 @@ export function PullDecisionRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={<span title={row.repo ?? "no repo recorded"}>{pullIdentity(row.repo)}</span>}
       label={
         <span title={row.rationale ?? undefined}>

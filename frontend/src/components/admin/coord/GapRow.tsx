@@ -182,6 +182,7 @@ export function GapRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={category}
       label={
         <span title={question.question}>{truncate(question.question, 160)}</span>

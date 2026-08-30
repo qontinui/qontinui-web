@@ -61,7 +61,7 @@ import {
   RowTime,
   StatusBadge,
   isNotFoundError,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -204,12 +204,10 @@ export default function CoordQuestionDetailPage() {
               at a glance about whether an agent is stopped. */}
           <div
             data-testid="coord-question-meta"
-            className={[
-              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
-              rowAccentClass(status),
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            {...rowAccentProps(
+              status,
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2"
+            )}
           >
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />

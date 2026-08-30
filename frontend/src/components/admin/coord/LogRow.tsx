@@ -47,7 +47,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import { LevelBadge } from "@/components/admin/coord/LevelBadge";
-import { RecordDetail, RecordRow, RowTime } from "@/components/console";
+import {
+  RecordDetail,
+  RecordRow,
+  RowTime,
+  rowAccentClass,
+  type Attention,
+} from "@/components/console";
 
 export interface AgentLogRow {
   log_id?: string | number;
@@ -78,16 +84,26 @@ function shortId(id?: string | null, take = 8): string {
 /**
  * The left-edge accent, by log level. This is R4's mechanism, and the mapping
  * is R3's: `error` is the only level a human must act on, `warn` is the one
- * that says something else is degrading. `rowAccentClass` is not reused here
- * because a log line carries a LEVEL, not a `RowStatus` with an attention —
- * the level IS the severity model on this surface, and inventing a kind union
- * to wrap five well-known strings would be ceremony, not safety.
+ * that says something else is degrading.
+ *
+ * A log line carries a LEVEL, not a `RowStatus` — the level IS the severity
+ * model on this surface, and inventing a kind union to wrap five well-known
+ * strings would be ceremony, not safety. So this maps level → **attention**
+ * and hands that to the shared accent, rather than hand-spelling the border
+ * literals as it used to: §4.1 is explicit that nothing outside `statusRow`
+ * may mint a red or an amber, and two of these three lines were doing exactly
+ * that. Tint drift here would have passed every audit, because
+ * `paletteDisagreements` only ever sees a kind→class table and this file has
+ * none.
+ *
+ * It also means the row gets `data-attention` for free, on the same terms as
+ * every other console row.
  */
-function levelAccent(level?: string): string {
+function levelAttention(level?: string): Attention {
   const l = (level ?? "info").toLowerCase();
-  if (l === "error") return "border-l-2 border-l-red-500/80";
-  if (l === "warn" || l === "warning") return "border-l-2 border-l-amber-500/80";
-  return "";
+  if (l === "error") return "author";
+  if (l === "warn" || l === "warning") return "waiting";
+  return "none";
 }
 
 /** A one-line preview of the payload, for the row's `reason` slot. */
@@ -127,7 +143,8 @@ export function LogRow({
       rowKey={String(log.log_id ?? `${log.agent_id}-${occurredAt ?? ""}`)}
       expanded={expanded}
       onToggle={onToggle}
-      accent={levelAccent(log.level)}
+      accent={rowAccentClass({ attention: levelAttention(log.level) })}
+      attention={levelAttention(log.level)}
       // The level IS this row's identity chip: it is the one short token that
       // classifies a log line, and `<RecordRow>` supplies the chip chrome
       // around it (hence `inline` — see `LevelBadge`).

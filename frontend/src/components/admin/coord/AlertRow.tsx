@@ -221,6 +221,7 @@ export function AlertRow({
       onToggle={onToggle}
       className={alert.resolved_at ? "opacity-60" : undefined}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={severityChip(alert.severity)}
       label={
         <span

@@ -74,6 +74,7 @@ export function TreeRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={tree.repo}
       label={
         <span className="font-mono text-xs" title={tree.primary_path}>

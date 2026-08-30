@@ -85,6 +85,7 @@ export function SpawnPlanRow({
           expanded={expanded}
           onToggle={onToggle}
           accent={rowAccentClass(status)}
+          attention={status.attention}
           identity={planIdentity(plan.slug)}
           label={
             <span

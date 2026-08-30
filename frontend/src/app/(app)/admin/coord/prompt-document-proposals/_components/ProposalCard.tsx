@@ -118,6 +118,7 @@ export function ProposalCard({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={proposal.doc_kind}
       label={
         <span title={`${proposal.doc_kind}/${proposal.doc_name}`}>

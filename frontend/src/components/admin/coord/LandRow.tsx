@@ -257,6 +257,7 @@ export function LandRow({
       expanded={expanded}
       onToggle={onToggle}
       accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={
         <span title={`${action} — ${sig.repo ?? "no repo recorded"}`}>
           {landIdentity(row)}
