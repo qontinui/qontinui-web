@@ -53,6 +53,11 @@ describe("CoordNotificationsPage", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpPost.mockReset();
+    // The page reads `?ref=` from `window.location` once on mount, and the
+    // `?ref=` block below sets it. Reset here rather than there so the URL is
+    // known-clean for EVERY test in the file, not just the ones that follow a
+    // block that remembered to clean up after itself.
+    window.history.replaceState({}, "", "/");
   });
 
   it("reads total and unread_count from the envelope, not the page length", async () => {
@@ -606,11 +611,16 @@ describe("CoordNotificationsPage", () => {
   });
 
   describe("the ?ref= banner", () => {
-    // The banner reads `window.location` once on mount.
+    // The banner reads `window.location` once on mount. The outer `beforeEach`
+    // puts the URL back to `/` for every test in the file, so this leaves no
+    // residue for whatever is added after it.
     function withRef(ref: string) {
-      window.history.replaceState({}, "", `/admin/coord/notifications?ref=${ref}`);
+      window.history.replaceState(
+        {},
+        "",
+        `/admin/coord/notifications?ref=${ref}`
+      );
     }
-    beforeEach(() => window.history.replaceState({}, "", "/"));
 
     it("blames the feed only when the FEED failed, not when mark-read did", async () => {
       // `error` is the page's one error line and mark-read writes to it, so
