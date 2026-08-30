@@ -98,8 +98,10 @@ interface PlansListResponse {
 export default function CoordSpawnPage() {
   const [status, setStatus] = useState("in_progress");
   const [data, setData] = useState<PlansListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // No `loading` flag, for the reason `/plans` gives: "a request is
+  // outstanding" is not "this question has been answered", and only the second
+  // may decide whether the page is allowed to state an absence.
 
   const [spawnTarget, setSpawnTarget] = useState<CoordPlanRow | null>(null);
   /** Unanchored spawn — the modal opens with no plan seeded at all. Kept
@@ -134,8 +136,6 @@ export default function CoordSpawnPage() {
     } catch (e) {
       if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (question === questionGen.current) setLoading(false);
     }
   }, [status]);
 
@@ -152,8 +152,11 @@ export default function CoordSpawnPage() {
     questionGen.current += 1;
     setData(null);
     setError(null);
-    setLoading(true);
-    void fetchData();
+    // The first read holds the lock too — see `/plans`.
+    pollInFlight.current = true;
+    void fetchData().finally(() => {
+      pollInFlight.current = false;
+    });
     const id = setInterval(() => {
       if (pollInFlight.current) return;
       pollInFlight.current = true;
@@ -161,7 +164,10 @@ export default function CoordSpawnPage() {
         pollInFlight.current = false;
       });
     }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      pollInFlight.current = false;
+    };
   }, [fetchData]);
 
   const plans = useMemo(() => data?.work_units ?? data?.plans ?? [], [data]);
@@ -242,7 +248,12 @@ export default function CoordSpawnPage() {
         <RecordList
           items={plans}
           itemKey={(p) => p.slug}
-          loaded={!(loading && !data)}
+          // Answered, never "not loading" — see `/plans`' note. A read
+          // overtaken by a newer one of the same question is dropped without
+          // setting either, and a request-tracking flag would let this slot
+          // claim "No plans matching status=X." for a question coord has never
+          // answered.
+          loaded={data !== null || error !== null}
           skeletonRows={6}
           empty={
             plansUnknown ? (

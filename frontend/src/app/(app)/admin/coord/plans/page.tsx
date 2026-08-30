@@ -105,8 +105,13 @@ export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("created_desc");
   const [data, setData] = useState<PlansListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // There is deliberately no `loading` flag. It used to gate the list's
+  // `loaded` prop, and the two questions it conflated are what let a
+  // fabricated absence through: "is a request outstanding?" is not "has this
+  // question been answered?", and only the second one may decide whether the
+  // page is allowed to say "no plans match". `data !== null || error !== null`
+  // answers the second directly, so the flag had no reader left.
 
   /**
    * Generation guard — a read may only speak while it is still the newest one.
@@ -129,25 +134,26 @@ export default function CoordPlansListPage() {
    * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
    * job here — `http-client.ts` overwrites the caller's `signal`.
    *
-   * **TWO counters, because the three things being gated are not one
-   * question.** A single per-request counter silences a read in all three
-   * arms, and that is how a page ends up stuck: `httpClient`'s request timeout
-   * is 60s and its 5xx retry spends ~7s in backoff over four round trips, both
-   * far longer than this page's 10s tick, so under a slow or retrying backend
-   * every read is superseded before it settles, `setLoading(false)` never
-   * runs, and the page sits on skeletons and "Waiting for coord…" with the
-   * error never surfaced. That is exactly the defect `readFailed` exists to
-   * prevent — `plansHealth.tsx`: *"a first load that errors leaves `loaded`
-   * false and renders 'Waiting for coord…' over a request that is never
-   * arriving"* — re-created by the fix for a different one.
+   * **TWO counters, because the two things being gated are not one question.**
+   * A single per-request counter silences a read in every arm at once, and
+   * that is how a page ends up stuck: `httpClient`'s request timeout is 60s
+   * and its 5xx retry spends ~7s in backoff over four round trips, both far
+   * longer than this page's 10s tick, so under a slow or retrying backend
+   * every read is superseded before it settles and the failure is never
+   * surfaced at all — the page waits on coord forever with nothing to show for
+   * it. That is exactly the defect `readFailed` exists to prevent —
+   * `plansHealth.tsx`: *"a first load that errors leaves `loaded` false and
+   * renders 'Waiting for coord…' over a request that is never arriving"* —
+   * re-created by the fix for a different one.
    *
    * So:
    *
    *   - `questionGen` (bumped in the effect, once per FILTER change) gates the
-   *     error and the loading flag. "This read failed" and "stop showing
-   *     skeletons" are true for any read of the filter currently on screen,
-   *     whether or not a newer request has overtaken it.
-   *   - `reqGen` (bumped per call) gates `setData` alone, so the newest
+   *     ERROR. "This read failed" is true of the filter currently on screen
+   *     whether or not a newer request has overtaken it, so an overtaken
+   *     failure still gets to speak; a failure belonging to a filter the
+   *     operator has left does not.
+   *   - `reqGen` (bumped per call) additionally gates `setData`, so the newest
    *     response is the one rendered and two overlapping reads cannot land out
    *     of order.
    *
@@ -179,12 +185,6 @@ export default function CoordPlansListPage() {
     } catch (e) {
       if (question !== questionGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      // A read of a filter the operator has left may not say the page has
-      // finished loading: the reset has just put the skeletons back up for the
-      // NEW question, and clearing them here would answer it with the empty
-      // list nobody has fetched yet. Any read of the CURRENT filter may.
-      if (question === questionGen.current) setLoading(false);
     }
   }, [status]);
 
@@ -208,8 +208,14 @@ export default function CoordPlansListPage() {
     questionGen.current += 1;
     setData(null);
     setError(null);
-    setLoading(true);
-    void fetchData();
+    // The FIRST read holds the lock too. Without that a tick 10s in issues a
+    // second read of the same question while the first is still out, and the
+    // first is then dropped for being superseded — which is only ever safe
+    // when nothing downstream mistakes "no answer yet" for "no answer".
+    pollInFlight.current = true;
+    void fetchData().finally(() => {
+      pollInFlight.current = false;
+    });
     const id = setInterval(() => {
       // A tick that outruns the previous read would otherwise stack: the
       // request timeout is 60s against a 10s interval, so a hung backend
@@ -220,7 +226,13 @@ export default function CoordPlansListPage() {
         pollInFlight.current = false;
       });
     }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      // The lock was taken for a question that is over. Leaving it set would
+      // have the new question's first few ticks skip while a read nobody is
+      // waiting for finishes — bounded by the 60s timeout, but pointless.
+      pollInFlight.current = false;
+    };
   }, [fetchData]);
 
   const plans = useMemo(
@@ -356,7 +368,16 @@ export default function CoordPlansListPage() {
       <RecordList
         items={sorted}
         itemKey={(p) => p.slug}
-        loaded={!(loading && !data)}
+        // "Has this question been ANSWERED, one way or the other?" — never
+        // "is a request outstanding?". The two diverge, and the gap is where a
+        // fabricated absence gets in: a read overtaken by a newer request of
+        // the SAME question is dropped without setting `data` or `error`, so a
+        // flag tracking requests would report "not loading" over a question
+        // coord has never answered, and this slot would render the plain "No
+        // plans matching status=X." underneath a strip still reading "Waiting
+        // for coord…". Derived from the answer instead, that state is what it
+        // is — still waiting, so still skeletons.
+        loaded={data !== null || error !== null}
         skeletonRows={6}
         empty={
           plansUnknown ? (

@@ -201,9 +201,14 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(strip.textContent ?? "").not.toMatch(
       /No agent is waiting on an answer/i
     );
-    // The stale headline: what was measured, and when — not a verdict.
-    expect(strip).toHaveTextContent(/Nothing was waiting at the last good read/i);
-    expect(strip).toHaveTextContent(/has not refreshed since/i);
+    // The stale headline names the READ that has not come back, and stops
+    // there. It deliberately does not say what was waiting at the last good
+    // read: `blockingGaps` counts `visibleGaps`, which `handledGaps` filters
+    // optimistically, so that sentence could be false about the read it names.
+    expect(strip).toHaveTextContent(
+      /gaps inbox has not refreshed since the last good read/i
+    );
+    expect(strip).toHaveTextContent(/not clear, just not re-read/i);
     // The count coord DID answer survives, named as stale rather than dashed.
     expect(strip).toHaveTextContent(/gaps\s*0/);
     expect(strip).toHaveTextContent(/Last refresh failed for: gaps/);
@@ -386,6 +391,51 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     expect(
       screen.getByTestId("coord-questions-health")
     ).toHaveTextContent(/answered\s*–/);
+  });
+
+  it("dates the gaps and answered lists too when their reads go stale", async () => {
+    // The two stale slots behind a tab click. Both lists answer once and then
+    // go dark, so each falls in the STALE arm rather than the unknown one —
+    // the plain copy would claim "No policy gaps reported." and "No
+    // recently-answered questions." in the present tense off reads that are
+    // currently failing.
+    let gapCalls = 0;
+    let answeredCalls = 0;
+    get.mockImplementation(async (url: string) => {
+      if (url.includes("gap=true")) {
+        gapCalls += 1;
+        // Two reads make one `fetchGaps`; the first pair lands, the rest fail.
+        if (gapCalls > 2) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      if (url.includes("/answered")) {
+        answeredCalls += 1;
+        if (answeredCalls > 1) throw new Error("coord unreachable");
+        return { questions: [] };
+      }
+      return { questions: [] };
+    });
+    const user = userEvent.setup();
+    render(<CoordQuestionsPage />);
+
+    await screen.findByTestId("coord-questions-health");
+    await user.click(screen.getByTestId("coord-questions-refresh"));
+
+    await user.click(screen.getByTestId("coord-questions-tab-gaps"));
+    const gapsStale = await screen.findByTestId("coord-questions-gaps-stale");
+    expect(gapsStale).toHaveTextContent(/not an all-clear/i);
+    expect(screen.queryByTestId("coord-questions-gaps-empty")).toBeNull();
+    expect(screen.queryByTestId("coord-questions-gaps-unreadable")).toBeNull();
+
+    await user.click(screen.getByTestId("coord-questions-tab-answered"));
+    const answeredStale = await screen.findByTestId(
+      "coord-questions-answered-stale"
+    );
+    expect(answeredStale).toHaveTextContent(/as of the last good read/i);
+    expect(screen.queryByTestId("coord-questions-answered-empty")).toBeNull();
+    expect(
+      screen.queryByTestId("coord-questions-answered-unreadable")
+    ).toBeNull();
   });
 
   it("says the pending list is unreadable instead of 'No pending questions'", async () => {
