@@ -54,6 +54,16 @@
  *   for such a lane is still shown (with a note that the row's pressure
  *   figure is a different instrument), because withholding a rule the
  *   dispatcher enforces is the worse error. A threshold is not a measurement.
+ * - **The SATURATION axis renders `unknown`, never green, until each machine's
+ *   runner is rebuilt.** Added by plan
+ *   `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`: a
+ *   pre-Phase-3 publisher sends NULL task counts, so every lane in the fleet
+ *   reads unknown on this column through the whole activation window, and no
+ *   running runner may be restarted to hurry that. That window must not be
+ *   papered over with an `ok` — it is the state the `runner_served_sha` gate
+ *   exists to watch. Its unknown-ness also does NOT destroy the memory and
+ *   disk verdicts on the same row; coord skips grading an axis nothing
+ *   measured, and the row keeps the verdicts it can honestly make.
  * - A `wsl` lane's headroom is never shown as spendable on its own:
  *   `pageReporting=true` couples the lanes, so the coupled
  *   `min(wsl_free, host_free_commit)` is shown beside the raw figure.
@@ -80,8 +90,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { CollapsiblePanel } from "@/components/console";
+import { deviceStateBadgeVariant } from "./FleetHealthSummary";
 import {
   buildMachineGroups,
+  classifySaturation,
   coupledWslHeadroomBytes,
   describeFloor,
   describePressureFloor,
@@ -89,9 +101,11 @@ import {
   formatBytes,
   formatPercent,
   formatRatioOfCeiling,
+  formatSaturationCounts,
   formatWarnMargin,
   FLOOR_VERDICT_HINT,
   hasPressureValue,
+  hasSaturationValue,
   headroomReport,
   headroomTone,
   HEADROOM_LABEL,
@@ -105,6 +119,8 @@ import {
   rowAnchor,
   rowHeadroom,
   safeRatio,
+  SATURATION_REPORT_MEANING,
+  saturationSourceLabel,
   STALE_AFTER_SECS,
 } from "./fleetResources";
 import type {
@@ -409,6 +425,111 @@ function PressureCell({ row }: { row: StripRow }) {
           Computed by coord, not by this page — the CI dispatcher ranks on the
           same value. It is a magnitude, not a verdict: whether this lane
           accepts work is the Admission column.
+        </div>
+        {stale && (
+          <div className="text-yellow-600 dark:text-yellow-400">
+            STALE: this is the last value, not the current one.
+          </div>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * The THIRD axis: how much of the lane's TASK CEILING is spent.
+ *
+ * Plan `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`,
+ * Phase 5. This column did not exist on 2026-08-27, which is why a machine at
+ * 190,840 / 192,146 kernel tasks — 99.3%, no process in the VM able to
+ * `fork()` — rendered green on every lane of this table. Every number the
+ * table showed that day was accurate; every one was about memory.
+ *
+ * Like `PressureCell` it is a MAGNITUDE and is deliberately **not**
+ * colour-toned: the tone belongs to the Admission column, which carries
+ * coord's verdict. And like every other cell here it computes nothing — the
+ * ratio is coord's `lane_saturation`, and the threshold it is graded against
+ * lives in coord's `saturation_floor`, never here.
+ *
+ * **Unknown never renders green.** Four different absences (`classifySaturation`)
+ * all render the same muted `unknown`; only the wording differs, because only
+ * the wording tells an operator whether to rebuild a runner, chase a failing
+ * probe, or upgrade coord. The whole fleet reads `unmeasured` here until each
+ * machine's runner is next rebuilt, and that is CORRECT.
+ */
+function SaturationCell({ row }: { row: StripRow }) {
+  const sample = row.sample;
+  const report = classifySaturation(sample);
+  const saturation = sample?.saturation ?? null;
+
+  if (row.freshness === "unknown" || !hasSaturationValue(saturation)) {
+    // A sample too old to trust outranks whatever the axis last said, for the
+    // same reason every other cell on the row is withheld: coord computed it
+    // against numbers that have stopped being true.
+    const cause = row.freshness === "unknown" ? "stale-sample" : report;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className="inline-flex items-center gap-1.5 text-muted-foreground underline decoration-dotted"
+            data-testid="fleet-resource-saturation-unknown"
+            data-saturation-report={cause}
+          >
+            unknown
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+          <div>
+            {row.freshness === "unknown"
+              ? "This machine's newest sample is too old to mean anything, so the saturation axis is unknown along with everything else on the row."
+              : SATURATION_REPORT_MEANING[report]}
+          </div>
+          <div className="text-muted-foreground">
+            Absence of signal is not health. Unknown here is never green, and
+            never zero — a zero would rank an unmeasured machine FIRST.
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  const stale = row.freshness === "stale";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex items-center gap-1.5"
+          data-testid="fleet-resource-saturation"
+          data-saturation-report={report}
+        >
+          <span
+            className={`font-medium tabular-nums ${
+              stale ? "line-through opacity-60 text-muted-foreground" : ""
+            }`}
+          >
+            {formatPercent(saturation.ratio)}
+          </span>
+          <span className="text-[10px] text-muted-foreground">
+            {pressureLabel(saturation.basis)}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[22rem] text-[11px] space-y-1">
+        <div className="font-mono">{pressureFormula(saturation.basis)}</div>
+        <div
+          className="font-mono text-muted-foreground"
+          data-testid="fleet-resource-saturation-counts"
+        >
+          {formatSaturationCounts(sample)}
+        </div>
+        <div className="text-muted-foreground">
+          {saturationSourceLabel(sample?.saturation_source)}
+        </div>
+        <div>
+          Instrumentally independent of memory — which is the point. On
+          2026-08-27 this axis read 99% on a machine whose every memory gauge
+          read healthy. Computed by coord; whether the lane still accepts work
+          is the Admission column.
         </div>
         {stale && (
           <div className="text-yellow-600 dark:text-yellow-400">
@@ -816,6 +937,26 @@ function AdmissionCell({ row, tone }: { row: StripRow; tone: RowTone }) {
               />
             </Aged>
           )}
+          {/* The SATURATION axis — never gated on the swap-suppression rule,
+              and never omitted for a lane. Coord reports this threshold on
+              EVERY lane, because a task table is a task table on Windows and
+              Linux alike and the incident that motivated the axis was a
+              container exhausting the HOST's kernel.threads-max. Restricting
+              it the way the swap ceiling is restricted would leave the arm
+              that actually broke with no rule on screen.
+
+              The number is coord's, read off the row. This page states it and
+              does not own it — a 0.80 written here would be §C1's defect
+              (ratio shared, threshold not) on the newest axis. */}
+          <Aged freshness={row.freshness}>
+            <FloorLine
+              label={pressureAxisLabel(
+                row.sample?.saturation_floor?.basis ?? "thread_ratio"
+              )}
+              detail={describePressureFloor(row.sample?.saturation_floor)}
+              reported={reportedState(row.sample?.saturation_floor)}
+            />
+          </Aged>
         </>
       )}
     </span>
@@ -997,15 +1138,28 @@ function FloorsLegend({
           coord&apos;s built-in fallback.
         </li>
         <li data-testid="fleet-resource-axes">
-          Thresholds live on two axes and run in <em>opposite</em> directions: a{" "}
-          <strong>byte floor</strong> (mem, disk) is crossed going <em>down</em>
-          , a <strong>pressure ceiling</strong> (swap) going <em>up</em>. A
-          Windows <code>host</code> row currently carries byte floors and no
-          swap ceiling; a Linux lane carries the swap ceiling and no memory
+          Thresholds live on <strong>three</strong> axes, running in{" "}
+          <em>opposite</em> directions: a <strong>byte floor</strong> (mem,
+          disk) is crossed going <em>down</em>, while a{" "}
+          <strong>ratio ceiling</strong> (swap, saturation) is crossed going{" "}
+          <em>up</em>. A Windows <code>host</code> row carries byte floors and
+          no swap ceiling; a Linux lane carries the swap ceiling and no memory
           floor, because nothing in the fleet floors <code>mem_available</code>.
-          Both absent on one axis means genuinely unguarded there — which is not
-          the same as unmeasured, and is why &quot;no threshold&quot; and
-          &quot;not reported&quot; are worded differently.
+          The <strong>saturation</strong> ceiling is on <em>every</em> lane — a
+          task table is a task table on either platform, and the incident that
+          added this axis was a container exhausting the host&apos;s kernel task
+          ceiling. Both absent on one axis means genuinely unguarded there —
+          which is not the same as unmeasured, and is why &quot;no
+          threshold&quot; and &quot;not reported&quot; are worded differently.
+        </li>
+        <li data-testid="fleet-resource-saturation-legend">
+          <strong>Saturation</strong> is the axis that is not about memory. It
+          was added after 2026-08-27, when a machine at 190,840 of 192,146
+          kernel tasks — unable to <code>fork()</code> at all — rendered green
+          on every lane of this table because all three of its memory
+          instruments read healthy. A lane reads <code>unknown</code> here until
+          its machine&apos;s runner is rebuilt to publish the counts; during
+          that window unknown is <em>correct</em>, and it is still not healthy.
         </li>
         <li data-testid="fleet-resource-warn-margin">
           On a <strong>byte floor</strong>, a lane reads{" "}
@@ -1124,6 +1278,11 @@ export function FleetResourceStrip({
             r.sample != null &&
             (r.sample.floor === undefined ||
               r.sample.disk_floor === undefined ||
+              // Coord reports the SATURATION ceiling on every lane, so its
+              // absence is always a coord that predates the axis — never a
+              // lane that legitimately has no such rule. Unconditional for
+              // exactly that reason, unlike the swap line below.
+              r.sample.saturation_floor === undefined ||
               // Only on a lane that HAS a pressure axis — a Windows host row
               // saying nothing about swap is correct, not a reporting gap.
               // Same predicate the render uses, so the two cannot disagree.
@@ -1260,17 +1419,49 @@ export function FleetResourceStrip({
                   <th className="py-1 pr-3 font-medium">
                     <Tooltip>
                       <TooltipTrigger asChild>
+                        <span
+                          className="underline decoration-dotted"
+                          data-testid="fleet-resource-saturation-header"
+                        >
+                          Saturation
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[22rem] text-[11px]">
+                        How much of the lane&apos;s{" "}
+                        <strong>task ceiling</strong> is spent —{" "}
+                        <code>threads_used / threads_max</code>, or the{" "}
+                        <code>pids_*</code> pair where a cgroup or job object
+                        binds lower. Computed by coord, like Pressure.
+                        <br />
+                        This column is{" "}
+                        <em>instrumentally independent of memory</em>, which is
+                        why it exists: on 2026-08-27 a machine sat at 99.3% here
+                        — no process in its VM could <code>fork()</code> — while
+                        73.3 GB of commit was free and every lane of this table
+                        was green.
+                        <br />
+                        <code>unknown</code> until a machine&apos;s runner is
+                        rebuilt to publish the counts. Unknown is not healthy.
+                      </TooltipContent>
+                    </Tooltip>
+                  </th>
+                  <th className="py-1 pr-3 font-medium">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
                         <span className="underline decoration-dotted">
                           Admission
                         </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-[22rem] text-[11px]">
                         Whether coord will still send this lane work, and the
-                        floor it decides that against. <strong>This</strong> is
-                        what colours the row — not the pressure ratio. The
-                        floors are byte counts on columns the ratio does not
-                        divide by, so there is no pressure threshold that could
-                        stand in for them, and this page keeps none.
+                        floors it decides that against. <strong>This</strong> is
+                        what colours the row — not the Pressure ratio and not
+                        the Saturation ratio, which are magnitudes. Coord takes
+                        the <em>worst of three axes</em>: the memory/disk byte
+                        floors, the swap ceiling, and the task-saturation
+                        ceiling. Each is graded against the floor its own
+                        enforcer reads, and this page keeps none of those
+                        numbers.
                       </TooltipContent>
                     </Tooltip>
                   </th>
@@ -1314,8 +1505,20 @@ export function FleetResourceStrip({
                               <span className="font-mono text-xs">
                                 {group.displayName}
                               </span>
+                              {/* NOT hardcoded `destructive` any more. Coord
+                                  now serves a fifth `DeviceState`, `stale` —
+                                  a device that is heartbeating fine but whose
+                                  SAMPLER has gone quiet — and painting that
+                                  the same red as `partitioned` ("coord cannot
+                                  reach it at all") would tell an operator a
+                                  live machine had dropped off the network.
+                                  `deviceStateBadgeVariant` is the one mapping
+                                  the console renders coord states through. */}
                               {group.state && group.state !== "healthy" && (
-                                <Badge variant="destructive">
+                                <Badge
+                                  variant={deviceStateBadgeVariant(group.state)}
+                                  data-coord-state={group.state}
+                                >
                                   {group.state}
                                 </Badge>
                               )}
@@ -1329,6 +1532,9 @@ export function FleetResourceStrip({
                         </td>
                         <td className="py-1.5 pr-3">
                           <PressureCell row={row} />
+                        </td>
+                        <td className="py-1.5 pr-3">
+                          <SaturationCell row={row} />
                         </td>
                         <td className="py-1.5 pr-3">
                           <AdmissionCell row={row} tone={tone} />
