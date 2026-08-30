@@ -29,6 +29,7 @@ all WS handshakes with a clear log. Never silently fall back to
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Any
 
@@ -75,8 +76,12 @@ _MAX_KID_CHARS = 64
 # kid-miss rejections in the pathological single-key-swap case.
 #
 # 30s mirrors coord's own `auth_sso::FORCED_REFRESH_COOLDOWN`, which exists
-# for exactly this reason. NOTE the sibling `cognito_jwks` force-refreshes
-# with NO cooldown — copy the semantics here, not those.
+# for exactly this reason. The sibling `cognito_jwks` no longer lacks a
+# cooldown — web #1076 gave it this same 30s — so keep the two in step if
+# this number moves. They are NOT yet equivalent, though: that door measures
+# the window on `time.monotonic` and this one still measures it on the wall
+# clock, so only one of them is immune to a clock step. Closing that is its
+# own row on plan `2026-08-25-coord-jwt-kid-collides-across-environments`.
 _FORCED_REFRESH_COOLDOWN_S = 30
 
 
@@ -171,6 +176,60 @@ def describe_token_rejection(exc: CoordTokenInvalidError) -> str:
     # vague message for a confidently wrong one, which is the failure
     # this whole function exists to stop.
     return "Device token failed verification."
+
+
+def _example_key(cls: type[CoordTokenInvalidError]) -> str:
+    """``CoordTokenNotYetValidError`` -> ``not_yet_valid``.
+
+    Purely mechanical, so a class added later gets a sensible key without
+    anyone maintaining a name table alongside the hierarchy.
+    """
+    name = cls.__name__.removeprefix("CoordToken").removesuffix("Error")
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def token_rejection_examples() -> dict[str, dict[str, Any]]:
+    """OpenAPI ``examples`` for the 401 bodies a device-token door returns.
+
+    DERIVED from :func:`describe_token_rejection` by walking the exception
+    hierarchy — never transcribed from it. A transcription is exactly what
+    went stale: ``events.py`` documented ``"Invalid or expired token"`` for
+    ``POST /api/v1/events/phase-completed`` long after this module stopped
+    emitting that sentence, and because the committed OpenAPI snapshots are
+    generated from that declaration, the dead string reached every client
+    generated from them. Deriving means the docs cannot say a thing this
+    function does not.
+
+    Walking ``__subclasses__()`` (as the budget test in
+    ``tests/services/test_coord_jwks.py`` already does) also means a failure
+    class added later is documented the moment it exists, rather than when
+    somebody remembers to come back here. Keep every subclass defined in THIS
+    module: ``__subclasses__()`` only sees classes already imported, and this
+    runs at ``events`` import time, so a subclass living elsewhere would make
+    the committed OpenAPI snapshot depend on import order.
+    """
+    examples: dict[str, dict[str, Any]] = {}
+    for cls in [CoordTokenInvalidError, *CoordTokenInvalidError.__subclasses__()]:
+        try:
+            exc = cls("example")
+        except TypeError:
+            # A subclass whose ``__init__`` demands more than a message
+            # (``CoordTokenForeignIssuerError`` does). This leans on
+            # ``describe_token_rejection`` being a pure type-to-constant
+            # dispatch: it never reads instance state, so an uninitialised
+            # instance answers identically and this helper does not have to
+            # know each signature. If that function ever starts reading an
+            # attribute, this construction has to change with it — it will
+            # say so by raising at import, not by returning something wrong.
+            exc = cls.__new__(cls)
+        # No ``summary``: the key already labels the arm, and sourcing one
+        # from a docstring would make every prose edit churn the committed
+        # OpenAPI snapshots — a second drift surface, which is the thing
+        # this helper exists to close.
+        examples[_example_key(cls)] = {
+            "value": {"detail": describe_token_rejection(exc)}
+        }
+    return examples
 
 
 class CoordJWKSClient:

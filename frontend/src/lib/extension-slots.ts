@@ -126,6 +126,27 @@ const slots: ExtensionSlots = {
 };
 
 /**
+ * The empty provider list — ONE array, shared by the initial client snapshot
+ * and by the server/hydration snapshot.
+ *
+ * Not two separately-frozen `[]`s. After hydrating, `useSyncExternalStore`
+ * compares the value it hydrated with (`getServerSnapshot`) against
+ * `getSnapshot()` by identity — `Object.is`, never value equality — so two
+ * empty-but-distinct arrays would schedule a re-render of `CloudProviders`
+ * for a value that did not change. `useSlotComponent` gets this for free
+ * (both halves are `undefined`); the provider hook has to spell it.
+ *
+ * NOT a bug being fixed: no `CloudProviders` hydrates today, in either build
+ * shape, because `AppAuthGate` withholds it (see below). The point is that
+ * this is the one of the two hazard conditions that costs a shared constant
+ * to remove rather than a design commitment to maintain. With the halves
+ * identical, an OSS-only build cannot hit the hydration-time provider swap
+ * no matter how `AppAuthGate` is later refactored; the composed build still
+ * depends on that gate, because there the two snapshots genuinely differ.
+ */
+const NO_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
+
+/**
  * Stable array snapshot of `slots.providers`, rebuilt ONLY inside
  * `registerCloudExtensions`.
  *
@@ -134,7 +155,7 @@ const slots: ExtensionSlots = {
  * every call and makes React re-render forever. So the array is built once
  * per registration and handed out by reference.
  */
-let providersSnapshot: readonly CloudProvider[] = Object.freeze([]);
+let providersSnapshot: readonly CloudProvider[] = NO_PROVIDERS;
 
 /**
  * Listeners notified after every `registerCloudExtensions` call. Module-level
@@ -198,7 +219,20 @@ export function registerCloudExtensions(
       slots.providers.set(k, v);
     }
     // Rebuild the stable snapshot ONCE per registration, never per read.
-    providersSnapshot = Object.freeze([...slots.providers.values()]);
+    // Before the notify loop below, not after: every subscriber re-reads the
+    // registry, so a rebuild that happened afterwards would hand
+    // `CloudProviders` the PREVIOUS array on the notification announcing the
+    // registration — the ordering `extension-slots.test.tsx` pins.
+    //
+    // Back to `NO_PROVIDERS` when the result is empty, rather than a fresh
+    // `Object.freeze([])`. `registerCloudExtensions({ providers: {} })` takes
+    // this branch — a composed build whose cloud-control ships no provider
+    // this release does exactly that — and allocating there would leave
+    // `providersSnapshot` empty but no longer identical to the server
+    // snapshot, which is the one state `NO_PROVIDERS` exists to prevent.
+    providersSnapshot = slots.providers.size
+      ? Object.freeze([...slots.providers.values()])
+      : NO_PROVIDERS;
   }
 
   // Notify AFTER every mutation: subscribers re-read the registry, so a
@@ -289,26 +323,25 @@ function getProvidersSnapshot(): readonly CloudProvider[] {
 }
 
 /**
- * SSR and OSS-only must agree, and the registry is empty on the server by
- * construction (the cloud-control bundle only loads in the browser). A
- * frozen module constant keeps the reference stable across calls.
- */
-const SERVER_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
-
-/**
  * The `getServerSnapshot` half of `useSlotProviders`, used for the HYDRATION
  * render as well as for SSR — React has to, or the two would tear.
  *
- * So a `CloudProviders` that took part in hydration would render zero
- * providers and then swap to the real snapshot, remounting everything below
- * it. It does not, because `app/(app)/layout.tsx`'s `AppAuthGate` renders
- * `AuthLoadingShell` instead of its children while auth is loading — which
- * on the server is always — so `CloudProviders` first mounts after
- * hydration, off `getProvidersSnapshot`. That gate is load-bearing for more
- * than auth; see `components/CloudProviders`.
+ * SSR and OSS-only must agree, and the registry is empty on the server by
+ * construction (the cloud-control bundle only loads in the browser). It
+ * returns `NO_PROVIDERS`, the same array `providersSnapshot` starts as, so
+ * before any registration the two halves are identical and not merely equal.
+ *
+ * In a COMPOSED build they do differ, and a `CloudProviders` that took part
+ * in hydration would therefore render zero providers and then swap to the
+ * real snapshot, remounting everything below it. It does not, because
+ * `app/(app)/layout.tsx`'s `AppAuthGate` renders `AuthLoadingShell` instead
+ * of its children while auth is loading — which on the server is always — so
+ * `CloudProviders` first mounts after hydration, off `getProvidersSnapshot`.
+ * That gate is load-bearing for more than auth; see
+ * `components/CloudProviders`.
  */
 function getServerProvidersSnapshot(): readonly CloudProvider[] {
-  return SERVER_PROVIDERS;
+  return NO_PROVIDERS;
 }
 
 /**
