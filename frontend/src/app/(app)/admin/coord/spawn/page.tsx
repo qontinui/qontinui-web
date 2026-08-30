@@ -59,7 +59,7 @@
  * authored testid (D4a).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -107,7 +107,15 @@ export default function CoordSpawnPage() {
    *  mistake it for a plan row with an empty slug. */
   const [newSessionOpen, setNewSessionOpen] = useState(false);
 
+  /**
+   * Generation guard — see `/plans`' copy for the two race arms it closes.
+   * The window here is WIDER: this page polls every 15s, so a superseded
+   * success owns the screen for longer before anything corrects it.
+   */
+  const queryGen = useRef(0);
+
   const fetchData = useCallback(async () => {
+    const gen = ++queryGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -115,12 +123,14 @@ export default function CoordSpawnPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
+      if (gen !== queryGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (gen !== queryGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (gen === queryGen.current) setLoading(false);
     }
   }, [status]);
 

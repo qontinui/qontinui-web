@@ -549,6 +549,21 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > third state spelled out, and it reads as a measurement with a timestamp
 > (*"Nothing was waiting at the last good read"*), never as an all-clear.
 >
+> **`empty=` needs the third state too — it is the easiest one to forget,
+> because nothing about it looks wrong.** Adding STALE to the strip and
+> stopping there leaves the list body rendering the plain empty copy, and that
+> copy is present-tense and unqualified: coord answering *"none"* once and then
+> going dark leaves *"No pending questions"* on screen for hours, under an
+> amber strip, in calm muted type. The strip is not a substitute — `empty=` is
+> where the absence claim is made **in words**, and it is the surface an
+> operator scrolls to. Three arms, then, not two, and the stale one keeps the
+> muted tone (nothing is wrong) while carrying the date (nothing is current).
+>
+> The tell that this arm is missing is a comment like *"`items` is `[]` either
+> way; only the flag can tell the two apart"* sitting above a two-branch
+> ternary. Once there are three states that sentence is false, and it is false
+> in the direction that ships.
+>
 > **A 404 is an ANSWER, and belongs on the "not found" side.** `httpClient`
 > throws on every non-2xx, so coord's 404 — the most definitive answer it
 > gives — reaches the page through the same `catch` as a dead socket. A detail
