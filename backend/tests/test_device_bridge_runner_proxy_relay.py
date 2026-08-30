@@ -279,6 +279,9 @@ async def test_relay_device_not_owned_maps_404(monkeypatch):
 async def test_relay_runner_not_connected_when_ws_session_null_maps_503(monkeypatch):
     # Row exists but ws_session_id IS NULL -> 503 before dispatch.
     _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    # The 503 branch decorates its body with ``last_seen_at`` from a second
+    # coord read; stub it so this test attempts no network.
+    _install_owned_device(monkeypatch, {"device_id": DEVICE_ID, "last_seen_at": None})
     dispatch = AsyncMock()
     _install_manager(monkeypatch, dispatch=dispatch)
 
@@ -288,6 +291,126 @@ async def test_relay_runner_not_connected_when_ws_session_null_maps_503(monkeypa
     )
     assert response.status_code == 503
     dispatch.assert_not_awaited()
+
+
+def _install_owned_device(monkeypatch, row, *, raises: Exception | None = None) -> None:
+    """Patch the full-row coord read the 503 branch uses for ``last_seen_at``."""
+
+    async def _fake_get_owned_device(request, device_id, user_id):
+        if raises is not None:
+            raise raises
+        return row
+
+    monkeypatch.setattr(
+        device_bridge_ws.coord_device,
+        "get_owned_device",
+        _fake_get_owned_device,
+        raising=True,
+    )
+
+
+def _body(response) -> dict:
+    import json
+
+    return json.loads(bytes(response.body).decode())
+
+
+class _RecordingLogger:
+    """Capture structlog-style calls without depending on the app's logging
+    configuration (structlog is not wired to stdlib ``logging`` under pytest,
+    so ``caplog`` would silently see nothing)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict]] = []
+
+    def _record(self, level):
+        def _call(event, **kw):
+            self.calls.append((level, event, kw))
+
+        return _call
+
+    def __getattr__(self, level):
+        return self._record(level)
+
+    def events(self) -> list[str]:
+        return [event for _lvl, event, _kw in self.calls]
+
+    def kw_for(self, event: str) -> dict:
+        for _lvl, ev, kw in self.calls:
+            if ev == event:
+                return kw
+        raise AssertionError(f"no {event!r} log line; saw {self.events()}")
+
+
+@pytest.mark.asyncio
+async def test_relay_not_connected_503_body_carries_device_id_and_last_seen(
+    monkeypatch,
+):
+    """W-A + W-B: the not-connected 503 is observable and self-describing.
+
+    W-A — a structured ``runner_proxy_relay_not_connected`` line naming the
+    device. W-B — ``device_id`` + ``last_seen_at`` in the body so the client
+    can render "last seen N min ago" instead of a bare failure string.
+    ``detail`` is unchanged, so an older mobile build is unaffected.
+    """
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch,
+        {"device_id": DEVICE_ID, "last_seen_at": "2026-08-27T09:15:00+00:00"},
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 503
+    body = _body(response)
+    # Additive only — the pre-existing key keeps its exact value.
+    assert body["detail"] == "runner not connected"
+    assert body["device_id"] == DEVICE_ID
+    assert body["last_seen_at"] == "2026-08-27T09:15:00+00:00"
+    assert isinstance(body["request_id"], str) and body["request_id"]
+
+    # W-A: the branch is no longer silent, and the line carries the fields a
+    # server-side debugger needs to find the device without the client.
+    logged = rec.kw_for("runner_proxy_relay_not_connected")
+    assert logged["device_id"] == DEVICE_ID
+    assert logged["user_id"] == USER_ID
+    assert logged["path"] == "usage"
+    assert logged["last_seen_at"] == "2026-08-27T09:15:00+00:00"
+    # The body's request_id is greppable in the log.
+    assert logged["request_id"] == body["request_id"]
+
+
+@pytest.mark.asyncio
+async def test_relay_not_connected_503_survives_last_seen_lookup_failure(monkeypatch):
+    """A coord fault while decorating the 503 must not change the status.
+
+    The 503 is already the right answer; the timestamp is a nicety, so a
+    failed full-row read yields ``last_seen_at: null``, never a 502/504.
+    """
+    from fastapi import HTTPException
+
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    assert response.status_code == 503
+    body = _body(response)
+    assert body["detail"] == "runner not connected"
+    assert body["device_id"] == DEVICE_ID
+    assert body["last_seen_at"] is None
 
 
 @pytest.mark.asyncio
