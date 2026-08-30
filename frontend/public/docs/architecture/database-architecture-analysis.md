@@ -2,7 +2,7 @@
 ## Qontinui Web Platform
 
 **Analysis Date:** 2025-11-21
-**Database:** PostgreSQL 15+ (AWS RDS Production)
+**Database:** PostgreSQL 16+ (AWS RDS Production — instance `qontinui-staging`, engine 16.13, us-east-1)
 **ORM:** SQLAlchemy 2.0.43
 **Migration Tool:** Alembic 1.16.5
 **Analyzed By:** Multi-Agent Deep Dive (5 Specialized Agents)

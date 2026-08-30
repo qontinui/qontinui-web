@@ -69,7 +69,7 @@ qontinui-web/
 ### Prerequisites
 - Python 3.12+
 - Node.js 20+
-- PostgreSQL 15+
+- PostgreSQL 16+ (production: AWS RDS `qontinui-staging`, 16.13, us-east-1)
 - Redis 7+
 
 ### Backend Setup
