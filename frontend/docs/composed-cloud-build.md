@@ -345,11 +345,30 @@ an SSR cookie read, a synchronous `localStorage` seed — would reintroduce a
 whole-tree remount with no visible connection to extension slots.
 
 `CloudProviders.test.tsx` pins the remount itself, so its cost is not
-folklore. It does **not** pin either condition: it registers by hand and
-never imports the boot module. What fails if the boot import stops being
-static is the composed half of `cloud-extensions-boot.registration.test.tsx`
-— importing the boot module would then register nothing — and that runs in
-the `composed-cloud-build` job, not the ordinary unit-test job.
+folklore. Its rendering cases do **not** pin either condition: they register
+by hand and never import the boot module.
+
+The two conditions are pinned separately, and by different things:
+
+- **The static boot import.** What fails if it stops being static is the
+  composed half of `cloud-extensions-boot.registration.test.tsx` — importing
+  the boot module would then register nothing — and that runs in the
+  `composed-cloud-build` job, not the ordinary unit-test job.
+- **`AppAuthGate`.** `CloudProviders.test.tsx`'s "mount site" block reads
+  `app/(app)/layout.tsx` as source and asserts the three structural facts:
+  `<CloudProviders>` is rendered at all, it sits *inside* `<AppAuthGate>`,
+  and that gate's early return is still keyed on `loading`. Source rather
+  than a render, because importing the real client shell would mean mocking a
+  dozen providers and asserting the mocks. This runs in the ordinary
+  unit-test job, in both build shapes.
+
+Neither of those covers the hook's own half, so `extension-slots.test.tsx`
+asserts it directly: `useSlotProviders`' server snapshot stays empty even
+with a provider registered, and — before any registration — is the *same*
+array the client snapshot starts as, not merely an equal one. That identity
+is what makes an OSS-only build immune to the swap however the gate is later
+refactored; the composed build still depends on the gate, because there the
+two snapshots genuinely differ.
 
 **Why a link and not a copy.** One source of truth, so editing
 `qontinui-cloud-control` is picked up by the next build with no re-sync and no

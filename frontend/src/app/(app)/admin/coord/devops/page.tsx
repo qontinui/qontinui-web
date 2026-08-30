@@ -120,6 +120,23 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
+          // Coord's fifth DeviceState, and its own badge rather than a share
+          // of `degraded` or `unknown`. `stale` is a machine coord still
+          // reaches whose resource SAMPLER has gone quiet — the 2026-08-27
+          // shape, where `/fleet/health` said `{healthy: 4}` beside a sample
+          // 22 minutes old. Deliberately not `attention`: the axis it names is
+          // a publisher, not an unreachable machine, and borrowing red would
+          // make it indistinguishable from `partitioned` at a glance.
+          ...(liveness.stale > 0
+            ? [
+                {
+                  key: "stale",
+                  label: `stale ${liveness.stale}`,
+                  tone: "default" as const,
+                  "data-testid": "coord-devops-stale-badge",
+                },
+              ]
+            : []),
           // Rendered even though it is not red, for the same reason the
           // pipeline page's collapsed header carries it: a fleet whose
           // telemetry has gone dark would otherwise render as "machines N"

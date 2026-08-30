@@ -320,3 +320,95 @@ async def test_foreign_issuer_still_falls_through_to_the_operator_path(
 
     assert principal.tenant_id == tenant_id
     assert principal.actor == "operator"
+
+
+# ---------------------------------------------------------------------------
+# Every failure class must be CONSCIOUSLY classified at this door.
+#
+# The handler above enumerates `(CoordTokenExpiredError,
+# CoordTokenNotYetValidError)` by hand. That list is correct today and has no
+# way to notice tomorrow: a fourth `CoordTokenInvalidError` subclass that also
+# proves the bearer is coord-signed would silently fall through to Cognito and
+# be answered "Authentication required." — reinstating exactly the defect this
+# door was just fixed for, with no test failing.
+#
+# So the walk is over the HIERARCHY and the expectation table lives here. A new
+# subclass fails this test until someone states which side of the line it is
+# on, which is a judgement (does reaching this arm prove coord signed it?) that
+# cannot be derived mechanically — but the PROMPT for it can be.
+# ---------------------------------------------------------------------------
+
+_STOPS_HERE = "stops"
+_FALLS_THROUGH = "falls_through"
+
+# What each class means at THIS door, and why.
+_CLASSIFICATION = {
+    # Reached before any signature check proved anything — a Cognito bearer
+    # lands here on the way to a successful request.
+    CoordTokenInvalidError: _FALLS_THROUGH,
+    # Same: a Cognito `kid` is absent from coord's JWKS by construction.
+    CoordTokenForeignIssuerError: _FALLS_THROUGH,
+    # Reached only AFTER the signature verified against a coord-served key,
+    # so the bearer is provably coord-signed and cannot also be Cognito.
+    CoordTokenExpiredError: _STOPS_HERE,
+    CoordTokenNotYetValidError: _STOPS_HERE,
+}
+
+
+def _instance(cls: type[CoordTokenInvalidError]) -> CoordTokenInvalidError:
+    if cls is CoordTokenForeignIssuerError:
+        return CoordTokenForeignIssuerError(
+            "no JWK with kid=...",
+            coord_url="http://localhost:9870",
+            token_kid="cognito-rsa-key-id",
+            served_kids=["coord-ed25519-v1"],
+        )
+    return cls("example")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cls",
+    [CoordTokenInvalidError, *CoordTokenInvalidError.__subclasses__()],
+    ids=lambda c: c.__name__,
+)
+async def test_every_failure_class_is_classified_at_the_memory_door(
+    cls: type, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each class either stops with its reason named, or probes on to Cognito.
+
+    A failure on the membership assertion below means a new failure class
+    exists and nobody decided what the memory door should do with it. Decide,
+    add the row, and wire the handler if it belongs on the stopping side.
+    """
+    assert cls in _CLASSIFICATION, (
+        f"{cls.__name__} is a CoordTokenInvalidError subclass that "
+        f"get_memory_tenant has never been told how to treat. Does reaching "
+        f"this arm PROVE the bearer was coord-signed? If yes it must stop "
+        f"here (add it to the handler); if no it must fall through so a "
+        f"Cognito bearer still gets its turn."
+    )
+
+    tenant_id = uuid4()
+    _mock_verify(monkeypatch, _instance(cls))
+    identity = MagicMock()
+    identity.home_tenant_id = tenant_id
+    monkeypatch.setattr(
+        memory_ep, "get_coord_identity", AsyncMock(return_value=identity)
+    )
+
+    if _CLASSIFICATION[cls] is _STOPS_HERE:
+        with pytest.raises(HTTPException) as exc:
+            await memory_ep.get_memory_tenant(
+                request=MagicMock(), user=MagicMock(), credentials=_creds()
+            )
+        assert exc.value.status_code == 401
+        # The whole point: the reason is NAMED, not flattened into the
+        # generic no-credential message at the bottom of the function.
+        assert exc.value.detail != "Authentication required."
+    else:
+        principal = await memory_ep.get_memory_tenant(
+            request=MagicMock(), user=MagicMock(), credentials=_creds()
+        )
+        assert principal.actor == "operator"
+        assert principal.tenant_id == tenant_id
