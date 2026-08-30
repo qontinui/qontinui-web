@@ -126,6 +126,26 @@ const slots: ExtensionSlots = {
 };
 
 /**
+ * The empty provider list — ONE array, shared by the initial client snapshot
+ * and by the server/hydration snapshot.
+ *
+ * Not two separately-frozen `[]`s. After hydrating, `useSyncExternalStore`
+ * compares the value it hydrated with (`getServerSnapshot`) against
+ * `getSnapshot()` by identity, so two empty-but-distinct arrays force a
+ * re-render of `CloudProviders` — the root of the whole authenticated tree —
+ * on every OSS-only page load, for a value that did not change.
+ * `useSlotComponent` gets this for free (both halves are `undefined`); the
+ * provider hook has to spell it.
+ *
+ * It also narrows the hazard `components/CloudProviders` documents at length:
+ * with the two halves identical, an OSS-only build cannot hit the
+ * hydration-time provider swap no matter how `AppAuthGate` is later
+ * refactored. The composed build still depends on that gate, because there
+ * the two snapshots genuinely differ.
+ */
+const NO_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
+
+/**
  * Stable array snapshot of `slots.providers`, rebuilt ONLY inside
  * `registerCloudExtensions`.
  *
@@ -134,7 +154,7 @@ const slots: ExtensionSlots = {
  * every call and makes React re-render forever. So the array is built once
  * per registration and handed out by reference.
  */
-let providersSnapshot: readonly CloudProvider[] = Object.freeze([]);
+let providersSnapshot: readonly CloudProvider[] = NO_PROVIDERS;
 
 /**
  * Listeners notified after every `registerCloudExtensions` call. Module-level
@@ -198,6 +218,11 @@ export function registerCloudExtensions(
       slots.providers.set(k, v);
     }
     // Rebuild the stable snapshot ONCE per registration, never per read.
+    // Before the notify loop below, not after: every subscriber re-reads the
+    // registry, so a rebuild that happened afterwards would hand
+    // `CloudProviders` the PREVIOUS array on the notification announcing the
+    // registration — the Map/array disagreement
+    // `extension-slots.test.tsx` pins.
     providersSnapshot = Object.freeze([...slots.providers.values()]);
   }
 
@@ -289,26 +314,25 @@ function getProvidersSnapshot(): readonly CloudProvider[] {
 }
 
 /**
- * SSR and OSS-only must agree, and the registry is empty on the server by
- * construction (the cloud-control bundle only loads in the browser). A
- * frozen module constant keeps the reference stable across calls.
- */
-const SERVER_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
-
-/**
  * The `getServerSnapshot` half of `useSlotProviders`, used for the HYDRATION
  * render as well as for SSR — React has to, or the two would tear.
  *
- * So a `CloudProviders` that took part in hydration would render zero
- * providers and then swap to the real snapshot, remounting everything below
- * it. It does not, because `app/(app)/layout.tsx`'s `AppAuthGate` renders
- * `AuthLoadingShell` instead of its children while auth is loading — which
- * on the server is always — so `CloudProviders` first mounts after
- * hydration, off `getProvidersSnapshot`. That gate is load-bearing for more
- * than auth; see `components/CloudProviders`.
+ * SSR and OSS-only must agree, and the registry is empty on the server by
+ * construction (the cloud-control bundle only loads in the browser). It
+ * returns `NO_PROVIDERS`, the same array `providersSnapshot` starts as, so
+ * before any registration the two halves are identical and not merely equal.
+ *
+ * In a COMPOSED build they do differ, and a `CloudProviders` that took part
+ * in hydration would therefore render zero providers and then swap to the
+ * real snapshot, remounting everything below it. It does not, because
+ * `app/(app)/layout.tsx`'s `AppAuthGate` renders `AuthLoadingShell` instead
+ * of its children while auth is loading — which on the server is always — so
+ * `CloudProviders` first mounts after hydration, off `getProvidersSnapshot`.
+ * That gate is load-bearing for more than auth; see
+ * `components/CloudProviders`.
  */
 function getServerProvidersSnapshot(): readonly CloudProvider[] {
-  return SERVER_PROVIDERS;
+  return NO_PROVIDERS;
 }
 
 /**

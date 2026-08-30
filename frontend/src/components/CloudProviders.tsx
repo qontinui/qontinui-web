@@ -45,13 +45,23 @@ import { useSlotProviders } from "@/lib/extension-slots";
  *    render zero providers and then swap to the real snapshot, which is this
  *    remount, on every composed-build page load. Making auth resolve
  *    synchronously would therefore reintroduce it — a change with no visible
- *    connection to extension slots.
+ *    connection to extension slots, which is why `AppAuthGate` carries a doc
+ *    block saying so at the place someone would make that change.
  *
- * `CloudProviders.test.tsx` pins the remount itself. It does NOT pin either
- * condition above: it registers by hand and never imports the boot module.
- * The check that fails if the boot import stops being static is the composed
- * half of `cloud-extensions-boot.registration.test.tsx`, which runs in its
- * own CI job.
+ * `CloudProviders.test.tsx` pins the remount itself. Its rendering cases do
+ * NOT pin either condition above: they register by hand and never import the
+ * boot module. Condition 1 is pinned by the composed half of
+ * `cloud-extensions-boot.registration.test.tsx`, which runs in its own CI
+ * job; condition 2 by that same test file's "mount site" block, which reads
+ * `app/(app)/layout.tsx` as source and asserts that this component is
+ * rendered at all, that it sits inside `AppAuthGate`, and that the gate's
+ * early return is still keyed on `loading`.
+ *
+ * A THIRD thing makes the OSS-only build immune independently of both: the
+ * client and server provider snapshots start as the same frozen array, not
+ * two equal ones, so React finds nothing changed after hydrating. That holds
+ * only until a registration lands, so it protects OSS-only builds and not
+ * composed ones — see `NO_PROVIDERS` in `extension-slots.ts`.
  *
  * Each provider is mounted directly, WITHOUT a fault boundary. That is
  * deliberate: a provider is infrastructure for the subtree beneath it, so
