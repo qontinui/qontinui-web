@@ -5,6 +5,8 @@ import {
   effectiveMergeStatus,
   fallbackMergeStatus,
   formatDuration,
+  perRepoCapHint,
+  slotScopeNote,
 } from "./trainActivity";
 import { redactSecrets } from "./mergeTypes";
 import type { PrRow, ProposalDetail, TrainHealth } from "./mergeTypes";
@@ -1040,6 +1042,246 @@ describe("slot-cap saturation", () => {
     expect(rows[0]!.reasons[0]!.detail).toContain("until one finishes");
   });
 
+  // --- The FLEET readout of the per-repo cap (the fourth render site). ------
+  // The Slots stat's hint prints a per-repo cap too. It was not reached by the
+  // narrowing fix above, whose grep stayed inside this module and never opened
+  // `MergeTrainActivity.tsx` — the same too-narrow-grep miss that left this
+  // whole family of sites wrong in the first place.
+
+  it("prints the plain configured per-repo cap when nothing is narrowed", () => {
+    expect(perRepoCapHint(slots())).toBe("per-repo cap 2");
+  });
+
+  it("names the narrowed repo in the fleet per-repo cap hint", () => {
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+        ],
+      })
+    );
+    // "per-repo cap 2" alone contradicts the "1/1 in flight" the row below
+    // prints for the same repo; the operator must not have to guess which is
+    // the number the dequeue is applying.
+    expect(hint).toContain("web is held at 1");
+    expect(hint).toContain("candidate CI");
+  });
+
+  it("counts, rather than lists, several narrowed repos", () => {
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+          {
+            repo: "qontinui/qontinui-runner",
+            in_flight: 1,
+            queued: 2,
+            at_repo_cap: true,
+            narrowed_repo_cap: 1,
+          },
+        ],
+      })
+    );
+    expect(hint).toContain("2 repos are held below it");
+  });
+
+  it("ignores a narrowed_repo_cap that is not actually narrower", () => {
+    // coord omits the key rather than echoing the configured cap, so a value
+    // equal to it means a producer that stopped honouring that — and it must
+    // not be announced as a narrowing.
+    const hint = perRepoCapHint(
+      slots({
+        repos: [
+          {
+            repo: "qontinui/web",
+            in_flight: 1,
+            queued: 3,
+            at_repo_cap: true,
+            narrowed_repo_cap: 2,
+          },
+        ],
+      })
+    );
+    expect(hint).toBe("per-repo cap 2");
+  });
+
+  // --- queued_blocked_by_cap: the partial case `at_repo_cap` cannot state. ---
+  // coord scopes `at_repo_cap` to the HEAD of a repo's queue. A repo whose head
+  // is admitted while proposals behind it are skipped by the same cap reports
+  // `at_repo_cap: false`, and every cap explanation above keys off that flag —
+  // so the console said nothing at all about the cap for those proposals.
+
+  it("explains queued proposals held behind a cap the repo is not AT", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+              oldest_queued_wait_seconds: 900,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    const r = rows[0]!.reasons.find(
+      (x) => x.code === "queued-behind-repo-cap"
+    )!;
+    expect(r).toBeDefined();
+    expect(r.label).toBe("Queued behind the per-repo cap");
+    expect(r.detail).toContain("3 of its 4 queued proposals");
+    expect(r.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
+    // The point of the reason: free slots are not the remedy.
+    expect(r.detail).toContain("Freeing a global slot does NOT release them");
+    expect(r.prCount).toBe(3);
+    expect(r.oldestSecs).toBe(900);
+  });
+
+  it("does not repeat itself on a repo that IS at its cap", () => {
+    // `repo-cap-starved` already tells the whole story there; two reasons for
+    // one cause is how a reason list stops being read.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 3,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 3,
+            },
+          ],
+          repos_at_cap: ["qontinui/web"],
+        }),
+      },
+      NOW
+    );
+    const codes = rows[0]!.reasons.map((r) => r.code);
+    expect(codes).toContain("repo-cap-starved");
+    expect(codes).not.toContain("queued-behind-repo-cap");
+  });
+
+  it("names the narrowed cap for proposals held behind it", () => {
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 0,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+              narrowed_repo_cap: 1,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    const r = rows[0]!.reasons.find(
+      (x) => x.code === "queued-behind-repo-cap"
+    )!;
+    expect(r.label).toBe("Queued behind a narrowed per-repo cap");
+    expect(r.detail).toContain("narrowed from COORD_MERGE_PER_REPO_CAP=2");
+    // A narrowed cap does not widen when in-flight work finishes.
+    expect(r.detail).toContain("candidate CI recovers");
+  });
+
+  it("adds the cap reason ALONGSIDE a slot wait, not instead of it", () => {
+    // Both are true at once, and they have different remedies: a freed slot
+    // releases the head, the repo's own cap still skips the rest.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 3,
+            },
+          ],
+        }),
+      },
+      NOW
+    );
+    const codes = rows[0]!.reasons.map((r) => r.code);
+    expect(codes).toContain("slots-saturated");
+    expect(codes).toContain("queued-behind-repo-cap");
+    // The total stop outranks the partial one.
+    expect(codes.indexOf("slots-saturated")).toBeLessThan(
+      codes.indexOf("queued-behind-repo-cap")
+    );
+  });
+
+  it("stays silent when coord omits queued_blocked_by_cap", () => {
+    // An older coord does not send the field. Absence is an old producer, and
+    // must not be rendered as a cap claim either way.
+    const rows = buildRepoTrainRows(
+      [],
+      [],
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+            },
+          ],
+          repos_at_cap: [],
+        }),
+      },
+      NOW
+    );
+    expect(rows[0]!.reasons.map((r) => r.code)).not.toContain(
+      "queued-behind-repo-cap"
+    );
+  });
+
   it("shows a starved repo even when it has no in-flight leg or PR row", () => {
     // A repo with only queued proposals is exactly the starved case; it must
     // not vanish from the board for lack of another signal.
@@ -1120,11 +1362,333 @@ describe("slot-cap saturation", () => {
     expect(covered).toContain(2);
   });
 
+  // --- The fleet banner keys off the cap-blocked COUNT, not the flag. -------
+  // #1147 mirrored `queued_blocked_by_cap` and read it on the per-repo ROW but
+  // left this banner keyed off `at_repo_cap` and gated on `available > 0` — the
+  // two corrections coord had already made to its own `compute_headline`.
+
+  it("banners the partial cap case, where no repo is AT its cap", () => {
+    // 0 in flight + 3 queued against a cap of 2: the dequeue skips one, and
+    // `at_repo_cap` is (correctly) false because `in_flight >= cap` is false.
+    // Keyed off the flag, this banner rendered nothing at all.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          queued_depth: 3,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 0,
+              queued: 3,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 1,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b).toBeDefined();
+    expect(b!.detail).toContain("2 slots are free");
+    expect(b!.detail).toContain("1 queued proposal across 1 repo (web)");
+    // Number agreement follows the SUBJECT of each clause: the proposals for
+    // "is skipped", the repos for "it is at or past".
+    expect(b!.detail).toContain("is skipped by the dequeue: it is at or past");
+    expect(b!.detail).toContain("waits on its own in-flight proposals");
+    expect(b!.detail).toContain("COORD_MERGE_PER_REPO_CAP=2");
+  });
+
+  it("still banners the cap when every slot is busy", () => {
+    // The guard `available > 0` is FALSE for a saturated train by construction,
+    // so the one banner saying "a free slot will not release these" was
+    // suppressed exactly when `slots-saturated` was telling the operator to
+    // raise COORD_MERGE_SLOTS. Both causes hold at once; both must be said.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          repos_at_cap: ["qontinui/web"],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 4,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 4,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const codes = s.banners.map((b) => b.code);
+    expect(codes).toContain("slots-saturated");
+    expect(codes).toContain("repo-cap-starved");
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("Every global merge slot is busy");
+    expect(b!.detail).toContain("even once one frees");
+    expect(b!.detail).toContain("4 queued proposals");
+    // The saturated lead must NOT claim free slots it does not have.
+    expect(b!.detail).not.toContain("slots are free");
+  });
+
+  it("names only the repos the cap is actually skipping", () => {
+    // A repo at its cap with NOTHING queued has `queued_blocked_by_cap: 0`:
+    // the dequeue is skipping none of its work, so naming it under "the
+    // dequeue skips their queued work" was a claim coord was not making.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos_at_cap: ["qontinui/idle", "qontinui/web"],
+          repos: [
+            {
+              repo: "qontinui/idle",
+              in_flight: 2,
+              queued: 0,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 0,
+            },
+            {
+              repo: "qontinui/web",
+              in_flight: 2,
+              queued: 2,
+              at_repo_cap: true,
+              queued_blocked_by_cap: 2,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("across 1 repo (web)");
+    expect(b!.detail).not.toContain("idle");
+  });
+
+  it("carries the A2 narrowing clause into the count-keyed banner", () => {
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 4,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 4,
+              narrowed_repo_cap: 1,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toContain("the reduced cap coord is enforcing for them");
+    expect(b!.detail).toContain("narrowed cap of 1");
+    expect(b!.detail).not.toContain("COORD_MERGE_PER_REPO_CAP=2");
+    expect(b!.detail).not.toContain("by design");
+  });
+
+  it("says nothing when coord reports the cap skipping nothing", () => {
+    // A zero coord ASSERTS is not the same as a field it never sent. With the
+    // count present and 0, there is no cap story to tell.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 1,
+          available: 2,
+          saturated: false,
+          repos_at_cap: [],
+          repos: [
+            {
+              repo: "qontinui/web",
+              in_flight: 1,
+              queued: 0,
+              at_repo_cap: false,
+              queued_blocked_by_cap: 0,
+            },
+          ],
+        }),
+      },
+      [],
+      NOW
+    );
+    expect(s.banners.map((b) => b.code)).not.toContain("repo-cap-starved");
+  });
+
+  it("keeps the legacy flag-keyed copy byte-identical", () => {
+    // A coord predating `queued_blocked_by_cap` sends the flag and nothing
+    // else. Degrading to silence there would lose today's signal, and a
+    // producer that tells us less must not make the copy worse.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          occupied: 2,
+          available: 1,
+          saturated: false,
+          repos_at_cap: ["qontinui/qontinui-runner"],
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "repo-cap-starved");
+    expect(b!.detail).toBe(
+      "1 slot is free, but 1 repo (qontinui-runner) already hold " +
+        "COORD_MERGE_PER_REPO_CAP=2 in-flight proposals, so the dequeue skips " +
+        "their queued work. Fairness filter, by design \u2014 it stops one busy " +
+        "repo monopolising the train."
+    );
+  });
+
   it("treats absent slot data as unknown, never as not-saturated", () => {
     const s = buildTrainSummary({ last_merged_at: ago(60) }, [], NOW);
     expect(s.slots).toBeNull();
     expect(s.banners.map((b) => b.code)).not.toContain("slots-saturated");
     expect(s.banners.map((b) => b.code)).not.toContain("repo-cap-starved");
+  });
+
+  // --- occupancy_over_cap: the invariant tripwire nothing was reading. ------
+  // coord always serializes it and documents it as having to read 0 forever.
+  // Unread, the console rendered the impossible `4/3` as an ordinary ratio and
+  // repeated the silence the Prometheus gauge already kept through three
+  // incidents.
+
+  it("raises a blocking banner when the slot count exceeds the ceiling", () => {
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          configured_cap: 3,
+          effective_cap: 3,
+          occupied: 4,
+          occupancy_over_cap: 1,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "occupancy-over-cap");
+    expect(b?.severity).toBe("blocking");
+    expect(b?.detail).toContain("4 permit-holding proposals");
+    expect(b?.detail).toContain("ceiling of 3");
+    expect(b?.detail).toContain("coord defect");
+  });
+
+  it("ranks the tripwire above the capacity readings it undermines", () => {
+    // Every slot number on the tab comes from the suspect count, so an
+    // operator must read "these numbers are wrong" before "the train is at
+    // capacity" — otherwise they chase a throughput ceiling that may not exist.
+    const s = buildTrainSummary(
+      { slots: slots({ occupied: 4, occupancy_over_cap: 1 }) },
+      [],
+      NOW
+    );
+    const codes = s.banners.map((b) => b.code);
+    expect(codes.indexOf("occupancy-over-cap")).toBeLessThan(
+      codes.indexOf("slots-saturated")
+    );
+  });
+
+  it("stays silent on a healthy invariant and on a coord that omits it", () => {
+    // 0 is coord ASSERTING the invariant holds; absence is an older producer
+    // saying nothing. Neither may raise the banner — and absence must not be
+    // back-derived from `occupied > configured_cap`, which is coord's
+    // comparison to make, not ours.
+    for (const over of [
+      { occupancy_over_cap: 0 },
+      { occupancy_over_cap: undefined },
+    ]) {
+      const s = buildTrainSummary({ slots: slots(over) }, [], NOW);
+      expect(s.banners.map((b) => b.code)).not.toContain("occupancy-over-cap");
+    }
+  });
+
+  // --- tenant_scoped: the scope the Slots stat used to assert wrongly. ------
+  // `/pr-merge/health` observes with `Some(tenant_id)` ALWAYS, so under any
+  // coord that reports the field the cap is the TENANT's while the occupancy
+  // beside it stays fleet-wide. The stat hardcoded "occupancy and cap are
+  // fleet-wide", pairing a fleet-wide numerator with a tenant-scoped
+  // denominator — the same shape as quoting a configured per-repo cap beside a
+  // flag derived against a narrowed one.
+
+  it("says the cap is the tenant's when coord scoped the observation", () => {
+    const note = slotScopeNote(slots({ tenant_scoped: true }));
+    expect(note).toContain("Occupancy is fleet-wide");
+    expect(note).toContain("YOUR TENANT's");
+  });
+
+  it("says both are fleet-wide only when coord reports an untenanted read", () => {
+    const note = slotScopeNote(slots({ tenant_scoped: false }));
+    expect(note).toContain("both fleet-wide");
+  });
+
+  it("reports the scope as unknown when coord omits tenant_scoped", () => {
+    // Absence is UNKNOWN, not fleet-wide. Picking either scope on no evidence
+    // is the absence-as-fact error the whole module exists to avoid.
+    const note = slotScopeNote(slots());
+    expect(note).toContain("unknown");
+    expect(note).not.toContain("YOUR TENANT's");
+    expect(note).not.toContain("both fleet-wide");
+  });
+
+  it("names the tenant's own fleet when its dynamic cap collapses to 0", () => {
+    // Scope changes the remedy and the blast radius: tenanted, the runners to
+    // bring back are the tenant's own and other tenants keep landing.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          dynamic: true,
+          effective_cap: 0,
+          occupied: 0,
+          online_ci_runners: 0,
+          tenant_scoped: true,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "no-ci-runners");
+    expect(b?.detail).toContain("YOUR TENANT's runners");
+    expect(b?.detail).toContain("other tenants may be landing normally");
+  });
+
+  it("keeps the no-runners copy unchanged when the scope is unknown", () => {
+    // A coord too old to report the scope must not have a tenant claim put in
+    // its mouth — the copy is byte-identical to before the field existed.
+    const s = buildTrainSummary(
+      {
+        slots: slots({
+          dynamic: true,
+          effective_cap: 0,
+          occupied: 0,
+          online_ci_runners: 0,
+        }),
+      },
+      [],
+      NOW
+    );
+    const b = s.banners.find((x) => x.code === "no-ci-runners");
+    expect(b?.detail).toBe(
+      `The slot cap is dynamic (COORD_MERGE_SLOT_CAP_DYNAMIC=1) and no CI ` +
+        `runner is online, so the effective cap is 0 — the train cannot ` +
+        `dispatch anything at all, regardless of how many PRs are ready.`
+    );
   });
 });
 

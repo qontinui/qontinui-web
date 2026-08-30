@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { RUNNER_API_BASE } from "@/lib/runner-api";
+import {
+  RUNNER_API_BASE,
+  type TaskRun,
+  type RunningTaskRunsResponse,
+} from "@/lib/runner-api";
 import {
   Activity,
   Clock,
@@ -42,14 +46,6 @@ interface WorkflowState {
   workflow_stage_display: string;
 }
 
-interface TaskRun {
-  id: string;
-  workflow_id?: string;
-  status: string;
-  prompt?: string;
-  started_at?: string;
-}
-
 interface ExecutionStatusPanelProps {
   workflowId: string;
 }
@@ -72,8 +68,15 @@ export function ExecutionStatusPanel({
     try {
       const res = await fetch(`${RUNNER_API_BASE}/task-runs/running`);
       if (!res.ok) return null;
-      const tasks: TaskRun[] = await res.json();
-      return tasks.find((t) => t.workflow_id === workflowId) ?? null;
+      // Envelope, not a bare array. `running.scope` is deliberately not
+      // rendered here: this panel returns null when it finds no run, so it
+      // never shows an empty list that could be misread as "runner idle".
+      // The user-facing caption for that case lives on the Stop action in
+      // WorkflowEditor, which does report `scope`.
+      const running = (await res.json()) as RunningTaskRunsResponse;
+      return (
+        running.task_runs.find((t) => t.workflow_id === workflowId) ?? null
+      );
     } catch {
       return null;
     }

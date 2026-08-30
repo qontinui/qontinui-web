@@ -36,6 +36,7 @@ from app.services.coord_jwks import (
     CoordTokenInvalidError,
     CoordTokenNotYetValidError,
     describe_token_rejection,
+    token_rejection_examples,
 )
 
 # ---------------------------------------------------------------------------
@@ -637,9 +638,10 @@ async def test_forced_refetch_is_rate_limited() -> None:
     """`kid` is attacker-supplied, so it must not drive unbounded fetches.
 
     Without a cooldown, any caller could force one coord round-trip per
-    request just by presenting an unknown kid. The sibling `cognito_jwks`
-    force-refreshes with no cooldown; this deliberately follows coord's own
-    Rust `FORCED_REFRESH_COOLDOWN` instead.
+    request just by presenting an unknown kid. This follows coord's own Rust
+    `FORCED_REFRESH_COOLDOWN`; the sibling `cognito_jwks` no longer lacks one
+    either (web #1076 gave it the same 30s), though the two still read
+    different clocks — see the constant's own comment.
     """
     _, jwk = _ed25519_keypair()
     private, _ = _ed25519_keypair()
@@ -681,3 +683,125 @@ async def test_forced_refetch_cooldown_expires() -> None:
         headers={"kid": new_jwk["kid"], "typ": "JWT"},
     )
     assert (await client.verify_token(token))["iss"] == "qontinui-coord"
+
+
+# ---------------------------------------------------------------------------
+# The DOCUMENTED 401 bodies must be the ones this module actually produces.
+#
+# `events.py` carried a hand-copied 401 example — "Invalid or expired token",
+# over a description naming a "runner token" retired two plans ago — and the
+# committed OpenAPI snapshots are generated from that declaration, so the dead
+# sentence reached every generated client. Nothing failed when it went stale,
+# because nothing connected the docs to the classifier. These tests are that
+# connection.
+# ---------------------------------------------------------------------------
+
+
+def _all_failure_classes() -> list[type[CoordTokenInvalidError]]:
+    """Base class + every subclass, discovered rather than listed."""
+    subclasses = CoordTokenInvalidError.__subclasses__()
+    assert CoordTokenNotYetValidError in subclasses, (
+        "sanity: the hierarchy walk must actually see the subclasses"
+    )
+    return [CoordTokenInvalidError, *subclasses]
+
+
+def test_examples_cover_every_failure_class_and_quote_the_classifier() -> None:
+    """One example per class, and each one is the classifier's own string.
+
+    Both halves matter. Missing a class means an arm this backend can return
+    is undocumented; a string the classifier does not produce means the docs
+    are lying, which is the exact defect being closed.
+    """
+    examples = token_rejection_examples()
+    classes = _all_failure_classes()
+
+    assert len(examples) == len(classes), (
+        f"expected one example per failure class, got {sorted(examples)} "
+        f"for {[c.__name__ for c in classes]}"
+    )
+
+    produced = set()
+    for cls in classes:
+        try:
+            exc = cls("example")
+        except TypeError:
+            exc = cls.__new__(cls)
+        produced.add(describe_token_rejection(exc))
+
+    documented = {e["value"]["detail"] for e in examples.values()}
+    assert documented == produced, (
+        "the documented 401 bodies drifted from describe_token_rejection"
+    )
+
+
+def test_example_keys_are_the_slugs_the_snapshots_carry() -> None:
+    """The keys are committed data, not an implementation detail.
+
+    They are the only label an API-docs renderer shows, AND they are written
+    verbatim into ``openapi-schema.json`` / ``openapi-schema.base.json``, so
+    a change in ``_example_key`` churns both snapshots and reds the CI drift
+    check. Pin them here, where the reason is legible, rather than letting a
+    100k-line snapshot diff be the first notification.
+    """
+    assert set(token_rejection_examples()) == {
+        "expired",
+        "not_yet_valid",
+        "foreign_issuer",
+        # The base class is the residue arm; it must not be keyed as if it
+        # were one of the specific ones.
+        "invalid",
+    }
+
+
+def test_phase_completed_documents_exactly_the_401s_it_can_return() -> None:
+    """The route's declared 401 examples equal the reachable bodies.
+
+    `POST /api/v1/events/phase-completed` authenticates with
+    `get_authenticated_device`, whose 401s are either `HTTPBearer`'s own
+    "Not authenticated" (no header at all) or `describe_token_rejection`.
+    Re-transcribing any of them here fails this test rather than silently
+    baking a dead string into the OpenAPI snapshots.
+    """
+    from app.api.v1.endpoints import events as events_ep
+
+    route = next(
+        r
+        for r in events_ep.router.routes
+        if getattr(r, "path", None) == "/phase-completed"
+    )
+    examples = route.responses[401]["content"]["application/json"]["examples"]
+    documented = {e["value"]["detail"] for e in examples.values()}
+
+    reachable = {"Not authenticated"} | {
+        e["value"]["detail"] for e in token_rejection_examples().values()
+    }
+    assert documented == reachable
+
+    description = route.responses[401]["description"]
+    assert "runner token" not in description.lower(), (
+        "the legacy runner bearer was retired in Phase 5 of the unified "
+        "devices registry; this door takes a coord-issued device-token JWT"
+    )
+
+
+@pytest.mark.asyncio
+async def test_missing_bearer_detail_is_the_string_the_docs_promise() -> None:
+    """The one hand-written example is pinned to FastAPI's real behaviour.
+
+    `HTTPBearer(auto_error=True)` raises this before any handler runs, so it
+    is not a string this codebase owns — which is precisely why it needs a
+    test rather than a comment.
+    """
+    from fastapi import HTTPException
+    from fastapi.security import HTTPBearer
+    from starlette.requests import Request
+
+    scheme = HTTPBearer(auto_error=True)
+    request = Request({"type": "http", "method": "POST", "path": "/x", "headers": []})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await scheme(request)
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Not authenticated"
