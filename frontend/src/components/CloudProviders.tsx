@@ -52,10 +52,12 @@ import { useSlotProviders } from "@/lib/extension-slots";
  * NOT pin either condition above: they register by hand and never import the
  * boot module. Condition 1 is pinned by the composed half of
  * `cloud-extensions-boot.registration.test.tsx`, which runs in its own CI
- * job; condition 2 by that same test file's "mount site" block, which reads
- * `app/(app)/layout.tsx` as source and asserts that this component is
- * rendered at all, that it sits inside `AppAuthGate`, and that the gate's
- * early return is still keyed on `loading`.
+ * job; condition 2 by the "mount site" block at the bottom of
+ * `CloudProviders.test.tsx`, which reads `app/(app)/layout.tsx` as source
+ * and asserts that this component is rendered at all, that it sits inside
+ * `AppAuthGate`, and that the gate's early return is still keyed on
+ * `loading`. That block's header states what a source scan does and does not
+ * buy; read it before trusting or extending it.
  *
  * A THIRD thing makes the OSS-only build immune independently of both: the
  * client and server provider snapshots start as the same frozen array, not

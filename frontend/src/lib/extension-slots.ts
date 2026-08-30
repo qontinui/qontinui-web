@@ -131,17 +131,18 @@ const slots: ExtensionSlots = {
  *
  * Not two separately-frozen `[]`s. After hydrating, `useSyncExternalStore`
  * compares the value it hydrated with (`getServerSnapshot`) against
- * `getSnapshot()` by identity, so two empty-but-distinct arrays force a
- * re-render of `CloudProviders` — the root of the whole authenticated tree —
- * on every OSS-only page load, for a value that did not change.
- * `useSlotComponent` gets this for free (both halves are `undefined`); the
- * provider hook has to spell it.
+ * `getSnapshot()` by identity — `Object.is`, never value equality — so two
+ * empty-but-distinct arrays would schedule a re-render of `CloudProviders`
+ * for a value that did not change. `useSlotComponent` gets this for free
+ * (both halves are `undefined`); the provider hook has to spell it.
  *
- * It also narrows the hazard `components/CloudProviders` documents at length:
- * with the two halves identical, an OSS-only build cannot hit the
- * hydration-time provider swap no matter how `AppAuthGate` is later
- * refactored. The composed build still depends on that gate, because there
- * the two snapshots genuinely differ.
+ * NOT a bug being fixed: no `CloudProviders` hydrates today, in either build
+ * shape, because `AppAuthGate` withholds it (see below). The point is that
+ * this is the one of the two hazard conditions that costs a shared constant
+ * to remove rather than a design commitment to maintain. With the halves
+ * identical, an OSS-only build cannot hit the hydration-time provider swap
+ * no matter how `AppAuthGate` is later refactored; the composed build still
+ * depends on that gate, because there the two snapshots genuinely differ.
  */
 const NO_PROVIDERS: readonly CloudProvider[] = Object.freeze([]);
 
@@ -221,9 +222,17 @@ export function registerCloudExtensions(
     // Before the notify loop below, not after: every subscriber re-reads the
     // registry, so a rebuild that happened afterwards would hand
     // `CloudProviders` the PREVIOUS array on the notification announcing the
-    // registration — the Map/array disagreement
-    // `extension-slots.test.tsx` pins.
-    providersSnapshot = Object.freeze([...slots.providers.values()]);
+    // registration — the ordering `extension-slots.test.tsx` pins.
+    //
+    // Back to `NO_PROVIDERS` when the result is empty, rather than a fresh
+    // `Object.freeze([])`. `registerCloudExtensions({ providers: {} })` takes
+    // this branch — a composed build whose cloud-control ships no provider
+    // this release does exactly that — and allocating there would leave
+    // `providersSnapshot` empty but no longer identical to the server
+    // snapshot, which is the one state `NO_PROVIDERS` exists to prevent.
+    providersSnapshot = slots.providers.size
+      ? Object.freeze([...slots.providers.values()])
+      : NO_PROVIDERS;
   }
 
   // Notify AFTER every mutation: subscribers re-read the registry, so a
