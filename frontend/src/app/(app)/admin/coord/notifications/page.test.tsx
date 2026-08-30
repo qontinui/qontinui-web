@@ -53,6 +53,11 @@ describe("CoordNotificationsPage", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpPost.mockReset();
+    // The page reads `?ref=` from `window.location` once on mount, and the
+    // `?ref=` block below sets it. Reset here rather than there so the URL is
+    // known-clean for EVERY test in the file, not just the ones that follow a
+    // block that remembered to clean up after itself.
+    window.history.replaceState({}, "", "/");
   });
 
   it("reads total and unread_count from the envelope, not the page length", async () => {
@@ -522,5 +527,257 @@ describe("CoordNotificationsPage", () => {
     ).toHaveTextContent(DEVICE);
     // The principal id is kept, not scrubbed — it is the paste target.
     expect(detail).toHaveTextContent("merge-train-steward");
+  });
+
+  it("a failed first read does not let the LIST claim there is nothing", async () => {
+    // The half of R6 the strip's own fix left behind. `loading` is cleared in a
+    // `finally`, so a first read that throws settles with `rows === []` and
+    // `RecordList`'s `loaded` prop true — which renders the `empty` node. The
+    // page therefore said "Could not read the feed" in the strip and, two
+    // elements below, "No notifications matching filters.": the fabricated
+    // absence the strip was just fixed to stop making, still being made in
+    // words.
+    httpGet.mockRejectedValue(
+      new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+    );
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-unknown")
+    ).toHaveTextContent(/unknown, not none/);
+    expect(
+      screen.queryByText("No notifications matching filters.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing unread.")).not.toBeInTheDocument();
+    // …and the strip agrees, because both now read the same predicate.
+    expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+      /Could not read the feed/
+    );
+  });
+
+  it("a genuinely empty answer still says nothing matches", async () => {
+    // The other direction: the unknown arm must not swallow the honest empty
+    // state. coord answered, and the answer was zero rows.
+    httpGet.mockResolvedValue({
+      notifications: [],
+      next_cursor: null,
+      total: 0,
+      unread_count: 0,
+    });
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByText("No notifications matching filters.")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-notifications-unknown")
+    ).not.toBeInTheDocument();
+  });
+
+  it("a blipped poll on an empty window does not flip the list to unknown", async () => {
+    // Why the slot is keyed on `loaded` and not on `rows.length` — the reason
+    // `readIsUnknown` states, asserted at the surface that would show it. coord
+    // has CONFIRMED this window empty; a single failing poll must not restate
+    // that as "unknown" and back again on the next tick.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [],
+        next_cursor: null,
+        total: 0,
+        unread_count: 0,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await screen.findByText("No notifications matching filters.");
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+
+    // The strip goes amber-stale — that IS its job — while the list holds the
+    // answer coord actually gave.
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        /stopped updating/
+      )
+    );
+    expect(
+      screen.queryByTestId("coord-notifications-unknown")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("No notifications matching filters.")
+    ).toBeInTheDocument();
+  });
+
+  it("a filter change whose read fails does not inherit the old filter's answer", async () => {
+    // The state that re-opened the same bug one step over. `loaded` is
+    // page-lifetime — never set back to false — so a success under "all kinds"
+    // used to license "No notifications matching filters." about a DIFFERENT
+    // filter that had never been read at all. `readIsUnknown`'s premise is
+    // "coord has CONFIRMED this window empty"; the confirmation has to be
+    // about the window being described.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+    await screen.findByTestId("coord-notification-row");
+
+    // Change the filter — rows are cleared, and the new query's read throws.
+    await user.click(screen.getByTestId("coord-notifications-unread-only"));
+
+    expect(
+      await screen.findByTestId("coord-notifications-unknown")
+    ).toBeInTheDocument();
+    // Neither honest-empty sentence may appear: coord has said nothing about
+    // this filter at all.
+    expect(
+      screen.queryByText("No notifications matching filters.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing unread.")).not.toBeInTheDocument();
+  });
+
+  it("does not promise a stale number in front of the irreversible button", async () => {
+    // The fourth consumer of the same failed poll. The strip says the count
+    // stopped updating; the mark-all tooltip must not spend it as a fact,
+    // because that arm marks EVERY unread row for the principal and there is
+    // no mark-unread in the API.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).not.toHaveAttribute("title", expect.stringContaining("137"))
+    );
+    // The warning survives; only the figure is withdrawn.
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("cannot be undone"));
+  });
+
+  describe("the ?ref= banner", () => {
+    // The banner reads `window.location` once on mount. The outer `beforeEach`
+    // puts the URL back to `/` for every test in the file, so this leaves no
+    // residue for whatever is added after it.
+    function withRef(ref: string) {
+      window.history.replaceState(
+        {},
+        "",
+        `/admin/coord/notifications?ref=${ref}`
+      );
+    }
+
+    it("blames the feed only when the FEED failed, not when mark-read did", async () => {
+      // `error` is the page's one error line and mark-read writes to it, so
+      // consulting it here made a rejected POST report "the feed above failed
+      // to load" about a feed that had loaded perfectly well — and told the
+      // operator the wrong thing to go and fix.
+      httpGet.mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      });
+      httpPost.mockRejectedValue(new Error("mark-read failed: 500 - boom"));
+      withRef(UUID_B);
+      const user = userEvent.setup();
+      render(<CoordNotificationsPage />);
+
+      // UUID_B is not on the page, so the banner starts on its last arm.
+      expect(
+        await screen.findByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/not on the page that is loaded/);
+
+      await user.click(screen.getByTestId("coord-notification-mark-read"));
+      await screen.findByText(/Could not mark read/);
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/not on the page that is loaded/);
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).not.toHaveTextContent(/feed above failed to load/);
+    });
+
+    it("does not send the operator to a Load more that just failed", async () => {
+      // The banner's fallback arm ends "…clear them or load more". A failed
+      // PAGE leaves the head counts fresh — so the strip must NOT go stale —
+      // while making that exact instruction the wrong one.
+      httpGet
+        .mockResolvedValueOnce({
+          notifications: [notification()],
+          next_cursor: "cursor-1",
+          total: 900,
+          unread_count: 137,
+        })
+        .mockRejectedValue(new Error("GET …/notifications failed: 500 - boom"));
+      withRef(UUID_B);
+      const user = userEvent.setup();
+      render(<CoordNotificationsPage />);
+
+      await screen.findByTestId("coord-notification-row");
+      await user.click(screen.getByTestId("coord-notifications-load-more"));
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/could not be looked up/)
+      );
+      // …and the strip stays green: the head read never failed.
+      expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
+        "data-health-level",
+        "green"
+      );
+    });
+
+    it("reports the migration, not a missing event, while the table is absent", async () => {
+      // With no table there is no page for the event to be absent FROM, so
+      // "not on the page that is loaded — clear the filters" would report a
+      // deployment state as a fact about this event.
+      httpGet.mockRejectedValue(
+        new Error("GET …/notifications failed: 503 - schema_migration_pending")
+      );
+      withRef(UUID_B);
+      render(<CoordNotificationsPage />);
+
+      expect(
+        await screen.findByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/deployment state, not a missing event/);
+    });
+
+    it("still blames the feed when the feed is what failed", async () => {
+      httpGet.mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+      withRef(UUID_B);
+      render(<CoordNotificationsPage />);
+
+      expect(
+        await screen.findByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/feed above failed to load/);
+    });
   });
 });

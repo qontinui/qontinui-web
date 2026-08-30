@@ -426,4 +426,37 @@ describe("linkedRefNotice", () => {
       linkedRefNotice({ found: false, loading: false, error: false })
     ).toMatch(/not on the page that is loaded/i);
   });
+
+  it("reports the migration rather than a missing event, and outranks the rest", () => {
+    // Under `503 schema_migration_pending` there is no table, so there is no
+    // page for the event to be absent FROM — and "clear the filters" sends the
+    // operator after something no filter can fix. Asserted with `loading` and
+    // `error` also true, because the arm is only useful if it wins.
+    const line = linkedRefNotice({
+      found: false,
+      loading: true,
+      error: true,
+      migrationPending: true,
+    });
+    expect(line).toMatch(/deployment state, not a missing event/i);
+    expect(line).not.toMatch(/not on the page/i);
+    expect(line).not.toMatch(/failed to load/i);
+  });
+
+  it("still yields to a FOUND event — the row is on the page either way", () => {
+    expect(
+      linkedRefNotice({
+        found: true,
+        loading: false,
+        error: false,
+        migrationPending: true,
+      })
+    ).toMatch(/expanded below/i);
+  });
+
+  it("is unchanged when the flag is absent, so existing callers do not move", () => {
+    expect(
+      linkedRefNotice({ found: false, loading: false, error: false })
+    ).toMatch(/not on the page that is loaded/i);
+  });
 });
