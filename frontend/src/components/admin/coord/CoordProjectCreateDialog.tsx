@@ -16,7 +16,7 @@
  * caveat, because amber's contract is "waiting on something that will clear
  * itself" and nothing here is waiting.
  *
- * Two honesty rules drive the design, both stated by the plan:
+ * Three honesty rules drive the design, all stated by a plan:
  *
  * 1. **Never silently mangle the name.** Coord slugifies and REJECTS a name
  *    that does not survive it (`400 invalid_name`) rather than assigning
@@ -30,6 +30,16 @@
  *    tenant only — so no runner can be paired to it yet (plan Q5,
  *    explicitly out of scope). Saying so on success is cheaper than letting
  *    the user discover it by failing to pair.
+ * 3. **Show the derived id BEFORE submit, and never promise it.** Plan
+ *    `2026-08-27-tenant-creation-fix-and-members-page-ux` Phase 1 #7: this
+ *    dialog used to reveal the slug only in the success state, which is too
+ *    late to be an affordance — it made rule 1's reject-don't-mangle contract
+ *    something the user met only by failing. `slugifyProjectName` mirrors
+ *    coord's rule so the id appears as they type. It is a preview and nothing
+ *    more: it does not gate submit (a mirror with a veto turns drift into an
+ *    unusable name — see `projectSlug.ts`), and it says only what the id WOULD
+ *    be, never that it is available, because the reserved-list and
+ *    group-mapping halves of coord's answer cannot be mirrored from a browser.
  *
  * The success path is deliberately two-step rather than an immediate
  * reload: the caveat above would be unreadable if the page navigated out
@@ -57,6 +67,7 @@ import { Label } from "@/components/ui/label";
 import { createTenant, TenantCreateError } from "@/components/sessions/api";
 import type { TenantCreateResponse } from "@/components/sessions/types";
 import { useTenant } from "@/contexts/tenant-context";
+import { projectSlugProblemMessage, slugifyProjectName } from "./projectSlug";
 
 /** Coord's `min_length`/`max_length` on the proxy's `display_name`. Mirrored
  *  here only to disable submit early — the server is still the authority. */
@@ -154,6 +165,20 @@ export function CoordProjectCreateDialog({
   const canSubmit =
     !submitting && trimmed.length > 0 && trimmed.length <= MAX_NAME_LENGTH;
 
+  // The live slug preview (plan Phase 1 #7). Derived from the TRIMMED value
+  // because that is what `handleSubmit` posts — previewing the raw text would
+  // show a different id from the one the request asks for.
+  //
+  // It deliberately does NOT feed `canSubmit`. `slugifyProjectName` is a
+  // mirror of a rule that lives in coord, and giving a mirror a veto is how a
+  // drift stops being a cosmetic bug and starts making a legitimate name
+  // unusable. The server remains the authority, exactly as this file's header
+  // rule 1 says; the preview only stops the answer from being a surprise.
+  const slugPreview = slugifyProjectName(trimmed);
+  const slugProblem = slugPreview.ok
+    ? null
+    : projectSlugProblemMessage(slugPreview.reason);
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -230,7 +255,12 @@ export function CoordProjectCreateDialog({
               disabled={submitting}
               aria-invalid={error !== null}
               aria-describedby={
-                error !== null ? "coord-project-create-error" : undefined
+                [
+                  error !== null ? "coord-project-create-error" : null,
+                  trimmed.length > 0 ? "coord-project-create-preview" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ") || undefined
               }
             />
             <p className="text-xs text-muted-foreground">
@@ -238,6 +268,48 @@ export function CoordProjectCreateDialog({
               own, and if the name can&apos;t produce one you&apos;ll be told
               rather than given something you didn&apos;t choose.
             </p>
+            {/* The derived id, live (plan Phase 1 #7). `aria-live="polite"`
+                rather than `role="alert"`: this updates on every keystroke, and
+                an assertive region would interrupt the operator mid-word to
+                read out an id they are still typing. */}
+            {trimmed.length > 0 ? (
+              <p
+                id="coord-project-create-preview"
+                className="text-xs text-muted-foreground"
+                data-testid="coord-project-create-preview"
+                data-ui-bridge-id="coord.project-create.preview"
+                aria-live="polite"
+              >
+                {slugPreview.ok ? (
+                  <>
+                    Short id:{" "}
+                    <span
+                      className="font-mono text-foreground"
+                      data-testid="coord-project-create-preview-slug"
+                    >
+                      {slugPreview.slug}
+                    </span>
+                    {/* Derivation is ALL that can be previewed. Coord's other
+                        two rejections are unmirrorable from here — the reserved
+                        list reads coord's own deployment config, and the
+                        group-mapping check is a read inside the create
+                        transaction — so this line must never be taken for
+                        "this id is yours". */}
+                    <span className="text-muted-foreground/70">
+                      {" "}
+                      · whether it&apos;s free is checked when you create it
+                    </span>
+                  </>
+                ) : (
+                  <span
+                    className="text-destructive"
+                    data-testid="coord-project-create-preview-problem"
+                  >
+                    {slugProblem}
+                  </span>
+                )}
+              </p>
+            ) : null}
             {error !== null ? (
               <p
                 id="coord-project-create-error"
