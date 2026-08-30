@@ -251,9 +251,16 @@ interface MyTenantsResponse {
  * The predicate lives here rather than at each call site for the reason
  * `console/readFailure.ts` gives for its own: seven sites each spelling it
  * themselves will drift, and the drift is invisible because every spelling
- * looks right. It is deliberately NOT in the `console/` barrel — that module is
- * presentation only ("nothing here fetches, polls, or knows a route"), and this
- * is about a wire body. Promote it the first time a second page needs it.
+ * looks right.
+ *
+ * It stays local for one reason only — no second page needs it yet. NOT
+ * because the `console/` barrel is off-limits to wire concerns: that barrel
+ * says "nothing here fetches, polls, or knows a route", but it exports
+ * `readFailure.ts`, whose `isNotFoundError` parses an HTTP status out of a
+ * `GET <url> failed: <status> - <body>` message. So the barrel already holds a
+ * predicate about a wire body, and citing "presentation only" as the reason
+ * would be a rule this file's own precedent breaks. Promote this the first
+ * time a second consumer appears.
  *
  * Throwing is the whole mechanism: each caller already has a `catch` that sets
  * the error state, so refusing the body here routes it to the unknown arm the
@@ -445,7 +452,24 @@ function MembersTable({
       // and, through `stats` below, the four-count headline `members 0 ·
       // administrators 0 · developers 0 · no access 0`. That is the page's
       // whole answer, invented from a read that did not land.
-      setOperators(requireRows<OperatorRow>(json?.operators, "members"));
+      const rows = requireRows<OperatorRow>(json?.operators, "members");
+      for (const op of rows) {
+        // Per ROW as well, and this one hides rather than announcing itself.
+        // `deriveMemberStatus` does not throw on a string: `"operator"
+        // .includes("admin")` is false and `.length > 0` is true, so the row
+        // renders as Developer and `stats` counts it as one. Nothing looks
+        // wrong until somebody clicks the row, and `op.roles.map()` in the
+        // expansion (`MemberDetail`, below) throws and unmounts the tree.
+        //
+        // Absent is refused here, unlike the `tenants[].roles` guard above,
+        // and the difference is the wire types: `TenantRoleEntry.roles` is
+        // declared optional, `OperatorRow.roles` is not. The render agrees —
+        // `op.roles.length` is dereferenced unconditionally — so a body
+        // without the key already crashed this page. Throwing turns that
+        // crash into the error arm the section already has.
+        requireRows<string>(op?.roles, "members row `roles`");
+      }
+      setOperators(rows);
     } catch (err) {
       log.warn("load members failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -530,18 +554,25 @@ function MembersTable({
       else if (k === "developer") devs += 1;
       else none += 1;
     }
-    // `null` renders as `–`, never `0` (`StatCluster.tsx:95`). R6's rule is
-    // "not fetched includes fetched and FAILED" — `console/readFailure.ts`
-    // says so in as many words — but only the in-flight half was spelled here,
-    // so a FAILED read still published all four counts as confident zeroes.
-    // The error text sits directly below this strip, which made the strip a
-    // contradiction rather than a silence: "no access 0" reads as "nobody is
-    // locked out", the single most reassuring answer the page can give, on the
-    // strength of a read that never arrived.
+    // `null` renders as `–`, never `0` (`StatCluster.tsx:95`). Only the
+    // in-flight half of that was spelled here, so a FAILED read still
+    // published all four counts as confident zeroes — and "no access 0" reads
+    // as "nobody is locked out", the single most reassuring answer the page
+    // can give, on the strength of a read that never arrived.
     //
-    // Error wins over stale rows, as it does at every other read site on this
-    // page: a failed REFRESH degrades known counts to `–` instead of leaving
-    // numbers standing that the page can no longer vouch for.
+    // This is DELIBERATELY stricter than `console/readFailure.ts`, and the
+    // difference is worth naming rather than glossing. That module's
+    // `readIsUnknown` is `readFailed && !loaded`: once a read has ever landed,
+    // it says a later failure belongs to `staleDetail`, not to "unknown", and
+    // it calls the count-based spelling wrong because on a POLLED surface one
+    // blipped tick flips a genuinely-empty list to "unknown" and back.
+    //
+    // That reasoning does not reach here. `MembersTable` is not polled — it
+    // reloads on mount, on `refreshKey`, and after a grant/revoke — so there
+    // is no tick to flicker on. And the error arm already replaces the entire
+    // table below with the error paragraph, so dashing the strip makes it
+    // AGREE with the table underneath instead of contradicting it. Numbers
+    // standing over a hidden table is the state worth avoiding.
     const unknown = loading || error !== null;
     return [
       {
