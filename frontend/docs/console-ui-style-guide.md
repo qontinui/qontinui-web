@@ -592,14 +592,27 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > line, which mark-read also writes, so a rejected POST blamed a feed that had
 > loaded fine.
 >
-> Two rules follow. **Import the predicate, do not re-spell it**
-> (`console/readFailure.ts` `readIsUnknown`): two hand-rolled `failed &&
-> !loaded`s drift, and the drift is invisible because both spellings look
-> right. And **give each surface the flag that answers ITS question** — "has
-> anything ever arrived" (`loaded`), "did the last read fail" (`readFailed`),
-> and "is anything wrong on this page at all" (`error`, which writes from
-> mutations too) are three different questions, and a surface wired to the
-> wrong one is confidently wrong rather than silent.
+> Three rules follow.
+>
+> **Import the predicate, do not re-spell it** (`console/readFailure.ts`
+> `readIsUnknown`): two hand-rolled `failed && !loaded`s drift, and the drift is
+> invisible because both spellings look right.
+>
+> **Give each surface the flag that answers ITS question.** "Has anything ever
+> arrived" (`loaded`), "did the last read fail" (`readFailed`), "did paging
+> fail" and "is anything wrong on this page at all" (`error`, which mutations
+> write to as well) are four different questions, and a surface wired to the
+> wrong one is confidently wrong rather than silent. **Count the consumers
+> before declaring the sweep done** — on `/admin/coord/notifications` there
+> were four, and the fourth was a tooltip spending a stale count in front of an
+> irreversible mark-all.
+>
+> **Check the GRAIN of the flag, not just its truth.** A page-lifetime `loaded`
+> is the right input for a strip whose scalars are filter-independent and the
+> wrong one for a query-scoped list: a success under filter A otherwise
+> licenses an empty-state claim about filter B, which no read has ever
+> answered. `readIsUnknown`'s premise is that coord *confirmed this window
+> empty* — so the confirmation has to be about the window being described.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
