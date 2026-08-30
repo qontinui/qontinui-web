@@ -32,7 +32,7 @@
  *    different versions of the same mistake:
  *
  *    - The COLLAPSED panel headers. `summary` renders inside
- *      `CollapsibleTrigger` (`CollapsiblePanel.tsx:131`), so the badge is on
+ *      `CollapsibleTrigger` (`CollapsiblePanel.tsx:138`), so the badge is on
  *      screen while the body — including the error text — is unmounted by
  *      Radix, and both panels are `defaultOpen={false}`.
  *      `{loading ? "–" : rows.length}` therefore published `mappings 0` /
@@ -64,13 +64,30 @@
  * still be telling the operator there is nothing to break, so asserting only
  * the marker would let the regression back in.
  *
- * The `still reports…` / `still renders…` tests are the positive controls.
- * Without them the fix could degrade into a blanket "unknown", which destroys
- * the signal instead of qualifying it — the same failure in the other
- * direction. A genuinely empty read must still say "empty", and `{}` from
- * `/coord/my-tenants` must still say "No roles found.": that body is
- * indistinguishable from an operator who really holds nothing, so it is
- * deliberately NOT refused.
+ * The `still reports…` / `still renders…` / `still says…` tests are the
+ * positive controls. Without them the fix could degrade into a blanket
+ * "unknown", which destroys the signal instead of qualifying it — the same
+ * failure in the other direction. A genuinely empty read must still say
+ * "empty", and `{}` from `/coord/my-tenants` must still say "No roles found.":
+ * that body is indistinguishable from an operator who really holds nothing, so
+ * it is deliberately NOT refused.
+ *
+ * **What the controls do and do not prove.** Four of them —
+ * `still reports a genuinely empty member list`, `still says 'No roles
+ * found.'`, `still reports a member count the probe actually delivered`, and
+ * `still renders a tenant card the read actually delivered` — assert against
+ * markup that already existed, so reverting the guards leaves them green and
+ * they are true controls.
+ *
+ * The two panel-badge controls (`still reports a genuinely empty mapping
+ * table` / `…group list as zero`) are NOT, against a tree predating this
+ * file's first commit: they read `data-testid="coord-group-roles-summary"` and
+ * `"coord-cognito-groups-summary"`, which that commit ADDED. Reverted that far
+ * they red on a missing testid rather than on behaviour, so they cannot
+ * demonstrate the `error ? "unknown"` arm avoids over-reporting. They are
+ * genuine controls only against the commit that introduced those badges. Said
+ * plainly because a control that reds for the wrong reason is worse than none:
+ * it looks like coverage.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -430,6 +447,28 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     expect(screen.queryByTestId("coord-members-table")).toBeNull();
   });
 
+  it("refuses a member ROW whose roles are not a list", async () => {
+    // The quiet one. `deriveMemberStatus` does NOT throw on a string —
+    // `"operator".includes("admin")` is false and `.length > 0` is true — so
+    // the row renders as Developer and the strip counts `developers 1`.
+    // Nothing looks wrong until someone clicks the row, at which point
+    // `op.roles.map()` in the expansion throws and unmounts the tree.
+    //
+    // So this asserts the read is refused BEFORE any of that: no row, and no
+    // count standing behind it.
+    state.operators = [{ ...operator("ops@example.com"), roles: "operator" }];
+    render(<MembersPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/malformed members row `roles` payload/i)
+      ).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId("coord-members-table")).toBeNull();
+    expect(badgeText(screen.getByTestId("coord-members-count-developers")))
+      .not.toMatch(/\d/);
+  });
+
   it("still reports a genuinely empty member list as zero", async () => {
     state.operators = [];
     render(<MembersPage />);
@@ -479,6 +518,77 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     const card = await screen.findByTestId("coord-members-my-tenants");
     await waitFor(() =>
       expect(card.textContent ?? "").toMatch(/malformed my-tenants/i)
+    );
+  });
+
+  it("still says 'No roles found.' for an empty object body", async () => {
+    // The control for the ONE body this guard deliberately lets through. Every
+    // field on `MyTenantsResponse` is optional and the endpoint has no response
+    // model, so `{}` cannot be told apart from coord answering "you hold
+    // nothing" — and an operator who really holds nothing must still be told
+    // so. Without this test the docstring's promise is unenforced, and
+    // tightening the guard later would silently break the honest case.
+    state.myTenants = {};
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /your tenant & roles/i })
+    );
+    const card = await screen.findByTestId("coord-members-my-tenants");
+    await waitFor(() =>
+      expect(card.textContent ?? "").toMatch(/no roles found/i)
+    );
+    expect(card.textContent ?? "").not.toMatch(/malformed/i);
+  });
+
+  it("refuses a top-level array where the tenant object belongs", async () => {
+    // An array passes `typeof x === "object"`, so it needs its own arm.
+    state.myTenants = [{ tenant_id: "t-1" }];
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /your tenant & roles/i })
+    );
+    const card = await screen.findByTestId("coord-members-my-tenants");
+    await waitFor(() =>
+      expect(card.textContent ?? "").toMatch(/malformed my-tenants payload/i)
+    );
+  });
+
+  it("refuses a tenant ENTRY whose roles are not a list", async () => {
+    // Per-entry, not just top level: `(t.roles ?? []).map()` throws on a
+    // string, and one bad entry would take the whole card down.
+    state.myTenants = {
+      home_tenant_slug: "acme",
+      tenants: [{ tenant_id: "t-1", slug: "acme", roles: "admin" }],
+    };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /your tenant & roles/i })
+    );
+    const card = await screen.findByTestId("coord-members-my-tenants");
+    await waitFor(() =>
+      expect(card.textContent ?? "").toMatch(/malformed my-tenants tenant/i)
+    );
+  });
+
+  it("refuses a top-level roles field that is not a list", async () => {
+    // The `tenants`-less shape: the card falls back to `data.roles`, which
+    // reaches `.map()` at the render site just the same.
+    state.myTenants = { home_tenant_slug: "acme", roles: "admin" };
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /your tenant & roles/i })
+    );
+    const card = await screen.findByTestId("coord-members-my-tenants");
+    await waitFor(() =>
+      expect(card.textContent ?? "").toMatch(/malformed my-tenants `roles`/i)
     );
   });
 
