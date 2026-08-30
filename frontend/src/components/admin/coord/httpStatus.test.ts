@@ -13,9 +13,12 @@ describe("httpStatusOf", () => {
 
   it("ignores a status-shaped string in the response BODY", () => {
     // The tail of the message is `await response.text()` — upstream-controlled
-    // prose. An unanchored probe would read this 500 as a 404, and a caller
-    // that hides its banner for not-found would never show the operator the
-    // real status.
+    // prose. This pins the shipped defect, which was a BOOLEAN probe
+    // (`/ failed: 404 /.test(message)`): true anywhere in the string, so this
+    // 500 read as a 404 — and the caller hides its banner for not-found, so
+    // the operator would never have seen the real status. Reading the FIRST
+    // ` failed: NNN ` is what closes that; the anchor closes the separate case
+    // below.
     expect(
       httpStatusOf(
         new Error(
@@ -23,6 +26,19 @@ describe("httpStatusOf", () => {
         )
       )
     ).toBe(500);
+  });
+
+  it("returns null for a wrapper error that merely embeds an httpClient one", () => {
+    // What the ANCHOR buys, and the reason it is not decoration. A message
+    // that is not itself an `httpClient` status rejection can still quote one
+    // — a retry wrapper, a batched reader, an error re-thrown with context.
+    // Read unanchored, that borrowed status is reported as this request's own,
+    // and the caller renders "not found" for a request that never got a 404.
+    expect(
+      httpStatusOf(
+        new Error("Failed to fetch: upstream GET /q failed: 404 - nope")
+      )
+    ).toBeNull();
   });
 
   it("returns null when there is no status to read", () => {

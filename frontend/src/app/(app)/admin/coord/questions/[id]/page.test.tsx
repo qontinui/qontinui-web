@@ -325,36 +325,32 @@ describe("the guards a stale read must not get past", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("[catch] does not paint A's failure over B's displayed question", async () => {
-    // The catch-arm seq guard. Without it, A rejecting after B rendered runs
-    // `setError`/`setNotFound` against the wrong id — a failure banner, or a
-    // "not found", over a question that read fine.
+  it("[catch] does not banner A's failure while B is still in flight", async () => {
+    // The catch-arm seq guard. Its observable consequence is narrow, and worth
+    // stating precisely rather than overclaiming: a stale `setNotFound` is
+    // masked (`shown` wins, and `loading` covers the in-flight window), but a
+    // stale non-404 `setError` is NOT -- the banner is `{error && !notFound}`,
+    // so A's failure paints a red "Failed to load" over B's skeleton, about a
+    // read that has been superseded and is no longer on screen.
     let rejectA: (e: unknown) => void = () => {};
-    const B = { question_id: "q-B", question: "Question B — the current one" };
     get.mockImplementation((url: string) =>
       url.includes("q-A")
         ? new Promise((_r, reject) => {
             rejectA = reject;
           })
-        : Promise.resolve(B)
+        : new Promise(() => {}) // B never settles
     );
 
     routeId = "q-A";
-    const { rerender } = render(<CoordQuestionDetailPage />);
+    const { container, rerender } = render(<CoordQuestionDetailPage />);
     routeId = "q-B";
     rerender(<CoordQuestionDetailPage />);
 
+    rejectA(httpError(500));
     await waitFor(() => {
-      expect(screen.getByText(B.question)).toBeInTheDocument();
+      expect(container.querySelector(".animate-pulse")).toBeTruthy();
     });
 
-    rejectA(httpError(404));
-    await waitFor(() => {
-      expect(screen.getByText(B.question)).toBeInTheDocument();
-    });
-    expect(
-      screen.queryByTestId("coord-question-not-found")
-    ).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed to load:/)).not.toBeInTheDocument();
   });
 
