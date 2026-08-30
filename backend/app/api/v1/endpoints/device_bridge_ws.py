@@ -43,7 +43,14 @@ Consequences worth stating outright
   NULL`` — the *runner* never registered with *this* backend. Redis, the
   phone bridge, and this file's WebSocket code are all uninvolved. Check the
   runner's ``GET http://127.0.0.1:9876/web-integration/status``, not the
-  phone. See ``knowledge-base/qontinui-specific/mobile-app.md``.
+  phone. See ``knowledge-base/qontinui-specific/mobile-app.md``. Every such
+  503 emits a ``runner_proxy_relay_not_connected`` structured log carrying
+  ``device_id``/``user_id``/``path``/``request_id``/``last_seen_at``, and
+  the same ``request_id`` is echoed in the response body — grep the log for
+  the id the client shows.
+* A coord-side fault is **not** a 503 from here: ``coord_device`` maps a
+  coord 5xx to ``502 upstream_error`` precisely so the two cannot be
+  confused (503 is reserved for ``ws_session_id IS NULL``).
 """
 
 import asyncio
@@ -864,6 +871,39 @@ def _resolve_relay_timeout_s(request: Request) -> float:
     return ms / 1000.0
 
 
+async def _relay_device_last_seen_at(
+    request: Request,
+    device_uuid: UUID,
+    user_id: str,
+) -> str | None:
+    """Best-effort ``coord.devices.last_seen_at`` for the not-connected 503.
+
+    Coord's ``GET /coord/devices/:id/routing`` deliberately returns only
+    ``{device_id, ws_session_id}``, so the timestamp comes from the full-row
+    read (``GET /coord/devices/:id/owned``) instead. That read runs ONLY on
+    the 503 path, never on a healthy relay dispatch.
+
+    **This function never raises.** A coord fault while decorating a 503
+    must not convert a genuine "runner not connected" into a 502/504 — the
+    503 is already the correct answer and the timestamp is a nicety. Any
+    failure yields ``None``, which the client renders as an unknown
+    last-seen rather than a wrong one.
+    """
+    try:
+        owned = await coord_device.get_owned_device(request, device_uuid, user_id)
+    except Exception:
+        logger.info(
+            "runner_proxy_relay_last_seen_lookup_failed",
+            device_id=str(device_uuid),
+            exc_info=True,
+        )
+        return None
+    value = owned.get("last_seen_at")
+    # coord serialises the row with ``to_jsonb``, so a timestamptz arrives as
+    # an ISO-8601 string. Anything else is not a timestamp we can promise.
+    return value if isinstance(value, str) else None
+
+
 async def _runner_proxy_relay(
     request: Request,
     path: str,
@@ -930,9 +970,34 @@ async def _runner_proxy_relay(
             content={"detail": "device not found or not owned by caller"},
         )
     if row.get("ws_session_id") is None:  # ws_session_id IS NULL
+        # This is the relay's single most common failure AND, historically,
+        # its most silent one: it emitted no log line at all, so the
+        # commonest cloud-relay outage was invisible server-side, and the
+        # body carried nothing the client could turn into a diagnosis
+        # ("Couldn't reach the runner through the cloud relay" and nothing
+        # more). W-A/W-B of the mobile-cloud-relay remediation loop.
+        #
+        # The extra fields are ADDITIVE and optional — ``detail`` keeps its
+        # exact prior value so an older mobile build is unaffected.
+        request_id = str(uuid4())
+        last_seen_at = await _relay_device_last_seen_at(request, device_uuid, user_id)
+        logger.warning(
+            "runner_proxy_relay_not_connected",
+            device_id=str(device_uuid),
+            user_id=str(user_id),
+            path=path,
+            method=request.method,
+            request_id=request_id,
+            last_seen_at=last_seen_at,
+        )
         return JSONResponse(
             status_code=503,
-            content={"detail": "runner not connected"},
+            content={
+                "detail": "runner not connected",
+                "device_id": str(device_uuid),
+                "last_seen_at": last_seen_at,
+                "request_id": request_id,
+            },
         )
 
     # 2. Validate path with the existing SSRF guard.
