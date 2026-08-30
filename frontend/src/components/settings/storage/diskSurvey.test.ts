@@ -476,6 +476,43 @@ describe("canClaimNothingToReclaim", () => {
     expect(canClaimNothingToReclaim(noKey)).toBe(false);
   });
 
+  it("parses depth_limited_dirs, the fifth shortfall signal", () => {
+    // The one way a walk can fall short that this page had no name for. It is
+    // NOT folded into `truncated`, and the runner keeps it out of
+    // `bytes_incomplete` while items are present -- so a UI explaining WHY a
+    // walk was short has to read it, or it names a cause that did not happen.
+    const withBound = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: null, bytes_incomplete: true },
+      scan: {
+        dirs_visited: 4_102,
+        truncated: false,
+        read_errors: [],
+        read_errors_total: 0,
+        depth_limited_dirs: 118,
+      },
+      census_status: "fresh",
+    });
+    expect(withBound.scan?.depthLimitedDirs).toBe(118);
+    // The other four shortfall signals are all clean in this state -- which is
+    // exactly why the fifth had to become readable.
+    expect(withBound.scan?.truncated).toBe(false);
+    expect(readErrorsSeen(withBound.scan)).toBe(0);
+    // ...and the runner's null total still vetoes the "nothing to reclaim"
+    // sentence on its own, with no help from the new field.
+    expect(canClaimNothingToReclaim(withBound)).toBe(false);
+
+    // Absence is UNKNOWN, not zero: a build that predates the field says
+    // nothing about the bound, and `null` keeps that distinct from a reported 0.
+    const older = surveyOf({
+      items: [],
+      summary: { reclaimable_bytes: 0 },
+      scan: { dirs_visited: 10, truncated: false, read_errors: [] },
+      census_status: "fresh",
+    });
+    expect(older.scan?.depthLimitedDirs).toBeNull();
+  });
+
   it("is FALSE when the runner sent NO reclaimable_bytes at all", () => {
     // W4: absence is UNKNOWN. This is the function whose docstring says a
     // missing total may never license the sentence, and it used to read a
