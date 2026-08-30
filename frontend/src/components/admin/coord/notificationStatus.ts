@@ -243,9 +243,21 @@ export function linkedRefNotice(state: {
   found: boolean;
   loading: boolean;
   error: boolean;
+  /** coord has the routes but not the table — there is no feed to search. */
+  migrationPending?: boolean;
 }): string {
   if (state.found) {
     return "Showing the event this write was announced with — expanded below.";
+  }
+  // Outranks every arm below: with no table there is no page for the event to
+  // be absent FROM, so "not on the page that is loaded" would report a
+  // deployment state as a fact about this event — and "clear the filters"
+  // would send the operator after something no filter can fix.
+  if (state.migrationPending) {
+    return (
+      "The linked event cannot be looked up yet — coord has the notifications " +
+      "routes but not the table. This is a deployment state, not a missing event."
+    );
   }
   if (state.loading) return "Looking for the linked event…";
   if (state.error) {
