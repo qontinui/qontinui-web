@@ -96,8 +96,9 @@ def test_repository_scopes_by_the_parent_task_runs_owner() -> None:
     keeps the behaviour keeps passing and one that drops the ownership
     predicate fails.
     """
-    from app.models.task_run import DeferredQuestion, TaskRun
     from sqlalchemy import select
+
+    from app.models.task_run import DeferredQuestion, TaskRun
 
     query = (
         select(DeferredQuestion, TaskRun.task_name, TaskRun.runner_id)
