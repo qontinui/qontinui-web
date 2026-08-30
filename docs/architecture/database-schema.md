@@ -6,7 +6,7 @@ This document provides a comprehensive Entity-Relationship (ER) diagram of the Q
 
 - **SQLAlchemy 2.0.43** - Python ORM for database interactions
 - **Alembic 1.16.5** - Database migration management
-- **PostgreSQL 15+** - Primary database (production: AWS RDS)
+- **PostgreSQL 16+** - Primary database (production: AWS RDS instance `qontinui-staging`, engine 16.13, us-east-1)
 - **AsyncPG** - Async PostgreSQL driver for high-performance queries
 - **Pydantic** - Data validation and serialization
 
@@ -900,6 +900,6 @@ async_session = sessionmaker(
 
 **Document Version:** 1.0
 **Last Updated:** 2025-11-18
-**Database Version:** PostgreSQL 15.x
+**Database Version:** PostgreSQL 16.13 (AWS RDS `qontinui-staging`, us-east-1; measured 2026-08-30)
 **SQLAlchemy Version:** 2.0.43
 **Alembic Version:** 1.16.5

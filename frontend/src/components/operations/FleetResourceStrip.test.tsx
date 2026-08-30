@@ -68,14 +68,40 @@ function sample(overrides: Partial<ResourceSampleRow> = {}): ResourceSampleRow {
     headroom: "ok",
     // Windows host lane: byte floors, no pressure ceiling.
     pressure_floor: null,
+    // The SATURATION axis, as a current coord sends it against a publisher
+    // that has not been rebuilt yet: the counts are NULL (unmeasured, never
+    // zero) so coord forms no ratio, but the THRESHOLD rides anyway because
+    // coord reports it on every lane whether or not anyone can measure
+    // against it. This is the whole fleet's state during the Phase 3
+    // activation window, so it is the base fixture rather than a special case.
+    threads_max: null,
+    threads_used: null,
+    pids_max: null,
+    pids_used: null,
+    saturation_source: null,
+    saturation: null,
+    saturation_floor: {
+      basis: "thread_ratio",
+      ratio: 0.8,
+      source: "default",
+      verdict: "defer",
+      reject_ratio: null,
+      reject_source: null,
+    },
     ...overrides,
   };
 }
 
 /**
  * A row as an un-upgraded coord sends it: no `floor`, no `disk_floor`, no
- * `headroom`. The state the whole fleet is in until the sibling coord PR
- * deploys, so it is a fixture rather than an afterthought.
+ * `headroom`, and no saturation axis at all. The state the whole fleet is in
+ * until the sibling coord PR deploys, so it is a fixture rather than an
+ * afterthought.
+ *
+ * The saturation keys are DELETED rather than nulled, and the difference is
+ * load-bearing: absent means "a coord that predates the axis", null means "a
+ * coord that has it and a publisher that cannot measure it". Two different
+ * facts, two different things for an operator to go fix.
  */
 function preFloorSample(
   overrides: Partial<ResourceSampleRow> = {}
@@ -84,6 +110,13 @@ function preFloorSample(
   delete row.floor;
   delete row.disk_floor;
   delete row.pressure_floor;
+  delete row.saturation_floor;
+  delete row.saturation;
+  delete row.threads_max;
+  delete row.threads_used;
+  delete row.pids_max;
+  delete row.pids_used;
+  delete row.saturation_source;
   delete row.headroom;
   return row;
 }
@@ -106,6 +139,26 @@ function renderStrip(
     refresh: vi.fn(),
   };
   return render(<FleetResourceStrip devices={devices} resources={resources} />);
+}
+
+/**
+ * The one rendered floor line carrying `label` ("mem", "disk", "swap",
+ * "saturation").
+ *
+ * Needed because the Admission cell now renders up to FOUR threshold lines per
+ * row, and several of them legitimately say the same thing — "no reject
+ * threshold" is true of both the swap ceiling and the saturation ceiling,
+ * since neither has a ratio-native rejecting enforcer. A document-wide
+ * `queryByTestId` for one of those clauses therefore stopped being a question
+ * about a specific axis. Scoping the assertion is the fix; loosening it to
+ * `getAllBy…[0]` would quietly stop testing which line said it.
+ */
+function floorLine(label: string): HTMLElement {
+  const hit = screen
+    .getAllByTestId("fleet-resource-floor")
+    .find((l) => l.firstElementChild?.textContent === label);
+  if (!hit) throw new Error(`no rendered floor line labelled "${label}"`);
+  return hit;
 }
 
 describe("§C3 — no recent sample renders unknown, never healthy", () => {
@@ -324,7 +377,12 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     expect(
       screen.getByTestId("fleet-resource-reject-floor-unreadable").textContent
     ).toMatch(/unreadable/i);
-    expect(screen.queryByTestId("fleet-resource-reject-floor-none")).toBeNull();
+    // On the axis under test. The saturation ceiling on the same row says "no
+    // reject threshold" truthfully — nothing REFUSES on that axis today — so
+    // the assertion has to name the line it is about.
+    expect(
+      within(floorLine("mem")).queryByTestId("fleet-resource-reject-floor-none")
+    ).toBeNull();
   });
 
   it("reports a reject threshold three ways on the pressure axis too", () => {
@@ -351,7 +409,8 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     // explicit null
     renderStrip({ latest: [wsl({ reject_ratio: null })], history: [] });
     expect(
-      screen.getByTestId("fleet-resource-reject-floor-none").textContent
+      within(floorLine("swap")).getByTestId("fleet-resource-reject-floor-none")
+        .textContent
     ).toMatch(/no reject threshold/);
     cleanup();
     // unreadable
@@ -461,7 +520,15 @@ describe("§C3 — the effective floor, as coord reports it", () => {
       screen.getAllByTestId("fleet-resource-reject-floor-missing")[0]
         .textContent
     ).toMatch(/not reported/i);
-    expect(screen.queryByTestId("fleet-resource-reject-floor-none")).toBeNull();
+    // On the two BYTE axes this legacy floor covers. The saturation ceiling
+    // beside them is a current-coord field and honestly reports "none".
+    for (const axis of ["mem", "disk"]) {
+      expect(
+        within(floorLine(axis)).queryByTestId(
+          "fleet-resource-reject-floor-none"
+        )
+      ).toBeNull();
+    }
   });
 
   it("prints the amber margin coord sent, and says so when it sent none", () => {
@@ -516,9 +583,13 @@ describe("§C3 — the effective floor, as coord reports it", () => {
   it("says a floor is NOT REPORTED rather than implying the lane has none", () => {
     renderStrip({ latest: [preFloorSample()], history: [] });
     const missing = screen.getAllByTestId("fleet-resource-floor-missing");
-    // The memory floor and the disk floor. NOT the pressure ceiling: this is
-    // a host row, where §C1 keeps the swap axis off the row entirely.
-    expect(missing).toHaveLength(2);
+    // The memory floor, the disk floor, and the SATURATION ceiling. NOT the
+    // swap ceiling: this is a host row, where §C1 keeps the swap axis off the
+    // row entirely. The saturation ceiling is not gated that way — coord
+    // reports it on every lane, so its silence is a real gap on a host row
+    // too, and staying quiet about it would let an older coord read as a lane
+    // with no task limit.
+    expect(missing).toHaveLength(3);
     expect(missing[0].textContent).toMatch(/not reported/i);
     expect(screen.queryByTestId("fleet-resource-floor")).toBeNull();
     // And the legend counts it rather than leaving the gap invisible.
@@ -527,13 +598,14 @@ describe("§C3 — the effective floor, as coord reports it", () => {
     ).toMatch(/left a threshold\s+unreported/i);
   });
 
-  it("reports all three axes as unreported on a lane that has all three", () => {
-    // The same older-coord payload on a Linux lane, where the pressure axis
-    // IS published — so its silence is a real gap and says so.
+  it("reports all four axes as unreported on a lane that has all four", () => {
+    // The same older-coord payload on a Linux lane, where the swap axis IS
+    // published — so its silence is a real gap and says so. Four lines, not
+    // three: mem, disk, swap, and the saturation ceiling.
     const legacy = preFloorSample({ lane: "wsl" });
     renderStrip({ latest: [legacy], history: [] });
     expect(screen.getAllByTestId("fleet-resource-floor-missing")).toHaveLength(
-      3
+      4
     );
     expect(
       screen.getByTestId("fleet-resource-floors-missing").textContent

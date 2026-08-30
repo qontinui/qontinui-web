@@ -134,7 +134,12 @@ export async function runnerFetch<T>(
   const text = await response.text();
   if (!text) return undefined as T;
   const json = JSON.parse(text);
-  // Unwrap ApiResponse envelope ({ success, data }) used by some endpoints
+  // Unwrap the ApiResponse envelope ({ success, data }) used by some endpoints.
+  // This is the ONLY envelope unwrapped here: other endpoints that return a
+  // named object — e.g. `/task-runs/running` -> { scope, task_runs } — are
+  // handed back whole, and the caller declares that object as `T` and reads
+  // its fields. Do not add per-endpoint unwrapping; a generic fetch helper
+  // that guesses at payload shapes is how a shape change goes unnoticed.
   if (json && typeof json === "object" && "success" in json && "data" in json) {
     return json.data as T;
   }
