@@ -261,6 +261,69 @@ describe("DiskSection — reclaim survey", () => {
     expect(panel?.textContent).toMatch(/never reached/i);
   });
 
+  it("names the DEPTH BOUND rather than blaming a cause that did not happen", async () => {
+    // The shape a `paths.workspace_root` set one level too high produces: the
+    // walk read every directory it opened and simply never reached deep enough.
+    // `truncated: false`, `read_errors_total: 0` — so the clause's first two
+    // arms are both falsy, and the fallback used to assert "a truncated walk,
+    // or a subtree it could not read". NEITHER happened, on the one panel whose
+    // job is never saying more than the payload carries. `census_note`, above
+    // this panel, said the true thing at the same moment.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: {
+        reclaimable_bytes: null,
+        bytes_incomplete: true,
+        roots_unknown: true,
+        by_class: [],
+      },
+      scan: {
+        dirs_visited: 4102,
+        truncated: false,
+        read_errors: [],
+        read_errors_total: 0,
+        depth_limited_dirs: 118,
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/depth bound/i);
+    expect(panel?.textContent).toMatch(/118/);
+    // And it must NOT name either cause that did not occur.
+    expect(panel?.textContent).not.toMatch(/visit ceiling/i);
+    expect(panel?.textContent).not.toMatch(/could not be read/i);
+    expect(panel?.textContent).not.toMatch(/truncated walk/i);
+  });
+
+  it("claims NO cause when the runner reports none, rather than picking one", async () => {
+    // Non-vacuous companion to the test above: with every named shortfall
+    // absent (an older runner that sends `bytes_incomplete` and nothing else),
+    // the panel must still refuse to invent a reason.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: { reclaimable_bytes: 0, bytes_incomplete: true },
+      scan: { dirs_visited: 10, truncated: false, read_errors: [] },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/did not name/i);
+    expect(panel?.textContent).not.toMatch(/visit ceiling/i);
+    expect(panel?.textContent).not.toMatch(/depth bound/i);
+  });
+
   it("renders an empty list with bytes_incomplete but no scan block distinctly", async () => {
     // Permission-denied subtrees: the ONLY signal is `bytes_incomplete`.
     runnerFetch.mockResolvedValue({
