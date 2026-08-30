@@ -46,6 +46,7 @@ import {
   FilterTabs,
   HealthStrip,
   RecordList,
+  readIsUnknown,
   type HealthStripLevel,
 } from "@/components/console";
 import {
@@ -102,6 +103,15 @@ export default function CoordQuestionsPage() {
   // once all three settle, whether they succeeded or not.
   const [answeredError, setAnsweredError] = useState(false);
   const [gapsError, setGapsError] = useState(false);
+  // ...and one "has coord ever ANSWERED this read?" flag per list, which is
+  // what `readIsUnknown` keys on. The error flags alone cannot separate the
+  // three states this page renders — never answered, answered then went dark,
+  // answered and current — because a failed read and a confirmed-empty read
+  // leave the same `[]` behind. `loading` cannot stand in either: `fetchAll`
+  // clears it once all three settle, whether they succeeded or not.
+  const [pendingLoaded, setPendingLoaded] = useState(false);
+  const [answeredLoaded, setAnsweredLoaded] = useState(false);
+  const [gapsLoaded, setGapsLoaded] = useState(false);
 
   // Generation guards — one per read, because all three flags now feed a
   // rendered verdict rather than a banner. Both race directions matter, and
@@ -128,6 +138,7 @@ export default function CoordQuestionsPage() {
       if (seq !== pendingSeq.current) return;
       setPending(extractQuestions(body));
       setError(null);
+      setPendingLoaded(true);
     } catch (e) {
       if (seq !== pendingSeq.current) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -146,6 +157,7 @@ export default function CoordQuestionsPage() {
       if (seq !== answeredSeq.current) return;
       setAnswered(extractQuestions(body));
       setAnsweredError(false);
+      setAnsweredLoaded(true);
     } catch (e) {
       if (seq !== answeredSeq.current) return;
       // Don't clobber a pending-tab error; the pending tab is the load-bearing
@@ -181,6 +193,7 @@ export default function CoordQuestionsPage() {
       if (seq !== gapsSeq.current) return;
       setGaps(merged);
       setGapsError(false);
+      setGapsLoaded(true);
     } catch (e) {
       if (seq !== gapsSeq.current) return;
       // The worst of the three to swallow: `gaps` at `[]` makes
@@ -192,8 +205,24 @@ export default function CoordQuestionsPage() {
     }
   }, []);
 
+  /**
+   * `fetchAll` needs its own generation for the same reason its three legs do.
+   *
+   * The refresh button calls it directly, so a click during the first load
+   * runs two `fetchAll`s at once. The superseded one's three reads are each
+   * dropped by their `*Seq` guard — leaving every `*Loaded` flag false — and
+   * then it clears `loading` anyway, which is exactly the `neverAnswered`
+   * state: all three lists render the red "could not be read" for reads that
+   * merely got overtaken, attributing to coord a discard that was ours.
+   * Skeletons are the honest rendering there, and keeping `loading` true is
+   * what produces them.
+   */
+  const allSeq = useRef(0);
+
   const fetchAll = useCallback(async () => {
+    const seq = ++allSeq.current;
     await Promise.all([fetchPending(), fetchAnswered(), fetchGaps()]);
+    if (seq !== allSeq.current) return;
     setLoading(false);
   }, [fetchPending, fetchAnswered, fetchGaps]);
 
@@ -228,7 +257,14 @@ export default function CoordQuestionsPage() {
 
   useEffect(() => {
     setLoading(true);
-    void fetchAll();
+    // The FIRST load holds the poll lock too. Without this a tick 10s in
+    // supersedes the initial reads, whose resolutions are then dropped by the
+    // seq guards while `fetchAll` clears `loading` anyway — the fourth state
+    // above, arrived at on an ordinary slow first load rather than a race.
+    pollInFlight.current = true;
+    void fetchAll().finally(() => {
+      pollInFlight.current = false;
+    });
     // Poll the pending list; the answered list is operator-driven and doesn't
     // need 10s churn — EXCEPT while a verdict-bearing read is unread, when the
     // whole point of the poll is to find out that it no longer is.
@@ -248,24 +284,55 @@ export default function CoordQuestionsPage() {
   }, [fetchAll, fetchPending]);
 
   const blockingGaps = visibleGaps.filter((g) => !g.responded_at).length;
-  // A failed read only FABRICATES when the list it left behind is empty. A
-  // non-empty list retained from an earlier success is STALE, not invented —
-  // blanking it would throw away real information and hide a count the
-  // operator can still act on. So "unknown" is reserved for exactly the case
-  // where the zero would otherwise be a claim about coord.
+  // UNKNOWN is "coord has never answered this read", and it is keyed on the
+  // per-list `loaded` flag rather than on the list being empty — the shared
+  // `readIsUnknown` predicate, which this page previously hand-spelled four
+  // times in its older `readFailed && count === 0` form.
   //
-  // EACH predicate is keyed on the quantity ITS OWN surface renders. Keying one
-  // off a neighbour's count reopens the hole in a narrower window: the gaps
-  // list unions `pending?gap=true` with `answered?gap=true`, so it can hold
-  // rows while `blockingGaps` is 0 (every retained gap already answered) — and
-  // a `visibleGaps.length`-keyed predicate would then read "known" while the
-  // strip printed `gaps 0` and the green all-clear off a read that failed.
-  const pendingUnknown = error !== null && pending.length === 0;
-  const answeredUnknown = answeredError && answered.length === 0;
-  /** For the FilterTabs count, which renders `visibleGaps.length`. */
-  const gapsTabUnknown = gapsError && visibleGaps.length === 0;
-  /** For the strip badge and level, which render `blockingGaps`. */
-  const blockingGapsUnknown = gapsError && blockingGaps === 0;
+  // That older spelling was written before there was a `loaded` flag, and its
+  // stated reason — "the zero would otherwise be a claim about coord" — is
+  // exactly what the flag now settles: once coord has answered, the zero IS
+  // coord's claim. Keeping the count-keyed form has two costs the flag
+  // removes. It FLICKERS: a genuinely-empty inbox plus one blipped poll flips
+  // the page from "No pending questions" to "could not be read" and back on
+  // the next tick, off no new information. And it is inconsistent with the
+  // stale arm below — a retained count of 7 is kept and labelled old, while a
+  // retained count of 0 is thrown away and called unknown, though both are
+  // equally fetched.
+  //
+  // With `loaded` doing the work, the gaps tab and the gaps badge no longer
+  // need separate predicates: the two used to diverge only because each was
+  // keyed on its own rendered count, and "did the gap read land?" is one
+  // question for both.
+  //
+  // There is a FOURTH state, and it is the one that reaches the all-clear:
+  // a read whose resolution the seq guard DROPPED sets neither flag, while
+  // `fetchAll` clears `loading` regardless. So a list can be "not loading",
+  // carry no error, and still have heard nothing — `[]`, green, "No agent is
+  // waiting on an answer", off a read that never landed. Reachable on the
+  // first load alone: the initial `fetchAll` did not hold `pollInFlight`, so a
+  // tick could supersede its own reads (that hole is closed below too).
+  //
+  // It is unknown for the same reason a failure is — there is no answer — so
+  // it joins the same predicate rather than growing a fifth rendering. Named
+  // separately from `readIsUnknown` because the cause is OURS (we discarded
+  // the resolution), not coord's.
+  const neverAnswered = (loadedFlag: boolean) => !loading && !loadedFlag;
+  const pendingUnknown =
+    readIsUnknown(pendingLoaded, error !== null) || neverAnswered(pendingLoaded);
+  const answeredUnknown =
+    readIsUnknown(answeredLoaded, answeredError) ||
+    neverAnswered(answeredLoaded);
+  const gapsUnknown =
+    readIsUnknown(gapsLoaded, gapsError) || neverAnswered(gapsLoaded);
+
+  // STALE is the other half, and it is the half this page never had: a read
+  // that failed AFTER coord had answered. The counts are real measurements
+  // going out of date, so they are kept and labelled — never dashed, and never
+  // presented as current.
+  const pendingStale = error !== null && !pendingUnknown;
+  const answeredStale = answeredError && !answeredUnknown;
+  const gapsStale = gapsError && !gapsUnknown;
 
   // "Is an agent waiting?" — the question the strip answers — is decided by
   // pending + gaps ALONE. The answered list is a read-only audit view, and
@@ -275,7 +342,7 @@ export default function CoordQuestionsPage() {
   // operators to ignore amber and erodes the signal this whole change protects.
   const waitingUnreadable = [
     pendingUnknown ? "pending" : null,
-    blockingGapsUnknown ? "gaps" : null,
+    gapsUnknown ? "gaps" : null,
   ].filter(Boolean);
   const allUnreadable = [
     ...waitingUnreadable,
@@ -283,15 +350,23 @@ export default function CoordQuestionsPage() {
   ].filter(Boolean);
   const waitingUnknown = waitingUnreadable.length > 0;
   const anyUnknown = allUnreadable.length > 0;
-  // A read that failed but left a NON-empty list behind: not fabricated, but
-  // not fresh either, and otherwise its only trace is a `console.warn`. Named,
-  // like the unknown ones — "something is stale" sends an operator hunting.
-  const staleNames = [
-    error !== null ? "pending" : null,
-    gapsError ? "gaps" : null,
-    answeredError ? "answered" : null,
+  // A read that failed but left an answer behind: not fabricated, but not
+  // fresh either, and otherwise its only trace is a `console.warn`. Named, like
+  // the unknown ones — "something is stale" sends an operator hunting.
+  //
+  // The two lists are DISJOINT now (a read is either unknown or stale, never
+  // both), so the detail line below can report each without one hiding the
+  // other, which the previous `anyStale && !anyUnknown` form could not do.
+  const waitingStaleNames = [
+    pendingStale ? "pending" : null,
+    gapsStale ? "gaps" : null,
   ].filter(Boolean);
-  const anyStale = staleNames.length > 0 && !anyUnknown;
+  const staleNames = [
+    ...waitingStaleNames,
+    answeredStale ? "answered" : null,
+  ].filter(Boolean);
+  const waitingStale = waitingStaleNames.length > 0;
+  const anyStale = staleNames.length > 0;
   const inboxWord = (n: number) => (n === 1 ? "inbox" : "inboxes");
 
   // R1 — derived from the three lists already on the page, never a second
@@ -303,8 +378,15 @@ export default function CoordQuestionsPage() {
   // failed fetch leaves exactly that. Without this guard, coord going dark
   // renders as "No agent is waiting on an answer", which is the one sentence
   // that tells an operator to stop looking at this page.
+  //
+  // STALE disqualifies the all-clear exactly as UNKNOWN does, and this is the
+  // one place the two must NOT be told apart. The counts differ — unknown
+  // dashes them, stale keeps them — but the green dot is a claim about NOW,
+  // and the last good read is not now. A verdict may only be painted green off
+  // a read that both landed and is current.
+  const waitingNotCurrent = waitingUnknown || waitingStale;
   const level: HealthStripLevel =
-    loading || (waitingUnknown && pending.length === 0 && blockingGaps === 0)
+    loading || (waitingNotCurrent && pending.length === 0 && blockingGaps === 0)
       ? "amber"
       : pending.length > 0
         ? "red"
@@ -316,24 +398,56 @@ export default function CoordQuestionsPage() {
   // headline is the surface an operator reads first, and "2 policy gaps still
   // blocking" with no hint that the pending inbox went unread understates what
   // is actually not known.
-  const alsoUnknown = waitingUnknown
-    ? ` (${waitingUnreadable.join(" and ")} unread)`
+  // BOTH clauses, when both apply — the same correction the detail line gets
+  // below. A ternary here would drop the stale one whenever anything was
+  // unknown, and the number the headline is built from can be the stale one:
+  // "2 policy gaps still blocking (pending unread)" says nothing about the 2
+  // itself being a reading nobody has refreshed.
+  const notCurrentClauses = [
+    waitingUnknown ? `${waitingUnreadable.join(" and ")} unread` : null,
+    waitingStale ? `${waitingStaleNames.join(" and ")} not refreshed` : null,
+  ].filter(Boolean);
+  const alsoNotCurrent = notCurrentClauses.length
+    ? ` (${notCurrentClauses.join("; ")})`
     : "";
   const headline = loading
     ? "Waiting for coord…"
     : pending.length > 0
       ? `${pending.length} agent${
           pending.length === 1 ? " is" : "s are"
-        } stopped waiting on you${alsoUnknown}`
+        } stopped waiting on you${alsoNotCurrent}`
       : blockingGaps > 0
         ? `${blockingGaps} policy gap${
             blockingGaps === 1 ? "" : "s"
-          } still blocking${alsoUnknown}`
+          } still blocking${alsoNotCurrent}`
         : waitingUnknown
-          ? `Could not read the ${waitingUnreadable.join(" and ")} ${inboxWord(
+          ? // The stale clause rides along here too. Dropping it was the
+            // defect corrected in the detail line and in `alsoNotCurrent`,
+            // and this arm is the third place it could have been left behind.
+            `Could not read the ${waitingUnreadable.join(" and ")} ${inboxWord(
               waitingUnreadable.length
-            )} — unknown, not clear`
-          : "No agent is waiting on an answer";
+            )} — unknown, not clear${
+              waitingStale
+                ? `; ${waitingStaleNames.join(" and ")} not refreshed`
+                : ""
+            }`
+          : waitingStale
+            ? // Not a verdict, and deliberately not a claim about the last
+              // good read either. The obvious phrasing — "nothing was waiting
+              // at the last good read" — names a moment and then says
+              // something that can be false about it: `blockingGaps` counts
+              // `visibleGaps`, which `handledGaps` filters optimistically, so
+              // after the operator clears the last blocking gap the sentence
+              // reports that read PLUS this session's own edit. The gaps
+              // `empty=` copy dodges the same trap the same way. What is left
+              // is the only thing the page actually knows: which reads have
+              // not come back, and that this is therefore not an all-clear.
+              `The ${waitingStaleNames.join(" and ")} ${inboxWord(
+                waitingStaleNames.length
+              )} ${
+                waitingStaleNames.length === 1 ? "has" : "have"
+              } not refreshed since the last good read — not clear, just not re-read`
+            : "No agent is waiting on an answer";
 
   return (
     <div className="p-3 sm:p-6 space-y-4" data-testid="coord-questions-page">
@@ -343,15 +457,26 @@ export default function CoordQuestionsPage() {
         detail={
           loading
             ? "counts appear once the inbox arrives"
-            : anyUnknown
-              ? `coord did not answer for: ${allUnreadable.join(
-                  ", "
-                )}. Those counts are unknown — a dash, not a zero.`
-              : anyStale
-                ? `coord did not answer for: ${staleNames.join(
-                    ", "
-                  )}. Those counts are the last ones that landed, not current.`
-                : "an unanswered question is an agent that has stopped — nothing else clears it"
+            : anyUnknown || anyStale
+              ? // Both clauses, when both apply. The previous form dropped the
+                // stale one entirely whenever anything was unknown, so a page
+                // with an unread pending inbox said nothing at all about a
+                // gaps count that had quietly gone out of date.
+                [
+                  anyUnknown
+                    ? `coord did not answer for: ${allUnreadable.join(
+                        ", "
+                      )}. Those counts are unknown — a dash, not a zero.`
+                    : null,
+                  anyStale
+                    ? `Last refresh failed for: ${staleNames.join(
+                        ", "
+                      )}. Those counts are the last ones that landed, not current.`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              : "an unanswered question is an agent that has stopped — nothing else clears it"
         }
         badges={[
           {
@@ -374,13 +499,10 @@ export default function CoordQuestionsPage() {
           },
           {
             key: "gaps",
-            // `blockingGapsUnknown`, not the tab's predicate: this badge
-            // renders `blockingGaps`, and the two diverge whenever a retained
-            // gap list holds only already-answered rows.
-            label: <>gaps {loading || blockingGapsUnknown ? "–" : blockingGaps}</>,
+            label: <>gaps {loading || gapsUnknown ? "–" : blockingGaps}</>,
             tone: !loading && blockingGaps > 0 ? "attention" : "muted",
             onClick: () => setTab("gaps"),
-            title: blockingGapsUnknown
+            title: gapsUnknown
               ? "the gap inbox could not be read — count unknown"
               : "policy gaps still blocking an agent",
           },
@@ -423,7 +545,7 @@ export default function CoordQuestionsPage() {
             {
               id: "gaps",
               label: "Gaps",
-              count: loading || gapsTabUnknown ? null : visibleGaps.length,
+              count: loading || gapsUnknown ? null : visibleGaps.length,
               attention: !loading && blockingGaps > 0,
             },
           ]}
@@ -452,8 +574,17 @@ export default function CoordQuestionsPage() {
             skeletonRows={5}
             empty={
               // The empty slot is where the absence claim is actually made, so
-              // it is the last place the failure has to reach. `items` is `[]`
-              // either way; only the flag can tell the two apart.
+              // it is the last place a read that did not land has to reach —
+              // and `items` is `[]` in all THREE states, so only the flags can
+              // tell them apart.
+              //
+              // The stale arm is not decoration. Coord answering "none" once
+              // and then going dark permanently leaves this slot rendering
+              // forever, and the plain copy below is present-tense and
+              // unqualified: it would say "No pending questions" for hours
+              // after the last read that could support it. The strip says
+              // amber above, but this sentence is the one an operator scrolls
+              // to, so it carries the timestamp too.
               pendingUnknown ? (
                 <p
                   className="text-sm text-destructive italic"
@@ -461,6 +592,14 @@ export default function CoordQuestionsPage() {
                 >
                   The pending inbox could not be read, so whether an agent is
                   waiting is unknown — not none.
+                </p>
+              ) : pendingStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-pending-stale"
+                >
+                  No pending questions as of the last good read — this inbox
+                  has not refreshed since, so a newer one would not show here.
                 </p>
               ) : (
                 <p
@@ -499,6 +638,14 @@ export default function CoordQuestionsPage() {
                   The answered inbox could not be read — this list is unknown,
                   not empty.
                 </p>
+              ) : answeredStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-answered-stale"
+                >
+                  No recently-answered questions as of the last good read —
+                  this list has not refreshed since.
+                </p>
               ) : (
                 <p
                   className="text-sm text-muted-foreground italic"
@@ -527,7 +674,7 @@ export default function CoordQuestionsPage() {
             loaded={!loading}
             skeletonRows={4}
             empty={
-              gapsTabUnknown ? (
+              gapsUnknown ? (
                 <p
                   className="text-sm text-destructive italic"
                   data-testid="coord-questions-gaps-unreadable"
@@ -535,6 +682,19 @@ export default function CoordQuestionsPage() {
                   The gap inbox could not be read. Whether an agent is blocked
                   on a missing policy clause is unknown — this is not an
                   all-clear.
+                </p>
+              ) : gapsStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-gaps-stale"
+                >
+                  {/* Deliberately does NOT say "no gaps at the last good
+                      read": `visibleGaps` is that read MINUS anything handled
+                      in this session, so the claim could be false about the
+                      read it names. It says what is true — there is nothing
+                      to show, and nothing has been re-read. */}
+                  Nothing to show here, and the gap inbox has not refreshed
+                  since the last good read — so this is not an all-clear.
                 </p>
               ) : (
                 <p
