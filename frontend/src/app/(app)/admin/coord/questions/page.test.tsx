@@ -243,11 +243,14 @@ describe("/admin/coord/questions — a failed read is unknown, not empty", () =>
     );
     expect(strip).toHaveTextContent(/0\s*pending/);
     expect(strip.textContent ?? "").not.toMatch(/–\s*pending/);
-    // The list keeps coord's answer rather than claiming it is unreadable.
-    expect(
-      screen.getByTestId("coord-questions-pending-empty")
-    ).toBeInTheDocument();
+    // The list keeps coord's answer rather than claiming it is unreadable —
+    // and dates it. The bare "No pending questions." would be a present-tense
+    // claim off a read that is currently failing, which is the same
+    // over-claim as the green dot, one element down.
+    const stale = screen.getByTestId("coord-questions-pending-stale");
+    expect(stale).toHaveTextContent(/as of the last good read/i);
     expect(screen.queryByTestId("coord-questions-pending-unreadable")).toBeNull();
+    expect(screen.queryByTestId("coord-questions-pending-empty")).toBeNull();
     // …and the verdict still steps down, because stale is not current.
     expect(strip).toHaveAttribute("data-health-level", "amber");
     expect(strip.textContent ?? "").not.toMatch(

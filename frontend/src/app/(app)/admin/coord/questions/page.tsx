@@ -357,11 +357,18 @@ export default function CoordQuestionsPage() {
   // headline is the surface an operator reads first, and "2 policy gaps still
   // blocking" with no hint that the pending inbox went unread understates what
   // is actually not known.
-  const alsoNotCurrent = waitingUnknown
-    ? ` (${waitingUnreadable.join(" and ")} unread)`
-    : waitingStale
-      ? ` (${waitingStaleNames.join(" and ")} not refreshed)`
-      : "";
+  // BOTH clauses, when both apply — the same correction the detail line gets
+  // below. A ternary here would drop the stale one whenever anything was
+  // unknown, and the number the headline is built from can be the stale one:
+  // "2 policy gaps still blocking (pending unread)" says nothing about the 2
+  // itself being a reading nobody has refreshed.
+  const notCurrentClauses = [
+    waitingUnknown ? `${waitingUnreadable.join(" and ")} unread` : null,
+    waitingStale ? `${waitingStaleNames.join(" and ")} not refreshed` : null,
+  ].filter(Boolean);
+  const alsoNotCurrent = notCurrentClauses.length
+    ? ` (${notCurrentClauses.join("; ")})`
+    : "";
   const headline = loading
     ? "Waiting for coord…"
     : pending.length > 0
@@ -381,6 +388,16 @@ export default function CoordQuestionsPage() {
               // attached rather than as a verdict. "Nothing was waiting" is
               // true and useful; "no agent is waiting" would be a claim about
               // a moment nobody has read.
+              //
+              // One honest imprecision, recorded rather than papered over:
+              // `blockingGaps` counts `visibleGaps`, which `handledGaps`
+              // filters optimistically, so if the operator handled the last
+              // blocking gap and the next gap read failed, "nothing was
+              // waiting at the last good read" reports the last good read PLUS
+              // this session's own optimistic edit. The pre-existing green arm
+              // had the same shape; naming a moment is what makes it visible.
+              // Closing it needs the handled set reconciled against a read,
+              // which is a change to the optimistic update, not to this line.
               `Nothing was waiting at the last good read — the ${waitingStaleNames.join(
                 " and "
               )} ${inboxWord(waitingStaleNames.length)} ${
@@ -513,8 +530,17 @@ export default function CoordQuestionsPage() {
             skeletonRows={5}
             empty={
               // The empty slot is where the absence claim is actually made, so
-              // it is the last place the failure has to reach. `items` is `[]`
-              // either way; only the flag can tell the two apart.
+              // it is the last place a read that did not land has to reach —
+              // and `items` is `[]` in all THREE states, so only the flags can
+              // tell them apart.
+              //
+              // The stale arm is not decoration. Coord answering "none" once
+              // and then going dark permanently leaves this slot rendering
+              // forever, and the plain copy below is present-tense and
+              // unqualified: it would say "No pending questions" for hours
+              // after the last read that could support it. The strip says
+              // amber above, but this sentence is the one an operator scrolls
+              // to, so it carries the timestamp too.
               pendingUnknown ? (
                 <p
                   className="text-sm text-destructive italic"
@@ -522,6 +548,14 @@ export default function CoordQuestionsPage() {
                 >
                   The pending inbox could not be read, so whether an agent is
                   waiting is unknown — not none.
+                </p>
+              ) : pendingStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-pending-stale"
+                >
+                  No pending questions as of the last good read — this inbox
+                  has not refreshed since, so a newer one would not show here.
                 </p>
               ) : (
                 <p
@@ -560,6 +594,14 @@ export default function CoordQuestionsPage() {
                   The answered inbox could not be read — this list is unknown,
                   not empty.
                 </p>
+              ) : answeredStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-answered-stale"
+                >
+                  No recently-answered questions as of the last good read —
+                  this list has not refreshed since.
+                </p>
               ) : (
                 <p
                   className="text-sm text-muted-foreground italic"
@@ -596,6 +638,14 @@ export default function CoordQuestionsPage() {
                   The gap inbox could not be read. Whether an agent is blocked
                   on a missing policy clause is unknown — this is not an
                   all-clear.
+                </p>
+              ) : gapsStale ? (
+                <p
+                  className="text-sm text-muted-foreground italic"
+                  data-testid="coord-questions-gaps-stale"
+                >
+                  No policy gaps as of the last good read — this inbox has not
+                  refreshed since, so this is not an all-clear either.
                 </p>
               ) : (
                 <p

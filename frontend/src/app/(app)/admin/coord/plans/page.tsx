@@ -39,7 +39,7 @@
  * health strip, derived from the window that WAS fetched.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -108,7 +108,31 @@ export default function CoordPlansListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Generation guard — a read may only speak while it is still the newest one.
+   *
+   * Without it the reset below narrows the bug instead of closing it: the read
+   * issued under the PREVIOUS `status` is still live, still holds its own
+   * closure, and lands on `setData`/`setError` unconditionally. Both arms are
+   * reachable by changing the filter while the first load is in flight, which
+   * is the ordinary case, not a corner:
+   *
+   *   - the superseded SUCCESS repaints the discarded window under the new
+   *     filter, for a whole poll interval;
+   *   - worse, it lands on top of a new read that FAILED — `setError(null)`
+   *     clears the banner, `loaded` flips true, and the old window is stated
+   *     as a confident answer to a question that errored. That is the
+   *     fabricated-answer class this change exists to close, re-created in a
+   *     race window.
+   *
+   * Same shape as `/notifications`' `queryGen`, `/questions`' three `*Seq`
+   * refs and `usePlanLibrary`'s counter. An `AbortController` cannot do this
+   * job here — `http-client.ts` overwrites the caller's `signal`.
+   */
+  const queryGen = useRef(0);
+
   const fetchData = useCallback(async () => {
+    const gen = ++queryGen.current;
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
@@ -117,12 +141,18 @@ export default function CoordPlansListPage() {
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
       );
+      if (gen !== queryGen.current) return;
       setData(body);
       setError(null);
     } catch (e) {
+      if (gen !== queryGen.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      // Only the newest read may say the page has finished loading. A
+      // superseded one clearing it drops the skeletons while the read that
+      // will actually answer is still out — an empty list, briefly, as the
+      // answer to a question nobody has heard back on.
+      if (gen === queryGen.current) setLoading(false);
     }
   }, [status]);
 

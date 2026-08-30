@@ -71,9 +71,10 @@ const TITLE_RE = new RegExp(FIRST_WINDOW.title);
 interface Surface {
   name: string;
   Page: () => React.JSX.Element;
-  /** The status the page starts on, and the one the test switches to. */
-  from: string;
+  /** The status option the test switches TO, by its visible label. */
   toLabel: string;
+  /** The `?status=` value that label must produce on the wire. */
+  toValue: string;
   selectTestId: string;
   emptyTestId: string;
   unknownTestId: string;
@@ -83,8 +84,8 @@ const SURFACES: Surface[] = [
   {
     name: "/admin/coord/plans",
     Page: CoordPlansListPage,
-    from: "any",
     toLabel: "Blocked",
+    toValue: "blocked",
     selectTestId: "coord-plans-status-select",
     emptyTestId: "coord-plans-empty",
     unknownTestId: "coord-plans-unknown",
@@ -92,8 +93,8 @@ const SURFACES: Surface[] = [
   {
     name: "/admin/coord/spawn",
     Page: CoordSpawnPage,
-    from: "in_progress",
     toLabel: "Blocked",
+    toValue: "blocked",
     selectTestId: "coord-spawn-status-select",
     emptyTestId: "coord-spawn-plans-empty",
     unknownTestId: "coord-spawn-plans-unknown",
@@ -106,24 +107,45 @@ beforeEach(() => {
 
 describe.each(SURFACES)(
   "$name — a filter change resets the window",
-  ({ Page, toLabel, selectTestId, emptyTestId, unknownTestId }) => {
+  ({ Page, toLabel, toValue, selectTestId, emptyTestId, unknownTestId }) => {
+    /**
+     * Route by URL, never by call ORDER.
+     *
+     * Order-keyed mocks would pass every test below against a page that reset
+     * `data` correctly and then never sent `?status=` at all — and, worse,
+     * they cannot express the ordering that actually breaks this feature: an
+     * OLD-filter read landing after the new one. Keying on the URL means each
+     * scenario says which QUESTION it is answering, which is the thing under
+     * test.
+     */
+    function routeByStatus(handlers: {
+      first: () => unknown;
+      switched: () => unknown;
+    }) {
+      get.mockImplementation(async (url: string) => {
+        const answer = url.includes(`status=${toValue}`)
+          ? handlers.switched
+          : handlers.first;
+        return answer();
+      });
+    }
+
     /** Pick `toLabel` from the status Select. */
     async function switchFilter(user: ReturnType<typeof userEvent.setup>) {
       await user.click(screen.getByTestId(selectTestId));
       await user.click(await screen.findByRole("option", { name: toLabel }));
     }
 
-    it("does not show the previous filter's rows as the new filter's answer", async () => {
-      // The second query never resolves, so the render under test is exactly
+    it("asks coord the new question, and shows no answer until it lands", async () => {
+      // The switched read is held open, so the render under test is exactly
       // the in-flight window — the one the retained rows used to occupy.
-      let call = 0;
-      let releaseSecondRead: ((body: unknown) => void) | undefined;
-      get.mockImplementation(async () => {
-        call += 1;
-        if (call === 1) return { work_units: [FIRST_WINDOW] };
-        return new Promise((resolve) => {
-          releaseSecondRead = resolve;
-        });
+      let releaseSwitchedRead: ((body: unknown) => void) | undefined;
+      routeByStatus({
+        first: () => ({ work_units: [FIRST_WINDOW] }),
+        switched: () =>
+          new Promise((resolve) => {
+            releaseSwitchedRead = resolve;
+          }),
       });
       const user = userEvent.setup();
       render(<Page />);
@@ -131,6 +153,14 @@ describe.each(SURFACES)(
       await screen.findByText(TITLE_RE);
       await switchFilter(user);
 
+      // The new question was actually asked. Without this the rest of the file
+      // would pass on a page that discarded the window and re-asked the old
+      // one.
+      await waitFor(() =>
+        expect(get).toHaveBeenLastCalledWith(
+          expect.stringContaining(`status=${toValue}`)
+        )
+      );
       await waitFor(() => expect(screen.queryByText(TITLE_RE)).toBeNull());
       // ...and skeletons, not an empty-state claim about a query still in
       // flight. `<RecordList>` renders one or the other, never both.
@@ -141,7 +171,7 @@ describe.each(SURFACES)(
       // keeps the vitest worker from closing ("something prevents Vite server
       // from exiting"), which reads as an infrastructure flake in CI rather
       // than as this test's own doing.
-      releaseSecondRead?.({ work_units: [] });
+      releaseSwitchedRead?.({ work_units: [] });
       await screen.findByTestId(emptyTestId);
     });
 
@@ -150,11 +180,11 @@ describe.each(SURFACES)(
       // true across the change, so `readIsUnknown` returns false and the page
       // reports counts as merely out of date — for a query nothing has ever
       // answered.
-      let call = 0;
-      get.mockImplementation(async () => {
-        call += 1;
-        if (call === 1) return { work_units: [FIRST_WINDOW] };
-        throw new Error("coord unreachable");
+      routeByStatus({
+        first: () => ({ work_units: [FIRST_WINDOW] }),
+        switched: () => {
+          throw new Error("coord unreachable");
+        },
       });
       const user = userEvent.setup();
       render(<Page />);
@@ -172,11 +202,9 @@ describe.each(SURFACES)(
       // The other half of the pin: the reset must not turn a real empty answer
       // into an unknown one, or the fix would be indistinguishable from
       // breaking the empty state.
-      let call = 0;
-      get.mockImplementation(async () => {
-        call += 1;
-        if (call === 1) return { work_units: [FIRST_WINDOW] };
-        return { work_units: [] };
+      routeByStatus({
+        first: () => ({ work_units: [FIRST_WINDOW] }),
+        switched: () => ({ work_units: [] }),
       });
       const user = userEvent.setup();
       render(<Page />);
@@ -187,6 +215,74 @@ describe.each(SURFACES)(
       const empty = await screen.findByTestId(emptyTestId);
       expect(within(empty).queryByText(/unknown/i)).toBeNull();
       expect(screen.queryByTestId(unknownTestId)).toBeNull();
+    });
+
+    /**
+     * The ordering the reset alone does not survive.
+     *
+     * Discarding the window narrows the bug rather than closing it: the read
+     * issued under the PREVIOUS filter is still live and still lands on
+     * `setData`/`setError`. Both tests below switch the filter while the FIRST
+     * read is still in flight — the ordinary case, not a corner — which is
+     * precisely what the three tests above cannot reach, since each waits for
+     * the first read to settle before switching.
+     */
+    describe("a superseded read may not speak", () => {
+      it("does not repaint the discarded window when the old read lands late", async () => {
+        let releaseFirstRead: ((body: unknown) => void) | undefined;
+        routeByStatus({
+          first: () =>
+            new Promise((resolve) => {
+              releaseFirstRead = resolve;
+            }),
+          switched: () => ({ work_units: [] }),
+        });
+        const user = userEvent.setup();
+        render(<Page />);
+
+        // Switch WHILE the first read is still out.
+        await switchFilter(user);
+        const empty = await screen.findByTestId(emptyTestId);
+        expect(empty).toBeInTheDocument();
+
+        // Now the superseded read lands, with rows.
+        releaseFirstRead?.({ work_units: [FIRST_WINDOW] });
+
+        await waitFor(() =>
+          expect(screen.queryByText(TITLE_RE)).toBeNull()
+        );
+        expect(screen.getByTestId(emptyTestId)).toBeInTheDocument();
+      });
+
+      it("does not clear a real error when the old read lands late and succeeds", async () => {
+        // The worse arm. A superseded SUCCESS running `setError(null)` wipes
+        // the banner and flips `loaded` true, so the previous window is stated
+        // as a confident answer to a question that errored — the fabricated
+        // answer this whole change exists to prevent, in a race window.
+        let releaseFirstRead: ((body: unknown) => void) | undefined;
+        routeByStatus({
+          first: () =>
+            new Promise((resolve) => {
+              releaseFirstRead = resolve;
+            }),
+          switched: () => {
+            throw new Error("coord unreachable");
+          },
+        });
+        const user = userEvent.setup();
+        render(<Page />);
+
+        await switchFilter(user);
+        await screen.findByTestId(unknownTestId);
+
+        releaseFirstRead?.({ work_units: [FIRST_WINDOW] });
+
+        await waitFor(() =>
+          expect(screen.queryByText(TITLE_RE)).toBeNull()
+        );
+        expect(screen.getByTestId(unknownTestId)).toBeInTheDocument();
+        expect(screen.queryByTestId(emptyTestId)).toBeNull();
+      });
     });
   }
 );
