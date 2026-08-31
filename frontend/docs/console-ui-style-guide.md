@@ -1129,13 +1129,27 @@ same table. Every module doc cites its rule number and links this file.
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three each audit one surface. Neither can bind a surface
-that does not exist yet, and 29 routes are about to adopt the pattern. So the
+that does not exist yet, and 29 routes were about to adopt the pattern. So the
 assertion became `paletteDisagreements()` and
 `src/components/console/attention.test.ts` runs it over a **registry** of every
-console palette — today the merge pipeline and alerts. Adding a surface means adding
-one line to that registry. The per-surface tests stay: they are each surface's own
-oracle, and they cover things the generic audit cannot (per-row escalation, UUID
-hygiene).
+console palette. That registry began as the two rows this sentence used to name —
+the merge pipeline and alerts — and every Phase 3 wave added to it; **read the count
+off `CONSOLE_PALETTES`, never off a number written here**, which is the mistake this
+paragraph itself shipped and then carried through all five waves.
+
+Adding a surface still means adding one row to that registry — but **forgetting is
+no longer something that can ship silently.** The registry is checked against the
+tree by the console's own suite, in both directions: every attention table the
+console declares must be held by a row, and every registered row's table must still
+be reachable by that check, since a discovery that quietly stops discovering agrees
+with everything. Enrolment is
+therefore derived from the tree rather than from whoever remembered, which is the
+whole point — an audit you have to remember to enrol in is an audit with a hole, and
+Waves 1 and 2 had already fallen through it: seven palettes were live and
+unregistered at once, each audited only beside itself.
+
+The per-surface tests stay: they are each surface's own oracle, and they cover
+things the generic audit cannot (per-row escalation, UUID hygiene).
 
 The audit carries exactly one declared exemption, `perRowKinds`, for a kind whose
 badge class is resolved per row rather than read off the static table — the alerts
