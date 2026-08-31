@@ -164,7 +164,10 @@ class Settings(BaseSettings):
     )
 
     # AWS Settings (for SES)
-    AWS_REGION: str = Field(default="eu-central-1", description="AWS region for SES")
+    # us-east-1: the sending identity this fleet uses (staging.qontinui.io) is
+    # verified in us-east-1, not eu-central-1 (verified 2026-08-30). SES
+    # identities are per-region, so a wrong region fails silently.
+    AWS_REGION: str = Field(default="us-east-1", description="AWS region for SES")
     USE_SES_API: bool = Field(
         default=True,
         description="Use AWS SES API instead of SMTP (recommended for AWS deployments)",

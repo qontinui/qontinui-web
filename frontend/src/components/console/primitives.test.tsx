@@ -27,6 +27,7 @@ import { HealthStrip } from "./HealthStrip";
 import { RecordDetail } from "./RecordDetail";
 import { RecordList } from "./RecordList";
 import { RecordRow } from "./RecordRow";
+import { rowAccentClass } from "./statusRow";
 import { StatCluster } from "./StatCluster";
 
 // ----------------------------------------------------------------------------
@@ -371,6 +372,74 @@ describe("RecordRow (R2, R4)", () => {
     expect(text.indexOf("waiting on CI")).toBeLessThan(text.indexOf("2h"));
   });
 
+  /**
+   * The machine-readable half of the console style — the precondition Phase 4
+   * step 1 of the console plan names before its rules may be written.
+   *
+   * The point of asserting these in a RENDER rather than by grep: a style rule
+   * or a spec selector matches the DOM, and a rule with a live evaluator and a
+   * dead selector reports PASS. A grep over the source proves an attribute is
+   * spelled somewhere; only a render proves it reaches an element, on the one
+   * that carries the property the rule is about.
+   */
+  describe("emits the selectors the style rules address", () => {
+    it("marks the row LINE — the element that owns the padding and the size", () => {
+      render(
+        <RecordRow
+          {...base}
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      const row = document.querySelector("[data-console-row]");
+      expect(row).not.toBeNull();
+      // Not the wrapper: the density budget is about this element's box.
+      expect(row?.tagName).toBe("BUTTON");
+      expect(row?.className).toContain("py-2");
+      expect(row?.className).toContain("px-3");
+      // Stated rather than inherited, so `[data-console-row]{font-size}` is a
+      // rule about something this element actually declares.
+      expect(row?.className).toContain("text-sm");
+    });
+
+    it("paints and declares from ONE prop, so the two cannot disagree", () => {
+      const { unmount } = render(
+        <RecordRow
+          {...base}
+          attention="author"
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      const row = document.querySelector("[data-console-row]");
+      expect(row).toHaveAttribute("data-attention", "author");
+      // The colour and the attribute are the same fact in two channels, and
+      // both come off the same prop — so a rule keyed on one always finds the
+      // other on the same element. The accent is the SHARED one, byte for
+      // byte: §4.1 says nothing outside `statusRow` may mint a red.
+      expect(row?.className).toContain(rowAccentClass({ attention: "author" }));
+      expect(row?.className).toContain("border-l-red-500/80");
+      unmount();
+
+      // Absent, not `"none"`, when the surface classifies nothing: "this row
+      // is calm" and "this surface has no severity model" are different
+      // claims, and an audit that conflates them reads the second as the first.
+      render(
+        <RecordRow
+          {...base}
+          expanded={false}
+          onToggle={() => {}}
+          data-testid="row"
+        />
+      );
+      expect(
+        document.querySelector("[data-console-row]")
+      ).not.toHaveAttribute("data-attention");
+    });
+  });
+
   it("truncates rather than wraps, and carries the full text in a title", () => {
     render(
       <RecordRow
@@ -425,7 +494,10 @@ describe("RecordRow (R2, R4)", () => {
     render(
       <RecordRow
         {...base}
-        accent="border-l-2 border-l-red-500/80"
+        // The accent is derived from `attention` rather than passed as a
+        // class — one prop, so the border and `data-attention` cannot
+        // disagree. See the prop's own doc.
+        attention="author"
         expanded={false}
         onToggle={() => {}}
         data-testid="row"
@@ -489,6 +561,63 @@ describe("RecordDetail (R5)", () => {
     // Five always-present wrappers would make `space-y-3` add gaps for
     // sections that are not there.
     expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it("marks the raw-ids block, and only when there is one", () => {
+    // R8's slot, made addressable: a style rule or a spec selector can find
+    // "the raw block" instead of guessing at a class string. Phase 4 step 1 of
+    // the console plan writes a rule keyed on `[data-console-raw]`, and a rule
+    // whose selector matches nothing reports PASS.
+    const { unmount } = render(
+      <RecordDetail data-testid="detail" why={<p>WHY</p>} raw={<p>RAW</p>} />
+    );
+    const raw = document.querySelector("[data-console-raw]");
+    expect(raw).not.toBeNull();
+    expect(raw).toHaveTextContent("RAW");
+    // It is ONE child of the container either way, so `space-y-3` spaces the
+    // wrapper exactly as it spaced the bare node.
+    expect(screen.getByTestId("detail").children).toHaveLength(2);
+    unmount();
+
+    // Conditional, so the "an absent slot costs nothing" promise above still
+    // holds — an always-present wrapper would reintroduce the gap.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} />);
+    expect(document.querySelector("[data-console-raw]")).toBeNull();
+    expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["null", null],
+    ["false", false],
+    ["true", true],
+    ["an empty string", ""],
+    ["an empty array", []],
+    ["an array of nothing-values", [false, null, ""]],
+  ])("emits no wrapper — and no gap — when raw is %s", (_name, raw) => {
+    // Every value React itself renders as nothing. The obvious guard
+    // (`raw != null && raw !== false`) covers three of them and lets the rest
+    // through as an EMPTY wrapper, which is a non-first child of `space-y-3`
+    // and therefore a 12px gap at the foot of the panel. Two of the misses
+    // arrive by ordinary means: `str && <div/>` yields `""`, and a `||` chain
+    // over a nullable string yields it too — which is the exact shape of
+    // `<AlertRow>`'s raw slot over a `device_id` typed `string | null`.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} raw={raw} />);
+    expect(document.querySelector("[data-console-raw]")).toBeNull();
+    expect(screen.getByTestId("detail").children).toHaveLength(1);
+  });
+
+  it("does NOT detect an empty fragment — the one gap, named", () => {
+    // `<></>` is a real React element that happens to render nothing, and
+    // telling that apart from a fragment with content means reading
+    // `props.children` off an element — walking React's internals to save a
+    // 12px gap. The values above are the ones a caller reaches by ORDINARY
+    // means (`cond &&`, a nullable string, an empty list); a bare empty
+    // fragment is not one of them, and no `raw=` call site in the repo passes
+    // one. Asserted so the limit is a measurement rather than an assumption:
+    // if this ever starts passing, the guard grew and this test should go.
+    render(<RecordDetail data-testid="detail" why={<p>WHY</p>} raw={<></>} />);
+    expect(document.querySelector("[data-console-raw]")).not.toBeNull();
   });
 });
 
