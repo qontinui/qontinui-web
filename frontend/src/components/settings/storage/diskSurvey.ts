@@ -451,9 +451,30 @@ export function readErrorsSeen(scan: DiskScanStats | null): number {
     : Math.max(scan.readErrorsTotal, listed);
 }
 
-/** English plural for a count of directories. */
-function directories(n: number): string {
+/**
+ * English plural for a count of directories, grouped.
+ *
+ * Exported because the same count is rendered in two places on this page and
+ * the two must not drift apart in formatting: a walk's read-error total appears
+ * both in the incomplete-walk panel's cause list and in the byte-lower-bound
+ * note. (They are in mutually exclusive branches — empty list versus non-empty
+ * — so they never co-render, but one number should not have two spellings in
+ * one module.)
+ */
+export function directories(n: number): string {
   return `${n.toLocaleString()} director${n === 1 ? "y" : "ies"}`;
+}
+
+/**
+ * ` after N directories`, or `""` when the walk did not say how many it saw.
+ *
+ * Shared by the incomplete-walk panel's ceiling phrase and the list-is-a-prefix
+ * banner, which render in mutually exclusive branches and used to build this
+ * string twice from the same field.
+ */
+export function dirsVisitedSuffix(scan: DiskScanStats | null): string {
+  const n = scan?.dirsVisited ?? null;
+  return n === null ? "" : ` after ${n.toLocaleString()} directories`;
 }
 
 /**
@@ -480,13 +501,9 @@ export function walkShortfallCauses(scan: DiskScanStats | null): string[] {
   if (scan === null) return [];
   const causes: string[] = [];
   if (scan.truncated) {
-    const afterNDirs =
-      scan.dirsVisited === null
-        ? ""
-        : ` after ${scan.dirsVisited.toLocaleString()} directories`;
     causes.push(
-      `it hit its visit ceiling${afterNDirs}, so the list is a prefix of a` +
-        " population it never finished enumerating"
+      `it hit its visit ceiling${dirsVisitedSuffix(scan)}, so the list is a` +
+        " prefix of a population it never finished enumerating"
     );
   }
   const readErrors = readErrorsSeen(scan);
@@ -497,9 +514,10 @@ export function walkShortfallCauses(scan: DiskScanStats | null): string[] {
   // part-way through their listing, so they are absent from `read_errors`
   // entirely and the walk saw less than they hold.
   if (scan.entryErrors !== null && scan.entryErrors > 0) {
+    const n = scan.entryErrors;
     causes.push(
-      `${directories(scan.entryErrors)} errored part-way through listing, so` +
-        " the walk saw less than they hold"
+      `${directories(n)} errored part-way through listing, so the walk saw` +
+        ` less than ${n === 1 ? "it holds" : "they hold"}`
     );
   }
   // Not an error: refusing to follow a junction is deliberate. But a target
@@ -1497,21 +1515,32 @@ export function reportOnlyDisagreement(
  *   present-but-`null` case is separate and already handled: the key's
  *   presence is recorded by `Object.hasOwn`, its value survives as `NaN`, and
  *   `NaN` fails the finite test below.
- * - a walk that stopped at its DEPTH BOUND never reached the part of the tree
- *   below it, so an empty list is a zero over the part it does reach. This one
- *   clause cannot be delegated to `bytes_incomplete`: the runner deliberately
- *   keeps `depth_limited_dirs` out of that flag (the bound bites on any deep
- *   tree, so folding it in would pin the flag permanently true), and out of
- *   `truncated` as well. Every machine-readable completeness field therefore
- *   reads CLEAN in the one state where this sentence is most tempting and most
- *   wrong — `truncated: false`, `read_errors_total: 0`, `bytes_incomplete:
- *   false`, `reclaimable_bytes: 0` — while `census_note`, rendered directly
- *   above this sentence on the page, says "this is not a certified 'nothing to
- *   reclaim'". Reachable with no failure of any kind: with the walk's depth
- *   bound at 4, a `paths.workspace_root` set one level too high finds no target
- *   root at or above the bound. A `null` count is a build too old to report the
- *   field, which is UNKNOWN and not a reason to refuse — only a POSITIVE
- *   non-zero count is.
+ * - a walk that named ANY shortfall did not see the whole tree, so an empty list
+ *   is a zero over the part it did see. `!bytesIncomplete` is not this test:
+ *   that flag is DERIVED, it carries four of the five signals, and it carries
+ *   `depth_limited_dirs` not at all — the runner deliberately keeps the bound
+ *   out of it (the bound bites on any deep tree, so folding it in would pin the
+ *   flag permanently true) and out of `truncated` as well. Every
+ *   machine-readable completeness field therefore reads CLEAN in the one state
+ *   where this sentence is most tempting and most wrong — `truncated: false`,
+ *   `read_errors_total: 0`, `bytes_incomplete: false`, `reclaimable_bytes: 0` —
+ *   while `census_note`, rendered directly above this sentence on the page,
+ *   says "this is not a certified 'nothing to reclaim'". Reachable with no
+ *   failure of any kind: with the walk's depth bound at 4, a
+ *   `paths.workspace_root` set one level too high finds no target root at or
+ *   above the bound. So the counters are read directly, through
+ *   {@link walkShortfallCauses} — the same function the panel renders from, so
+ *   the sentence and the explanation beside it can never disagree about whether
+ *   the walk fell short. A `null` counter is a build too old to report that
+ *   field: UNKNOWN, and not a reason to refuse — only a POSITIVE non-zero count
+ *   is, which is what keeps an older runner able to report a clean disk.
+ *
+ *   Consequence worth knowing: with `MAX_WALK_DEPTH = 4` the bound is bitten on
+ *   essentially every real root, so on a real box this sentence is now close to
+ *   unreachable. That is the correct outcome, not an over-reach — the runner
+ *   refuses "measured zero" in exactly that state too, in prose — but it does
+ *   mean the measured-empty state is effectively retired rather than merely
+ *   guarded.
  */
 export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
   // The runner must have sent an explicit ZERO. `null` there is the runner
@@ -1521,16 +1550,19 @@ export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
     Number.isFinite(survey.summaryReclaimableBytes) &&
     survey.summaryReclaimableBytes === 0;
   // The walk must SAY it was complete, not merely fail to say it was short.
-  // `truncated: false` is only four of the five shortfall signals' worth of
-  // silence: the depth bound is reported nowhere else, so it is checked here
-  // rather than left to `bytesIncomplete`, which by design never carries it.
+  // `truncated: false` is ONE signal's worth of silence, and `!bytesIncomplete`
+  // is a DERIVED flag carrying four of the five. This function's whole argument
+  // is that a derived flag is not the counter — so it reads the counters, via
+  // the same function the panel renders from. That subsumes the depth bound,
+  // which `bytesIncomplete` never carries at all, and closes the gap where a
+  // payload whose `scan` reports 4,137 unreadable directories alongside
+  // `bytes_incomplete: false` could still print "a measured answer". A
+  // conforming runner never sends that, which is exactly why trusting it here
+  // was invisible.
   const walkSaysComplete =
     survey.scan !== null &&
     survey.scan.hasTruncatedField &&
-    !survey.scan.truncated &&
-    !(
-      survey.scan.depthLimitedDirs !== null && survey.scan.depthLimitedDirs > 0
-    );
+    walkShortfallCauses(survey.scan).length === 0;
   return (
     survey.items.length === 0 &&
     survey.skippedItems === 0 &&
