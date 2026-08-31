@@ -762,17 +762,13 @@ export function MachineCard({
               ? machine.coordHealth.device_id
               : undefined
           }
-          // NOT `machine.ciRunner != null` — a workstation that also hosts a
-          // CI runner is still a workstation and its coord device IS bound, so
-          // it keeps a working control. This flag means "this row exists ONLY
-          // because the CI-runner mirror named it", which is exactly the
-          // population whose devices carry no tenant binding.
-          // Adds one sentence to the scope note; it does NOT withhold the
-          // control. These devices ARE tenant-bound — the registrar's
-          // `bind_runners_to_repo_tenants` writes the row, and that binding is
-          // the JOIN the mirror itself selects on — so coord's drain accepts
-          // them.
-          ciInfrastructure={machine.isCiInfrastructure ?? false}
+          // Derived from the ROW'S OWN SOURCE, not from `isCiInfrastructure`.
+          // That flag means "no runner-inventory row", which a device-registry
+          // CI host can also have; this prop is specifically "coord's mirror
+          // named this, so it is a GitHub Actions runner", which is the
+          // population whose devices advertise `ci_runner` and are therefore
+          // invisible to both readers of the drain map.
+          ciInfrastructure={machine.ciRunner?.source === "coord-mirror"}
         />
 
         {/* Summary footer */}

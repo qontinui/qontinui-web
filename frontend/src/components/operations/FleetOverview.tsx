@@ -190,12 +190,18 @@ function buildMachineGroups(
 
   // ...and any host that is PURELY CI infrastructure. The backend excludes
   // CI-runner devices from `fleet.runners` (that is the categorisation), so a
-  // dedicated CI host — `spaceship-wsl`, `msi-wsl` — reaches this point with
-  // no group at all. These are live infrastructure, not clutter: they must
-  // stay in the fleet, just in their own category rather than padding the
-  // workstation list. Any host that already has a group keeps it and is NOT
-  // reclassified — a workstation that also hosts a CI runner is still a
-  // workstation.
+  // dedicated CI host reaches this point with no group at all. These are live
+  // infrastructure, not clutter: they must stay in the fleet, just in their own
+  // category rather than padding the workstation list. Any host that already
+  // has a group keeps it and is NOT reclassified.
+  //
+  // For MIRROR rows the "already has a group" case is unreachable rather than
+  // merely rare: `ci_runner_registrar::hostname_for` mints a synthetic
+  // `gh-runner-<name>`, which never equals a machine's hostname. So a physical
+  // CI host appears TWICE by design — once as its workstation card, once as the
+  // GitHub registration it hosts — and those are genuinely two coord devices
+  // with two different capability sets. Do not "fix" that by joining on
+  // hostname; the two rows answer different questions.
   for (const hostname of Object.keys(ciRunners)) {
     if (!byHost.has(hostname)) {
       const activity = deviceStatusByHost.get(hostname);
@@ -221,7 +227,15 @@ function buildMachineGroups(
         // box is exactly the machine whose disk fills with build artifacts —
         // resolving this to a placeholder would blind the one category that
         // most needs watching.
-        volumes: resolveVolumes(hostname, activity),
+        // The mirror row's own `device_id` is the fallback key. Without it a
+        // `gh-runner-*` row resolves volumes by a SYNTHETIC hostname, misses,
+        // and renders "no coord device row in view" for a device coord plainly
+        // has — directly under the comment above promising real telemetry.
+        volumes: resolveVolumes(
+          hostname,
+          activity,
+          ciRunners[hostname]?.deviceId
+        ),
       });
     }
   }

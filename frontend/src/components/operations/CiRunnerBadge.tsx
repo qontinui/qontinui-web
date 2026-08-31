@@ -160,10 +160,13 @@ export function CiRunnerBadge({ ciRunner, className }: CiRunnerBadgeProps) {
           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
           <span>
             <strong>GitHub will not route fleet CI here.</strong> Missing{" "}
-            {missing.map((m) => (
-              <code key={m} className="font-mono">
-                {m}
-              </code>
+            {missing.map((m, i) => (
+              <span key={m}>
+                {/* A separator, because a host missing BOTH labels otherwise
+                    renders `self-hostedqontinui` as one run-together word. */}
+                {i > 0 && <span>, </span>}
+                <code className="font-mono">{m}</code>
+              </span>
             ))}
             , and <code className="font-mono">runs-on</code> matches every label
             or none.

@@ -48,6 +48,7 @@ export {
   CI_ROUTING_LABELS,
   describeMirrorFreshness,
   hasLabel,
+  indexCiRunners,
   isRoutingLabel,
   matchesFleetRouting,
   mergeCiRunners,

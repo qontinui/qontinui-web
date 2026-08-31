@@ -80,19 +80,26 @@ export interface CoordDispatchDisclosureProps {
   /** For the confirm copy and the result line. Never used to address coord. */
   hostname: string;
   /**
-   * True when this row reached the machine list ONLY because coord's CI-runner
-   * mirror named it — a GitHub Actions runner rather than a workstation.
+   * True when this row is a **GitHub Actions runner** — a device coord's
+   * CI-runner mirror named, not a workstation.
    *
-   * It adds one sentence to the scope note and changes nothing else. **It does
-   * NOT withhold the control**, and an earlier cut of this file that did was
-   * wrong on its premise: `ci_runner_registrar` does bind these devices to
-   * their repo's owning tenants, in `bind_runners_to_repo_tenants` — a separate
-   * INSERT into `coord.tenant_devices` run after `register_device`, which is
-   * why `register_device`'s own empty `tenant_ids` proves nothing. That binding
-   * is also the JOIN `list_ci_runners` selects on, so a row can only reach this
-   * page BECAUSE it exists, and `fleet_drain`'s Gate 2 — which checks that same
-   * binding — passes for these devices. Telling the operator the host cannot be
-   * paused would have been false where coord would have accepted the pause.
+   * These rows get NO control, and the reason is not the one an earlier cut of
+   * this file gave. That cut said the devices carry no `coord.tenant_devices`
+   * binding, which is false — `ci_runner_registrar::bind_runners_to_repo_tenants`
+   * writes exactly that row, and it is the JOIN the mirror itself selects on,
+   * so `fleet_drain`'s Gate 2 **passes** and coord would answer 200.
+   *
+   * The real reason is that the accepted write would reach nothing. The
+   * registrar registers these devices with `capabilities = ["ci_runner"]` and
+   * no `role`, deliberately — while both consumers of the drain map select
+   * something else: `ci_dispatch` on `capabilities @> '["ci_node"]'`, and
+   * `build_dispatcher` on `role = 'build'`. So a pause here would write a
+   * `user_overrides` row, raise an alert, stamp `fleet.drain.set` and change
+   * **nothing**, while the control reported "Paused."
+   *
+   * That is the same defect as the branch it replaces with the sign flipped,
+   * and it is the worse direction: telling an operator a host is out of
+   * rotation when it is not is what the plan's motivating incident was made of.
    */
   ciInfrastructure?: boolean;
 }
@@ -106,13 +113,7 @@ export interface CoordDispatchDisclosureProps {
  * how the reassuring sentence and the real blast radius end up on screen
  * together, disagreeing.
  */
-function ScopeNote({
-  hostname,
-  ciInfrastructure,
-}: {
-  hostname: string;
-  ciInfrastructure: boolean;
-}) {
+function ScopeNote({ hostname }: { hostname: string }) {
   return (
     <div
       className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-2"
@@ -125,14 +126,6 @@ function ScopeNote({
         {drainScopeSentences(hostname).map((sentence) => (
           <li key={sentence}>{sentence}</li>
         ))}
-        {ciInfrastructure && (
-          <li data-testid="coord-dispatch-ci-note">
-            This host is a <strong>GitHub Actions runner</strong>. Pausing coord
-            dispatch is a legal write for it, but the lever that takes it out of
-            GitHub&apos;s routing is its <code>qontinui</code> label, shown
-            above &mdash; not this.
-          </li>
-        )}
       </ul>
     </div>
   );
@@ -169,11 +162,9 @@ function DispatchNotice({
 function DispatchControl({
   deviceId,
   hostname,
-  ciInfrastructure,
 }: {
   deviceId: string;
   hostname: string;
-  ciInfrastructure: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [windowId, setWindowId] = useState(DEFAULT_DRAIN_WINDOW_ID);
@@ -228,7 +219,7 @@ function DispatchControl({
 
   return (
     <div className="space-y-2" data-testid={`coord-dispatch-${hostname}`}>
-      <ScopeNote hostname={hostname} ciInfrastructure={ciInfrastructure} />
+      <ScopeNote hostname={hostname} />
 
       {/* Current state, stated as UNKNOWN rather than as "not paused".
           Coord exposes no read of the drain map — `fleet_drain.rs` has no GET
@@ -362,17 +353,31 @@ export function CoordDispatchDisclosure({
         title="Coord dispatch"
         className="border-dashed p-3"
       >
-        {deviceId ? (
+        {ciInfrastructure ? (
+          <DispatchNotice
+            state="ci_runner_not_a_dispatch_target"
+            headline="Not a coord dispatch target — pausing would change nothing"
+          >
+            This is a <strong>GitHub Actions runner</strong>. Coord would accept
+            the pause &mdash; the device is tenant-bound, so the drain route
+            answers 200 &mdash; but the write would reach nothing: the registrar
+            gives these devices the <code>ci_runner</code> capability and no{" "}
+            <code>role</code>, while both readers of the drain map select
+            something else (<code>ci_dispatch</code> on <code>ci_node</code>,{" "}
+            <code>build_dispatcher</code> on{" "}
+            <code>role = &apos;build&apos;</code>). A button here would report
+            &ldquo;Paused&rdquo; over a no-op. The lever that does move this
+            host is its <code>qontinui</code> label, shown above; the
+            machine&apos;s own workstation card is where coord dispatch is
+            pausable.
+          </DispatchNotice>
+        ) : deviceId ? (
           <CoordAdminOnly
             fallback={
               <ReadOnlyNotice label="Administrator only — coord requires an operator admin to drain a machine" />
             }
           >
-            <DispatchControl
-              deviceId={deviceId}
-              hostname={hostname}
-              ciInfrastructure={ciInfrastructure}
-            />
+            <DispatchControl deviceId={deviceId} hostname={hostname} />
           </CoordAdminOnly>
         ) : (
           <DispatchNotice

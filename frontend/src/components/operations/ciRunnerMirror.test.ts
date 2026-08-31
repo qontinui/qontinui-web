@@ -105,7 +105,8 @@ describe("parseCiRunnersPayload", () => {
     ]);
     expect(read.windowSecs).toBe(42);
     expect(read.asOf).toBe("2026-08-31T12:00:30Z");
-    expect(read.skippedRows).toBe(0);
+    expect(read.unplaceableRows).toBe(0);
+    expect(read.shadowedRows).toBe(0);
   });
 
   it("an EMPTY runners list is a real measurement, not a failure", () => {
@@ -138,23 +139,27 @@ describe("parseCiRunnersPayload", () => {
     expect(read.reason).toMatch(/stated nothing about the roster/);
   });
 
-  it("counts a duplicate hostname as skipped, first row winning", () => {
-    // One host can hold a separate GitHub registration per repo. Silently
-    // overwriting would show one registration's labels for the host.
-    const { byHostname, skippedRows } = indexCiRunners({
+  it("counts a SHADOWED registration separately from an unplaceable row", () => {
+    // `device_id_for` keys on (repo, name) while `hostname_for` keys on the
+    // name alone, so one runner in several repos arrives as several devices
+    // sharing a hostname. That host is on screen showing ONE registration's
+    // labels — the opposite of missing, and a different sentence.
+    const { byHostname, unplaceableRows, shadowedRows } = indexCiRunners({
       runners: [MSI, { ...MSI, ci_runner_labels: ["self-hosted"] }],
     });
     expect(byHostname.size).toBe(1);
-    expect(skippedRows).toBe(1);
+    expect(shadowedRows).toBe(1);
+    expect(unplaceableRows).toBe(0);
     expect(byHostname.get("msi-wsl")?.ci_runner_labels).toContain("qontinui");
   });
 
   it("drops a row with no hostname rather than guessing one", () => {
-    const { byHostname, skippedRows } = indexCiRunners({
+    const { byHostname, unplaceableRows, shadowedRows } = indexCiRunners({
       runners: [MSI, { ...MSI, hostname: "" }],
     });
     expect(byHostname.size).toBe(1);
-    expect(skippedRows).toBe(1);
+    expect(unplaceableRows).toBe(1);
+    expect(shadowedRows).toBe(0);
   });
 });
 
@@ -206,6 +211,14 @@ describe("mergeCiRunners", () => {
     expect(merged["merytshost"]?.lastSeenAt).toBe("2026-08-31T12:00:00Z");
   });
 
+  it("carries device_id, the row's ONLY real key", () => {
+    // The hostname is synthetic (`gh-runner-<name>`), so it joins to nothing.
+    // Without the device id the card resolves no volume telemetry and names no
+    // coord device.
+    const merged = mergeCiRunners(registry, mirror);
+    expect(merged["merytshost"]?.deviceId).toBe("d-meryts");
+  });
+
   it("marks device-registry rows as such, so no routing verdict is claimed", () => {
     const merged = mergeCiRunners(registry, mirror);
     expect(merged["my-workstation"]?.source).toBe("device-registry");
@@ -248,15 +261,30 @@ describe("describeMirrorFreshness", () => {
     expect(text).toMatch(/unreported freshness window/);
   });
 
-  it("says the roster is partial when rows could not be placed", () => {
+  it("says the roster is INCOMPLETE when a row named no host", () => {
     const text = describeMirrorFreshness(
       parseCiRunnersPayload({
         runners: [MSI, { ...MSI, hostname: "" }],
         freshness_secs: 180,
       })
     );
-    expect(text).toMatch(/1 row\(s\).*NOT shown/);
-    expect(text).toMatch(/partial/);
+    expect(text).toMatch(/1 row\(s\) named no host and are NOT shown/);
+    expect(text).toMatch(/incomplete/);
+  });
+
+  it("says a SHADOWED registration is HIDDEN, never that the roster is short", () => {
+    // The card is present and under-reporting — which is exactly how a
+    // delabelled second registration would hide. "Partial roster" would send
+    // the reader looking for an absent card instead.
+    const text = describeMirrorFreshness(
+      parseCiRunnersPayload({
+        runners: [MSI, { ...MSI, ci_runner_labels: ["self-hosted"] }],
+        freshness_secs: 180,
+      })
+    );
+    expect(text).toMatch(/1 further registration\(s\).*HIDDEN behind it/);
+    expect(text).toMatch(/another may differ/);
+    expect(text).not.toMatch(/incomplete/);
   });
 
   it("reports a failed read as UNKNOWN label state, with the reason", () => {

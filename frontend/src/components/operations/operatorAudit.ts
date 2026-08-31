@@ -280,8 +280,12 @@ export interface AuditActionLabel {
 const ACTION_LABELS: Readonly<Record<string, string>> = {
   "fleet.drain.set": "Paused coord dispatch to a machine",
   "fleet.drain.clear": "Resumed coord dispatch to a machine",
-  "pr_merge.kill_switch": "Fired the merge kill switch",
-  "pr_merge.merge_enabled": "Changed merge enablement",
+  // The full action strings coord writes, not the prefixes. Verified against
+  // `pr_merge/rollout_routes.rs` — the shorter forms these replaced could never
+  // have matched, so both rows rendered unmapped while the table claimed to
+  // cover them.
+  "pr_merge.kill_switch.activate": "Fired the merge kill switch",
+  "pr_merge.merge_enabled.set": "Changed merge enablement",
   "operator.disable": "Disabled an operator",
   "operator.enable": "Re-enabled an operator",
 };

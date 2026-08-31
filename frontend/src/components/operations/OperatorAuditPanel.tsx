@@ -353,8 +353,10 @@ export function OperatorAuditPanel() {
             empty={
               <p className="text-xs text-muted-foreground">
                 No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
-                rows in the most recent {AUDIT_LIMIT}. The read succeeded
-                &mdash; this is a measurement, not a failed look. Widen the
+                rows for this tenant at all &mdash; coord applies the filter
+                BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches, not
+                &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read
+                succeeded; this is a measurement, not a failed look. Widen the
                 filter to see whether anything else was written.
               </p>
             }

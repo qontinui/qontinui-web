@@ -621,6 +621,16 @@ export interface CiRunnerInfo {
   /** The instant coord ran the mirror read — the anchor `lastSeenAt` is aged
    * against. `coord-mirror` only. */
   mirrorAsOf?: string | null;
+  /**
+   * The `coord.devices.device_id` this mirror row is about — `coord-mirror`
+   * only.
+   *
+   * The mirror's HOSTNAME is synthetic (`gh-runner-<name>`), so it joins to
+   * nothing; this is the row's only real key, and it is what lets the card
+   * resolve volume telemetry instead of reporting "no coord device in view"
+   * for a device coord plainly has.
+   */
+  deviceId?: string;
 }
 
 // ============================================================================

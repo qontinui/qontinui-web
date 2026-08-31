@@ -255,23 +255,31 @@ describe("gating", () => {
     expect(notice.textContent).toMatch(/Nothing here says/);
   });
 
-  it("STILL offers the control for a GitHub Actions runner row", () => {
-    // An earlier cut withheld it, on the premise that these devices carry no
-    // `coord.tenant_devices` binding. False: `ci_runner_registrar`'s
-    // `bind_runners_to_repo_tenants` writes that row, and it is also the JOIN
-    // `list_ci_runners` selects on — so a host can only be on this page
-    // BECAUSE the binding exists, and `fleet_drain`'s Gate 2 passes. Refusing
-    // would have told the operator a host cannot be paused where coord would
-    // have paused it.
+  it("offers NO control for a GitHub Actions runner — the write reaches nothing", () => {
+    // Coord would ACCEPT it: these devices are tenant-bound, so Gate 2 passes
+    // and the route answers 200. But the registrar gives them
+    // `capabilities = ["ci_runner"]` and no `role`, while both readers of the
+    // drain map select `ci_node` / `role = 'build'`. A button here would
+    // report "Paused." over a guaranteed no-op — the worse direction of the
+    // same defect an earlier cut had.
     openPanel({ ciInfrastructure: true });
-    expect(screen.getByTestId(`coord-dispatch-pause-${HOST}`)).toBeTruthy();
+    expect(screen.queryByTestId(`coord-dispatch-pause-${HOST}`)).toBeNull();
+    const notice = screen.getByTestId("coord-dispatch-unavailable");
+    expect(notice.getAttribute("data-coord-dispatch")).toBe(
+      "ci_runner_not_a_dispatch_target"
+    );
   });
 
-  it("tells a GitHub Actions runner row where its real routing lever is", () => {
+  it("says WHY, without repeating the retracted tenant-binding story", () => {
     openPanel({ ciInfrastructure: true });
-    const note = screen.getByTestId("coord-dispatch-ci-note");
-    expect(note.textContent).toMatch(/GitHub Actions runner/);
-    expect(note.textContent).toContain("qontinui");
+    const notice = screen.getByTestId("coord-dispatch-unavailable");
+    expect(notice.textContent).toMatch(/would accept the pause/);
+    expect(notice.textContent).toContain("ci_runner");
+    expect(notice.textContent).toContain("ci_node");
+    // And it points at the lever that DOES move this host.
+    expect(notice.textContent).toContain("qontinui");
+    // The false premise must not come back.
+    expect(notice.textContent).not.toMatch(/tenant_devices/);
   });
 
   it("adds no such note to an ordinary workstation row", () => {

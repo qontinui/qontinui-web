@@ -49,6 +49,21 @@
  * answer is never rendered as "this host has no labels", which would be a claim
  * about the host rather than about the request
  * (`[policy: silent-empty-is-unknown]`).
+ *
+ * ## These rows are a SEPARATE population, not a richer view of the machines
+ *
+ * `ci_runner_registrar::hostname_for` mints a **synthetic** hostname —
+ * `gh-runner-<runner name>` — and `device_id_for` keys on `(repo, runner name)`.
+ * Two consequences the rest of this file depends on:
+ *
+ *  * A mirror row's hostname **never** equals a real machine's, so it never
+ *    joins onto a workstation card. It gets its own row, for its own device.
+ *    Any code here that reads as "where both sources carry a host, X wins" is
+ *    describing a collision that cannot happen; say so rather than implying a
+ *    merge that never runs.
+ *  * One runner registered in N repos yields N devices sharing ONE synthetic
+ *    hostname. That collision is real, it is the only one, and it is counted
+ *    rather than resolved — see `indexCiRunners`.
  */
 
 import type { CiRunnersByHost, CiRunnerStatus } from "./types";
@@ -109,12 +124,22 @@ export type CiRunnerMirrorRead =
        */
       windowSecs: number | null;
       /**
-       * Rows coord sent that could not be indexed, because they named no
-       * hostname or collided with one already claimed. Surfaced rather than
-       * swallowed: the page shows a roster and must be able to say the roster
-       * is partial.
+       * Rows coord sent that named no hostname, so they could not be placed on
+       * a card at all. These hosts are genuinely MISSING from the roster.
        */
-      skippedRows: number;
+      unplaceableRows: number;
+      /**
+       * Rows dropped because another registration already claimed their
+       * (synthetic) hostname — one runner registered in several repos.
+       *
+       * Counted SEPARATELY from `unplaceableRows` because the operator
+       * consequence is different and worse: the host IS on screen, showing one
+       * registration's label set, while a second registration on the same host
+       * may be missing `qontinui`. Calling that "partial roster" would send a
+       * reader looking for an absent card while the real problem is a card
+       * that is present and under-reporting.
+       */
+      shadowedRows: number;
     }
   | { state: "unavailable"; reason: string };
 
@@ -184,22 +209,26 @@ export function matchesFleetRouting(labels: readonly string[]): boolean {
  */
 export function indexCiRunners(payload: CoordCiRunnersPayload): {
   byHostname: Map<string, CoordCiRunnerRow>;
-  skippedRows: number;
+  unplaceableRows: number;
+  shadowedRows: number;
 } {
   const byHostname = new Map<string, CoordCiRunnerRow>();
-  let skippedRows = 0;
+  let unplaceableRows = 0;
+  let shadowedRows = 0;
   for (const row of payload.runners ?? []) {
     const hostname = typeof row?.hostname === "string" ? row.hostname : "";
     if (!hostname) {
-      skippedRows += 1;
+      unplaceableRows += 1;
       continue;
     }
-    // A COLLISION is counted too, and the first row wins. One host can hold a
-    // separate GitHub registration per repo, so two rows sharing a hostname is
-    // a real shape — and silently overwriting would show one registration's
-    // labels while the operator believes they are looking at the host.
+    // A COLLISION is a different fact and gets its own counter. `device_id_for`
+    // keys on `(repo, runner name)` while `hostname_for` keys on the name
+    // alone, so one runner registered in several repos arrives as several
+    // devices sharing one synthetic hostname. First row wins; the rest are
+    // SHADOWED — present on screen through another registration's labels, not
+    // missing from the roster.
     if (byHostname.has(hostname)) {
-      skippedRows += 1;
+      shadowedRows += 1;
       continue;
     }
     byHostname.set(hostname, {
@@ -212,7 +241,7 @@ export function indexCiRunners(payload: CoordCiRunnersPayload): {
       last_seen_at: row.last_seen_at ?? null,
     });
   }
-  return { byHostname, skippedRows };
+  return { byHostname, unplaceableRows, shadowedRows };
 }
 
 /**
@@ -247,11 +276,12 @@ export function parseCiRunnersPayload(payload: unknown): CiRunnerMirrorRead {
             "could be matched to a label set.",
     };
   }
-  const { byHostname, skippedRows } = indexCiRunners(body);
+  const { byHostname, unplaceableRows, shadowedRows } = indexCiRunners(body);
   return {
     state: "ok",
     byHostname,
-    skippedRows,
+    unplaceableRows,
+    shadowedRows,
     asOf: typeof body.as_of === "string" ? body.as_of : null,
     windowSecs:
       typeof body.freshness_secs === "number" &&
@@ -303,31 +333,41 @@ export function describeMirrorFreshness(read: CiRunnerMirrorRead): string {
         )}s`
       : "coord heard from inside an unreported freshness window";
   const stamp = read.asOf ? `, read at ${read.asOf}` : "";
-  const partial =
-    read.skippedRows > 0
-      ? ` ${read.skippedRows} row(s) coord sent could not be placed on a host ` +
-        `and are NOT shown, so this roster is partial.`
+  // Two different faults, two different sentences. "Partial roster" sends a
+  // reader looking for a missing card; a SHADOWED registration is the opposite
+  // — the card is there and is showing another registration's labels, which is
+  // exactly how a delabelled registration would hide.
+  const unplaceable =
+    read.unplaceableRows > 0
+      ? ` ${read.unplaceableRows} row(s) named no host and are NOT shown, so ` +
+        `this roster is incomplete.`
+      : "";
+  const shadowed =
+    read.shadowedRows > 0
+      ? ` ${read.shadowedRows} further registration(s) share a host already ` +
+        `listed and are HIDDEN behind it — the labels shown for that host are ` +
+        `one registration's, and another may differ.`
       : "";
   return (
     `Rows are the CI runners ${window}${stamp}. Their labels are what ` +
     `coord's ~60s registrar poll last mirrored from GitHub — not a live read ` +
-    `of GitHub.${partial}`
+    `of GitHub.${unplaceable}${shadowed}`
   );
 }
 
 /**
- * Merge the two sources of per-host CI-runner facts into one map.
+ * Fold coord's mirror rows in beside the device-registry ones.
  *
- * The device-registry map (`GET /operations/fleet`'s `ci_runners`) covers this
- * caller's own paired devices; the coord mirror covers the GitHub fleet, whose
- * rows that read cannot see at all. They are not competing views of one
- * population — for the fleet's actual CI hosts, only the mirror has anything.
+ * **Not a reconciliation of two views of one population.** Mirror hostnames are
+ * synthetic (`gh-runner-<name>`, see the module doc), so they cannot collide
+ * with a workstation's, and the two sets are disjoint in practice. What this
+ * function does is add the GitHub fleet — which `GET /operations/fleet` cannot
+ * see at all, because coord's registrar writes those devices with no `user_id`
+ * and no `capability_user_paired` while the device read requires both.
  *
- * Where both do carry a host, **the mirror wins for status and labels**: it is
- * the copy derived from GitHub's own listing, which is what the routing verdict
- * has to be computed from. `lastJobAt` is kept from the device-registry entry,
- * because coord's route does not carry it and dropping it would lose a fact for
- * no gain.
+ * The mirror still takes precedence on a same-key entry, because if the two
+ * ever DID meet, the copy derived from GitHub's own listing is the one the
+ * routing verdict has to be computed from. That is a guard, not the point.
  *
  * A read that has not answered (or failed) contributes nothing and removes
  * nothing — the device-registry entries stand on their own, unlabelled as
@@ -359,6 +399,10 @@ export function mergeCiRunners(
       // the only honest recency this row has.
       lastSeenAt: row.last_seen_at,
       mirrorAsOf: mirror.asOf,
+      // The one REAL key a mirror row carries. Dropping it left the row
+      // addressable only by a synthetic hostname, which resolves no volume
+      // telemetry and names no coord device.
+      deviceId: row.device_id,
       source: "coord-mirror",
     };
   }

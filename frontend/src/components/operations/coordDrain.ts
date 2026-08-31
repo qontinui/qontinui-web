@@ -93,7 +93,15 @@ export const DRAIN_WINDOWS: readonly DrainWindow[] = [
   { id: "24h", label: "24 hours", hours: 24 },
   { id: "3d", label: "3 days", hours: 72 },
   { id: "7d", label: "7 days", hours: 168 },
-  { id: "30d", label: `${MAX_DRAIN_DAYS} days (coord's maximum)`, hours: 720 },
+  // 719, not 720. Coord rejects `until > now + 30 days` outright, and `until`
+  // is computed from the BROWSER clock — so a browser a minute ahead of coord
+  // would make the option literally labelled "coord's maximum" the one that
+  // 400s. An hour of headroom costs nothing and removes the failure.
+  {
+    id: "30d",
+    label: `just under ${MAX_DRAIN_DAYS} days (coord's maximum)`,
+    hours: 719,
+  },
 ];
 
 /** The default selection — long enough to survive a night, short enough that
