@@ -24,6 +24,20 @@
  *     collapsed, rather than as a fourth section: the knob and the telemetry
  *     that says what to set it to belong in one viewport.
  *
+ * ## The health strip answers TWO questions, not one
+ *
+ * The badge cluster carries machine liveness AND coord's unresolved-alert
+ * severity rollup, because those are different claims and the page used to
+ * make only the first. `by_state: {healthy: 8}` is liveness; it says nothing
+ * about alerts, and a steward read it as an all-clear while thousands of
+ * unresolved criticals stood (plan
+ * `2026-08-31-devops-surface-renders-no-alert-signal`). Coord had been
+ * publishing the rollup on this page's own poll the whole time — it was
+ * discarded by a hook type that declared only `devices`.
+ *
+ * This costs NO new read: `alerts` rides the `/fleet/health` body the page
+ * already polls, which is R1's "derived from data already on the page".
+ *
  * ## What this page does NOT do
  *
  * It does not recalculate a verdict. Pressure and `headroom` arrive
@@ -48,8 +62,10 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
+import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
@@ -60,8 +76,20 @@ import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
 // defeats every downstream useMemo keyed on it.
 const EMPTY_DEVICES: FleetHealthDevice[] = [];
 
+/**
+ * Where a severity badge goes — and deliberately with **no query string**.
+ *
+ * `/admin/coord/alerts` owns severity as local chip state and reads no
+ * `useSearchParams`, so `?severity=critical` would land on an UNFILTERED page
+ * showing every severity under a control that claimed to filter. Plain link
+ * until that page hydrates its filters from the URL, which is a separate,
+ * recorded follow-up — not something to smuggle in behind a badge.
+ */
+const ALERTS_HREF = "/admin/coord/alerts";
+
 export default function CoordDevOpsPage() {
   const fleet = useFleetHealth();
+  const router = useRouter();
   // The CI-capacity join (Phase 2). One read, owned here, passed down —
   // never a fetch per machine row. It carries no CI-node configuration of its
   // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
@@ -79,6 +107,84 @@ export default function CoordDevOpsPage() {
       }),
     [devices, fleet.loading, fleet.error]
   );
+
+  // Coord's alert rollup, from the SAME poll — never a second fetch (R1).
+  const alertCounts = fleet.data?.alerts;
+  const alertsScrapeUp = fleet.data?.alerts_scrape_up;
+
+  /**
+   * The severity cluster, and the three-way distinction it exists to make.
+   * `by_state` above is device liveness; these are alerts, and until this
+   * change the page rendered `machines 8` beside nothing at all while
+   * thousands of unresolved criticals stood.
+   *
+   * 1. `alerts` present, `alerts_scrape_up` anything but `false` → the numbers.
+   *    `undefined` is the PRE-DEPLOY coord that serves the rollup and not yet
+   *    the flag; that rollup was measured, and dashing it would blank a real
+   *    count on every day this page is ahead of coord — which the plan's
+   *    deploy order requires it to be.
+   * 2. `alerts_scrape_up === false` → coord told us its rollup query did not
+   *    run. Its `{0,0,0}` is not a count.
+   * 3. `alerts` absent → coord did not serve it, or the read failed here.
+   *
+   * Cases 2 and 3 render UNKNOWN. **Never `?? 0`** — a zero here is the one
+   * sentence this page must not say falsely, and it is the same reasoning as
+   * the `unknown` liveness badge below: a signal that has gone dark and a
+   * genuine all-clear must not look alike (`[policy: silent-empty-is-unknown]`).
+   *
+   * One badge for the unknown case, not three dashed ones: the rollup is a
+   * single measurement, so all three severities fail together and saying it
+   * three times is clutter, not honesty.
+   */
+  const alertBadges = useMemo<HealthBadge[]>(() => {
+    const openAlerts = () => router.push(ALERTS_HREF);
+    if (!alertCounts || alertsScrapeUp === false) {
+      return [
+        {
+          key: "alerts-unknown",
+          label: "alerts unknown",
+          tone: "muted",
+          title:
+            alertsScrapeUp === false
+              ? "Coord could not read the alert rollup on this poll. This is not zero alerts — it is no measurement."
+              : "This coord served no alert rollup. This is not zero alerts — it is no measurement.",
+          onClick: openAlerts,
+          "data-testid": "coord-devops-alerts-unknown-badge",
+        },
+      ];
+    }
+    // Tone is R3: colour says who must act. `attention` is the only tone that
+    // borrows red, and a count of zero needs nobody — so a measured `critical
+    // 0` stays muted rather than painting an all-clear red.
+    const toneFor = (count: number, tone: HealthBadge["tone"]) =>
+      count > 0 ? tone : ("muted" as const);
+    return [
+      {
+        key: "alerts-critical",
+        label: `critical ${alertCounts.critical}`,
+        tone: toneFor(alertCounts.critical, "attention"),
+        title: "Unresolved critical alerts. Opens the alerts list.",
+        onClick: openAlerts,
+        "data-testid": "coord-devops-critical-badge",
+      },
+      {
+        key: "alerts-warning",
+        label: `warning ${alertCounts.warning}`,
+        tone: toneFor(alertCounts.warning, "default"),
+        title: "Unresolved warning alerts. Opens the alerts list.",
+        onClick: openAlerts,
+        "data-testid": "coord-devops-warning-badge",
+      },
+      {
+        key: "alerts-info",
+        label: `info ${alertCounts.info}`,
+        tone: "muted",
+        title: "Unresolved info alerts. Opens the alerts list.",
+        onClick: openAlerts,
+        "data-testid": "coord-devops-info-badge",
+      },
+    ];
+  }, [alertCounts, alertsScrapeUp, router]);
 
   return (
     // `overflow-x-auto`: the resource strip is wide, and it must scroll rather
@@ -151,8 +257,38 @@ export default function CoordDevOpsPage() {
                 },
               ]
             : []),
+          // Alerts last, after the liveness cluster: the four above answer
+          // "are the machines there?", these answer "is anything wrong?", and
+          // the second question is the one this page could not previously ask.
+          ...alertBadges,
         ]}
       />
+
+      {/* The pageout sink, when coord says it is not configured. ONE muted
+          line, deliberately: this is a recorded operator decision (confirmed
+          2026-08-05 — in-app is the delivery surface, no Slack/email sink is
+          wanted), not an incident. A warning banner on an intended state is
+          how a strip earns the operator's habit of not reading it. It exists
+          only so the next steward does not re-file "alerts reach nobody" as a
+          defect, which is exactly what happened. Absent field renders
+          nothing — we do not know the posture, so we claim nothing. */}
+      {fleet.data?.pageout?.sink_configured === false && (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="coord-devops-pageout-note"
+        >
+          Alert pages are in-app only — no external sink is configured (by
+          decision). Everything above is delivered under{" "}
+          <Link
+            href={ALERTS_HREF}
+            className="font-medium text-foreground underline underline-offset-2 hover:no-underline"
+            data-testid="coord-devops-pageout-alerts-link"
+          >
+            Alerts
+          </Link>
+          .
+        </p>
+      )}
 
       {/* The join this page is keyed on, stated once, before the list it
           shapes. Rows here come from coord's device registry, and the bridge
