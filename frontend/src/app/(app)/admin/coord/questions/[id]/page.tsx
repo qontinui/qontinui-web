@@ -61,7 +61,7 @@ import {
   RowTime,
   StatusBadge,
   isNotFoundError,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
@@ -199,17 +199,17 @@ export default function CoordQuestionDetailPage() {
       ) : question ? (
         <>
           {/* R9/R4 — the meta block is one bordered strip, not a Card with a
-              header. `rowAccentClass` gives an unanswered question the same
+              header. `rowAccentProps` gives an unanswered question the same
               red left edge it carries in the inbox, so the two surfaces agree
-              at a glance about whether an agent is stopped. */}
+              at a glance about whether an agent is stopped — and declares that
+              attention in `data-attention`, so a style rule can check the
+              agreement rather than a reader having to. */}
           <div
             data-testid="coord-question-meta"
-            className={[
-              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
-              rowAccentClass(status),
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            {...rowAccentProps(
+              status,
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2"
+            )}
           >
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={status} palette={QUESTION_STATUS_PALETTE} />
