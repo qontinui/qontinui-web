@@ -44,6 +44,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { rowAccentClass as sharedRowAccentClass } from "@/components/console";
 import {
   AgentPrefError,
   listAdminAgentRegistry,
@@ -95,10 +96,15 @@ function rowAttention(row: AdminAgentRegistryRow): "waiting" | "none" {
   return row.pref_differs_from_default_count > 0 ? "waiting" : "none";
 }
 
+/**
+ * Delegates rather than re-spelling: §4.1 says nothing outside `statusRow` may
+ * mint a red or an amber, and this hand-written `border-l-amber-500/80` was
+ * doing exactly that — invisibly, because `paletteDisagreements` only ever
+ * inspects a kind→class table and this surface has none, so a tint drift here
+ * would have passed every audit in the repo.
+ */
 function rowAccentClass(row: AdminAgentRegistryRow): string {
-  return rowAttention(row) === "waiting"
-    ? "border-l-2 border-l-amber-500/80"
-    : "";
+  return sharedRowAccentClass({ attention: rowAttention(row) });
 }
 
 function matchesFilter(row: AdminAgentRegistryRow, filter: Filter): boolean {
@@ -451,6 +457,14 @@ export default function CoordAgentRegistryPage() {
                 )} ${isOpen ? "rounded-b-none" : ""}`}
                 data-testid={`agent-registry-row-${row.agent_name}`}
                 data-attention={rowAttention(row)}
+                // This route hand-rolls its row rather than using
+                // `<RecordRow>` (the expand control is a nested button, which
+                // a whole-line `<button>` cannot host), so it has to declare
+                // the marker itself. Without it, it is the one console row a
+                // `[data-console-row]` density or font-size rule would silently
+                // skip — the row already carries the `px-3 py-2 text-sm` such
+                // a rule asserts.
+                data-console-row=""
               >
                 <button
                   type="button"

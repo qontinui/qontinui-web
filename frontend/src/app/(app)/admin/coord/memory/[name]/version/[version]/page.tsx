@@ -57,7 +57,7 @@ import {
   RowTime,
   StatusBadge,
   isNotFoundError,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import {
   MEMORY_STATUS_PALETTE,
@@ -191,12 +191,10 @@ export default function CoordMemoryVersionPage() {
               the memory list and detail route render. */}
           <div
             data-testid="coord-memory-version-meta"
-            className={[
-              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
-              rowAccentClass(deriveMemoryStatus(entry)),
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            {...rowAccentProps(
+              deriveMemoryStatus(entry),
+              "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2"
+            )}
           >
             <div className="flex items-center gap-2 flex-wrap">
               <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
