@@ -2,6 +2,81 @@
 
 This Terraform configuration sets up comprehensive monitoring for the Qontinui production environment on AWS Elastic Beanstalk.
 
+> ## ⚠️ Do not apply this without reading first (2026-08-30)
+>
+> This root is **stale Beanstalk-era configuration**, and as written it cannot
+> apply at all. Neither problem has been corrected here, because the right
+> correction depends on facts not knowable from inside the repo.
+>
+> **1. It monitors Elastic Beanstalk, which is not what production runs.**
+> Its eight alarms are four `AWS/ElasticBeanstalk` (`main.tf:37,63,89,140`),
+> three `AWS/RDS` (`171,197,223`) and one `AWS/EC2` (`249`), all targeting the
+> environment `qontinui-prod-py`. Production is now ECS, provisioned by
+> `qontinui-stack` (`aws/staging/`, despite the name). The live,
+> correctly-regioned monitoring is `qontinui-stack/aws/modules/observability` —
+> region inherited from a provider defaulting to `us-east-1`, no region literals
+> anywhere.
+>
+> **2. `region` defaults to `eu-central-1`, and that makes the root
+> un-appliable.** `variables.tf` sets `default = "eu-central-1"` and `main.tf`
+> wires it straight into `provider "aws"`. But the RDS instance this root alarms
+> on lives in **`us-east-1`** (`eu-central-1` holds only the SSM secrets store),
+> and `main.tf:166` looks it up through a data source:
+>
+> ```hcl
+> data "aws_db_instance" "main" {
+>   db_instance_identifier = "qontinui-db"
+> }
+> ```
+>
+> A terraform `data` block **errors** when the lookup finds nothing — it does not
+> return null. So with the default region, `terraform plan` aborts here and *no*
+> alarms are created, not even the Beanstalk ones. The corollary is worth stating
+> plainly, because it is the opposite of what you might assume: this root did
+> **not** ship silently-inert wrong-region alarms. Either it was applied back when
+> a database called `qontinui-db` really was in `eu-central-1`, or it was never
+> successfully applied at all.
+>
+> **And the region is not the only thing stale about that lookup.** No instance
+> named `qontinui-db` exists anywhere in this fleet's configuration — the live
+> database is `qontinui-staging`, from
+> `qontinui-stack/aws/modules/postgres/main.tf:94` (`identifier =
+> "qontinui-${var.environment}"`). The string `qontinui-db` appears only here and
+> in this file's own troubleshooting section. So **switching `region` to
+> `us-east-1` would not make this root appliable either** — the data source would
+> fail there too. Anyone reaching for the one-line region fix should know it does
+> not work before they try it.
+>
+> Three other places carry the same stale region and will mislead a reader
+> independently of the terraform. Named by section, not line, since this warning
+> shifts the numbering itself:
+>
+> * **Prerequisites** — the `aws configure` snippet tells you to set your CLI's
+>   region to `eu-central-1`. The most harmful of the three: it acts on a person,
+>   and it does so before they reach any of this.
+> * **Accessing the Dashboard** — links a console dashboard in `eu-central-1`.
+> * **State Management → Example: S3 Backend** — shows an `eu-central-1` backend.
+>
+> **Before you touch this:** find out whether it was ever applied —
+> `aws cloudwatch describe-alarms --region eu-central-1 --alarm-name-prefix
+> qontinui-prod-py-` and again for `us-east-1`.
+>
+> * **No alarms in either region** — it was never applied. Delete this whole
+>   directory rather than fixing it.
+> * **Alarms exist** — they are live resources, and this repo has **no committed
+>   terraform state** (see "State Management" below), so `terraform destroy` will
+>   not work from a fresh clone: there is nothing for it to destroy. You would
+>   need to `terraform import` each resource first, or delete them through the
+>   console / `aws cloudwatch delete-alarms`. Do that before deleting the source,
+>   or the alarms are orphaned with no managed way to remove them.
+>
+> Do **not** simply change the default to `us-east-1` and apply. That would make a
+> Beanstalk monitoring stack look current for an architecture production does not
+> run — trading a loudly-broken config for a quietly-wrong one.
+>
+> Context: `qontinui-dev-notes` plan
+> `plans/2026-08-30-cloudwatch-module-hardcodes-eu-central-1-for-us-east-1-resources.md`.
+
 ## What This Creates
 
 ### SNS Topic & Email Alerts
