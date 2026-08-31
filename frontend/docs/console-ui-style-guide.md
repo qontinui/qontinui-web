@@ -693,6 +693,50 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > licenses an empty-state claim about filter B, which no read has ever
 > answered. `readIsUnknown`'s premise is that coord *confirmed this window
 > empty* — so the confirmation has to be about the window being described.
+>
+> **A fourth rule, from auditing the sweep that produced the first three.** It
+> re-spelled the predicate twice while fixing the consumers, in both directions
+> the first three rules warn about — which is the evidence that "count the
+> consumers" is not enough on its own.
+>
+> **Publish the verdict from the surface that owns it; do not let consumers
+> re-derive it.** Importing a shared predicate still leaves each caller
+> assembling its own ARGUMENTS, and that is where the next drift lives. On
+> `/admin/coord/notifications` the strip is the surface that decides whether
+> coord's scalars may be quoted — it is what dashes the badges — and the
+> mark-all tooltip re-derived that as `!readFailed`: three of the four ways a
+> count stops being quotable, missing `migrationPending`, so it promised
+> *"Marks ALL 137 unread… cannot be undone"* under a strip rendering that same
+> 137 as `–`. The fix is not a fifth spelling but a field on the derived object
+> (`health.countsAreCurrent`), with the deriver *branching* on it so its arms
+> cannot drift from what it publishes. **A deriver that already knows something
+> should return it.**
+>
+> The same audit found the mirror-image error: a flag deliberately SPLIT for one
+> surface's sake (`pagingFailed`, kept out of `readFailed` so a failed page
+> would not stale the strip) and then folded straight back into one boolean at
+> another (`error: readFailed || pagingFailed`). A failed *Load more* duly
+> reported *"the feed above failed to load"* about a feed the strip was painting
+> green, and withheld the only remedy that applied. **If two states were worth
+> splitting, they are worth two sentences** — and rank them, because when both
+> are true one is the bigger truth.
+>
+> Note what let this survive review, because it is NOT a loose assertion. The
+> sweep wrote a test for exactly this state — *"does not send the operator to a
+> Load more that just failed"* — and asserted `/could not be looked up/`, which
+> at the time matched the head-failure arm and only that arm. The regex
+> discriminated perfectly. **The test pinned the behaviour the code intended,
+> and the intent was the bug**: folding the two failures into one boolean was a
+> deliberate choice with a comment arguing for it, so no assertion about the
+> sentence that choice produces could ever have caught it.
+>
+> The rule that would have: **when you split a flag, test that the two states
+> produce two DIFFERENT outputs** — assert the discrimination itself, not each
+> arm against the text it currently emits. A test per state passes happily while
+> two states share one sentence; a test that the sentences differ does not. The
+> same test's own body asserted the strip stays green one line below, so both
+> halves of the contradiction were on screen in one assertion block, agreeing
+> with the code and with each other about a page that was lying.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
