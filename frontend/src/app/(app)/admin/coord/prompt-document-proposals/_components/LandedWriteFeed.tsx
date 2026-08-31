@@ -128,6 +128,24 @@ interface LandedWriteFeedProps {
  * would silently discard every write made since, so those rows show their
  * version and nothing more.
  *
+ * ## The author filter is the one layer allowed to hide a loosening
+ *
+ * The backend guarantees the PAYLOAD: its page slice is taken from a partition
+ * that lifts classified loosenings above the recency order, so the response
+ * carries every loosening among the writes it read — and when its `limited`
+ * caveat is set it says exactly that, in the notice box above the rows. The
+ * guarantee stops at the wire. This component's agent-authored filter then
+ * removes rows from the screen, and a loosening is classified by DIRECTION, not
+ * by author, so an `operator:` or unrecognised-label edit that widens what
+ * agents may do is flagged and is precisely what the filter drops.
+ *
+ * So the filter must disclose flagged rows SPECIFICALLY, not only as part of an
+ * author count, and the "none of the writes on this page…" line must not be
+ * printed while one is hidden. Otherwise the page pairs a server sentence
+ * promising every loosening is present with a screen showing none — the
+ * absence-as-fact failure this feature exists to prevent, arriving through the
+ * only layer with permission to hide a row.
+ *
  * ## Two OPTIONAL columns, and what absent means
  *
  * `loosening` and `notification_ref` are served by a coord change that lands
@@ -167,6 +185,52 @@ export function LandedWriteFeed({
   const flaggedCount = useMemo(
     () => visible.filter(isLoosening).length,
     [visible]
+  );
+
+  /**
+   * Flagged rows this filter is hiding — the one thing the hidden-rows note
+   * cannot express as an author count.
+   *
+   * **The backend now GUARANTEES what this filter can quietly undo.** The page
+   * slice is taken from a stable partition that lifts classified loosenings
+   * above the recency order (`operations.py` `_promote_flagged`), so the
+   * response carries every loosening among the writes it read, whatever its
+   * age. That guarantee is about the PAYLOAD. This filter then removes rows
+   * from the screen, and a loosening is not always agent-authored: coord
+   * classifies a write's direction, not its author, so an `operator:` edit that
+   * widens what agents may do is flagged and is exactly what the agent filter
+   * drops.
+   *
+   * Without this count the page could print "None of the writes on this page
+   * were classified as widening what agents may do" while hiding one — the
+   * absence-as-fact failure the whole feature is built to prevent, arriving
+   * through the one layer that is allowed to hide rows. The `limited` caveat in
+   * the notice box states the server's promise in as many words when it is set,
+   * which sharpens the contradiction; it is not a precondition of it. That
+   * caveat fires only when more writes were read than `limit` returned, and its
+   * no-verdict-anywhere arm deliberately says nothing about direction at all.
+   *
+   * Counted over `writes` minus the filter, not over `visible`: these are by
+   * definition the rows `visible` does not contain.
+   *
+   * **The `authorFilter` ternary is a cheap path, NOT a guard.** Dropping it
+   * would change no rendering: with the filter off `visible === writes`, so a
+   * non-agent loosening is on screen and `flaggedCount` already suppresses the
+   * line. It is kept because the name says *hidden* and nothing is hidden in
+   * that position — and it skips the scan.
+   *
+   * **Scope, exactly.** `isLoosening` is `=== true`, so this sees hidden rows
+   * coord POSITIVELY classified and no others. A hidden row carrying no verdict
+   * is counted by the author tally and by nothing here — correct, since absent
+   * is not `false`, but it means this term closes the false-claim hole and not
+   * the weaker unknown one. Plan follow-up 4c records that residual.
+   */
+  const hiddenFlagged = useMemo(
+    () =>
+      authorFilter === "agent"
+        ? writes.filter((w) => !isAgentAuthored(w) && isLoosening(w)).length
+        : 0,
+    [writes, authorFilter]
   );
 
   // R6: a count that has not been fetched is `–`, never `0`. Nothing was read
@@ -237,6 +301,31 @@ export function LandedWriteFeed({
           class as agent-authored: {tally.operator} by you, {tally.system} from
           coord&apos;s shipped defaults, {tally.unknown} whose author label is
           not one this page recognises.
+          {hiddenFlagged > 0 && (
+            // Said in the same breath as the author counts, because it is the
+            // one fact those counts cannot carry: coord classifies a write's
+            // DIRECTION, not its author, so a loosening can sit in any of the
+            // three hidden classes. The caveat above may be promising that
+            // every loosening this feed read is on the page — true of the
+            // payload, and this filter is what makes it untrue of the screen.
+            //
+            // "That includes N", not "N of them": the antecedent is the hidden
+            // SET, whose size is `hiddenByFilter`, and the two counts are
+            // independent. At `hiddenByFilter === hiddenFlagged === 1` the
+            // partitive reads "One of them" of a set of one; at 2 of 2 it reads
+            // as a proper subset of itself. This phrasing is grammatical at
+            // every pair of counts, which is what a sentence built from two
+            // independent numbers has to be.
+            <>
+              {" "}
+              <strong className="font-medium">
+                That includes{" "}
+                {hiddenFlagged === 1 ? "1 write" : `${hiddenFlagged} writes`}{" "}
+                classified as widening what agents may do; turn the filter off
+                to read {hiddenFlagged === 1 ? "it" : "them"}.
+              </strong>
+            </>
+          )}
         </p>
       )}
 
@@ -437,8 +526,19 @@ export function LandedWriteFeed({
       {/* Said only when the field was actually served. "Nothing on this page
           widens authority" and "this coord build does not classify landed
           writes" are different facts, and the second must never be printed as
-          the first. */}
-      {classified && visible.length > 0 && flaggedCount === 0 && (
+          the first.
+
+          And never while the author filter is hiding a flagged row. The three
+          preconditions above are all computed over `visible`, which is correct
+          for what they each assert — but together they say "no loosening is
+          here", and with a loosening one click away that reads as "no loosening
+          exists". `hiddenFlagged` is the only term that can see the difference;
+          the filter note above states the number instead, which is the fact
+          rather than the reassurance. */}
+      {classified &&
+        visible.length > 0 &&
+        flaggedCount === 0 &&
+        hiddenFlagged === 0 && (
         <p
           className="text-xs text-muted-foreground"
           data-testid="landed-writes-none-flagged"
