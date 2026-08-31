@@ -1635,6 +1635,20 @@ class TestCoordServiceUnavailableOnTheCitationRead:
     an ECS rotation, an ALB target drain). The tests below pin both halves at
     both statuses: a typed 503/500 does not trip, an UNTYPED one on the same
     hop does, and a status/code pairing coord does not use fails closed.
+
+    **The error CODE is no longer sufficient on its own, and the tests say so
+    at both ends.** coord's crate-wide sweep made ``db_error`` the code EVERY
+    narrowed production door writes, so ``(500, db_error)`` on this hop stopped
+    meaning "the citation read failed" and started meaning "a query inside
+    coord failed" — ``tenant_scope.resolve`` and ``work_unit.list`` included,
+    both fleet-wide faults that must trip. The same sweep shipped ``op``, which
+    names the read; ``_CITATION_ANSWERING_OPS`` uses it to REFUSE the carve-out
+    and never to grant it, so the two directions need separate coverage and get
+    it: a FOREIGN op trips at either status, and a body with NO op — a coord
+    predating the sweep, and the hand-rolled 503 on every coord — is carved out
+    exactly as before. Reverting the refusal reds only the first pair;
+    requiring the field reds only the second, plus the two pre-existing arms
+    whose bodies carry no ``op`` at all.
     """
 
     async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
@@ -1973,6 +1987,243 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             assert link["unavailable_reason"] == (
                 "coord returned 500: db_error: work_unit.citations.read: 23503"
             ), link["unavailable_reason"]
+
+    async def test_a_500_naming_a_DIFFERENT_coord_read_still_trips(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A typed body is not enough — it must be typed ABOUT THIS READ.
+
+        The carve-out keys on ``error``, and coord's crate-wide sweep took away
+        that field's ability to name a door: ``to_safe_body`` writes
+        ``db_error`` as a literal, the same for every operation. So
+        ``(500, db_error)`` on this hop no longer means "the citation SELECT
+        failed" — it means "a query somewhere inside coord failed", and the
+        bodies ``tenant_scope.resolve`` and ``work_unit.list`` answer with are
+        indistinguishable from the one the exception was written for.
+
+        Granting the carve-out to those is the failure the exception's own
+        docstring warns about, inverted: a genuinely coord-wide fault answers a
+        typed ``500 db_error`` on every guarded hop, nothing trips, and
+        ``coord_available`` reports ``true`` through an outage while the page
+        pays ``2N`` round-trips to discover it row by row.
+
+        **Not reachable on coord's ``main`` today, and this test does not claim
+        it is.** Both ``/citations`` tiers route their whole 500 path through one
+        handler that names ``work_unit.citations.read``, and neither tier's
+        tenant resolution can answer a 5xx at all — the operator tier 403s, and
+        the agent tier's ``caller_tenant`` swallows even a Postgres fault on its
+        ``coord.devices`` fallback into a 400 — so the token used here cannot
+        arrive from that coord. This pins the classifier against the predicate it
+        DOCUMENTS rather than against one deployment's route table, the same
+        reading the surrounding suite already takes of coord's shapes, in both
+        directions.
+
+        The same sweep shipped the field that separates them. ``op`` names the
+        operation, from a closed set, and this read already parsed it to RENDER
+        it (``_coord_error_op``, #1046) — it just never let it decide anything.
+        Here it does, in the refusing direction only: an ``op`` outside
+        ``_CITATION_ANSWERING_OPS`` falls through to the ordinary 5xx reading.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("foreign-op"),
+                work_unit_slug=_slug("wu-foreign-op"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                # coord's `TenantScopeError::Db` arm, verbatim: the SAME
+                # constructor and the SAME `error` code the citation read uses,
+                # differing only in the field that says which read it was.
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps(
+                        {
+                            "error": "db_error",
+                            "pg_code": "53300",
+                            "op": "tenant_scope.resolve",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False, (
+            "coord answered about `tenant_scope.resolve` — a fault that is "
+            "fleet-wide by construction — and the citations carve-out swallowed "
+            "it, so a real outage reads as healthy"
+        )
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        # The op that caused the refusal is also the op the operator is shown:
+        # one parse of the body feeds the classifier and the reason alike.
+        assert reason == "coord returned 500: db_error: tenant_scope.resolve: 53300", (
+            reason
+        )
+
+    async def test_a_500_with_NO_op_keeps_the_carve_out_for_a_PRE_SWEEP_coord(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The fail-OPEN direction, which the op test must not take away.
+
+        ``op`` exists only on a coord carrying the crate-wide sweep. A coord
+        predating it answers this door with ``db_error`` and no such field, and
+        so does the hand-rolled 503 on EVERY coord. Refusing the carve-out on a
+        missing ``op`` would delete it against exactly the coord it was written
+        for — reinstating the page-wide blanking, silently, in the deploy window
+        where this service is ahead of the coord in front of it.
+
+        Distinct from the wide-body test above, which also carries no ``op``:
+        that one proves the whitelist stays safe against a legacy body's PG
+        internals. This one isolates the classifier, on a body identical to the
+        narrow one coord sends today with the single field removed — so a
+        regression here is unambiguously about the op test and not about shape
+        handling.
+        """
+        plans = [
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("no-op-500"),
+                work_unit_slug=_slug("wu-no-op-500"),
+            )
+            for _ in range(4)
+        ]
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps({"error": "db_error", "pg_code": "23503"}),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is True, (
+            "a coord predating the sweep sends no `op`, and requiring one "
+            "silently deletes the carve-out for it"
+        )
+        assert fake.await_count == 2 * len(plans)
+        for plan in plans:
+            link = next(i for i in body["items"] if i["id"] == str(plan.id))["coord"]
+            assert link["work_unit_state"] == "linked"
+            assert link["linked_prs_state"] == "unavailable"
+
+    async def test_the_DELIVERY_op_is_also_an_answer_about_these_rows(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The set admits both of coord's citation-sub-resource tokens.
+
+        ``work_unit.citations.delivery`` is coord's name for a failure deriving
+        the shipped/evidence verdict FROM the citation rows. It is not reachable
+        on this door today — the sub-resource reduces rows it already read, so
+        its delivery arm cannot fail, and only the by-slug door still emits
+        ``delivery_error`` — but a coord that grew one here would be answering
+        about these rows, which is the whole predicate the carve-out tests.
+
+        Admitting it is not a widening of the exception: without the op test
+        every token was admitted. The set only ever subtracts.
+        """
+        plans = [
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("delivery-op"),
+                work_unit_slug=_slug("wu-delivery-op"),
+            )
+            for _ in range(4)
+        ]
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps(
+                        {
+                            "error": "db_error",
+                            "pg_code": None,
+                            "op": "work_unit.citations.delivery",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        fake = AsyncMock(side_effect=_fake)
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is True
+        assert fake.await_count == 2 * len(plans)
+        for plan in plans:
+            link = next(i for i in body["items"] if i["id"] == str(plan.id))["coord"]
+            assert link["linked_prs_state"] == "unavailable"
+            # `pg_code` is null on this fixture, so the op is the whole
+            # diagnostic — the same property that made it worth reading.
+            assert link["unavailable_reason"] == (
+                "coord returned 500: db_error: work_unit.citations.delivery"
+            ), link["unavailable_reason"]
+
+    async def test_a_503_naming_a_FOREIGN_op_still_trips(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The refusal is a property of the carve-out, not of the 500 arm.
+
+        coord's ``citation_surface_unavailable`` body is hand-rolled and has
+        never carried an ``op`` — which is why the 503 arm keeps working
+        untouched (pinned by the sibling test above). A 503 that DOES carry one,
+        naming another operation, is therefore not that body: it is some other
+        door's answer wearing this door's error code, and the conservative
+        reading is the one the status/code pairing already takes.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("foreign-op-503"),
+                work_unit_slug=_slug("wu-foreign-op-503"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=503,
+                    detail=json.dumps(
+                        {
+                            "error": "citation_surface_unavailable",
+                            "pg_code": "42P01",
+                            "op": "work_unit.list",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["coord_available"] is False
 
     async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
