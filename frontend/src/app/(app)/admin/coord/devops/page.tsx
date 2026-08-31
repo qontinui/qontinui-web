@@ -46,10 +46,17 @@
  * have stopped sending it work, and that is only true while both consumers
  * read one definition of the number AND the verdict.
  *
- * It opens exactly TWO POLLS: `/fleet/health` here, and
- * `/fleet/resource-samples` inside `FleetResourcesSection`, which passes the
- * same rows to both the strip and the CI panel. Two polls of one route would
- * be two chances to disagree about what the fleet looks like right now.
+ * It opens THREE POLLS, each of a DIFFERENT route: `/fleet/health` here,
+ * `/fleet/resource-samples` inside `FleetResourcesSection` (which passes the
+ * same rows to both the strip and the CI panel), and `/fleet/ci-runners` here
+ * at coord's own registrar cadence. Two polls of ONE route is the thing
+ * forbidden — that is two chances to disagree about what the fleet looks like
+ * right now. The third was added by plan
+ * `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2 and is not a
+ * second view of an existing one: the GitHub fleet's rows are structurally
+ * invisible to `/fleet`'s device read, so nothing else on this page can see
+ * the labels GitHub routes on. It polls at 60 s because coord's registrar
+ * rewrites those rows on that cadence; faster reads the same row twice.
  *
  * The third read is `/devenv/machines`, read ONCE (`useDevenvMachines`) and
  * not polled: it carries the CI-capacity JOIN, and the roster it indexes
@@ -68,6 +75,7 @@ import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
 import { FleetOverview, FleetResourcesSection } from "@/components/operations";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
+import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
 import { useFleetHealth } from "@/components/operations/useFleetHealth";
 import type { FleetHealthDevice } from "@/components/operations/useFleetHealth";
@@ -94,6 +102,10 @@ export default function CoordDevOpsPage() {
   // never a fetch per machine row. It carries no CI-node configuration of its
   // own: that is `CiNodeConfigPanel`'s, inside the disclosure.
   const ciMachines = useDevenvMachines();
+  // Coord's mirror of the GitHub-side CI runners and the labels GitHub routes
+  // on. Owned here, one poll, passed down — the machine rows resolve their own
+  // row from it rather than fetching per card.
+  const ciRunnerMirror = useCiRunnerMirror();
   const devices = fleet.data?.devices ?? EMPTY_DEVICES;
 
   // R1: derived from data already on the page, never a second fetch. The
@@ -321,7 +333,11 @@ export default function CoordDevOpsPage() {
           facts read `unknown`, rather than vanishing or rendering as zero.
           4. CI capacity rides on each row as a collapsed disclosure, resolved
           from `ciMachines` — one read, no per-row fetch. */}
-      <FleetOverview health={fleet} ciMachines={ciMachines} />
+      <FleetOverview
+        health={fleet}
+        ciMachines={ciMachines}
+        ciRunnerMirror={ciRunnerMirror}
+      />
 
       {/* 2. Resources and 3. CI occupancy, over the section's own single
           poll of /fleet/resource-samples. `devices` is the spine: a machine

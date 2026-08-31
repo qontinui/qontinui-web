@@ -44,6 +44,26 @@ export {
   undrainConfirmText,
 } from "./coordDrain";
 export type { DrainResponse, DrainWindow } from "./coordDrain";
+export {
+  CI_ROUTING_LABELS,
+  describeMirrorFreshness,
+  indexCiRunners,
+  matchesFleetRouting,
+  mergeCiRunners,
+  missingRoutingLabels,
+  normalizeCiRunnerStatus,
+  parseCiRunnersPayload,
+} from "./ciRunnerMirror";
+export type {
+  CiRunnerMirrorRead,
+  CoordCiRunnerRow,
+  CoordCiRunnersPayload,
+} from "./ciRunnerMirror";
+export {
+  CI_RUNNER_MIRROR_API,
+  CI_RUNNER_MIRROR_POLL_MS,
+  useCiRunnerMirror,
+} from "./useCiRunnerMirror";
 export { CiStatusPanel } from "./CiStatusPanel";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";

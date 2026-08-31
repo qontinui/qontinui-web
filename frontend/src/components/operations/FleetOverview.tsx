@@ -41,6 +41,11 @@ import {
 } from "./fleetVolumes";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
+import {
+  describeMirrorFreshness,
+  mergeCiRunners,
+  type CiRunnerMirrorRead,
+} from "./ciRunnerMirror";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -83,10 +88,27 @@ function buildMachineGroups(
    * EMPTY array is still a read that happened and found nothing, which is why
    * it is not the same as the old `null`.
    */
-  coordDevices: FleetHealthDevice[]
+  coordDevices: FleetHealthDevice[],
+  /**
+   * Coord's GitHub-runner mirror.
+   *
+   * The GH fleet's rows are structurally invisible to `GET /operations/fleet`
+   * (coord's registrar writes them with no `user_id` and no
+   * `capability_user_paired`, and the device read requires both), so without
+   * this the `ci_runners` map below is empty for exactly the hosts an operator
+   * came here to look at. See `ciRunnerMirror.ts`.
+   */
+  ciRunnerMirror: CiRunnerMirrorRead
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
-  const ciRunners: CiRunnersByHost = fleet.ci_runners ?? {};
+  // The mirror WINS for status and labels where both carry a host: it is the
+  // copy derived from GitHub's own listing, and the routing verdict has to be
+  // computed from that one. A mirror read that has not answered contributes
+  // nothing and removes nothing.
+  const ciRunners: CiRunnersByHost = mergeCiRunners(
+    fleet.ci_runners ?? {},
+    ciRunnerMirror
+  );
   const displayNames: Record<string, string> =
     fleet.machine_display_names ?? {};
 
@@ -310,9 +332,24 @@ export interface FleetOverviewProps {
    * the join from nothing would be reporting on a read nobody made.
    */
   ciMachines: DevenvMachinesRead;
+  /**
+   * Coord's CI-runner mirror (`useCiRunnerMirror`), supplied by the Dev Ops
+   * Overview — plan `2026-08-20-fleet-page-runner-enable-disable-switch`
+   * Phase 2.
+   *
+   * Required, like the other two: a mount that omitted it would render the
+   * GitHub fleet's hosts with no labels at all, which reads as "this host
+   * advertises nothing" rather than as "nobody looked". This component neither
+   * reads nor caches it; the page owns the one poll.
+   */
+  ciRunnerMirror: CiRunnerMirrorRead;
 }
 
-export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
+export function FleetOverview({
+  health,
+  ciMachines,
+  ciRunnerMirror,
+}: FleetOverviewProps) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -440,7 +477,8 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
             deviceStatus.byHostname,
             symbolClaims.byMachine,
             volumes,
-            coordDevices
+            coordDevices,
+            ciRunnerMirror
           )
         : // The runner-inventory read failed or has not landed, but coord's
           // device list may have. Those machines still exist — render them
@@ -451,7 +489,8 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
             deviceStatus.byHostname,
             symbolClaims.byMachine,
             volumes,
-            coordDevices
+            coordDevices,
+            ciRunnerMirror
           ),
     [
       fleet,
@@ -459,20 +498,33 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
       symbolClaims.byMachine,
       volumes,
       coordDevices,
+      ciRunnerMirror,
     ]
   );
 
-  const activeCiRunners = useMemo(() => {
-    if (!fleet?.ci_runners) return 0;
-    return Object.values(fleet.ci_runners).filter(
-      (ci) => ci.status !== "offline"
-    ).length;
-  }, [fleet]);
+  // Counted off the MERGED map the cards are built from, not off
+  // `fleet.ci_runners` — which is empty for the GitHub fleet, and was the
+  // reason the `CI Runners x/y` stat read `0/0` beside three live hosts.
+  const mergedCiRunners = useMemo(
+    () => mergeCiRunners(fleet?.ci_runners ?? {}, ciRunnerMirror),
+    [fleet, ciRunnerMirror]
+  );
 
-  const totalCiRunners = useMemo(() => {
-    if (!fleet?.ci_runners) return 0;
-    return Object.keys(fleet.ci_runners).length;
-  }, [fleet]);
+  // `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` now a real
+  // status, the negative form would count a runner nobody has heard from as
+  // active — a wrong number in the direction that hides a problem.
+  const activeCiRunners = useMemo(
+    () =>
+      Object.values(mergedCiRunners).filter(
+        (ci) => ci.status === "idle" || ci.status === "busy"
+      ).length,
+    [mergedCiRunners]
+  );
+
+  const totalCiRunners = useMemo(
+    () => Object.keys(mergedCiRunners).length,
+    [mergedCiRunners]
+  );
 
   /**
    * Fleet-level headline: the TIGHTEST volume anywhere in the fleet — the
@@ -619,6 +671,23 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
               </div>
             </div>
           )}
+
+          {/* The CI-runner label mirror's own provenance and age — plan
+              `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2,
+              §5 Q2. Stated ABOVE the rows rather than in a footnote, because
+              it changes what the label chips below mean: they are the set
+              coord's ~60s registrar poll last mirrored from GitHub, not a live
+              read of GitHub, and a page that implies otherwise will one day
+              tell an operator a delabelled host is fine. When the read failed,
+              the same line says the label state is UNKNOWN — never that a host
+              advertises nothing. */}
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="ci-runner-mirror-freshness"
+            data-ci-runner-mirror={ciRunnerMirror.state}
+          >
+            {describeMirrorFreshness(ciRunnerMirror)}
+          </p>
 
           {/* Machine cards grid */}
           {isEmpty ? (

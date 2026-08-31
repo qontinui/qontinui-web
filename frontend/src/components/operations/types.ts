@@ -578,8 +578,14 @@ export interface AggregatedTaskRuns {
  * - `idle`    — CI runner is registered and available for jobs.
  * - `busy`    — CI runner is currently executing a job.
  * - `offline` — CI runner is registered but not reachable / reporting.
+ * - `unknown` — nobody said. Added by plan
+ *   `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2, when the
+ *   coord mirror became a second source: it reports `ci_runner_status` as a
+ *   nullable free string, and folding an absent or unrecognised value into
+ *   `offline` would turn "we were not told" into a claim about the host. That
+ *   is the one of the four that gets acted on wrongly.
  */
-export type CiRunnerStatus = "idle" | "busy" | "offline";
+export type CiRunnerStatus = "idle" | "busy" | "offline" | "unknown";
 
 export interface CiRunnerInfo {
   status: CiRunnerStatus;
@@ -587,6 +593,22 @@ export interface CiRunnerInfo {
   labels: string[];
   /** ISO 8601 timestamp of the last CI job execution, or `null` if never. */
   lastJobAt: string | null;
+  /**
+   * Where `labels` came from, and therefore what may be concluded from them.
+   *
+   * `coord-mirror` — coord's `ci_runner_registrar` last mirrored them from
+   * GitHub's own `actions/runners` listing, so they ARE the set GitHub matches
+   * `runs-on` against and the badge may say whether the host is routable.
+   *
+   * `device-registry` — this caller's own paired-device rows
+   * (`GET /operations/fleet`). Those labels are whatever was written to
+   * `coord.devices` for a user-paired device and are NOT evidence about
+   * GitHub's routing, so no routing verdict is rendered for them.
+   *
+   * Absent on data predating the mirror; treated as `device-registry`, which is
+   * the arm that claims less.
+   */
+  source?: "coord-mirror" | "device-registry";
 }
 
 // ============================================================================
