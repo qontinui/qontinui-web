@@ -56,7 +56,7 @@ import { PrDraftStateControl } from "@/components/operations/PrDraftStateControl
 import {
   RecordDetail,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import {
   derivePrStatus,
@@ -579,7 +579,7 @@ export function PrsTable({
                   onClick={() => setOpenKey(expanded ? null : key)}
                   // R4 — the accent is a left border; the row body stays
                   // neutral, which is what keeps 40 rows readable when 6 are red.
-                  className={`cursor-pointer ${rowAccentClass(status)}`}
+                  {...rowAccentProps(status, "cursor-pointer")}
                 >
                   <TableCell className="max-w-[14rem]">
                     <span className="inline-flex max-w-full items-center gap-1.5 align-bottom">

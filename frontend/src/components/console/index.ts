@@ -85,6 +85,7 @@ export {
   UNKNOWN_AMBER,
   WAITING_AMBER,
   rowAccentClass,
+  rowAccentProps,
 } from "./statusRow";
 export type {
   RowStatus,
