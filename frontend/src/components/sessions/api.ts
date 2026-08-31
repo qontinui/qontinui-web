@@ -273,18 +273,60 @@ export async function listTenants(
  * when coord answered something we cannot parse; `detail` is always the
  * most specific human-readable text we could recover, so an unrecognized
  * failure is surfaced verbatim rather than as "something went wrong".
+ *
+ * `cap`/`created`/`slug` are coord's STRUCTURED operands (see
+ * `TenantCreateErrorFields`). Each is `undefined` when coord did not send it
+ * or sent a value of the wrong type, so every renderer must have a sentence
+ * that works without them — they enrich a message, they never gate one.
  */
 export class TenantCreateError extends Error {
   status: number;
   code: string | null;
   detail: string;
-  constructor(status: number, code: string | null, detail: string) {
+  /** Coord's per-operator creation cap (`tenant_cap_reached`). */
+  cap?: number;
+  /** How many projects the operator has created (`tenant_cap_reached`). */
+  created?: number;
+  /** The derived slug coord rejected (`slug_taken` / `reserved_name`). */
+  slug?: string;
+  constructor(
+    status: number,
+    code: string | null,
+    detail: string,
+    fields: TenantCreateErrorFields = {}
+  ) {
     super(detail || `POST tenants failed: ${status}`);
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.cap = fields.cap;
+    this.created = fields.created;
+    this.slug = fields.slug;
     this.name = "TenantCreateError";
   }
+}
+
+/**
+ * The structured operands coord puts NEXT TO its error token.
+ *
+ * Coord's bodies are not `{error, message}` pairs — they carry the numbers and
+ * ids the message is about:
+ *
+ *     {"error":"tenant_cap_reached","cap":5,"created":5}
+ *     {"error":"slug_taken","slug":"my-pizzeria"}
+ *     {"error":"reserved_name","reason":"group_mapped","slug":"acme"}
+ *
+ * `parseTenantCreateError` used to read only `error`/`code` and
+ * `message`/`detail`/`reason` and threw the rest away, so the cap message
+ * could only say "you've reached the limit" — never *what* the limit is, which
+ * is the one fact that makes it actionable. Every field is optional and
+ * type-checked at the parse boundary: coord owns these bodies, so a missing or
+ * renamed field must degrade the sentence, not break the dialog.
+ */
+export interface TenantCreateErrorFields {
+  cap?: number;
+  created?: number;
+  slug?: string;
 }
 
 /**
@@ -298,11 +340,15 @@ export class TenantCreateError extends Error {
  * Every layer is optional: a plain-text body, a non-JSON coord answer, or a
  * FastAPI 422 validation list all degrade to "no code, here is the text".
  * Exported for unit tests — the parsing, not the copy, is where this breaks.
+ *
+ * Alongside the code and the text it returns coord's structured operands
+ * (`TenantCreateErrorFields`) when they are present AND of the right type, so
+ * the cap message can name the cap and the collision message can name the id.
  */
 export function parseTenantCreateError(rawBody: string): {
   code: string | null;
   detail: string;
-} {
+} & TenantCreateErrorFields {
   let detail: unknown = rawBody;
   try {
     const outer: unknown = JSON.parse(rawBody);
@@ -321,6 +367,7 @@ export function parseTenantCreateError(rawBody: string): {
 
   let code: string | null = null;
   let text = detail;
+  const fields: TenantCreateErrorFields = {};
   try {
     const inner: unknown = JSON.parse(detail);
     if (inner && typeof inner === "object") {
@@ -330,12 +377,55 @@ export function parseTenantCreateError(rawBody: string): {
       const rawMessage = obj.message ?? obj.detail ?? obj.reason;
       if (typeof rawMessage === "string") text = rawMessage;
       else if (code) text = code;
+      // The structured operands. Type-checked one at a time and dropped
+      // individually — coord sending `cap` but not `created` (or a future
+      // coord sending a string where a number was) must cost the numbers in
+      // one sentence, never the whole parse.
+      if (typeof obj.cap === "number" && Number.isFinite(obj.cap)) {
+        fields.cap = obj.cap;
+      }
+      if (typeof obj.created === "number" && Number.isFinite(obj.created)) {
+        fields.created = obj.created;
+      }
+      if (typeof obj.slug === "string" && obj.slug !== "") {
+        fields.slug = obj.slug;
+      }
     }
   } catch {
     // coord answered plain text — `text` is already it.
   }
-  return { code, detail: text };
+  return { code, detail: text, ...fields };
 }
+
+/**
+ * Statuses `POST /operations/tenants` must NOT be retried on.
+ *
+ * Tenant creation is **not idempotent** — coord's create is a plain INSERT
+ * that deliberately rejects a slug collision rather than joining the caller to
+ * an existing tenant. So a retry is never a free repeat of the same question.
+ *
+ * The concrete hazard is the 504. The web proxy's coord timeout is 5s
+ * (`operations.py` `_COORD_TIMEOUT`) and a timeout maps to `504 timeout
+ * waiting for coord`, which is a statement about OUR clock, not about coord's
+ * transaction — a slow create that committed at 5.1s answers 504 and is a
+ * real project. `HttpClient` retries every `>= 500` up to `maxRetries: 3`, so
+ * without this the identical POST is re-issued, hits the unique-violation arm,
+ * and tells the operator their own successfully created project "is taken":
+ * a false failure that they then act on by picking a different name.
+ *
+ * The 429 is here for a different reason: it is the per-operator creation cap,
+ * a deliberate and persistent answer. Retrying it three times only costs three
+ * round-trips to be told the same thing.
+ *
+ * The list enumerates 5xx rather than declaring a range because
+ * `noRetryStatuses` is a membership test. It covers every 5xx this path can
+ * actually produce: 500 (an unhandled web error, or coord's own 500 forwarded
+ * verbatim — e.g. a cap-lookup failure), 502 (coord unreachable), 503 (the app
+ * unconfigured / an LB with no healthy target) and 504 (the timeout above).
+ */
+export const TENANT_CREATE_NO_RETRY_STATUSES: number[] = [
+  429, 500, 501, 502, 503, 504,
+];
 
 /**
  * Create a new tenant ("Project") owned by the calling operator.
@@ -346,6 +436,8 @@ export function parseTenantCreateError(rawBody: string): {
  * tenant, seeds its policy row and grants the caller `admin` in it in ONE
  * transaction, so the membership is readable on the very next
  * `GET /operations/tenants`.
+ *
+ * **Never retried.** See `TENANT_CREATE_NO_RETRY_STATUSES`.
  */
 export async function createTenant(
   body: TenantCreateRequest
@@ -354,11 +446,12 @@ export async function createTenant(
   const res = await httpClient.fetch(url, {
     method: "POST",
     body: JSON.stringify(body),
+    noRetryStatuses: TENANT_CREATE_NO_RETRY_STATUSES,
   });
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
-    const { code, detail } = parseTenantCreateError(raw);
-    throw new TenantCreateError(res.status, code, detail);
+    const { code, detail, ...fields } = parseTenantCreateError(raw);
+    throw new TenantCreateError(res.status, code, detail, fields);
   }
   return (await res.json()) as TenantCreateResponse;
 }

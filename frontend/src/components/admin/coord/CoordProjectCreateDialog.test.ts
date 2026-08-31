@@ -30,6 +30,38 @@ describe("parseTenantCreateError", () => {
     expect(parseTenantCreateError(body)).toEqual({
       code: "slug_taken",
       detail: "slug_taken",
+      // Coord's operand, kept rather than discarded (Phase 4 #2). The
+      // collision is on the derived ID, so the id is the fact the message
+      // needs — two different names can slugify to the same one.
+      slug: "my-pizzeria",
+    });
+  });
+
+  it("keeps the cap operands coord sends beside the token", () => {
+    // `{"error":"tenant_cap_reached","cap":5,"created":5}`. Dropping these is
+    // what made the cap message unactionable: "you've reached the limit"
+    // without saying what the limit is.
+    const body = JSON.stringify({
+      detail: '{"error":"tenant_cap_reached","cap":5,"created":5}',
+    });
+    expect(parseTenantCreateError(body)).toEqual({
+      code: "tenant_cap_reached",
+      detail: "tenant_cap_reached",
+      cap: 5,
+      created: 5,
+    });
+  });
+
+  it("drops an operand of the wrong type without breaking the parse", () => {
+    // Coord owns these bodies. A renamed or retyped field must cost the
+    // numbers in one sentence, never the code or the text.
+    const body = JSON.stringify({
+      detail: '{"error":"tenant_cap_reached","cap":"five","created":5}',
+    });
+    expect(parseTenantCreateError(body)).toEqual({
+      code: "tenant_cap_reached",
+      detail: "tenant_cap_reached",
+      created: 5,
     });
   });
 
@@ -53,12 +85,10 @@ describe("parseTenantCreateError", () => {
   });
 
   it("degrades to the whole body when nothing is JSON at all", () => {
-    expect(parseTenantCreateError("<html>502 Bad Gateway</html>")).toEqual(
-      {
-        code: null,
-        detail: "<html>502 Bad Gateway</html>",
-      }
-    );
+    expect(parseTenantCreateError("<html>502 Bad Gateway</html>")).toEqual({
+      code: null,
+      detail: "<html>502 Bad Gateway</html>",
+    });
   });
 
   it("survives a FastAPI 422 validation list without inventing a code", () => {
@@ -146,6 +176,107 @@ describe("projectCreateErrorMessage", () => {
         new TenantCreateError(403, "tenant_cap_reached", "tenant_cap_reached")
       )
     ).toBe("You've reached the limit on how many projects you can create.");
+  });
+
+  it("does NOT render coord's cap-LOOKUP failure as the cap message", () => {
+    // Plan `2026-08-28-tenant-creation-followup-defects-from-the-preemptive-
+    // sweep` Phase 4 #1 (V5). Coord's cap lookup can itself fail, and it fails
+    // as `500 {"error":"self-service tenant cap lookup: <pg error>"}` — a
+    // string that contains "cap", which the loose `/cap|quota|limit/i`
+    // backstop matched. A database fault then told the operator they had hit
+    // their project limit: not merely wrong but actionable in the WRONG
+    // direction, since a cap means stop and an outage means try again.
+    //
+    // Built through both envelopes, the way `createTenant` really does it, so
+    // this asserts the whole path rather than a hand-shaped error object.
+    const wire = JSON.stringify({
+      detail: JSON.stringify({
+        error:
+          'self-service tenant cap lookup: relation "coord.tenants" does not exist',
+      }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    const err = new TenantCreateError(500, code, detail, fields);
+
+    const message = projectCreateErrorMessage(err);
+    expect(message).not.toContain("reached the limit");
+    expect(message).not.toContain("You've created");
+    // It falls through to the verbatim branch: coord's own words plus the
+    // status, which is the only thing we can honestly say about a 5xx.
+    expect(message).toContain("(500)");
+    expect(message).toContain("self-service tenant cap lookup");
+  });
+
+  it("never renders ANY 5xx as the cap message, whatever the token says", () => {
+    // The narrowing is on the STATUS, not on that one coord string — a 5xx is
+    // never a policy answer, so no 5xx body can be rendered as one.
+    for (const code of [
+      "cap lookup failed",
+      "quota service unavailable",
+      "rate limiter exploded",
+    ]) {
+      for (const status of [500, 502, 503, 504]) {
+        const message = projectCreateErrorMessage(
+          new TenantCreateError(status, code, code)
+        );
+        expect(message, `${status} / ${code}`).not.toContain(
+          "reached the limit"
+        );
+        expect(message).toContain(`(${status})`);
+      }
+    }
+  });
+
+  it("keeps the loose 4xx backstop for a cap token we have not seen", () => {
+    // The backstop still earns its place: coord may rename the token, and a
+    // 4xx IS a policy answer. Only the 5xx arm was unsafe.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, "tenant_quota_exhausted", "no more")
+      )
+    ).toBe("You've reached the limit on how many projects you can create.");
+  });
+
+  it("names the cap numbers when coord sends them", () => {
+    // Phase 4 #2 (V6): the operands make the sentence actionable.
+    const wire = JSON.stringify({
+      detail: JSON.stringify({
+        error: "tenant_cap_reached",
+        cap: 5,
+        created: 5,
+      }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, code, detail, fields)
+      )
+    ).toBe(
+      "You've created 5 of 5 projects — that's the limit on how many you can create."
+    );
+  });
+
+  it("falls back to the plain cap sentence when only ONE operand arrived", () => {
+    // "5 of ?" is worse than saying nothing about the number.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, "tenant_cap_reached", "cap", { created: 5 })
+      )
+    ).toBe("You've reached the limit on how many projects you can create.");
+  });
+
+  it("names the colliding id when coord sends the slug", () => {
+    const wire = JSON.stringify({
+      detail: JSON.stringify({ error: "slug_taken", slug: "my-pizzeria" }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(409, code, detail, fields)
+      )
+    ).toBe(
+      "The short id “my-pizzeria” is already taken. Pick a different name."
+    );
   });
 
   it("surfaces an unrecognized failure VERBATIM rather than guessing", () => {
