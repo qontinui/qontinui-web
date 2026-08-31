@@ -52,6 +52,32 @@ export interface NotificationsHealth {
   headline: string;
   detail: string;
   badges: HealthBadge[];
+  /**
+   * Is the READ that delivered coord's scalars a current one?
+   *
+   * The strip is already the surface that decides this — it is what dashes the
+   * badges and what says "these counts stopped updating" — so the answer is
+   * published here rather than re-derived by each consumer. That is R6's
+   * *import the predicate, do not re-spell it*, applied to the flag rather than
+   * to the read: the mark-all tooltip had spelled it `!readFailed`, which is
+   * three of the four ways a read can be uncurrent, and the missing one
+   * (`migrationPending`) put a promise of "ALL 137 unread… cannot be undone"
+   * directly under a strip rendering that same 137 as `–`.
+   *
+   * False in exactly the four arms below where the strip declines to speak for
+   * the read: nothing was ever read, nothing has been read YET, the last read
+   * failed (the counts are real but frozen), or coord has the routes and not
+   * the table.
+   *
+   * **Named for the READ, not for the counts** — which is what it was called
+   * first, and which overpromised in exactly the way this module exists to
+   * stop. A current read can still carry a `null` `unread_count` (the arm below
+   * headlined "The unread count did not come back"), so the two questions are
+   * independent and a consumer that needs a number must ask BOTH: this flag,
+   * and then the scalar itself. A field named for the counts invites
+   * `health.readIsCurrent ? unreadCount! : …`, and the type would not stop it.
+   */
+  readIsCurrent: boolean;
 }
 
 export interface NotificationsHealthInput {
@@ -131,6 +157,18 @@ function countBadges(
   ];
 }
 
+/**
+ * The one spelling of "the read behind these scalars is current".
+ *
+ * Structural rather than parallel: the deriver below branches on it, so the
+ * four uncurrent arms cannot drift away from the predicate the rest of the page
+ * reads off `health.readIsCurrent`. Written as the positive because that is the
+ * question a consumer actually asks before spending a number.
+ */
+function readIsCurrent(input: NotificationsHealthInput): boolean {
+  return input.loaded && !input.migrationPending && !input.failed;
+}
+
 export function deriveNotificationsHealth(
   input: NotificationsHealthInput
 ): NotificationsHealth {
@@ -141,49 +179,57 @@ export function deriveNotificationsHealth(
    */
   const unknownBadges = countBadges(null, null);
 
-  if (migrationPending) {
-    return {
-      level: "amber",
-      headline: "Notifications are not available yet",
-      detail: "coord has the routes but not the table — this is not an error",
-      badges: unknownBadges,
-    };
-  }
-  // Arm 1 of the split, through the console's SHARED predicate rather than a
-  // fourth spelling of it. `readFailure.ts` exists because the strip and the
-  // page's `empty=` slot have to agree about the same read, and a hand-rolled
-  // `failed && !loaded` here would be the drift that module was written to
-  // stop — invisible precisely because both spellings look right. The three
-  // console surfaces that grew this arm before us (`/plans`, `/spawn`,
-  // `/agents/[agent_id]`) call the same function.
-  if (readIsUnknown(loaded, failed)) {
-    return {
-      level: "amber",
-      headline: "Could not read the feed",
-      detail: "what happened while you were away is UNKNOWN, not nothing",
-      badges: unknownBadges,
-    };
-  }
-  if (failed) {
-    // Arm 2 of the split: we DID read once, and the numbers on screen are from
-    // that read. They are real, so they are shown — but they stopped moving,
-    // and only the strip can say so. Reporting them silently is the same
-    // confident-false-claim as `?? 0`, made with a stale fact instead of a
-    // fabricated one.
-    return {
-      level: "amber",
-      headline: "These counts stopped updating",
-      detail:
-        "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
-      badges: countBadges(unreadCount, total),
-    };
-  }
-  if (!loaded) {
+  // Four ways for the read not to be current, each owed its own sentence — but
+  // ONE predicate deciding that none of them may be quoted as current.
+  if (!readIsCurrent(input)) {
+    if (migrationPending) {
+      return {
+        level: "amber",
+        headline: "Notifications are not available yet",
+        detail: "coord has the routes but not the table — this is not an error",
+        badges: unknownBadges,
+        readIsCurrent: false,
+      };
+    }
+    // Arm 1 of the split, through the console's SHARED predicate rather than a
+    // fourth spelling of it. `readFailure.ts` exists because the strip and the
+    // page's `empty=` slot have to agree about the same read, and a hand-rolled
+    // `failed && !loaded` here would be the drift that module was written to
+    // stop — invisible precisely because both spellings look right. The three
+    // console surfaces that grew this arm before us (`/plans`, `/spawn`,
+    // `/agents/[agent_id]`) call the same function.
+    if (readIsUnknown(loaded, failed)) {
+      return {
+        level: "amber",
+        headline: "Could not read the feed",
+        detail: "what happened while you were away is UNKNOWN, not nothing",
+        badges: unknownBadges,
+        readIsCurrent: false,
+      };
+    }
+    if (failed) {
+      // Arm 2 of the split: we DID read once, and the numbers on screen are
+      // from that read. They are real, so they are shown — but they stopped
+      // moving, and only the strip can say so. Reporting them silently is the
+      // same confident-false-claim as `?? 0`, made with a stale fact instead of
+      // a fabricated one. Shown here, and still not quotable ELSEWHERE: this is
+      // the arm that made the mark-all tooltip grow its own guard.
+      return {
+        level: "amber",
+        headline: "These counts stopped updating",
+        detail:
+          "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+        badges: countBadges(unreadCount, total),
+        readIsCurrent: false,
+      };
+    }
+    // Only `!loaded` is left: not pending, not failed, and not current.
     return {
       level: "amber",
       headline: "Waiting for coord…",
       detail: "counts appear once the feed answers",
       badges: unknownBadges,
+      readIsCurrent: false,
     };
   }
 
@@ -214,6 +260,12 @@ export function deriveNotificationsHealth(
       detail:
         "the feed answered but without an unread count — how much you have not seen is UNKNOWN, not zero",
       badges: countBadges(null, total),
+      // The read IS current — coord answered, just without this scalar. Saying
+      // `false` here would blame the read for a gap in the envelope and make
+      // this indistinguishable from an outage when there is not one. The
+      // consumer's second question, `unreadCount != null`, is what withholds
+      // the figure — and it is answered independently, right here in `badges`.
+      readIsCurrent: true,
     };
   }
 
@@ -230,5 +282,6 @@ export function deriveNotificationsHealth(
         ? "nothing is blocked by these — they are what happened while you were away"
         : "you have seen everything coord recorded",
     badges: countBadges(unreadCount, total),
+    readIsCurrent: true,
   };
 }
