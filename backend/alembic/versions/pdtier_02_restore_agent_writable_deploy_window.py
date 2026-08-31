@@ -118,17 +118,59 @@ _TABLES = ("coord.prompt_documents", "coord.prompt_document_versions")
 _LEGACY_COLUMN = "agent_writable"
 _TIER_COLUMN = "agent_write_tier"
 
-# `pdaw_01`'s comment bodies, restored with the column so the catalog reads the
-# same as it did before `pdtier_01` took them with the DROP.
+# `pdaw_01`'s comment bodies, VERBATIM, restored with the column so the catalog
+# reads the same as it did before `pdtier_01` took them with the DROP.
+#
+# VERBATIM is a requirement, not a style note. `pdtier_01`'s downgrade restores
+# these same two bodies character-for-character, so a paraphrase here makes the
+# forward and reverse paths disagree about what the catalog says - and the
+# forward one is the path production takes. A paraphrase already cost the
+# parent's "NULL is NOT false", which is the sentence `pdaw_01` exists to carry
+# and the one a three-state setting stored in a two-state column needs most.
+# `test_pdtier_02_restore_agent_writable_migration.py` compares both bodies
+# against `pdaw_01`'s SOURCE, so the next paraphrase fails rather than lands.
+#
+# Apostrophes are written ONCE here and doubled by `_comment_sql`. Writing `''`
+# into these strings would store the doubled form: only the SQL parser
+# collapses it.
 _COMMENTS = {
     "coord.prompt_documents": (
-        "Operator-controlled per-document agent write access. NULL = no operator "
-        "opinion (the compile-time default decides)."
+        "May an agent write this document via coord_write_prompt_document? "
+        "TRUE = allow, FALSE = deny, NULL = no operator opinion — fall back to "
+        "coord's compile-time AGENT_UNWRITABLE_DOCUMENTS default (the three "
+        "meta-policies deny, every other document allows). NULL is NOT false. "
+        "Operator-settable only, via the admin-gated PATCH "
+        "/coord/prompt-documents/{kind}/{name}; coord_write_prompt_document has "
+        "no argument that can reach it, which is what keeps the control "
+        "non-circular."
     ),
     "coord.prompt_document_versions": (
-        "Snapshot of the parent agent_writable at the time this version was written."
+        "Snapshot of the parent's agent_writable at this version. Carried "
+        "forward by every version write including append, so a flip is "
+        "attributable to the operator via this row's edited_by — which the "
+        "parent's mutable updated_by cannot be, since the next agent append "
+        "overwrites it."
     ),
 }
+
+
+def _comment_sql(table: str) -> str:
+    """``COMMENT ON COLUMN`` for ``table``, with the body quoted safely.
+
+    The bodies carry apostrophes (``coord's``, ``parent's``, ``row's``), which
+    `_COMMENTS` stores singly so the dict reads as prose and can be compared
+    against `pdaw_01`'s source as prose. The doubling happens here, once.
+
+    Separately, and NOT what the doubling is for: `op.execute` of a plain
+    string routes through SQLAlchemy's ``text()``, which reads ``:word`` as a
+    BIND PARAMETER. `pdaw_01` spells the route ``{kind}/{name}`` rather than
+    ``:kind/:name`` for exactly that reason, and these bodies inherit that
+    spelling. The test asserts no such token can re-enter them, using
+    SQLAlchemy's own compiler rather than a second regex to decide what counts.
+    """
+    body = _COMMENTS[table].replace("'", "''")
+    return f"COMMENT ON COLUMN {table}.{_LEGACY_COLUMN} IS '{body}'"
+
 
 # Guarded on the TIER column, because that is the one the UPDATE READS.
 # `pdtier_01` shipped a defect of exactly this shape - a probe naming one table
@@ -169,9 +211,7 @@ def upgrade() -> None:
         op.execute(
             _BACKFILL.format(table=table, tier=_TIER_COLUMN, legacy=_LEGACY_COLUMN)
         )
-        op.execute(
-            f"COMMENT ON COLUMN {table}.{_LEGACY_COLUMN} IS '{_COMMENTS[table]}'"
-        )
+        op.execute(_comment_sql(table))
 
 
 def downgrade() -> None:
