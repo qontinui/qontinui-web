@@ -30,12 +30,21 @@ export interface RunnerRelayDiagnostics {
   detail?: string;
   deviceId?: string;
   /**
-   * When the runner last held a WS session. `null`/absent means it has never
-   * registered; a recent value means it is flapping rather than absent. This
-   * is the clock that tells those two apart — `lastSeenAt` is the general
+   * When the runner last held a WS session — the clock that tells "never
+   * registered" apart from "flapping right now". `lastSeenAt` is the general
    * device heartbeat and does not.
+   *
+   * Three states, and the difference between the last two matters:
+   *  - a string  — it held a session until then, so it is flapping, not absent;
+   *  - `null`    — the column is NULL: it has **never** registered;
+   *  - `undefined` — **unknown**. The backend omits the key when its coord
+   *    read failed (and an older backend never sent it at all). Not a
+   *    synonym for `null`: reporting "never registered" because a lookup
+   *    failed is a confident wrong answer, which is the failure mode this
+   *    whole diagnostic path exists to remove.
    */
   wsConnectedAt?: string | null;
+  /** The device heartbeat clock. Same three states as `wsConnectedAt`. */
   lastSeenAt?: string | null;
   /**
    * Correlates with the backend's `X-Request-ID` for this request and with
