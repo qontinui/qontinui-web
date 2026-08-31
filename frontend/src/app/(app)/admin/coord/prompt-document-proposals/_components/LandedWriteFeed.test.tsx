@@ -16,7 +16,17 @@
  *    be printed from a server that never classified anything.
  * 3. **The author filter hides nothing silently.** The web proxy returns
  *    writes unfiltered on purpose; a client filter is only allowed if what it
- *    hides is counted on screen.
+ *    hides is counted on screen — and a hidden LOOSENING has to be counted as
+ *    one, not merely as "1 by you". Coord classifies a write's direction, not
+ *    its author, so the agent filter is the one layer that can drop a flagged
+ *    row while the backend's `limited` caveat is promising every loosening it
+ *    read is on the page.
+ *    ⚠️ This property was asserted here before it held. The original case gave
+ *    its VISIBLE row no `loosening` field, so the "none flagged" line was
+ *    suppressed by the absent-verdict arm and the filter was never exercised;
+ *    serve that row an explicit `false` — what a deployed classifier does — and
+ *    the page printed the reassurance over a hidden loosening. Both arms are
+ *    pinned separately now, which is why there are two cases that look alike.
  * 4. **The completeness caveat is always on screen.** Coord's announce path is
  *    post-commit and best-effort, so a quiet feed is not evidence of a quiet
  *    fleet, and no per-response caveat would ever say so.
@@ -398,18 +408,25 @@ describe("LandedWriteFeed — two versions of the same document", () => {
 });
 
 describe("LandedWriteFeed — the filter and the flagged claim describe ONE set", () => {
+  /**
+   * An operator-authored loosening. Coord classifies a write's DIRECTION, not
+   * its author, so this row is both flagged and exactly what the agent filter
+   * drops — the shape that lets the filter undo the backend's guarantee.
+   */
+  const hiddenLoosening = write({
+    name: "engineering-priorities",
+    label: "Engineering Priorities",
+    version_number: 4,
+    current_version: 4,
+    edited_by: "operator:fb7bf946-cb46-4c38-9a1d-c7081c493b04:jspinak@gmail.com",
+    loosening: true,
+  });
+
   it("does not say 'none flagged' from a loosening the filter hid", () => {
-    // An operator-authored loosening, hidden by the agent filter. If the
-    // "classified" precondition were computed over the unfiltered feed, the
-    // page would print a sentence about rows the operator cannot see.
-    const hiddenLoosening = write({
-      name: "engineering-priorities",
-      label: "Engineering Priorities",
-      version_number: 4,
-      current_version: 4,
-      edited_by: "operator:fb7bf946-cb46-4c38-9a1d-c7081c493b04:jspinak@gmail.com",
-      loosening: true,
-    });
+    // The visible row carries NO verdict, so `classified` is false and the line
+    // is suppressed by the absent-verdict arm. Kept as its own case: it is a
+    // different precondition from the one the next test pins, and this was the
+    // ONLY case here until a served `false` showed the gap between them.
     const agentOrdinary = write({
       edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
     });
@@ -419,5 +436,135 @@ describe("LandedWriteFeed — the filter and the flagged claim describe ONE set"
     // The visible row carries NO classification, so there is no verdict to
     // report about what is on screen.
     expect(screen.queryByTestId("landed-writes-none-flagged")).toBeNull();
+  });
+
+  it("still does not, when the VISIBLE row carries an explicit `false`", () => {
+    // The case the test above cannot reach, and the one that is ordinary the
+    // day coord's classifier is deployed: the visible row is classified, so
+    // `classified` is true and `flaggedCount` is 0 over what is on screen —
+    // every precondition of the reassurance is satisfied while a loosening sits
+    // one click away behind the filter. Suppressed by `hiddenFlagged`, which is
+    // the only term that can see it.
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+      loosening: false,
+    });
+    renderFeed({ writes: [hiddenLoosening, agentOrdinary] });
+    // Unfiltered, the reassurance is FALSE of the screen and must be absent
+    // because a flagged row is on it.
+    expect(screen.queryByTestId("landed-writes-none-flagged")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.queryByTestId("landed-writes-none-flagged")).toBeNull();
+  });
+
+  it("COUNTS the hidden loosening rather than only its author class", () => {
+    // An author tally cannot express this: "1 by you" is true and says nothing
+    // about direction. The backend's `limited` caveat may be promising that
+    // every loosening it read is on the page — true of the payload, and this
+    // note is what keeps it from reading as true of the screen.
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+      loosening: false,
+    });
+    renderFeed({ writes: [hiddenLoosening, agentOrdinary] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    const note = screen.getByTestId("landed-writes-filter-hidden");
+    expect(note).toHaveTextContent("Hiding 1 write");
+    expect(note).toHaveTextContent(
+      /That includes 1 write classified as widening what agents may do; turn the filter off to read it\./i
+    );
+  });
+
+  it("pluralises the hidden-loosening count", () => {
+    const secondHidden = write({
+      name: "escalation-bar",
+      label: "Escalation Bar",
+      version_number: 9,
+      current_version: 9,
+      // A REAL value from this tenant: an operator edit predating actor
+      // prefixes. It classes as `unknown`, not `operator` — a loosening can be
+      // hidden in ANY of the three non-agent classes, not just yours.
+      edited_by: "josh@qontinui.io",
+      loosening: true,
+    });
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+      loosening: false,
+    });
+    renderFeed({ writes: [hiddenLoosening, secondHidden, agentOrdinary] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+    expect(
+      screen.getByTestId("landed-writes-filter-hidden")
+    ).toHaveTextContent(
+      /That includes 2 writes classified as widening what agents may do; turn the filter off to read them\./i
+    );
+  });
+
+  it("says nothing about hidden loosenings when the hidden rows carry none", () => {
+    // The note must not acquire a permanent clause. An unflagged hidden row
+    // gets the author count and nothing more, and the reassurance is earned
+    // again because nothing flagged is out of sight.
+    const hiddenOrdinary = write({
+      name: "engineering-priorities",
+      label: "Engineering Priorities",
+      version_number: 4,
+      current_version: 4,
+      edited_by: "operator:fb7bf946-cb46-4c38-9a1d-c7081c493b04:jspinak@gmail.com",
+      loosening: false,
+    });
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+      loosening: false,
+    });
+    renderFeed({ writes: [hiddenOrdinary, agentOrdinary] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    expect(
+      screen.getByTestId("landed-writes-filter-hidden")
+    ).not.toHaveTextContent(/widening what agents may do/i);
+    expect(
+      screen.getByTestId("landed-writes-none-flagged")
+    ).toBeInTheDocument();
+  });
+
+  it("still counts the hidden loosening when the filter empties the screen", () => {
+    // The sharpest case: the filter hides EVERY row, so the list falls to its
+    // empty state and there is no row left to carry a badge. "No agent-authored
+    // writes among the ones on this page" is true and, alone, reads as nothing
+    // to see — while the one write that most needs reading is one click away.
+    renderFeed({ writes: [hiddenLoosening] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(
+      screen.getByText(/no agent-authored writes among the ones on this page/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("landed-writes-filter-hidden")
+    ).toHaveTextContent(
+      /That includes 1 write classified as widening what agents may do/i
+    );
+  });
+
+  it("says nothing about hidden loosenings while the filter is OFF", () => {
+    // The same loosening, with the filter in its default position. Nothing is
+    // hidden, so there is no hidden-rows note at all and no clause about a
+    // hidden loosening — the row is on screen wearing its badge instead.
+    //
+    // Note what this does NOT pin, because nothing can: the `authorFilter`
+    // ternary inside `hiddenFlagged` is a cheap path, not a guard. Remove it
+    // and this still passes, because with the filter off `visible === writes`,
+    // so the loosening is counted by `flaggedCount` and the reassurance is
+    // already suppressed by the pre-existing term.
+    renderFeed({ writes: [hiddenLoosening] });
+
+    expect(screen.queryByTestId("landed-writes-filter-hidden")).toBeNull();
+    expect(screen.queryByText(/classified as widening what agents may do/i)).toBeNull();
+    expect(
+      screen.getByTestId("write-loosening-policy-engineering-priorities-4")
+    ).toBeInTheDocument();
   });
 });

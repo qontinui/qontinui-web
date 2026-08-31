@@ -316,4 +316,69 @@ describe("the strip's contract with the page", () => {
       "green"
     );
   });
+
+  /**
+   * `readIsCurrent` — the strip publishing what it already decided.
+   *
+   * The strip is the surface that decides whether coord's scalars may be quoted
+   * as fact: it is what dashes the badges and what says "these counts stopped
+   * updating". Other surfaces used to re-derive that with their own boolean —
+   * the mark-all tooltip spelled it `!readFailed`, which is three of the four
+   * ways a count can be unquotable — so the answer is published on the health
+   * object instead. Pinned here as a truth table because the failure mode is a
+   * consumer and the strip disagreeing while both look right.
+   */
+  describe("readIsCurrent", () => {
+    it("is false in every arm where the badges are a dash", () => {
+      // The three unknowns: no table, nothing ever read, and nothing read YET.
+      expect(
+        deriveNotificationsHealth(input({ migrationPending: true }))
+          .readIsCurrent
+      ).toBe(false);
+      expect(
+        deriveNotificationsHealth(input({ loaded: false, failed: true }))
+          .readIsCurrent
+      ).toBe(false);
+      expect(
+        deriveNotificationsHealth(input({ loaded: false })).readIsCurrent
+      ).toBe(false);
+    });
+
+    it("is false for counts that are REAL but frozen", () => {
+      // The stale arm renders coord's actual numbers — and still must not let
+      // anything else spend them as current. Shown is not the same as quotable.
+      const h = deriveNotificationsHealth(
+        input({ unreadCount: 137, total: 900, failed: true })
+      );
+      expect(h.headline).toMatch(/stopped updating/i);
+      expect(h.readIsCurrent).toBe(false);
+    });
+
+    it("stays false while the table is absent even after a good read", () => {
+      // The arm the first cut missed. `migrationPending` after a successful
+      // load leaves a real `unreadCount` standing with `failed` FALSE, so a
+      // guard spelled `!failed` says "current" about a count the strip is
+      // rendering as `–` two elements away.
+      const h = deriveNotificationsHealth(
+        input({ unreadCount: 137, total: 900, migrationPending: true })
+      );
+      expect(h.headline).toMatch(/not available yet/i);
+      expect(badgesOf(h)).toEqual({ unread: "– unread", total: "– total" });
+      expect(h.readIsCurrent).toBe(false);
+    });
+
+    it("is true once coord has answered, including without an unread count", () => {
+      expect(
+        deriveNotificationsHealth(input({ unreadCount: 137, total: 900 }))
+          .readIsCurrent
+      ).toBe(true);
+      // A gap in the ENVELOPE is not a failure of the read: the count is
+      // `null`, which already stops a consumer quoting it, and blaming the read
+      // for it would report an outage that did not happen.
+      expect(
+        deriveNotificationsHealth(input({ unreadCount: null, total: 900 }))
+          .readIsCurrent
+      ).toBe(true);
+    });
+  });
 });

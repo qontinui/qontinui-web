@@ -42,6 +42,16 @@ notice a violation has been deliberately disabled:
 6. **Up -> down -> up leaves no residue and does not touch data.** Downgrade
    drops five columns; it must leave the TABLE (that belongs to
    ``fleet_res_tel_01``) and every pre-existing sample row alone.
+7. **Every column carries its ``COMMENT``, and no column carries a DEFAULT.**
+   The comments are the only place rules 3 and 5 are written into the DATABASE
+   — the revision's docstring ships nowhere an operator sees, and ``\\d+`` is
+   where a human meets this schema. They are also five HAND-WRITTEN blocks
+   while the ADDs and DROPs are generated from one list, so a sixth column is
+   added, dropped and type-checked by everything here and lands undocumented.
+   The DEFAULT half is rule 3's other flank: ``NOT NULL`` is not the only way
+   to manufacture a 0, since a plain nullable ``DEFAULT 0`` writes one into
+   every INSERT that omits the column — which is every row a pre-publisher
+   runner sends.
 
 ``migration-reversal.yml`` walks the chain against an EMPTY database, so it
 proves the SQL parses and nothing more: no row exists there to survive a
@@ -62,9 +72,9 @@ which looks exactly like a green run in the summary line.
 
 from __future__ import annotations
 
-import importlib.util
 import re
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -74,7 +84,10 @@ from tests._alembic_harness import (
     admin_database_url,
     backend_root,
     can_connect,
+    column_comment,
+    comment_body_from_source,
     ephemeral_database,
+    load_revision_module,
     run_alembic,
     table_exists,
 )
@@ -109,6 +122,13 @@ _EXPECTED: tuple[tuple[str, str], ...] = (
 # The same five, spelled as the revision's own DDL spells them — this is what
 # the module-constant guard compares against, so a name or type edited in one
 # place and not the other cannot pass.
+#
+# Only THIS tuple is pinned to the revision's `_SATURATION_COLUMNS`; `_EXPECTED`
+# above is pinned to nothing, and it is what every live-schema walk iterates.
+# So a sixth column fails the revision-list guard, gets added here to fix it,
+# and is then absent from `_EXPECTED` — where its omission is silent, because
+# `_assert_columns_present` only checks the names it was handed. The two are
+# reconciled by `test_the_two_column_tables_describe_the_same_five` below.
 _EXPECTED_DDL: tuple[tuple[str, str], ...] = (
     ("threads_max", "BIGINT"),
     ("threads_used", "BIGINT"),
@@ -141,10 +161,22 @@ _BEYOND_INT32 = 4_294_967_296
 # ---------------------------------------------------------------------------
 
 
+def _revision_path() -> Path:
+    return backend_root() / "alembic" / "versions" / _REVISION_FILENAME
+
+
 def _revision_source() -> str:
-    return (backend_root() / "alembic" / "versions" / _REVISION_FILENAME).read_text(
-        encoding="utf-8"
-    )
+    return _revision_path().read_text(encoding="utf-8")
+
+
+def _expected_comment(column: str) -> str:
+    """The body the revision's own source emits for ``column``.
+
+    Read from the ONE author rather than copied here: a second copy of five
+    prose blocks is the divergence such an assertion exists to catch, and the
+    reader collapses the doubled apostrophes exactly as the SQL parser does.
+    """
+    return comment_body_from_source(_revision_source(), f"coord.{_TABLE}.{column}")
 
 
 def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
@@ -163,14 +195,7 @@ def test_the_pinned_parent_matches_the_revisions_down_revision() -> None:
 
 def _revision_module():
     """Import the revision file directly — it only imports ``alembic.op``."""
-    spec = importlib.util.spec_from_file_location(
-        "_fleet_res_tel_04_under_test",
-        backend_root() / "alembic" / "versions" / _REVISION_FILENAME,
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_revision_module(_revision_path(), "_fleet_res_tel_04_under_test")
 
 
 def test_the_revision_names_the_columns_coord_reads_from_one_list() -> None:
@@ -198,6 +223,60 @@ def test_the_revision_names_the_columns_coord_reads_from_one_list() -> None:
         "swallowed on the reading side, so drift here idles forever in silence "
         "rather than failing."
     )
+
+
+def test_the_two_column_tables_describe_the_same_five() -> None:
+    """`_EXPECTED` and `_EXPECTED_DDL` name the same columns, in the same order.
+
+    Closes the one seam between the guards above and the walks below.
+    `_EXPECTED_DDL` is pinned to the revision's `_SATURATION_COLUMNS`; nothing
+    pinned `_EXPECTED`, and `_EXPECTED` is what every live-schema assertion
+    iterates. Adding a sixth column therefore failed the revision-list guard,
+    was fixed by extending `_EXPECTED_DDL` alone, and then shipped a column
+    that no walk in this file ever looked at — present, dropped and
+    round-tripped by the revision, and unchecked for type, nullability or
+    default. This is a name-level pin only: the type SPELLINGS differ on
+    purpose (``BIGINT`` in DDL, ``bigint`` in ``information_schema``).
+    """
+    assert [name for name, _ in _EXPECTED] == [name for name, _ in _EXPECTED_DDL], (
+        "the catalogue table and the DDL table list different columns; every "
+        "live-schema walk below iterates the FORMER, so a column present only "
+        "in the latter is added by the revision and asserted about by nothing"
+    )
+
+
+def test_the_revision_comments_every_column_it_adds() -> None:
+    """Each of the five carries a ``COMMENT ON COLUMN`` in the revision source.
+
+    The ADDs and DROPs are generated from `_SATURATION_COLUMNS`; the comments
+    are **five hand-written blocks** that are not. So a sixth column added to
+    that list is added, dropped, type-checked and round-tripped by everything
+    else in this file, and lands with no comment at all — the exact asymmetry
+    `sess_guard_01` asserts against for the same reason (*"a column name cannot
+    say it"*).
+
+    That matters more here than tidiness, because these comments are the only
+    place the NULL-is-never-0 rule is written into the database itself. coord
+    reads these columns across a repo boundary through a swallowed 42703, the
+    revision's docstring is not shipped anywhere an operator sees, and
+    ``\\d+`` is where a human meets this schema.
+
+    Structural rather than database-backed: it never skips, which is the point
+    — the four walks below skip wholesale when no Postgres is reachable.
+    """
+    source = _revision_source()
+    for name, _ in _EXPECTED_DDL:
+        marker = f"COMMENT ON COLUMN coord.{_TABLE}.{name} IS"
+        assert marker in source, (
+            f"{name} is added by the revision's one column list but carries no "
+            f"COMMENT; the comments are hand-written blocks rather than "
+            f"generated from that list, so a new column lands bare unless one "
+            f"is written for it"
+        )
+        assert _expected_comment(name).strip(), (
+            f"{name}'s COMMENT body is empty; an empty comment records nothing "
+            f"and reads as documented to anyone checking for one"
+        )
 
 
 def test_the_revision_generates_its_drops_from_the_same_list() -> None:
@@ -233,25 +312,33 @@ def test_the_revision_generates_its_drops_from_the_same_list() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _columns(engine: Engine) -> dict[str, tuple[str, str]]:
-    """``{column: (data_type, is_nullable)}`` for ``coord.device_resource_samples``."""
+def _columns(engine: Engine) -> dict[str, tuple[str, str, str | None]]:
+    """``{column: (data_type, is_nullable, column_default)}`` for the table.
+
+    One bulk read rather than the harness's per-column ``column_info``: the
+    round-trip walk calls this three times over five columns, and
+    [`_assert_columns_absent`] needs the whole set rather than one column.
+    """
     sql = text(
         """
-        SELECT column_name, data_type, is_nullable
+        SELECT column_name, data_type, is_nullable, column_default
           FROM information_schema.columns
          WHERE table_schema = 'coord' AND table_name = :t
         """
     )
     with engine.connect() as conn:
-        return {r[0]: (r[1], r[2]) for r in conn.execute(sql, {"t": _TABLE}).fetchall()}
+        return {
+            r[0]: (r[1], r[2], r[3])
+            for r in conn.execute(sql, {"t": _TABLE}).fetchall()
+        }
 
 
 def _assert_columns_present(engine: Engine) -> None:
-    """All five columns, right type, nullable."""
+    """All five columns, right type, nullable, and carrying no default."""
     cols = _columns(engine)
     for name, expected_type in _EXPECTED:
         assert name in cols, f"coord.{_TABLE} is missing {name}"
-        data_type, nullable = cols[name]
+        data_type, nullable, default = cols[name]
         assert data_type == expected_type, (
             f"coord.{_TABLE}.{name} is {data_type}, expected {expected_type}. "
             f"ADD COLUMN IF NOT EXISTS is type-blind, so a wrong type is a "
@@ -260,6 +347,40 @@ def _assert_columns_present(engine: Engine) -> None:
         assert nullable == "YES", (
             f"coord.{_TABLE}.{name} is NOT NULL; NULL is how this schema says "
             f"'not probed', and 0 on this axis means 'perfectly idle'"
+        )
+        # Nullability alone does not defend the NULL-is-never-0 rule: a plain
+        # `DEFAULT 0` leaves the column nullable and still writes 0 into every
+        # INSERT that omits it, which is every row a pre-publisher runner
+        # sends. The no-default state is what makes an unprobed lane read as
+        # unknown rather than as idle.
+        assert default is None, (
+            f"coord.{_TABLE}.{name} carries DEFAULT {default}; a default on "
+            f"this axis manufactures a reading nothing measured — 0 renders as "
+            f"perfectly idle, and NULLS LAST would rank the blind machine first"
+        )
+
+
+def _assert_columns_commented(engine: Engine) -> None:
+    """Each column's ``col_description`` is what the revision's source emits.
+
+    Compared against the revision rather than a copy pasted here, so the
+    assertion cannot drift from the thing it describes.
+
+    Worth a live read on top of the structural guard above, which only proves
+    the source CONTAINS the blocks: the five ``COMMENT ON COLUMN`` statements
+    are unguarded ``op.execute`` calls replayed on every re-run, and nothing
+    else in this file notices if they stop arriving, land on the wrong column,
+    or are truncated by an edit to the adjacent-literal runs.
+    """
+    for name, _ in _EXPECTED:
+        actual = column_comment(engine, _TABLE, name)
+        assert actual == _expected_comment(name), (
+            f"coord.{_TABLE}.{name}'s COMMENT is not what the revision emits.\n"
+            f"  in the database: {actual!r}\n"
+            f"  in the revision: {_expected_comment(name)!r}\n"
+            f"These comments are the only place NULL-is-never-0 is recorded in "
+            f"the database itself; coord reads these columns from another repo "
+            f"through a swallowed 42703, so nothing at runtime would notice."
         )
 
 
@@ -346,6 +467,7 @@ def test_a_sample_row_carries_the_incident_reading(_admin_url: str) -> None:
     with ephemeral_database(_admin_url, "fleet_res_tel_04_in") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
+        _assert_columns_commented(engine)
 
         with engine.begin() as conn:
             conn.execute(
@@ -569,6 +691,10 @@ def test_up_down_up_leaves_no_residue_and_keeps_the_sample_row(
 
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
+        # DROP COLUMN takes the comment with it, so this is the restore path
+        # rather than the replay one: the re-added columns must be documented
+        # again, not merely present again.
+        _assert_columns_commented(engine)
         assert _sample_row(engine, device_id) == before
 
         # The re-added columns are NULL for the row that predates them, which
@@ -596,10 +722,12 @@ def test_upgrade_is_idempotent(_admin_url: str) -> None:
     the guard is per-clause: one missing `IF NOT EXISTS` in a five-clause ALTER
     makes the whole statement abort on the re-run. The re-run also replays the
     five `COMMENT ON COLUMN` statements, which are not themselves guarded and
-    must stay safe to repeat.
+    must stay safe to repeat — so the replayed comments are read back too,
+    rather than only asserted to have not aborted the run.
     """
     with ephemeral_database(_admin_url, "fleet_res_tel_04_id") as (engine, db_url):
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         run_alembic(backend_root(), db_url, "stamp", _PARENT_REVISION_ID)
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
+        _assert_columns_commented(engine)
