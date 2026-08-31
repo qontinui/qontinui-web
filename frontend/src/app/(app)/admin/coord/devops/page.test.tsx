@@ -28,7 +28,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 const httpGet = vi.fn();
 const httpFetch = vi.fn();
@@ -59,6 +65,15 @@ vi.mock("@/components/operations/useSymbolClaimsStream", () => ({
     error: null,
     refetch: vi.fn(),
   }),
+}));
+
+// The severity badges navigate (`HealthBadge` carries `onClick`, not `href`),
+// so the page holds a router. Only `useRouter` is stubbed — nothing else in
+// this tree reads `next/navigation`, and `routerPush` is referenced lazily,
+// inside the returned function, so the hoisted factory never touches its TDZ.
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: (...args: unknown[]) => routerPush(...args) }),
 }));
 
 import CoordDevOpsPage from "./page";
@@ -150,6 +165,12 @@ interface Fixture {
   samples: unknown[];
   /** The devenv machine roster backing the Phase 2 CI-capacity join. */
   machines?: ReturnType<typeof devenvMachine>[];
+  /**
+   * The rest of the `/fleet/health` body beside `devices` — coord's alert
+   * severity rollup (`alerts`, `alerts_scrape_up`) and `pageout`. Spread
+   * verbatim, so a fixture can serve a coord that predates any of them.
+   */
+  healthExtras?: Record<string, unknown>;
 }
 
 function mockRoutes(fixture: Fixture) {
@@ -159,7 +180,10 @@ function mockRoutes(fixture: Fixture) {
       return Promise.resolve({ latest: fixture.samples, history: [] });
     }
     if (u.includes("fleet/health")) {
-      return Promise.resolve({ devices: fixture.devices });
+      return Promise.resolve({
+        devices: fixture.devices,
+        ...(fixture.healthExtras ?? {}),
+      });
     }
     return Promise.reject(new Error(`unexpected GET ${u}`));
   });
@@ -193,6 +217,7 @@ describe("/admin/coord/devops", () => {
   beforeEach(() => {
     httpGet.mockReset();
     httpFetch.mockReset();
+    routerPush.mockReset();
     window.localStorage.clear();
   });
 
@@ -971,6 +996,251 @@ describe("/admin/coord/devops — CI capacity", () => {
     );
     expect(
       httpFetch.mock.calls.filter((c) => String(c[0]).includes("/ci-node"))
+    ).toHaveLength(0);
+  });
+});
+// ---------------------------------------------------------------------------
+// The alert severity rollup — plan
+// `2026-08-31-devops-surface-renders-no-alert-signal` Phase 4.
+// ---------------------------------------------------------------------------
+
+/**
+ * The defect this block guards is not a missing feature; it is a number coord
+ * had been publishing on THIS page's own poll for months, discarded by a hook
+ * type that declared only `devices`. The steward who read `by_state:
+ * {healthy: 8}` — device liveness — concluded the fleet was fine while 170+
+ * unresolved criticals stood.
+ *
+ * So the assertions are about what the page is allowed to SAY:
+ *
+ *  1. A measured rollup renders as numbers.
+ *  2. A rollup coord says it could not read renders UNKNOWN — never `0`.
+ *  3. No rollup at all renders UNKNOWN — never `0`. (Absence is not zero.)
+ *  4. Counts with no `alerts_scrape_up` flag are MEASURED, not unknown: that
+ *     is today's coord, and this page ships ahead of coord's half by design.
+ *  5. `pageout.sink_configured: false` is a recorded operator decision, so it
+ *     gets one muted line — and absence of the field gets nothing at all.
+ */
+describe("/admin/coord/devops — the alert severity rollup", () => {
+  beforeEach(() => {
+    httpGet.mockReset();
+    httpFetch.mockReset();
+    routerPush.mockReset();
+    window.localStorage.clear();
+  });
+
+  /** One healthy machine, so nothing in the LIVENESS half explains a badge. */
+  function healthyFleet(healthExtras?: Record<string, unknown>) {
+    mockRoutes({
+      devices: [coordDevice("d-1", "msi", "healthy")],
+      runners: [runner("msi")],
+      samples: [hostSample("d-1", "ok")],
+      healthExtras,
+    });
+  }
+
+  it("renders the severity counts coord already serves", async () => {
+    healthyFleet({
+      alerts: { critical: 170, warning: 2302, info: 55 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 170")
+    );
+    expect(
+      within(strip).getByTestId("coord-devops-warning-badge")
+    ).toHaveTextContent("warning 2302");
+    expect(
+      within(strip).getByTestId("coord-devops-info-badge")
+    ).toHaveTextContent("info 55");
+    // The liveness badge is still there and still says liveness: the two
+    // rollups sit side by side precisely because they answer different
+    // questions, and conflating them is the bug.
+    expect(
+      within(strip).getByTestId("coord-devops-machines-badge")
+    ).toHaveTextContent("machines 1");
+    expect(
+      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+    ).toBeNull();
+  });
+
+  it("renders UNKNOWN, not 0, when coord says the rollup did not run", async () => {
+    // `alerts_scrape_up: false` is coord admitting its query failed. The zeros
+    // beside it are the shape of a failure, not a count of alerts.
+    healthyFleet({
+      alerts: { critical: 0, warning: 0, info: 0 },
+      alerts_scrape_up: false,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
+      ).toHaveTextContent("alerts unknown")
+    );
+    expect(
+      within(strip).queryByTestId("coord-devops-critical-badge")
+    ).toBeNull();
+    expect(
+      within(strip).queryByTestId("coord-devops-warning-badge")
+    ).toBeNull();
+    expect(within(strip).queryByTestId("coord-devops-info-badge")).toBeNull();
+    // The literal failure mode this guards: a `?? 0` puts these on screen.
+    expect(strip).not.toHaveTextContent("critical 0");
+    expect(strip).not.toHaveTextContent("warning 0");
+    expect(strip).not.toHaveTextContent("info 0");
+  });
+
+  it("renders UNKNOWN, not 0, when coord serves no rollup at all", async () => {
+    // No `alerts` key: a coord that does not publish it, or a read that never
+    // landed. Either way the page knows nothing, and must say so.
+    healthyFleet();
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-alerts-unknown-badge")
+      ).toHaveTextContent("alerts unknown")
+    );
+    expect(strip).not.toHaveTextContent("critical 0");
+  });
+
+  it("treats counts with no `alerts_scrape_up` flag as MEASURED, not unknown", async () => {
+    // Today's coord: it serves the rollup and not the flag, because the flag
+    // is the coord half of this plan and lands later. Reading the absent flag
+    // as a failure would dash a real number across the whole pre-deploy
+    // window — the window this page is REQUIRED to render correctly in.
+    healthyFleet({ alerts: { critical: 3364, warning: 13723, info: 283 } });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 3364")
+    );
+    expect(
+      within(strip).queryByTestId("coord-devops-alerts-unknown-badge")
+    ).toBeNull();
+  });
+
+  it("keeps a MEASURED zero out of the red tone, and still renders it", async () => {
+    // A genuine all-clear is a real measurement and must stay on screen — a
+    // hidden badge is indistinguishable from a page that cannot count. But
+    // red says "somebody must act", and nobody must act on zero.
+    healthyFleet({
+      alerts: { critical: 0, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const strip = await screen.findByTestId("coord-devops-health-strip");
+    await waitFor(() =>
+      expect(
+        within(strip).getByTestId("coord-devops-critical-badge")
+      ).toHaveTextContent("critical 0")
+    );
+    expect(
+      within(strip).getByTestId("coord-devops-critical-badge").className
+    ).not.toMatch(/red/);
+  });
+
+  it("navigates the badge to the alerts list with NO query string", async () => {
+    // `/admin/coord/alerts` hydrates no filter from the URL, so a
+    // `?severity=critical` badge would land on an unfiltered page under a
+    // control that claimed to filter.
+    healthyFleet({
+      alerts: { critical: 12, warning: 3, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const badge = await screen.findByTestId("coord-devops-critical-badge");
+    fireEvent.click(badge);
+    expect(routerPush).toHaveBeenCalledWith("/admin/coord/alerts");
+    expect(String(routerPush.mock.calls[0][0])).not.toContain("?");
+  });
+
+  it("says nothing about the pageout sink when coord says nothing", async () => {
+    // Absence is UNKNOWN. The page has no posture to report, so it reports no
+    // posture — it neither guesses "configured" nor warns.
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
+  });
+
+  it("states an unconfigured pageout sink as a decision, not an alarm", async () => {
+    // Confirmed with the operator 2026-08-05 across three shipped plans:
+    // in-app is the delivery surface and no Slack/email sink is wanted. One
+    // muted line, no warning colour, no icon — an alarm on an intended state
+    // is how a strip loses its credibility.
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+      pageout: { sink_configured: false },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    const note = await screen.findByTestId("coord-devops-pageout-note");
+    expect(note).toHaveTextContent("in-app only");
+    expect(note).toHaveTextContent("by decision");
+    expect(note.className).toContain("text-muted-foreground");
+    expect(note.className).not.toMatch(/red|amber|yellow/);
+    expect(
+      within(note).getByTestId("coord-devops-pageout-alerts-link")
+    ).toHaveAttribute("href", "/admin/coord/alerts");
+  });
+
+  it("says nothing about the sink when it IS configured", async () => {
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+      pageout: { sink_configured: true },
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-health-strip");
+    expect(screen.queryByTestId("coord-devops-pageout-note")).toBeNull();
+  });
+
+  it("adds NO read: the rollup rides the fleet-health poll already made", async () => {
+    healthyFleet({
+      alerts: { critical: 1, warning: 0, info: 0 },
+      alerts_scrape_up: true,
+    });
+
+    render(<CoordDevOpsPage />);
+
+    await screen.findByTestId("coord-devops-critical-badge");
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("fleet/health"))
+    ).toHaveLength(1);
+    expect(
+      httpGet.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
+    ).toHaveLength(0);
+    expect(
+      httpFetch.mock.calls.filter((c) => String(c[0]).includes("/alerts"))
     ).toHaveLength(0);
   });
 });
