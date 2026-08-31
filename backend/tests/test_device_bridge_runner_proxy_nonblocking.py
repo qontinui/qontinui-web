@@ -348,16 +348,26 @@ def test_relay_503_is_the_ws_session_id_branch() -> None:
     )
     idx = emitters[0]
 
-    # Walk back to the nearest CONDITIONAL; it must be the ws_session_id read.
-    # A fixed line-distance lookback was the earlier spelling of this check and
-    # it broke the moment the branch grew a body (the W-A structured log + the
-    # W-B ``last_seen_at`` decoration) — the invariant is which guard governs
-    # the emitter, not how many lines away it sits.
+    # Walk back to the GOVERNING conditional; it must be the ws_session_id read.
+    #
+    # Two earlier spellings of this check were both too weak. A fixed
+    # line-distance lookback broke the moment the branch grew a body (the W-A
+    # structured log + the W-B clock decoration). Replacing it with "the
+    # nearest preceding ``if``" then broke on the first conditional *inside*
+    # the branch (``if liveness.known:``, which decorates the body) — a line
+    # that precedes the emitter without governing it.
+    #
+    # "Governs" is an indentation relation in Python, so test that directly:
+    # the nearest preceding ``if``/``elif`` indented STRICTLY LESS than the
+    # emitter. That is the branch the emitter actually sits inside, and it
+    # stays correct however much the body grows or nests.
+    emitter_indent = len(lines[idx]) - len(lines[idx].lstrip())
     guard = next(
         (
             lines[i]
             for i in range(idx - 1, -1, -1)
             if lines[i].strip().startswith(("if ", "elif "))
+            and len(lines[i]) - len(lines[i].lstrip()) < emitter_indent
         ),
         None,
     )

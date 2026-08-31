@@ -17,6 +17,7 @@ import {
   useRunnerSpecGraph,
   useRunnerSpecList,
 } from "../_hooks/useUiBridge";
+import { RelayFailure } from "./RelayFailure";
 
 const DEFAULT_APP_ID = "qontinui-web";
 
@@ -136,9 +137,25 @@ export function UiBridgePanel() {
             </p>
           )}
           {specList.isError && (
-            <p className="text-sm text-muted-foreground">
-              Could not read specs for <code>{appId}</code> from the runner.
-            </p>
+            <RelayFailure
+              error={specList.error}
+              subject={`spec pages for ${appId}`}
+            />
+          )}
+          {/*
+            The graph is a second, independent query. Its failure used to be
+            rendered nowhere at all: `graphPages` fell back to `[]` and the
+            counter below simply showed "0 graph nodes", which is what a
+            genuinely empty graph looks like. A failed read and an empty result
+            are different facts and must not share a rendering.
+          */}
+          {specGraph.isError && (
+            <div className="mb-3">
+              <RelayFailure
+                error={specGraph.error}
+                subject={`the state-machine graph for ${appId}`}
+              />
+            </div>
           )}
           {!specList.isLoading && !specList.isError && (
             <>
@@ -152,8 +169,16 @@ export function UiBridgePanel() {
                   <span className="text-muted-foreground">states</span>
                 </span>
                 <span>
+                  {/*
+                    "0" is a claim about the graph, so it is shown only once
+                    the graph read has actually answered. This is a SECOND
+                    query, independent of the spec list gating this block: it
+                    can still be in flight, or have failed, while the list
+                    beside it succeeded — and both of those look exactly like
+                    a genuinely empty graph if the count is rendered anyway.
+                  */}
                   <span className="text-lg font-semibold">
-                    {graphPages.length}
+                    {specGraph.data ? graphPages.length : "—"}
                   </span>{" "}
                   <span className="text-muted-foreground">graph nodes</span>
                 </span>
@@ -209,10 +234,7 @@ export function UiBridgePanel() {
           </Button>
 
           {snapshot.isError && snapshotRequested && (
-            <p className="text-sm text-muted-foreground">
-              Could not capture a snapshot — the app may not be connected to the
-              runner.
-            </p>
+            <RelayFailure error={snapshot.error} subject="a live snapshot" />
           )}
           {snap && (
             <>
