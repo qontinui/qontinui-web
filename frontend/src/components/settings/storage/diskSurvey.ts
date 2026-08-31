@@ -86,11 +86,37 @@
  *     "read_errors_total": 0,                  // the UNCAPPED count; absent
  *                                              // from a runner build that
  *                                              // predates the cap
+ *     "entry_errors": 0,                       // entries that errored AFTER
+ *                                              // their directory opened
+ *     "reparse_dirs_skipped": 0,               // junctions not followed
+ *     "depth_limited_dirs": 0,                 // dirs never descended into
  *     "roots_with_unknown_bytes": 0,
  *     "roots_with_partial_bytes": 0
  *   }
  * }
  * ```
+ *
+ * ### FIVE shortfall signals, not one
+ *
+ * `truncated` is the loudest of the five ways `scan` can say the walk fell
+ * short, and it is the one that is `false` in the commonest unknown-population
+ * state there is. The full set, and what each means for `items[]`:
+ *
+ * | Signal | The walk… | Folded into `bytes_incomplete`? |
+ * |---|---|---|
+ * | `truncated` | hit its 200k visit ceiling | yes |
+ * | `read_errors_total` | could not OPEN some directories | yes |
+ * | `entry_errors` | opened a directory, then failed mid-listing | yes |
+ * | `reparse_dirs_skipped` | refused to follow a junction | yes |
+ * | `depth_limited_dirs` | stopped at its depth bound | **no — never** |
+ *
+ * The last row is the trap. The bound bites on any deep tree, so the runner
+ * keeps it out of `bytes_incomplete` to preserve that flag's ability to signal a
+ * real failure — which means a walk can be short for the depth bound ALONE while
+ * every machine-readable completeness field reads clean. Only `census_note`
+ * says so in prose. Any predicate here that asks "was this walk complete?" must
+ * therefore consult `depthLimitedDirs` itself; `!bytesIncomplete` does not cover
+ * it. See {@link canClaimNothingToReclaim}.
  *
  * ### Two different ways an answer can be short
  *
@@ -363,6 +389,31 @@ export interface DiskScanStats {
    */
   readErrorsTotal: number | null;
   /**
+   * `scan.entry_errors` — directory ENTRIES that errored after their directory
+   * had already opened, or `null` from a build that predates the field.
+   *
+   * Counted apart from `read_errors`, which records only OPEN failures: a
+   * directory that opens and then errors mid-iteration is invisible to that
+   * list, and the runner's own note for it is "this walk saw less than the
+   * directory holds". It IS folded into `bytes_incomplete`, so this state
+   * reaches the incomplete-walk panel on every runner build that reports it —
+   * which is why leaving it unread made that panel say a shortfall had no
+   * named cause while the payload carried one.
+   */
+  entryErrors: number | null;
+  /**
+   * `scan.reparse_dirs_skipped` — junctions and symlinked directories the walk
+   * refused to descend into, or `null` from a build that predates the field.
+   *
+   * Not following them is deliberate (it would double-count the tree behind
+   * them), but a junctioned target root then appears neither as an item nor as
+   * an error, so it is counted here rather than vanishing. Like
+   * {@link entryErrors} it IS folded into `bytes_incomplete` — a
+   * `paths.workspace_root` whose children are all junctions produces an empty
+   * item list with no read errors at all.
+   */
+  reparseDirsSkipped: number | null;
+  /**
    * `scan.depth_limited_dirs` — directories the walk did not descend into
    * because it hit its depth bound, or `null` from a build that predates the
    * field.
@@ -398,6 +449,82 @@ export function readErrorsSeen(scan: DiskScanStats | null): number {
   return scan.readErrorsTotal === null
     ? listed
     : Math.max(scan.readErrorsTotal, listed);
+}
+
+/** English plural for a count of directories. */
+function directories(n: number): string {
+  return `${n.toLocaleString()} director${n === 1 ? "y" : "ies"}`;
+}
+
+/**
+ * Every shortfall the payload actually NAMES, as phrases, in the runner's own
+ * order — empty when it names none.
+ *
+ * Two rules, and they pull in opposite directions:
+ *
+ * - **Never assert a cause the payload does not carry.** A cause whose counter
+ *   is `0`, or `null` from a build too old to report it, contributes nothing.
+ *   An empty result is the honest "it did not say", and the caller must render
+ *   that rather than picking a plausible cause.
+ * - **Never omit one it does.** These are not alternatives: a walk can hit its
+ *   ceiling AND fail reads AND skip junctions in the same pass. Reporting only
+ *   the first-matching cause quietly drops the rest, which is the same defect
+ *   as inventing one, pointed the other way. The runner's own `census_note`
+ *   joins its gap fragments with `"; "` for exactly this reason, and this
+ *   function is the page's mirror of that list.
+ *
+ * A single-cause payload therefore yields exactly one phrase, which is what the
+ * commonest states produce.
+ */
+export function walkShortfallCauses(scan: DiskScanStats | null): string[] {
+  if (scan === null) return [];
+  const causes: string[] = [];
+  if (scan.truncated) {
+    const afterNDirs =
+      scan.dirsVisited === null
+        ? ""
+        : ` after ${scan.dirsVisited.toLocaleString()} directories`;
+    causes.push(
+      `it hit its visit ceiling${afterNDirs}, so the list is a prefix of a` +
+        " population it never finished enumerating"
+    );
+  }
+  const readErrors = readErrorsSeen(scan);
+  if (readErrors > 0) {
+    causes.push(`${directories(readErrors)} could not be read`);
+  }
+  // Distinct from a failed OPEN: these directories opened and then errored
+  // part-way through their listing, so they are absent from `read_errors`
+  // entirely and the walk saw less than they hold.
+  if (scan.entryErrors !== null && scan.entryErrors > 0) {
+    causes.push(
+      `${directories(scan.entryErrors)} errored part-way through listing, so` +
+        " the walk saw less than they hold"
+    );
+  }
+  // Not an error: refusing to follow a junction is deliberate. But a target
+  // root behind one is then neither an item nor an error, so saying nothing
+  // here would let it vanish.
+  if (scan.reparseDirsSkipped !== null && scan.reparseDirsSkipped > 0) {
+    const n = scan.reparseDirsSkipped;
+    causes.push(
+      `${n.toLocaleString()} junction${n === 1 ? " was" : "s were"} not` +
+        ` followed, so whatever ${n === 1 ? "it points" : "they point"} at is` +
+        " unmeasured"
+    );
+  }
+  // Last, matching the runner's note, which appends the depth-bound sentence
+  // after its gap list. It is also the only one of the five that never raises
+  // `bytes_incomplete`, so it is the one most likely to be the SOLE cause.
+  if (scan.depthLimitedDirs !== null && scan.depthLimitedDirs > 0) {
+    causes.push(
+      `it stopped at its depth bound, leaving ${directories(
+        scan.depthLimitedDirs
+      )} it never descended into, so a target root below the bound is absent` +
+        " rather than measured"
+    );
+  }
+  return causes;
 }
 
 /** A parsed survey. Every field is what the runner said, or an explicit gap. */
@@ -689,6 +816,8 @@ export function parseScanStats(raw: unknown): DiskScanStats | null {
     hasTruncatedField: Object.hasOwn(raw, "truncated"),
     readErrors,
     readErrorsTotal: count(raw.read_errors_total),
+    entryErrors: count(raw.entry_errors),
+    reparseDirsSkipped: count(raw.reparse_dirs_skipped),
     depthLimitedDirs: count(raw.depth_limited_dirs),
     rootsWithUnknownBytes: count(raw.roots_with_unknown_bytes),
     rootsWithPartialBytes: count(raw.roots_with_partial_bytes),
@@ -1368,6 +1497,21 @@ export function reportOnlyDisagreement(
  *   present-but-`null` case is separate and already handled: the key's
  *   presence is recorded by `Object.hasOwn`, its value survives as `NaN`, and
  *   `NaN` fails the finite test below.
+ * - a walk that stopped at its DEPTH BOUND never reached the part of the tree
+ *   below it, so an empty list is a zero over the part it does reach. This one
+ *   clause cannot be delegated to `bytes_incomplete`: the runner deliberately
+ *   keeps `depth_limited_dirs` out of that flag (the bound bites on any deep
+ *   tree, so folding it in would pin the flag permanently true), and out of
+ *   `truncated` as well. Every machine-readable completeness field therefore
+ *   reads CLEAN in the one state where this sentence is most tempting and most
+ *   wrong — `truncated: false`, `read_errors_total: 0`, `bytes_incomplete:
+ *   false`, `reclaimable_bytes: 0` — while `census_note`, rendered directly
+ *   above this sentence on the page, says "this is not a certified 'nothing to
+ *   reclaim'". Reachable with no failure of any kind: with the walk's depth
+ *   bound at 4, a `paths.workspace_root` set one level too high finds no target
+ *   root at or above the bound. A `null` count is a build too old to report the
+ *   field, which is UNKNOWN and not a reason to refuse — only a POSITIVE
+ *   non-zero count is.
  */
 export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
   // The runner must have sent an explicit ZERO. `null` there is the runner
@@ -1377,10 +1521,16 @@ export function canClaimNothingToReclaim(survey: DiskSurvey): boolean {
     Number.isFinite(survey.summaryReclaimableBytes) &&
     survey.summaryReclaimableBytes === 0;
   // The walk must SAY it was complete, not merely fail to say it was short.
+  // `truncated: false` is only four of the five shortfall signals' worth of
+  // silence: the depth bound is reported nowhere else, so it is checked here
+  // rather than left to `bytesIncomplete`, which by design never carries it.
   const walkSaysComplete =
     survey.scan !== null &&
     survey.scan.hasTruncatedField &&
-    !survey.scan.truncated;
+    !survey.scan.truncated &&
+    !(
+      survey.scan.depthLimitedDirs !== null && survey.scan.depthLimitedDirs > 0
+    );
   return (
     survey.items.length === 0 &&
     survey.skippedItems === 0 &&
