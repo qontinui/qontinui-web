@@ -8016,6 +8016,195 @@ def _write_annotations(version: dict[str, Any], doc: dict[str, Any]) -> dict[str
     return out
 
 
+def _is_flagged(write: dict[str, Any]) -> bool:
+    """Did coord POSITIVELY classify this write as widening agent authority?
+
+    ``is True``, never truthiness, and never ``.get(...) or False``. The key has
+    three admissible states out of :func:`_write_annotations` — absent (no
+    verdict exists), ``False`` (the classifier ran and found no widening) and
+    ``True`` — plus a ``None`` this proxy forwards verbatim for a future
+    producer. Only the last of those is a loosening.
+
+    This is deliberately the SAME rule as the frontend's ``isLoosening``
+    (``_lib/writes.ts``: ``write.loosening === true``). The two predicates decide
+    the same question on the two sides of one wire — the server decides which
+    writes survive the page slice, the client decides which get the badge — and
+    a drift between them would show a badge on a row the server had not
+    prioritised, or worse, silently drop a row the client would have badged.
+    """
+    return write.get("loosening") is True
+
+
+def _has_verdict(write: dict[str, Any]) -> bool:
+    """Did the direction classifier RUN on this write, either way?
+
+    The discriminator between "coord classified these and none was a loosening"
+    and "coord never classified them" — two facts a single count would collapse.
+    Mirrors the client's ``looseningClassificationPresent`` exactly
+    (``=== true || === false``), and deliberately NOT ``"loosening" in write``:
+    membership is right for :func:`_write_annotations`, which forwards what coord
+    sent, and wrong here, because a forwarded ``None`` is not a verdict.
+    """
+    return write.get("loosening") is True or write.get("loosening") is False
+
+
+def _promote_flagged(writes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Classified loosenings first, everything else after, recency preserved
+    inside each group.
+
+    **This exists so the page slice below cannot drop the writes the feed is
+    for.** ``writes`` arrives sorted newest-first and is then cut to ``limit``.
+    Without this, a loosening older than the newest ``limit`` writes is dropped
+    server-side and never reaches the client at all — while the client's own
+    ``sortWritesForFeed`` promotes flagged rows to the top *of what it received*
+    and the page tells the operator those writes are "marked and sorted to the
+    top". That promotion is decorative if the row is not in the payload, and the
+    operator has no way to reach it: the page requests a fixed ``?limit=40`` and
+    offers no paging control. An edit that widened what agents may do would then
+    be invisible on the one surface built to show it.
+
+    A stable PARTITION, not a comparator — the same construction, and the same
+    reason, as the client's ``sortWritesForFeed``: the recency order is already
+    established above and re-deriving it on a timestamp here would shuffle rows
+    whose ``created_at`` is unparseable (``_parse_iso`` maps those to
+    ``datetime.min``) into an arbitrary place. Partitioning touches only the one
+    axis this function is about.
+
+    Applied unconditionally rather than only when the slice bites, so there is
+    one ordering in the response rather than two that differ by corpus size.
+    Below ``limit`` it is a pure reorder the client re-derives identically, so
+    nothing on screen changes.
+    """
+    flagged: list[dict[str, Any]] = []
+    rest: list[dict[str, Any]] = []
+    for write in writes:
+        (flagged if _is_flagged(write) else rest).append(write)
+    return flagged + rest
+
+
+def _limited_caveat(
+    writes: list[dict[str, Any]], page: list[dict[str, Any]], limit: int
+) -> str:
+    """What the ``limit`` slice dropped, said in a sentence an operator can act on.
+
+    The old text — *"Showing the 40 most recent writes of 137."* — is true and
+    answers the wrong question. This surface exists so that an edit widening
+    agent authority is seen; a count of dropped rows does not say whether one of
+    them was such an edit, and the operator cannot look (fixed ``?limit=40``, no
+    paging). So the caveat now reports the classification across the WHOLE read
+    corpus, not just the page.
+
+    Two questions decide the sentence, and they are NOT the same question:
+    *what is the page made of* (which fixes the shape), and *what did the slice
+    drop* (which fixes the trailing clause). Keying the whole thing on the
+    second is the bug this docstring exists to prevent — see below.
+
+    * **The page is entirely loosenings.** Every unflagged write was cut, so
+      there is no "rest" to promise. Reached at ``flagged_total >= limit``, and
+      the ``dropped`` count only chooses which second sentence follows.
+    * **Some loosenings, and unflagged writes too.** The page carries all of
+      them, which :func:`_promote_flagged` makes a guarantee rather than a hope.
+    * **None flagged, every write carries a verdict** — "none of the 137, shown
+      or not" is a real reassurance and worth stating.
+    * **None flagged, only SOME writes carry a verdict** — the ordinary state
+      the day the classifier deploys. The reassurance is then scoped to the
+      writes coord actually classified, and the unclassified remainder is
+      counted rather than absorbed into it.
+    * **No verdict anywhere** — the pre-classification coord build. Say
+      **nothing** about direction: there is no verdict to report.
+
+    **Why the shape is keyed on the PAGE and not on ``dropped``.** The obvious
+    spelling — ``if dropped > 0`` for the all-flagged arm — is wrong at exactly
+    one input, ``flagged_total == limit``: nothing flagged is dropped, yet the
+    page is still 100% loosenings. It would fall through to the second arm,
+    whose "then the most recent of the rest" names rows that are not on the
+    page, and which never mentions that the unflagged writes were cut at all.
+    ``flagged_shown == len(page)`` asks what the page IS, which is what the
+    sentence describes.
+
+    **Why "none of them" is scoped, twice.** A corpus-wide reassurance drawn
+    from a single classified row is the same unknown-as-fact failure one layer
+    up: "None of the 137 … is classified as widening" reads as a verdict on 137
+    writes when coord may have classified one of them. Mixed classification is
+    not an edge case — it is what a partially-rolled-out classifier looks like,
+    and one document's history can span both states. So the count in the
+    sentence is the number of writes that carry a VERDICT, never ``len(writes)``,
+    unless the two coincide. The client's equivalent line says "on this page"
+    and is computed over what is on screen; this one reaches further, so it has
+    to qualify further rather than less.
+
+    **And "a verdict exists" is not "the key is present" — they come apart on
+    ``None``.** :func:`_write_annotations` decides what to FORWARD and correctly
+    uses membership there: a proxy reports its upstream verbatim, so a served
+    ``None`` is passed on. But forwarding a value and counting it as a verdict
+    are different questions, and ``None`` is explicitly not a verdict. A corpus
+    whose rows all carried ``loosening: null`` would, under a membership test
+    here, be reported as classified-and-clean — the unknown-as-fact failure
+    again, arriving through the one spelling that looks like it agrees with the
+    layer below. So ``_has_verdict`` mirrors the CLIENT's
+    ``looseningClassificationPresent`` (``=== true || === false``) rather than
+    ``_write_annotations``' membership.
+
+    ``shown`` is ``len(page)`` rather than ``limit``. They are equal at the only
+    call site (which guards on ``len(writes) > limit``), but the honest value is
+    the one the function was handed.
+    """
+    flagged_total = sum(1 for w in writes if _is_flagged(w))
+    flagged_shown = sum(1 for w in page if _is_flagged(w))
+    dropped = flagged_total - flagged_shown
+    shown = len(page)
+    recent = f"Showing the {_plural(shown, 'most recent write')} of {len(writes)}."
+
+    if flagged_shown and flagged_shown == shown:
+        head = (
+            f"Showing {shown} of {len(writes)} writes, every one of them classified "
+            "as widening what agents may do."
+        )
+        if dropped:
+            return (
+                f"{head} {_plural(dropped, 'further such write')} "
+                f"{'is' if dropped == 1 else 'are'} not shown, and neither is any "
+                "write that was not so classified."
+            )
+        # dropped == 0 with a full page of loosenings forces
+        # flagged_total == shown < len(writes), so unflagged writes exist and
+        # every one of them was cut.
+        return f"{head} No write that was not so classified is shown."
+
+    if flagged_shown:
+        # The scoping matters: this feed can be short of writes it never read
+        # (`truncated`, `partial`), so the guarantee is over what it DID read.
+        # Without that, "whatever their age" over-reads as "and none exists".
+        kept = (
+            "the one write this feed read that coord classified as widening what "
+            "agents may do, whatever its age"
+            if flagged_shown == 1
+            else (
+                f"all {flagged_shown} writes this feed read that coord classified "
+                "as widening what agents may do, whatever their age"
+            )
+        )
+        return (
+            f"Showing {shown} of {len(writes)} writes: {kept}, then the most "
+            "recent of the rest."
+        )
+
+    verdicts = sum(1 for w in writes if _has_verdict(w))
+    if verdicts == len(writes):
+        return (
+            f"{recent} None of the {len(writes)} this feed read, shown or not, is "
+            "classified as widening what agents may do."
+        )
+    if verdicts:
+        silent = len(writes) - verdicts
+        return (
+            f"{recent} None of the {_plural(verdicts, 'write')} coord classified is "
+            f"a widening, but {_plural(silent, 'write')} in this feed "
+            f"{'carries' if silent == 1 else 'carry'} no verdict either way."
+        )
+    return recent
+
+
 async def _fetch_versions_bulk(
     documents: list[dict[str, Any]], tenant_id: UUID
 ) -> list[Any]:
@@ -8219,7 +8408,25 @@ async def list_prompt_document_writes(
     limit: int = Query(default=40, ge=1, le=200),
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> dict[str, Any]:
-    """Recently landed prompt-document writes across the tenant, newest first.
+    """Recently landed prompt-document writes across the tenant, newest first —
+    except that classified loosenings are never cut by the page slice.
+
+    **Ordering, precisely.** Writes are sorted newest-first, then every write
+    coord classified as widening what agents may do is lifted above the rest as
+    a stable partition, and the ``limit`` slice is taken from THAT. So the page
+    is "every loosening, then the most recent of the remainder" rather than
+    "the most recent N". Recency order survives inside each group, and the
+    client re-derives the identical partition (``_lib/writes.ts``
+    ``sortWritesForFeed``), so this changes what is IN the page, not how it is
+    laid out. Below the limit it is a pure reorder with no visible effect.
+
+    The reason is not tidiness. The client promotes flagged rows to the top of
+    what it received and the page tells the operator they are "marked and sorted
+    to the top"; the page requests a fixed ``?limit=40`` and offers no paging.
+    A loosening older than the newest forty writes would therefore be dropped
+    here, promoted by nobody, and unreachable — invisible on the one surface
+    built to show it. ``limited`` reports the direction of what the slice did
+    drop, not only how many.
 
     An AGGREGATION over routes that already exist — the document list plus one
     ``/versions`` read per document — rather than a new coord surface, so it
@@ -8322,7 +8529,11 @@ async def list_prompt_document_writes(
             )
 
     writes.sort(key=lambda w: _parse_iso(w.get("created_at")), reverse=True)
-    response: dict[str, Any] = {"writes": writes[:limit], "total": len(writes)}
+    # Newest-first, then classified loosenings lifted above it as a stable
+    # partition, and only THEN sliced — so the page cut cannot drop the writes
+    # this feed exists to show. See :func:`_promote_flagged`.
+    page = _promote_flagged(writes)[:limit]
+    response: dict[str, Any] = {"writes": page, "total": len(writes)}
     if degraded:
         response["degraded"] = degraded
     if failed:
@@ -8340,11 +8551,11 @@ async def list_prompt_document_writes(
             "not read; writes belonging to them are missing from this feed."
         )
     # The limit slice drops writes too, and a silent drop here would be
-    # indistinguishable from the ceiling case that gets a banner.
+    # indistinguishable from the ceiling case that gets a banner. What it drops
+    # is now reported by DIRECTION as well as by count — see
+    # :func:`_limited_caveat`.
     if len(writes) > limit:
-        response["limited"] = (
-            f"Showing the {_plural(limit, 'most recent write')} of {len(writes)}."
-        )
+        response["limited"] = _limited_caveat(writes, page, limit)
     return response
 
 
