@@ -324,6 +324,154 @@ describe("DiskSection — reclaim survey", () => {
     expect(panel?.textContent).not.toMatch(/depth bound/i);
   });
 
+  it("names SKIPPED JUNCTIONS, a cause the payload carries and the page did not read", async () => {
+    // `reparse_dirs_skipped` is folded into the runner's `incomplete()`, so it
+    // raises `bytes_incomplete` and this state reaches the panel on every
+    // runner build — no companion runner change needed. With the counter
+    // unparsed, the panel said the shortfall had no named cause while the
+    // payload named it and `census_note` spelled it out. The reachable shape:
+    // a `paths.workspace_root` whose children are all junctions (`_wt` shared
+    // checkouts, `.wt-targets` links) returns an empty list with NO read
+    // errors at all.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: { reclaimable_bytes: null, bytes_incomplete: true },
+      scan: {
+        dirs_visited: 61,
+        truncated: false,
+        read_errors: [],
+        read_errors_total: 0,
+        entry_errors: 0,
+        reparse_dirs_skipped: 4,
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/4 junctions were not followed/);
+    // And it must not fall back to refusing to name what it was told.
+    expect(panel?.textContent).not.toMatch(/did not name/i);
+    expect(panel?.textContent).not.toMatch(/visit ceiling/i);
+    expect(panel?.textContent).not.toMatch(/could not be read/i);
+  });
+
+  it("names EVERY shortfall the walk reported, not just the loudest one", async () => {
+    // The causes are not alternatives: one pass can hit the ceiling AND fail
+    // reads AND skip junctions. Naming only the first-matching one drops the
+    // rest, which understates the shortfall exactly as inventing a cause
+    // overstates it. The runner's own `census_note` joins its gap list with
+    // "; " for this reason; this panel is the page's mirror of that list.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: { reclaimable_bytes: null, bytes_incomplete: true },
+      scan: {
+        dirs_visited: 200000,
+        truncated: true,
+        read_errors: [{ path: "D:\\locked", error: "denied" }],
+        read_errors_total: 4137,
+        entry_errors: 6,
+        reparse_dirs_skipped: 3,
+        depth_limited_dirs: 118,
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/visit ceiling/i);
+    expect(panel?.textContent).toMatch(
+      /4[,.\s]?137 directories could not be read/
+    );
+    expect(panel?.textContent).toMatch(/6 directories errored part-way/);
+    expect(panel?.textContent).toMatch(/3 junctions were not followed/);
+    expect(panel?.textContent).toMatch(/depth bound/i);
+  });
+
+  it("refuses 'nothing to reclaim' under a bitten DEPTH BOUND, with every other field clean", async () => {
+    // The state the runner emits TODAY: `depth_limited_dirs` is kept out of
+    // both `truncated` and `bytes_incomplete` on purpose, so every
+    // machine-readable completeness field reads clean and only `census_note`
+    // says the walk fell short. Without reading the counter here, the page
+    // printed "this is a measured answer, not a missing one" directly beneath
+    // a note saying it was not a certified "nothing to reclaim".
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: {
+        reclaimable_bytes: 0,
+        report_only_bytes: 0,
+        bytes_incomplete: false,
+        by_class: [],
+      },
+      scan: {
+        dirs_visited: 4102,
+        truncated: false,
+        read_errors: [],
+        read_errors_total: 0,
+        entry_errors: 0,
+        reparse_dirs_skipped: 0,
+        depth_limited_dirs: 118,
+        roots_with_unknown_bytes: 0,
+        roots_with_partial_bytes: 0,
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="incomplete"]')
+      ).not.toBeNull()
+    );
+    expect(container.querySelector('[data-disk-empty="measured"]')).toBeNull();
+    const panel = container.querySelector('[data-disk-empty="incomplete"]');
+    expect(panel?.textContent).toMatch(/depth bound/i);
+    expect(panel?.textContent).toMatch(/118/);
+    expect(panel?.textContent).not.toMatch(/did not name/i);
+  });
+
+  it("NON-VACUOUS: the same payload with the bound unbitten IS the measured zero", async () => {
+    // Without this, the test above would pass for a page that had simply
+    // stopped being able to say "nothing to reclaim" at all.
+    runnerFetch.mockResolvedValue({
+      items: [],
+      summary: {
+        reclaimable_bytes: 0,
+        report_only_bytes: 0,
+        bytes_incomplete: false,
+        by_class: [],
+      },
+      scan: {
+        dirs_visited: 4102,
+        truncated: false,
+        read_errors: [],
+        read_errors_total: 0,
+        entry_errors: 0,
+        reparse_dirs_skipped: 0,
+        depth_limited_dirs: 0,
+        roots_with_unknown_bytes: 0,
+        roots_with_partial_bytes: 0,
+      },
+      census_status: "fresh",
+    });
+    const { container } = render(<DiskSection />);
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-disk-empty="measured"]')
+      ).not.toBeNull()
+    );
+    expect(
+      container.querySelector('[data-disk-empty="incomplete"]')
+    ).toBeNull();
+  });
+
   it("renders an empty list with bytes_incomplete but no scan block distinctly", async () => {
     // Permission-denied subtrees: the ONLY signal is `bytes_incomplete`.
     runnerFetch.mockResolvedValue({
