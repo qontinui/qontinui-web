@@ -361,11 +361,48 @@ function MyTenantsCard() {
       defaultOpen={false}
       storageKey="coord-members-my-tenants"
       summary={
-        data ? (
-          <Badge variant="outline" className="font-mono text-[11px]">
-            {homeTenantName(data)}
-          </Badge>
-        ) : undefined
+        <Badge
+          variant="outline"
+          // `error !== null`, not the sibling badges' `error ?`, and matching
+          // the `StatCluster` predicate above. `setError` stores
+          // `err.message`, which is `""` for `new Error()` — falsy, so `error ?`
+          // would drop the amber while the text below still read "unknown".
+          // One predicate for the tone and the word, so they cannot disagree.
+          className={`font-mono text-[11px]${
+            error !== null ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-members-my-tenants-summary"
+        >
+          {/* The third `defaultOpen={false}` panel on this page, and the one
+              the sibling badges' fix skipped. `summary` renders inside
+              `CollapsibleTrigger` (`CollapsiblePanel.tsx:138`), so while this
+              panel is folded the error paragraph below is unmounted by Radix
+              and this badge is the whole story an operator gets.
+
+              `data ? <Badge/> : undefined` made the badge VANISH on a failed
+              read. That is not a wrong count — it is no signal at all, and a
+              header indistinguishable from one that is merely still loading.
+              The comment above this component promises the opposite: the
+              panel folds, its signal does not. Silence is the fabricated
+              absence in its quietest form, and the worst of the four shapes,
+              because there is nothing for an operator to disbelieve.
+
+              `–` and `unknown` are the two markers the mappings and groups
+              badges already use, so all three collapsed headers now answer in
+              one vocabulary rather than two.
+
+              The trailing `–` is unreachable — `loading` starts `true` and the
+              `finally` only clears it after `data` or `error` is set — but the
+              type is `MyTenantsResponse | null`, and spelling the arm is
+              cheaper than a non-null assertion. */}
+          {loading
+            ? "–"
+            : error !== null
+              ? "unknown"
+              : data
+                ? homeTenantName(data)
+                : "–"}
+        </Badge>
       }
       contentClassName="space-y-3"
     >
@@ -1680,7 +1717,16 @@ function CognitoGroupItem({
           >
             <Badge
               variant={membersError ? "outline" : "secondary"}
-              className="text-[0.7rem] font-normal"
+              // Amber on the unknown arm, matching the `tenant mappings
+              // unknown` badge rendered immediately to its right and the two
+              // collapsed panel headers. Both halves of this blast radius fail
+              // the same way and are read in one glance, so they must not
+              // announce it in two different tones: `members unknown` in the
+              // default foreground beside an amber `tenant mappings unknown`
+              // reads as one caveat and one fact.
+              className={`text-[0.7rem] font-normal${
+                membersError ? " text-amber-600 dark:text-amber-400" : ""
+              }`}
               data-testid={`cognito-group-members-count-${group.group_name}`}
             >
               <Users className="h-3 w-3" />
