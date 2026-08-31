@@ -1000,3 +1000,381 @@ class TestListWrites:
         assert body["writes"][0]["version_number"] == 3
         # `total` reports what was collected, not what was returned.
         assert body["total"] == 2
+
+
+# ---------------------------------------------------------------------------
+# The page slice must not be able to drop a classified loosening
+# ---------------------------------------------------------------------------
+
+_DOC = {
+    "documents": [
+        {
+            "kind": "policy",
+            "name": "alpha",
+            "description": "Alpha",
+            "updated_at": "2026-08-29T12:00:00Z",
+        }
+    ],
+    "total": 1,
+}
+
+
+def _version(number: int, day: int, **annotations) -> dict:
+    """One version row. ``day`` orders them: a higher day is more recent.
+
+    Annotations are passed through as coord would send them, so a test that
+    omits ``loosening`` produces a row where the KEY IS ABSENT — the shape of a
+    coord build that does not classify, which is a different fact from
+    ``loosening: false`` and must stay different all the way down.
+    """
+    return {
+        "version_number": number,
+        "description": None,
+        "edited_by": "agent:x",
+        "created_at": f"2026-08-{day:02d}T12:00:00Z",
+        **annotations,
+    }
+
+
+def _fetch_writes(auth_client: TestClient, versions: list[dict], query: str = ""):
+    with _patch_httpx() as MockClient:
+        instance = AsyncMock()
+        instance.get.side_effect = [
+            _mock_response(json_data=_DOC),
+            _mock_response(
+                json_data=_versions_payload(
+                    max(v["version_number"] for v in versions), versions
+                )
+            ),
+        ]
+        _configure_mock_client(MockClient, instance)
+        resp = auth_client.get(f"{WRITES}{query}")
+    assert resp.status_code == 200
+    return resp.json()
+
+
+class TestLooseningsSurviveThePageSlice:
+    """The feed's whole purpose is that a write widening agent authority is SEEN.
+
+    The client promotes flagged rows to the top of what it received and the page
+    says they are "marked and sorted to the top"; it requests a fixed
+    ``?limit=40`` and offers no paging control. So a loosening older than the
+    newest ``limit`` writes has to survive the server's slice, or it is
+    invisible on the one surface built to show it — and no client-side sort can
+    recover a row that never arrived.
+    """
+
+    def test_an_old_loosening_is_kept_and_a_newer_ordinary_write_is_dropped(
+        self, auth_client: TestClient
+    ):
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(3, 29),
+                _version(2, 28),
+                _version(1, 27, loosening=True),
+            ],
+            "?limit=2",
+        )
+
+        # v1 is the OLDEST write and would have been the first cut by a pure
+        # recency slice. It is the one row that must not be cut.
+        assert [w["version_number"] for w in body["writes"]] == [1, 3]
+        assert body["total"] == 3
+
+    def test_flagged_lead_the_page_and_recency_survives_inside_each_group(
+        self, auth_client: TestClient
+    ):
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(4, 29),
+                _version(3, 28, loosening=True),
+                _version(2, 27),
+                _version(1, 26, loosening=True),
+            ],
+        )
+
+        # A stable partition, not a re-sort: flagged newest-first, then the rest
+        # newest-first. Identical to the client's `sortWritesForFeed`.
+        assert [w["version_number"] for w in body["writes"]] == [3, 1, 4, 2]
+        assert "limited" not in body
+
+    def test_a_null_loosening_is_not_a_loosening(self, auth_client: TestClient):
+        """``None`` is forwarded verbatim but is NOT a verdict.
+
+        Guards the ``is True`` rule against the tempting ``"loosening" in write``
+        or ``.get("loosening") is not None`` spellings, either of which would
+        promote a row coord never classified — and would then badge nothing,
+        since the client requires ``=== true``.
+        """
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29), _version(1, 27, loosening=None)],
+            "?limit=1",
+        )
+
+        assert [w["version_number"] for w in body["writes"]] == [2]
+
+    def test_false_is_not_a_loosening_either(self, auth_client: TestClient):
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29), _version(1, 27, loosening=False)],
+            "?limit=1",
+        )
+
+        assert [w["version_number"] for w in body["writes"]] == [2]
+
+
+class TestLimitedCaveatReportsDirection:
+    """``limited`` says WHAT the slice dropped, not only how many.
+
+    "Showing the 40 most recent writes of 137" is true and answers the wrong
+    question: it does not say whether one of the 97 widened agent authority, and
+    the operator cannot go and look.
+    """
+
+    def test_says_the_page_carries_every_loosening(self, auth_client: TestClient):
+        body = _fetch_writes(
+            auth_client,
+            [_version(3, 29), _version(2, 28), _version(1, 27, loosening=True)],
+            "?limit=2",
+        )
+
+        limited = body["limited"]
+        assert limited == (
+            "Showing 2 of 3 writes: the one write this feed read that coord "
+            "classified as widening what agents may do, whatever its age, then "
+            "the most recent of the rest."
+        )
+
+    def test_says_the_page_carries_every_loosening_plural(
+        self, auth_client: TestClient
+    ):
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(4, 29),
+                _version(3, 28),
+                _version(2, 27, loosening=True),
+                _version(1, 26, loosening=True),
+            ],
+            "?limit=3",
+        )
+
+        # "whatever their age" is the load-bearing half: it tells the operator
+        # that a loosening missing from this list does not exist, rather than
+        # having scrolled off the recent window.
+        assert body["limited"] == (
+            "Showing 3 of 4 writes: all 2 writes this feed read that coord "
+            "classified as widening what agents may do, whatever their age, then "
+            "the most recent of the rest."
+        )
+        assert [w["version_number"] for w in body["writes"]] == [2, 1, 4]
+
+    def test_a_page_that_is_all_loosenings_does_not_promise_a_rest(
+        self, auth_client: TestClient
+    ):
+        """The ``flagged_total == limit`` boundary.
+
+        Nothing flagged is dropped here, so a caveat keyed on "did the slice cut
+        a loosening" falls into the some-fit arm — whose "then the most recent of
+        the rest" names rows that are not on the page, and which never says the
+        unflagged writes were cut at all. The shape has to be keyed on what the
+        page IS, not on what was dropped.
+        """
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(3, 29, loosening=True),
+                _version(2, 28, loosening=True),
+                _version(1, 27),
+            ],
+            "?limit=2",
+        )
+
+        assert [w["version_number"] for w in body["writes"]] == [3, 2]
+        assert body["limited"] == (
+            "Showing 2 of 3 writes, every one of them classified as widening what "
+            "agents may do. No write that was not so classified is shown."
+        )
+
+    def test_the_all_loosenings_page_still_names_the_ones_that_did_not_fit(
+        self, auth_client: TestClient
+    ):
+        """One past that boundary: the page is still 100% flagged, but now a
+        loosening was dropped too and has to be counted."""
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(4, 29, loosening=True),
+                _version(3, 28, loosening=True),
+                _version(2, 27, loosening=True),
+                _version(1, 26),
+            ],
+            "?limit=2",
+        )
+
+        assert body["limited"] == (
+            "Showing 2 of 4 writes, every one of them classified as widening what "
+            "agents may do. 1 further such write is not shown, and neither is any "
+            "write that was not so classified."
+        )
+
+    def test_the_kept_loosening_can_be_the_oldest_write_in_the_corpus(
+        self, auth_client: TestClient
+    ):
+        """The sharpest form of the boundary: a one-row page holding the OLDEST
+        write. The caveat must not tell the operator the most recent of the
+        remainder is also on screen."""
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29), _version(1, 27, loosening=True)],
+            "?limit=1",
+        )
+
+        assert [w["version_number"] for w in body["writes"]] == [1]
+        assert "then the most recent of the rest" not in body["limited"]
+        assert body["limited"] == (
+            "Showing 1 of 2 writes, every one of them classified as widening what "
+            "agents may do. No write that was not so classified is shown."
+        )
+
+    def test_names_the_loosenings_that_did_not_fit(self, auth_client: TestClient):
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(3, 29, loosening=True),
+                _version(2, 28, loosening=True),
+                _version(1, 27, loosening=True),
+            ],
+            "?limit=2",
+        )
+
+        limited = body["limited"]
+        # Every row shown is flagged, so the remainder has to be named rather
+        # than left to be inferred from a count of "writes".
+        assert "every one of them classified as widening" in limited
+        assert "1 further such write is not shown" in limited
+        assert [w["version_number"] for w in body["writes"]] == [3, 2]
+
+    def test_none_flagged_is_stated_across_the_whole_corpus_when_classified(
+        self, auth_client: TestClient
+    ):
+        """``false`` is a VERDICT, so "none of them" is a real reassurance."""
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29, loosening=False), _version(1, 27, loosening=False)],
+            "?limit=1",
+        )
+
+        limited = body["limited"]
+        assert "Showing the 1 most recent write of 2." in limited
+        assert "None of the 2 this feed read, shown or not" in limited
+
+    def test_absent_classification_makes_no_claim_about_direction(
+        self, auth_client: TestClient
+    ):
+        """The pre-classification coord build. Absent is not ``false``.
+
+        This arm must say nothing about widening at all: there is no verdict to
+        report, and printing the reassurance above here would manufacture a
+        safety claim out of a server that does not classify.
+        """
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29), _version(1, 27)],
+            "?limit=1",
+        )
+
+        limited = body["limited"]
+        assert limited == "Showing the 1 most recent write of 2."
+        assert "widening" not in limited
+
+    def test_a_null_annotation_does_not_license_the_reassurance(
+        self, auth_client: TestClient
+    ):
+        """``null`` is FORWARDED but is not a verdict, so it licenses nothing.
+
+        The trap this pins: ``_write_annotations`` decides what to forward using
+        key MEMBERSHIP, which is right for a proxy reporting its upstream
+        verbatim. Reusing that same test to answer "was a verdict given?" would
+        report a corpus of ``loosening: null`` rows as classified-and-clean —
+        the unknown-as-fact failure, wearing the spelling that looks consistent
+        with the layer below. Arm three mirrors the client's
+        ``looseningClassificationPresent`` (``=== true || === false``) instead.
+        """
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29, loosening=None), _version(1, 27, loosening=None)],
+            "?limit=1",
+        )
+
+        limited = body["limited"]
+        assert limited == "Showing the 1 most recent write of 2."
+        assert "widening" not in limited
+        # The null itself still reaches the client untouched — forwarding and
+        # counting-as-a-verdict are separate questions and only the second changed.
+        assert body["writes"][0]["loosening"] is None
+
+    def test_a_partly_classified_corpus_scopes_the_reassurance_to_the_verdicts(
+        self, auth_client: TestClient
+    ):
+        """One classified row must NOT license a verdict on the whole corpus.
+
+        This is the ordinary state the day the classifier deploys, and one
+        document's history can span both sides of it. A sentence counting
+        ``len(writes)`` would read as "coord looked at all 2 and found nothing",
+        when it looked at one. The unclassified remainder is counted, not
+        absorbed — the client's equivalent line only ever claims "on this page",
+        and this one reaches further, so it qualifies further.
+        """
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29, loosening=False), _version(1, 27)],
+            "?limit=1",
+        )
+
+        limited = body["limited"]
+        assert limited == (
+            "Showing the 1 most recent write of 2. None of the 1 write coord "
+            "classified is a widening, but 1 write in this feed carries no "
+            "verdict either way."
+        )
+        assert "None of the 2" not in limited
+
+    def test_the_unqualified_reassurance_needs_every_row_classified(
+        self, auth_client: TestClient
+    ):
+        """The corpus-wide sentence is earned only when there is no silent row."""
+        body = _fetch_writes(
+            auth_client,
+            [
+                _version(3, 29, loosening=False),
+                _version(2, 28, loosening=False),
+                _version(1, 27, loosening=False),
+            ],
+            "?limit=1",
+        )
+
+        assert body["limited"] == (
+            "Showing the 1 most recent write of 3. None of the 3 this feed read, "
+            "shown or not, is classified as widening what agents may do."
+        )
+
+    def test_a_null_row_counts_as_silent_not_as_a_verdict(
+        self, auth_client: TestClient
+    ):
+        """``null`` is forwarded but is not a verdict, so it lands in the
+        unclassified remainder rather than inflating the classified count."""
+        body = _fetch_writes(
+            auth_client,
+            [_version(2, 29, loosening=False), _version(1, 27, loosening=None)],
+            "?limit=1",
+        )
+
+        assert body["limited"] == (
+            "Showing the 1 most recent write of 2. None of the 1 write coord "
+            "classified is a widening, but 1 write in this feed carries no "
+            "verdict either way."
+        )
