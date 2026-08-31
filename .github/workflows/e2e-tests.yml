@@ -198,7 +198,19 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg15
+        # pgvector/pgvector:pg16 matches production — AWS RDS `qontinui-staging`,
+        # engine 16.13, us-east-1 — and every sibling workflow that provisions a
+        # Postgres service (backend-ci, backend-coverage-producer,
+        # memory-recall-eval, migration-reversal, spec-ci, style-gate,
+        # cross-browser-survey). This job's `Run database migrations`
+        # step runs `alembic upgrade heads` against this service, so this pin
+        # decides which major the migration graph is exercised on; keeping it
+        # behind prod means CI clears migrations on a version prod never runs.
+        # pg16 is the proven target: migration-reversal.yml replays the WHOLE
+        # graph up->down->up on pg16. The pgvector-bundled image rather than
+        # stock postgres:16 is required because the squashed initial schema
+        # creates `vector` columns (see backend-ci.yml for the full rationale).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: test_user
           POSTGRES_PASSWORD: test_password
