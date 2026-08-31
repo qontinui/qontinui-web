@@ -40,6 +40,33 @@
 
 import type { ReactNode } from "react";
 
+/**
+ * Would React render anything at all for this node?
+ *
+ * The wrapper below is conditional so an absent slot still leaves no gap, and
+ * getting the condition slightly wrong reintroduces the gap in exactly the
+ * cases nobody tests. React renders NOTHING for six values — `null`,
+ * `undefined`, `true`, `false`, `""` and an empty array — and the tempting
+ * `raw != null && raw !== false` covers three of them. The other three arrive
+ * by ordinary means: `cond && <div/>` yields `false`, but `str && <div/>`
+ * yields `""` when the string is empty, and `list.length > 0 && …` inside a
+ * `||` chain can yield either. `<AlertRow>`'s `raw` is exactly that shape over
+ * a `device_id` typed `string | null`.
+ *
+ * An empty wrapper is not visually free: it is a non-first child of a
+ * `space-y-3` container, so it draws a 12px gap at the foot of every panel it
+ * appears in.
+ */
+function rendersSomething(node: ReactNode): boolean {
+  if (node == null || typeof node === "boolean" || node === "") return false;
+  // Recursive, not `length > 0`: `[a && <X/>, b && <Y/>]` with both conditions
+  // false is `[false, false]` — two entries, nothing rendered. No `raw=` call
+  // site passes an array today, so this is the cheap way to keep the guard
+  // honest rather than a fix for a live bug.
+  if (Array.isArray(node)) return node.some(rendersSomething);
+  return true;
+}
+
 export interface RecordDetailProps {
   /** Plain-language why. First, because it is what the click was for. */
   why?: ReactNode;
@@ -78,7 +105,16 @@ export function RecordDetail({
       {problems}
       {actions}
       {history}
-      {raw}
+      {/*
+        The one slot that gets a wrapper, and only when it is occupied.
+        `data-console-raw` is R8's slot made addressable: a style rule, a spec
+        selector or a `/visual-audit` assertion can now find "the raw-ids
+        block" instead of guessing at a class string. Rendered conditionally so
+        the module doc's promise above still holds — an absent slot costs
+        nothing and leaves no gap — and the wrapper is one child either way, so
+        the container's `space-y-3` spaces it exactly as the bare node was.
+      */}
+      {rendersSomething(raw) && <div data-console-raw="">{raw}</div>}
     </div>
   );
 }
