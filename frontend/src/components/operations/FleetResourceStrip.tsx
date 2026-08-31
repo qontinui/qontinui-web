@@ -64,9 +64,15 @@
  *   exists to watch. Its unknown-ness also does NOT destroy the memory and
  *   disk verdicts on the same row; coord skips grading an axis nothing
  *   measured, and the row keeps the verdicts it can honestly make.
- * - A `wsl` lane's headroom is never shown as spendable on its own:
- *   `pageReporting=true` couples the lanes, so the coupled
- *   `min(wsl_free, host_free_commit)` is shown beside the raw figure.
+ * - A `wsl` lane's headroom is never shown as spendable on its own: WSL handing
+ *   idle pages back to Windows couples the lanes, so the coupled
+ *   `min(wsl_free, host_free_commit)` is shown beside the raw figure. Do NOT
+ *   re-attribute that reclaim to a `.wslconfig` `pageReporting=true` key: on
+ *   WSL 2.7.12.0 the key is not recognised at all, and neither fleet box sets
+ *   it. That reclaim is on by *default* remains presumed, not measured — an
+ *   assumption this surface rests on. See
+ *   `qontinui-claude-config/knowledge-base/qontinui-specific/machine-resources.md`
+ *   §2.
  * - Every figure is a **ratio against its own ceiling**; bare byte counts only
  *   ever appear next to the ratio that gives them meaning.
  */
@@ -1035,7 +1041,7 @@ function MemoryCell({ row }: { row: StripRow }) {
             </TooltipTrigger>
             <TooltipContent className="max-w-[22rem] text-[11px]">
               {
-                ".wslconfig sets pageReporting=true, so WSL returns idle pages to Windows and its `memory=` setting is a CEILING, not a reservation. Real WSL headroom is min(WSL free, host free commit) — a WSL lane reading 9 GB free beside a host at 900 MB free commit is showing memory that cannot be spent."
+                "WSL returns idle pages to Windows, so `memory=` in .wslconfig is a CEILING, not a reservation. Real WSL headroom is min(WSL free, host free commit) — a WSL lane reading 9 GB free beside a host at 900 MB free commit is showing memory that cannot be spent."
               }
             </TooltipContent>
           </Tooltip>
@@ -1638,8 +1644,8 @@ export function FleetResourceStrip({
           <Activity className="h-3 w-3 mt-0.5 shrink-0" />
           <span>
             Lanes are never summed. Host and WSL measure different pools, and
-            because <code>pageReporting=true</code> couples them, WSL headroom
-            is only spendable up to the host&apos;s free commit.
+            because WSL hands idle pages back to Windows the two are coupled, so
+            WSL headroom is only spendable up to the host&apos;s free commit.
           </span>
         </p>
       </CollapsiblePanel>
