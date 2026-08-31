@@ -31,7 +31,12 @@ class SecretsManager:
         self.use_secrets_manager = (
             os.getenv("USE_AWS_SECRETS_MANAGER", "false").lower() == "true"
         )
-        self.aws_region = os.getenv("AWS_REGION", "eu-central-1")
+        # us-east-1: every Secrets Manager secret this fleet owns lives there
+        # (verified 2026-08-30 -- `list-secrets` returns 29 in us-east-1 and
+        # ZERO in eu-central-1, which holds only the SSM Parameter Store).
+        # A wrong region here fails silently: the client builds fine and every
+        # lookup then misses.
+        self.aws_region = os.getenv("AWS_REGION", "us-east-1")
         self._client = None
 
     @property

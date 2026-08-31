@@ -105,7 +105,7 @@ import {
   RecordDetail,
   StatCluster,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
   type Stat,
 } from "@/components/console";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
@@ -533,7 +533,7 @@ function MembersTable({
                       onClick={() =>
                         setOpenMember(expanded ? null : op.operator_id)
                       }
-                      className={`cursor-pointer ${rowAccentClass(status)}`}
+                      {...rowAccentProps(status, "cursor-pointer")}
                     >
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-1.5">

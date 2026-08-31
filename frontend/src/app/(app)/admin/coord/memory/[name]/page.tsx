@@ -88,7 +88,7 @@ import {
   absoluteTime,
   isNotFoundError,
   relativeTime,
-  rowAccentClass,
+  rowAccentProps,
 } from "@/components/console";
 import {
   MEMORY_STATUS_PALETTE,
@@ -276,12 +276,10 @@ export default function CoordMemoryDetailPage() {
                 under a ~72px card header. */}
             <div
               data-testid="coord-memory-meta"
-              className={[
-                "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2",
-                rowAccentClass(deriveMemoryStatus(memory)),
-              ]
-                .filter(Boolean)
-                .join(" ")}
+              {...rowAccentProps(
+                deriveMemoryStatus(memory),
+                "rounded-lg border border-border bg-card/30 px-4 py-3 space-y-2"
+              )}
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
