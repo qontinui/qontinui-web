@@ -47,6 +47,13 @@ import {
   Snowflake,
 } from "lucide-react";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
+import {
+  AUTHOR_RED,
+  INERT,
+  WAITING_AMBER,
+  rowAccentProps,
+  type Attention,
+} from "@/components/console";
 import { createLogger } from "@/lib/logger";
 import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
@@ -90,17 +97,47 @@ const SEVERITY_TEXT: Record<PauseSeverity, string> = {
   info: "text-muted-foreground",
 };
 
+// Imported, not re-typed: §4.1 says nothing outside `statusRow` may mint a red
+// or an amber, and these three were verbatim copies of `AUTHOR_RED`,
+// `WAITING_AMBER` and `INERT`. A copy drifts silently — `paletteDisagreements`
+// only inspects a kind→class table, and this surface has none.
 const SEVERITY_CHIP: Record<PauseSeverity, string> = {
-  blocking: "bg-red-500/15 text-red-200 border-red-500/35",
-  waiting: "bg-amber-500/15 text-amber-200 border-amber-500/30",
-  info: "bg-muted text-muted-foreground border-border",
+  blocking: AUTHOR_RED,
+  waiting: WAITING_AMBER,
+  info: INERT,
 };
 
-function rowAccent(severity: PauseSeverity, active: boolean): string {
-  if (severity === "blocking") return "border-l-2 border-l-red-500/80";
-  if (severity === "waiting") return "border-l-2 border-l-amber-500/80";
-  if (active) return "border-l-2 border-l-blue-500/60";
-  return "border-l-2 border-l-transparent";
+/** This surface's severity vocabulary, in the console's own terms. */
+const SEVERITY_ATTENTION: Record<PauseSeverity, Attention> = {
+  blocking: "author",
+  waiting: "waiting",
+  info: "none",
+};
+
+/**
+ * The row's accent, and the attention it encodes, from one call.
+ *
+ * The two severity-bearing arms delegate to the shared accent — they were
+ * hand-spelled byte-copies of it. The `active` arm is this surface's own: a
+ * blue "something is happening here right now" edge that no other console row
+ * has and that R3's vocabulary deliberately does not cover, since nobody must
+ * act on it. It is therefore NOT an attention, and the row reports `none`.
+ */
+function rowAccentFor(
+  severity: PauseSeverity,
+  active: boolean,
+  extra: string
+): { className: string; "data-attention": Attention } {
+  const attention = SEVERITY_ATTENTION[severity];
+  if (attention !== "none") return rowAccentProps({ attention }, extra);
+  return {
+    className: `${extra} ${
+      active
+        ? "border-l-2 border-l-blue-500/60"
+        : "border-l-2 border-l-transparent"
+    }`,
+    "data-attention": "none",
+  };
 }
 
 /**
@@ -741,10 +778,34 @@ function RepoRow({
   const active = row.activity.kind !== "idle";
   return (
     <div
-      className={`rounded-md border border-border bg-card px-2.5 py-2 ${rowAccent(
+      {...rowAccentFor(
         row.severity,
-        active
-      )}`}
+        active,
+        "rounded-md border border-border bg-card px-2.5 py-2"
+      )}
+      // NO `data-console-row` here, deliberately — and the reason is the same
+      // one that makes the marker worth having.
+      //
+      // Its contract is "the element that owns the row's padding, font size
+      // and accent" (`RecordRow`), because that is what a density or
+      // font-size rule is about. This `<div>` owns the padding and the accent
+      // but declares no font size, and — unlike `<RecordRow>` and
+      // `agent-registry`, which keep the detail as a SIBLING — it also
+      // contains the expanded `<RepoDetail>`, so with a row open the marked
+      // box is the whole panel.
+      //
+      // Marking it would raise the selector's count and lower its meaning:
+      // a rule asserting `font-size: .875rem` would report drift on a surface
+      // whose ambient size is 16px, and one asserting a row's box would be
+      // measuring a detail panel. A selector that matches the wrong element is
+      // the same defect class as one that matches nothing — it just fails
+      // loudly instead of silently. `data-attention` above IS emitted: that
+      // one is about severity, which this row does carry.
+      //
+      // The fix is to migrate this row onto `<RecordRow>`, which is Phase 3
+      // shaped work rather than Phase 4's precondition; it inherits the marker
+      // for free at that point. Recorded in the plan's Phase 4 section so the
+      // gap is a measurement rather than an oversight.
       data-testid={`train-row-${row.repo}`}
       data-activity={row.activity.kind}
       data-severity={row.severity}

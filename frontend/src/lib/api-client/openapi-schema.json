@@ -21338,6 +21338,166 @@
         "title": "FlagAnchor",
         "type": "object"
       },
+      "FleetDeferredQuestionListResponse": {
+        "description": "Envelope for the fleet-wide deferred-question read.\n\nDeliberately an envelope rather than a bare list: an empty ``questions``\narray is then unambiguously \"nothing is pending\", distinguishable from a\ntransport failure at the client. Same reason\n``GET /task-runs/running`` carries its ``scope``.",
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/FleetDeferredQuestionResponse"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "questions",
+          "total"
+        ],
+        "title": "FleetDeferredQuestionListResponse",
+        "type": "object"
+      },
+      "FleetDeferredQuestionResponse": {
+        "description": "A deferred question plus the task-run context needed to act on it.\n\nThe per-task-run list route already answers \"what is pending on THIS run\".\nThe fleet-wide question \u2014 \"what is waiting for me anywhere\" \u2014 needs to name\nwhich run and which machine raised it, or a reviewer holding a list of bare\nquestions cannot tell two runs apart.\n\n``runner_id`` is the runner instance identifier recorded on the task run;\nit is nullable because a task run synced before the column was populated\ngenuinely does not know, and inventing a machine name would be worse than\nsaying so.",
+        "properties": {
+          "auto_decision_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Decision Detail"
+          },
+          "auto_decision_type": {
+            "title": "Auto Decision Type",
+            "type": "string"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "context_json": {
+            "title": "Context Json",
+            "type": "string"
+          },
+          "contingent_iterations": {
+            "title": "Contingent Iterations",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "git_checkpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Checkpoint"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "iteration": {
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewer_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Comment"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "runner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runner Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_run_id": {
+            "format": "uuid",
+            "title": "Task Run Id",
+            "type": "string"
+          },
+          "task_run_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Run Name"
+          }
+        },
+        "required": [
+          "id",
+          "task_run_id",
+          "iteration",
+          "question",
+          "context_json",
+          "auto_decision_type",
+          "auto_decision_detail",
+          "confidence",
+          "risk_level",
+          "status",
+          "git_checkpoint",
+          "contingent_iterations",
+          "reviewer_comment",
+          "created_at",
+          "reviewed_at"
+        ],
+        "title": "FleetDeferredQuestionResponse",
+        "type": "object"
+      },
       "FleetPolicyPut": {
         "additionalProperties": false,
         "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
@@ -81372,7 +81532,7 @@
     },
     "/api/v1/operations/coord/prompt-document-writes": {
       "get": {
-        "description": "Recently landed prompt-document writes across the tenant, newest first.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
+        "description": "Recently landed prompt-document writes across the tenant, newest first \u2014\nexcept that classified loosenings are never cut by the page slice.\n\n**Ordering, precisely.** Writes are sorted newest-first, then every write\ncoord classified as widening what agents may do is lifted above the rest as\na stable partition, and the ``limit`` slice is taken from THAT. So the page\nis \"every loosening, then the most recent of the remainder\" rather than\n\"the most recent N\". Recency order survives inside each group, and the\nclient re-derives the identical partition (``_lib/writes.ts``\n``sortWritesForFeed``), so this changes what is IN the page, not how it is\nlaid out. Below the limit it is a pure reorder with no visible effect.\n\nThe reason is not tidiness. The client promotes flagged rows to the top of\nwhat it received and the page tells the operator they are \"marked and sorted\nto the top\"; the page requests a fixed ``?limit=40`` and offers no paging.\nA loosening older than the newest forty writes would therefore be dropped\nhere, promoted by nobody, and unreachable \u2014 invisible on the one surface\nbuilt to show it. ``limited`` reports the direction of what the slice did\ndrop, not only how many.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
         "operationId": "api_v1_operations_coord_prompt_document_writes_get",
         "parameters": [
           {
@@ -105513,6 +105673,71 @@
           }
         ],
         "summary": "Create a new task run",
+        "tags": [
+          "task-runs"
+        ]
+      }
+    },
+    "/api/v1/task-runs/deferred-questions/pending": {
+      "get": {
+        "description": "Deferred questions awaiting review across EVERY task run the caller owns, newest last. The fleet-wide counterpart to `/task-runs/{task_run_id}/deferred-questions`.",
+        "operationId": "api_v1_task_runs_deferred_questions_pending_get",
+        "parameters": [
+          {
+            "description": "Review status to filter on. Pass an empty string for all.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "description": "Review status to filter on. Pass an empty string for all.",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum questions to return",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "description": "Maximum questions to return",
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetDeferredQuestionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Fleet-wide deferred-question queue",
         "tags": [
           "task-runs"
         ]

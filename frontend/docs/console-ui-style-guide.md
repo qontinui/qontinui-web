@@ -584,6 +584,56 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > stated rather than implied, because "their tests pin every arm" is exactly
 > the kind of unenforced claim this section exists to stop.
 >
+> **A route taken at "R9 only" is not thereby exempt from R6, and reading it
+> that way has now cost three fixes.** `/admin/coord/prompt-injections` was
+> classed R9-only by the §4 census correction because its table already
+> satisfied D2/R5 and it has no severity to encode — both true, and both about
+> LAYOUT. It shipped all three arms above anyway: a failed first read printing
+> *"No prompt injections matching the current filters"* under its own *"Failed
+> to load"* line, a count badge reading `0`, and a failed refetch presenting
+> stale rows as current. `/plan-library`, migrated by the SAME PR (#1036),
+> produced the right OUTPUT for both arms it can have — so the wave had the
+> correct wording in front of it and applied it only where the migration
+> happened to be large. The rule:
+> **R6's failed-read arms are keyed on whether a surface READS, not on how much
+> of the style guide its migration touched.** Fixed with a route-level test
+> (`PromptInjectionsDashboard.test.tsx`) in the post-merge follow-up to #1036.
+>
+> **`/plan-library` is the right output and NOT yet the right derivation** —
+> recorded so it is not cited as an exemplar wholesale. It has no count badge
+> at all (its only `Badge` is the per-row status one), so the `–`-not-`0`
+> clause does not arise there; and its unknown predicate is
+> `items.length === 0 && !error`, the list-is-empty spelling this section
+> forbids four paragraphs above. Same standing as `/admin/coord/questions`:
+> correct today, not yet converted to `readIsUnknown`, and not an exemption.
+>
+> **A filter set is a list route's param, and the reset rule above applies to
+> it.** That clause is written for a detail route's id; the list analogue is
+> the filter set, and getting it wrong re-opens arm 1 on every filter change
+> rather than only on first load. `/prompt-injections`' first cut carried a
+> global `loaded` boolean, so a read that failed under NEW filters kept
+> `unknown` false, took the stale arm, and rendered the PREVIOUS filters' rows
+> beneath filter chrome that said otherwise — an answer to a different question
+> presented as a stale answer to this one, which is worse than the defect being
+> fixed, because the unfixed banner at least claimed nothing about the rows'
+> provenance. Stamp the stored answer with the filter set that produced it and
+> DERIVE the rows from whether that stamp still matches: a boolean cannot
+> express the difference, and clearing rows in an effect only narrows the
+> window. A list read also needs a **sequence guard** — an undebounced filter
+> input issues overlapping reads, and a superseded rejection landing after a
+> newer success paints "stale" over rows that are current, the same lie
+> inverted.
+>
+> **The 404 split branches on evidence, not on a fixed predicate.**
+> `isNotFoundError` recovers a status by parsing `httpClient.get`'s message
+> string, which is the only place it survives for THAT client. A surface whose
+> client already carries the status as a field — `prompt-injections-api.ts`
+> raises a `PromptInjectionsApiError` with `.status` — must branch on the
+> field. Reaching for the primitive there produces a split that silently never
+> matches and sends every genuine absence down the outage arm, which is the
+> inversion this clause exists to prevent. Import the predicate when the
+> message is all you have; prefer the structured status when you have it.
+>
 > **Retaining a record across a param change defeats all of this.** Both arms
 > live behind `record === null`, so a route that keeps the previous record when
 > the next id 404s renders the OLD record under the NEW heading and reaches

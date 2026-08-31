@@ -14,7 +14,12 @@ to pin the shape here rather than after the fact.
 What is asserted, and why each one can break silently:
 
 1. **Both tiers get the column.** Per-repo granularity is what Phase 2
-   graduates on — one repo at a time through ``rollout_state`` — and the plan
+   graduates on — one repo at a time by writing
+   ``tenant_repo_profiles.ff_land_head_sync_enabled``, NOT through the
+   ``rollout_state`` tri-state this test used to name: that was retired and its
+   columns dropped from both of these tables by
+   ``merge_enabled_02_drop_rollout_state``, and it wrote ``rollout_state``
+   rather than this column even while it existed. And the plan
    calls it "the point, not a nicety" because the measured benefit ranges from
    87.0% (``qontinui-runner``) to 9.7% (``ui-bridge``). A tenant-only widening
    raises no error and no warning: coord's resolver would simply never find a

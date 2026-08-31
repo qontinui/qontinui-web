@@ -105,7 +105,7 @@ import {
   RecordDetail,
   StatCluster,
   StatusBadge,
-  rowAccentClass,
+  rowAccentProps,
   type Stat,
 } from "@/components/console";
 import { deriveMemberStatus, MEMBER_STATUS_PALETTE } from "./memberStatus";
@@ -230,6 +230,50 @@ interface MyTenantsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Payload shape — a successful STATUS is not a successful READ
+// ---------------------------------------------------------------------------
+
+/**
+ * The list a 200 promised, or a throw.
+ *
+ * Every read on this page renders `loading` → `error` → `rows.length === 0` →
+ * the table. That ordering is right, and it is not the gap. The gap is one
+ * layer up: `setRows(json.things ?? [])` turns a body that never carried the
+ * list into a **successful, empty** read — `error` stays null, the error arm is
+ * skipped, and the page prints its absence copy for a table it never saw. The
+ * `?? []` is dead per the wire types (every list field here is declared
+ * non-optional) and live at runtime, which is exactly why it survived review.
+ *
+ * A non-array value is worse than a missing one: `.length` succeeds on a
+ * string, so the `=== 0` guard does not fire, the value reaches `.map()`, and
+ * the panel throws.
+ *
+ * The predicate lives here rather than at each call site for the reason
+ * `console/readFailure.ts` gives for its own: seven sites each spelling it
+ * themselves will drift, and the drift is invisible because every spelling
+ * looks right.
+ *
+ * It stays local for one reason only — no second page needs it yet. NOT
+ * because the `console/` barrel is off-limits to wire concerns: that barrel
+ * says "nothing here fetches, polls, or knows a route", but it exports
+ * `readFailure.ts`, whose `isNotFoundError` parses an HTTP status out of a
+ * `GET <url> failed: <status> - <body>` message. So the barrel already holds a
+ * predicate about a wire body, and citing "presentation only" as the reason
+ * would be a rule this file's own precedent breaks. Promote this the first
+ * time a second consumer appears.
+ *
+ * Throwing is the whole mechanism: each caller already has a `catch` that sets
+ * the error state, so refusing the body here routes it to the unknown arm the
+ * page already renders. No caller learns a new failure mode.
+ */
+function requireRows<T>(value: unknown, what: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`malformed ${what} payload`);
+  }
+  return value as T[];
+}
+
+// ---------------------------------------------------------------------------
 // Tenant slug validation (matches the backend / coord constraint).
 // ---------------------------------------------------------------------------
 
@@ -250,7 +294,44 @@ function MyTenantsCard() {
     try {
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/my-tenants`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData((await res.json()) as MyTenantsResponse);
+      const json = (await res.json()) as MyTenantsResponse | null;
+      // This read is cast straight into state with no check at all. A `null`
+      // body — legal JSON, and what a proxy returns when it has nothing —
+      // leaves `data` null while `loading` and `error` are both false, and the
+      // render's trailing `: null` then draws NOTHING. A blank section with no
+      // error is the worst outcome on this page: there is not even a wrong
+      // claim for an operator to disbelieve.
+      if (json === null || typeof json !== "object" || Array.isArray(json)) {
+        throw new Error("malformed my-tenants payload");
+      }
+      // What this guard deliberately does NOT reject is `{}`. Every field on
+      // `MyTenantsResponse` is optional and the endpoint is a raw `-> Any`
+      // passthrough of coord's `/admin/coord/me` (`operations.py:8570`) with no
+      // response model, so there is no key whose absence is decidable here:
+      // `{}` is indistinguishable from coord answering "you hold nothing", and
+      // an operator who genuinely holds nothing must still see "No roles
+      // found." Tightening that needs a declared contract on the coord side,
+      // not a guess on this one.
+      //
+      // `tenants`/`roles` ARE decidable, because present-and-not-a-list is
+      // never a valid answer. Both reach `.map()` at the render site, and
+      // `data.tenants && data.tenants.length > 0` waves a string straight
+      // through. `== null` treats an explicit `null` as absent, which is what
+      // the render's own `data.tenants?.` / `?? []` already assume.
+      if (json.tenants != null) {
+        requireRows<TenantRoleEntry>(json.tenants, "my-tenants `tenants`");
+        for (const t of json.tenants) {
+          // Per-entry, for the same reason: `(t.roles ?? []).map()` throws on a
+          // string, and one bad entry takes the whole card down.
+          if (t?.roles != null) {
+            requireRows<string>(t.roles, "my-tenants tenant `roles`");
+          }
+        }
+      }
+      if (json.roles != null) {
+        requireRows<string>(json.roles, "my-tenants `roles`");
+      }
+      setData(json);
     } catch (err) {
       log.warn("load my-tenants failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -280,11 +361,48 @@ function MyTenantsCard() {
       defaultOpen={false}
       storageKey="coord-members-my-tenants"
       summary={
-        data ? (
-          <Badge variant="outline" className="font-mono text-[11px]">
-            {homeTenantName(data)}
-          </Badge>
-        ) : undefined
+        <Badge
+          variant="outline"
+          // `error !== null`, not the sibling badges' `error ?`, and matching
+          // the `StatCluster` predicate above. `setError` stores
+          // `err.message`, which is `""` for `new Error()` — falsy, so `error ?`
+          // would drop the amber while the text below still read "unknown".
+          // One predicate for the tone and the word, so they cannot disagree.
+          className={`font-mono text-[11px]${
+            error !== null ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-members-my-tenants-summary"
+        >
+          {/* The third `defaultOpen={false}` panel on this page, and the one
+              the sibling badges' fix skipped. `summary` renders inside
+              `CollapsibleTrigger` (`CollapsiblePanel.tsx:138`), so while this
+              panel is folded the error paragraph below is unmounted by Radix
+              and this badge is the whole story an operator gets.
+
+              `data ? <Badge/> : undefined` made the badge VANISH on a failed
+              read. That is not a wrong count — it is no signal at all, and a
+              header indistinguishable from one that is merely still loading.
+              The comment above this component promises the opposite: the
+              panel folds, its signal does not. Silence is the fabricated
+              absence in its quietest form, and the worst of the four shapes,
+              because there is nothing for an operator to disbelieve.
+
+              `–` and `unknown` are the two markers the mappings and groups
+              badges already use, so all three collapsed headers now answer in
+              one vocabulary rather than two.
+
+              The trailing `–` is unreachable — `loading` starts `true` and the
+              `finally` only clears it after `data` or `error` is set — but the
+              type is `MyTenantsResponse | null`, and spelling the arm is
+              cheaper than a non-null assertion. */}
+          {loading
+            ? "–"
+            : error !== null
+              ? "unknown"
+              : data
+                ? homeTenantName(data)
+                : "–"}
+        </Badge>
       }
       contentClassName="space-y-3"
     >
@@ -367,7 +485,28 @@ function MembersTable({
       const res = await httpClient.fetch(`${OPERATIONS_API}/coord/members`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as MembersResponse;
-      setOperators(json.operators ?? []);
+      // The third sibling. A malformed 200 here fabricates "No members yet." —
+      // and, through `stats` below, the four-count headline `members 0 ·
+      // administrators 0 · developers 0 · no access 0`. That is the page's
+      // whole answer, invented from a read that did not land.
+      const rows = requireRows<OperatorRow>(json?.operators, "members");
+      for (const op of rows) {
+        // Per ROW as well, and this one hides rather than announcing itself.
+        // `deriveMemberStatus` does not throw on a string: `"operator"
+        // .includes("admin")` is false and `.length > 0` is true, so the row
+        // renders as Developer and `stats` counts it as one. Nothing looks
+        // wrong until somebody clicks the row, and `op.roles.map()` in the
+        // expansion (`MemberDetail`, below) throws and unmounts the tree.
+        //
+        // Absent is refused here, unlike the `tenants[].roles` guard above,
+        // and the difference is the wire types: `TenantRoleEntry.roles` is
+        // declared optional, `OperatorRow.roles` is not. The render agrees —
+        // `op.roles.length` is dereferenced unconditionally — so a body
+        // without the key already crashed this page. Throwing turns that
+        // crash into the error arm the section already has.
+        requireRows<string>(op?.roles, "members row `roles`");
+      }
+      setOperators(rows);
     } catch (err) {
       log.warn("load members failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -452,27 +591,45 @@ function MembersTable({
       else if (k === "developer") devs += 1;
       else none += 1;
     }
+    // `null` renders as `–`, never `0` (`StatCluster.tsx:95`). Only the
+    // in-flight half of that was spelled here, so a FAILED read still
+    // published all four counts as confident zeroes — and "no access 0" reads
+    // as "nobody is locked out", the single most reassuring answer the page
+    // can give, on the strength of a read that never arrived.
+    //
+    // This is DELIBERATELY stricter than `console/readFailure.ts`, and the
+    // difference is worth naming rather than glossing. That module's
+    // `readIsUnknown` is `readFailed && !loaded`: once a read has ever landed,
+    // it says a later failure belongs to `staleDetail`, not to "unknown", and
+    // it calls the count-based spelling wrong because on a POLLED surface one
+    // blipped tick flips a genuinely-empty list to "unknown" and back.
+    //
+    // That reasoning does not reach here. `MembersTable` is not polled — it
+    // reloads on mount, on `refreshKey`, and after a grant/revoke — so there
+    // is no tick to flicker on. And the error arm already replaces the entire
+    // table below with the error paragraph, so dashing the strip makes it
+    // AGREE with the table underneath instead of contradicting it. Numbers
+    // standing over a hidden table is the state worth avoiding.
+    const unknown = loading || error !== null;
     return [
       {
         key: "members",
         label: "members ",
-        // `null` while the first load is in flight — R6's absence-is-not-zero
-        // rule, which `<StatCluster>` renders as `–`. Claiming "0 members"
-        // before the fetch lands would be a lie about a page whose whole
-        // subject is who exists.
-        value: loading ? null : operators.length,
+        // Claiming "0 members" before the fetch lands — or after it fails —
+        // would be a lie about a page whose whole subject is who exists.
+        value: unknown ? null : operators.length,
         "data-testid": "coord-members-count",
       },
       {
         key: "admins",
         label: "administrators ",
-        value: loading ? null : admins,
+        value: unknown ? null : admins,
         "data-testid": "coord-members-count-admins",
       },
       {
         key: "devs",
         label: "developers ",
-        value: loading ? null : devs,
+        value: unknown ? null : devs,
         "data-testid": "coord-members-count-developers",
       },
       {
@@ -480,13 +637,13 @@ function MembersTable({
         label: "no access ",
         // Muted, NOT `attention`: nobody must act now (see `memberStatus.ts`).
         tone: "muted",
-        value: loading ? null : none,
+        value: unknown ? null : none,
         title:
           "Members holding no role in this tenant. Nothing is broken — they simply cannot reach anything until an administrator grants a tier.",
         "data-testid": "coord-members-count-no-access",
       },
     ];
-  }, [operators, loading]);
+  }, [operators, loading, error]);
 
   return (
     // R9 — no page-level Card/CardHeader/CardTitle. "Members" duplicated the
@@ -533,7 +690,7 @@ function MembersTable({
                       onClick={() =>
                         setOpenMember(expanded ? null : op.operator_id)
                       }
-                      className={`cursor-pointer ${rowAccentClass(status)}`}
+                      {...rowAccentProps(status, "cursor-pointer")}
                     >
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-1.5">
@@ -886,7 +1043,19 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as GroupTenantRolesResponse;
-      setRows(json.group_tenant_roles ?? []);
+      // A successful STATUS is not a successful READ — the same rule the
+      // blast-radius read of this SAME endpoint applies below. `?? []` is dead
+      // per the types (`group_tenant_roles` is declared non-optional) and live
+      // at runtime, and what it fabricates is "No mappings yet." from a body
+      // that never carried the table. It also stops a non-array body reaching
+      // `rows.map()` at the render site, where `.length` succeeds on a string
+      // and `.map` then throws, taking the panel down.
+      setRows(
+        requireRows<GroupTenantRoleRow>(
+          json?.group_tenant_roles,
+          "group-tenant-roles"
+        )
+      );
     } catch (err) {
       log.warn("load group-tenant-roles failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -1028,9 +1197,23 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       defaultOpen={false}
       storageKey="coord-members-group-roles"
       summary={(
-        <Badge variant="outline" className="font-mono text-[11px]">
+        <Badge
+          variant="outline"
+          className={`font-mono text-[11px]${
+            error ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-group-roles-summary"
+        >
           <span className="font-normal text-muted-foreground">mappings&nbsp;</span>
-          {loading ? "–" : rows.length}
+          {/* `rows.length` is 0 both when the read said "none" and when it
+              FAILED, and this panel is `defaultOpen={false}` — so the error
+              text below is hidden and this badge is the whole story an
+              operator gets. Printing `0` there states the most reassuring
+              possible answer on the strength of a read that did not land. The
+              comment above says the count is here precisely so an empty set
+              can be noticed WITHOUT opening; that is exactly what makes the
+              false `0` worth closing. */}
+          {loading ? "–" : error ? "unknown" : rows.length}
         </Badge>
       )}
       contentClassName="space-y-4"
@@ -1227,7 +1410,10 @@ function CognitoGroupMembers({
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as CognitoGroupUsersResponse;
-      setUsers(json.users ?? []);
+      // "No users in this group yet." is an assertion about a group an operator
+      // is deciding whether to empty or delete. It must come from a read that
+      // landed, not from a 200 that forgot the list.
+      setUsers(requireRows<CognitoGroupUserRow>(json?.users, "cognito group users"));
     } catch (err) {
       log.warn("load cognito group users failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -1531,7 +1717,16 @@ function CognitoGroupItem({
           >
             <Badge
               variant={membersError ? "outline" : "secondary"}
-              className="text-[0.7rem] font-normal"
+              // Amber on the unknown arm, matching the `tenant mappings
+              // unknown` badge rendered immediately to its right and the two
+              // collapsed panel headers. Both halves of this blast radius fail
+              // the same way and are read in one glance, so they must not
+              // announce it in two different tones: `members unknown` in the
+              // default foreground beside an amber `tenant mappings unknown`
+              // reads as one caveat and one fact.
+              className={`text-[0.7rem] font-normal${
+                membersError ? " text-amber-600 dark:text-amber-400" : ""
+              }`}
               data-testid={`cognito-group-members-count-${group.group_name}`}
             >
               <Users className="h-3 w-3" />
@@ -1859,7 +2054,11 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as CognitoGroupsResponse;
-      setGroups(json.groups ?? []);
+      // Same rule as the two `group-tenant-roles` reads: a 200 whose body is
+      // not the list is UNKNOWN, not "no groups". `?? []` would render "No
+      // Cognito groups yet." for a pool that may be full of them, and a
+      // non-array body would reach `groups.map()` below and throw.
+      setGroups(requireRows<CognitoGroupRow>(json?.groups, "cognito groups"));
     } catch (err) {
       log.warn("load cognito groups failed", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -1892,10 +2091,10 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         // malformed 200 as the failure it is and let the `catch` route it to
         // the unknown arm. (It also stops a non-array body throwing later,
         // inside the `.filter()` at the render site.)
-        const rows = json?.group_tenant_roles;
-        if (!Array.isArray(rows)) {
-          throw new Error("malformed group-tenant-roles payload");
-        }
+        const rows = requireRows<GroupTenantRoleRow>(
+          json?.group_tenant_roles,
+          "group-tenant-roles"
+        );
         if (!cancelled) {
           setMappings(rows);
           setMappingsError(false);
@@ -1942,7 +2141,21 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
             );
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = (await res.json()) as CognitoGroupUsersResponse;
-            counts[g.group_name] = (json.users ?? []).length;
+            // `memberErrors` is the mechanism #1111 held up as the model — a
+            // failed probe becomes "members unknown" rather than a count. But
+            // it is reached only from this `catch`, so a malformed 200 walked
+            // straight past it: `(json.users ?? []).length` recorded a
+            // confident `0 members` on the row that offers the pool-wide
+            // Delete, with no error flag to contradict it. A non-array body was
+            // worse still — `"nope".length` is 4, so the badge would have shown
+            // a member count that was really a string length.
+            //
+            // Refusing the body here routes it to the same `catch`, which is
+            // where the honest answer already lives.
+            counts[g.group_name] = requireRows<CognitoGroupUserRow>(
+              json?.users,
+              "cognito group users"
+            ).length;
           } catch (err) {
             log.warn("member count probe failed", g.group_name, err);
             errors[g.group_name] = true;
@@ -2011,9 +2224,19 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
       defaultOpen={false}
       storageKey="coord-members-cognito-groups"
       summary={(
-        <Badge variant="outline" className="font-mono text-[11px]">
+        <Badge
+          variant="outline"
+          className={`font-mono text-[11px]${
+            error ? " text-amber-600 dark:text-amber-400" : ""
+          }`}
+          data-testid="coord-cognito-groups-summary"
+        >
           <span className="font-normal text-muted-foreground">groups&nbsp;</span>
-          {loading ? "–" : groups.length}
+          {/* A failed read must not print `groups 0` on a collapsed panel —
+              see the mappings badge above. This is the section that carries
+              the pool-wide Delete, so "there is nothing here" is the last
+              thing it should assert on a read that never landed. */}
+          {loading ? "–" : error ? "unknown" : groups.length}
         </Badge>
       )}
       contentClassName="space-y-4"

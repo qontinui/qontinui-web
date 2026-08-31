@@ -38,7 +38,9 @@ export {
 } from "./FleetHealthSummary";
 export { FLEET_HEALTH_API, useFleetHealth } from "./useFleetHealth";
 export type {
+  FleetHealthAlertCounts,
   FleetHealthDevice,
+  FleetHealthPageout,
   FleetHealthPayload,
   UseFleetHealthResult,
 } from "./useFleetHealth";

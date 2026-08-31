@@ -41,10 +41,32 @@ resolver (``qontinui-coord/src/pr_merge/settings.rs``):
     3. Defaults::FF_LAND_HEAD_SYNC_ENABLED = false
 
 **Per-repo granularity is the point, not a nicety.** The plan graduates one repo
-at a time through the existing ``rollout_state`` shadow→live protocol, and the
-measured benefit is wildly uneven across repos — ``qontinui-runner`` is 87.0%
-sha-rewriting while ``ui-bridge`` is 9.7%. A tenant-only or env-only dial could
-not express that, which is why this is a column pair and not an env var.
+at a time, and the measured benefit is wildly uneven across repos —
+``qontinui-runner`` is 87.0% sha-rewriting while ``ui-bridge`` is 9.7%. A
+tenant-only or env-only dial could not express that, which is why this is a
+column pair and not an env var.
+
+⚠️ **Graduation does NOT go through ``rollout_state``**, which the plan this
+revision implements still names. That tri-state (``dry_run`` / ``shadow`` /
+``live``) was **retired and the columns dropped from both of these very tables**
+by ``merge_enabled_02_drop_rollout_state`` (plan
+``2026-07-29-retire-merge-rollout-tristate-and-fix-the-dead-kill-switch``), and
+``POST /pr-merge/rollout`` no longer exists on the web proxy. Even while it did,
+it wrote ``rollout_state`` — never this column — so it could not have graduated
+this dial in any case. Graduation is a per-repo write of
+``tenant_repo_profiles.ff_land_head_sync_enabled``, and the only non-SQL door for
+that is the settings PATCH (``PATCH /pr-merge/repos/:repo/profile``).
+
+**That door does not exist yet, and nothing else writes these columns either.**
+``qontinui-coord#1660`` adds the RESOLVER that reads them, but neither it nor
+this revision adds ``ff_land_head_sync_enabled`` to coord's ``PatchTenantSettings``
+/ ``PatchRepoProfile`` or to the ``EffectiveProfile`` those routes serve — the
+full path its sibling dial ``auto_fix_red_main`` has. Until a coord build carries
+that wire, these two columns have **no writer anywhere in the fleet** and the dial
+can only be set by hand-SQL. The qontinui-web console
+(``frontend/src/components/operations/MergeOrchestrationSettings.tsx``) renders
+both tiers already and lights them up off the served ``EffectiveProfile``, so the
+remaining work is entirely coord-side.
 
 Decoupled deploy order: coord reads these two columns via a SEPARATE, best-effort
 query (NOT folded into the main resolver SELECT), exactly as ``auto_fix_red_main``

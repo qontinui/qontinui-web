@@ -25,6 +25,17 @@ GLOB rather than trusting a hand-maintained literal. That is deliberate: the
 first round of this very fix shipped to 6 of the 8 carriers because the census
 that found them was a shell loop that hit its timeout and was read as complete.
 A hand-maintained list cannot catch that; a glob can.
+
+Everything above tests what each step SAYS once it runs. A second, quieter
+class of pin covers whether it runs at all: the `if:` condition, and -- for
+both steps, which measure job wall-clock -- the `JOB_START_EPOCH` stamp their
+job must write in its FIRST step. Neither is reachable from a body executed
+directly by this harness, so both were unpinned while every arm inside them
+was covered. A marker that never fires on `cancelled`, or a tripwire whose job
+never stamps its start, is worse than a wrong verdict: a wrong verdict at
+least leaves a sentence to disagree with, while silence leaves the bare
+zero-failing-step `fail` these steps exist to explain -- under a full suite of
+green tests attesting to a body that never executed.
 """
 
 from __future__ import annotations
@@ -111,23 +122,71 @@ def _marker_body(workflow: str) -> str:
     return _find_step(workflow, MARKER_STEP_NAME)[2]["run"]
 
 
-def _marker_steps():
-    """Every marker step in every carrier -- not just the first one per file.
+def _steps_named(workflows: list[str], step_name: str):
+    """Every step with this name in every listed workflow -- not just the first.
 
-    `_find_step` stops at the first match, so a SECOND marker step added to
-    another job of an already-listed carrier is invisible to it: the carrier
-    set still matches, and the body it compares is the original. That copy
-    would then be exempt from both the byte-identity pin and the job-start
-    stamp pin -- the same "one site out of N" drift the identity test exists
-    to catch, wearing a shape the file-level census cannot see.
+    `_find_step` stops at the first match, so a SECOND copy added to another
+    job of an already-listed carrier is invisible to it: the carrier set still
+    matches, and the body it compares is the original. That copy would then be
+    exempt from every per-step pin below -- the same "one site out of N" drift
+    the identity tests exist to catch, wearing a shape the file-level census
+    cannot see.
+
+    Both duplicated steps in this file need that treatment, so the traversal
+    is shared rather than written twice: a helper that existed for the marker
+    alone is how the tripwire came to be pinned one site per file.
 
     Yields (workflow, job_id, job, step).
     """
-    for workflow in MARKER_WORKFLOWS:
+    for workflow in workflows:
         for job_id, job, steps in _steps(workflow):
             for step in steps:
-                if step.get("name") == MARKER_STEP_NAME:
+                if step.get("name") == step_name:
                     yield workflow, job_id, job, step
+
+
+def _marker_steps():
+    """Every marker step in every carrier. See `_steps_named`."""
+    yield from _steps_named(MARKER_WORKFLOWS, MARKER_STEP_NAME)
+
+
+def _tripwire_steps():
+    """Every tripwire step in every carrier. See `_steps_named`."""
+    yield from _steps_named(TRIPWIRE_WORKFLOWS, TRIPWIRE_STEP_NAME)
+
+
+def _step_env(step: dict) -> dict[str, str]:
+    return {k: str(v) for k, v in (step.get("env") or {}).items()}
+
+
+def _step_condition(step: dict) -> str:
+    """The `if:` that decides whether this step runs AT ALL.
+
+    A step with no `if:` key defaults to `success()`, so absence is normalised
+    to that rather than treated as a third state -- for the tripwire the two
+    are genuinely equivalent, and for the marker the normalised value is what
+    makes an omitted `if:` fail the `cancelled()` assertion on its merits.
+    """
+    raw = step.get("if")
+    return "success()" if raw is None else " ".join(str(raw).split())
+
+
+def _assert_job_stamps_its_start_first(workflow: str, job_id: str, job: dict) -> None:
+    """The job's FIRST step must write `JOB_START_EPOCH`.
+
+    Both the marker and the tripwire measure JOB wall-clock from that stamp.
+    Anything later than step 1 measures a suffix of the job and understates
+    elapsed by the setup prefix.
+    """
+    steps = job["steps"]
+    assert steps[0].get("name") == STAMP_STEP_NAME, (
+        f"{workflow} job {job_id!r}: first step is "
+        f"{steps[0].get('name') or steps[0].get('uses')!r}, "
+        f"expected {STAMP_STEP_NAME!r}"
+    )
+    assert "JOB_START_EPOCH" in steps[0]["run"], (
+        f"{workflow} job {job_id!r}: the first step does not write JOB_START_EPOCH"
+    )
 
 
 def _cancel_in_progress(workflow: str, job: dict):
@@ -203,17 +262,87 @@ def test_every_carrier_stamps_its_job_start_as_the_first_step():
     """
     checked = 0
     for workflow, job_id, job, _ in _marker_steps():
-        steps = job["steps"]
-        assert steps[0].get("name") == STAMP_STEP_NAME, (
-            f"{workflow} job {job_id!r}: first step is "
-            f"{steps[0].get('name') or steps[0].get('uses')!r}, "
-            f"expected {STAMP_STEP_NAME!r}"
-        )
-        assert "JOB_START_EPOCH" in steps[0]["run"]
+        _assert_job_stamps_its_start_first(workflow, job_id, job)
         checked += 1
     assert checked >= len(MARKER_WORKFLOWS), (
         f"only {checked} marker steps scanned across "
         f"{len(MARKER_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
+
+
+def test_the_marker_is_reached_on_a_cancelled_job():
+    """The condition that decides whether the marker RUNS is itself pinned.
+
+    Every arm below is exercised against the shipped body -- but all of that
+    is downstream of `if:`, and nothing pinned it. A marker narrowed to
+    `if: failure()` (or losing its `if:` altogether, which defaults to
+    `success()`) would be byte-identical at all eight carriers, budget-matched,
+    note-matched, and would never run on the one conclusion it was written for:
+    a job-budget timeout concludes `cancelled`.
+
+    That is the worst shape this defect can take. The original bug printed a
+    wrong verdict, which at least left a sentence in the log to disagree with;
+    an unreached marker prints nothing, and a reader sees the same bare
+    zero-failing-step `fail` the whole step exists to explain -- with 40-odd
+    green tests attesting to a body that never executed.
+    """
+    conditions = {}
+    for workflow, job_id, _, step in _marker_steps():
+        cond = _step_condition(step)
+        assert "cancelled()" in cond, (
+            f"{workflow} job {job_id!r}: the marker's condition is {cond!r}, "
+            "which does not include `cancelled()`. A job-budget timeout and a "
+            "merge-train reap both conclude `cancelled`, so the step would "
+            "never run on the states it exists to explain"
+        )
+        conditions[f"{workflow}:{job_id}"] = cond
+
+    assert len(conditions) >= len(MARKER_WORKFLOWS), (
+        f"only {len(conditions)} marker conditions checked across "
+        f"{len(MARKER_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
+    distinct = set(conditions.values())
+    assert len(distinct) == 1, (
+        "the marker's `if:` has drifted across carriers; "
+        f"{len(distinct)} distinct conditions across {sorted(conditions)}: "
+        f"{sorted(distinct)}"
+    )
+
+
+def test_the_tripwire_is_reached_on_a_green_job():
+    """The tripwire's whole point is warning while the lane is still GREEN.
+
+    Gate it on `failure()` or `cancelled()` and it inverts into a second
+    marker: it would only ever speak about jobs that had already gone red,
+    which is exactly the too-late signal it was added to replace. Every
+    tripwire test below drives the body directly, so none of them would
+    notice.
+    """
+    conditions = {}
+    for workflow, job_id, _, step in _tripwire_steps():
+        cond = _step_condition(step)
+        assert "success()" in cond, (
+            f"{workflow} job {job_id!r}: the tripwire's condition is {cond!r}, "
+            "which does not include `success()`; it must warn on a run that "
+            "PASSED, while there is still budget in hand"
+        )
+        for forbidden in ("cancelled()", "failure()"):
+            assert forbidden not in cond, (
+                f"{workflow} job {job_id!r}: the tripwire's condition is "
+                f"{cond!r}, which brings in {forbidden}. A budget-creep warning "
+                "on an already-red lane is the late signal this step replaces"
+            )
+        conditions[f"{workflow}:{job_id}"] = cond
+
+    assert len(conditions) >= len(TRIPWIRE_WORKFLOWS), (
+        f"only {len(conditions)} tripwire conditions checked across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
+    distinct = set(conditions.values())
+    assert len(distinct) == 1, (
+        "the tripwire's `if:` has drifted across carriers; "
+        f"{len(distinct)} distinct conditions across {sorted(conditions)}: "
+        f"{sorted(distinct)}"
     )
 
 
@@ -348,17 +477,49 @@ def test_every_external_cancel_note_matches_its_workflow_concurrency():
 
 def test_soft_budget_is_below_the_job_budget():
     """A soft budget at or above the hard one could never warn in time."""
-    for workflow in TRIPWIRE_WORKFLOWS:
-        _, job, step = _find_step(workflow, TRIPWIRE_STEP_NAME)
-        soft = int(step["env"]["SOFT_BUDGET_MINUTES"])
+    checked = 0
+    for workflow, job_id, job, step in _tripwire_steps():
+        env = _step_env(step)
+        soft = int(env["SOFT_BUDGET_MINUTES"])
         hard = int(job["timeout-minutes"])
         assert 0 < soft < hard, (
-            f"{workflow}: soft budget {soft} must sit strictly inside {hard}"
+            f"{workflow} job {job_id!r}: soft budget {soft} must sit strictly "
+            f"inside {hard}"
         )
-        assert step["env"]["JOB_TIMEOUT_MINUTES"] == str(hard), (
-            f"{workflow}: the tripwire's JOB_TIMEOUT_MINUTES has drifted from "
-            f"the job's own timeout-minutes ({hard})"
+        assert env["JOB_TIMEOUT_MINUTES"] == str(hard), (
+            f"{workflow} job {job_id!r}: the tripwire's JOB_TIMEOUT_MINUTES has "
+            f"drifted from the job's own timeout-minutes ({hard})"
         )
+        checked += 1
+    assert checked >= len(TRIPWIRE_WORKFLOWS), (
+        f"only {checked} tripwire steps scanned across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
+
+
+def test_every_tripwire_job_stamps_its_job_start_as_the_first_step():
+    """The tripwire's ONLY input is `JOB_START_EPOCH`, and nothing pinned it.
+
+    The marker's carriers are pinned by
+    `test_every_carrier_stamps_its_job_start_as_the_first_step`, and today the
+    two tripwires happen to sit in marker-carrying jobs -- so this holds
+    transitively, by coincidence rather than by assertion. Put a tripwire in a
+    job with no stamp step and it degrades to its own UNKNOWN arm on every run:
+    "budget tripwire did not run", forever, on a GREEN lane nobody is reading
+    closely, with every test in this file still passing.
+
+    That is the failure this file exists to make impossible -- a guard that is
+    perfectly correct and never actually measures anything -- so it is asserted
+    for the tripwire's own jobs rather than inherited from the marker's.
+    """
+    checked = 0
+    for workflow, job_id, job, _ in _tripwire_steps():
+        _assert_job_stamps_its_start_first(workflow, job_id, job)
+        checked += 1
+    assert checked >= len(TRIPWIRE_WORKFLOWS), (
+        f"only {checked} tripwire steps scanned across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
 
 
 # --- execution harness ------------------------------------------------------
@@ -760,7 +921,7 @@ def _tripwire_body(
 def _tripwire_warn_title(workflow: str) -> str:
     """The warn title is per-site: the body interpolates `$JOB_LABEL`."""
     _, env = _tripwire_body(workflow)
-    return f"{env['JOB_LABEL']} is approaching its job budget"
+    return f"{env['JOB_LABEL']} {TITLE_TRIPWIRE_WARN_TAIL}"
 
 
 def test_tripwire_carriers_are_exactly_the_expected_set():
@@ -787,7 +948,11 @@ def test_all_tripwire_bodies_are_identical():
     is in `env:`, so the `run:` body itself has nothing legitimate to differ
     about.
     """
-    bodies = {wf: _tripwire_body(wf)[0] for wf in TRIPWIRE_WORKFLOWS}
+    bodies = {f"{wf}:{jid}": step["run"] for wf, jid, _, step in _tripwire_steps()}
+    assert len(bodies) >= len(TRIPWIRE_WORKFLOWS), (
+        f"found only {len(bodies)} tripwire steps across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan missed some"
+    )
     distinct = set(bodies.values())
     assert len(distinct) == 1, (
         "the tripwire body has drifted across carriers; "
@@ -802,11 +967,17 @@ def test_every_tripwire_carrier_declares_its_own_site_text():
     stops naming which job is creeping -- which is the only thing it is for.
     """
     labels = {}
-    for workflow in TRIPWIRE_WORKFLOWS:
-        _, env = _tripwire_body(workflow)
+    for workflow, job_id, _, step in _tripwire_steps():
+        env = _step_env(step)
         for key in ("JOB_LABEL", "BUDGET_STAKES"):
-            assert env.get(key), f"{workflow}: tripwire declares no {key}"
-        labels[workflow] = env["JOB_LABEL"]
+            assert env.get(key), (
+                f"{workflow} job {job_id!r}: tripwire declares no {key}"
+            )
+        labels[f"{workflow}:{job_id}"] = env["JOB_LABEL"]
+    assert len(labels) >= len(TRIPWIRE_WORKFLOWS), (
+        f"only {len(labels)} tripwire steps scanned across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
     assert len(set(labels.values())) == len(labels), (
         f"tripwire carriers must not share a JOB_LABEL, got {labels}"
     )
@@ -867,8 +1038,10 @@ def test_every_tripwire_carrier_warns_against_its_own_soft_budget(tmp_path):
     interpolates. This is the tripwire's counterpart to
     `test_every_carrier_routes_identically_against_its_own_budget`.
     """
-    for workflow in TRIPWIRE_WORKFLOWS:
-        body, env = _tripwire_body(workflow)
+    checked = 0
+    for workflow, job_id, _, step in _tripwire_steps():
+        body = step["run"]
+        env = _step_env(step)
         soft = int(env["SOFT_BUDGET_MINUTES"])
         env["PATH"] = "/usr/bin:/bin"
 
@@ -883,10 +1056,17 @@ def test_every_tripwire_carrier_warns_against_its_own_soft_budget(tmp_path):
         env["JOB_START_EPOCH"] = str(int(time.time()) - (soft - 5) * 60)
         below = _exec(body, env, tmp_path)
 
-        title = _tripwire_warn_title(workflow)
-        assert title in at_soft, workflow
-        assert env["BUDGET_STAKES"].strip() in at_soft, workflow
-        assert title not in below, workflow
+        site = f"{workflow}:{job_id}"
+        title = f"{env['JOB_LABEL']} {TITLE_TRIPWIRE_WARN_TAIL}"
+        assert title in at_soft, site
+        assert env["BUDGET_STAKES"].strip() in at_soft, site
+        assert title not in below, site
+        checked += 1
+
+    assert checked >= len(TRIPWIRE_WORKFLOWS), (
+        f"only {checked} tripwire steps executed across "
+        f"{len(TRIPWIRE_WORKFLOWS)} carriers; the scan would have passed vacuously"
+    )
 
 
 @requires_bash

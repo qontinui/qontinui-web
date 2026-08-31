@@ -8,7 +8,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import { DestructiveButton } from "@/components/ui/destructive-button";
 import {
@@ -321,7 +320,7 @@ function RuleRow({
       rowKey={rule.policy_id}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(status)}
+      attention={status.attention}
       identity={gateClass ?? "no class"}
       label={
         <span title={rule.rationale ?? rule.name}>

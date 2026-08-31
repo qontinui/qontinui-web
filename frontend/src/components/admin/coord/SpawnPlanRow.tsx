@@ -49,7 +49,6 @@ import {
   RecordRow,
   RowTime,
   StatusBadge,
-  rowAccentClass,
 } from "@/components/console";
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import {
@@ -84,7 +83,7 @@ export function SpawnPlanRow({
           rowKey={plan.slug}
           expanded={expanded}
           onToggle={onToggle}
-          accent={rowAccentClass(status)}
+          attention={status.attention}
           identity={planIdentity(plan.slug)}
           label={
             <span
