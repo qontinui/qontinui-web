@@ -34,13 +34,23 @@
  *    - The COLLAPSED panel headers. `summary` renders inside
  *      `CollapsibleTrigger` (`CollapsiblePanel.tsx:138`), so the badge is on
  *      screen while the body — including the error text — is unmounted by
- *      Radix, and both panels are `defaultOpen={false}`.
+ *      Radix, and all three panels are `defaultOpen={false}`.
  *      `{loading ? "–" : rows.length}` therefore published `mappings 0` /
  *      `groups 0` from a read that failed, with nothing visible to contradict
  *      it.
+ *
+ *      The third panel, "Your tenant & roles", broke the same rule in its
+ *      quietest form, and the first pass over this class fixed the other two
+ *      and left it. `summary={data ? <Badge/> : undefined}` published no wrong
+ *      value — it removed the badge, leaving a folded header indistinguishable
+ *      from one still loading, and carrying no claim an operator could
+ *      disbelieve. All three now answer in one vocabulary: `–` and `unknown`.
  *    - The per-group `N members` badge, whose probe recorded a count from a
  *      malformed 200 and so never set the `memberErrors` flag that exists to
- *      say "members unknown".
+ *      say "members unknown". Its unknown arm is now amber like the
+ *      `tenant mappings unknown` badge it renders beside: the two halves of
+ *      one blast radius are read in a single glance, and two tones for one
+ *      meaning reads as one caveat and one fact.
  *
  *    Both sit on the section carrying the pool-wide Cognito **Delete**, so
  *    "there is nothing here" is the last claim they should make on an answer
@@ -72,22 +82,27 @@
  * that body is indistinguishable from an operator who really holds nothing, so
  * it is deliberately NOT refused.
  *
- * **What the controls do and do not prove.** Four of them —
+ * **What the controls do and do not prove.** Five of them —
  * `still reports a genuinely empty member list`, `still says 'No roles
- * found.'`, `still reports a member count the probe actually delivered`, and
- * `still renders a tenant card the read actually delivered` — assert against
- * markup that already existed, so reverting the guards leaves them green and
- * they are true controls.
+ * found.'`, `still reports a member count the probe actually delivered`,
+ * `still renders a tenant card the read actually delivered` and `still says
+ * 'No users in this group yet.'` — assert against markup that already existed,
+ * so reverting the guards leaves them green and they are true controls.
  *
- * The two panel-badge controls (`still reports a genuinely empty mapping
- * table` / `…group list as zero`) are NOT, against a tree predating this
- * file's first commit: they read `data-testid="coord-group-roles-summary"` and
- * `"coord-cognito-groups-summary"`, which that commit ADDED. Reverted that far
- * they red on a missing testid rather than on behaviour, so they cannot
- * demonstrate the `error ? "unknown"` arm avoids over-reporting. They are
- * genuine controls only against the commit that introduced those badges. Said
- * plainly because a control that reds for the wrong reason is worse than none:
- * it looks like coverage.
+ * Three are NOT, and each names the commit it is a control against, because a
+ * control that reds for the wrong reason is worse than none: it looks like
+ * coverage.
+ *
+ * - The two panel-badge controls (`still reports a genuinely empty mapping
+ *   table` / `…group list as zero`) read
+ *   `data-testid="coord-group-roles-summary"` and
+ *   `"coord-cognito-groups-summary"`, which this file's first commit ADDED.
+ *   Reverted past it they red on a missing testid rather than on behaviour, so
+ *   they cannot demonstrate the `error ? "unknown"` arm avoids over-reporting.
+ * - `still shows the home tenant on the collapsed header` reads
+ *   `"coord-members-my-tenants-summary"`, added by the follow-up commit that
+ *   stopped that badge vanishing. Before it there was no testid — and, on a
+ *   failed read, no badge — so it is a control only against that commit.
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -661,5 +676,144 @@ describe("/admin/coord/members — an unreadable section is unknown, not empty",
     const panel = await screen.findByTestId("coord-members-cognito-groups");
     await waitFor(() => expect(panel.textContent ?? "").toMatch(/2 members/));
     expect(panel.textContent ?? "").not.toMatch(/members unknown/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // The EXPANDED per-group user list — `CognitoGroupMembers`
+  //
+  // The fourth `?? []` named in this file's own docstring
+  // (`setUsers(json.users ?? [])`) is guarded, and until now nothing
+  // exercised it. The three tests above look like they cover it and do not:
+  // they never expand a row, so `CognitoGroupMembers` never mounts. What they
+  // pin is the section-level blast-radius PROBE — a different call site
+  // against the same route, whose failure is recorded in `memberErrors`.
+  //
+  // This is the site that renders "No users in this group yet." — an
+  // assertion about a group an operator is deciding whether to empty or
+  // delete, and one made where the error text IS on screen only because the
+  // row is open.
+  // -----------------------------------------------------------------------
+
+  it("treats a malformed 200 as unknown rather than 'No users in this group yet.'", async () => {
+    state.usersMode = "malformed";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /cognito groups/i })
+    );
+    await user_.click(
+      await screen.findByTestId("cognito-group-toggle-acme-devs")
+    );
+    const detail = await screen.findByTestId("cognito-group-detail-acme-devs");
+    await waitFor(() =>
+      expect(detail.textContent ?? "").toMatch(/malformed cognito group users/i)
+    );
+    expect(detail.textContent ?? "").not.toMatch(/no users in this group yet/i);
+  });
+
+  it("survives a 200 whose user list is not a list", async () => {
+    // `users.length === 0` is false for `"nope"`, so the value reached
+    // `users.map()` and took the expanded row down with it.
+    state.usersMode = "notArray";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /cognito groups/i })
+    );
+    await user_.click(
+      await screen.findByTestId("cognito-group-toggle-acme-devs")
+    );
+    const detail = await screen.findByTestId("cognito-group-detail-acme-devs");
+    await waitFor(() =>
+      expect(detail.textContent ?? "").toMatch(/malformed cognito group users/i)
+    );
+    expect(detail.textContent ?? "").not.toMatch(/no users in this group yet/i);
+  });
+
+  it("still says 'No users in this group yet.' for a genuinely empty group", async () => {
+    // The control. `users: []` is already the `beforeEach` default, spelled
+    // here anyway so the test states its own premise.
+    state.users = [];
+    state.usersMode = "ok";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /cognito groups/i })
+    );
+    await user_.click(
+      await screen.findByTestId("cognito-group-toggle-acme-devs")
+    );
+    const detail = await screen.findByTestId("cognito-group-detail-acme-devs");
+    await waitFor(() =>
+      expect(detail.textContent ?? "").toMatch(/no users in this group yet/i)
+    );
+    expect(detail.textContent ?? "").not.toMatch(/malformed/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // Section a's COLLAPSED header — the third panel
+  //
+  // The mappings and groups badges were taught to say "unknown". This one was
+  // not, and its failure mode is quieter than theirs: `summary={data ? <Badge/>
+  // : undefined}` removed the badge entirely, so a failed read left the folded
+  // header bare — identical to a header still loading, and carrying no claim an
+  // operator could disbelieve.
+  // -----------------------------------------------------------------------
+
+  it("says 'unknown' on the collapsed tenant header instead of dropping the badge", async () => {
+    state.myTenantsOk = false;
+    render(<MembersPage />);
+
+    const badge = await screen.findByTestId("coord-members-my-tenants-summary");
+    // Both directions: the marker is present AND the header is not silent.
+    // The silence is the regression — the badge used to be absent here, which
+    // is why `findByTestId` resolving at all is half the assertion.
+    await waitFor(() => expect(badgeText(badge)).toMatch(/unknown/i));
+    expect(badgeText(badge)).not.toBe("");
+  });
+
+  it("still shows the home tenant on the collapsed header when the read landed", async () => {
+    // The control: qualifying the signal must not destroy it.
+    state.myTenants = { home_tenant_slug: "acme", tenants: [] };
+    render(<MembersPage />);
+
+    const badge = await screen.findByTestId("coord-members-my-tenants-summary");
+    await waitFor(() => expect(badgeText(badge)).toBe("acme"));
+    expect(badgeText(badge)).not.toMatch(/unknown/i);
+  });
+
+  // -----------------------------------------------------------------------
+  // One tone for one meaning
+  //
+  // Both halves of a group row's blast radius fail the same way and are read
+  // in one glance. `members unknown` in the default foreground beside an amber
+  // `tenant mappings unknown` reads as one caveat and one fact.
+  // -----------------------------------------------------------------------
+
+  it("marks both halves of an unreadable blast radius in the same tone", async () => {
+    state.usersMode = "error";
+    state.mappingsMode = "error";
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+
+    await user_.click(
+      await screen.findByRole("button", { name: /cognito groups/i })
+    );
+    const members = await screen.findByTestId(
+      "cognito-group-members-count-acme-devs"
+    );
+    const mappings = await screen.findByTestId(
+      "cognito-group-mappings-unknown-acme-devs"
+    );
+    await waitFor(() =>
+      expect(members.textContent ?? "").toMatch(/members unknown/i)
+    );
+    expect(members.className).toMatch(/text-amber-600/);
+    // Asserted against the sibling rather than against a literal, so the two
+    // cannot drift apart without this failing.
+    expect(mappings.className).toMatch(/text-amber-600/);
   });
 });
