@@ -255,28 +255,28 @@ describe("gating", () => {
     expect(notice.textContent).toMatch(/Nothing here says/);
   });
 
-  it("explains WHY a GitHub Actions runner row is not drainable", () => {
-    // The row has a device_id in coord's CI-runner mirror, but that device has
-    // no `coord.tenant_devices` binding — the registrar registers with an
-    // empty tenant list — and `fleet_drain`'s Gate 2 answers
-    // `device_not_in_tenant`. Offering the button off the mirror's id would
-    // ship a control that 403s every time.
-    openPanel({ deviceId: undefined, ciInfrastructure: true });
-    expect(screen.queryByTestId(`coord-dispatch-pause-${HOST}`)).toBeNull();
-    const notice = screen.getByTestId("coord-dispatch-unavailable");
-    expect(notice.getAttribute("data-coord-dispatch")).toBe(
-      "ci_runner_unbound"
-    );
-    expect(notice.textContent).toMatch(/tenant_devices/);
-    // And it points at the lever that DOES apply to this host.
-    expect(notice.textContent).toMatch(/qontinui/);
+  it("STILL offers the control for a GitHub Actions runner row", () => {
+    // An earlier cut withheld it, on the premise that these devices carry no
+    // `coord.tenant_devices` binding. False: `ci_runner_registrar`'s
+    // `bind_runners_to_repo_tenants` writes that row, and it is also the JOIN
+    // `list_ci_runners` selects on — so a host can only be on this page
+    // BECAUSE the binding exists, and `fleet_drain`'s Gate 2 passes. Refusing
+    // would have told the operator a host cannot be paused where coord would
+    // have paused it.
+    openPanel({ ciInfrastructure: true });
+    expect(screen.getByTestId(`coord-dispatch-pause-${HOST}`)).toBeTruthy();
   });
 
-  it("keeps a working control on a workstation that also hosts a CI runner", () => {
-    // `ciInfrastructure` means "this row exists ONLY because the mirror named
-    // it" — not "there is a CI runner here". A workstation's coord device is
-    // bound, so its control stays.
+  it("tells a GitHub Actions runner row where its real routing lever is", () => {
+    openPanel({ ciInfrastructure: true });
+    const note = screen.getByTestId("coord-dispatch-ci-note");
+    expect(note.textContent).toMatch(/GitHub Actions runner/);
+    expect(note.textContent).toContain("qontinui");
+  });
+
+  it("adds no such note to an ordinary workstation row", () => {
     openPanel({ ciInfrastructure: false });
+    expect(screen.queryByTestId("coord-dispatch-ci-note")).toBeNull();
     expect(screen.getByTestId(`coord-dispatch-pause-${HOST}`)).toBeTruthy();
   });
 });

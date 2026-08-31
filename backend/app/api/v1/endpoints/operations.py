@@ -4128,9 +4128,15 @@ async def post_fleet_drain(
 
     Same shape as :func:`post_pr_merge_kill_switch` — the admin dependency,
     the ``_proxy_coord_post`` helper, and coord's status codes forwarded
-    verbatim (400 on a blank reason or an out-of-window expiry, 403 when the
-    caller is not an operator admin or the device is not bound to the caller's
-    tenant).
+    verbatim: 400 on an out-of-window expiry, 403 when the caller is not an
+    operator admin or the device is not bound to the caller's tenant
+    (``device_not_in_tenant``).
+
+    A **blank reason never reaches coord** — :class:`FleetDrainBody` refuses it
+    here, so it is a 422 from this door rather than coord's 400. That is the
+    one place this proxy is stricter than the route it fronts, and it is
+    deliberate: the field is required by both, and refusing it one hop earlier
+    names the field instead of returning coord's error string.
 
     Coord, in one versioned transaction:
 
@@ -4215,21 +4221,25 @@ async def post_fleet_undrain(
 # `freshness_secs` / `as_of` are on the wire precisely so the console can label
 # it rather than imply live truth (plan §5 Q2).
 #
-# ## Auth — a deliberate difference from the Phase 1 writes above
+# ## Auth — admin, because that is what coord enforces
 #
-# `get_tenant_id`, not `require_coord_tenant_admin`. Every GET proxy in this
-# file resolves a tenant to forward the operator bearer and lets coord scope
-# and gate; `require_coord_tenant_admin` is this file's posture for MUTATIONS.
-# The Dev Ops page is viewable by the Developer tier (that is exactly what
-# `CoordAdminOnly` exists to draw the line for — it hides the write controls,
-# not the telemetry), and admin-gating the label mirror would blank a
-# read-only fact for those viewers while saying nothing true about the fleet.
-# Coord re-validates on its own terms either way.
+# `require_coord_tenant_admin`. Most GET proxies in this file use
+# `get_tenant_id` and let coord scope the read, and this one was written that
+# way first, on the reasoning that the Dev Ops page is viewable by the
+# Developer tier and admin-gating telemetry would blank a read-only fact for
+# those viewers. **Coord does not implement that posture**:
+# `fleet_ci_runners::get_fleet_ci_runners` calls
+# `rbac::deny_unless_tenant_admin` before it queries anything, so a
+# Developer-tier caller gets a 403 from coord regardless. Matching the gate here
+# keeps this door's posture equal to the route it fronts and stops the comment
+# describing a behaviour the system does not have. The console degrades
+# honestly either way — the hook lands on `unavailable`, which renders as
+# "label state unknown", never as a host with no labels.
 
 
 @router.get("/fleet/ci-runners")
 async def get_fleet_ci_runners(
-    tenant_id: UUID = Depends(get_tenant_id),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
 ) -> Any:
     """Return coord's mirror of the self-hosted CI runners and their labels.
 
@@ -4255,8 +4265,15 @@ async def get_fleet_ci_runners(
     `[self-hosted, qontinui]` job, which is what makes this read worth
     surfacing: it is the only place the console can see routing eligibility.
 
-    ``as_of`` / ``freshness_secs`` describe the MIRROR, not GitHub. Pass them
-    through untouched; the page labels the age rather than implying live truth.
+    ``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and
+    ``freshness_secs`` is coord's SELECTION WINDOW — not an age. Coord's own
+    words: "the freshness window the query was executed under, in seconds",
+    sourced from ``merge_scheduler::ci_runner_freshness_secs()``
+    (``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).
+    The rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A
+    consumer that renders it as "N seconds old" prints a constant as if it were
+    a measurement; the real per-row age is ``as_of - last_seen_at``, which is
+    why ``last_seen_at`` is on the wire. All three pass through untouched.
 
     Forwarded verbatim — this proxy adds no shape of its own, so a coord that
     grows a field serves it to the console without a change here.

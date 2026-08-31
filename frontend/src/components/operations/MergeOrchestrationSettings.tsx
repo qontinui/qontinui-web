@@ -580,14 +580,14 @@ function TenantDefaultsCard({
             <p className="text-xs text-muted-foreground">
               coord lands a PR by rebasing its commits onto the base branch and
               pushing them straight there. When the rebase rewrites the shas —
-              69.4% of lands, measured over the 90 days to 2026-08-26 — the PR&apos;s
-              head ref is left behind, so GitHub shows grey{" "}
-              <span className="font-mono">Closed</span> on work that demonstrably
-              landed. With this on, coord also moves the head ref to the rebased
-              tip, and GitHub marks the PR{" "}
-              <span className="font-mono">Merged</span> by itself. Off by default
-              — it is a force-update on a branch coord does not own, so it is
-              graduated per repo below rather than flipped fleet-wide.
+              69.4% of lands, measured over the 90 days to 2026-08-26 — the
+              PR&apos;s head ref is left behind, so GitHub shows grey{" "}
+              <span className="font-mono">Closed</span> on work that
+              demonstrably landed. With this on, coord also moves the head ref
+              to the rebased tip, and GitHub marks the PR{" "}
+              <span className="font-mono">Merged</span> by itself. Off by
+              default — it is a force-update on a branch coord does not own, so
+              it is graduated per repo below rather than flipped fleet-wide.
             </p>
             {!ffLandHeadSyncSupported(profile) && (
               <p
@@ -598,7 +598,8 @@ function TenantDefaultsCard({
                 (qontinui-web#1092) and coord&apos;s resolver reads them
                 (qontinui-coord#1660), but the settings API does not carry the
                 field yet, so there is no writer for it. Shown here so the dial
-                is discoverable, and it goes live by itself once coord serves it.
+                is discoverable, and it goes live by itself once coord serves
+                it.
               </p>
             )}
           </div>

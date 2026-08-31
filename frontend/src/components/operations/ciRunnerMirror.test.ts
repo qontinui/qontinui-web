@@ -5,6 +5,7 @@ import {
   indexCiRunners,
   matchesFleetRouting,
   mergeCiRunners,
+  mirrorRowAgeSecs,
   missingRoutingLabels,
   normalizeCiRunnerStatus,
   parseCiRunnersPayload,
@@ -102,8 +103,9 @@ describe("parseCiRunnersPayload", () => {
       "msi-wsl",
       "spaceship-wsl",
     ]);
-    expect(read.freshnessSecs).toBe(42);
+    expect(read.windowSecs).toBe(42);
     expect(read.asOf).toBe("2026-08-31T12:00:30Z");
+    expect(read.skippedRows).toBe(0);
   });
 
   it("an EMPTY runners list is a real measurement, not a failure", () => {
@@ -120,12 +122,31 @@ describe("parseCiRunnersPayload", () => {
     expect(parseCiRunnersPayload({ runners: {} }).state).toBe("unavailable");
   });
 
-  it("reports missing freshness as unknown rather than picking a number", () => {
+  it("reports a missing window as unknown rather than picking a number", () => {
     const read = parseCiRunnersPayload({ runners: [MSI] });
     expect(read.state).toBe("ok");
     if (read.state !== "ok") return;
-    expect(read.freshnessSecs).toBeNull();
+    expect(read.windowSecs).toBeNull();
     expect(read.asOf).toBeNull();
+  });
+
+  it("an ABSENT `runners` key is UNAVAILABLE, not an empty fleet", () => {
+    // A response that never mentioned the roster stated nothing about it.
+    const read = parseCiRunnersPayload({ as_of: "2026-08-31T12:00:30Z" });
+    expect(read.state).toBe("unavailable");
+    if (read.state !== "unavailable") return;
+    expect(read.reason).toMatch(/stated nothing about the roster/);
+  });
+
+  it("counts a duplicate hostname as skipped, first row winning", () => {
+    // One host can hold a separate GitHub registration per repo. Silently
+    // overwriting would show one registration's labels for the host.
+    const { byHostname, skippedRows } = indexCiRunners({
+      runners: [MSI, { ...MSI, ci_runner_labels: ["self-hosted"] }],
+    });
+    expect(byHostname.size).toBe(1);
+    expect(skippedRows).toBe(1);
+    expect(byHostname.get("msi-wsl")?.ci_runner_labels).toContain("qontinui");
   });
 
   it("drops a row with no hostname rather than guessing one", () => {
@@ -178,6 +199,13 @@ describe("mergeCiRunners", () => {
     expect(merged["merytshost"]?.lastJobAt).toBeNull();
   });
 
+  it("carries last_seen_at, the only recency a mirrored row actually has", () => {
+    // Dropping it made every mirrored host render "No jobs run yet" — a claim
+    // about the host drawn from a field the mirror does not send at all.
+    const merged = mergeCiRunners(registry, mirror);
+    expect(merged["merytshost"]?.lastSeenAt).toBe("2026-08-31T12:00:00Z");
+  });
+
   it("marks device-registry rows as such, so no routing verdict is claimed", () => {
     const merged = mergeCiRunners(registry, mirror);
     expect(merged["my-workstation"]?.source).toBe("device-registry");
@@ -195,23 +223,40 @@ describe("mergeCiRunners", () => {
 });
 
 describe("describeMirrorFreshness", () => {
-  it("says the labels are a mirror, with coord's own age", () => {
+  it("states coord's WINDOW as a window, never as an age", () => {
+    // `freshness_secs` is `COORD_CI_RUNNER_FRESHNESS_SECS` — a configured
+    // constant (default 180), not a measurement. Printing "180s old" would put
+    // a constant on screen as if it were the mirror's age.
     const read = parseCiRunnersPayload({
       runners: [MSI],
       as_of: "2026-08-31T12:00:30Z",
-      freshness_secs: 42,
+      freshness_secs: 180,
     });
     const text = describeMirrorFreshness(read);
-    expect(text).toContain("42s old");
+    expect(text).toMatch(/within the last 180s/);
+    expect(text).not.toMatch(/180s old/);
     expect(text).toContain("2026-08-31T12:00:30Z");
-    expect(text).toMatch(/not a live read of GitHub/);
+    expect(text).toMatch(
+      /not a live read\s+of GitHub|not a live read of GitHub/
+    );
   });
 
-  it("says the age is unknown rather than picking a reassuring number", () => {
+  it("says the window is unreported rather than picking a number", () => {
     const text = describeMirrorFreshness(
       parseCiRunnersPayload({ runners: [] })
     );
-    expect(text).toContain("unknown age");
+    expect(text).toMatch(/unreported freshness window/);
+  });
+
+  it("says the roster is partial when rows could not be placed", () => {
+    const text = describeMirrorFreshness(
+      parseCiRunnersPayload({
+        runners: [MSI, { ...MSI, hostname: "" }],
+        freshness_secs: 180,
+      })
+    );
+    expect(text).toMatch(/1 row\(s\).*NOT shown/);
+    expect(text).toMatch(/partial/);
   });
 
   it("reports a failed read as UNKNOWN label state, with the reason", () => {
@@ -221,5 +266,25 @@ describe("describeMirrorFreshness", () => {
     });
     expect(text).toMatch(/^Label state unknown/);
     expect(text).toContain("coord is not reachable");
+  });
+});
+
+describe("mirrorRowAgeSecs — the age `freshness_secs` is not", () => {
+  it("ages a row against the read's own as_of", () => {
+    expect(
+      mirrorRowAgeSecs("2026-08-31T12:00:30Z", "2026-08-31T12:00:00Z")
+    ).toBe(30);
+  });
+
+  it("is UNKNOWN when either end is missing or unparseable", () => {
+    expect(mirrorRowAgeSecs(null, "2026-08-31T12:00:00Z")).toBeNull();
+    expect(mirrorRowAgeSecs("2026-08-31T12:00:30Z", null)).toBeNull();
+    expect(mirrorRowAgeSecs("nope", "2026-08-31T12:00:00Z")).toBeNull();
+  });
+
+  it("clamps clock skew to 0 rather than reporting a future sighting", () => {
+    expect(
+      mirrorRowAgeSecs("2026-08-31T12:00:00Z", "2026-08-31T12:00:30Z")
+    ).toBe(0);
   });
 });

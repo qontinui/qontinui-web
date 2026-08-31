@@ -156,9 +156,12 @@ describe("describeDrainResult", () => {
     expect(out).not.toMatch(/^Released/);
   });
 
-  it("distinguishes a no-op pause from a no-op release", () => {
+  it("has no 'already paused' arm, because no response can produce one", () => {
+    // Coord's no-op arm hardcodes `drained: false`, and a repeat drain always
+    // changes `drained_at`. A branch for `changed:false, drained:true` would be
+    // unreachable code asserting something the wire cannot say.
     const out = describeDrainResult({ ...RESPONSE, changed: false });
-    expect(out).toMatch(/already paused/);
+    expect(out).toMatch(/nothing to release/);
   });
 });
 

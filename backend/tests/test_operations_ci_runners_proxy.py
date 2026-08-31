@@ -6,16 +6,19 @@ for coord's ``GET /coord/fleet/ci-runners``, which serves the label set coord's
 ``ci_runner_registrar`` last mirrored from GitHub's ``actions/runners``
 listing.
 
-Auth posture: ``get_tenant_id`` (any authenticated tenant member), matching
-``GET /operations/fleet/health`` — the nearest sibling read, on the same coord
-path prefix — rather than the ``require_coord_tenant_admin`` the Phase 1 WRITES
-carry. The Dev Ops page is viewable by the Developer tier; ``CoordAdminOnly``
-hides the write controls, not the telemetry, and coord re-validates on its own
-terms.
+Auth posture: ``require_coord_tenant_admin``, matching what coord actually
+enforces — ``fleet_ci_runners::get_fleet_ci_runners`` calls
+``rbac::deny_unless_tenant_admin`` before it queries anything, so a
+Developer-tier caller is refused there regardless. This route was first written
+with ``get_tenant_id`` on the reasoning that admin-gating telemetry would blank
+a read-only fact for viewers who may see the page; coord does not implement that
+posture, and a door whose comment describes a behaviour the system does not have
+is worse than a stricter door.
 
-The route is a pass-through by design: ``as_of`` / ``freshness_secs`` describe
-the MIRROR and must reach the console untouched so it can label the age rather
-than imply live GitHub truth. These tests pin that it adds no shape of its own.
+The route is a pass-through by design: ``as_of``, ``freshness_secs`` and each
+row's ``last_seen_at`` describe the READ, and must reach the console untouched
+so it can label what it is showing rather than imply live GitHub truth. These
+tests pin that it adds no shape of its own.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -68,7 +71,7 @@ _COORD_PAYLOAD = {
 
 def _build_test_app() -> FastAPI:
     from app.api.deps import get_current_active_user_async
-    from app.api.v1.endpoints.operations import get_tenant_id
+    from app.api.v1.endpoints.operations import require_coord_tenant_admin
     from app.api.v1.endpoints.operations import router as operations_router
 
     test_app = FastAPI()
@@ -78,7 +81,7 @@ def _build_test_app() -> FastAPI:
     mock_user.is_active = True
     mock_user.is_verified = True
     test_app.dependency_overrides[get_current_active_user_async] = lambda: mock_user
-    test_app.dependency_overrides[get_tenant_id] = lambda: uuid4()
+    test_app.dependency_overrides[require_coord_tenant_admin] = lambda: uuid4()
     test_app.include_router(operations_router, prefix=API_PREFIX)
     return test_app
 
@@ -119,9 +122,14 @@ class TestGetFleetCiRunners:
         assert instance.get.call_args.args[0].endswith("/coord/fleet/ci-runners")
 
     def test_labels_and_freshness_pass_through_untouched(self, client: TestClient):
-        """The console computes the routing verdict from these labels and
-        labels the age from `freshness_secs`; a proxy that reshaped either
-        would be a second, drifting definition of both."""
+        """The console computes the routing verdict from these labels and the
+        per-row age from ``as_of - last_seen_at``; a proxy that reshaped any of
+        the three would be a second, drifting definition of it.
+
+        Note ``freshness_secs`` is coord's SELECTION WINDOW, not an age — a
+        configured constant (``COORD_CI_RUNNER_FRESHNESS_SECS``, default 180).
+        It is forwarded as-is and the console is careful not to print it as a
+        measurement."""
         with _patch_httpx() as MockClient:
             instance = AsyncMock()
             instance.get.return_value = _mock_response(json_data=_COORD_PAYLOAD)

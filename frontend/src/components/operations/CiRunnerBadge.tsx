@@ -9,7 +9,12 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "./utils";
-import { CI_ROUTING_LABELS, missingRoutingLabels } from "./ciRunnerMirror";
+import {
+  isRoutingLabel,
+  matchesFleetRouting,
+  mirrorRowAgeSecs,
+  missingRoutingLabels,
+} from "./ciRunnerMirror";
 import type { CiRunnerInfo, CiRunnerStatus } from "./types";
 
 interface CiRunnerBadgeProps {
@@ -37,12 +42,6 @@ const dotColors: Record<CiRunnerStatus, string> = {
   offline: "bg-zinc-400",
   unknown: "bg-amber-400",
 };
-
-/** Case-insensitive, matching how GitHub compares runner labels. */
-function isRoutingLabel(label: string): boolean {
-  const l = label.trim().toLowerCase();
-  return CI_ROUTING_LABELS.some((r) => r.toLowerCase() === l);
-}
 
 /**
  * CiRunnerBadge -- renders CI runner status for a machine.
@@ -75,11 +74,29 @@ export function CiRunnerBadge({ ciRunner, className }: CiRunnerBadgeProps) {
   const { status, labels, lastJobAt } = ciRunner;
   const mirrored = ciRunner.source === "coord-mirror";
   const missing = mirrored ? missingRoutingLabels(labels) : [];
-  const routable = mirrored && missing.length === 0;
+  const routable = mirrored && matchesFleetRouting(labels);
 
-  const tooltipText = lastJobAt
-    ? `Last job: ${relativeTime(lastJobAt)}`
-    : "No jobs run yet";
+  // A mirrored row carries NO job history — coord's CI-runner read does not
+  // serve one — so deriving "No jobs run yet" from a null `lastJobAt` would be
+  // a claim about the host made from a field nobody sent. What the mirror does
+  // carry is `last_seen_at`, aged against the read's own `as_of`.
+  let tooltipText: string;
+  if (mirrored) {
+    const ageSecs = mirrorRowAgeSecs(
+      ciRunner.mirrorAsOf ?? null,
+      ciRunner.lastSeenAt
+    );
+    const seen = ciRunner.lastSeenAt
+      ? ageSecs != null
+        ? `Last seen ${ageSecs}s before this read`
+        : `Last seen ${relativeTime(ciRunner.lastSeenAt)}`
+      : "Last seen: not reported";
+    tooltipText = `${seen} — the mirror carries no job history`;
+  } else {
+    tooltipText = lastJobAt
+      ? `Last job: ${relativeTime(lastJobAt)}`
+      : "No jobs run yet";
+  }
 
   return (
     <div

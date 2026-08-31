@@ -26,10 +26,24 @@
  *
  * Nothing on this page reads GitHub. Coord's registrar polls
  * `GET /repos/{repo}/actions/runners` roughly every 60 s and this shows what
- * that poll last wrote. The response carries `as_of` and `freshness_secs` for
- * exactly this reason and the UI labels the age — a page that implies live
- * routing truth is a page that will one day tell an operator a host is
- * routable while GitHub disagrees.
+ * that poll last wrote. The UI labels that — a page that implies live routing
+ * truth is a page that will one day tell an operator a host is routable while
+ * GitHub disagrees.
+ *
+ * ### `freshness_secs` is a WINDOW, not an age. Read coord before believing it.
+ *
+ * `fleet_ci_runners.rs` calls it "the freshness window the query was executed
+ * under, in seconds", and it comes from
+ * `merge_scheduler::ci_runner_freshness_secs()` —
+ * `COORD_CI_RUNNER_FRESHNESS_SECS`, **a configured constant, default 180**. The
+ * response means: these are the runners coord heard from in
+ * `(as_of - freshness_secs, as_of]`.
+ *
+ * Rendering it as "180s old" would print a fixed number as if it were a
+ * measurement, for a mirror that might be two seconds old — the exact defect
+ * this module claims to exist to prevent. It is therefore modelled as
+ * `windowSecs`, named for what it is, and the real per-row age is computed from
+ * `as_of - last_seen_at`, which coord does send.
  *
  * Every failure lands on `unavailable` WITH the reason. A read that did not
  * answer is never rendered as "this host has no labels", which would be a claim
@@ -84,10 +98,23 @@ export type CiRunnerMirrorRead =
   | {
       state: "ok";
       byHostname: Map<string, CoordCiRunnerRow>;
-      /** When coord last refreshed the mirror. `null` when it did not say. */
+      /** When coord ran the read — the anchor the window is measured back
+       * from. `null` when it did not say. */
       asOf: string | null;
-      /** Coord's own age-of-mirror, in seconds. `null` when it did not say. */
-      freshnessSecs: number | null;
+      /**
+       * Coord's SELECTION WINDOW in seconds, not an age: every row here was
+       * seen within `windowSecs` of `asOf`. A configured constant
+       * (`COORD_CI_RUNNER_FRESHNESS_SECS`, default 180), so it says nothing
+       * about how old any particular row is — use `mirrorRowAgeSecs` for that.
+       */
+      windowSecs: number | null;
+      /**
+       * Rows coord sent that could not be indexed, because they named no
+       * hostname or collided with one already claimed. Surfaced rather than
+       * swallowed: the page shows a roster and must be able to say the roster
+       * is partial.
+       */
+      skippedRows: number;
     }
   | { state: "unavailable"; reason: string };
 
@@ -114,10 +141,21 @@ export function normalizeCiRunnerStatus(
   }
 }
 
-/** Case-insensitive membership — GitHub matches runner labels that way. */
-function hasLabel(labels: readonly string[], want: string): boolean {
+/**
+ * Case-insensitive membership — GitHub matches runner labels that way.
+ *
+ * Exported because the badge needs the same comparison to decide which chips to
+ * emphasise, and two case-folding rules for one question is how a chip ends up
+ * highlighted on one row and not the next.
+ */
+export function hasLabel(labels: readonly string[], want: string): boolean {
   const target = want.toLowerCase();
   return labels.some((l) => l.trim().toLowerCase() === target);
+}
+
+/** True when `label` is one of the two GitHub matches `runs-on` against. */
+export function isRoutingLabel(label: string): boolean {
+  return hasLabel(CI_ROUTING_LABELS, label);
 }
 
 /**
@@ -156,6 +194,14 @@ export function indexCiRunners(payload: CoordCiRunnersPayload): {
       skippedRows += 1;
       continue;
     }
+    // A COLLISION is counted too, and the first row wins. One host can hold a
+    // separate GitHub registration per repo, so two rows sharing a hostname is
+    // a real shape — and silently overwriting would show one registration's
+    // labels while the operator believes they are looking at the host.
+    if (byHostname.has(hostname)) {
+      skippedRows += 1;
+      continue;
+    }
     byHostname.set(hostname, {
       device_id: row.device_id,
       hostname,
@@ -186,20 +232,28 @@ export function parseCiRunnersPayload(payload: unknown): CiRunnerMirrorRead {
     };
   }
   const body = payload as CoordCiRunnersPayload;
-  if (body.runners !== undefined && !Array.isArray(body.runners)) {
+  // An ABSENT `runners` key is unavailable, not an empty fleet. A response that
+  // never mentioned the roster has told us nothing about it, and "ok with zero
+  // rows" would put that on screen as a successful measurement — the same
+  // unknown-as-empty conflation this module refuses everywhere else.
+  if (!Array.isArray(body.runners)) {
     return {
       state: "unavailable",
       reason:
-        "The CI-runner mirror's `runners` field was not a list, so no host " +
-        "could be matched to a label set.",
+        body.runners === undefined
+          ? "The CI-runner mirror's response carried no `runners` field, so it " +
+            "stated nothing about the roster."
+          : "The CI-runner mirror's `runners` field was not a list, so no host " +
+            "could be matched to a label set.",
     };
   }
-  const { byHostname } = indexCiRunners(body);
+  const { byHostname, skippedRows } = indexCiRunners(body);
   return {
     state: "ok",
     byHostname,
+    skippedRows,
     asOf: typeof body.as_of === "string" ? body.as_of : null,
-    freshnessSecs:
+    windowSecs:
       typeof body.freshness_secs === "number" &&
       Number.isFinite(body.freshness_secs)
         ? body.freshness_secs
@@ -208,11 +262,31 @@ export function parseCiRunnersPayload(payload: unknown): CiRunnerMirrorRead {
 }
 
 /**
+ * How long ago coord last heard from this host, in seconds — the number
+ * `freshness_secs` is NOT.
+ *
+ * `null` when either end is missing or unparseable, which is UNKNOWN and must
+ * render as such. A negative result (a `last_seen_at` after `as_of`, i.e. clock
+ * skew) clamps to 0 rather than rendering a host as seen in the future.
+ */
+export function mirrorRowAgeSecs(
+  asOf: string | null,
+  lastSeenAt: string | null | undefined
+): number | null {
+  if (!asOf || !lastSeenAt) return null;
+  const a = Date.parse(asOf);
+  const b = Date.parse(lastSeenAt);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.max(0, Math.round((a - b) / 1000));
+}
+
+/**
  * The one sentence the page must show beside the labels.
  *
- * It never claims the labels are current. `freshness_secs` is coord's own
- * measurement of how old its mirror is; when coord does not report it, the
- * sentence says the age is unknown rather than picking a reassuring number.
+ * It never claims the labels are current, and it never dresses coord's
+ * SELECTION WINDOW up as an age (see the module doc — `freshness_secs` is a
+ * configured constant). What it states is exactly what coord answered: the
+ * window the rows were selected under, and when the read ran.
  */
 export function describeMirrorFreshness(read: CiRunnerMirrorRead): string {
   if (read.state === "loading") {
@@ -221,14 +295,23 @@ export function describeMirrorFreshness(read: CiRunnerMirrorRead): string {
   if (read.state === "unavailable") {
     return `Label state unknown — ${read.reason}`;
   }
-  const age =
-    read.freshnessSecs != null
-      ? `${Math.max(0, Math.round(read.freshnessSecs))}s old`
-      : "of unknown age";
-  const stamp = read.asOf ? `, as of ${read.asOf}` : "";
+  const window =
+    read.windowSecs != null
+      ? `coord heard from within the last ${Math.max(
+          0,
+          Math.round(read.windowSecs)
+        )}s`
+      : "coord heard from inside an unreported freshness window";
+  const stamp = read.asOf ? `, read at ${read.asOf}` : "";
+  const partial =
+    read.skippedRows > 0
+      ? ` ${read.skippedRows} row(s) coord sent could not be placed on a host ` +
+        `and are NOT shown, so this roster is partial.`
+      : "";
   return (
-    `Labels mirror GitHub as coord's ~60s registrar poll last saw them ` +
-    `(${age}${stamp}). This is not a live read of GitHub.`
+    `Rows are the CI runners ${window}${stamp}. Their labels are what ` +
+    `coord's ~60s registrar poll last mirrored from GitHub — not a live read ` +
+    `of GitHub.${partial}`
   );
 }
 
@@ -269,6 +352,13 @@ export function mergeCiRunners(
       status: normalizeCiRunnerStatus(row.ci_runner_status),
       labels: row.ci_runner_labels,
       lastJobAt: merged[hostname]?.lastJobAt ?? null,
+      // Carried, not dropped. Without it every mirror-sourced host renders the
+      // badge's `lastJobAt`-derived tooltip — "No jobs run yet" — which is a
+      // positive claim about a host made from a field the mirror does not
+      // carry at all. `last_seen_at` is what the mirror DOES carry, and it is
+      // the only honest recency this row has.
+      lastSeenAt: row.last_seen_at,
+      mirrorAsOf: mirror.asOf,
       source: "coord-mirror",
     };
   }

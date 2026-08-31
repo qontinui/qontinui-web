@@ -609,6 +609,18 @@ export interface CiRunnerInfo {
    * the arm that claims less.
    */
   source?: "coord-mirror" | "device-registry";
+  /**
+   * When coord last heard from this CI runner (RFC 3339) — `coord-mirror` only.
+   *
+   * The mirror carries no job history at all, so `lastJobAt` is `null` for
+   * every mirrored host. Without this field the badge's tooltip would derive
+   * "No jobs run yet" from that absence, which is a claim about the host made
+   * from a field nobody sent. This is the recency the mirror DOES carry.
+   */
+  lastSeenAt?: string | null;
+  /** The instant coord ran the mirror read — the anchor `lastSeenAt` is aged
+   * against. `coord-mirror` only. */
+  mirrorAsOf?: string | null;
 }
 
 // ============================================================================

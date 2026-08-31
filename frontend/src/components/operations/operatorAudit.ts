@@ -241,12 +241,52 @@ export function parseAuditPayload(payload: unknown): AuditRead {
       reason: "the audit feed did not come back as an object.",
     };
   }
-  if (body["audit"] !== undefined && !Array.isArray(body["audit"])) {
+  // An ABSENT `audit` key is unavailable, not an empty trail. A body that never
+  // mentioned the feed has stated nothing about it, and "ok with zero rows"
+  // renders as "the read succeeded — this is a measurement, not a failed look",
+  // which would be a claim drawn from a response that made none.
+  if (!Array.isArray(body["audit"])) {
     return {
       state: "unavailable",
-      reason: "the audit feed's `audit` field was not a list.",
+      reason:
+        body["audit"] === undefined
+          ? "the audit feed's response carried no `audit` field, so it stated " +
+            "nothing about what was written."
+          : "the audit feed's `audit` field was not a list.",
     };
   }
-  const rows = (body["audit"] as AuditRow[] | undefined) ?? [];
-  return { state: "ok", rows };
+  return { state: "ok", rows: body["audit"] as AuditRow[] };
+}
+
+/**
+ * A plain-language label for one `coord.operator_audit` action.
+ *
+ * The style guide's R8 — no internal vocabulary on a primary surface, and the
+ * derivation lives in a pure, unit-tested module rather than inline in JSX.
+ * `fleet.drain.set` is coord's enum; "Paused coord dispatch to a machine" is
+ * what an operator scanning the feed is looking for.
+ *
+ * `mapped: false` is the honest fallback. An action this build has no label for
+ * renders its own id rather than "Unknown action": the id is a real fact and a
+ * working filter term, while a friendly-sounding placeholder is neither. The
+ * raw string reaches the DOM in `data-audit-action` either way, so a test or a
+ * spec selector never depends on the prose.
+ */
+export interface AuditActionLabel {
+  label: string;
+  mapped: boolean;
+}
+
+const ACTION_LABELS: Readonly<Record<string, string>> = {
+  "fleet.drain.set": "Paused coord dispatch to a machine",
+  "fleet.drain.clear": "Resumed coord dispatch to a machine",
+  "pr_merge.kill_switch": "Fired the merge kill switch",
+  "pr_merge.merge_enabled": "Changed merge enablement",
+  "operator.disable": "Disabled an operator",
+  "operator.enable": "Re-enabled an operator",
+};
+
+export function describeAuditAction(action: string): AuditActionLabel {
+  const label = ACTION_LABELS[action];
+  return label ? { label, mapped: true } : { label: action, mapped: false };
 }

@@ -4,6 +4,7 @@ import {
   DEFAULT_AUDIT_FILTER_ID,
   NIL_OPERATOR_ID,
   blastRadiusOf,
+  describeAuditAction,
   isNilOperator,
   parseAuditPayload,
   reasonOf,
@@ -179,5 +180,31 @@ describe("parseAuditPayload", () => {
   it("a failed shape is UNAVAILABLE, never an empty feed", () => {
     expect(parseAuditPayload(null).state).toBe("unavailable");
     expect(parseAuditPayload({ audit: "nope" }).state).toBe("unavailable");
+  });
+
+  it("an ABSENT `audit` key is UNAVAILABLE too", () => {
+    const read = parseAuditPayload({ count: 0 });
+    expect(read.state).toBe("unavailable");
+    if (read.state !== "unavailable") return;
+    expect(read.reason).toMatch(/stated nothing about what was written/);
+  });
+});
+
+describe("describeAuditAction — R8", () => {
+  it("labels the actions this console knows", () => {
+    expect(describeAuditAction("fleet.drain.set")).toEqual({
+      label: "Paused coord dispatch to a machine",
+      mapped: true,
+    });
+    expect(describeAuditAction("fleet.drain.clear").mapped).toBe(true);
+  });
+
+  it("falls back to the raw id, never to a friendly placeholder", () => {
+    // The id is a real fact and a working filter term; "Unknown action" is
+    // neither, and would hide the one string an operator could act on.
+    expect(describeAuditAction("fleet.something.new")).toEqual({
+      label: "fleet.something.new",
+      mapped: false,
+    });
   });
 });

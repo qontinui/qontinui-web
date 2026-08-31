@@ -260,10 +260,10 @@ function statusFromProposal(p: ProposalDetail): UnifiedStatus {
         reason:
           paths.length > 0
             ? `overlapping files: ${paths.slice(0, 2).join(", ")}${paths.length > 2 ? "…" : ""}`
-            // `||` not `??` — an empty-string error is not nullish and would
+            : // `||` not `??` — an empty-string error is not nullish and would
               // otherwise win, yielding a blank reason instead of this copy.
-              : (redactSecrets(p.error) ||
-              "overlapping files — lands after the other PR"),
+              redactSecrets(p.error) ||
+              "overlapping files — lands after the other PR",
         attention: "waiting",
       };
     }

@@ -767,6 +767,11 @@ export function MachineCard({
           // it keeps a working control. This flag means "this row exists ONLY
           // because the CI-runner mirror named it", which is exactly the
           // population whose devices carry no tenant binding.
+          // Adds one sentence to the scope note; it does NOT withhold the
+          // control. These devices ARE tenant-bound — the registrar's
+          // `bind_runners_to_repo_tenants` writes the row, and that binding is
+          // the JOIN the mirror itself selects on — so coord's drain accepts
+          // them.
           ciInfrastructure={machine.isCiInfrastructure ?? false}
         />
 
@@ -787,9 +792,17 @@ export function MachineCard({
               </span>
             </>
           )}
-          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
-            <span>CI runner active</span>
-          )}
+          {/* `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` a
+              real status (a mirrored row whose `ci_runner_status` coord did not
+              report), the negative form calls a runner nobody has heard from
+              "active" — a wrong claim in the direction that hides a problem,
+              and the exact form `FleetOverview`'s CI stat was fixed away from.
+              A row's own badge says `status unknown`; this line must agree. */}
+          {machine.ciRunner &&
+            (machine.ciRunner.status === "idle" ||
+              machine.ciRunner.status === "busy") && (
+              <span>CI runner active</span>
+            )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
               `device_id`. */}

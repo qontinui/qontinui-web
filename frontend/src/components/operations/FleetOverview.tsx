@@ -208,6 +208,15 @@ function buildMachineGroups(
         currentlyEditing: resolveClaims(activity),
         ciRunner: ciRunners[hostname],
         isCiInfrastructure: true,
+        // The runner inventory has no row for this host — it reached the list
+        // through the CI mirror alone. Saying so is what keeps the card footer
+        // on "runners: unknown · CC sessions: unknown" instead of the measured
+        // "0 of 0 healthy · 0 CC sessions" an exclusion is not. Before the
+        // mirror existed these hosts arrived through the `coordDevices` loop
+        // below, which sets the same flag; the mirror now claims them first, so
+        // it has to set it too or Phase 2 silently converts an unknown into a
+        // zero.
+        coordHealthOnly: true,
         // CI hosts get REAL disk telemetry, not an exemption. A dedicated CI
         // box is exactly the machine whose disk fills with build artifacts —
         // resolving this to a placeholder would blind the one category that

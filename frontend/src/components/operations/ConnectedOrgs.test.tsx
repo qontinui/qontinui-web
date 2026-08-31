@@ -16,7 +16,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 const getMock = vi.fn();
 const fetchMock = vi.fn();
@@ -40,7 +46,9 @@ const ENROLLED_ORG = {
   account_login: "portofino",
   account_type: "Organization",
   installation_id: 222,
-  repos: [{ repo: "portofino/web", merge_enabled: false, profile_source: "auto" }],
+  repos: [
+    { repo: "portofino/web", merge_enabled: false, profile_source: "auto" },
+  ],
 };
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -76,7 +84,10 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
     fireEvent.click(btn);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const [url, opts] = fetchMock.mock.calls[0] as [string, Record<string, unknown>];
+    const [url, opts] = fetchMock.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
     expect(url).toContain("/pr-merge/onboarding/installations/111/enroll");
     expect(opts.method).toBe("POST");
     expect(opts.maxRetries).toBe(0);
@@ -92,7 +103,11 @@ describe("<ConnectedOrgs> enroll/sync button", () => {
             {
               ...EMPTY_ORG,
               repos: [
-                { repo: "acme/web", merge_enabled: null, profile_source: "auto" },
+                {
+                  repo: "acme/web",
+                  merge_enabled: null,
+                  profile_source: "auto",
+                },
               ],
             },
           ],

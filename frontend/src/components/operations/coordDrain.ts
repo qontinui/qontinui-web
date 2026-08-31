@@ -185,10 +185,14 @@ export function undrainConfirmText(hostname: string): string {
  * not report itself as a release.
  */
 export function describeDrainResult(res: DrainResponse): string {
+  // `changed: false` has exactly ONE shape on the wire. Coord's no-op arm
+  // hardcodes `drained: false` (`fleet_drain.rs`), and a repeat DRAIN can never
+  // be a no-op because the entry carries `drained_at: now`, which moves the
+  // JSONB value on every call. So "already paused, unchanged" is unreachable
+  // and is deliberately not written here — a branch no response can produce is
+  // a claim nothing tests.
   if (!res.changed) {
-    return res.drained
-      ? "No change — this machine was already paused, with the same expiry."
-      : "No change — this machine was not paused, so there was nothing to release.";
+    return "No change — this machine was not paused, so there was nothing to release.";
   }
   if (res.drained) {
     const until = res.until ? new Date(res.until) : null;

@@ -47,9 +47,11 @@ export type { DrainResponse, DrainWindow } from "./coordDrain";
 export {
   CI_ROUTING_LABELS,
   describeMirrorFreshness,
-  indexCiRunners,
+  hasLabel,
+  isRoutingLabel,
   matchesFleetRouting,
   mergeCiRunners,
+  mirrorRowAgeSecs,
   missingRoutingLabels,
   normalizeCiRunnerStatus,
   parseCiRunnersPayload,
@@ -70,12 +72,14 @@ export {
   DEFAULT_AUDIT_FILTER_ID,
   NIL_OPERATOR_ID,
   blastRadiusOf,
+  describeAuditAction,
   isNilOperator,
   parseAuditPayload,
   reasonOf,
   resolveAuditFilter,
 } from "./operatorAudit";
 export type {
+  AuditActionLabel,
   AuditFilter,
   AuditRead,
   AuditRow,

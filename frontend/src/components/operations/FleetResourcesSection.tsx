@@ -42,9 +42,7 @@ export interface FleetResourcesSectionProps {
   devices: FleetDeviceRef[];
 }
 
-export function FleetResourcesSection({
-  devices,
-}: FleetResourcesSectionProps) {
+export function FleetResourcesSection({ devices }: FleetResourcesSectionProps) {
   // This section owns the one poll and passes the SAME rows to both children.
   // Two polls of one route would be two chances to disagree about what the
   // fleet looks like right now.

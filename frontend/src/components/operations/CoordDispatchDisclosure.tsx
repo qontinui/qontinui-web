@@ -80,18 +80,19 @@ export interface CoordDispatchDisclosureProps {
   /** For the confirm copy and the result line. Never used to address coord. */
   hostname: string;
   /**
-   * True when this row reached the machine list through coord's CI-runner
-   * mirror rather than the tenant device roster.
+   * True when this row reached the machine list ONLY because coord's CI-runner
+   * mirror named it — a GitHub Actions runner rather than a workstation.
    *
-   * It changes only the copy for the no-device case, and it is not a detail:
-   * those rows have a `device_id` — the mirror carries one — but coord's drain
-   * would refuse it. `ci_runner_registrar` registers with `tenant_ids = &[]`,
-   * so a GitHub-runner row has no `coord.tenant_devices` binding; that is why
-   * it is absent from `/coord/fleet/health` (whose roster query is keyed on
-   * that JOIN) AND why `fleet_drain`'s Gate 2 answers
-   * `device_not_in_tenant`. Wiring the mirror's id into the button would
-   * therefore ship a control that 403s every time. Saying so is the useful
-   * thing this row can do.
+   * It adds one sentence to the scope note and changes nothing else. **It does
+   * NOT withhold the control**, and an earlier cut of this file that did was
+   * wrong on its premise: `ci_runner_registrar` does bind these devices to
+   * their repo's owning tenants, in `bind_runners_to_repo_tenants` — a separate
+   * INSERT into `coord.tenant_devices` run after `register_device`, which is
+   * why `register_device`'s own empty `tenant_ids` proves nothing. That binding
+   * is also the JOIN `list_ci_runners` selects on, so a row can only reach this
+   * page BECAUSE it exists, and `fleet_drain`'s Gate 2 — which checks that same
+   * binding — passes for these devices. Telling the operator the host cannot be
+   * paused would have been false where coord would have accepted the pause.
    */
   ciInfrastructure?: boolean;
 }
@@ -105,7 +106,13 @@ export interface CoordDispatchDisclosureProps {
  * how the reassuring sentence and the real blast radius end up on screen
  * together, disagreeing.
  */
-function ScopeNote({ hostname }: { hostname: string }) {
+function ScopeNote({
+  hostname,
+  ciInfrastructure,
+}: {
+  hostname: string;
+  ciInfrastructure: boolean;
+}) {
   return (
     <div
       className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-2"
@@ -118,6 +125,14 @@ function ScopeNote({ hostname }: { hostname: string }) {
         {drainScopeSentences(hostname).map((sentence) => (
           <li key={sentence}>{sentence}</li>
         ))}
+        {ciInfrastructure && (
+          <li data-testid="coord-dispatch-ci-note">
+            This host is a <strong>GitHub Actions runner</strong>. Pausing coord
+            dispatch is a legal write for it, but the lever that takes it out of
+            GitHub&apos;s routing is its <code>qontinui</code> label, shown
+            above &mdash; not this.
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -154,9 +169,11 @@ function DispatchNotice({
 function DispatchControl({
   deviceId,
   hostname,
+  ciInfrastructure,
 }: {
   deviceId: string;
   hostname: string;
+  ciInfrastructure: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [windowId, setWindowId] = useState(DEFAULT_DRAIN_WINDOW_ID);
@@ -211,7 +228,7 @@ function DispatchControl({
 
   return (
     <div className="space-y-2" data-testid={`coord-dispatch-${hostname}`}>
-      <ScopeNote hostname={hostname} />
+      <ScopeNote hostname={hostname} ciInfrastructure={ciInfrastructure} />
 
       {/* Current state, stated as UNKNOWN rather than as "not paused".
           Coord exposes no read of the drain map — `fleet_drain.rs` has no GET
@@ -351,24 +368,12 @@ export function CoordDispatchDisclosure({
               <ReadOnlyNotice label="Administrator only — coord requires an operator admin to drain a machine" />
             }
           >
-            <DispatchControl deviceId={deviceId} hostname={hostname} />
+            <DispatchControl
+              deviceId={deviceId}
+              hostname={hostname}
+              ciInfrastructure={ciInfrastructure}
+            />
           </CoordAdminOnly>
-        ) : ciInfrastructure ? (
-          <DispatchNotice
-            state="ci_runner_unbound"
-            headline="Not drainable — this is a GitHub Actions runner"
-          >
-            This row came from coord&apos;s CI-runner mirror, and those device
-            rows carry no <code>coord.tenant_devices</code> binding
-            (`ci_runner_registrar` registers them with an empty tenant list).
-            Coord&apos;s drain refuses an unbound device outright
-            (`device_not_in_tenant`), so a button here would fail every time —
-            and it would be aimed at the wrong thing anyway: the drain map is
-            read by coord&apos;s own CI and build dispatch, while this host is
-            drawn by <strong>GitHub</strong>. The lever that takes it out of
-            GitHub&apos;s routing is its <code>qontinui</code> label, shown
-            above.
-          </DispatchNotice>
         ) : (
           <DispatchNotice
             state="no_device"

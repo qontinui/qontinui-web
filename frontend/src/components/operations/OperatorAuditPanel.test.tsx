@@ -83,8 +83,16 @@ describe("a drain is answerable — who, when, why, and how far", () => {
     await openPanel();
 
     const row = await screen.findByTestId(`audit-row-${DRAIN_ROW.audit_id}`);
-    expect(row.textContent).toContain("fleet.drain.set");
-    fireEvent.click(screen.getByRole("button", { name: /fleet.drain.set/ }));
+    // R8 — the LABEL reaches the screen, the enum reaches a data attribute.
+    expect(row.textContent).toContain("Paused coord dispatch to a machine");
+    expect(
+      row
+        .querySelector("[data-audit-action]")
+        ?.getAttribute("data-audit-action")
+    ).toBe("fleet.drain.set");
+    fireEvent.click(
+      screen.getByRole("button", { name: /Paused coord dispatch/ })
+    );
 
     const detail = await screen.findByTestId(
       `audit-detail-${DRAIN_ROW.audit_id}`
@@ -105,9 +113,27 @@ describe("a drain is answerable — who, when, why, and how far", () => {
       count: 1,
     });
     await openPanel();
-    fireEvent.click(screen.getByRole("button", { name: /fleet.drain.set/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Paused coord dispatch/ })
+    );
     const flagged = await screen.findByTestId("audit-nil-operator");
     expect(flagged.textContent).toMatch(/operator not recorded/);
+  });
+});
+
+describe("R8 — no internal vocabulary on the row", () => {
+  it("renders an UNMAPPED action as its own id, not as a friendly placeholder", async () => {
+    // The id is a real fact and a working filter term. "Unknown action" is
+    // neither, and would hide the one string an operator could act on.
+    getMock.mockResolvedValue({
+      audit: [{ ...DRAIN_ROW, action: "fleet.something.new" }],
+      count: 1,
+    });
+    await openPanel();
+    const row = await screen.findByTestId(`audit-row-${DRAIN_ROW.audit_id}`);
+    const identity = row.querySelector("[data-audit-action]");
+    expect(identity?.textContent).toBe("fleet.something.new");
+    expect(identity?.getAttribute("data-audit-action-mapped")).toBe("false");
   });
 });
 
@@ -119,7 +145,9 @@ describe("the two refusals", () => {
     });
     await openPanel();
     expect(screen.getByTestId("audit-blast-unstated")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /fleet.drain.set/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Paused coord dispatch/ })
+    );
     const blast = await screen.findByTestId(
       `audit-blast-${DRAIN_ROW.audit_id}`
     );
@@ -136,6 +164,14 @@ describe("the two refusals", () => {
       /says nothing about whether anyone changed/
     );
     expect(err.textContent).toContain("403");
+  });
+
+  it("a body with NO `audit` key is unavailable, not an empty trail", async () => {
+    // A response that never mentioned the feed stated nothing about it.
+    getMock.mockResolvedValue({ count: 0 });
+    await openPanel();
+    const err = await screen.findByTestId("operator-audit-error");
+    expect(err.textContent).toMatch(/stated\s+nothing about what was written/);
   });
 
   it("an EMPTY feed says the read succeeded", async () => {

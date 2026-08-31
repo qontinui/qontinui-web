@@ -170,6 +170,8 @@ describe("CiStatusPanel notify-when-green arm outcome", () => {
     expect(chip.getAttribute("data-arm-tone")).toBe("armed");
     // The warning rides the tooltip, which mounts on hover.
     await userEvent.hover(chip);
-    await waitFor(() => expect(screen.getAllByText(steer).length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText(steer).length).toBeGreaterThan(0)
+    );
   });
 });

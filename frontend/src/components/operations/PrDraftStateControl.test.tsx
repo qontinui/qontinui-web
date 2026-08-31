@@ -220,7 +220,9 @@ describe("PrDraftStateControl", () => {
       const wrongTenant = toastError.mock.calls[0][1] as {
         description: string;
       };
-      expect(wrongTenant.description).toContain("repo_not_registered_to_tenant");
+      expect(wrongTenant.description).toContain(
+        "repo_not_registered_to_tenant"
+      );
       // The whole point: the two 404s must not read the same.
       expect(wrongTenant.description).not.toEqual(notFound.description);
     });
@@ -286,11 +288,8 @@ describe("PrDraftStateControl", () => {
       expect(splitOwnerRepo(input as string)).toEqual(expected);
     });
 
-    it.each(["", "noslash", "/leading", "trailing/"])(
-      "rejects %s",
-      (input) => {
-        expect(splitOwnerRepo(input)).toBeNull();
-      }
-    );
+    it.each(["", "noslash", "/leading", "trailing/"])("rejects %s", (input) => {
+      expect(splitOwnerRepo(input)).toBeNull();
+    });
   });
 });

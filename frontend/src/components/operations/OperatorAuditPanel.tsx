@@ -58,6 +58,7 @@ import {
   AUDIT_FILTERS,
   DEFAULT_AUDIT_FILTER_ID,
   blastRadiusOf,
+  describeAuditAction,
   isNilOperator,
   parseAuditPayload,
   reasonOf,
@@ -106,11 +107,25 @@ function AuditRowView({
 }) {
   const blast = blastRadiusOf(row);
   const reason = reasonOf(row);
+  // R8 — the label reaches the screen, the enum reaches a data attribute. An
+  // action this build has no label for shows its own id rather than a
+  // friendly-sounding placeholder: the id is a real fact and a working filter
+  // term, and `data-audit-action-mapped` says which case you are looking at.
+  const actionLabel = describeAuditAction(row.action);
   return (
     <RecordRow
       rowKey={row.audit_id}
       data-testid={`audit-row-${row.audit_id}`}
-      identity={<span className="font-mono">{row.action}</span>}
+      identity={
+        <span
+          className={actionLabel.mapped ? undefined : "font-mono"}
+          title={row.action}
+          data-audit-action={row.action}
+          data-audit-action-mapped={actionLabel.mapped ? "true" : "false"}
+        >
+          {actionLabel.label}
+        </span>
+      }
       label={
         row.resource_key ? (
           <span title={row.resource_key}>
@@ -198,6 +213,7 @@ function AuditRowView({
             {JSON.stringify(
               {
                 audit_id: row.audit_id,
+                action: row.action,
                 occurred_at: row.occurred_at,
                 metadata: row.metadata,
               },
