@@ -6465,11 +6465,18 @@ async def create_user_tenant(
     - ``429``/``403`` — the per-operator creation cap
       (``COORD_SELF_SERVICE_TENANT_CAP``).
 
-    NOTE (plan Q5, out of scope here): the new tenant is an ADDITIONAL
-    membership, not the creator's home tenant, and ``mint_pair_code_endpoint``
-    can only mint pair codes for the caller's home — so no runner can be
-    paired to a self-service project until that endpoint is generalized.
-    The create dialog states this.
+    Runner pairing is NOT blocked for a self-service project, contrary to a
+    note that used to sit here (and a paragraph in the create dialog; both
+    deleted by plan
+    ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
+    Phase 2). The new tenant is an ADDITIONAL membership rather than the
+    creator's home, and ``mint_pair_code_endpoint`` does burn
+    ``identity.home_tenant_id`` — but that identity is already re-scoped to
+    the operator's SELECTED tenant: ``/api/v1/devices/pair-codes`` is in the
+    frontend's ``ACTIVE_TENANT_URL_PREFIXES``, so the browser attaches
+    ``X-Qontinui-Active-Tenant``; ``get_coord_identity`` forwards it to
+    coord's ``/me``; coord re-scopes and returns the active tenant as
+    ``home_tenant_id``. Switching to the new project mints codes for it.
     """
     # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``.
     # ``capture_caller_bearer`` is a sync ``def``; FastAPI runs sync
