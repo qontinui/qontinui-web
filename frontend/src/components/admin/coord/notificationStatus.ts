@@ -242,7 +242,26 @@ export function matchesNotificationRef(
 export function linkedRefNotice(state: {
   found: boolean;
   loading: boolean;
+  /** The HEAD read failed — the feed itself is not answering. */
   error: boolean;
+  /**
+   * A "Load more" failed while the head read is fine.
+   *
+   * Its own input rather than folded into `error`, for the reason `error` is
+   * not `error`: the two failures want DIFFERENT sentences. The head failing
+   * means the feed is down and there is nothing to do here. A page append
+   * failing means the feed is healthy, the walk is short, and the remedy is to
+   * retry the button — so saying "the feed above failed to load" names a thing
+   * that is working and withholds the one action that would help.
+   */
+  pagingFailed?: boolean;
+  /**
+   * A kind filter or the unread-only switch is on, so the event may be excluded
+   * rather than merely further back. Only consulted by the `pagingFailed` arm,
+   * which otherwise SUBTRACTS an unknown it never resolved: a failed page adds
+   * "we could not look further", it does not rule out "the filter hides it".
+   */
+  filterActive?: boolean;
   /** coord has the routes but not the table — there is no feed to search. */
   migrationPending?: boolean;
 }): string {
@@ -262,6 +281,25 @@ export function linkedRefNotice(state: {
   if (state.loading) return "Looking for the linked event…";
   if (state.error) {
     return "The linked event could not be looked up — the feed above failed to load.";
+  }
+  // Ranked BELOW `error` on purpose: when both are true the head is down, and
+  // that is the bigger truth. Alone it is the opposite situation — the feed is
+  // answering and only the walk is short — so this arm names the BUTTON rather
+  // than the feed.
+  //
+  // It keeps the filter clause, though, because a failed page ADDS an unknown
+  // without resolving the one the fallback arm was already carrying. An event
+  // excluded by the kind filter will never match however many pages load, so
+  // an arm that named only the button would leave the operator retrying it
+  // forever with the one action that works — clearing the filter — never
+  // mentioned.
+  if (state.pagingFailed) {
+    const base =
+      "The linked event is not on the pages loaded so far, and loading more " +
+      "failed — whether it is further back is unknown. Try Load more again.";
+    return state.filterActive
+      ? `${base} It may also be excluded by the filters above — clear them.`
+      : base;
   }
   return (
     "The linked event is not on the page that is loaded. It may be older than " +
