@@ -35,10 +35,11 @@ from app.api.v1.endpoints.admin_dev import (
     _capture_bearer_best_effort,
 )
 from app.api.v1.endpoints.operations import (
-    _caller_bearer,
-    _extract_caller_token,
+    ACTIVE_TENANT_HEADER,
+    _effective_tenant_id,
     _proxy_coord_get,
     _tenant_headers,
+    capture_caller_bearer,
     get_tenant_id,
 )
 from app.core.config import settings
@@ -83,8 +84,14 @@ _FULL_COVERAGE_THRESHOLD = 0.99
 # Short per-tenant TTL cache over the whole matrix fan-out. The matrix fires ~11
 # live coord observer reads per load; without this, N dashboard viewers = N×11
 # coord reads. React Query already throttles a single client; this bounds the
-# coord load across all viewers of a tenant. Keyed by tenant; small + in-process
-# (per worker) by design — staleness is acceptable for a completeness view.
+# coord load across all viewers of a tenant. Small + in-process (per worker) by
+# design — staleness is acceptable for a completeness view.
+#
+# The key MUST be the EFFECTIVE tenant (the switcher selection when the operator
+# is a member of it, else home), never the home tenant, because coord scopes the
+# probed verdicts to the selection we forward. Keying on home while forwarding
+# the selection would file tenant B's matrix under tenant A and serve it to A —
+# a cross-tenant read that outlives the request that caused it.
 _MATRIX_CACHE: dict[str, tuple[float, Any]] = {}
 _MATRIX_CACHE_TTL_S = 30.0
 
@@ -202,28 +209,53 @@ async def get_twin_subspaces(
     """Live numerator for the completeness matrix: a per-sub-space probe of
     every fleet-wide snapshot twin observer.
 
-    Per-tenant: the home tenant is resolved best-effort (and the caller's Cognito
-    bearer captured for forwarding). The matrix reflects what coord can observe
-    for *their* tenant — flag-gated / tenant-scoped observers legitimately read
-    ``blind`` for some tenants. If coord/the tenant is unavailable we DEGRADE to
-    an all-error matrix (HTTP 200), never 5xx.
+    Per-tenant: the tenant is resolved best-effort (and the caller's Cognito
+    bearer **plus their tenant-switcher selection** captured for forwarding).
+    The matrix reflects what coord can observe for *their* tenant — flag-gated
+    / tenant-scoped observers legitimately read ``blind`` for some tenants. If
+    coord/the tenant is unavailable we DEGRADE to an all-error matrix (HTTP
+    200), never 5xx.
+
+    Tenant selection (plan
+    ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
+    Phase 3). This route captures the caller's context INLINE rather than via
+    ``Depends(get_tenant_id)`` like its siblings, and used to set only
+    ``_caller_bearer`` — so ``_tenant_headers`` found ``_caller_active_tenant``
+    at its ``None`` default and dropped ``X-Qontinui-Active-Tenant``, silently
+    serving a tenant-switched operator their HOME tenant's matrix. It now calls
+    the same ``capture_caller_bearer`` the siblings reach through, which sets
+    both.
+
+    Forwarding the header alone would be worse than the bug: the fan-out result
+    is cached, so a matrix coord scoped to the SELECTED tenant would land under
+    the HOME tenant's key and later be served to a request that selected home —
+    a cached cross-tenant read. The cache is therefore keyed on the EFFECTIVE
+    tenant (``_effective_tenant_id``: the selection when the operator is a
+    member of it, else home — mirroring coord's own
+    ``apply_active_tenant_override``, which degrades a non-member selection to
+    home rather than widening).
     """
-    _caller_bearer.set(_extract_caller_token(request))
+    active_tenant = request.headers.get(ACTIVE_TENANT_HEADER)
+    capture_caller_bearer(request)
+    tenant_id: UUID | None = None
+    effective_id: UUID | None = None
     try:
         identity = await get_coord_identity(request)
         tenant_id = identity.home_tenant_id
+        effective_id = _effective_tenant_id(identity, active_tenant)
     except Exception:  # coord unreachable / unresolvable — degrade, don't 5xx
         tenant_id = None
-    if tenant_id is None:
+        effective_id = None
+    if tenant_id is None or effective_id is None:
         return _degraded_matrix("coord_unavailable")
 
-    cache_key = str(tenant_id)
+    cache_key = str(effective_id)
     now = time.monotonic()
     cached = _MATRIX_CACHE.get(cache_key)
     if cached is not None and now - cached[0] < _MATRIX_CACHE_TTL_S:
         return cached[1]
 
-    headers = _tenant_headers(tenant_id)
+    headers = _tenant_headers(effective_id)
     async with httpx.AsyncClient(timeout=_TWIN_PROBE_TIMEOUT) as client:
         results = await asyncio.gather(
             *(_probe_subspace(client, s, headers) for s in _PROBEABLE_SUBSPACES)
