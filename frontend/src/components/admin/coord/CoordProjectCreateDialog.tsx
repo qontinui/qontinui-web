@@ -37,7 +37,12 @@
  *    And because it has no veto, the name it dislikes still reaches coord — so
  *    `projectCreateErrorMessage` renders coord's `invalid_name` reason through
  *    the preview's own `projectSlugProblemMessage`. Rule 1 and rule 2 are one
- *    rejection seen twice, and they must say the same thing.
+ *    rejection seen twice, and they must say the same thing — which means the
+ *    surface must then say it ONCE. Both are rendered here simultaneously, so
+ *    agreeing on the sentence is what makes duplicating it possible; the
+ *    dedupe below is the other half of that agreement, not a cosmetic tidy.
+ *    For the same reason coord's answer is held WITH the name it answered:
+ *    a sentence that outlives its name is the same contradiction again.
  *
  * There used to be a third rule, and a paragraph in the success state
  * enforcing it: "a runner can't be paired to this project yet — pair codes
@@ -235,7 +240,16 @@ export function CoordProjectCreateDialog({
   const { setActiveTenantId } = useTenant();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Coord's answer is about the name that was SUBMITTED, so it is stored WITH
+  // that name rather than as a bare sentence. A bare sentence outlives the
+  // value it describes: the box was cleared only on open and on the next
+  // submit, so editing `ab` into `abc` left "A short id needs at least 3
+  // letters or digits." sitting under a preview reading `Short id: abc`. That
+  // is the same contradiction the `invalid_name` arm above exists to remove,
+  // displaced in time — and sharper now that the sentence is specific.
+  const [error, setError] = useState<{ name: string; message: string } | null>(
+    null
+  );
   const [created, setCreated] = useState<TenantCreateResponse | null>(null);
 
   // Reset every time the dialog opens, so a prior failure or a prior
@@ -266,6 +280,23 @@ export function CoordProjectCreateDialog({
     ? null
     : projectSlugProblemMessage(slugPreview.reason);
 
+  // Coord's answer, but only while the field still holds the name it answered.
+  const shownError =
+    error !== null && error.name === trimmed ? error.message : null;
+
+  // One rejection, one sentence — shown ONCE. Rule 2 renders coord's
+  // `invalid_name` reason through `projectSlugProblemMessage`, which is rule
+  // 1's own function, so agreeing means the two surfaces produce the IDENTICAL
+  // string and this component renders both at the same time. The error box is
+  // the half that stays: it is `role="alert"`, so it is the one that announces
+  // the answer to the click that asked for it. When coord says something the
+  // preview could not have said (`slug_taken`, `reserved_name`) nothing is
+  // duplicated and both halves stand — the id the name derives, and the fact
+  // that id is unavailable.
+  const previewProblem = slugProblem !== shownError ? slugProblem : null;
+  const showPreview =
+    trimmed.length > 0 && (slugPreview.ok || previewProblem !== null);
+
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -275,7 +306,7 @@ export function CoordProjectCreateDialog({
       const result = await createTenant({ display_name: trimmed });
       setCreated(result);
     } catch (err) {
-      setError(projectCreateErrorMessage(err));
+      setError({ name: trimmed, message: projectCreateErrorMessage(err) });
     } finally {
       setSubmitting(false);
     }
@@ -336,11 +367,11 @@ export function CoordProjectCreateDialog({
               maxLength={MAX_NAME_LENGTH}
               autoComplete="off"
               disabled={submitting}
-              aria-invalid={error !== null}
+              aria-invalid={shownError !== null}
               aria-describedby={
                 [
-                  error !== null ? "coord-project-create-error" : null,
-                  trimmed.length > 0 ? "coord-project-create-preview" : null,
+                  shownError !== null ? "coord-project-create-error" : null,
+                  showPreview ? "coord-project-create-preview" : null,
                 ]
                   .filter(Boolean)
                   .join(" ") || undefined
@@ -355,7 +386,7 @@ export function CoordProjectCreateDialog({
                 rather than `role="alert"`: this updates on every keystroke, and
                 an assertive region would interrupt the operator mid-word to
                 read out an id they are still typing. */}
-            {trimmed.length > 0 ? (
+            {showPreview ? (
               <p
                 id="coord-project-create-preview"
                 className="text-xs text-muted-foreground"
@@ -388,12 +419,12 @@ export function CoordProjectCreateDialog({
                     className="text-destructive"
                     data-testid="coord-project-create-preview-problem"
                   >
-                    {slugProblem}
+                    {previewProblem}
                   </span>
                 )}
               </p>
             ) : null}
-            {error !== null ? (
+            {shownError !== null ? (
               <p
                 id="coord-project-create-error"
                 className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive whitespace-pre-wrap break-words"
@@ -401,7 +432,7 @@ export function CoordProjectCreateDialog({
                 data-ui-bridge-id="coord.project-create.error"
                 role="alert"
               >
-                {error}
+                {shownError}
               </p>
             ) : null}
           </div>
