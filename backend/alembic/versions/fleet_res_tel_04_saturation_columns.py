@@ -342,6 +342,14 @@ def upgrade() -> None:
             'one. That is a judgement, not a default.'
         """
     )
+    # The `''` below are SQL's escaped apostrophe and must stay BARE. They were
+    # written `\'\'` at first: inert in a non-raw triple-quoted string, so the
+    # SQL Postgres receives is identical either way and nothing at runtime could
+    # tell the two apart. But the backslashes are not inert to a reader of this
+    # FILE, and `_alembic_harness.comment_body_from_source` — which recovers a
+    # comment body from source so a test need not hold a second copy of it — is
+    # exactly such a reader. It strips SQL string literals and asserts the
+    # remainder is blank; a stray backslash survives that strip and aborts it.
     op.execute(
         """
         COMMENT ON COLUMN coord.device_resource_samples.saturation_source IS
@@ -353,10 +361,10 @@ def upgrade() -> None:
             'exists is stated at process_health.rs:158-160: cgroup '
             'counts tasks (THREADS) and proc counts thread-group LEADERS, and '
             'they are different quantities. A publisher reading the PROMETHEUS '
-            'exposition rather than the JSON must map its literal \'\'none\'\' label '
+            'exposition rather than the JSON must map its literal ''none'' label '
             'back to NULL (process_health.rs:445 renders '
-            'pids_source.unwrap_or(\'\'none\'\') because the metric has no null) - '
-            'writing \'\'none\'\' here would record an unmeasured row as having a '
+            'pids_source.unwrap_or(''none'') because the metric has no null) - '
+            'writing ''none'' here would record an unmeasured row as having a '
             'known-but-unrecognised instrument. Without this column a publisher '
             'that probes the cgroup, fails, and falls back to /proc silently '
             'changes what the number means, and a saturation ratio would divide '
