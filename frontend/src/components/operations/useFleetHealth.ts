@@ -18,6 +18,12 @@
  * a device that reports health but publishes no resource sample, and a device
  * that appears in no runner inventory, must both still render — as `unknown`,
  * never as absent and never as healthy (`[policy: silent-empty-is-unknown]`).
+ *
+ * The same body also carries coord's ALERT severity rollup (`alerts`,
+ * `alerts_scrape_up`) and the pageout sink's deliverability — see
+ * `FleetHealthPayload`. They are declared here because every field this type
+ * omits is silently discarded, which is how the rollup stayed invisible on
+ * `/admin/coord/devops` while coord published it on every poll.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -63,8 +69,60 @@ export interface FleetHealthDevice {
   state?: string;
 }
 
+/**
+ * Coord's unresolved-alert severity rollup, served on the SAME poll as the
+ * device list (`fleet_health.rs` `get_fleet_health`).
+ *
+ * These are ALERT counts. `by_state` — the other rollup on this body — is
+ * DEVICE LIVENESS and says nothing about alerts, which is exactly how a
+ * steward came to read `{healthy: 8}` as an all-clear while 170+ criticals
+ * stood (plan
+ * `2026-08-31-devops-surface-renders-no-alert-signal`).
+ */
+export interface FleetHealthAlertCounts {
+  critical: number;
+  warning: number;
+  info: number;
+}
+
+/**
+ * Whether the alert PAGEOUT sink is deliverable, from coord's zero-DB,
+ * env-derived `alert_pageout_worker::sink_is_deliverable()`.
+ *
+ * `false` is the fleet's RECORDED CONFIGURATION, not an incident: the operator
+ * confirmed 2026-08-05, across three shipped plans, that in-app is the
+ * delivery surface and no Slack/email sink is wanted. Any surface rendering
+ * this must say so calmly — an alarm on an intended state teaches the operator
+ * to ignore the surface.
+ */
+export interface FleetHealthPageout {
+  sink_configured: boolean;
+}
+
 export interface FleetHealthPayload {
   devices?: FleetHealthDevice[];
+  /**
+   * Present on every coord that ships the rollup — which today's coord already
+   * does. It crossed the wire on every poll for months and was dropped HERE,
+   * by a type that declared only `devices`; that omission is the whole defect
+   * the plan above names.
+   */
+  alerts?: FleetHealthAlertCounts;
+  /**
+   * Coord's own verdict on whether the rollup query actually RAN
+   * (`alerts_scrape_up`, named for the house `coord_alert_pageout_scrape_up`
+   * convention). `false` means coord served `alerts` it could not measure, so
+   * its zeros are not a count — render UNKNOWN, never `0`
+   * (`[policy: silent-empty-is-unknown]`).
+   *
+   * **`undefined` is NOT `false`.** A coord predating the plan's Phase 2
+   * serves `alerts` and no flag at all, and that rollup is measured — reading
+   * absence as failure would dash a real number on every deploy of this page
+   * that lands ahead of coord's half (which is the deploy order this plan
+   * requires).
+   */
+  alerts_scrape_up?: boolean;
+  pageout?: FleetHealthPageout;
 }
 
 export interface UseFleetHealthResult {
