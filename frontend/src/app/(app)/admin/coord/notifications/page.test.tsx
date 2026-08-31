@@ -679,6 +679,83 @@ describe("CoordNotificationsPage", () => {
     ).toHaveAttribute("title", expect.stringContaining("cannot be undone"));
   });
 
+  it("does not promise a count the strip is calling unknown", async () => {
+    // The same fourth consumer, one state over. `migrationPending` after a good
+    // read leaves `unread_count` standing with `readFailed` FALSE, so a guard
+    // spelled `readFailed` let the tooltip say "Marks ALL 137 unread… cannot be
+    // undone" while the strip beside it rendered both badges as `–`.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      })
+      .mockRejectedValue(
+        new Error(
+          'GET /api/v1/operations/notifications failed: 503 - {"error":"schema_migration_pending"}'
+        )
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await screen.findByTestId("coord-notifications-pending");
+
+    const button = screen.getByTestId("coord-notifications-mark-all-read");
+    expect(button).not.toHaveAttribute(
+      "title",
+      expect.stringContaining("137")
+    );
+    // The warning survives the figure, exactly as it does on the stale arm.
+    expect(button).toHaveAttribute(
+      "title",
+      expect.stringContaining("cannot be undone")
+    );
+  });
+
+  it("does not leave mark-all live when there is no table to mark", async () => {
+    // The POST is a guaranteed 503 that this page swallows as the quiet
+    // degrade, so the click is a silent no-op — the outcome the contract-error
+    // arm exists to prevent one branch over.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 137,
+      })
+      .mockRejectedValue(
+        new Error(
+          'GET /api/v1/operations/notifications failed: 503 - {"error":"schema_migration_pending"}'
+        )
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-mark-all-read")
+    ).toBeEnabled();
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await screen.findByTestId("coord-notifications-pending");
+
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeDisabled();
+    // Refresh stays live — it is the recovery path, not a write.
+    expect(screen.getByTestId("coord-notifications-refresh")).toBeEnabled();
+    // Clicked, not merely inspected: `userEvent` does not dispatch on a
+    // disabled control, so this asserts the guard actually blocks the POST
+    // rather than asserting that a test which never clicks did not post.
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
@@ -741,16 +818,74 @@ describe("CoordNotificationsPage", () => {
       await screen.findByTestId("coord-notification-row");
       await user.click(screen.getByTestId("coord-notifications-load-more"));
 
+      // The sentence has to name the BUTTON. This assertion used to read
+      // `/could not be looked up/`, which is the shared head-failure arm — so
+      // it passed while the banner said "the feed above failed to load" about a
+      // feed the strip was painting green, one element up.
       await waitFor(() =>
         expect(
           screen.getByTestId("coord-notifications-linked-ref")
-        ).toHaveTextContent(/could not be looked up/)
+        ).toHaveTextContent(/loading more failed/)
       );
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).not.toHaveTextContent(/feed above failed to load/);
       // …and the strip stays green: the head read never failed.
       expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
         "data-health-level",
         "green"
       );
+    });
+
+    it("stops blaming a Load more that a Refresh has since discarded", async () => {
+      // `fetchHead(false)` restarts the walk, so the old walk's failure goes
+      // with it. Only the filter effect used to reset `pagingFailed`; Refresh
+      // calls the same function and did not — and when the new head answers
+      // with no cursor the Load more button is gone, leaving the banner telling
+      // the operator to press a button that is not there.
+      httpGet
+        .mockResolvedValueOnce({
+          notifications: [notification()],
+          next_cursor: "cursor-1",
+          total: 900,
+          unread_count: 137,
+        })
+        .mockRejectedValueOnce(
+          new Error("GET …/notifications failed: 500 - boom")
+        )
+        .mockResolvedValue({
+          notifications: [notification()],
+          next_cursor: null,
+          total: 900,
+          unread_count: 137,
+        });
+      withRef(UUID_B);
+      const user = userEvent.setup();
+      render(<CoordNotificationsPage />);
+
+      await screen.findByTestId("coord-notification-row");
+      await user.click(screen.getByTestId("coord-notifications-load-more"));
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/loading more failed/)
+      );
+
+      await user.click(screen.getByTestId("coord-notifications-refresh"));
+
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).not.toHaveTextContent(/loading more failed/)
+      );
+      // The new head carries no cursor, so there is no button to point at.
+      expect(
+        screen.queryByTestId("coord-notifications-load-more")
+      ).not.toBeInTheDocument();
+      // Back to the honest fallback: not on this page, and why.
+      expect(
+        screen.getByTestId("coord-notifications-linked-ref")
+      ).toHaveTextContent(/not on the page that is loaded/);
     });
 
     it("reports the migration, not a missing event, while the table is absent", async () => {

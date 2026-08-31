@@ -427,6 +427,71 @@ describe("linkedRefNotice", () => {
     ).toMatch(/not on the page that is loaded/i);
   });
 
+  it("names the BUTTON, not the feed, when only a page append failed", () => {
+    // A failed "Load more" leaves the head read — and the strip — perfectly
+    // healthy, so folding it into `error` told the operator "the feed above
+    // failed to load" about a feed that was answering, and withheld the one
+    // action that would help.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+    });
+    expect(line).toMatch(/loading more failed/i);
+    expect(line).toMatch(/Load more again/i);
+    expect(line).not.toMatch(/feed above failed to load/i);
+    // With no `filterActive` passed, the clause defaults off — the filtered
+    // case is its own test below.
+    expect(line).not.toMatch(/clear them/i);
+  });
+
+  it("blames the feed when BOTH failed — the head is the bigger truth", () => {
+    // A RANKING GUARD, not a regression test: the pre-change code ignored
+    // `pagingFailed` entirely and returned this same sentence, so both
+    // assertions passed before. It is here to stop the new arm being promoted
+    // above `error` later, not as evidence the new arm works.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: true,
+      pagingFailed: true,
+    });
+    expect(line).toMatch(/feed above failed to load/i);
+    expect(line).not.toMatch(/Load more again/i);
+  });
+
+  it("keeps the FILTER clause when a page fails under an active filter", () => {
+    // A failed page ADDS an unknown; it does not resolve the one the fallback
+    // arm was carrying. An event excluded by the kind filter never matches
+    // however many pages load, so an arm naming only the button would leave the
+    // operator retrying it forever.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+      filterActive: true,
+    });
+    expect(line).toMatch(/loading more failed/i);
+    expect(line).toMatch(/Load more again/i);
+    expect(line).toMatch(/excluded by the filters above — clear them/i);
+  });
+
+  it("omits the filter clause when no filter is on", () => {
+    // The converse matters as much: with no filter active, "clear them" names
+    // nothing and would be its own false lead.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+      filterActive: false,
+    });
+    expect(line).toMatch(/Load more again/i);
+    expect(line).not.toMatch(/clear them/i);
+  });
+
   it("reports the migration rather than a missing event, and outranks the rest", () => {
     // Under `503 schema_migration_pending` there is no table, so there is no
     // page for the event to be absent FROM — and "clear the filters" sends the
