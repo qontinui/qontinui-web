@@ -3998,6 +3998,191 @@ async def get_fleet_health(
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
+# ---- Machine drain / undrain (coord dispatch pause) ----------------------
+#
+# Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 1. Coord has
+# shipped `POST /coord/fleet/drain` / `/undrain` since
+# `2026-08-02-fleet-resource-telemetry-and-ci-allocation` §D2 — with a
+# mandatory expiry and a four-way audit trail — and qontinui-web had NO proxy
+# for either, so the console could not reach the one reversible, audited lever
+# the fleet already owns. These two routes are that exposure; no new coord code
+# is involved.
+#
+# ## What a drain actually does — and the three things it does NOT do
+#
+# `fleet_drain::drained_device_ids{,_on}` has exactly TWO consumers, both
+# coord's own dispatch selectors: `ci_dispatch.rs` and `build_dispatcher.rs`.
+# Measured against `qontinui-coord` `origin/main`, 2026-08-31:
+#
+#   * It does NOT change GitHub Actions routing. A drained host still draws
+#     `runs-on: [self-hosted, qontinui]` jobs, because GitHub matches on the
+#     runner's LABEL set and coord's drain map is invisible to GitHub.
+#   * It does NOT gate agent-session spawning. `agents_spawn.rs` and
+#     `spawn_authorization.rs` reference the drain map zero times, and
+#     `PICK_ONLINE_DEVICE_SQL` filters on the tenant binding, `last_seen_at`
+#     freshness and the `ci_runner` capability exclusion — never on drain.
+#   * It does NOT reach the merge-train slot clamp. Neither
+#     `merge_scheduler.rs` nor `device_state.rs` references `fleet_drain`, so a
+#     drained machine still counts toward `effective_slot_cap` (the plan's
+#     Phase 3, deliberately not shipped here).
+#
+# That is why the UI control these feed is named "Pause coord dispatch" and
+# never "Disable": a control that overstates its reach is worse than no control,
+# because an operator reaches for it in an incident and believes the host is
+# out.
+#
+# ## Why the expiry is a first-class REQUIRED field
+#
+# Coord's `DrainRequest::until` is a non-`Option` `DateTime<Utc>` — §D2 requires
+# the expiry, and a missing key is a hard reject at coord's door rather than a
+# defaulted forever. Modelling it here as a required Pydantic field puts the
+# same contract in this service's OpenAPI schema and answers a MISSING `until`
+# with a sentence naming the field, instead of forwarding a body coord will
+# reject with a serde error. Coord still owns the RANGE rule
+# (`MAX_DRAIN_DAYS = 30`, and "must be in the future"); duplicating it here
+# would be a second copy of a policy this service does not own, so those two
+# 400s are forwarded from coord verbatim.
+
+
+class FleetDrainBody(BaseModel):
+    """Body of ``POST /operations/fleet/drain`` — coord's ``DrainRequest``.
+
+    ``model_config`` forbids extra keys because coord's own struct carries
+    ``#[serde(deny_unknown_fields)]``: a typo'd field name must fail at this
+    door with a field-level message rather than reach coord and be reported as
+    an opaque deserialization error.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID = Field(
+        description="The coord device to stop dispatching work to.",
+    )
+    until: datetime = Field(
+        description="REQUIRED expiry (RFC 3339, timezone-aware). A drain "
+        "without a deadline is a permanent removal wearing an expiry's "
+        "clothes, which is exactly what coord's §D2 contract forbids — so "
+        "there is no default and no open-ended form. Coord additionally "
+        "refuses a deadline in the past or more than 30 days out.",
+    )
+    reason: str = Field(
+        description="REQUIRED, non-blank. It lands in the "
+        "`coord.user_overrides` row, the `coord.alerts` row and the "
+        "`operator_audit` stamp — the audit trail is the whole point of "
+        "routing this through coord rather than a shell.",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason: required, non-blank")
+        return v
+
+    @field_validator("until")
+    @classmethod
+    def _until_is_aware(cls, v: datetime) -> datetime:
+        """Reject a naive timestamp rather than guessing its zone.
+
+        A naive `until` reaches coord as a string with no offset, where it
+        parses as UTC — so a browser in UTC+2 sending local wall-clock time
+        would silently shorten or lengthen the drain by two hours. The expiry
+        is the safety property here; guessing it is not acceptable.
+        """
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            raise ValueError(
+                "until: must carry a UTC offset (RFC 3339, e.g. "
+                "2026-08-31T18:00:00Z). A naive timestamp has no defined "
+                "instant and the expiry is the point of the field."
+            )
+        return v
+
+
+class FleetUndrainBody(BaseModel):
+    """Body of ``POST /operations/fleet/undrain`` — coord's ``UndrainRequest``.
+
+    No ``until``: releasing a hold has no deadline. Coord answers
+    ``changed: false`` when the device was not drained, which the console
+    reports as "it was not paused" rather than dressing it up as a release.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason: required, non-blank")
+        return v
+
+
+@router.post("/fleet/drain")
+async def post_fleet_drain(
+    body: FleetDrainBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Stop coord dispatching CI and build work to one machine, until ``until``.
+
+    Same shape as :func:`post_pr_merge_kill_switch` — the admin dependency,
+    the ``_proxy_coord_post`` helper, and coord's status codes forwarded
+    verbatim (400 on a blank reason or an out-of-window expiry, 403 when the
+    caller is not an operator admin or the device is not bound to the caller's
+    tenant).
+
+    Coord, in one versioned transaction:
+
+    1. Writes the entry into ``coord.fleet_runtime_policy.drain`` JSONB
+       (``{"<device_uuid>": {"until", "reason", "drained_by", "drained_at"}}``)
+       via ``fleet_policy::apply_policy_edit_tx`` — a numbered, immutable
+       snapshot. **Zero new columns.**
+    2. INSERTs a ``coord.user_overrides(override_kind='fleet_drain_set')`` row.
+    3. INSERTs a ``coord.alerts`` row so other operators see it.
+    4. Stamps ``auth_sso::audit_mutation`` with ``ctx.operator_id`` — the
+       operator resolved from the forwarded bearer, never a header-derived id.
+       (`resolve_operator_id(&headers)` reads an `X-Qontinui-Operator-Id`
+       header this service never sends and falls back to `Uuid::nil()`, which
+       violates `operator_audit`'s FK and is then swallowed by
+       `audit_mutation`'s fire-and-forget warn. This path does not go near it.)
+
+    Returns coord's ``DrainResponse``: ``{device_id, drained, until, reason,
+    drained_by, drained_at, version, changed}``. ``changed`` is ``false`` when
+    the request altered nothing.
+
+    **Scope, stated because the control that calls this must say it too:** the
+    drain map is consulted by coord's CI dispatch and build dispatch and by
+    nothing else. GitHub Actions routing, agent-session spawning and the
+    merge-train slot clamp are all unaffected — see the section comment above.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/drain",
+        body.model_dump(mode="json"),
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/fleet/undrain")
+async def post_fleet_undrain(
+    body: FleetUndrainBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Release a machine's drain hold so coord dispatches to it again.
+
+    Same auth, helper and error mapping as :func:`post_fleet_drain`. Coord
+    writes no audit side effects when nothing changed — an undrain of a device
+    that was not drained returns ``changed: false`` and stamps nothing, because
+    "an audit feed that records requests rather than changes is one operators
+    stop reading" (`fleet_drain.rs`).
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/undrain",
+        body.model_dump(mode="json"),
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Claude account roster (per device) ---------------------------------
 #
 # Plan `2026-08-25-general-purpose-session-spawn-machine-account-prompt`

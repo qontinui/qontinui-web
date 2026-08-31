@@ -37,6 +37,7 @@ import {
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+import { CoordDispatchDisclosure } from "./CoordDispatchDisclosure";
 import type { CiCapacityJoin } from "./ciCapacity";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
@@ -741,6 +742,27 @@ export function MachineCard({
             the knob and its evidence in one viewport is the whole reason this
             page exists. Collapsed, so opening it is a deliberate act. */}
         {ciCapacity && <CiCapacityDisclosure join={ciCapacity} />}
+
+        {/* Coord dispatch — the reversible, audited, expiring pause coord has
+            shipped since §D2 and the console could not reach until plan
+            `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 1. It
+            sits directly under CI capacity because they are the same question
+            asked at two layers: how much work MAY this machine take, and is
+            coord sending it any right now. Collapsed for the same reason that
+            one is — it is a consent surface, not a preference.
+
+            It is NOT called "Disable", and the copy inside says why: coord's
+            drain map reaches coord's own CI and build dispatch and nothing
+            else. GitHub keeps routing `[self-hosted, qontinui]` jobs here and
+            sessions can still be spawned in. */}
+        <CoordDispatchDisclosure
+          hostname={machine.hostname}
+          deviceId={
+            machine.coordHealth?.matched
+              ? machine.coordHealth.device_id
+              : undefined
+          }
+        />
 
         {/* Summary footer */}
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">

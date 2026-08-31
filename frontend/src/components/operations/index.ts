@@ -29,6 +29,21 @@ export type { CiCapacityDisclosureProps } from "./CiCapacityDisclosure";
 export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
+export { CoordDispatchDisclosure } from "./CoordDispatchDisclosure";
+export type { CoordDispatchDisclosureProps } from "./CoordDispatchDisclosure";
+export {
+  DEFAULT_DRAIN_WINDOW_ID,
+  DRAIN_WINDOWS,
+  MAX_DRAIN_DAYS,
+  describeDrainResult,
+  drainConfirmText,
+  drainScopeSentences,
+  drainUntilIso,
+  reasonRefusal,
+  resolveDrainWindow,
+  undrainConfirmText,
+} from "./coordDrain";
+export type { DrainResponse, DrainWindow } from "./coordDrain";
 export { CiStatusPanel } from "./CiStatusPanel";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";
