@@ -49,7 +49,6 @@ import {
 import {
   AUTHOR_GLYPH_KINDS,
   RowTime,
-  rowAccentClass,
   StatusBadge,
   STATUS_BADGE_CLASS,
   type StatusPalette,
@@ -623,7 +622,7 @@ function PipelineRowDisplay({
       rowKey={row.key}
       expanded={expanded}
       onToggle={onToggle}
-      accent={rowAccentClass(row.status)}
+      attention={row.status.attention}
       identity={
         row.members
           ? `${row.members.length}-repo change`
