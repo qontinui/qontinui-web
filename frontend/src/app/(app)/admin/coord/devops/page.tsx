@@ -22,7 +22,16 @@
  *  4. **CI capacity** — how much is it ALLOWED to take? Phase 2 mounts the
  *     shared `CiNodeConfigPanel` as a per-row disclosure on the machine list,
  *     collapsed, rather than as a fourth section: the knob and the telemetry
- *     that says what to set it to belong in one viewport.
+ *     that says what to set it to belong in one viewport. Plan
+ *     `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 1 adds a
+ *     second per-row disclosure beside it — "Pause coord dispatch", the
+ *     reversible expiring drain coord has shipped all along — on the same
+ *     principle.
+ *  5. **Who changed it** — the `coord.operator_audit` feed, last and
+ *     collapsed. It is history rather than liveness, and it is HERE rather
+ *     than on a sibling route because the pause control above it cannot report
+ *     its own current state: coord serves no read of the drain map, so this is
+ *     the durable answer to "who took this host out, when, and why".
  *
  * ## The health strip answers TWO questions, not one
  *
@@ -73,7 +82,11 @@ import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { HealthStrip } from "@/components/console";
 import type { HealthBadge } from "@/components/console";
-import { FleetOverview, FleetResourcesSection } from "@/components/operations";
+import {
+  FleetOverview,
+  FleetResourcesSection,
+  OperatorAuditPanel,
+} from "@/components/operations";
 import { summarizeFleetLiveness } from "@/components/operations/fleetLiveness";
 import { useCiRunnerMirror } from "@/components/operations/useCiRunnerMirror";
 import { useDevenvMachines } from "@/components/operations/useDevenvMachines";
@@ -343,6 +356,23 @@ export default function CoordDevOpsPage() {
           poll of /fleet/resource-samples. `devices` is the spine: a machine
           that publishes no sample still gets a row, as `unknown`. */}
       <FleetResourcesSection devices={devices} />
+
+      {/* 5. Who changed what. Plan
+          `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5.
+
+          It belongs on THIS page because the write it explains is on this
+          page: the per-row "Pause coord dispatch" control cannot show current
+          drain state (coord serves no read of its drain map) and points here
+          for the durable record. Putting the record of an action on a
+          different page from the action is the shape the merge kill switch was
+          deliberately moved out of.
+
+          Last, and collapsed: it is history, not liveness, so it must not
+          compete with the three sections above that answer "what is happening
+          right now". Unlike the pause control it persists being open — it is
+          read-only, so there is no consent surface to keep out from under a
+          cursor. */}
+      <OperatorAuditPanel />
     </div>
   );
 }

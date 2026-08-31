@@ -64,6 +64,24 @@ export {
   CI_RUNNER_MIRROR_POLL_MS,
   useCiRunnerMirror,
 } from "./useCiRunnerMirror";
+export { OPERATOR_AUDIT_API, OperatorAuditPanel } from "./OperatorAuditPanel";
+export {
+  AUDIT_FILTERS,
+  DEFAULT_AUDIT_FILTER_ID,
+  NIL_OPERATOR_ID,
+  blastRadiusOf,
+  isNilOperator,
+  parseAuditPayload,
+  reasonOf,
+  resolveAuditFilter,
+} from "./operatorAudit";
+export type {
+  AuditFilter,
+  AuditRead,
+  AuditRow,
+  BlastRadius,
+  BlastRadiusItem,
+} from "./operatorAudit";
 export { CiStatusPanel } from "./CiStatusPanel";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";

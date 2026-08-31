@@ -4264,6 +4264,101 @@ async def get_fleet_ci_runners(
     return await _proxy_coord_get("/coord/fleet/ci-runners", tenant_id=tenant_id)
 
 
+# ---- Operator audit feed -------------------------------------------------
+#
+# Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5, and it
+# closes that plan's §7 metric rather than adding a feature.
+#
+# The metric reads: *"the action is auditable — who, when, which repos, and how
+# to reverse it"*. Coord has WRITTEN `coord.operator_audit` all along and mounts
+# `GET /admin/coord/audit/recent` behind its own admin router — and qontinui-web
+# had no proxy, so the table was written and **unreadable from the console**.
+# The plan's own §1 makes the case: the 2026-08-20 delabel of `msi-wsl` was
+# undone at some later point and *nothing anywhere records who did it or when*.
+# An audit trail no operator can read is the same as none.
+#
+# ## Auth: admin, matching coord's own gate
+#
+# `require_coord_tenant_admin`. Coord mounts this route on its
+# `rbac::require_role(admin)` + `require_sso` router (`routes.rs`), so a
+# non-administrator gets a 403 from coord regardless; asking here first turns a
+# two-service round trip into one clean answer, and keeps this door's posture
+# equal to the route it fronts. This is the opposite call from
+# `/fleet/ci-runners` above — deliberately: that one serves telemetry every
+# viewer of the page may see, this one serves an operator identity feed.
+#
+# ## Tenant scoping is coord's, and is NOT a parameter
+#
+# Coord derives the tenant from the caller's own `OperatorContext` and never
+# from a query param, so there is no scope to widen from this side and none is
+# offered. The filters below are exactly coord's: `action` (exact, or a prefix
+# match when it ends in `*`), `since` / `before` (RFC 3339 on `occurred_at`),
+# and `limit` (coord clamps to `[1, 1000]`, default 200).
+
+
+@router.get("/coord/audit/recent")
+async def get_coord_audit_recent(
+    action: str | None = Query(
+        default=None,
+        description="Filter by action. A trailing `*` is a PREFIX match "
+        "(`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); "
+        "anything else is an exact match. Forwarded to coord verbatim — the "
+        "prefix grammar is coord's, not this proxy's.",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339. Restrict to rows where `occurred_at >= since`.",
+    ),
+    before: str | None = Query(
+        default=None,
+        description="RFC 3339. Restrict to rows where `occurred_at < before`.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        ge=1,
+        description="Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+    ),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return recent ``coord.operator_audit`` rows for the caller's tenant.
+
+    Coord answers ``{"audit": [...], "count": <n>}`` ordered
+    ``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,
+    ``action``, ``resource_kind``, ``resource_key``, ``metadata`` and
+    ``occurred_at``.
+
+    **``metadata`` is where the blast radius lives**, and it is per-action
+    rather than a fixed schema — `operator_disable.rs` computes
+    ``affected_tenant_ids`` before stamping, the kill switch stamps
+    ``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``
+    / ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that
+    normalised it into a fixed shape would silently drop whatever the next
+    writer computes, which is the one field an operator reading this feed
+    actually needs.
+
+    ``operator_id`` is the acting operator coord resolved from the bearer. A
+    row reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID
+    signature of a coord writer that used ``resolve_operator_id(&headers)``
+    instead of ``ctx.operator_id`` — the header it reads is one this service
+    never sends. That is a coord-side defect to report, not a real operator,
+    and the console labels it as such rather than rendering a plausible id.
+    """
+    params: dict[str, Any] = {}
+    if action:
+        params["action"] = action
+    if since:
+        params["since"] = since
+    if before:
+        params["before"] = before
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get(
+        "/admin/coord/audit/recent",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Claude account roster (per device) ---------------------------------
 #
 # Plan `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
