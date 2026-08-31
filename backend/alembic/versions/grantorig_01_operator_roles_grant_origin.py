@@ -62,10 +62,22 @@ it, so these spellings must not drift:
     The group-claim tenant auto-create bootstrap admin (path 3).
 ``'default_role'``
     The first-login default-role bootstrap (path 4).
+``'group_claim_sync'``
+    The group-claim reconciliation's own sentinel-owned rows (the fifth
+    writer — see the backfill note). ``granted_by`` is the sentinel operator,
+    not NULL, so this path never fed the old predicate; it is named here so
+    the column can describe every writer rather than only the four the cap
+    was confused by.
 ``'admin_grant'``
     A real grant made by a human admin through the grant endpoints.
 ``NULL``
     Legacy or unknown provenance — see the backfill below.
+
+The vocabulary grew from five values to six between this revision being
+written and the coord half being authored, which is precisely the reason
+there is no ``CHECK`` constraint below: a sixth writer surfaced within the
+hour, and under a CHECK it would have been a cross-repo release — or, worse,
+a ``23514`` on every SSO group-claim login.
 
 **NULLABLE, and it must stay that way.** Deploy order is
 producer-before-consumer: this revision lands first and coord starts
@@ -115,10 +127,14 @@ group-claim reconciliation marks the rows it owns with
 revokes its own rows. Those rows have ``granted_by IS NOT NULL`` and are **not
 admin grants**; a flat ``granted_by IS NOT NULL -> 'admin_grant'`` backfill
 would stamp a knowably false provenance onto them, which is the same defect
-class as the tuple-overload this plan exists to fix. The given vocabulary has
-no value for a sentinel-owned group-sync grant (``'group_auto_create'`` means
-the *tenant auto-create bootstrap admin*, a distinct and ``granted_by``-NULL
-path), so the honest value is NULL — unknown — not a wrong one. The
+class as the tuple-overload this plan exists to fix. Note ``'group_auto_create'``
+is emphatically NOT the value for them — that means the *tenant auto-create
+bootstrap admin*, a distinct and ``granted_by``-NULL path. The coord half adds
+``'group_claim_sync'`` and stamps these rows going forward, but the backfill
+still leaves the EXISTING ones NULL: coord writes the value where it knows the
+path was taken, whereas backfilling would infer provenance from a sentinel
+lookup, and an inference is not an observation. NULL — unknown — stays the
+honest value for a row nobody watched being written. The
 ``NOT EXISTS`` is written so it is a no-op where the sentinel operator does
 not exist, in which case every non-NULL ``granted_by`` row is backfilled, as
 it should be.
@@ -196,9 +212,13 @@ def upgrade() -> None:
             '''sso_email_bootstrap'' (COORD_SSO_BOOTSTRAP_ADMIN_EMAILS), '
             '''group_auto_create'' (group-claim tenant auto-create bootstrap '
             'admin), ''default_role'' (first-login COORD_SSO_DEFAULT_ROLE '
-            'bootstrap), ''admin_grant'' (a human admin used the grant '
+            'bootstrap), ''group_claim_sync'' (the group-claim reconcile''s own '
+            'sentinel-owned rows -- granted_by is the sentinel, not NULL), '
+            '''admin_grant'' (a human admin used the grant '
             'endpoints). Enforced in coord Rust, NOT by a CHECK, so the '
-            'vocabulary can grow without a cross-repo release. NULL means the '
+            'vocabulary can grow without a cross-repo release -- it grew from '
+            'five values to six within an hour of this revision being written. '
+            'NULL means the '
             'row predates coord recording an origin (deploy order is '
             'producer-before-consumer) or its provenance is genuinely unknown '
             '-- read it as Unavailable, NEVER as a positive assertion that the '
