@@ -77,6 +77,8 @@ import {
   aggregateByClass,
   bucketTotals,
   canClaimNothingToReclaim,
+  directories,
+  dirsVisitedSuffix,
   DISK_SURVEY_PATH,
   measuredZeroBuckets,
   parseDiskSurvey,
@@ -627,11 +629,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   // first-matching one drops the rest, which is the same defect as inventing a
   // cause, pointed the other way.
   const shortfallCauses = walkShortfallCauses(survey.scan);
-  const dirsVisited = survey.scan?.dirsVisited ?? null;
-  const afterNDirs =
-    dirsVisited === null
-      ? ""
-      : ` after ${dirsVisited.toLocaleString()} directories`;
+  const afterNDirs = dirsVisitedSuffix(survey.scan);
 
   return (
     <div className="space-y-4">
@@ -836,9 +834,7 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
                 truncatedWalk ? "Separately: at least" : "At least"
               } one byte total above is a LOWER BOUND — a subtree could not be read, or a root could not be sized${
                 readErrorCount > 0
-                  ? ` (${readErrorCount} director${
-                      readErrorCount === 1 ? "y" : "ies"
-                    } failed to read)`
+                  ? ` (${directories(readErrorCount)} failed to read)`
                   : ""
               }. The real figure is larger by an unknown amount. This is about the roots that ARE listed; whether the LIST is complete is a separate question.`}
             </p>

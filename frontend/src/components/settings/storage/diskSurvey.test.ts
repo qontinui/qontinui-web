@@ -1247,9 +1247,16 @@ describe("walkShortfallCauses names what the payload carries — no more, no les
     expect(causes).toEqual([]);
   });
 
-  it("says 'directory' and 'junction' in the singular", () => {
-    expect(walkShortfallCauses(scanWith({ entry_errors: 1 }))[0]).toMatch(
-      /^1 directory errored/
+  it("says 'directory' and 'junction' in the singular — pronouns included", () => {
+    // Anchoring only the leading noun let "1 directory ... so the walk saw less
+    // than THEY hold" through, so each singular arm is asserted end to end.
+    expect(walkShortfallCauses(scanWith({ entry_errors: 1 }))[0]).toBe(
+      "1 directory errored part-way through listing, so the walk saw less " +
+        "than it holds"
+    );
+    expect(walkShortfallCauses(scanWith({ entry_errors: 2 }))[0]).toBe(
+      "2 directories errored part-way through listing, so the walk saw less " +
+        "than they hold"
     );
     expect(walkShortfallCauses(scanWith({ depth_limited_dirs: 1 }))[0]).toMatch(
       /leaving 1 directory it never descended into/
@@ -1300,6 +1307,40 @@ describe("the DEPTH BOUND is a shortfall no other field carries", () => {
       scan: { ...DEPTH_BOUND_EMPTY_WALK.scan, depth_limited_dirs: 0 },
     });
     expect(canClaimNothingToReclaim(survey)).toBe(true);
+  });
+
+  it("refuses on ANY named shortfall, not just the one the runner derives a flag from", () => {
+    // `bytesIncomplete` is DERIVED, and a payload can contradict it. This
+    // predicate's whole argument is that a derived flag is not the counter, so
+    // it must not read four of the five through one: `scan` reporting 4,137
+    // unreadable directories under `bytes_incomplete: false` is not a measured
+    // zero, whatever the summary says. A conforming runner folds all four into
+    // the flag — which is exactly why trusting it here was invisible.
+    const survey = surveyOf({
+      ...DEPTH_BOUND_EMPTY_WALK,
+      scan: {
+        ...DEPTH_BOUND_EMPTY_WALK.scan,
+        depth_limited_dirs: 0,
+        read_errors: [{ path: "D:/locked", error: "denied" }],
+        read_errors_total: 4_137,
+      },
+    });
+    expect(survey.bytesIncomplete).toBe(false);
+    expect(canClaimNothingToReclaim(survey)).toBe(false);
+
+    // Same for the two counters no derived flag on this page carries alone.
+    for (const over of [{ entry_errors: 6 }, { reparse_dirs_skipped: 3 }]) {
+      const s = surveyOf({
+        ...DEPTH_BOUND_EMPTY_WALK,
+        scan: {
+          ...DEPTH_BOUND_EMPTY_WALK.scan,
+          depth_limited_dirs: 0,
+          ...over,
+        },
+      });
+      expect(s.bytesIncomplete).toBe(false);
+      expect(canClaimNothingToReclaim(s)).toBe(false);
+    }
   });
 
   it("an ABSENT count is UNKNOWN, and does not by itself refuse the sentence", () => {
