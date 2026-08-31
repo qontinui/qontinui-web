@@ -85,6 +85,7 @@ import {
   rollupDisagreement,
   SURVEY_NOT_YET_READ,
   surveyDisagreement,
+  walkShortfallCauses,
   type DiskClassTotals,
   type DiskSurvey,
   type DiskSurveyFetch,
@@ -604,16 +605,28 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
   // locked subtree's thousands of failures into a flat "100 directories" — a
   // silent under-report on the one panel built to make under-reports visible.
   const readErrorCount = readErrorsSeen(survey.scan);
-  // The THIRD reason a walk can be short, and the one this panel used to have
-  // no name for. `depth_limited_dirs` is not folded into `truncated`, and the
-  // runner keeps it out of `bytes_incomplete` while items are present — so an
-  // empty result whose only shortfall is the depth bound reached the clause
-  // below with `truncatedWalk` and `readErrorCount` both falsy, and the
-  // fallback arm then blamed "a truncated walk, or a subtree it could not
-  // read". Neither happened. `census_note`, rendered above by
-  // <CensusFreshness>, said the true thing at the same time.
+  // The depth bound is the one shortfall the runner reports in NO
+  // machine-readable completeness field: it is kept out of `truncated` and out
+  // of `bytes_incomplete` alike, because the bound bites on any deep tree and
+  // folding it in would pin that flag permanently true. So it is read here
+  // directly. `null` is a build too old to report it — UNKNOWN, and not a
+  // shortfall this page may assert.
   const depthLimitedDirs = survey.scan?.depthLimitedDirs ?? 0;
-  const incompleteWalk = truncatedWalk || survey.bytesIncomplete;
+  // `bytesIncomplete` carries four of the five shortfall signals, so it cannot
+  // be the whole test: an empty list under a bitten depth bound is a walk that
+  // never reached the part of the tree the roots would be in, and every flag
+  // beside it reads clean. Without this term that state fell past the panel
+  // below into the generic "not a measurement" copy — which is true but says
+  // nothing an operator can act on, while `census_note` twenty lines above
+  // named the bound outright.
+  const incompleteWalk =
+    truncatedWalk || survey.bytesIncomplete || depthLimitedDirs > 0;
+  // Every shortfall the payload NAMES, joined the way the runner's own
+  // `census_note` joins its gap list. These are not alternatives — a walk can
+  // hit its ceiling AND fail reads in one pass — so naming only the
+  // first-matching one drops the rest, which is the same defect as inventing a
+  // cause, pointed the other way.
+  const shortfallCauses = walkShortfallCauses(survey.scan);
   const dirsVisited = survey.scan?.dirsVisited ?? null;
   const afterNDirs =
     dirsVisited === null
@@ -692,22 +705,12 @@ function SurveyBody({ survey }: { survey: DiskSurvey }) {
               <p className="text-xs text-muted-foreground">
                 The census returned no candidates, but the runner also reports
                 that this walk was INCOMPLETE
-                {truncatedWalk
-                  ? ` — it hit its visit ceiling${afterNDirs}, so the list is a` +
-                    " prefix of a population it never finished enumerating"
-                  : readErrorCount > 0
-                    ? ` — ${readErrorCount} director${
-                        readErrorCount === 1 ? "y" : "ies"
-                      } could not be read`
-                    : depthLimitedDirs > 0
-                      ? ` — it stopped at its depth bound, leaving ${depthLimitedDirs.toLocaleString()} director${
-                          depthLimitedDirs === 1 ? "y" : "ies"
-                        } it never descended into, so a target root below the` +
-                        " bound is absent rather than measured"
-                      : // Every named cause is absent. Say that, rather than
-                        // picking one of them: this panel's whole job is not
-                        // asserting more than the payload carries.
-                        " for a reason it did not name"}
+                {shortfallCauses.length > 0
+                  ? ` — ${shortfallCauses.join("; ")}`
+                  : // Every named cause is absent. Say that, rather than
+                    // picking one of them: this panel's whole job is not
+                    // asserting more than the payload carries.
+                    " for a reason it did not name"}
                 . An empty list from a walk that stopped early says nothing
                 about what is on this disk: the roots may simply be somewhere
                 the walk never reached. Press Preview to run a fresh census.
