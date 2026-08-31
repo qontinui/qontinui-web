@@ -11,7 +11,6 @@ FILES_TO_MIGRATE = [
     "app/config/redis_config.py",
     "app/services/pattern_optimization_service.py",
     "app/services/background_removal_service.py",
-    "app/services/email.py",
     "app/services/email/email_composers.py",
     "app/services/email/email_transport_service.py",
     "app/services/email/email_template_service.py",
