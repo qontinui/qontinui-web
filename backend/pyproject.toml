@@ -130,7 +130,6 @@ ignore = [
     "B008",  # function call in default argument - allowed for FastAPI Depends()
     "B017",  # pytest.raises(Exception) - acceptable for validation tests
     "B904",  # raise from - good practice but not critical, many existing exceptions
-    "B019",  # lru_cache on methods - used intentionally for secrets/config caching
 ]
 
 [tool.ruff.lint.per-file-ignores]
