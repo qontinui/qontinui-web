@@ -3989,9 +3989,11 @@ async def get_fleet_resource_samples(
     the admission fields ``floor`` / ``disk_floor``
     (``{basis, bytes, source, verdict, reject_bytes, reject_source}``),
     ``pressure_floor``
-    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``)
-    and ``headroom`` (``ok | warn | breach | unknown``). All are passed
-    through untouched on purpose:
+    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``),
+    ``saturation`` (``{ratio, basis}``), ``saturation_floor``
+    (the same shape as ``pressure_floor``) and ``headroom``
+    (``ok | warn | breach | unknown``). All are passed through untouched
+    on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
       ranker also reads. Recomputing it here (or in the browser) is
@@ -4058,6 +4060,32 @@ async def get_fleet_resource_samples(
       whole INSERT and discard the memory and disk metrics on the same
       row), so an unexpected value reaches the browser and renders as an
       explicit unknown rather than being coerced here.
+    * ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED
+      half of that axis, and the half the browser actually renders — the
+      five raw columns above only caption it. ``saturation`` is
+      ``{ratio, basis}`` with ``basis: "threads"``, computed as
+      ``threads_used / threads_max`` and falling back to the ``pids_*``
+      pair where a cgroup or job-object ceiling is the binding one;
+      ``saturation_floor`` is ``pressure_floor``'s shape on
+      ``basis: "thread_ratio"``. **The threshold travels on the wire for
+      the same reason the ratio does.** coord's dispatch ranking reads
+      this floor, so a client that named its own number could render
+      amber while the ranker had already stopped electing the machine —
+      §C1's defect, one axis over. Both are optional and independently
+      nullable, and the caller reads the difference: keys **absent** is a
+      coord that predates the axis, ``null`` on every count is a
+      publisher whose runner predates the probe, and a count without its
+      ceiling is a probe that FAILED. All three render *unknown* — never
+      healthy, and never ``0``.
+    * ``headroom`` composes all three axes, not two: coord grades the
+      worst of memory, disk and task saturation into the one verdict the
+      strip colours from. That is why the saturation ratio must not be
+      banded client-side — the composition is coord's, and a second one
+      in the browser would disagree with it exactly at the boundary. A
+      coord predating the axis sends no saturation fields, and the row's
+      ``headroom`` is then the worst of the two axes it does send; the
+      caller renders the third as *unreported* rather than inferring that
+      it is clear.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord

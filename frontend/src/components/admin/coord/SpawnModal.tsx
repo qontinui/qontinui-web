@@ -74,6 +74,17 @@ import {
 } from "@/components/ui/select";
 import { Rocket } from "lucide-react";
 import { ApiConfig } from "@/services/api-config";
+// The fleet-health wire shapes are IMPORTED, not re-declared. This file used
+// to carry its own copy of `FleetHealthDevice`, and it drifted exactly the way
+// a second mirror does: coord grew a fifth `DeviceState` (`stale`, a derived
+// overlay meaning the heartbeat is fine and the resource sampler has gone
+// quiet), the operations copy learned it, and this one went on documenting
+// four. The device list rendered below comes from the same
+// `GET /operations/fleet/health` read, so it reads the same shape.
+import type {
+  FleetHealthDevice,
+  FleetHealthPayload,
+} from "@/components/operations/useFleetHealth";
 
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 
@@ -92,17 +103,6 @@ const KNOWN_REPOS = [
   "qontinui-ui-bridge",
   "qontinui-dev-notes",
 ] as const;
-
-interface FleetHealthDevice {
-  device_id: string;
-  hostname?: string;
-  /** Coord `DeviceState` (serde-lowercase): healthy | degraded | partitioned | abandoned. */
-  state?: string;
-}
-
-interface FleetHealthPayload {
-  devices?: FleetHealthDevice[];
-}
 
 /** One row of coord's per-device Claude account feed, as served by the
  *  qontinui-web proxy `GET /operations/claude-accounts` (plan
