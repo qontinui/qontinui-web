@@ -29,6 +29,7 @@ if os.environ.get("QONTINUI_DISABLE_CLOUD_EXTENSIONS") != "1":
         pass
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints.session_repository import EXPORT_PROVENANCE_HEADERS
 from app.config.logging_config import configure_logging, get_logger
 from app.core.config import settings
 from app.db.init_db import init_db
@@ -174,6 +175,33 @@ app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONMENT)
 
+# Response headers a browser client is allowed to READ.
+#
+# Only six response headers are CORS-safelisted (Cache-Control,
+# Content-Language, Content-Length, Content-Type, Expires, Last-Modified,
+# Pragma); every other one is invisible to `fetch` on a cross-origin response
+# unless it is listed here. The frontend runs cross-origin whenever
+# NEXT_PUBLIC_API_URL names the API host — `ApiConfig.IS_REMOTE_BACKEND`, the
+# deployed shape — so an unlisted header is not "missing in some edge case",
+# it is missing in production while still present in local same-origin dev.
+#
+# It fails SILENTLY: `response.headers.get(name)` returns None, which is the
+# same answer as "the server never sent it". Nothing logs, nothing 500s, and
+# the client's fallback path runs as if the server had been less honest than
+# it was. Add a header here in the same change that starts emitting it.
+CORS_EXPOSE_HEADERS: list[str] = [
+    "X-Total-Count",
+    "X-RateLimit-Limit",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "X-Request-ID",
+    # The session-repository export's provenance set. `X-Content-Sha256` is
+    # also what `/api/v1/plan-library/{id}/export` returns its digest in, so
+    # that route's documented contract is readable from a browser for the
+    # first time too.
+    *EXPORT_PROVENANCE_HEADERS,
+]
+
 # CORS middleware must be added LAST so it executes FIRST (middleware order is reversed)
 cors_origin_regex = settings.BACKEND_CORS_ORIGIN_REGEX or None
 if cors_origin_regex:
@@ -185,13 +213,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    expose_headers=[
-        "X-Total-Count",
-        "X-RateLimit-Limit",
-        "X-RateLimit-Remaining",
-        "X-RateLimit-Reset",
-        "X-Request-ID",
-    ],
+    expose_headers=CORS_EXPOSE_HEADERS,
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

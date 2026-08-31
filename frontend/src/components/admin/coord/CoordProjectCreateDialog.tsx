@@ -40,6 +40,10 @@
  *    unusable name — see `projectSlug.ts`), and it says only what the id WOULD
  *    be, never that it is available, because the reserved-list and
  *    group-mapping halves of coord's answer cannot be mirrored from a browser.
+ *    And because it has no veto, the name it dislikes still reaches coord — so
+ *    `projectCreateErrorMessage` renders coord's `invalid_name` reason through
+ *    the preview's own `projectSlugProblemMessage`. Rule 1 and rule 3 are one
+ *    rejection seen twice, and they must say the same thing.
  *
  * The success path is deliberately two-step rather than an immediate
  * reload: the caveat above would be unreadable if the page navigated out
@@ -67,7 +71,11 @@ import { Label } from "@/components/ui/label";
 import { createTenant, TenantCreateError } from "@/components/sessions/api";
 import type { TenantCreateResponse } from "@/components/sessions/types";
 import { useTenant } from "@/contexts/tenant-context";
-import { projectSlugProblemMessage, slugifyProjectName } from "./projectSlug";
+import {
+  isProjectSlugReason,
+  projectSlugProblemMessage,
+  slugifyProjectName,
+} from "./projectSlug";
 
 /** Coord's `min_length`/`max_length` on the proxy's `display_name`. Mirrored
  *  here only to disable submit early — the server is still the authority. */
@@ -82,6 +90,12 @@ const MAX_NAME_LENGTH = 120;
  * coord's own words plus the status, because a generic "failed to create
  * project" would be us asserting we know a cause we do not.
  *
+ * Two of those codes carry a second-level discriminator in `err.detail` and
+ * both are read: `reserved_name`'s `ReservedSlugReason`, and `invalid_name`'s
+ * `TenantNameError::reason()` — the latter rendered through
+ * `projectSlugProblemMessage`, the same function the live preview uses, so one
+ * rejection produces one sentence wherever the user meets it.
+ *
  * Exported pure so the mapping is unit-testable without a DOM.
  */
 export function projectCreateErrorMessage(err: unknown): string {
@@ -94,8 +108,38 @@ export function projectCreateErrorMessage(err: unknown): string {
   if (code === "slug_taken" || err.status === 409) {
     return "That name is taken. Pick a different one.";
   }
+  // `invalid_name` is the SAME rejection the live preview mirrors, so it must
+  // read as the same answer. Coord answers
+  // `{"error":"invalid_name","reason":<TenantNameError::reason()>}` and its own
+  // docstring calls that `reason` "the machine-readable discriminator the
+  // frontend renders against"; `parseTenantCreateError` lands it in
+  // `err.detail`, because coord's body carries no `message`/`detail` and so
+  // `obj.reason` wins — the identical shape the `reserved_name` arm below reads.
+  //
+  // This matters precisely BECAUSE the preview has no veto: a name the preview
+  // dislikes is still submittable by design, so this arm is the live end of the
+  // same journey. Without it, typing `ab` says "A short id needs at least 3
+  // letters or digits." and submitting `ab` says "try letters and numbers" —
+  // two sentences for one answer, and the second one false, since `ab` IS
+  // letters. The generic copy survives only where no reason arrived.
   if (code === "invalid_name") {
-    return "That name can't be used — try letters and numbers.";
+    const reason = err.detail;
+    const generic = "That name can't be used — try letters and numbers.";
+    if (isProjectSlugReason(reason)) {
+      // `empty` is the one reason with no sentence — an untouched field is not
+      // a mistake, and submit is disabled there, so coord cannot really answer
+      // it. A `null` must still never reach the error box.
+      return projectSlugProblemMessage(reason) ?? generic;
+    }
+    if (reason === "" || reason === code) {
+      // No reason travelled: coord sent none, or the parse fell back to
+      // echoing the code. Say the general thing rather than invent a cause.
+      return generic;
+    }
+    // A reason added coord-side after this shipped. Legible verbatim rather
+    // than flattened — and without the "letters and numbers" advice, which we
+    // would have no basis for.
+    return `That name can't be used (${reason}).`;
   }
   // `reserved_name` is the DENYLIST rejection, and it is the security-relevant
   // one: coord reserves the `personal-` namespace and any slug a group mapping

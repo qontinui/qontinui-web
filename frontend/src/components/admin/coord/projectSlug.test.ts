@@ -15,9 +15,11 @@
 import { describe, expect, it } from "vitest";
 import fixtures from "./projectSlug.fixtures.json";
 import {
+  isProjectSlugReason,
   MAX_DISPLAY_NAME_CHARS,
   MAX_SLUG_LEN,
   MIN_SLUG_LEN,
+  PROJECT_SLUG_REASONS,
   projectSlugProblemMessage,
   slugifyProjectName,
   type ProjectSlugReason,
@@ -107,6 +109,52 @@ describe("the property coord asserts: clean or refused, never mangled", () => {
       expect(/^[a-z0-9][a-z0-9-]*$/.test(result.slug)).toBe(true);
     });
   }
+});
+
+describe("isProjectSlugReason — the narrowing the WIRE needs", () => {
+  // These values do not only come from `slugifyProjectName`. Coord sends the
+  // same tokens back as `{"error":"invalid_name","reason":…}`, and
+  // `projectCreateErrorMessage` renders them through the same sentences — so
+  // the union has to exist at runtime, not only at compile time.
+  it("accepts exactly coord's reasons and nothing else", () => {
+    for (const reason of PROJECT_SLUG_REASONS) {
+      expect(isProjectSlugReason(reason)).toBe(true);
+    }
+    for (const notAReason of [
+      "invalid_name", // the CODE, which the parse echoes when no reason came
+      "reserved_name",
+      "contains_emoji", // a reason coord might add after this ships
+      "",
+      "TOO_SHORT",
+      " too_short",
+    ]) {
+      expect(isProjectSlugReason(notAReason)).toBe(false);
+    }
+  });
+
+  it("is not fooled by a non-string, or by Object.prototype", () => {
+    for (const value of [null, undefined, 3, {}, ["too_short"], "toString"]) {
+      expect(isProjectSlugReason(value)).toBe(false);
+    }
+  });
+
+  it("holds every reason the fixture table names", () => {
+    // The fixture is transcribed from coord. If coord grows a reason and the
+    // table records it, the runtime list must have grown too — otherwise the
+    // wire value silently falls through to the generic sentence.
+    for (const testCase of fixtures.rejects) {
+      expect(isProjectSlugReason(testCase.reason)).toBe(true);
+    }
+  });
+
+  it("has a sentence for every reason but `empty`", () => {
+    // `projectCreateErrorMessage` renders these straight into the error box, so
+    // a reason with no sentence and no fallback would render as nothing at all.
+    for (const reason of PROJECT_SLUG_REASONS) {
+      if (reason === "empty") continue;
+      expect(projectSlugProblemMessage(reason)).toBeTruthy();
+    }
+  });
 });
 
 describe("projectSlugProblemMessage", () => {
