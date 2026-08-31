@@ -930,11 +930,20 @@ export function formatAge(secs: number | null | undefined): string {
  * WSL headroom that can ACTUALLY be spent, given the host lane on the same
  * machine.
  *
- * `.wslconfig` sets `pageReporting=true`, so WSL returns idle pages to
- * Windows and `memory=<N>GB` is a *ceiling*, not a reservation. The lanes are
- * coupled: real WSL headroom is `min(ceiling − used, host_free)`. A WSL row
- * reading "9 GB free" beside a host at 900 MB free commit — the literal
- * 2026-08-02 state — is showing memory that cannot be spent.
+ * WSL returns idle pages to Windows, so `memory=<N>GB` in `.wslconfig` is a
+ * *ceiling*, not a reservation. The lanes are coupled: real WSL headroom is
+ * `min(ceiling − used, host_free)`. A WSL row reading "9 GB free" beside a host
+ * at 900 MB free commit — the literal 2026-08-02 state — is showing memory that
+ * cannot be spent.
+ *
+ * Do NOT re-attribute the reclaim above to a `.wslconfig` `pageReporting=true`
+ * key. That attribution was measured false: WSL 2.7.12.0 does not recognise the
+ * key at all, and neither fleet box sets it. What IS still presumed rather than
+ * measured is that reclaim is on by *default* on these builds — the coupled
+ * figure this function returns depends on it, so treat it as an assumption this
+ * surface rests on, not as something the code below establishes.
+ * `qontinui-claude-config/knowledge-base/qontinui-specific/machine-resources.md`
+ * §2 carries both measurements.
  *
  * Returns `null` when either side is missing: a coupled figure derived from
  * one half is not a coupled figure, and guessing the other half would be the
