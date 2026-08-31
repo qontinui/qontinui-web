@@ -161,9 +161,7 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
     // receives it on the authorize path too, not just the install-button path.
     stubFetch(jsonResponse({ connect_state: TOKEN }));
     const runnerNonce = "b".repeat(64);
-    render(
-      <ConnectInstalledOrg flow="runner-clone" runnerState={runnerNonce} />
-    );
+    render(<ConnectInstalledOrg flow="runner-clone" runnerState={runnerNonce} />);
 
     await userEvent.type(
       await screen.findByTestId("connect-installed-org-login"),
@@ -175,7 +173,8 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
     const segments = (
-      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ?? ""
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
     ).split("~");
     expect(segments).toHaveLength(5);
     expect(segments[4]).toBe(runnerNonce);
@@ -195,7 +194,8 @@ describe("<ConnectInstalledOrg> authorize CTA", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
     const segments = (
-      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ?? ""
+      new URL(assign.mock.calls[0][0] as string).searchParams.get("state") ??
+      ""
     ).split("~");
     expect(segments).toHaveLength(4);
   });

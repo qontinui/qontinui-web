@@ -104,9 +104,10 @@ describe("useTrainHealth", () => {
 
   it("stops polling when the tab is switched away", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { result, rerender } = renderHook(({ on }) => useTrainHealth(on), {
-      initialProps: { on: true },
-    });
+    const { result, rerender } = renderHook(
+      ({ on }) => useTrainHealth(on),
+      { initialProps: { on: true } }
+    );
     await vi.waitFor(() => expect(result.current.loaded).toBe(true));
     const before = healthCalls();
 
@@ -137,6 +138,8 @@ describe("useTrainHealth", () => {
       vi.advanceTimersByTime(TRAIN_HEALTH_POLL_MS + 1_000);
     });
     // A transient blip must not blank the fleet banner.
-    expect(result.current.health?.last_merged_at).toBe("2026-07-26T00:00:00Z");
+    expect(result.current.health?.last_merged_at).toBe(
+      "2026-07-26T00:00:00Z"
+    );
   });
 });
