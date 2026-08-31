@@ -86360,7 +86360,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/accept": {
       "post": {
-        "description": "UPSERT ``coord.tenant_repo_profiles`` with\n``profile_source='audit'`` + the (possibly hand-edited) starter\nprofile. Stamps ``coord.operator_audit`` + publishes settings cache\ninvalidation.",
+        "description": "UPSERT ``coord.tenant_repo_profiles`` with ``profile_source='audit'``\n+ the (possibly hand-edited) starter profile, then REGISTER the repo into\n``coord.canonical_repos`` and provision it. Stamps ``coord.operator_audit``\n+ publishes settings cache invalidation.\n\nProvisioning is a bare ``git init``, a full mirror clone of\n``github_remote``, and a synchronous reconcile \u2014 the work that stops\n``POST /agents/allocate`` answering ``409 repo_not_registered`` for a repo\nthe tenant has just onboarded. Coord requires ``github_remote`` here and\nwill not synthesize one.\n\nSuccess adds ``provisioning`` (per-step outcomes) and\n``worktree_allocation`` (``enabled`` | ``blocked_no_remote`` |\n``pending_first_reconcile``) to the response. Refusals are coord's typed\ncodes: ``repo_not_in_tenant`` 403, ``repo_has_no_remote`` 422,\n``repo_registered_to_another_tenant`` 409, ``repo_unenrolled`` 409 \u2014 passed\nthrough as a STRUCTURED detail (``structured_errors``) so the wizard can\nbranch on ``error`` and render coord's ``hint``.",
         "operationId": "api_v1_operations_pr_merge_onboarding_accept_post",
         "requestBody": {
           "content": {
