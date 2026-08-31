@@ -68,11 +68,18 @@ afterEach(() => {
 });
 
 /** Render and open the collapsed disclosure. */
-function openPanel(props: { deviceId?: string; hostname?: string } = {}) {
+function openPanel(
+  props: {
+    deviceId?: string;
+    hostname?: string;
+    ciInfrastructure?: boolean;
+  } = {}
+) {
   render(
     <CoordDispatchDisclosure
       deviceId={"deviceId" in props ? props.deviceId : DEVICE}
       hostname={props.hostname ?? HOST}
+      ciInfrastructure={props.ciInfrastructure}
     />
   );
   fireEvent.click(screen.getByRole("button", { name: /Coord dispatch/i }));
@@ -246,5 +253,30 @@ describe("gating", () => {
     const notice = screen.getByTestId("coord-dispatch-unavailable");
     expect(notice.getAttribute("data-coord-dispatch")).toBe("no_device");
     expect(notice.textContent).toMatch(/Nothing here says/);
+  });
+
+  it("explains WHY a GitHub Actions runner row is not drainable", () => {
+    // The row has a device_id in coord's CI-runner mirror, but that device has
+    // no `coord.tenant_devices` binding — the registrar registers with an
+    // empty tenant list — and `fleet_drain`'s Gate 2 answers
+    // `device_not_in_tenant`. Offering the button off the mirror's id would
+    // ship a control that 403s every time.
+    openPanel({ deviceId: undefined, ciInfrastructure: true });
+    expect(screen.queryByTestId(`coord-dispatch-pause-${HOST}`)).toBeNull();
+    const notice = screen.getByTestId("coord-dispatch-unavailable");
+    expect(notice.getAttribute("data-coord-dispatch")).toBe(
+      "ci_runner_unbound"
+    );
+    expect(notice.textContent).toMatch(/tenant_devices/);
+    // And it points at the lever that DOES apply to this host.
+    expect(notice.textContent).toMatch(/qontinui/);
+  });
+
+  it("keeps a working control on a workstation that also hosts a CI runner", () => {
+    // `ciInfrastructure` means "this row exists ONLY because the mirror named
+    // it" — not "there is a CI runner here". A workstation's coord device is
+    // bound, so its control stays.
+    openPanel({ ciInfrastructure: false });
+    expect(screen.getByTestId(`coord-dispatch-pause-${HOST}`)).toBeTruthy();
   });
 });

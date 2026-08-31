@@ -762,6 +762,12 @@ export function MachineCard({
               ? machine.coordHealth.device_id
               : undefined
           }
+          // NOT `machine.ciRunner != null` — a workstation that also hosts a
+          // CI runner is still a workstation and its coord device IS bound, so
+          // it keeps a working control. This flag means "this row exists ONLY
+          // because the CI-runner mirror named it", which is exactly the
+          // population whose devices carry no tenant binding.
+          ciInfrastructure={machine.isCiInfrastructure ?? false}
         />
 
         {/* Summary footer */}

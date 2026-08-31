@@ -79,6 +79,21 @@ export interface CoordDispatchDisclosureProps {
   deviceId?: string;
   /** For the confirm copy and the result line. Never used to address coord. */
   hostname: string;
+  /**
+   * True when this row reached the machine list through coord's CI-runner
+   * mirror rather than the tenant device roster.
+   *
+   * It changes only the copy for the no-device case, and it is not a detail:
+   * those rows have a `device_id` — the mirror carries one — but coord's drain
+   * would refuse it. `ci_runner_registrar` registers with `tenant_ids = &[]`,
+   * so a GitHub-runner row has no `coord.tenant_devices` binding; that is why
+   * it is absent from `/coord/fleet/health` (whose roster query is keyed on
+   * that JOIN) AND why `fleet_drain`'s Gate 2 answers
+   * `device_not_in_tenant`. Wiring the mirror's id into the button would
+   * therefore ship a control that 403s every time. Saying so is the useful
+   * thing this row can do.
+   */
+  ciInfrastructure?: boolean;
 }
 
 /**
@@ -317,6 +332,7 @@ function DispatchControl({
 export function CoordDispatchDisclosure({
   deviceId,
   hostname,
+  ciInfrastructure = false,
 }: CoordDispatchDisclosureProps) {
   return (
     <div data-coord-dispatch-row={deviceId ? "device" : "no_device"}>
@@ -337,6 +353,22 @@ export function CoordDispatchDisclosure({
           >
             <DispatchControl deviceId={deviceId} hostname={hostname} />
           </CoordAdminOnly>
+        ) : ciInfrastructure ? (
+          <DispatchNotice
+            state="ci_runner_unbound"
+            headline="Not drainable — this is a GitHub Actions runner"
+          >
+            This row came from coord&apos;s CI-runner mirror, and those device
+            rows carry no <code>coord.tenant_devices</code> binding
+            (`ci_runner_registrar` registers them with an empty tenant list).
+            Coord&apos;s drain refuses an unbound device outright
+            (`device_not_in_tenant`), so a button here would fail every time —
+            and it would be aimed at the wrong thing anyway: the drain map is
+            read by coord&apos;s own CI and build dispatch, while this host is
+            drawn by <strong>GitHub</strong>. The lever that takes it out of
+            GitHub&apos;s routing is its <code>qontinui</code> label, shown
+            above.
+          </DispatchNotice>
         ) : (
           <DispatchNotice
             state="no_device"
@@ -346,7 +378,7 @@ export function CoordDispatchDisclosure({
             row carries none — it reached the list through the runner inventory
             and coord&apos;s device read has no row for it. Nothing here says
             whether coord is dispatching to this machine; there is simply no id
-            to name in the request.
+            to match a machine record against.
           </DispatchNotice>
         )}
       </CollapsiblePanel>

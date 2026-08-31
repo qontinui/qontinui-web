@@ -90,25 +90,22 @@ function buildMachineGroups(
    */
   coordDevices: FleetHealthDevice[],
   /**
-   * Coord's GitHub-runner mirror.
+   * The per-host CI facts, ALREADY MERGED by the caller.
    *
-   * The GH fleet's rows are structurally invisible to `GET /operations/fleet`
-   * (coord's registrar writes them with no `user_id` and no
-   * `capability_user_paired`, and the device read requires both), so without
-   * this the `ci_runners` map below is empty for exactly the hosts an operator
-   * came here to look at. See `ciRunnerMirror.ts`.
+   * Merged rather than derived here so there is exactly one merged map per
+   * render: the stat row counts off the same object the cards are built from,
+   * and two `mergeCiRunners` calls would be two chances for the `CI Runners
+   * x/y` badge and the rows beneath it to disagree.
+   *
+   * It matters that this is merged at all — the GitHub fleet's rows are
+   * structurally invisible to `GET /operations/fleet` (coord's registrar writes
+   * them with no `user_id` and no `capability_user_paired`, and the device read
+   * requires both), so `fleet.ci_runners` alone is empty for exactly the hosts
+   * an operator came here to look at. See `ciRunnerMirror.ts`.
    */
-  ciRunnerMirror: CiRunnerMirrorRead
+  ciRunners: CiRunnersByHost
 ): MachineGroup[] {
   const byHost = new Map<string, MachineGroup>();
-  // The mirror WINS for status and labels where both carry a host: it is the
-  // copy derived from GitHub's own listing, and the routing verdict has to be
-  // computed from that one. A mirror read that has not answered contributes
-  // nothing and removes nothing.
-  const ciRunners: CiRunnersByHost = mergeCiRunners(
-    fleet.ci_runners ?? {},
-    ciRunnerMirror
-  );
   const displayNames: Record<string, string> =
     fleet.machine_display_names ?? {};
 
@@ -469,6 +466,16 @@ export function FleetOverview({
   // defeat the memo below.
   const coordDevices = health.data?.devices ?? EMPTY_DEVICES;
 
+  // The mirror WINS for status and labels where both carry a host: it is the
+  // copy derived from GitHub's own listing, and the routing verdict has to be
+  // computed from that one. A mirror read that has not answered contributes
+  // nothing and removes nothing. Computed ONCE, here, and handed to both the
+  // row builder and the stat row.
+  const mergedCiRunners = useMemo(
+    () => mergeCiRunners(fleet?.ci_runners ?? {}, ciRunnerMirror),
+    [fleet, ciRunnerMirror]
+  );
+
   const machineGroups = useMemo(
     () =>
       fleet
@@ -478,7 +485,7 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            ciRunnerMirror
+            mergedCiRunners
           )
         : // The runner-inventory read failed or has not landed, but coord's
           // device list may have. Those machines still exist — render them
@@ -490,7 +497,7 @@ export function FleetOverview({
             symbolClaims.byMachine,
             volumes,
             coordDevices,
-            ciRunnerMirror
+            mergedCiRunners
           ),
     [
       fleet,
@@ -498,18 +505,14 @@ export function FleetOverview({
       symbolClaims.byMachine,
       volumes,
       coordDevices,
-      ciRunnerMirror,
+      mergedCiRunners,
     ]
   );
 
   // Counted off the MERGED map the cards are built from, not off
   // `fleet.ci_runners` — which is empty for the GitHub fleet, and was the
   // reason the `CI Runners x/y` stat read `0/0` beside three live hosts.
-  const mergedCiRunners = useMemo(
-    () => mergeCiRunners(fleet?.ci_runners ?? {}, ciRunnerMirror),
-    [fleet, ciRunnerMirror]
-  );
-
+  //
   // `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` now a real
   // status, the negative form would count a runner nobody has heard from as
   // active — a wrong number in the direction that hides a problem.
