@@ -1115,6 +1115,17 @@ async def _runner_proxy_relay(
             # The heartbeat clock. A different fact; see
             # ``_relay_device_liveness``.
             content["last_seen_at"] = liveness.last_seen_at
+        # The log carries the SAME keys as the body, present under exactly the
+        # same condition. A ``ws_connected_at=None`` kwarg here would put the
+        # ambiguity straight back on the surface an operator actually greps:
+        # a query for this event with a null clock would return the
+        # never-registered rows and the coord-outage rows together.
+        # ``liveness_known`` names which population a row is in without
+        # needing the absence to be noticed.
+        liveness_fields: dict[str, object] = {"liveness_known": liveness.known}
+        if liveness.known:
+            liveness_fields["ws_connected_at"] = liveness.ws_connected_at
+            liveness_fields["last_seen_at"] = liveness.last_seen_at
         logger.warning(
             "runner_proxy_relay_not_connected",
             device_id=str(device_uuid),
@@ -1122,11 +1133,7 @@ async def _runner_proxy_relay(
             path=path,
             method=request.method,
             request_id=request_id,
-            # Same shape as the body, so the log and the response never
-            # disagree about what was known.
-            liveness_known=liveness.known,
-            ws_connected_at=liveness.ws_connected_at,
-            last_seen_at=liveness.last_seen_at,
+            **liveness_fields,
         )
         return JSONResponse(status_code=503, content=content)
 
