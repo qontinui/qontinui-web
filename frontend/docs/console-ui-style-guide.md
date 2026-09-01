@@ -720,9 +720,13 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > **Name that field for the READ, not for what was counted** — it was
 > `countsAreCurrent` first, and the rename is part of the rule rather than a
 > tidy-up. The two questions are independent: a read can be perfectly current
-> and still carry a `null` scalar (`deriveNotificationsHealth` has an arm
-> headlined *"The unread count did not come back"* that returns
-> `readIsCurrent: true`). A field named for the counts invites
+> and still carry a `null` scalar — the FIRST read to answer without one is
+> current, and `deriveNotificationsHealth` has an arm headlined *"The unread
+> count did not come back"* that returns `readIsCurrent: true` for it. Note
+> what that does NOT license: a read that used to carry the scalar and has
+> STOPPED is a fact about the read, and is uncurrent. Raising the same flag for
+> both makes the first arm unreachable and puts *"no longer"* in front of an
+> operator who never had a good read. A field named for the counts invites
 > `health.countsAreCurrent ? unreadCount! : …` at every consumer, and the type
 > will not stop it — so the published verdict answers one question, and a
 > consumer that wants a number asks BOTH: this flag, then the scalar itself.
