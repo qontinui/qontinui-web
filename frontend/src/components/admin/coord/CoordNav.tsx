@@ -669,8 +669,17 @@ function useAlertsBadge(): {
 
   const fetchCount = useCallback(async () => {
     // One ticket per axis, taken together before either read goes out. They
-    // stay in lockstep because every poll settles both exactly once, and each
-    // axis only ever compares against its own sequence.
+    // stay in lockstep because every poll settles both exactly once — six
+    // branches, six settles, no early return — and each axis only ever compares
+    // against its own sequence.
+    //
+    // ⚠️ Which makes CROSS-WIRING the hazard here, not divergence. A branch that
+    // skipped one axis's settle would only leave a gap in that axis's own
+    // numbering, and the next poll re-syncs. But `settleCritical(seq, …)` is
+    // correct only while the counters march together: the moment some future
+    // branch issues one ticket and not the other, a cross-wired call compares
+    // against the wrong sequence and silently declines reads. Keep each
+    // `settle*` on its own `*Seq`.
     const seq = issueCount();
     const critSeq = issueCritical();
     // Two `limit=1` reads: the unresolved total for the number, and a
