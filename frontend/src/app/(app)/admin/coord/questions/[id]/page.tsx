@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * /admin/coord/questions/[id] â€” single agent-question detail + responder.
+ * /admin/coord/questions/[id] — single agent-question detail + responder.
  *
  * Plan `2026-05-19-coordinator-production-readiness.md` Phase 3 (Wave 3a).
  *
  * Renders the full question, free-form context (markdown), and the
  * `options` JSONB as selectable cards. The operator can:
- *   1. Click an option card â†’ its value is staged in the response textarea
+ *   1. Click an option card → its value is staged in the response textarea
  *   2. Edit the textarea freely
- *   3. Submit â€” POST /api/v1/operations/agent-questions/:id/respond with
+ *   3. Submit — POST /api/v1/operations/agent-questions/:id/respond with
  *      `{response, responded_by_operator}` where responded_by_operator is
  *      the current admin's email.
  *
@@ -19,23 +19,23 @@
  *
  * ## Console style (Phase 3 Wave 3)
  *
- * The ROUTE survives (D1 â€” this page is a workspace: it has its own actions,
+ * The ROUTE survives (D1 — this page is a workspace: it has its own actions,
  * its own composer, and a deep link operators paste). What changed is chrome,
  * per `frontend/docs/console-ui-style-guide.md`:
  *
- * - **R9** â€” the four `<Card><CardHeader><CardTitle>` section wrappers are
+ * - **R9** — the four `<Card><CardHeader><CardTitle>` section wrappers are
  *   gone. None of them was a page title, but each cost ~72px of header to
  *   label a section a one-line heading labels just as well, and four of them
- *   stacked pushed the composer â€” the thing the operator came here to use â€”
+ *   stacked pushed the composer — the thing the operator came here to use —
  *   below the fold on a laptop.
- * - **R3/R4** â€” the question's state is now a `<StatusBadge>` off
+ * - **R3/R4** — the question's state is now a `<StatusBadge>` off
  *   `deriveQuestionStatus`, the SAME derivation `/questions` renders, with the
  *   matching left-edge accent. It used to be a hand-rolled
  *   `answered ? "secondary" : "default"` badge saying "pending", which is the
  *   one state R3 files as red: an unanswered question is an agent that has
  *   STOPPED, and nothing but this page clears it. The list said so; the detail
  *   route did not.
- * - **R7** â€” free-form `Context` is supporting material, so it collapses. It
+ * - **R7** — free-form `Context` is supporting material, so it collapses. It
  *   opens by default (you usually need it to answer) and its open/closed
  *   choice persists.
  *
@@ -43,15 +43,15 @@
  *
  * #1110 removed the false all-clear from the INBOX and amended the style
  * guide's R6 to say a failed read needs its own flag that every derived
- * surface consults â€” "`RecordList`'s `empty` slot included". Its sweep was of
+ * surface consults — "`RecordList`'s `empty` slot included". Its sweep was of
  * `empty=` slots, so it did not reach the shape here: a bare `: (` arm on a
  * `question === null` ternary, which is the same slot hand-rolled. That arm
  * said **"Question {id} not found."** for a read that FAILED, which is the
- * inbox's green all-clear in the singular â€” it tells the operator the question
+ * inbox's green all-clear in the singular — it tells the operator the question
  * is gone, and nothing else on the page contradicts it.
  *
  * The correction has to stop short of the opposite error. A **404 is coord
- * ANSWERING** â€” it holds no such row â€” and is the ordinary outcome of a stale
+ * ANSWERING** — it holds no such row — and is the ordinary outcome of a stale
  * deep link, so it keeps the calm, definite copy. Only a read that never
  * landed is unknown. Three things follow: `extractQuestion` refuses an
  * unrecognised 200 instead of casting it into a live composer; `fetchSeq`
@@ -80,7 +80,6 @@ import {
   CollapsiblePanel,
   RowTime,
   StatusBadge,
-  isNotFoundError,
   rowAccentProps,
 } from "@/components/console";
 import { useAuth } from "@/contexts/auth-context";
@@ -104,7 +103,7 @@ const API = "/api/v1/operations";
  * unrecognised 200 into a confident zero. The blind `httpClient.get<Row>` cast
  * here was the same mistake with a worse landing. A wrapper body, a `null`, or
  * a coord error envelope all pass `typeof body === "object"`, so `question`
- * became a TRUTHY object with every field `undefined` â€” which renders an empty
+ * became a TRUTHY object with every field `undefined` — which renders an empty
  * question heading above a LIVE composer, because `responded_at` is undefined
  * so `answered` is false. An operator can then submit an answer to a question
  * they were never shown.
@@ -152,7 +151,7 @@ export default function CoordQuestionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** The read failed with coord's own 404 — it answered, and the answer was
-   *  "no such question". See `isNotFoundError`. Separate from `error` because
+   *  "no such question". See `httpStatusOf`. Separate from `error` because
    *  the two absences are different facts: coord ANSWERED and holds no such
    *  row, versus coord did not answer at all. Only the second is unknown, and
    *  collapsing them either way misinforms. */
@@ -163,10 +162,10 @@ export default function CoordQuestionDetailPage() {
   const [submitting, setSubmitting] = useState(false);
 
   // Generation guard, for the same reason #1110 put one on each of the three
-  // list reads â€” and here it is not only a rendering concern. App Router keeps
+  // list reads — and here it is not only a rendering concern. App Router keeps
   // this component MOUNTED across an `[id]` change, so navigating A -> B while
   // A's read is slow lands `setQuestion(A)` after B's. The page would then
-  // render question A's text under B's id, and `onSubmit` posts to `id` â€” B.
+  // render question A's text under B's id, and `onSubmit` posts to `id` — B.
   // The operator answers the wrong agent, having read the wrong question.
   const fetchSeq = useRef(0);
 
@@ -174,7 +173,7 @@ export default function CoordQuestionDetailPage() {
     const seq = ++fetchSeq.current;
     if (!id) {
       // Bailing here used to skip the `finally`, so `loading` stayed true and
-      // the page rendered its skeleton forever â€” no error, no explanation, and
+      // the page rendered its skeleton forever — no error, no explanation, and
       // indistinguishable from a read that is merely slow.
       setError("no question id in the route");
       setLoading(false);
@@ -216,7 +215,7 @@ export default function CoordQuestionDetailPage() {
     setLoading(true);
     // Drop the previous question when the id changes. #1110's rule is that a
     // retained list is STALE-but-real and worth keeping; that rule turns on the
-    // retained rows still being about the same thing. Here they are not â€” a
+    // retained rows still being about the same thing. Here they are not — a
     // different `[id]` is a different question, and holding A's text under B's
     // id beside a live composer that posts to B is the wrong-question hazard
     // the generation guard exists to close, arriving by the other door.
@@ -267,7 +266,7 @@ export default function CoordQuestionDetailPage() {
 
   const options = normalizeOptions(shown?.options ?? null);
   const answered = Boolean(shown?.responded_at);
-  // R3 â€” the SAME derivation the inbox renders, so the two surfaces cannot
+  // R3 — the SAME derivation the inbox renders, so the two surfaces cannot
   // disagree about whether an agent is stopped on this question. `question`
   // may be null while the first read is in flight; the block that consumes
   // this only renders once it is not.
@@ -323,7 +322,7 @@ export default function CoordQuestionDetailPage() {
               )}
             </div>
             <p className="text-base font-medium">{shown.question}</p>
-            {/* R8 â€” the raw coord ids live at the bottom, muted and mono, not
+            {/* R8 — the raw coord ids live at the bottom, muted and mono, not
                 beside the question they are support material for. */}
             <div className="flex flex-wrap gap-x-3 font-mono text-[10px] text-muted-foreground/60 break-all">
               {shown.agent_id && <span>agent {shown.agent_id}</span>}
@@ -335,7 +334,7 @@ export default function CoordQuestionDetailPage() {
           </div>
 
           {shown.context && (
-            /* R7 â€” supporting material collapses. It opens by default because
+            /* R7 — supporting material collapses. It opens by default because
                you usually need it to answer, and the choice persists. */
             <CollapsiblePanel
               titleAs="h2"
