@@ -552,7 +552,14 @@ function isLeafActive(pathname: string, leaf: NavLeaf): boolean {
 }
 
 interface AlertsRollup {
-  alerts?: Array<{ severity?: string }>;
+  /**
+   * `resolved_at` is carried because the degraded arm below has to read it.
+   * The row shape was `{ severity }` alone, which threw away the one field
+   * that separates "a critical exists" from "a critical existed" — and the
+   * degraded arm fires exactly on the build that may have dropped
+   * `include_resolved=false` along with `severity`.
+   */
+  alerts?: Array<{ severity?: string; resolved_at?: string | null }>;
   /** Rows MATCHING the query, unpaged. Absent on an un-upgraded coord. */
   total_count?: number;
 }
@@ -657,7 +664,9 @@ function useRetainedValue<T>(initial: T): {
  * dragging 500 across the wire on every page every poll.
  *
  * `known: false` means the deployed coord served no `total_count`. The caller
- * renders `≥N` — the truncated length is a LOWER BOUND, never the truth.
+ * renders `≥N` — the truncated length is a LOWER BOUND, never the truth —
+ * except at zero, where "at least none" is true of every state there is and
+ * the caller says the number is unknown instead.
  *
  * **Two axes, and each one answers for itself.** The number and the critical
  * accent come from two reads that FAIL INDEPENDENTLY, so they get two
@@ -735,11 +744,20 @@ function useAlertsBadge(): {
       if (typeof critTotal === "number") {
         settleCritical(seq, { value: critTotal > 0 });
       } else if (
-        (critBody.alerts ?? []).some((a) => a.severity === "critical")
+        (critBody.alerts ?? []).some(
+          (a) => a.severity === "critical" && !a.resolved_at
+        )
       ) {
-        // Degraded — an un-upgraded coord dropped `severity` too — but a
-        // critical row IN the sample PROVES a critical exists. Existence
-        // survives sampling.
+        // Degraded — an un-upgraded coord dropped `severity` too — but an
+        // UNRESOLVED critical row in the sample proves an unresolved critical
+        // exists. Existence survives sampling.
+        //
+        // `!a.resolved_at` is not belt-and-braces. This arm fires on exactly
+        // the build that ignored `severity`, and `include_resolved=false` is a
+        // filter on the same request; nothing in the response says which
+        // filters were honoured. Reading severity alone therefore asserted an
+        // UNRESOLVED critical off a row coord had already cleared.
+        // `alertStatus.ts` draws the same line from the same field.
         settleCritical(seq, { value: true });
       } else {
         // ...and absence does NOT. This arm used to answer `false` here, which
