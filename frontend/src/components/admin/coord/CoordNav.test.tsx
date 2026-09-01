@@ -435,6 +435,49 @@ describe("CoordNav", () => {
     expect(badge.className).toContain("text-red-200");
   });
 
+  it("labels a retained alert count as stale, the same as its sibling", async () => {
+    // Symmetry, deliberately: both nav badges keep their number across a failed
+    // poll and both are rendered by ONE path, so qualifying only the badge the
+    // notifications follow-up came from would leave the identical unlabelled
+    // claim on the tab beside it — which is the "applied it only where the
+    // migration happened to be large" failure the style guide records for
+    // /prompt-injections.
+    let call = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      call += 1;
+      if (call <= 2)
+        return Promise.resolve(
+          String(url).includes("severity=critical")
+            ? { alerts: [], total_count: 0 }
+            : { alerts: [], total_count: 42 }
+        );
+      return Promise.reject(new Error("GET … failed: 500 - boom"));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      const badge = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(badge).toHaveAttribute("data-read-stale", "false");
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await waitFor(() =>
+        expect(screen.getByTestId("coord-nav-alerts-badge")).toHaveAttribute(
+          "data-read-stale",
+          "true"
+        )
+      );
+      const stale = screen.getByTestId("coord-nav-alerts-badge");
+      expect(stale).toHaveTextContent("42");
+      expect(stale.getAttribute("title")).toMatch(/stopped moving/);
+      // The base title still says WHICH number this is — the staleness
+      // clause is appended to it, not substituted for it, so the two things
+      // the badge cannot vouch for (`totalKnown`, `stale`) stay separable.
+      expect(stale.getAttribute("title")).toMatch(/unpaged total/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders no badge when the rollup is empty or unavailable", async () => {
     httpGet.mockRejectedValue(new Error("boom"));
     render(<CoordNav />);
@@ -680,6 +723,102 @@ describe("CoordNav", () => {
         expect(
           screen.getByTestId("coord-nav-notifications-badge")
         ).toHaveTextContent("7");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("says the retained count is from an earlier read — and only then", async () => {
+      // The DISCRIMINATION, not each arm against the text it happens to emit:
+      // a fresh 7 and a retained 7 render the same number, so the test above
+      // ("keeps the LAST KNOWN count") passes just as happily against a badge
+      // that says nothing about where the 7 came from — which is exactly what
+      // this hook shipped. What has to differ is the QUALIFICATION.
+      let call = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        if (String(url).startsWith("/api/v1/operations/notifications")) {
+          call += 1;
+          return call === 1
+            ? Promise.resolve({ notifications: [], unread_count: 7 })
+            : Promise.reject(new Error("GET … failed: 500 - boom"));
+        }
+        return Promise.resolve({ alerts: [] });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        const fresh = await screen.findByTestId(
+          "coord-nav-notifications-badge"
+        );
+        expect(fresh).toHaveTextContent("7");
+        // The attribute is EMITTED on the fresh arm too — "false" is the
+        // answer "the last poll landed", which is a different claim from a
+        // badge that never asked the question.
+        expect(fresh).toHaveAttribute("data-read-stale", "false");
+        const freshTitle = fresh.getAttribute("title");
+        // It had no title at all before this; the one channel that could
+        // carry the qualification was empty.
+        expect(freshTitle).toBeTruthy();
+        expect(freshTitle).not.toMatch(/stopped moving/);
+        expect(fresh.className).not.toContain("opacity-60");
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-notifications-badge")
+          ).toHaveAttribute("data-read-stale", "true")
+        );
+        const stale = screen.getByTestId("coord-nav-notifications-badge");
+        // The number is still KEPT — that half was always right.
+        expect(stale).toHaveTextContent("7");
+        const staleTitle = stale.getAttribute("title");
+        expect(staleTitle).toMatch(/stopped moving/);
+        // Not a lower bound: an operator marking rows read in another tab
+        // moves this count DOWN, so `≥` would be a fresh false claim.
+        expect(stale).not.toHaveTextContent("≥");
+        // Dimmed, not recoloured — a stale count is not a condition.
+        expect(stale.className).toContain("opacity-60");
+        expect(stale.className).not.toContain("text-red-200");
+        // The two states produce two DIFFERENT outputs. This is the assertion
+        // that could not have been satisfied before.
+        expect(staleTitle).not.toBe(freshTitle);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not un-stale itself on a 2xx that carried no scalar", async () => {
+      // The subtle arm. A coord build predating `unread_count` answers 200
+      // with no scalar — reachable enough that the page's `applyEnvelope`
+      // documents it — so the read LANDED but replaced nothing. Clearing the
+      // flag on any 2xx would re-tell the lie while the number on screen is
+      // still the one from before the outage.
+      let call = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        if (String(url).startsWith("/api/v1/operations/notifications")) {
+          call += 1;
+          if (call === 1) return Promise.resolve({ unread_count: 7 });
+          if (call === 2)
+            return Promise.reject(new Error("GET … failed: 500 - boom"));
+          return Promise.resolve({ notifications: [] });
+        }
+        return Promise.resolve({ alerts: [] });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await screen.findByTestId("coord-nav-notifications-badge");
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-notifications-badge")
+          ).toHaveAttribute("data-read-stale", "true")
+        );
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() => expect(call).toBeGreaterThan(2));
+        const badge = screen.getByTestId("coord-nav-notifications-badge");
+        expect(badge).toHaveTextContent("7");
+        expect(badge).toHaveAttribute("data-read-stale", "true");
       } finally {
         vi.useRealTimers();
       }
