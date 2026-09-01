@@ -885,16 +885,19 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-health")
-    ).toHaveTextContent("7 unread events");
+    // `waitFor` on the CONTENT, not `findBy` on the element. The strip is
+    // rendered unconditionally, so `findBy` resolves the instant the component
+    // mounts — while the strip still reads "Waiting for coord…" — and the
+    // chained assertion then races the head read. It passes only because a
+    // mocked GET resolves in a microtask, and loses that race under load.
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
     ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
 
-    const strip = await screen.findByTestId("coord-notifications-health");
     await waitFor(() =>
       expect(strip).toHaveTextContent("These counts stopped updating")
     );
@@ -1000,9 +1003,13 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-health")
-    ).toHaveTextContent("7 unread events");
+    // `waitFor` on the CONTENT, not `findBy` on the element. The strip is
+    // rendered unconditionally, so `findBy` resolves the instant the component
+    // mounts — while the strip still reads "Waiting for coord…" — and the
+    // chained assertion then races the head read. It passes only because a
+    // mocked GET resolves in a microtask, and loses that race under load.
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
 
     await user.click(screen.getByTestId("coord-notifications-load-more"));
     await waitFor(() =>
