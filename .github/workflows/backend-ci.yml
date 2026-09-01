@@ -126,23 +126,27 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
-      # Ahead of the poetry install on purpose: this gate needs nothing but a
-      # bare interpreter and two committed files, so a PR that is going to
-      # fail it fails in seconds rather than after paying for a dependency
-      # install. `working-directory` overrides the job's ./backend default
-      # because the path below is repo-relative; the script itself resolves
-      # the repo root from its own location, so its verdict does not depend
-      # on cwd either way.
+      # NO ruff-version-parity STEP HERE, and this is load-bearing rather than
+      # an oversight — `a208240e2` added one and it is removed again by the
+      # commit you are reading. The gate that asserts the ruff below
+      # (poetry.lock's) is the ruff a contributor's pre-commit hooks run lives
+      # in .github/workflows/ruff-version-parity.yml, whose header states the
+      # reason: this workflow's other jobs stand up Postgres, Redis and a
+      # Docker build, while the change that motivates that gate touches
+      # `.pre-commit-config.yaml` alone.
       #
-      # SAME SCRIPT as .pre-commit-config.yaml's `ruff-version-parity` hook
-      # and .qontinui/ci.toml's `ruff-version-parity` step. It asserts that
-      # the ruff the two ruff steps below run (poetry.lock's) is the ruff a
-      # contributor's pre-commit hooks run — without which those hooks can go
-      # green on a tree this job rejects, which is the defect `505f5738`
-      # added the ruff-format hook to close and left half-open.
-      - name: Check ruff version parity (pre-commit vs poetry.lock)
-        run: python scripts/ci/check_ruff_version_parity.py
-        working-directory: ${{ github.workspace }}
+      # A step here is also WEAKER than the workflow, not merely redundant.
+      # This workflow is path-filtered and the filter above lists neither
+      # `.pre-commit-config.yaml` nor the repo-root `poetry.lock` — the two
+      # files that can put the versions out of step — so the step could not
+      # run on the drift it was added to catch. ruff-version-parity.yml is
+      # deliberately unfiltered for exactly that reason.
+      #
+      # backend/tests/test_ruff_version_parity_gate.py pins the lane roster,
+      # so re-adding an invocation here fails that test rather than silently
+      # falsifying the three places that enumerate the lanes — the script's
+      # docstring, the hook comment in .pre-commit-config.yaml, and
+      # ruff-version-parity.yml's header — plus this comment.
 
       - name: Install Poetry
         run: |
