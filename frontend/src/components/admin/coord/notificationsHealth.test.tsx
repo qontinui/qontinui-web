@@ -290,7 +290,12 @@ describe("the strip's contract with the page", () => {
     // Its own sentence, not the failed read's: nothing here is failing, and
     // "the feed could not be re-read" would send an operator after an outage
     // that is not happening.
-    expect(health.detail).toContain("the feed is answering but no longer");
+    expect(health.detail).toContain("the counts are no longer being refreshed");
+    // Deliberately NOT "the feed no longer carries them": the scalar can also
+    // have been delivered by the mark-read door, in which case the feed never
+    // carried it at all and that phrasing presupposes a delivery that never
+    // happened.
+    expect(health.detail).not.toContain("the feed is answering");
     expect(health.detail).not.toContain("could not be re-read");
     // The number is real, so it is still shown — and not quotable elsewhere.
     expect(health.readIsCurrent).toBe(false);
