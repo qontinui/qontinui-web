@@ -23,6 +23,14 @@ What these tests pin:
 6. A comparison that could not run exits 2, never 0. A gate that passes because
    it found nothing to check is the failure class ``_gate_lib`` exists to
    prevent.
+7. The LANE ROSTER — exactly three files invoke this script, the three the
+   tree documents. ``a208240e2`` added a fourth (a step in ``backend-ci.yml``)
+   and nothing noticed: all three enumerations went on saying "three lanes",
+   and the new one sat behind a ``paths:`` filter naming neither file that can
+   create the drift, so it could not fire on the change it was added for.
+8. The script's own docstring names every lane. It is the roster a reader
+   trusts instead of grepping, so a lane added without touching it leaves the
+   script describing a shape the repo no longer has.
 """
 
 from __future__ import annotations
@@ -166,3 +174,127 @@ def test_a_failed_lockfile_read_is_vacuous_not_clean(
     _write_config(tmp_path, _CONFIG_TWO_REPOS, monkeypatch)
     monkeypatch.setattr(gate, "locked_ruff_versions", lambda: None)
     assert gate.main() == gate.EXIT_VACUOUS
+
+
+# ---------------------------------------------------------------------------
+# The lane roster. Not machinery — this is the invariant `a208240e2` broke.
+#
+# That commit added a FOURTH invocation of this script, a step in
+# `backend-ci.yml`'s `lint` job, while three places in the tree enumerate the
+# lanes and say there are three: the gate script's docstring, the
+# `ruff-version-parity` pre-commit hook's comment, and
+# `.github/workflows/ruff-version-parity.yml`'s header — whose next paragraph
+# states outright that the gate is NOT a step in `backend-ci.yml`, and gives
+# the reason. Nothing failed. The prose went quietly wrong, and the extra lane
+# sat behind a `paths:` filter listing neither file that can create the drift,
+# so it could not run on the change it was added to catch.
+#
+# The lane count is the whole "same committed script" shape `.qontinui/ci.toml`
+# calls preferred ("the two lanes cannot drift because there is only one copy
+# of the logic"). A roster nobody checks is a roster that rots, which is the
+# same argument this gate makes about the ruff pin one level down.
+# ---------------------------------------------------------------------------
+
+# Repo-relative, exactly as the invoking lines spell it.
+_SCRIPT_REF = "scripts/ci/check_ruff_version_parity.py"
+
+# The three lanes, and the reason each one exists rather than the other two:
+#   * the workflow — the GitHub Actions lane. Deliberately UNFILTERED (its own
+#     header says why), so it reports on every candidate instead of hanging in
+#     awaiting-ci on the ones that touch neither file;
+#   * .qontinui/ci.toml — the runner-as-CI-node lane, which is why the script
+#     is stdlib-only;
+#   * the pre-commit hook — catches the drift before the push, since editing
+#     either side is what creates it.
+_DECLARED_LANES = frozenset(
+    {
+        ".github/workflows/ruff-version-parity.yml",
+        ".pre-commit-config.yaml",
+        ".qontinui/ci.toml",
+    }
+)
+
+# The script and this test both NAME the path in prose. Excluded by identity
+# rather than by a cleverer pattern: a regex that tried to tell an invocation
+# from a mention inside a docstring would be the fragile half of this test.
+# This file's own entry is derived, not spelled, so a rename cannot leave a
+# stale literal here quietly re-admitting it to the roster.
+_NOT_LANES = frozenset(
+    {_SCRIPT_REF, Path(__file__).resolve().relative_to(REPO_ROOT).as_posix()}
+)
+
+
+def _invoking_files() -> set[str]:
+    """Tracked files with a NON-COMMENT line naming the script.
+
+    A plain grep would count mentions: ``backend-ci.yml`` names the script in
+    the comment on its `paths:` filter (that filter is what makes THIS test run
+    on a change to ``scripts/ci/**`` at all), and removing that entry to make a
+    grep tidy would blind the gate's own tests to the gate's own edits.
+    """
+    listing = subprocess.run(
+        ["git", "grep", "-In", "--fixed-strings", _SCRIPT_REF],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    # `git grep` exits 1 for "no matches", which here means the scan proved
+    # nothing — this file alone guarantees at least one hit — so both non-zero
+    # codes are failures rather than an empty set.
+    assert listing.returncode == 0, (
+        f"`git grep` for {_SCRIPT_REF} exited {listing.returncode}; the lane "
+        f"roster was not scanned. stderr: {listing.stderr.strip()}"
+    )
+
+    found: set[str] = set()
+    for line in listing.stdout.splitlines():
+        path, _, rest = line.partition(":")
+        _, _, content = rest.partition(":")
+        if content.lstrip().startswith("#"):
+            continue
+        if path in _NOT_LANES:
+            continue
+        found.add(path)
+    return found
+
+
+def test_the_lane_roster_is_exactly_the_three_declared_lanes() -> None:
+    found = _invoking_files()
+
+    extra = found - _DECLARED_LANES
+    assert not extra, (
+        f"{sorted(extra)} invoke {_SCRIPT_REF}, but the tree documents three "
+        "lanes. Either drop the invocation, or add the lane HERE and to all "
+        "three enumerations of the roster: the docstring of "
+        f"{_SCRIPT_REF}, the `ruff-version-parity` hook comment in "
+        ".pre-commit-config.yaml, and the header of "
+        ".github/workflows/ruff-version-parity.yml -- which says the gate is "
+        "NOT a step in backend-ci.yml, and is exactly the sentence a fourth "
+        "lane falsified once already, in `a208240e2`."
+    )
+
+    missing = _DECLARED_LANES - found
+    assert not missing, (
+        f"{sorted(missing)} no longer invoke {_SCRIPT_REF}. A lane that stops "
+        "running is a gate that quietly narrowed; delete it from this roster "
+        "in the same change that removes it, so the loss is deliberate."
+    )
+
+
+def test_the_scripts_docstring_names_every_lane() -> None:
+    """The roster in prose must be the roster in the tree.
+
+    ``check_ruff_version_parity.py`` opens by listing the lanes that invoke it.
+    That list is what a reader trusts instead of grepping, so a lane added
+    without touching it leaves the script confidently describing a shape the
+    repo no longer has.
+    """
+    docstring = gate.__doc__ or ""
+    for lane in sorted(_DECLARED_LANES):
+        assert lane in docstring, (
+            f"{lane} invokes the gate but is not named in "
+            f"{_SCRIPT_REF}'s module docstring."
+        )
