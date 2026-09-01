@@ -617,11 +617,24 @@ export default function CoordNotificationsPage() {
    * nothing a disabled button promises.
    *
    * So: disabled only on an AFFIRMATIVE zero — coord's scalar actually said
-   * `0` and no loaded row contradicts it. Every other state, including the
-   * stale one, keeps the button live, which is the same direction §2's
-   * reasoning already took ("a stale count is no reason to refuse the write").
+   * `0`, THE READ THAT DELIVERED IT IS CURRENT, and no loaded row contradicts
+   * it. Every other state keeps the button live, which is the same direction
+   * §2's reasoning already took ("a stale count is no reason to refuse the
+   * write").
+   *
+   * `health.readIsCurrent` is that middle term and it is not optional. Without
+   * it this predicate reads a RETAINED zero as knowledge: `applyEnvelope` keeps
+   * the previous scalar when a poll fails, so a feed that answered `0` and then
+   * went dark leaves a frozen `0` in state while new events arrive — and the
+   * button greys out under a strip headlined "These counts stopped updating"
+   * whose detail line says, in words, "what has arrived since the last good
+   * read is UNKNOWN". That is the same defect one state over, and re-deriving
+   * "may I quote this scalar?" from the raw value is exactly what R6's fourth
+   * rule forbids: the strip owns that verdict and publishes it, two
+   * declarations above, where `markAllCount` already consults it.
    */
-  const knownNothingUnread = unreadCount === 0 && !rows.some(isUnread);
+  const knownNothingUnread =
+    health.readIsCurrent && unreadCount === 0 && !rows.some(isUnread);
   const markAllDisabled =
     migrationPending ||
     (filterActive ? loadedUnreadIds.length === 0 : knownNothingUnread);

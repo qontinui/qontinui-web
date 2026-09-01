@@ -749,9 +749,41 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > failed poll — correct, and half the rule — while rendering it unqualified,
 > so the widest-reach number in the console was the one with no way to say it
 > had stopped moving, and its `title` was `undefined` where the sibling alerts
-> badge has carried one all along. Both nav badges now publish `stale`; the
-> shared renderer dims the badge and appends the qualification to its `title`.
+> badge has carried one all along. Both nav badges now publish `stale` and the
+> shared renderer marks it — a visible `*`, the qualification appended to
+> `title`, and the same words in `sr-only` text.
 > **A route boundary is not a consumer boundary** — the poll is.
+>
+> Three things that pass for done and are not, all found reviewing the fix
+> above rather than the code it fixed:
+>
+> - **Do not signal a stale number by DIMMING it.** The first cut used
+>   `opacity-60`, which makes the state you most need to read the hardest one
+>   to read — 10px bold text at 60% — and is a lone non-text visual difference
+>   besides. A visible glyph survives at any contrast and composes with the
+>   `≥` this same badge already uses (`≥2*`).
+> - **A `title` is not an accessible name.** The badge is a non-focusable
+>   `<span>` with text content inside a link, so the link's name is computed
+>   from that content and the tooltip is never reached; there is no hover for a
+>   keyboard user either. Without an `sr-only` copy of the qualification, the
+>   whole fix is a sighted-mouse-user feature and everyone else is left with the
+>   unqualified claim. Test the accessible TEXT, not the attribute.
+> - **`count > 0` as a render gate makes the qualification unreachable for a
+>   retained ZERO** — the asymmetry this section already names four hundred
+>   lines up (*"a retained count of 7 is kept and labelled old while a retained
+>   0 would be thrown away"*). A last-good `0` then goes dark and renders
+>   nothing at all, on every console page, which states the absence in the
+>   loudest medium there is. Gate the exception on *"a read has delivered a
+>   count"*, not on the flag alone: a zero that was NEVER read has no retained
+>   fact to qualify and must stay silent.
+>
+> And name the flag for what it CARRIES. *"The most recent poll failed"* was
+> false in two states this same file produces — a 2xx carrying no scalar (the
+> read landed and refreshed nothing) and, under `Promise.all`, a poll whose
+> second read failed beside a first that succeeded. **`stale` means the most
+> recent read did not REPLACE this number**, which is one fact the code
+> actually holds, and it is symmetric: the scalar-less answer must SET the flag,
+> not merely decline to clear it.
 >
 > The rule that would have: **when you split a flag, test that the two states
 > produce two DIFFERENT outputs** — assert the discrimination itself, not each
