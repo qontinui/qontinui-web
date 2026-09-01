@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   MANAGED_HEAD_FORK_SUBCLASS,
   isManagedPredictedHeadFork,
+  isNoProposalAnswer,
   verdictChipLabel,
 } from "./deployTypes";
 import type { DimensionVerdict } from "./landTypes";
@@ -84,5 +85,53 @@ describe("verdictChipLabel — friendly managed-fork label", () => {
   it("ordinary verdict shows its outcome; missing → em dash", () => {
     expect(verdictChipLabel(verdict({ outcome: "confirmed" }))).toBe("confirmed");
     expect(verdictChipLabel(verdict({ outcome: null }))).toBe("—");
+  });
+});
+
+/**
+ * `DeployRow` renders calm explanatory copy — "coord does not consider this
+ * verification rollback-justified" — when this answers true, and the failure's
+ * own message when it answers false. So a false positive is an absence stated
+ * off a read that failed, the class #1110 removed from `/admin/coord/questions`.
+ *
+ * The probe this replaces was `/404/` over `GET <url> failed: <status> - <body>`,
+ * which is why the URL cases below are not hypothetical: the deploy id is in
+ * that URL on every request the row makes.
+ */
+describe("isNoProposalAnswer", () => {
+  const url = (id: string) => `/api/v1/operations/deploys/${id}/rollback-proposal`;
+
+  it("is true only when the STATUS is 404", () => {
+    expect(isNoProposalAnswer(new Error(`GET ${url("d1")} failed: 404 - {}`))).toBe(
+      true
+    );
+    expect(
+      isNoProposalAnswer(new Error(`GET ${url("d1")} failed: 500 - boom`))
+    ).toBe(false);
+  });
+
+  it("does not read a deploy id as a status", () => {
+    // The shipped defect, and the reason it was worth a named predicate. Ids
+    // are hex, so "404" occurs in them at an unremarkable rate — and when it
+    // does, `/404/` matched the URL on EVERY error that row could raise. The
+    // row then told the operator no rollback was available, permanently,
+    // because of its own id.
+    const e = new Error(`GET ${url("7c404ab9")} failed: 500 - coord exploded`);
+    expect(isNoProposalAnswer(e)).toBe(false);
+  });
+
+  it("does not read the response BODY as a status", () => {
+    expect(
+      isNoProposalAnswer(
+        new Error(`GET ${url("d1")} failed: 500 - upstream returned 404 earlier`)
+      )
+    ).toBe(false);
+  });
+
+  it("is false when there is no status at all", () => {
+    // Coord unreachable. `httpStatusOf` yields null, which is not 404, so the
+    // row keeps showing the real message rather than inventing an answer.
+    expect(isNoProposalAnswer(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isNoProposalAnswer("not an error")).toBe(false);
   });
 });

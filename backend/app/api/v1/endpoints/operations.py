@@ -1712,20 +1712,59 @@ async def get_pr_merge_onboarding_audit_status(
     )
 
 
+# The alternative shape for accept — async, with an ``accept-status`` poll the
+# way ``audit`` → ``audit-status`` works — was considered and REJECTED. It
+# reopens a window in which ``coord.tenant_repo_profiles`` has a row and
+# ``coord.canonical_repos`` does not: the two tables disagreeing about whether
+# the tenant took the repo on, which is exactly the state this phase removes.
+# Accept stays synchronous, and pays for it with a long-held connection.
+#
+# What the BROWSER receives on a refusal is one step past the ``HTTPException``
+# raised here, and is worth stating because the route's own tests (a bare
+# ``FastAPI()``, no handlers) cannot show it: ``app/main.py`` registers
+# ``app.middleware.error_handler.http_exception_handler`` over FastAPI's
+# default, and for a dict detail carrying an ``error`` key that handler SPLICES
+# the dict into the top level of its standardized envelope. The wire shape is
+# therefore ``{"error": "repo_has_no_remote", "message": …, "timestamp": …,
+# "path": …, "repo": …, "hint": …}`` — coord's keys as siblings of the
+# envelope's, with NO ``detail`` key at all. The wizard's decoder
+# (``MergeOrchestrationOnboarding.tsx`` ``parseCoordError``) handles that shape
+# first; do not "simplify" it to read ``detail``.
 @router.post("/pr-merge/onboarding/accept")
 async def post_pr_merge_onboarding_accept(
     body: dict[str, Any],
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """UPSERT ``coord.tenant_repo_profiles`` with
-    ``profile_source='audit'`` + the (possibly hand-edited) starter
-    profile. Stamps ``coord.operator_audit`` + publishes settings cache
-    invalidation.
+    """UPSERT ``coord.tenant_repo_profiles`` with ``profile_source='audit'``
+    + the (possibly hand-edited) starter profile, then REGISTER the repo into
+    ``coord.canonical_repos`` and provision it. Stamps ``coord.operator_audit``
+    + publishes settings cache invalidation.
+
+    Provisioning is a bare ``git init``, a full mirror clone of
+    ``github_remote``, and a synchronous reconcile — the work that stops
+    ``POST /agents/allocate`` answering ``409 repo_not_registered`` for a repo
+    the tenant has just onboarded. Coord requires ``github_remote`` here and
+    will not synthesize one.
+
+    Success adds ``provisioning`` (per-step outcomes) and
+    ``worktree_allocation`` (``enabled`` | ``blocked_no_remote`` |
+    ``pending_first_reconcile``) to the response. Refusals are coord's typed
+    codes: ``repo_not_in_tenant`` 403, ``repo_has_no_remote`` 422,
+    ``repo_registered_to_another_tenant`` 409, ``repo_unenrolled`` 409 — passed
+    through as a STRUCTURED detail (``structured_errors``) so the wizard can
+    branch on ``error`` and render coord's ``hint``.
     """
     return await _proxy_coord_post(
         "/pr-merge/onboarding/accept",
         body,
         tenant_id=tenant_id,
+        # NOT the module-wide 5s ``_COORD_TIMEOUT``: no read deadline, 5s to
+        # connect. **Do not delete this override.** A mirror clone of any real
+        # repository takes longer than five seconds, so the default turns every
+        # SUCCESSFUL accept into a 504 and the operator never sees the
+        # provisioning result. Same idiom as the SSE proxies below.
+        timeout=httpx.Timeout(None, connect=5.0),
+        structured_errors=True,
     )
 
 
@@ -2759,6 +2798,7 @@ async def _proxy_coord_post(
     forward_bearer: bool = False,
     timeout: httpx.Timeout | None = None,
     return_status: bool = False,
+    structured_errors: bool = False,
 ) -> Any:
     """Proxy a POST request to coord and return the JSON body.
 
@@ -2781,6 +2821,27 @@ async def _proxy_coord_post(
     body as ``200``). Coord 4xx/5xx still raise ``HTTPException`` either way;
     this only distinguishes the <400 success codes. Default False preserves
     the prior behavior exactly (returns just the JSON body).
+    ``structured_errors`` — when True, a coord ≥400 body that parses to a JSON
+    OBJECT becomes the ``HTTPException.detail`` VERBATIM instead of being
+    stringified into ``detail=resp.text``. That is what lets a caller branch on
+    coord's machine-readable ``{"error": "...", "repo": ..., "hint": ...}``
+    contract rather than re-parsing JSON out of a string. Anything that is not
+    a JSON object (a bare string, a list, an HTML 502 page from an
+    intermediary, an empty body) still falls back to ``resp.text``, so the
+    error is never lost. Default False because most callers on this surface
+    render ``detail`` as a message string; opting in is per-route (see
+    ``post_pr_merge_onboarding_accept``).
+
+    ``structured_errors`` is deliberately opt-in rather than the default for
+    all ~45 callers of this helper. Flipping the default is not a no-op at the
+    wire: ``app.middleware.error_handler.http_exception_handler`` splices a
+    dict detail into the top level of its envelope, which moves ``error`` from
+    the status-derived code to coord's own, turns ``message`` into a Python
+    repr of the dict rather than coord's verbatim JSON text, and lets coord's
+    remaining keys collide with the envelope's. That is a real contract change
+    for every other route, invisible to their tests (which run against a bare
+    ``FastAPI()`` with no handlers registered), so each route opts in
+    knowingly.
     """
     url = f"{settings.COORD_URL}{path}"
     headers = (
@@ -2800,10 +2861,36 @@ async def _proxy_coord_post(
                 detail="timeout waiting for coord",
             )
     if resp.status_code >= 400:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=_coord_error_detail(resp) if structured_errors else resp.text,
+        )
     if return_status:
         return resp.json(), resp.status_code
     return resp.json()
+
+
+def _coord_error_detail(resp: httpx.Response) -> Any:
+    """Coord's ≥400 body as a structured object when it is one, else its text.
+
+    Coord's typed refusals are JSON objects (``{"error": "repo_has_no_remote",
+    "repo": …, "hint": …}``). Handing that dict to ``HTTPException(detail=…)``
+    keeps the contract machine-readable end to end — FastAPI serializes it as
+    ``{"detail": {"error": …}}`` rather than ``{"detail": "{\\"error\\": …}"}``,
+    which the browser would have to JSON-parse a second time.
+
+    Only a JSON OBJECT is passed through. A JSON scalar or array is not coord's
+    error contract, and a non-JSON body (an HTML error page from a proxy in
+    front of coord, or an empty one) must not be swallowed — both fall back to
+    the raw text, exactly as before.
+    """
+    try:
+        parsed = resp.json()
+    except ValueError:
+        return resp.text
+    if isinstance(parsed, dict):
+        return parsed
+    return resp.text
 
 
 @router.post("/agents/allocate")
@@ -3807,7 +3894,107 @@ async def post_coord_notifications_mark_read(
 async def get_fleet_health(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the fleet-health rollup from coord (tenant-scoped)."""
+    """Return the fleet-health rollup from coord (tenant-scoped).
+
+    The body is coord's ``get_fleet_health`` envelope, passed through
+    untouched: ``devices`` (the per-machine
+    ``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,
+    ``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,
+    ``kv_bucket`` and ``as_of``. This route declares no
+    ``response_model``, so nothing here filters a field coord adds.
+
+    Those nine are what coord emits **today**. Two more are read by this
+    repo's client and appear nowhere in coord's source: ``FleetHealthPayload``
+    declares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page
+    branches on ``alerts_scrape_up === false``. They are FORWARD
+    declarations — deliberately absence-tolerant, since the client must
+    treat an absent flag as *measured* — so they are not part of this
+    contract and this route synthesises neither. The branch reading them
+    is unreachable until coord grows them.
+
+    The contract is written down because the sibling resource-samples
+    route learned the lesson first: this
+    docstring is what FastAPI renders into ``openapi-schema.json`` /
+    ``openapi-schema.base.json``, which are committed and drift-gated by
+    ``backend-ci.yml``, so it is this repo's contract of record for the
+    route. Until now it described none of a wire its own browser reads
+    on a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,
+    ``SpawnModal.tsx``).
+
+    The fields that make the surface honest rather than merely working:
+
+    * ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:
+      ``healthy | degraded | stale | partitioned | abandoned``, plus
+      ``unknown`` when the stored string did not parse. It is
+      non-optional in coord's snapshot, so today's coord always sends
+      it; callers still treat an absent one as *unknown* rather than
+      healthy, which is the rule the whole surface rests on. Read the
+      vocabulary as OPEN: a state a newer coord adds must render
+      *unknown*, not fail to parse, so nothing on this path may narrow
+      it to a closed union.
+    * ``stale`` is the newest value and the only DERIVED one — computed
+      at read time and never persisted (coord's ``devices_state_chk``
+      admits only the other four). It means **the heartbeat is fine and
+      the resource SAMPLER has gone quiet**, which is deliberately not
+      ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``
+      beside a WSL-lane sample 22 minutes old, and calling that a
+      network partition would have sent an operator to debug the wrong
+      layer.
+    * ``devices[].heartbeat_state`` is the machine's PERSISTED ladder
+      state, before the freshness overlay — carried so that the overlay
+      **loses nothing**. It is the difference between "this box is
+      unreachable" and "this box is fine and its publisher is quiet",
+      and a caller that renders ``state`` alone cannot tell an operator
+      which. A spawn picker is the case that bites: ``stale`` is a
+      perfectly spawnable machine and ``partitioned`` is not.
+    * ``devices[].state_raw`` is present **only** when the stored state
+      failed to parse (``state`` is then ``"unknown"``); it carries what
+      the row actually said. Omitted entirely in the common case, so its
+      presence is the anomaly marker — do not default it in.
+    * ``devices[].newest_sample_age_secs`` is seconds since that
+      device's newest resource sample, and
+      ``devices[].sample_stale_after_secs`` is the threshold it was
+      graded against. **It is NOT the configured cadence**: coord
+      computes ``sample_interval_secs × SAMPLE_STALE_INTERVALS`` with
+      that multiplier pinned at 4, falling back to a 30s interval where
+      the tenant set none — so the default threshold is 120s, not 30s.
+      **The threshold rides the wire for the same reason the resource
+      strip's floors do** — so the client keeps no constant of its own
+      and cannot disagree with coord about where stale begins, which is
+      exactly the disagreement a client re-deriving "4 × the interval"
+      would eventually ship. ``null`` on either is UNKNOWN: not zero,
+      and not "fresh". They are also independently nullable: a device
+      with no sample in the lookback arrives with a null age and a
+      POPULATED threshold.
+    * ``devices[].within_dispatch_window`` says whether coord would
+      actually expect this machine to answer. The roster stopped
+      dropping out-of-window devices and ships the answer instead, so
+      *listed* no longer implies *reachable*; the ``liveness`` block
+      (``within_dispatch_window`` / ``outside_dispatch_window`` /
+      ``heartbeat_ttl_secs``) is the same split rolled up.
+    * ``excluded`` is ``null`` when coord did not MEASURE the exclusion
+      set — see ``excluded_error`` — and never means "none excluded".
+
+    **The one caveat a caller must not read as an all-clear**, stated
+    precisely because the imprecise version is worse than none. A
+    Postgres outage is NOT this case: the roster query acquires the pool
+    first and its failure returns 500, which this proxy raises rather
+    than passing off as an empty fleet. The caveat is the narrower
+    **mid-request** one — the roster succeeded and a LATER acquire did
+    not (pool exhaustion, an acquire timeout). coord then logs *"no
+    freshness overlay, no alert rollup this tick"* and still answers
+    200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,
+    indistinguishable from a genuinely quiet fleet, with every device's
+    ``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to
+    ``stale``** (a persisted ``'stale'`` string would still decode —
+    coord parses the value so such a row is not silently dropped — but
+    the CHECK is what makes that improbable, not this path).
+
+    coord ships no flag distinguishing that tick from a healthy one, so
+    zeros here are not evidence of quiet and an absent ``stale`` is not
+    evidence of a live publisher
+    (``[policy: silent-empty-is-unknown]``).
+    """
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
@@ -3989,9 +4176,11 @@ async def get_fleet_resource_samples(
     the admission fields ``floor`` / ``disk_floor``
     (``{basis, bytes, source, verdict, reject_bytes, reject_source}``),
     ``pressure_floor``
-    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``)
-    and ``headroom`` (``ok | warn | breach | unknown``). All are passed
-    through untouched on purpose:
+    (``{basis, ratio, source, verdict, reject_ratio, reject_source}``),
+    ``saturation`` (``{ratio, basis}``), ``saturation_floor``
+    (the same shape as ``pressure_floor``) and ``headroom``
+    (``ok | warn | breach | unknown``). All are passed through untouched
+    on purpose:
 
     * ``pressure`` is the ONE lane-pressure definition that coord's CI
       ranker also reads. Recomputing it here (or in the browser) is
@@ -4058,6 +4247,32 @@ async def get_fleet_resource_samples(
       whole INSERT and discard the memory and disk metrics on the same
       row), so an unexpected value reaches the browser and renders as an
       explicit unknown rather than being coerced here.
+    * ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED
+      half of that axis, and the half the browser actually renders — the
+      five raw columns above only caption it. ``saturation`` is
+      ``{ratio, basis}`` with ``basis: "threads"``, computed as
+      ``threads_used / threads_max`` and falling back to the ``pids_*``
+      pair where a cgroup or job-object ceiling is the binding one;
+      ``saturation_floor`` is ``pressure_floor``'s shape on
+      ``basis: "thread_ratio"``. **The threshold travels on the wire for
+      the same reason the ratio does.** coord's dispatch ranking reads
+      this floor, so a client that named its own number could render
+      amber while the ranker had already stopped electing the machine —
+      §C1's defect, one axis over. Both are optional and independently
+      nullable, and the caller reads the difference: keys **absent** is a
+      coord that predates the axis, ``null`` on every count is a
+      publisher whose runner predates the probe, and a count without its
+      ceiling is a probe that FAILED. All three render *unknown* — never
+      healthy, and never ``0``.
+    * ``headroom`` composes all three axes, not two: coord grades the
+      worst of memory, disk and task saturation into the one verdict the
+      strip colours from. That is why the saturation ratio must not be
+      banded client-side — the composition is coord's, and a second one
+      in the browser would disagree with it exactly at the boundary. A
+      coord predating the axis sends no saturation fields, and the row's
+      ``headroom`` is then the worst of the two axes it does send; the
+      caller renders the third as *unreported* rather than inferring that
+      it is clear.
 
     ``schema_pending: true`` means the sibling alembic migration
     (qontinui-web#949) has not reached coord's database yet — coord
@@ -6437,11 +6652,18 @@ async def create_user_tenant(
     - ``429``/``403`` — the per-operator creation cap
       (``COORD_SELF_SERVICE_TENANT_CAP``).
 
-    NOTE (plan Q5, out of scope here): the new tenant is an ADDITIONAL
-    membership, not the creator's home tenant, and ``mint_pair_code_endpoint``
-    can only mint pair codes for the caller's home — so no runner can be
-    paired to a self-service project until that endpoint is generalized.
-    The create dialog states this.
+    Runner pairing is NOT blocked for a self-service project, contrary to a
+    note that used to sit here (and a paragraph in the create dialog; both
+    deleted by plan
+    ``2026-08-28-tenant-creation-followup-defects-from-the-preemptive-sweep``
+    Phase 2). The new tenant is an ADDITIONAL membership rather than the
+    creator's home, and ``mint_pair_code_endpoint`` does burn
+    ``identity.home_tenant_id`` — but that identity is already re-scoped to
+    the operator's SELECTED tenant: ``/api/v1/devices/pair-codes`` is in the
+    frontend's ``ACTIVE_TENANT_URL_PREFIXES``, so the browser attaches
+    ``X-Qontinui-Active-Tenant``; ``get_coord_identity`` forwards it to
+    coord's ``/me``; coord re-scopes and returns the active tenant as
+    ``home_tenant_id``. Switching to the new project mints codes for it.
     """
     # Captured INLINE, deliberately NOT as ``Depends(capture_caller_bearer)``.
     # ``capture_caller_bearer`` is a sync ``def``; FastAPI runs sync

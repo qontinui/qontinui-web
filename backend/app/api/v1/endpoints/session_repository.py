@@ -208,6 +208,32 @@ _PREVIEW_CHARS = 200
 #: truncation is REPORTED (``turn_index_state='truncated'``), never silent.
 _TURN_INDEX_DEFAULT_LIMIT = 200
 
+#: The custom response headers ``GET /{artifact_id}/export`` carries.
+#:
+#: Spelled ONCE because there are two consumers and they must not drift:
+#: :func:`_export_provenance` builds the response from this tuple, and
+#: :data:`app.main.CORS_EXPOSE_HEADERS` publishes it in
+#: ``Access-Control-Expose-Headers``.
+#:
+#: The CORS half is not a formality. Only six response headers are
+#: CORS-safelisted, and none of these is among them, so a browser on a
+#: different origin from the API — the shape ``ApiConfig.IS_REMOTE_BACKEND``
+#: exists for — gets ``null`` from ``response.headers.get(...)`` for every one
+#: of them. That failure is SILENT and indistinguishable from "the server did
+#: not send it", which for these particular headers means the honesty signals
+#: this route exists to carry (whether the served bytes match the recorded
+#: digest, and whether that digest can be checked against the original at all)
+#: vanish with no error anywhere.
+EXPORT_PROVENANCE_HEADERS: tuple[str, ...] = (
+    "X-Content-Sha256",
+    "X-Content-Sha256-Stored",
+    "X-Content-Sha256-Match",
+    "X-Digest-Verifiable",
+    "X-Body-Source",
+    "X-Claude-Session-Id",
+    "X-Tenant-Source",
+)
+
 
 # ────────────────────────── scope & principal ──────────────────────────
 
@@ -505,6 +531,32 @@ def _digest_verifiable(row: SessionArtifact) -> bool:
     added ``body_source`` to prevent.
     """
     return row.body_source == "disk_verbatim" and bool(row.content_sha256)
+
+
+def _export_provenance(
+    row: SessionArtifact,
+    *,
+    served_digest: str,
+    stored_digest: str,
+    matches: bool,
+) -> dict[str, str]:
+    """The export's provenance headers, keyed by :data:`EXPORT_PROVENANCE_HEADERS`.
+
+    Built here rather than inline in the route so the names have exactly one
+    spelling: the tuple is what CORS publishes, and a header emitted under a
+    name that is not in it would be unreadable cross-origin with nothing to
+    catch it. ``test_session_repository_export_headers.py`` asserts the two
+    agree, which is only meaningful because this function is the sole producer.
+    """
+    return {
+        "X-Content-Sha256": served_digest,
+        "X-Content-Sha256-Stored": stored_digest or "none",
+        "X-Content-Sha256-Match": "true" if matches else "false",
+        "X-Digest-Verifiable": "true" if _digest_verifiable(row) else "false",
+        "X-Body-Source": row.body_source or "unknown",
+        "X-Claude-Session-Id": row.claude_session_id,
+        "X-Tenant-Source": row.tenant_source,
+    }
 
 
 def _summary(row: SessionArtifact) -> SessionArtifactSummary:
@@ -933,18 +985,23 @@ async def export_session(
         )
 
     filename = _KEY_SAFE.sub("-", row.claude_session_id).strip("-.") or "session"
+    # The provenance headers are built from EXPORT_PROVENANCE_HEADERS and
+    # published through CORS `Access-Control-Expose-Headers` (app.main). That
+    # is load-bearing rather than housekeeping: none of them is CORS-safelisted,
+    # so without the exposure a browser on a different origin from the API
+    # reads `null` for every one — the same answer it gets when the header was
+    # never sent, which makes the honesty signals above disappear silently.
     return Response(
         content=raw,
         media_type="application/x-ndjson",
         headers={
             "Content-Disposition": f'attachment; filename="{filename[:200]}.jsonl"',
-            "X-Content-Sha256": served_digest,
-            "X-Content-Sha256-Stored": stored_digest or "none",
-            "X-Content-Sha256-Match": "true" if matches else "false",
-            "X-Digest-Verifiable": "true" if _digest_verifiable(row) else "false",
-            "X-Body-Source": row.body_source or "unknown",
-            "X-Claude-Session-Id": row.claude_session_id,
-            "X-Tenant-Source": row.tenant_source,
+            **_export_provenance(
+                row,
+                served_digest=served_digest,
+                stored_digest=stored_digest,
+                matches=matches,
+            ),
         },
     )
 

@@ -25,6 +25,8 @@
  * severity/attention vocabulary here — the only row state is read/unread.
  */
 
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
+
 /** One row of coord's `GET /coord/notifications` response. */
 export interface CoordNotificationRow {
   notification_id: string;
@@ -242,7 +244,26 @@ export function matchesNotificationRef(
 export function linkedRefNotice(state: {
   found: boolean;
   loading: boolean;
+  /** The HEAD read failed — the feed itself is not answering. */
   error: boolean;
+  /**
+   * A "Load more" failed while the head read is fine.
+   *
+   * Its own input rather than folded into `error`, for the reason `error` is
+   * not `error`: the two failures want DIFFERENT sentences. The head failing
+   * means the feed is down and there is nothing to do here. A page append
+   * failing means the feed is healthy, the walk is short, and the remedy is to
+   * retry the button — so saying "the feed above failed to load" names a thing
+   * that is working and withholds the one action that would help.
+   */
+  pagingFailed?: boolean;
+  /**
+   * A kind filter or the unread-only switch is on, so the event may be excluded
+   * rather than merely further back. Only consulted by the `pagingFailed` arm,
+   * which otherwise SUBTRACTS an unknown it never resolved: a failed page adds
+   * "we could not look further", it does not rule out "the filter hides it".
+   */
+  filterActive?: boolean;
   /** coord has the routes but not the table — there is no feed to search. */
   migrationPending?: boolean;
 }): string {
@@ -262,6 +283,25 @@ export function linkedRefNotice(state: {
   if (state.loading) return "Looking for the linked event…";
   if (state.error) {
     return "The linked event could not be looked up — the feed above failed to load.";
+  }
+  // Ranked BELOW `error` on purpose: when both are true the head is down, and
+  // that is the bigger truth. Alone it is the opposite situation — the feed is
+  // answering and only the walk is short — so this arm names the BUTTON rather
+  // than the feed.
+  //
+  // It keeps the filter clause, though, because a failed page ADDS an unknown
+  // without resolving the one the fallback arm was already carrying. An event
+  // excluded by the kind filter will never match however many pages load, so
+  // an arm that named only the button would leave the operator retrying it
+  // forever with the one action that works — clearing the filter — never
+  // mentioned.
+  if (state.pagingFailed) {
+    const base =
+      "The linked event is not on the pages loaded so far, and loading more " +
+      "failed — whether it is further back is unknown. Try Load more again.";
+    return state.filterActive
+      ? `${base} It may also be excluded by the filters above — clear them.`
+      : base;
   }
   return (
     "The linked event is not on the page that is loaded. It may be older than " +
@@ -336,19 +376,30 @@ export function kindOptions(vocabulary: string[], selected: string): string[] {
  * this is the expected steady state for a while. It must read as "nothing
  * here yet", never as an error.
  *
- * Both probes are anchored. A bare `\b503\b` would also match a genuine 500
- * whose body happens to contain those three digits — a PR number, a byte
- * count, a duration — and swallow a real outage as "not available yet",
- * which is the worst possible direction for this predicate to fail in.
- * `HttpClient` formats the message as `<METHOD> <url> failed: <status> - …`,
- * so `failed: 503` pins the status field itself.
+ * ## Reading the status field rather than the message (#1110 follow-up)
+ *
+ * This docstring used to say "both probes are anchored", and the reasoning it
+ * gave was right as far as it went: a bare `\b503\b` would also match a genuine
+ * 500 whose body happens to contain those three digits — a PR number, a byte
+ * count, a duration — and swallow a real outage as "not available yet", which
+ * is the worst possible direction for this predicate to fail in.
+ *
+ * `/failed:\s*503\b/` was one step short of that claim. `HttpClient` formats
+ * the message as `<METHOD> <url> failed: <status> - <body>` and the body is
+ * `await response.text()` — upstream-controlled prose that can quote a whole
+ * inner failure, `failed: 503` and all. An unanchored probe reads it and cannot
+ * tell coord's own status from a status coord is merely reporting. Reading the
+ * FIRST field, anchored to the verb, is what makes the paragraph above true.
+ *
+ * The `schema_migration_pending` body token is gone with it, for the same
+ * reason and with nothing lost: it is a substring test against that same
+ * upstream prose, and coord pairs the token with the 503 that the status arm
+ * already catches — both cases this function was pinned for carry one. Keeping
+ * it would have left the exact hole the status arm just closed, since a 500
+ * relaying coord's earlier envelope carries the token too.
  */
 export function isMigrationPending(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  return (
-    message.includes("schema_migration_pending") ||
-    /failed:\s*503\b/.test(message)
-  );
+  return httpStatusOf(err) === 503;
 }
 
 /**
@@ -362,8 +413,14 @@ export function isMigrationPending(err: unknown): boolean {
  * body the contract forbids", which must be loud, because the alternative is a
  * button that silently does nothing forever. Swallowing a 400 as
  * migration-pending is the specific mistake this predicate exists to prevent.
+ *
+ * Reads the status field for the reason `isMigrationPending` gives above. The
+ * direction of failure is the other way round here — an unanchored probe made
+ * this one fire on a 500 whose body quoted a 400, which is loud about the wrong
+ * thing rather than quiet about the right one — but the two predicates decide
+ * against each other, so a body-driven answer in EITHER corrupts both.
  */
 export function isContractError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err ?? "");
-  return /failed:\s*4(?:00|22)\b/.test(message);
+  const status = httpStatusOf(err);
+  return status === 400 || status === 422;
 }

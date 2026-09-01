@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { httpClient } from "@/services/service-factory";
+import { httpStatusOf } from "@/components/admin/coord/httpStatus";
 import type {
   ComplianceVerdict,
   ListComplianceSessionsResponse,
@@ -25,6 +26,14 @@ function message(err: unknown, fallback: string): string {
 }
 
 /**
+ * Statuses that mean "this build does not deploy the route", as opposed to
+ * "the route ran and failed". A 405 or a 501 is a router that knows the path
+ * and not the verb, or knows neither; a 404 here is the same family, because
+ * these four endpoints ship together with coord's half of the plan.
+ */
+const ROUTE_UNAVAILABLE_STATUSES = new Set([404, 405, 501]);
+
+/**
  * True when coord answered "not found" rather than failing.
  *
  * `httpClient` throws a plain `Error` whose message embeds the upstream status
@@ -37,10 +46,31 @@ function message(err: unknown, fallback: string): string {
  *
  * What matters either way is that it is NOT an empty result: rendering an empty
  * table would claim "no sessions have been checked", which we do not know.
+ *
+ * ## Why this reads the status FIELD (#1110 follow-up)
+ *
+ * This used to be `/ failed: (404|405|501) /.test(message)`, and the tail of
+ * that message is `await response.text()` — the raw upstream BODY, which the
+ * operations proxy fills with coord's own `resp.text`. So the probe scanned
+ * upstream-controlled prose, and a 500 whose body merely quoted a 404 (an
+ * echoed inner error, an HTML error page) was classified as route-unavailable.
+ *
+ * That direction of failure is worse here than anywhere else this class has
+ * been found, because of what the caller does next: every `catch` below sets
+ * `error: isRouteUnavailable(err) ? null : message(...)`. A misread is not a
+ * wrong label on a visible error — it DELETES the error. The operator gets the
+ * calm "coord doesn't serve this yet" notice and is never told there was a 500
+ * at all, which is the same all-clear-over-a-failed-read defect #1110 removed
+ * from `/admin/coord/questions`, arriving through the status probe instead of
+ * through the empty slot.
+ *
+ * `httpStatusOf` is anchored to the verb and reads the status field once, so
+ * the body is out of the decision. A message with no status at all yields
+ * `null`, which is NOT in the set — an unreachable coord stays loud.
  */
 function isRouteUnavailable(err: unknown): boolean {
-  const text = err instanceof Error ? err.message : String(err);
-  return / failed: (404|405|501) /.test(text);
+  const status = httpStatusOf(err);
+  return status !== null && ROUTE_UNAVAILABLE_STATUSES.has(status);
 }
 
 /** Shared per-request outcome: a value, or a typed reason we have none. */

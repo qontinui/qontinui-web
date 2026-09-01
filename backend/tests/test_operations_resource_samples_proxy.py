@@ -16,6 +16,12 @@ rather than merely working:
   untouched too — the *verdict* has to be shared for the same reason the
   *number* does, and the strip derives its red/amber from them rather
   than from a client-side constant,
+* the **saturation** axis survives the hop in all four of its states —
+  measured, all-null, half-measured and wholly absent — because those
+  four are what let the caller tell "this publisher has no probe" from
+  "this probe failed" from "this coord predates the axis", and because a
+  fabricated ``0`` here would not merely misreport but INVERT the one
+  column built to catch a saturated box,
 * ``schema_pending`` and an empty set survive the hop, since that is the
   §C3 state the caller renders as *unknown* rather than healthy,
 * out-of-range query params are FORWARDED for coord to clamp, not 422'd
@@ -142,6 +148,56 @@ SAMPLE_ROW = {
     "pressure_floor": None,
     "headroom": "warn",
 }
+
+# The 2026-08-27 incident row, and the reason the third axis exists: 190,840
+# of 192,146 kernel tasks (99.3%) with no `fork()` possible anywhere on the
+# box, beside memory and disk figures that were green AND accurate. Plan
+# `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`.
+#
+# The five raw columns are qontinui-web#1135's docstring; `saturation` /
+# `saturation_floor` are the SERVER-COMPUTED pair qontinui-web#1150 taught the
+# browser to read. Nothing pinned either half's pass-through until now, on the
+# one axis whose failure mode is an inversion rather than a misreport.
+SATURATED_ROW = {
+    **SAMPLE_ROW,
+    # The incident's OWN memory and disk figures, not `SAMPLE_ROW`'s. That row
+    # sits at 0.7963 commit pressure, which is most of the way to its own
+    # floor — reusing it would have made the `headroom` assertion below
+    # unattributable, since a `warn` would be explicable without the new axis
+    # at all. Here 73.3 GB of 125.6 GB commit is free and every other axis is
+    # far from its floor, which is exactly what made 2026-08-27 invisible.
+    "commit_total_bytes": 125_600_000_000,
+    "commit_available_bytes": 73_300_000_000,
+    "mem_total_bytes": 137_438_953_472,
+    "mem_available_bytes": 61_000_000_000,
+    "pressure": {"ratio": 0.4164, "basis": "commit"},
+    "threads_max": 192_146,
+    "threads_used": 190_840,
+    "pids_max": None,
+    "pids_used": None,
+    "saturation_source": "cgroup",
+    "saturation": {"ratio": 0.9932, "basis": "threads"},
+    "saturation_floor": {
+        # 0.80 is coord's `DEFAULT_THREAD_SATURATION_DEFER_RATIO`. It travels
+        # on the wire precisely so no client names it.
+        "basis": "thread_ratio",
+        "ratio": 0.80,
+        "source": "default",
+        "verdict": "defer",
+        "reject_ratio": None,
+        "reject_source": None,
+    },
+}
+
+SATURATION_KEYS = (
+    "threads_max",
+    "threads_used",
+    "pids_max",
+    "pids_used",
+    "saturation_source",
+    "saturation",
+    "saturation_floor",
+)
 
 
 class TestResourceSamplesProxy:
@@ -353,6 +409,196 @@ class TestResourceSamplesProxy:
         assert row["pressure_floor"]["ratio"] == 0.5
         assert row["pressure_floor"]["verdict"] == "defer"
         assert row["disk_floor"]["verdict"] is None
+
+    def test_forwards_the_saturation_axis_untouched(self, auth_client: TestClient):
+        """The THIRD axis survives the hop, ratio and threshold alike.
+
+        The 2026-08-27 row: 190,840 / 192,146 kernel tasks beside memory
+        and disk readings that were green *and accurate* — they were
+        measuring a resource that had not run out. The raw counts carry
+        the magnitude, ``saturation`` carries coord's ratio, and
+        ``saturation_floor`` carries the threshold coord's dispatch
+        ranking actually reads.
+
+        The threshold matters as much as the ratio: a client that named
+        its own 0.80 could paint amber while the ranker had already
+        stopped electing the machine, which is §C1's defect one axis
+        over. So the floor is asserted field-for-field, ``basis``
+        included — ``thread_ratio`` is a different quantity from
+        ``swap_ratio`` and must not be collapsed into "a pressure
+        threshold" anywhere along this path.
+        """
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"latest": [SATURATED_ROW], "count": 1}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert row["threads_used"] == 190_840
+        assert row["threads_max"] == 192_146
+        assert row["saturation_source"] == "cgroup"
+        assert row["saturation"] == {"ratio": 0.9932, "basis": "threads"}
+        assert row["saturation_floor"] == {
+            "basis": "thread_ratio",
+            "ratio": 0.80,
+            "source": "default",
+            "verdict": "defer",
+            "reject_ratio": None,
+            "reject_source": None,
+        }
+        # The verdict composes all three axes server-side, and on THIS row it
+        # can only have come from the third one: commit is 42% used against a
+        # 5 GiB floor with 73.3 GB free, and disk is 90 GB above a 30 GiB
+        # floor. A `warn` arriving intact beside those is the composition
+        # surviving the hop — not something this proxy, or the browser, may
+        # recompute.
+        assert row["headroom"] == "warn"
+        assert row["pressure"] == {"ratio": 0.4164, "basis": "commit"}
+        assert row["commit_available_bytes"] == 73_300_000_000
+
+    def test_null_saturation_counts_stay_null(self, auth_client: TestClient):
+        """NULL must stay NULL, and on this axis that is not a style rule.
+
+        A fabricated ``0`` does not merely misreport here, it inverts:
+        ``threads_used = 0`` renders as *perfectly idle* on the one
+        column built to catch a saturated box, and a ``NULLS LAST``
+        ranking would then promote the blind machine to the front of the
+        dispatch queue.
+
+        This is the shape of the whole fleet during the activation
+        window — every publisher reports null until its runner is next
+        rebuilt, and no running runner may be restarted to hurry that.
+        The keys are asserted PRESENT as well as null, because their
+        presence is what separates "this publisher has no probe" from
+        "this coord predates the axis" downstream.
+        """
+        unmeasured_row = {
+            **SAMPLE_ROW,
+            "threads_max": None,
+            "threads_used": None,
+            "pids_max": None,
+            "pids_used": None,
+            "saturation_source": None,
+            "saturation": None,
+            "saturation_floor": None,
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"latest": [unmeasured_row], "count": 1}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        for key in SATURATION_KEYS:
+            assert key in row, f"{key} was dropped, so 'no probe' reads as 'no axis'"
+            assert row[key] is None, f"{key} arrived as {row[key]!r}, not null"
+        # The row's OTHER verdicts survive an unmeasured saturation axis. A
+        # fleet-wide activation window must not destroy the memory and disk
+        # readings on every row.
+        assert row["headroom"] == "warn"
+        assert row["pressure"] == {"ratio": 0.7963, "basis": "commit"}
+
+    def test_absent_saturation_axis_is_not_defaulted_in(self, auth_client: TestClient):
+        """A coord predating the axis must arrive WITHOUT it.
+
+        Mirrors ``test_absent_floor_bands_are_not_defaulted_in`` one axis
+        over. *Absent* and *null* are different claims — absent says
+        coord never mentioned the axis, null says a publisher has nothing
+        to report — and the caller words its "unknown" differently for
+        each, because the wording is what tells an operator whether to
+        upgrade coord or rebuild a runner. Filling either one in here
+        would erase the distinction before the browser saw it.
+        """
+        legacy_row = {
+            k: v for k, v in SATURATED_ROW.items() if k not in SATURATION_KEYS
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(200, {"latest": [legacy_row], "count": 1})
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        for key in SATURATION_KEYS:
+            assert key not in row
+
+    def test_a_failed_saturation_probe_arrives_half_measured(
+        self, auth_client: TestClient
+    ):
+        """A ceiling with no count is a probe that FAILED, and must look it.
+
+        Coord grades this ``unknown`` rather than skipping the axis, and
+        the caller says so in those words — but only if both halves
+        arrive as sent. Dropping the orphan ceiling would make a broken
+        probe indistinguishable from a publisher that has none.
+
+        ``saturation_source`` carries no CHECK in the schema on purpose
+        (an unrecognised provenance label would otherwise fail the whole
+        INSERT and discard the memory and disk metrics on the same row),
+        so an unexpected value has to reach the browser uncoerced to be
+        rendered as an explicit unknown. A ``pids`` ceiling rides along
+        beside the thread one because this is the ``container`` lane,
+        where the cgroup limit is the binding ceiling and coord's
+        ``.or_else`` order is what decides which pair a ratio would have
+        come from.
+        """
+        half_measured_row = {
+            **SAMPLE_ROW,
+            "lane": "container",
+            "threads_max": 192_146,
+            "threads_used": None,
+            "pids_max": 4_096,
+            "pids_used": None,
+            "saturation_source": "some_future_probe",
+            # Coord could form no ratio, so it asserts none.
+            "saturation": None,
+            "saturation_floor": {
+                "basis": "thread_ratio",
+                "ratio": 0.80,
+                "source": "policy",
+                # A threshold coord reports and nothing enforces.
+                "verdict": None,
+                "reject_ratio": None,
+                "reject_source": None,
+            },
+        }
+        with _patch_httpx() as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.get = AsyncMock(
+                return_value=_mock_response(
+                    200, {"latest": [half_measured_row], "count": 1}
+                )
+            )
+            _configure_mock_client(MockClient, mock_instance)
+
+            resp = auth_client.get(ROUTE)
+
+        row = resp.json()["latest"][0]
+        assert row["threads_max"] == 192_146
+        assert row["threads_used"] is None
+        assert row["pids_max"] == 4_096
+        assert row["pids_used"] is None
+        assert row["saturation"] is None
+        # Not coerced to a known label, and not dropped for being unknown.
+        assert row["saturation_source"] == "some_future_probe"
+        # The floor is still reported, with its verdict still null: "set, not
+        # enforced" is a distinct state from "not reported".
+        assert row["saturation_floor"]["ratio"] == 0.80
+        assert row["saturation_floor"]["verdict"] is None
 
     def test_calls_the_coord_read_route(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:

@@ -15,6 +15,12 @@ import {
   TenantCreateError,
 } from "@/components/sessions/api";
 import { projectCreateErrorMessage } from "./CoordProjectCreateDialog";
+import fixtures from "./projectSlug.fixtures.json";
+import {
+  projectSlugProblemMessage,
+  slugifyProjectName,
+  type ProjectSlugReason,
+} from "./projectSlug";
 
 describe("parseTenantCreateError", () => {
   it("unwraps coord's code out of the doubly-wrapped body", () => {
@@ -24,6 +30,38 @@ describe("parseTenantCreateError", () => {
     expect(parseTenantCreateError(body)).toEqual({
       code: "slug_taken",
       detail: "slug_taken",
+      // Coord's operand, kept rather than discarded (Phase 4 #2). The
+      // collision is on the derived ID, so the id is the fact the message
+      // needs — two different names can slugify to the same one.
+      slug: "my-pizzeria",
+    });
+  });
+
+  it("keeps the cap operands coord sends beside the token", () => {
+    // `{"error":"tenant_cap_reached","cap":5,"created":5}`. Dropping these is
+    // what made the cap message unactionable: "you've reached the limit"
+    // without saying what the limit is.
+    const body = JSON.stringify({
+      detail: '{"error":"tenant_cap_reached","cap":5,"created":5}',
+    });
+    expect(parseTenantCreateError(body)).toEqual({
+      code: "tenant_cap_reached",
+      detail: "tenant_cap_reached",
+      cap: 5,
+      created: 5,
+    });
+  });
+
+  it("drops an operand of the wrong type without breaking the parse", () => {
+    // Coord owns these bodies. A renamed or retyped field must cost the
+    // numbers in one sentence, never the code or the text.
+    const body = JSON.stringify({
+      detail: '{"error":"tenant_cap_reached","cap":"five","created":5}',
+    });
+    expect(parseTenantCreateError(body)).toEqual({
+      code: "tenant_cap_reached",
+      detail: "tenant_cap_reached",
+      created: 5,
     });
   });
 
@@ -47,12 +85,10 @@ describe("parseTenantCreateError", () => {
   });
 
   it("degrades to the whole body when nothing is JSON at all", () => {
-    expect(parseTenantCreateError("<html>502 Bad Gateway</html>")).toEqual(
-      {
-        code: null,
-        detail: "<html>502 Bad Gateway</html>",
-      }
-    );
+    expect(parseTenantCreateError("<html>502 Bad Gateway</html>")).toEqual({
+      code: null,
+      detail: "<html>502 Bad Gateway</html>",
+    });
   });
 
   it("survives a FastAPI 422 validation list without inventing a code", () => {
@@ -142,6 +178,107 @@ describe("projectCreateErrorMessage", () => {
     ).toBe("You've reached the limit on how many projects you can create.");
   });
 
+  it("does NOT render coord's cap-LOOKUP failure as the cap message", () => {
+    // Plan `2026-08-28-tenant-creation-followup-defects-from-the-preemptive-
+    // sweep` Phase 4 #1 (V5). Coord's cap lookup can itself fail, and it fails
+    // as `500 {"error":"self-service tenant cap lookup: <pg error>"}` — a
+    // string that contains "cap", which the loose `/cap|quota|limit/i`
+    // backstop matched. A database fault then told the operator they had hit
+    // their project limit: not merely wrong but actionable in the WRONG
+    // direction, since a cap means stop and an outage means try again.
+    //
+    // Built through both envelopes, the way `createTenant` really does it, so
+    // this asserts the whole path rather than a hand-shaped error object.
+    const wire = JSON.stringify({
+      detail: JSON.stringify({
+        error:
+          'self-service tenant cap lookup: relation "coord.tenants" does not exist',
+      }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    const err = new TenantCreateError(500, code, detail, fields);
+
+    const message = projectCreateErrorMessage(err);
+    expect(message).not.toContain("reached the limit");
+    expect(message).not.toContain("You've created");
+    // It falls through to the verbatim branch: coord's own words plus the
+    // status, which is the only thing we can honestly say about a 5xx.
+    expect(message).toContain("(500)");
+    expect(message).toContain("self-service tenant cap lookup");
+  });
+
+  it("never renders ANY 5xx as the cap message, whatever the token says", () => {
+    // The narrowing is on the STATUS, not on that one coord string — a 5xx is
+    // never a policy answer, so no 5xx body can be rendered as one.
+    for (const code of [
+      "cap lookup failed",
+      "quota service unavailable",
+      "rate limiter exploded",
+    ]) {
+      for (const status of [500, 502, 503, 504]) {
+        const message = projectCreateErrorMessage(
+          new TenantCreateError(status, code, code)
+        );
+        expect(message, `${status} / ${code}`).not.toContain(
+          "reached the limit"
+        );
+        expect(message).toContain(`(${status})`);
+      }
+    }
+  });
+
+  it("keeps the loose 4xx backstop for a cap token we have not seen", () => {
+    // The backstop still earns its place: coord may rename the token, and a
+    // 4xx IS a policy answer. Only the 5xx arm was unsafe.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, "tenant_quota_exhausted", "no more")
+      )
+    ).toBe("You've reached the limit on how many projects you can create.");
+  });
+
+  it("names the cap numbers when coord sends them", () => {
+    // Phase 4 #2 (V6): the operands make the sentence actionable.
+    const wire = JSON.stringify({
+      detail: JSON.stringify({
+        error: "tenant_cap_reached",
+        cap: 5,
+        created: 5,
+      }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, code, detail, fields)
+      )
+    ).toBe(
+      "You've created 5 of 5 projects — that's the limit on how many you can create."
+    );
+  });
+
+  it("falls back to the plain cap sentence when only ONE operand arrived", () => {
+    // "5 of ?" is worse than saying nothing about the number.
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(403, "tenant_cap_reached", "cap", { created: 5 })
+      )
+    ).toBe("You've reached the limit on how many projects you can create.");
+  });
+
+  it("names the colliding id when coord sends the slug", () => {
+    const wire = JSON.stringify({
+      detail: JSON.stringify({ error: "slug_taken", slug: "my-pizzeria" }),
+    });
+    const { code, detail, ...fields } = parseTenantCreateError(wire);
+    expect(
+      projectCreateErrorMessage(
+        new TenantCreateError(409, code, detail, fields)
+      )
+    ).toBe(
+      "The short id “my-pizzeria” is already taken. Pick a different name."
+    );
+  });
+
   it("surfaces an unrecognized failure VERBATIM rather than guessing", () => {
     const err = new TenantCreateError(503, "app_unconfigured", "SSO is down");
     expect(projectCreateErrorMessage(err)).toBe(
@@ -156,5 +293,110 @@ describe("projectCreateErrorMessage", () => {
     expect(projectCreateErrorMessage("nope")).toBe(
       "Could not reach the server to create the project."
     );
+  });
+});
+
+/**
+ * The server-side half of the live slug preview.
+ *
+ * The preview (`projectSlug.ts`) deliberately has **no veto**, so a name it
+ * dislikes is still submitted and coord still rejects it — which makes this the
+ * live end of the same journey, not a theoretical branch. Coord answers
+ * `{"error":"invalid_name","reason":<TenantNameError::reason()>}` and its own
+ * docstring calls that reason "the machine-readable discriminator the frontend
+ * renders against".
+ *
+ * These cases are driven off `projectSlug.fixtures.json` — the same table that
+ * pins the mirror — so the two surfaces cannot be updated apart: a reason added
+ * to the fixture is asserted on both sides here by construction.
+ */
+describe("projectCreateErrorMessage — coord's `invalid_name` reason", () => {
+  /**
+   * Build the error the way `createTenant` really does, through BOTH envelopes,
+   * rather than hand-constructing `TenantCreateError`. Hand-constructing it
+   * would assert the copy while assuming the parse — and the parse is the half
+   * that has actually broken before (see the suite above).
+   */
+  function fromCoord(reason: string): TenantCreateError {
+    const wire = JSON.stringify({
+      detail: JSON.stringify({ error: "invalid_name", reason }),
+    });
+    const { code, detail } = parseTenantCreateError(wire);
+    return new TenantCreateError(400, code, detail);
+  }
+
+  /** The fixture's `repeat:<char>:<count>` form, as in `projectSlug.test.ts`. */
+  function expand(input: string): string {
+    const match = /^repeat:(.):(\d+)$/.exec(input);
+    return match ? match[1].repeat(Number(match[2])) : input;
+  }
+
+  for (const testCase of fixtures.rejects) {
+    const reason = testCase.reason as ProjectSlugReason;
+    if (reason === "empty") continue; // no sentence by design — asserted below
+    it(`${JSON.stringify(testCase.input)} reads the same before and after submit`, () => {
+      // What the preview says about the name...
+      expect(slugifyProjectName(expand(testCase.input))).toEqual({
+        ok: false,
+        reason,
+      });
+      const previewSentence = projectSlugProblemMessage(reason);
+      expect(previewSentence).toBeTruthy();
+      // ...is what the dialog says when coord rejects that same name.
+      expect(projectCreateErrorMessage(fromCoord(reason))).toBe(
+        previewSentence
+      );
+    });
+  }
+
+  it("stops answering `ab` with advice that is false", () => {
+    // The concrete regression: `ab` is already letters, so "try letters and
+    // numbers" told the user to do the thing they had just done. Pinned as a
+    // literal because the point is the SENTENCE, not that some string changed.
+    const message = projectCreateErrorMessage(fromCoord("too_short"));
+    expect(message).toBe("A short id needs at least 3 letters or digits.");
+    expect(message).not.toContain("letters and numbers");
+  });
+
+  it("falls back to the general sentence when NO reason travelled", () => {
+    // `parseTenantCreateError` echoes the code as the detail when coord's body
+    // carries no message/detail/reason. Inventing a cause there would be worse
+    // than answering generally.
+    for (const detail of ["invalid_name", ""]) {
+      expect(
+        projectCreateErrorMessage(
+          new TenantCreateError(400, "invalid_name", detail)
+        )
+      ).toBe("That name can't be used — try letters and numbers.");
+    }
+  });
+
+  it("falls back for `empty` rather than rendering a blank error box", () => {
+    // `projectSlugProblemMessage("empty")` is `null` on purpose. Submit is
+    // disabled on an empty name so coord cannot really answer this — but a
+    // `null` must never reach the box if it ever does.
+    expect(projectSlugProblemMessage("empty")).toBeNull();
+    expect(projectCreateErrorMessage(fromCoord("empty"))).toBe(
+      "That name can't be used — try letters and numbers."
+    );
+  });
+
+  it("keeps an UNKNOWN reason legible instead of flattening it", () => {
+    // Coord owns the list, so a reason added after this ships is not an error —
+    // it must still reach the user, and without the letters-and-numbers advice,
+    // which we would then have no basis for.
+    const message = projectCreateErrorMessage(fromCoord("contains_emoji"));
+    expect(message).toBe("That name can't be used (contains_emoji).");
+    expect(message).not.toContain("letters and numbers");
+  });
+
+  it("never prints coord's rule at the user", () => {
+    // Same guard the preview carries: "shows an error" must not be satisfiable
+    // by pasting `^[a-z0-9][a-z0-9-]{0,63}$` at somebody.
+    for (const testCase of fixtures.rejects) {
+      const message = projectCreateErrorMessage(fromCoord(testCase.reason));
+      expect(message).not.toContain("[a-z0-9]");
+      expect(message).not.toContain("^");
+    }
   });
 });

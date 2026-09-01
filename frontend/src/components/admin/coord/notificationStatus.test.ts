@@ -294,6 +294,49 @@ describe("isMigrationPending", () => {
       isMigrationPending(new Error("GET /x failed: 500 - PR #503 exploded"))
     ).toBe(false);
   });
+
+  it("does not match a whole `failed: 503` QUOTED in the body", () => {
+    // What `/failed:\s*503\b/` still let through, and the reason this reads
+    // the status field. The body is `await response.text()`, so it can carry a
+    // complete inner failure line — a proxy relaying what it got, coord
+    // reporting its own upstream. The old probe could not tell coord's status
+    // from a status coord was merely repeating, and answered `true`: a real
+    // 500 rendered as the quiet "nothing here yet".
+    expect(
+      isMigrationPending(
+        new Error(
+          "GET /api/v1/operations/notifications failed: 500 - " +
+            "proxy error: GET /coord/notifications failed: 503 - pending"
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("does not match the degrade TOKEN without the status", () => {
+    // The `schema_migration_pending` clause was dropped with the regex, and
+    // for the same reason: it is a substring test against upstream prose. A
+    // 500 that relays coord's earlier envelope carries the token verbatim.
+    expect(
+      isMigrationPending(
+        new Error(
+          'GET /x failed: 500 - relayed {"error":"schema_migration_pending"}'
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("still recognises the degrade the token clause used to cover", () => {
+    // Nothing is lost by dropping it: coord pairs the token with a 503, so the
+    // status arm answers every case the token arm was pinned for. This is the
+    // over-correction guard for the two assertions above.
+    expect(
+      isMigrationPending(
+        new Error(
+          'GET /x failed: 503 - {"error":"schema_migration_pending","missing":"coord.notifications.kind"}'
+        )
+      )
+    ).toBe(true);
+  });
 });
 
 describe("isContractError", () => {
@@ -328,6 +371,19 @@ describe("isContractError", () => {
       false
     );
     expect(isContractError(new Error("coord is not reachable"))).toBe(false);
+  });
+
+  it("does not read a 400 out of the response BODY", () => {
+    // The other half of the pair, and it fails the other way: an unanchored
+    // probe made THIS one fire on a real 500, telling the operator their
+    // request was malformed when the server had simply broken. The two
+    // predicates decide against each other, so a body-driven answer in either
+    // corrupts both — here it also flips `isMigrationPending`'s disjointness.
+    const relayed = new Error(
+      "POST /x failed: 500 - upstream said: POST /coord/mark-read failed: 400 - bad body"
+    );
+    expect(isContractError(relayed)).toBe(false);
+    expect(isMigrationPending(relayed)).toBe(false);
   });
 });
 
@@ -425,6 +481,71 @@ describe("linkedRefNotice", () => {
     expect(
       linkedRefNotice({ found: false, loading: false, error: false })
     ).toMatch(/not on the page that is loaded/i);
+  });
+
+  it("names the BUTTON, not the feed, when only a page append failed", () => {
+    // A failed "Load more" leaves the head read — and the strip — perfectly
+    // healthy, so folding it into `error` told the operator "the feed above
+    // failed to load" about a feed that was answering, and withheld the one
+    // action that would help.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+    });
+    expect(line).toMatch(/loading more failed/i);
+    expect(line).toMatch(/Load more again/i);
+    expect(line).not.toMatch(/feed above failed to load/i);
+    // With no `filterActive` passed, the clause defaults off — the filtered
+    // case is its own test below.
+    expect(line).not.toMatch(/clear them/i);
+  });
+
+  it("blames the feed when BOTH failed — the head is the bigger truth", () => {
+    // A RANKING GUARD, not a regression test: the pre-change code ignored
+    // `pagingFailed` entirely and returned this same sentence, so both
+    // assertions passed before. It is here to stop the new arm being promoted
+    // above `error` later, not as evidence the new arm works.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: true,
+      pagingFailed: true,
+    });
+    expect(line).toMatch(/feed above failed to load/i);
+    expect(line).not.toMatch(/Load more again/i);
+  });
+
+  it("keeps the FILTER clause when a page fails under an active filter", () => {
+    // A failed page ADDS an unknown; it does not resolve the one the fallback
+    // arm was carrying. An event excluded by the kind filter never matches
+    // however many pages load, so an arm naming only the button would leave the
+    // operator retrying it forever.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+      filterActive: true,
+    });
+    expect(line).toMatch(/loading more failed/i);
+    expect(line).toMatch(/Load more again/i);
+    expect(line).toMatch(/excluded by the filters above — clear them/i);
+  });
+
+  it("omits the filter clause when no filter is on", () => {
+    // The converse matters as much: with no filter active, "clear them" names
+    // nothing and would be its own false lead.
+    const line = linkedRefNotice({
+      found: false,
+      loading: false,
+      error: false,
+      pagingFailed: true,
+      filterActive: false,
+    });
+    expect(line).toMatch(/Load more again/i);
+    expect(line).not.toMatch(/clear them/i);
   });
 
   it("reports the migration rather than a missing event, and outranks the rest", () => {

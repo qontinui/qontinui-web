@@ -693,6 +693,87 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > licenses an empty-state claim about filter B, which no read has ever
 > answered. `readIsUnknown`'s premise is that coord *confirmed this window
 > empty* — so the confirmation has to be about the window being described.
+>
+> **A fourth rule, from auditing the sweep that produced the first three.** It
+> re-spelled the predicate twice while fixing the consumers, in both directions
+> the first three rules warn about — which is the evidence that "count the
+> consumers" is not enough on its own.
+>
+> **Publish the verdict from the surface that owns it; do not let consumers
+> re-derive it.** Importing a shared predicate still leaves each caller
+> assembling its own ARGUMENTS, and that is where the next drift lives. On
+> `/admin/coord/notifications` the strip is the surface that decides whether
+> coord's scalars may be quoted — it is what dashes the badges — and the
+> mark-all tooltip re-derived that as `!readFailed`: three of the four ways a
+> count stops being quotable, missing `migrationPending`, so it promised
+> *"Marks ALL 137 unread… cannot be undone"* under a strip rendering that same
+> 137 as `–`. The fix is not a fifth spelling but a field on the derived object
+> (`health.countsAreCurrent`), with the deriver *branching* on it so its arms
+> cannot drift from what it publishes. **A deriver that already knows something
+> should return it.**
+>
+> The same audit found the mirror-image error: a flag deliberately SPLIT for one
+> surface's sake (`pagingFailed`, kept out of `readFailed` so a failed page
+> would not stale the strip) and then folded straight back into one boolean at
+> another (`error: readFailed || pagingFailed`). A failed *Load more* duly
+> reported *"the feed above failed to load"* about a feed the strip was painting
+> green, and withheld the only remedy that applied. **If two states were worth
+> splitting, they are worth two sentences** — and rank them, because when both
+> are true one is the bigger truth.
+>
+> Note what let this survive review, because it is NOT a loose assertion. The
+> sweep wrote a test for exactly this state — *"does not send the operator to a
+> Load more that just failed"* — and asserted `/could not be looked up/`, which
+> at the time matched the head-failure arm and only that arm. The regex
+> discriminated perfectly. **The test pinned the behaviour the code intended,
+> and the intent was the bug**: folding the two failures into one boolean was a
+> deliberate choice with a comment arguing for it, so no assertion about the
+> sentence that choice produces could ever have caught it.
+>
+> The rule that would have: **when you split a flag, test that the two states
+> produce two DIFFERENT outputs** — assert the discrimination itself, not each
+> arm against the text it currently emits. A test per state passes happily while
+> two states share one sentence; a test that the sentences differ does not. The
+> same test's own body asserted the strip stays green one line below, so both
+> halves of the contradiction were on screen in one assertion block, agreeing
+> with the code and with each other about a page that was lying.
+
+> **The slot is not always spelled `empty=`.** #1110 swept for that prop and
+> so missed `/admin/coord/questions/[id]`, one directory down in the same
+> feature, where the same slot is the trailing arm of a `question === null`
+> ternary. It read *"Question {id} not found."* — the inbox's green all-clear
+> in the singular, and a stronger claim: it tells the operator the record is
+> GONE. `null` there covered two unrelated facts, "coord answered and holds no
+> such row" and "coord did not answer", and only the second is unknown. So the
+> thing to grep for is the **claim**, not the prop: any copy that says *none*,
+> *no such*, *not found*, *empty* or *all clear* is a surface that has to
+> consult the failure flag, whatever primitive renders it.
+>
+> **A surface that splits the failure into kinds must read the status FIELD,
+> never the message.** Several do, because "coord answered 404" and "nothing
+> answered" want different copy, and `httpClient` throws a plain `Error` — so
+> the status is only available as text: `<METHOD> <url> failed: <status> -
+> <body>`. That `<body>` is `await response.text()`, raw upstream prose the
+> operations proxy fills with coord's own `resp.text`, and it can quote a whole
+> inner failure. Every unanchored probe therefore reads a status the request
+> never got. Four had grown independently — `/ failed: (404|405|501) /`,
+> `/404/`, `/failed:\s*503\b/`, `/failed:\s*4(?:00|22)\b/` — and the loosest
+> also matched the **URL**, so `DeployRow` read the digits `404` out of a hex
+> deploy id and told the operator that row had no rollback proposal for as long
+> as the id existed. `components/admin/coord/httpStatus.ts` is the one reader:
+> anchored to the verb, first field, body out of the decision. It returns the
+> **status only** — what the status MEANS stays a named predicate at the call
+> site, because the surfaces legitimately disagree (`/questions/[id]` reads 404
+> as "coord holds no such row"; `useSessionCompliance` reads it as "this build
+> does not deploy the route"). `null` means "no status", and it must never fall
+> into the calm arm.
+>
+> The direction of the failure is what makes this R6's business rather than a
+> parsing nicety. `useSessionCompliance` writes `error: isRouteUnavailable(err)
+> ? null : message(err)`: a misread does not mislabel the error, it **deletes**
+> it, and the page renders the quiet "coord doesn't serve this yet" over a 500.
+> That is the same false all-clear as the green strip, reached through the
+> status probe instead of through the empty slot.
 
 ✅ `src/components/operations/MergePipeline.tsx:892-909` (re-anchored to
 `51168755`; the rest of §2 is still `859d8286`) — the tab strip, now
@@ -1085,13 +1166,27 @@ same table. Every module doc cites its rule number and links this file.
 
 **How the invariant got generalised.** `MergePipeline.test.tsx`'s two palette tests
 and `alertStatus.test.ts`'s three each audit one surface. Neither can bind a surface
-that does not exist yet, and 29 routes are about to adopt the pattern. So the
+that does not exist yet, and 29 routes were about to adopt the pattern. So the
 assertion became `paletteDisagreements()` and
 `src/components/console/attention.test.ts` runs it over a **registry** of every
-console palette — today the merge pipeline and alerts. Adding a surface means adding
-one line to that registry. The per-surface tests stay: they are each surface's own
-oracle, and they cover things the generic audit cannot (per-row escalation, UUID
-hygiene).
+console palette. That registry began as the two rows this sentence used to name —
+the merge pipeline and alerts — and every Phase 3 wave added to it; **read the count
+off `CONSOLE_PALETTES`, never off a number written here**, which is the mistake this
+paragraph itself shipped and then carried through all five waves.
+
+Adding a surface still means adding one row to that registry — but **forgetting is
+no longer something that can ship silently.** The registry is checked against the
+tree by the console's own suite, in both directions: every attention table the
+console declares must be held by a row, and every registered row's table must still
+be reachable by that check, since a discovery that quietly stops discovering agrees
+with everything. Enrolment is
+therefore derived from the tree rather than from whoever remembered, which is the
+whole point — an audit you have to remember to enrol in is an audit with a hole, and
+Waves 1 and 2 had already fallen through it: seven palettes were live and
+unregistered at once, each audited only beside itself.
+
+The per-surface tests stay: they are each surface's own oracle, and they cover
+things the generic audit cannot (per-row escalation, UUID hygiene).
 
 The audit carries exactly one declared exemption, `perRowKinds`, for a kind whose
 badge class is resolved per row rather than read off the static table — the alerts

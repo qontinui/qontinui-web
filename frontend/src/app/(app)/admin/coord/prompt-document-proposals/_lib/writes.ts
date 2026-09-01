@@ -55,12 +55,25 @@ export function looseningClassificationPresent(
  * Loosenings first, everything else after, **newest-first order preserved
  * inside each group**.
  *
- * A stable partition rather than a comparator: the backend already returns the
- * feed sorted by `created_at` descending, and re-sorting on a timestamp here
- * would silently re-derive an ordering the server owns — including for rows
- * whose `created_at` is unparseable, which a date comparator would shuffle to
- * an arbitrary place. Partitioning touches only the axis this function is
- * about.
+ * A stable partition rather than a comparator: the ordering by `created_at`
+ * descending is the SERVER's, and re-deriving it on a timestamp here would
+ * shuffle rows whose `created_at` is unparseable into an arbitrary place.
+ * Partitioning touches only the axis this function is about.
+ *
+ * **The backend now partitions too.** This used to say the feed arrives "sorted
+ * by `created_at` descending", which stopped being true: `operations.py`
+ * `_promote_flagged` lifts classified loosenings above the recency order BEFORE
+ * the page slice, so a loosening older than the newest `limit` writes is not
+ * dropped server-side. What arrives is therefore already loosenings-first, and
+ * this partition is idempotent over it — including over the component's
+ * filtered subset, since `Array.prototype.filter` preserves relative order.
+ *
+ * The ONE reason it still earns its place: a qontinui-web deploy predating that
+ * change serves an unpromoted feed, and this keeps the page correct on it. The
+ * two predicates are deliberately the same rule (`isLoosening`'s `=== true`,
+ * `_is_flagged`'s `is True`) — two languages and two files with no shared
+ * source, so that agreement is a convention each side documents, not something
+ * either can enforce on the other.
  */
 export function sortWritesForFeed<T extends Pick<PromptDocumentWrite, "loosening">>(
   writes: ReadonlyArray<T>
