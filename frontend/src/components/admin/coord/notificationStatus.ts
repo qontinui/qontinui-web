@@ -115,21 +115,25 @@ export const NOTIFICATIONS_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
 };
 
 /**
- * Deliberately NOT `/g`: a global regex carries `lastIndex` across `.test()`
- * calls, so alternating calls on the same instance return alternating answers.
- * The global form below is a separate instance used only with `.replace()`,
- * which resets `lastIndex` itself.
+ * One instance, `/g`, and used ONLY with `.replace()` — which resets
+ * `lastIndex` itself, so the stateful-regex trap does not arise here.
+ *
+ * There was a second, non-global instance beside it, for a `containsUuid`
+ * predicate no caller ever had. That is the module's own design working:
+ * nothing needs to ASK whether a string carries a UUID, because everything
+ * bound for the default view goes through `scrubUuids` unconditionally — a
+ * check is the "remember to do this" step the header says this module refuses
+ * to have. `alertStatus.ts` keeps its own `containsUuid`, live and called, for
+ * the surface that genuinely branches on the answer. If a caller here ever
+ * needs the predicate back, note the trap the deleted instance existed to
+ * dodge: a `/g` regex carries `lastIndex` across `.test()` calls, so
+ * alternating calls on one instance return alternating answers.
  */
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
-const UUID_RE_GLOBAL = new RegExp(UUID_RE.source, "gi");
+const UUID_RE_GLOBAL =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /** Stand-in for an elided UUID. Keeps the surrounding sentence readable. */
 const ELISION = "…";
-
-/** True when the string carries a UUID anywhere inside it. */
-export function containsUuid(value: string | null | undefined): boolean {
-  return typeof value === "string" && UUID_RE.test(value);
-}
 
 /**
  * Elide every UUID in a string that is bound for the DEFAULT view.

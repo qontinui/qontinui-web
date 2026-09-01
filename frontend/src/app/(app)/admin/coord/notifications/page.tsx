@@ -158,6 +158,7 @@ import {
   humanKind,
   isContractError,
   isMigrationPending,
+  isUnread,
   kindOptions,
   linkedRefNotice,
   matchesNotificationRef,
@@ -445,7 +446,7 @@ export default function CoordNotificationsPage() {
         const target = ids === null ? null : new Set(ids);
         setRows((prev) =>
           prev.map((n) =>
-            n.read_at || (target && !target.has(n.notification_id))
+            !isUnread(n) || (target && !target.has(n.notification_id))
               ? n
               : { ...n, read_at: now }
           )
@@ -534,8 +535,21 @@ export default function CoordNotificationsPage() {
    * BEFORE the click rather than the toast saying so after.
    */
   const filterActive = kind !== "any" || unreadOnly;
+  /**
+   * Through the module's `isUnread`, not a fourth `!n.read_at`.
+   *
+   * The same R6 rule the rest of this page was just fixed for, applied to the
+   * predicate that decides which rows the FILTERED arm irreversibly marks.
+   * `notificationStatus.ts` exports the one spelling of "unread" and
+   * `NotificationRow` imports it to decide how a row renders; this page had
+   * three hand-rolled copies deciding what a click destroys, so the row and
+   * the button could have disagreed about the same row. That the current
+   * spellings happen to match is not the property worth having — "unread ⇔
+   * no `read_at` for this principal" is coord's contract, and it belongs in
+   * one place for the same reason `readIsUnknown` does.
+   */
   const loadedUnreadIds = useMemo(
-    () => rows.filter((n) => !n.read_at).map((n) => n.notification_id),
+    () => rows.filter(isUnread).map((n) => n.notification_id),
     [rows]
   );
   /**
@@ -580,11 +594,37 @@ export default function CoordNotificationsPage() {
    * STORE cannot be written, which is a fact about coord's deployment rather
    * than about the freshness of a read.
    */
+  /**
+   * The unfiltered arm, and the one `?? 0` this page had left standing.
+   *
+   * `!((unreadCount ?? 0) > 0 || rows.some(unread))` reads a MISSING count as
+   * zero, which is the fabrication `notificationsHealth.tsx` exists to stop —
+   * made here in an affordance instead of in words. After a first read that
+   * failed, `unreadCount` is `null` and `rows` is `[]`, so the strip says
+   * "Could not read the feed", the list says "whether anything is waiting for
+   * you is unknown, not none", and between them the button greyed itself out:
+   * a third surface answering the same question, and the only one answering it
+   * confidently, wrongly, and without a sentence anyone could argue with.
+   *
+   * The disable now needs a REASON the page actually holds, which is exactly
+   * the standard the `migrationPending` line above was argued to: *the STORE
+   * cannot be written*. Not knowing the count is not such a reason — the
+   * unfiltered arm sends `{all: true}` and coord marks every unread row for
+   * this principal regardless of any number we hold, so an unknown count
+   * costs the request nothing. If there is genuinely nothing unread the POST
+   * is a no-op that answers `marked: 0`; if the feed is merely unreadable it
+   * does the work the operator asked for. Neither outcome is the silent
+   * nothing a disabled button promises.
+   *
+   * So: disabled only on an AFFIRMATIVE zero — coord's scalar actually said
+   * `0` and no loaded row contradicts it. Every other state, including the
+   * stale one, keeps the button live, which is the same direction §2's
+   * reasoning already took ("a stale count is no reason to refuse the write").
+   */
+  const knownNothingUnread = unreadCount === 0 && !rows.some(isUnread);
   const markAllDisabled =
     migrationPending ||
-    (filterActive
-      ? loadedUnreadIds.length === 0
-      : !((unreadCount ?? 0) > 0 || rows.some((n) => !n.read_at)));
+    (filterActive ? loadedUnreadIds.length === 0 : knownNothingUnread);
   const markAllLabel = filterActive
     ? `Mark ${loadedUnreadIds.length} shown read`
     : "Mark all read";

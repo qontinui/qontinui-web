@@ -756,6 +756,69 @@ describe("CoordNotificationsPage", () => {
     expect(httpPost).not.toHaveBeenCalled();
   });
 
+  it("does not grey out mark-all off a count it never got", async () => {
+    // The last `?? 0` on this page, and the only one making its claim in an
+    // AFFORDANCE rather than in words. A failed first read leaves
+    // `unread_count` null and `rows` empty, so `(unreadCount ?? 0) > 0` read
+    // the absent scalar as a zero and disabled the button — a third surface
+    // answering "is anything unread?", and the only one answering it
+    // confidently while the strip beside it said UNKNOWN and the list below it
+    // said "unknown, not none".
+    //
+    // Nothing about an unreadable FEED says the STORE cannot be written, which
+    // is the standard the migration-pending disable was argued to one line up.
+    // `{all: true}` marks every unread row for this principal regardless of any
+    // number the page holds.
+    httpGet.mockRejectedValue(
+      new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+    );
+    httpPost.mockResolvedValue({ marked: 3, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notifications-unknown");
+    const button = screen.getByTestId("coord-notifications-mark-all-read");
+    expect(button).toBeEnabled();
+    // No figure is promised — `readIsCurrent` is false — but the warning
+    // stands, because the click really does mark everything.
+    expect(button).toHaveAttribute(
+      "title",
+      expect.stringContaining("cannot be undone")
+    );
+    expect(button).not.toHaveAttribute("title", expect.stringMatching(/\d/));
+
+    // Clicked, not merely inspected: the point is that the request goes out.
+    await user.click(button);
+    await waitFor(() =>
+      expect(httpPost).toHaveBeenCalledWith(
+        "/api/v1/operations/notifications/mark-read",
+        { all: true },
+        expect.anything()
+      )
+    );
+  });
+
+  it("still greys out mark-all when coord AFFIRMATIVELY says zero", async () => {
+    // The other half of the discrimination, and the reason the fix above is a
+    // weakening rather than a removal: `unread_count: 0` from a read that
+    // landed IS knowledge, and a button that would do nothing should look like
+    // one. A test for the enabled arm alone passes against a predicate that
+    // never disables.
+    httpGet.mockResolvedValue({
+      notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+      next_cursor: null,
+      total: 4,
+      unread_count: 0,
+    });
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
