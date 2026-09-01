@@ -703,6 +703,30 @@ describe("CoordNav", () => {
     expect(badge.className).not.toContain("text-red-200");
   });
 
+  it("will not read a RESOLVED critical as an unresolved one", async () => {
+    // The hole in "existence survives sampling". This arm fires on exactly the
+    // build that ignored `severity` — and `include_resolved=false` is a filter
+    // on the same request, with nothing in the response saying which filters
+    // were honoured. Reading severity alone asserted an UNRESOLVED critical,
+    // in a red pill with no qualification, off a row coord had already cleared.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      return Promise.resolve({
+        alerts: [{ severity: "critical", resolved_at: "2026-08-31T09:00:00Z" }],
+      });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge.className).not.toContain("text-red-200");
+    // Not "no criticals" either — the window proves nothing either way.
+    expect(badge).toHaveAttribute("data-critical-known", "false");
+    expect(badge.getAttribute("title")).toMatch(/critical is UNKNOWN/);
+  });
+
   it("still believes a critical it can SEE in the sample", async () => {
     // The other half, and the reason this is not just "distrust the degraded
     // arm": existence survives sampling even when absence does not. A critical

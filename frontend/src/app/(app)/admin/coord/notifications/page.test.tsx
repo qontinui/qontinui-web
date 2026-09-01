@@ -1016,6 +1016,83 @@ describe("CoordNotificationsPage", () => {
     ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
   });
 
+  it("treats the mark-read scalar as a delivery, in both directions", async () => {
+    // `markRead` writes `unreadCount` and does NOT go through `applyEnvelope`,
+    // so when that function became the sole author of the scalar's verdict this
+    // door was left behind — and the `scalarSeenRef` gate then made the
+    // omission PERMANENT.
+    //
+    // Against a feed that never carries the scalar, a mark-all wrote a real `0`
+    // into state while `scalarSeenRef` stayed false: `scalarStale` could never
+    // be set, the "did not come back" arm could never fire again, and the strip
+    // settled into a green "you have seen everything coord recorded" over a
+    // number the FEED has never delivered — with no read able to dislodge it.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+    });
+    httpPost.mockResolvedValue({ marked: 1, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("The unread count did not come back")
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    // coord computed this for the principal just now — it IS current, and the
+    // strip is allowed to say so.
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unread"));
+
+    // ...and the next scalar-less head read must be able to take it back.
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+    // Which is now a true sentence: a read HAS delivered this scalar.
+    expect(strip).toHaveTextContent("no longer carries the counts");
+  });
+
+  it("un-stales the strip when mark-read brings a fresh scalar", async () => {
+    // The mirror case. A feed that stops carrying the scalar after a good read
+    // leaves the strip amber — correct — and a mark-all then returns a fresh
+    // `unread_count`. Leaving the flag set called a number frozen one tick
+    // after coord delivered it, and the affirmative-zero disable stopped
+    // working on a genuine fresh zero.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 900,
+      });
+    httpPost.mockResolvedValue({ marked: 7, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unread"));
+    // A genuine, current zero — so the affirmative-zero disable works again.
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeDisabled();
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
