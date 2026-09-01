@@ -809,7 +809,9 @@ def test_no_executed_sql_contains_a_sqlalchemy_bind_parameter() -> None:
     for block in re.finditer(r'op\.execute\(\s*"""(.*?)"""', source, re.S):
         for hit in re.finditer(r":\w", block.group(1)):
             start = max(0, hit.start() - 60)
-            offenders.append(block.group(1)[start : hit.start() + 10].replace("\n", " "))
+            offenders.append(
+                block.group(1)[start : hit.start() + 10].replace("\n", " ")
+            )
 
     assert not offenders, (
         "executed SQL contains SQLAlchemy bind-parameter syntax (':' + word char); "
