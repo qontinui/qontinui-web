@@ -72,11 +72,21 @@ export interface NotificationsHealth {
    *
    * **Named for the READ, not for the counts** — which is what it was called
    * first, and which overpromised in exactly the way this module exists to
-   * stop. A current read can still carry a `null` `unread_count` (the arm below
-   * headlined "The unread count did not come back"), so the two questions are
-   * independent and a consumer that needs a number must ask BOTH: this flag,
-   * and then the scalar itself. A field named for the counts invites
+   * stop. A current read can still carry a `null` `unread_count`: the FIRST
+   * read to answer without one is current (nothing is failing, and nothing
+   * earlier has gone out of date), and takes the arm below headlined "The
+   * unread count did not come back". So the two questions stay independent and
+   * a consumer that needs a number must ask BOTH: this flag, and then the
+   * scalar itself. A field named for the counts invites
    * `health.readIsCurrent ? unreadCount! : …`, and the type would not stop it.
+   *
+   * `scalarStale` is the OTHER half of that and does not collapse the two
+   * questions back together: it is not "the scalar is missing", it is "a read
+   * that used to carry it has stopped", which is a fact about the READ. The
+   * distinction is load-bearing rather than pedantic — an audit briefly wired
+   * the page to raise the flag on the first scalar-less read too, which made
+   * the "did not come back" arm unreachable and put *"no longer"* and *"since"*
+   * in front of an operator who had never had a good read.
    */
   readIsCurrent: boolean;
 }

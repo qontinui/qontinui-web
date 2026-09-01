@@ -297,6 +297,22 @@ describe("the strip's contract with the page", () => {
     expect(badgesOf(health)).toEqual({ unread: "7 unread", total: "900 total" });
   });
 
+  it("keeps the first scalar-less read CURRENT, which is what the name promises", () => {
+    // The arm the `scalarStale` audit nearly deleted by shadowing, and the one
+    // the `countsAreCurrent` -> `readIsCurrent` rename is argued from: a read
+    // can be perfectly current and still carry a null scalar. If this returns
+    // false, the published justification for the rename stops being true and
+    // the sentence an operator sees changes to one presupposing an earlier
+    // good read.
+    const health = deriveNotificationsHealth(
+      input({ unreadCount: null, total: 900 })
+    );
+    expect(health.readIsCurrent).toBe(true);
+    expect(health.headline).toBe("The unread count did not come back");
+    // One missing scalar does not make the other unknown.
+    expect(badgesOf(health)).toEqual({ unread: "– unread", total: "900 total" });
+  });
+
   it("ranks a FAILED read above a scalar-less one when both are true", () => {
     // Both are "the counts are frozen", and they want different sentences and
     // different remedies. A read that did not land is the bigger truth: the
@@ -317,6 +333,10 @@ describe("the strip's contract with the page", () => {
       input({ failed: true, loaded: false }),
       input({ failed: true, loaded: true, unreadCount: 137, total: 900 }),
       input({ scalarStale: true, loaded: true, unreadCount: 137, total: 900 }),
+      // The combination that shipped the wrong sentence: reachable only if a
+      // writer raises the flag on a FIRST scalar-less read, which is what the
+      // page briefly did.
+      input({ scalarStale: true, loaded: true, unreadCount: null, total: 900 }),
       input({ loaded: false, unreadCount: null, total: null }),
       input({ loaded: true, unreadCount: null, total: null }),
       input({ unreadCount: 137, total: 900 }),

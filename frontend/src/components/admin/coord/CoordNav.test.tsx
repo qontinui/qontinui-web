@@ -678,6 +678,156 @@ describe("CoordNav", () => {
     }
   });
 
+  it("will not conclude 'nothing is critical' from a one-row sample", async () => {
+    // The 2026-08-14 defect INVERTED, and in the reassuring direction. That one
+    // was "critical was unconditionally true because the served window happened
+    // to be 100% critical — a flag that is always on carries no information".
+    // An un-upgraded coord drops the `severity` filter as well as `limit`, so
+    // the degraded arm was reading a capped, unfiltered window and answering
+    // `false` when it held no critical row: a fleet-wide negative from a sample
+    // of one, published as KNOWN, with no red and nothing in the tooltip.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      // No `total_count` on either read; the severity filter was dropped, so
+      // both answer with the same one-row window, and that row is a warning.
+      return Promise.resolve({ alerts: [{ severity: "warning" }] });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge).toHaveAttribute("data-critical-known", "false");
+    expect(badge.getAttribute("title")).toMatch(/critical is UNKNOWN/);
+    expect(badge.className).not.toContain("text-red-200");
+  });
+
+  it("still believes a critical it can SEE in the sample", async () => {
+    // The other half, and the reason this is not just "distrust the degraded
+    // arm": existence survives sampling even when absence does not. A critical
+    // row IN the window proves a critical exists, whatever the window's size.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      return Promise.resolve({
+        alerts: [{ severity: u.includes("severity=critical") ? "critical" : "warning" }],
+      });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge).toHaveAttribute("data-critical-known", "true");
+    expect(badge.className).toContain("text-red-200");
+  });
+
+  it("does not say a never-read axis is from an EARLIER read", async () => {
+    // "Stale" means "from an earlier read"; an axis that has never read has no
+    // earlier read to be from. The count axes hide this behind the render gate,
+    // so it only became visible when the critical axis started publishing.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      return u.includes("severity=critical")
+        ? Promise.reject(new Error("GET … failed: 500 - boom"))
+        : Promise.resolve({ alerts: [], total_count: 42 });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge).toHaveAttribute("data-critical-known", "false");
+    // UNKNOWN, and therefore NOT stale — two different claims, and only one of
+    // them is true here.
+    expect(badge).toHaveAttribute("data-critical-stale", "false");
+  });
+
+  it("does not promise 'at LEAST this many' about a zero", async () => {
+    // Suppressing the `≥` glyph and leaving the sentence would have moved the
+    // vacuous claim into the channel the fix routed everything else into: the
+    // title still read "this coord build does not report a total — at LEAST
+    // this many" over a `0`, which is true of every state there is.
+    let alertsCall = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      alertsCall += 1;
+      if (alertsCall <= 2) return Promise.resolve({ alerts: [] });
+      return Promise.reject(new Error("GET … failed: 500 - boom"));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      await waitFor(() => expect(alertsCall).toBeGreaterThan(1));
+      await vi.advanceTimersByTimeAsync(60_000);
+      const badge = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(badge).toHaveTextContent("0*");
+      expect(badge.getAttribute("title")).not.toMatch(/at LEAST/);
+      // ...and the fresh-total sentence is not the fallback either: claiming
+      // "coord's unpaged total" about a build that served no total would trade
+      // one false claim for a worse one.
+      expect(badge.getAttribute("title")).not.toMatch(/unpaged total/);
+      expect(badge.getAttribute("title")).toMatch(/how many there are is UNKNOWN/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never lets `known` describe a read whose number was declined", async () => {
+    // `setKnown` fires only when the axis APPLIED the value. Without that
+    // guard a superseded reply that the axis correctly declined still
+    // overwrites `known`, so the badge renders a degraded count (a floor)
+    // while claiming coord served an exact total — or the reverse.
+    let resolveA: ((v: unknown) => void) | null = null;
+    let countCall = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      if (u.includes("severity=critical")) {
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      countCall += 1;
+      if (countCall === 1) {
+        // Poll A hangs, and will answer with an EXACT total.
+        return new Promise((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      // Poll B lands first, degraded: no total, a two-row window.
+      return Promise.resolve({
+        alerts: [{ severity: "warning" }, { severity: "warning" }],
+      });
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const badge = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(badge).toHaveTextContent("≥2");
+      expect(badge).toHaveAttribute("data-total-known", "false");
+
+      // A lands late with an exact total. Its VALUE is declined (older read),
+      // so its `known` must be declined with it.
+      await act(async () => {
+        resolveA?.({ alerts: [], total_count: 5 });
+        await Promise.resolve();
+      });
+
+      const after = screen.getByTestId("coord-nav-alerts-badge");
+      expect(after).toHaveTextContent("≥2");
+      expect(after).toHaveAttribute("data-total-known", "false");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders no badge when the rollup is empty or unavailable", async () => {
     httpGet.mockRejectedValue(new Error("boom"));
     render(<CoordNav />);
