@@ -16,23 +16,40 @@ is never run against ``coord.*``.
 Why these columns exist
 =======================
 
-On 2026-08-31 the runner's ``:9876`` listener stopped accepting. Probes against
-it timed out at ~2056 ms — this box's documented IPv4 connect cost for that
-port — while ``:9875`` (supervisor) and ``:3001`` (frontend) on the same host
-connected normally. The listener held **148 unreaped ``CLOSE_WAIT`` sockets**
-against a known-zero baseline: connections whose peer had closed and whose
-server-side descriptor was never dropped.
+On 2026-08-31 a steward reported that the runner's port-9876 listener had
+stopped accepting, holding 148 ``CLOSE_WAIT`` sockets against a known-zero
+baseline, while the supervisor (9875) and frontend (3001) on the same host
+connected normally. **Vetting refuted both halves of that account**, and this
+revision exists because of what the refutation needed rather than because of
+the account itself. Read this carefully — the wrong version of this story is
+what the column comments below are worded to prevent:
 
-That scoping — one listener starved, its two neighbours healthy — is the whole
-diagnosis, and **no fleet surface could show it.** ``coord.device_resource_samples``
-carries CPU, load, memory, commit, swap, disk, build slots, queue depth, CI job
-counts and (since ``fleet_res_tel_04``) the thread/PID saturation lane. It has
-**no socket-state dimension at all**: no ``CLOSE_WAIT``, no per-listener
-connection census, nothing keyed to a port. Both candidate hypotheses for the
-starvation mechanism (accept backlog exhaustion vs. descriptor ceiling) had to
-be re-derived by hand from a live ``ss`` run, and the plan records the mechanism
-as UNKNOWN precisely because the instrument that would have settled it does not
-exist.
+* **The ``CLOSE_WAIT`` population is not a leak.** Measured on a live runner:
+  60 full HTTP request/response cycles produce **zero**; 40 bare TCP
+  connect-then-close (no request sent) produce **40**, which drain
+  **sub-second**. Server-side ``TIME_WAIT`` rising is positive proof the
+  server closes correctly. The listener is stock ``axum::serve`` on hyper,
+  which tears the connection down on peer FIN and cannot be configured
+  otherwise here.
+* **The connect failures were IPv6.** ~2056 ms matches the fleet's documented
+  ``[::1]`` *failure* cost (2057 ms), not its IPv4 *success* cost (2133 ms),
+  and the recorded error was a Windows refusal. The runner binds the IPv4
+  loopback only, so an IPv6-resolving probe is refused by an absent listener.
+  The two "healthy neighbours" bind dual-stack, so they differed from the
+  subject in exactly the variable under test and scoped nothing.
+* Prior art had already settled this once: an earlier SHIPPED plan recorded
+  the same signal as *"a transient snapshot, not a standing leak … no fix
+  should be premised on socket leakage."*
+
+**What survives is the reason the question took a day to answer: no fleet
+surface could show any of it.** ``coord.device_resource_samples`` carries CPU,
+load, memory, commit, swap, disk, build slots, queue depth, CI job counts and
+(since ``fleet_res_tel_04``) the thread/PID saturation lane. It has **no
+socket-state dimension at all**: no ``CLOSE_WAIT``, no per-listener connection
+census, nothing keyed to a port. Every hypothesis had to be re-derived by hand
+from live ``ss`` runs, and the incident's own hand census could not even
+distinguish a server-side socket from a client-side one — see the local/remote
+section below, which is the single most important thing these columns do.
 
 This revision is the storage for that missing dimension. It is the
 **measurement** half only.
@@ -110,9 +127,11 @@ descriptor*. Which side is leaking is entirely determined by which end of the
 socket the probe port sits on:
 
 * ``sock_close_wait_local`` — the probe port is the **local** port, so the
-  socket is **server-side** and the fd belongs to the runner. This is the
-  starvation signal: the runner accepted a connection, the client went away, and
-  the runner never dropped it. 148 of these is the 2026-08-31 incident.
+  socket is **server-side** and the fd belongs to the runner. A *sustained*
+  population here would indict the runner. Note carefully that the 2026-08-31
+  reading did **not** establish one: a transient count is the ordinary result
+  of bare TCP probes arriving, and it drains sub-second. Only a count that
+  persists across samples means anything.
 * ``sock_close_wait_remote`` — the probe port is the **remote** port, so the
   socket is **client-side** and the fd belongs to some probe process on the same
   box (a health-check script, a monitoring loop). These do not starve the
@@ -365,10 +384,14 @@ def upgrade() -> None:
         COMMENT ON COLUMN coord.device_resource_samples.sock_close_wait_local IS
             'Sockets in CLOSE_WAIT where sock_probe_port is the LOCAL port — '
             'i.e. SERVER-side, the listener''s own process owns the descriptor. '
-            'This is the starvation signal: the peer sent FIN and the server '
-            'never closed its fd. Read 148 on the runner''s :9876 during the '
-            '2026-08-31 incident, against a known-zero baseline, while :9875 '
-            'and :3001 on the same host accepted normally. NULL = not probed '
+            'The peer sent FIN and this side has not yet closed its fd. A '
+            'TRANSIENT count here is ORDINARY - bare TCP probes (a port check '
+            'that sends no request) produce it one-for-one and it drains sub-second; '
+            'full HTTP request/response cycles produce none. Only a count that '
+            'PERSISTS across samples indicts the listener. The 2026-08-31 '
+            'reading of 148 was NOT such a leak - vetting refuted it by '
+            'measurement, and an earlier plan had already recorded the same '
+            'signal as transient. NULL = not probed '
             '(no ss, no netstat, or a publisher predating the probe). NEVER a '
             'fabricated 0 — a MEASURED 0 is the healthy baseline this plan''s '
             'growth figure is taken against, so 0 and NULL are different facts '
