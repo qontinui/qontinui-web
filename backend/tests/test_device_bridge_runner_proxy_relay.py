@@ -568,6 +568,43 @@ async def test_relay_503_absent_and_null_clocks_are_different_answers(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_relay_503_log_line_matches_the_body_about_what_was_known(monkeypatch):
+    """The log surface must not re-introduce the ambiguity the body removed.
+
+    The log is what an operator greps. If the failed-lookup case logged
+    ``ws_connected_at=None``, a query for this event with a null clock would
+    return the never-registered population and the coord-outage population
+    together — exactly the collapse the body now avoids. ``liveness_known``
+    is present either way so a row says which population it is in.
+    """
+    from fastapi import HTTPException
+
+    _install_device_lookup(monkeypatch, {"device_id": DEVICE_ID, "ws_session_id": None})
+    _install_owned_device(
+        monkeypatch, None, raises=HTTPException(status_code=502, detail="down")
+    )
+    _install_manager(monkeypatch, dispatch=AsyncMock())
+    rec = _RecordingLogger()
+    monkeypatch.setattr(device_bridge_ws, "logger", rec, raising=True)
+
+    request = _FakeRequest(headers={"X-Qontinui-Device-Id": DEVICE_ID})
+    response = await device_bridge_ws.runner_proxy(
+        request, "usage", user=SimpleNamespace(id=USER_ID)
+    )
+
+    body = _body(response)
+    logged = rec.kw_for("runner_proxy_relay_not_connected")
+
+    assert logged["liveness_known"] is False
+    assert "ws_connected_at" not in logged
+    assert "last_seen_at" not in logged
+    # The two surfaces agree about what was known.
+    assert ("ws_connected_at" in logged) == ("ws_connected_at" in body)
+    # And the id still joins this line to the one naming the fault.
+    assert logged["request_id"] == body["request_id"]
+
+
+@pytest.mark.asyncio
 async def test_relay_503_ws_connected_at_null_means_never_registered(monkeypatch):
     """A row with no ``ws_connected_at`` reports ``null``, not a wrong time.
 

@@ -18,6 +18,7 @@ import {
   useRunnerSpecList,
 } from "../_hooks/useUiBridge";
 import { RelayFailure } from "./RelayFailure";
+import { sharesRelayCause } from "../_lib/relay-error-presentation";
 
 const DEFAULT_APP_ID = "qontinui-web";
 
@@ -58,6 +59,15 @@ export function UiBridgePanel() {
     () => specs.reduce((acc, s) => acc + countStates(s.config), 0),
     [specs],
   );
+
+  // The list and the graph are two queries against the same relay to the same
+  // device, so the dominant failure — the runner is not connected — fails both
+  // identically. Show one box in that case rather than the same three lines
+  // twice; they stay separate whenever the diagnoses actually differ.
+  const bothFailedAlike =
+    specList.isError &&
+    specGraph.isError &&
+    sharesRelayCause(specList.error, specGraph.error);
 
   // UI Bridge: stable ids for the tab's controls (automation + spec-checks).
   const { ref: appIdRef } = useUIElement({
@@ -136,25 +146,34 @@ export function UiBridgePanel() {
               <Loader2 className="size-3.5 animate-spin" /> Loading specs…
             </p>
           )}
-          {specList.isError && (
-            <RelayFailure
-              error={specList.error}
-              subject={`spec pages for ${appId}`}
-            />
-          )}
           {/*
-            The graph is a second, independent query. Its failure used to be
+            The graph is a SECOND, independent query. Its failure used to be
             rendered nowhere at all: `graphPages` fell back to `[]` and the
             counter below simply showed "0 graph nodes", which is what a
             genuinely empty graph looks like. A failed read and an empty result
             are different facts and must not share a rendering.
           */}
-          {specGraph.isError && (
+          {bothFailedAlike ? (
             <div className="mb-3">
               <RelayFailure
-                error={specGraph.error}
-                subject={`the state-machine graph for ${appId}`}
+                errors={[specList.error, specGraph.error]}
+                subject={`spec pages or the state-machine graph for ${appId}`}
               />
+            </div>
+          ) : (
+            <div className="space-y-2 empty:hidden [&:not(:empty)]:mb-3">
+              {specList.isError && (
+                <RelayFailure
+                  errors={[specList.error]}
+                  subject={`spec pages for ${appId}`}
+                />
+              )}
+              {specGraph.isError && (
+                <RelayFailure
+                  errors={[specGraph.error]}
+                  subject={`the state-machine graph for ${appId}`}
+                />
+              )}
             </div>
           )}
           {!specList.isLoading && !specList.isError && (
@@ -234,7 +253,7 @@ export function UiBridgePanel() {
           </Button>
 
           {snapshot.isError && snapshotRequested && (
-            <RelayFailure error={snapshot.error} subject="a live snapshot" />
+            <RelayFailure errors={[snapshot.error]} subject="a live snapshot" />
           )}
           {snap && (
             <>
