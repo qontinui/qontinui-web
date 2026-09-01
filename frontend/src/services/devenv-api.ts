@@ -114,8 +114,59 @@ export interface Machine {
    * unambiguous-hostname backfill. Optional: older backends omit it.
    */
   coord_device_id?: string | null;
+  /**
+   * How the row came to exist: an operator registering it by hand
+   * (`manual`), an operator dispatching an enroll to a paired box
+   * (`dispatched`), or the connect-time engine enrolling it on its own
+   * (`auto`).
+   *
+   * `null` means UNKNOWN — the row predates the column, or an older backend
+   * omits the field. Render that as NO badge. It must NEVER be shown as
+   * `manual`: that would invent provenance the database never observed.
+   */
+  enrollment_origin?: "manual" | "dispatched" | "auto" | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-enrollment policy
+// ---------------------------------------------------------------------------
+
+/**
+ * The owner's connect-time auto-enrollment policy, plus what it actually
+ * resolves to right now.
+ *
+ * `configured: false` means NO row exists — which reads as ENABLED, not
+ * disabled (the server's default). The flag only distinguishes "the owner
+ * chose this" from "the owner has never opened this surface".
+ *
+ * `effective_environment_id` is the environment a new box would really join.
+ * Null with `environment_count > 1` is the ambiguous state: the engine skips
+ * every new machine and only logs. That combination is not a healthy "on" and
+ * the UI must say so — it is the whole reason this shape carries more than the
+ * two stored columns.
+ */
+export interface AutoEnrollPolicy {
+  enabled: boolean;
+  /**
+   * The DEPLOYMENT's auto-enrollment flag, not the owner's. Ships false and is
+   * turned on tenant by tenant, so during the whole rollout window the engine
+   * refuses before reading anything while `enabled` still (truthfully) says the
+   * owner wants it on. Dominates every other field when rendering status.
+   */
+  globally_enabled: boolean;
+  target_environment_id: string | null;
+  configured: boolean;
+  effective_environment_id: string | null;
+  environment_count: number;
+  updated_at: string | null;
+}
+
+/** Whole-row write — never a patch, so a client cannot half-state a policy. */
+export interface AutoEnrollPolicyUpdate {
+  enabled: boolean;
+  target_environment_id: string | null;
 }
 
 /** Machine create/regenerate-enrollment response: includes the ONE-TIME code. */
@@ -596,6 +647,29 @@ export function setMachineEnvironment(
   return request<Machine>(`/machines/${encodeURIComponent(id)}/environment`, {
     method: "PUT",
     body: JSON.stringify({ environment_id: environmentId }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-enrollment policy
+// ---------------------------------------------------------------------------
+
+/** Read the owner's auto-enrollment policy. Never creates the row. */
+export function getAutoEnrollPolicy(): Promise<AutoEnrollPolicy> {
+  return request<AutoEnrollPolicy>("/auto-enroll-policy");
+}
+
+/**
+ * Set the owner's auto-enrollment policy. A `target_environment_id` the caller
+ * does not own is a 404 — the server refuses to store a target that would
+ * never resolve.
+ */
+export function setAutoEnrollPolicy(
+  payload: AutoEnrollPolicyUpdate
+): Promise<AutoEnrollPolicy> {
+  return request<AutoEnrollPolicy>("/auto-enroll-policy", {
+    method: "PUT",
+    body: JSON.stringify(payload),
   });
 }
 
