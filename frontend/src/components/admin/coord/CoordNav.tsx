@@ -551,15 +551,24 @@ function readRollup(body: unknown): AlertsRollup {
  *
  * `known: false` means the deployed coord served no `total_count`. The caller
  * renders `≥N` — the truncated length is a LOWER BOUND, never the truth.
+ *
+ * `stale: true` means the number on screen is from an EARLIER read — see
+ * `useNotificationsBadge` below, which is where that flag is argued for. Both
+ * badges retain their count across a failed poll and both therefore owe the
+ * same qualification; they share one rendering path, so fixing only the one
+ * this follow-up came from would leave the identical unlabelled claim on the
+ * tab beside it.
  */
 function useAlertsBadge(): {
   count: number;
   critical: boolean;
   known: boolean;
+  stale: boolean;
 } {
   const [count, setCount] = useState(0);
   const [critical, setCritical] = useState(false);
   const [known, setKnown] = useState(false);
+  const [stale, setStale] = useState(false);
 
   const fetchCount = useCallback(async () => {
     try {
@@ -594,8 +603,12 @@ function useAlertsBadge(): {
           (critBody.alerts ?? []).some((a) => a.severity === "critical")
         );
       }
+      // Both reads landed — whatever is on the badge now came from this poll.
+      setStale(false);
     } catch (err) {
       log.warn("alerts badge fetch failed", err);
+      // The count is KEPT (see the notifications hook) and now labelled.
+      setStale(true);
     }
   }, []);
 
@@ -604,7 +617,7 @@ function useAlertsBadge(): {
   }, [fetchCount]);
   useVisiblePoll(fetchCount, ALERTS_POLL_MS);
 
-  return { count, critical, known };
+  return { count, critical, known, stale };
 }
 
 /** Live UNREAD-notification count for the Notifications tab badge.
@@ -621,6 +634,27 @@ function useAlertsBadge(): {
  *  silent-empty-is-unknown trap. Before the first successful poll the count is
  *  0 and no badge renders, so a route that has never answered stays quiet.
  *
+ *  ⚠️ **Retaining is only HALF the rule, and this hook shipped the half that is
+ *  silent.** R6's stale arm is "those numbers are real and still actionable,
+ *  so they keep rendering *and the detail line says they are old*"; a retained
+ *  count rendered with no qualification is indistinguishable from one a poll
+ *  just confirmed. `/admin/coord/notifications` counted four consumers of this
+ *  same `unread_count` and gave every one of them a way to decline to speak
+ *  for an uncurrent read — the strip dashes its badges, the `empty=` slot says
+ *  "unknown, not none", the `?ref=` banner names the failed read, and the
+ *  mark-all tooltip drops the figure. This badge is the FIFTH, it is the only
+ *  one rendered on EVERY console page, and it is the one that was not counted:
+ *  the page's own module doc names it ("the nav badge polls at 60s — it is a
+ *  background hint") while the sweep stayed inside the route.
+ *
+ *  So `stale` is published beside the count. The number is still kept — the
+ *  argument above is unchanged and correct — it is now labelled, through the
+ *  same `title`-plus-`data-` channel the sibling alerts badge already uses for
+ *  the OTHER thing it cannot vouch for (`totalKnown` → `≥N`). Deliberately not
+ *  a second lower bound: a stale unread count is not a floor, because the
+ *  operator may have marked rows read in another tab, so it can be wrong in
+ *  either direction and `≥` would be a fresh false claim rather than a hedge.
+ *
  *  The 503 is opted out of `HttpClient`'s 5xx retry
  *  (`NOTIFICATIONS_REQUEST_OPTIONS`): during the pre-migration window this poll
  *  runs on every console page, and the default policy measures at 5 requests
@@ -632,8 +666,9 @@ function useAlertsBadge(): {
  *  PAGE SIZE — a badge reading it would pin at that constant forever no matter
  *  how many unread events exist. `unread_count` is a server-computed scalar,
  *  distinct from the page, and it is the only honest source for this number. */
-function useNotificationsBadge(): { count: number } {
+function useNotificationsBadge(): { count: number; stale: boolean } {
   const [count, setCount] = useState(0);
+  const [stale, setStale] = useState(false);
 
   const fetchCount = useCallback(async () => {
     try {
@@ -646,9 +681,20 @@ function useNotificationsBadge(): { count: number } {
       // previous value alone rather than silently clearing the badge.
       if (typeof unread === "number" && Number.isFinite(unread)) {
         setCount(unread);
+        // ...and only HERE is the badge current again, because only here was
+        // the number actually replaced.
+        setStale(false);
       }
+      // Note what this arm does NOT do: an answer carrying no scalar leaves
+      // `stale` exactly as it was. The read landed, so it is not a failure —
+      // but it refreshed nothing, so a number retained from before is no more
+      // current than it was a moment ago. Clearing the flag on any 2xx would
+      // re-tell the lie this hook is being fixed for, against the one coord
+      // degrade (`applyEnvelope`'s "a coord build that predates the scalar")
+      // that the page module already documents as reachable.
     } catch (err) {
       log.warn("notifications badge fetch failed", err);
+      setStale(true);
     }
   }, []);
 
@@ -657,7 +703,7 @@ function useNotificationsBadge(): { count: number } {
   }, [fetchCount]);
   useVisiblePoll(fetchCount, NOTIFICATIONS_POLL_MS);
 
-  return { count };
+  return { count, stale };
 }
 
 /**
@@ -757,6 +803,20 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
   );
 }
 
+/**
+ * Appended to a badge's tooltip when the number it shows is from an earlier
+ * read than the last poll.
+ *
+ * One suffix rather than a fourth and fifth hand-written title, because both
+ * badges already vary their base title on something else (`totalKnown` on
+ * alerts) and spelling every combination out is how the two drift apart. The
+ * qualification is the same sentence either way — it is a statement about the
+ * READ, not about what was counted.
+ */
+const STALE_TITLE_SUFFIX =
+  "— from the last good read; the most recent poll failed, so this number " +
+  "has stopped moving. It is not a floor: it can be wrong in either direction.";
+
 const TAB_BASE =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors whitespace-nowrap";
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
@@ -797,6 +857,7 @@ export default function CoordNav() {
             // the number is a LOWER BOUND and gets the `≥` qualifier rather
             // than being printed as if it were the truth.
             totalKnown: alertsBadge.known,
+            stale: alertsBadge.stale,
             title: alertsBadge.known
               ? "unresolved alerts (coord's unpaged total)"
               : "this coord build does not report a total — at LEAST this many",
@@ -813,7 +874,12 @@ export default function CoordNav() {
               // keeps `data-total-known` off this badge entirely rather than
               // asserting a property the surface does not have.
               totalKnown: undefined as boolean | undefined,
-              title: undefined as string | undefined,
+              stale: notificationsBadge.stale,
+              // It HAD no title at all, alone among the badges this nav
+              // renders — so the one channel that could have carried the
+              // staleness qualification was empty, and a hover over the
+              // number said nothing about where it came from.
+              title: "unread notifications (coord's per-principal scalar)",
             }
           : null;
     return (
@@ -834,10 +900,22 @@ export default function CoordNav() {
                 ? "bg-red-500/25 text-red-200"
                 : active
                   ? "bg-primary-foreground/20"
-                  : "bg-muted text-foreground"
+                  : "bg-muted text-foreground",
+              // Dimmed, not recoloured: nothing is WRONG with a stale count —
+              // R6 keeps the muted tone for exactly this arm — it is simply
+              // not current, and a hue change here would read as a condition
+              // on a feed that has none.
+              badge.stale && "opacity-60"
             )}
-            title={badge.title}
+            title={
+              badge.stale ? `${badge.title} ${STALE_TITLE_SUFFIX}` : badge.title
+            }
             data-total-known={badge.totalKnown}
+            // Always emitted, like `data-total-known` above: the attribute's
+            // presence says this surface COMPUTES the answer, and `"false"` is
+            // the answer "the last poll landed", which is a different claim
+            // from a badge that never asked.
+            data-read-stale={badge.stale}
           >
             {badge.totalKnown === false ? "≥" : ""}
             {badge.count}
