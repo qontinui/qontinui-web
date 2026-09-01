@@ -272,7 +272,7 @@ export function deriveNotificationsHealth(
         level: "amber",
         headline: "These counts stopped updating",
         detail:
-          "the feed is answering but no longer carries the counts — what has arrived since is UNKNOWN",
+          "the counts are no longer being refreshed — the reads are landing without them, so what has arrived since is UNKNOWN",
         badges: countBadges(unreadCount, total),
         readIsCurrent: false,
       };

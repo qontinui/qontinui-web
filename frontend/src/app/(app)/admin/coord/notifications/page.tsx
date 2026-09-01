@@ -145,7 +145,12 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { CheckCheck, Filter, RefreshCw } from "lucide-react";
-import { HealthStrip, RecordList, readIsUnknown } from "@/components/console";
+import {
+  HealthStrip,
+  RecordList,
+  createReadSequence,
+  readIsUnknown,
+} from "@/components/console";
 import { NotificationRow } from "@/components/admin/coord/NotificationRow";
 import { deriveNotificationsHealth } from "@/components/admin/coord/notificationsHealth";
 import {
@@ -312,9 +317,28 @@ export default function CoordNotificationsPage() {
    */
   const queryGenRef = useRef(0);
 
-  /** Has a read ever delivered `unread_count`? A ref, because the writer below
-   *  has to consult it in the same tick it sets it. */
-  const scalarSeenRef = useRef(false);
+  /**
+   * Whether `unread_count` on screen came from the most recent read that could
+   * have carried it — as a SEQUENCE, through the console's shared module rather
+   * than a boolean this page spells for itself.
+   *
+   * Three writers touch that scalar and none of them ordered: the head read,
+   * `loadMore`, and `markRead`'s POST response. A flag was enough while only
+   * one of them wrote it; it stopped being enough the moment the POST started
+   * clearing it, because a POST that hangs past a head read can then land and
+   * report "current" about a number the newer read declined to confirm.
+   * `createReadSequence` is the same arithmetic `CoordNav`'s badges run — R6's
+   * own "import the predicate, do not re-spell it", applied to the module this
+   * page's audit produced.
+   *
+   * A ref, because a settling read has to see its own writes in the same tick.
+   */
+  const scalarSeqRef = useRef<ReturnType<typeof createReadSequence> | null>(
+    null
+  );
+  if (scalarSeqRef.current === null) {
+    scalarSeqRef.current = createReadSequence();
+  }
 
   /**
    * `fromHead` is not cosmetic. `applyEnvelope` now writes a staleness VERDICT
@@ -332,26 +356,29 @@ export default function CoordNotificationsPage() {
    * from.
    */
   const applyEnvelope = useCallback(
-    (body: NotificationsResponse, fromHead: boolean) => {
+    (body: NotificationsResponse, seq: number, fromHead: boolean) => {
+      const sequence = scalarSeqRef.current!;
       // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
       // previous value stands rather than silently reading zero — and, since
       // standing silently is what made the strip quote a frozen number as
       // current, absence now also says so.
       if (typeof body.total === "number") setTotal(body.total);
-      if (typeof body.unread_count === "number") {
-        setUnreadCount(body.unread_count);
-        scalarSeenRef.current = true;
-        if (fromHead) setScalarStale(false);
-      } else if (fromHead && scalarSeenRef.current) {
-        // Gated on having SEEN one. Without that gate the very first read,
-        // answering without the scalar, produced "These counts stopped
-        // updating / the feed is answering but NO LONGER carries the counts" —
-        // "no longer" and "since" both asserting an earlier good read that
-        // never happened. That state has its own arm and its own sentence
-        // ("The unread count did not come back"), and setting this flag ahead
-        // of it made that arm unreachable from this page.
-        setScalarStale(true);
+      const carried = typeof body.unread_count === "number";
+      // `counts: fromHead` is the whole of the paging fix. A cursor page can
+      // still DELIVER the scalar, but its silence says nothing — `pagingFailed`
+      // exists in this file precisely because "a failed Load more must not
+      // paint the head counts stale, since the 10s poller is still refreshing
+      // them", and letting a page's silence stale them brought that coupling
+      // back through the other door.
+      if (sequence.settle(seq, carried, fromHead) && carried) {
+        setUnreadCount(body.unread_count!);
       }
+      // The first read to answer WITHOUT the scalar is not a read that stopped
+      // carrying it: `isStale()` stays false until something has been
+      // delivered, so that state keeps its own arm and its own sentence ("The
+      // unread count did not come back") instead of being told it is a number
+      // that has gone out of date.
+      setScalarStale(sequence.isStale());
     },
     []
   );
@@ -360,6 +387,9 @@ export default function CoordNotificationsPage() {
   const fetchHead = useCallback(
     async (merge: boolean) => {
       const gen = queryGenRef.current;
+      // Taken BEFORE the request goes out, so the ticket orders reads by when
+      // they were issued rather than by when they happened to come back.
+      const scalarSeq = scalarSeqRef.current!.issue();
       try {
         const body = await httpClient.get<NotificationsResponse>(
           `${API}/notifications?${buildQuery({ kind, unreadOnly })}`,
@@ -385,7 +415,7 @@ export default function CoordNotificationsPage() {
           setNextCursor(body.next_cursor ?? null);
           setPagingFailed(false);
         }
-        applyEnvelope(body, true);
+        applyEnvelope(body, scalarSeq, true);
         setMigrationPending(false);
         setLoaded(true);
         // This query has now answered — the list may speak for it.
@@ -423,6 +453,7 @@ export default function CoordNotificationsPage() {
     const cursor = nextCursor;
     if (!cursor) return;
     const gen = queryGenRef.current;
+    const scalarSeq = scalarSeqRef.current!.issue();
     setLoadingMore(true);
     try {
       const body = await httpClient.get<NotificationsResponse>(
@@ -440,7 +471,7 @@ export default function CoordNotificationsPage() {
       // otherwise a fully-deduped page leaves an enabled button that does
       // nothing when clicked.
       setNextCursor(page.length === 0 ? null : (body.next_cursor ?? null));
-      applyEnvelope(body, false);
+      applyEnvelope(body, scalarSeq, false);
       setError(null);
       setPagingFailed(false);
     } catch (e) {
@@ -482,6 +513,7 @@ export default function CoordNotificationsPage() {
   const markRead = useCallback(
     async (selection: MarkReadSelection, bulk = false) => {
       const gen = queryGenRef.current;
+      const scalarSeq = scalarSeqRef.current!.issue();
       const ids = selectionIds(selection);
       setMarking(bulk || ids === null ? "all" : (ids[0] ?? "all"));
       try {
@@ -503,25 +535,28 @@ export default function CoordNotificationsPage() {
               : { ...n, read_at: now }
           )
         );
-        if (typeof body?.unread_count === "number") {
-          setUnreadCount(body.unread_count);
-          // The mark-read door is a DELIVERY of this scalar, and the
-          // bookkeeping has to say so — coord computed it for this principal
-          // just now, which is the same fact a head read carries.
-          //
-          // It was left out when `applyEnvelope` became the sole author of the
-          // verdict, and the `scalarSeenRef` gate then made the omission
-          // PERMANENT in one direction: against a feed that never carries the
-          // scalar, a mark-all would write a real `0` into state while
-          // `scalarSeenRef` stayed false, so `scalarStale` could never be set
-          // and the `unreadCount == null` arm could never fire again. The strip
-          // settled into a green "you have seen everything coord recorded" over
-          // a number the FEED has never delivered, with no read able to
-          // dislodge it. The mirror case is as bad the other way: a fresh POST
-          // scalar left labelled "these counts stopped updating".
-          scalarSeenRef.current = true;
-          setScalarStale(false);
+        // The mark-read door is a DELIVERY of this scalar — coord computed it
+        // for this principal just now — and the bookkeeping has to say so. It
+        // was left out when `applyEnvelope` became the sole author of the
+        // verdict, and a later "have we ever seen one?" gate then made the
+        // omission PERMANENT in one direction: against a feed that never
+        // carries the scalar, a mark-all wrote a real `0` into state while the
+        // gate stayed shut, so nothing could ever stale it again and the strip
+        // settled into a green "you have seen everything coord recorded" over a
+        // number the FEED has never delivered.
+        //
+        // `counts: false` is what keeps it a delivery WITHOUT making it a read:
+        // this is a write's response, so it can carry the scalar as a courtesy,
+        // but its silence says nothing about the feed and must never stale the
+        // strip. And going through the sequence at all is what stops the
+        // reverse — a POST that hangs past a newer head read landing afterwards
+        // and reporting "current" about a number that read declined to confirm.
+        const scalarCarried = typeof body?.unread_count === "number";
+        const sequence = scalarSeqRef.current!;
+        if (sequence.settle(scalarSeq, scalarCarried, false) && scalarCarried) {
+          setUnreadCount(body.unread_count!);
         }
+        setScalarStale(sequence.isStale());
         setError(null);
         // `unread_only` view: marked rows no longer match the filter.
         if (unreadOnly) fetchHead(false);

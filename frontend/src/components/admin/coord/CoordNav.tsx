@@ -114,6 +114,7 @@ import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
+import { createReadSequence } from "@/components/console";
 import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
@@ -522,6 +523,11 @@ function isLeafActive(pathname: string, leaf: NavLeaf): boolean {
   );
 }
 
+interface AlertsRollupRow {
+  severity?: string;
+  resolved_at?: string | null;
+}
+
 interface AlertsRollup {
   /**
    * `resolved_at` is carried because the degraded arm below has to read it.
@@ -530,7 +536,7 @@ interface AlertsRollup {
    * degraded arm fires exactly on the build that may have dropped
    * `include_resolved=false` along with `severity`.
    */
-  alerts?: Array<{ severity?: string; resolved_at?: string | null }>;
+  alerts?: AlertsRollupRow[];
   /** Rows MATCHING the query, unpaged. Absent on an un-upgraded coord. */
   total_count?: number;
 }
@@ -538,7 +544,7 @@ interface AlertsRollup {
 /** `{alerts:[…]}` and a bare list are both accepted (two coord vintages). */
 function readRollup(body: unknown): AlertsRollup {
   if (Array.isArray(body)) {
-    return { alerts: body as Array<{ severity?: string }> };
+    return { alerts: body as AlertsRollupRow[] };
   }
   return (body ?? {}) as AlertsRollup;
 }
@@ -553,25 +559,12 @@ function readRollup(body: unknown): AlertsRollup {
  * critical flag, the unread count), and hand-rolling it three times is the
  * drift this lineage exists to stop.
  *
- * **Staleness is a comparison of SEQUENCES, not a boolean set in a catch.** The
- * first cut set a flag in the failure path and cleared it in the success path,
- * which is wrong in both directions once replies can overtake each other on a
- * 60s timer:
- *
- *  - a superseded REJECTION landing after a newer success re-staled a number
- *    that had just been refreshed;
- *  - and the guard that fixed that (`return` unless this is the newest request
- *    ISSUED) threw away a superseded but SUCCESSFUL read — poll A hangs, poll B
- *    fails, A then answers with a real number, and the badge discards it and
- *    renders nothing. That is information loss, the opposite of the stale arm's
- *    "those numbers are real and still actionable".
- *
- * So: `completed` is the newest read that finished, `delivered` the newest that
- * carried a value, and **stale ⇔ delivered < completed** — a newer read
- * finished and did not replace what is on screen. It says nothing about WHY
- * (rejection, or a 2xx carrying no scalar: a coord build predating the field,
- * which `notificationsHealth.tsx` argues is reachable), because the badge does
- * not know why and must not say.
+ * The arithmetic is `console/readSequence.ts` — imported, not re-spelled,
+ * because `/admin/coord/notifications` needs the same verdict about the same
+ * scalar and two spellings of it drift invisibly. That module carries the
+ * argument for why staleness is a comparison of SEQUENCES rather than a flag
+ * set in a `catch`, and both wrong answers that produced it. This hook is the
+ * React shell around it: state for what renders, refs for what settles.
  *
  * `hasRead` is separate: has any read ever delivered? It gates the RETAINED
  * ZERO — see the render gate — and a value never read has no retained fact to
@@ -587,32 +580,20 @@ function useRetainedValue<T>(initial: T): {
   const [value, setValue] = useState<T>(initial);
   const [hasRead, setHasRead] = useState(false);
   const [stale, setStale] = useState(false);
-  const deliveredRef = useRef(0);
-  const completedRef = useRef(0);
-  // Mirrors `hasRead`, because `settle` must read it in the same tick it
-  // sets it and state does not update synchronously.
-  const hasReadRef = useRef(false);
+  // The sequence lives in a ref: `settle` has to read its own writes in the
+  // same tick, and state does not update synchronously.
+  const seqRef = useRef<ReturnType<typeof createReadSequence> | null>(null);
+  if (seqRef.current === null) seqRef.current = createReadSequence();
 
   const settle = useCallback(
     (seq: number, delivered: { value: T } | null): boolean => {
-      completedRef.current = Math.max(completedRef.current, seq);
-      let applied = false;
-      // `>=` rather than `>`: an out-of-order success must not overwrite a
-      // newer one, but the same seq settling twice is not a thing.
-      if (delivered && seq >= deliveredRef.current) {
-        deliveredRef.current = seq;
+      const sequence = seqRef.current!;
+      const applied = sequence.settle(seq, delivered !== null);
+      if (applied && delivered) {
         setValue(delivered.value);
-        hasReadRef.current = true;
         setHasRead(true);
-        applied = true;
       }
-      // `hasRead &&` is not redundant. Without it the very first read to
-      // finish without delivering publishes `stale: true` — "from an earlier
-      // read", when there has been no read. The count axes hide that behind
-      // the render gate; the critical axis is ungated, so it shipped the
-      // attribute. An axis that has never read is UNKNOWN, which is a
-      // different claim and has its own channel.
-      setStale(hasReadRef.current && deliveredRef.current < completedRef.current);
+      setStale(sequence.isStale());
       return applied;
     },
     []
@@ -729,6 +710,14 @@ function useAlertsBadge(): {
         // filters were honoured. Reading severity alone therefore asserted an
         // UNRESOLVED critical off a row coord had already cleared.
         // `alertStatus.ts` draws the same line from the same field.
+        //
+        // Best-effort, and the residual is stated rather than implied: a build
+        // that omits `resolved_at` entirely is trusted as unresolved. That is
+        // the deliberate trade — `resolved_at` is a data column rather than a
+        // request filter, so it is far likelier to be served than a filter is
+        // to be honoured, and demanding its PRESENCE would turn a correct red
+        // into silence for any build that drops null fields. Erring loud beats
+        // erring calm on this axis.
         settleCritical(seq, { value: true });
       } else {
         // ...and absence does NOT. This arm used to answer `false` here, which

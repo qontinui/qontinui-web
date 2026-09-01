@@ -17,7 +17,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
@@ -901,7 +901,12 @@ describe("CoordNotificationsPage", () => {
     // Its OWN sentence: nothing is failing here, so telling the operator the
     // feed could not be re-read would send them after an outage that is not
     // happening.
-    expect(strip).toHaveTextContent("the feed is answering but no longer");
+    expect(strip).toHaveTextContent("the counts are no longer being refreshed");
+    // Names the READS, not the feed. In the sibling test below the feed has
+    // never carried the scalar and only the POST has, so "the feed no longer
+    // carries them" would presuppose a feed delivery that never happened —
+    // the same over-reach one register down.
+    expect(strip).not.toHaveTextContent("the feed is answering");
     // The number is retained and shown — it is real — and no longer quotable.
     expect(strip).toHaveTextContent("7");
     expect(
@@ -1051,8 +1056,10 @@ describe("CoordNotificationsPage", () => {
     await waitFor(() =>
       expect(strip).toHaveTextContent("These counts stopped updating")
     );
-    // Which is now a true sentence: a read HAS delivered this scalar.
-    expect(strip).toHaveTextContent("no longer carries the counts");
+    // ...and the sentence is true in this path too, which is why it names the
+    // READS rather than the feed: here the FEED has never carried the scalar
+    // and only the mark-read door has.
+    expect(strip).toHaveTextContent("the counts are no longer being refreshed");
   });
 
   it("un-stales the strip when mark-read brings a fresh scalar", async () => {
@@ -1091,6 +1098,89 @@ describe("CoordNotificationsPage", () => {
     expect(
       screen.getByTestId("coord-notifications-mark-all-read")
     ).toBeDisabled();
+  });
+
+  it("does not let a WRITE's silence stale the counts", async () => {
+    // The other half of treating the POST as a delivery: it is a delivery
+    // WITHOUT being a read. `POST /mark-read` returns `unread_count` as a
+    // courtesy, and a response that omits it says nothing whatever about
+    // whether the feed is still carrying the scalar — so its silence must not
+    // stale a strip the head reads are keeping current. Making the write count
+    // as a read turns every scalar-less mark-read into "the counts are no
+    // longer being refreshed" over a feed that is refreshing them fine.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+      unread_count: 7,
+    });
+    httpPost.mockResolvedValue({ marked: 7 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(httpPost).toHaveBeenCalled());
+
+    expect(strip).not.toHaveTextContent("no longer being refreshed");
+    expect(strip).toHaveTextContent("7 unread events");
+  });
+
+  it("does not let a slow mark-read un-stale a newer read that answered without the scalar", async () => {
+    // Three writers touch this scalar — the head read, Load more, and the POST
+    // — and treating the POST as a delivery without ORDERING it opened the
+    // window one door over: the POST hangs, a newer head read lands carrying
+    // nothing and correctly turns the strip amber, and then the POST resolves
+    // and paints green over it. The number is honest (coord answered 0 when it
+    // processed the write); "current" is not, because a newer read finished
+    // afterwards and could not confirm one.
+    let resolvePost: ((v: unknown) => void) | null = null;
+    httpPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        })
+    );
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    // The POST goes out and hangs.
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(httpPost).toHaveBeenCalled());
+
+    // A newer head read lands, carrying no scalar.
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+
+    // Now the superseded POST answers.
+    await act(async () => {
+      resolvePost?.({ marked: 7, unread_count: 0 });
+      await Promise.resolve();
+    });
+
+    // Its number may be applied — it is the newest one anybody delivered — but
+    // the verdict stands, because a newer READ finished without confirming it.
+    expect(strip).toHaveTextContent("These counts stopped updating");
+    expect(strip).not.toHaveTextContent("you have seen everything coord recorded");
   });
 
   describe("the ?ref= banner", () => {
