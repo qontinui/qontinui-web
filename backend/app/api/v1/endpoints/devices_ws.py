@@ -52,6 +52,7 @@ from app.services.coord_jwks import (
     CoordTokenInvalidError,
     coord_jwks_client,
     describe_token_rejection,
+    identity_mismatch_remedy_fields,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
@@ -153,9 +154,9 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
                 served_kids=exc.served_kids,
                 note=(
                     "runner presented a token minted by a different coord "
-                    "than COORD_URL points at; check which coord this "
-                    "backend verifies against"
+                    "than this backend verifies against"
                 ),
+                **identity_mismatch_remedy_fields(),
             )
         await reject(websocket, message)
         return
