@@ -21111,7 +21111,7 @@
             "type": "string"
           },
           "reason": {
-            "description": "REQUIRED, non-blank. It lands in the `coord.user_overrides` row, the `coord.alerts` row and the `operator_audit` stamp \u2014 the audit trail is the whole point of routing this through coord rather than a shell.",
+            "description": "REQUIRED, non-blank. It lands in coord's user-override row, its alert row and the `operator_audit` stamp \u2014 the audit trail is the whole point of routing this through coord rather than a shell.",
             "title": "Reason",
             "type": "string"
           },
