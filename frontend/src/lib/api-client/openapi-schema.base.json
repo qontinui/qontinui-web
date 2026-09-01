@@ -15217,6 +15217,35 @@
         "title": "DomainKnowledgeUpdate",
         "type": "object"
       },
+      "DrainRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/drain``.\n\n``extra=\"forbid\"`` is not decoration \u2014 coord's struct is\n``deny_unknown_fields``, so a stray key would return a 422 carrying a\nserde message. Rejecting it here makes it a local, legible 422 and keeps\nthe wire body exactly the shape coord accepts.\n\n``until`` is REQUIRED and is the whole point of \u00a7D2: *a drain with no\ndeadline is how a machine silently leaves the fleet forever.* It is not\n``| None``, it has no default, and nothing in this module may grow one.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "until",
+          "reason"
+        ],
+        "title": "DrainRequestBody",
+        "type": "object"
+      },
       "EditCommandHistoryResponse": {
         "description": "Schema for command history list",
         "properties": {
@@ -48347,6 +48376,29 @@
         "title": "UIBridgeTransitionUpdate",
         "type": "object"
       },
+      "UndrainRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/undrain``.\n\nA reason is required here too, and for the same purpose: releasing a\nmachine early is as much an operator decision as holding it, and coord\nrecords both.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "UndrainRequestBody",
+        "type": "object"
+      },
       "UnifiedWorkflowListResponse": {
         "description": "Response for listing workflows.\n\nItems are the lossless canonical workflow objects (camelCase) augmented\nwith server-authoritative fields. They are plain dicts rather than a typed\nmodel so no field is ever dropped on serialization.",
         "properties": {
@@ -81278,6 +81330,73 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/drain": {
+      "get": {
+        "description": "Return which machines coord is currently holding out of the fleet.\n\nProxies coord's ``GET /coord/fleet/drain``, body passed through untouched\n\u2014 this route declares no ``response_model``, so nothing here filters a\nfield coord adds.\n\nThe body carries the ACTIVE drain entries keyed by device UUID, each with\n``until``, ``reason``, ``drained_by`` and ``drained_at``. Expiry is\nevaluated by coord on READ (there is no sweeper and no expiry job), so an\nentry that has lapsed simply stops appearing; a caller holding a response\nacross the deadline must re-read rather than assume.\n\n``drained_by`` may come back as coord's ``[redacted]`` placeholder for a\nprincipal that may not see operator identities. That is a value, not an\nabsence \u2014 \"someone drained this and you are not being told who\" is a\ndifferent fact from \"nobody is recorded\", and a caller that renders the\nplaceholder as blank reports the second.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n``DrainSet::Known(vec![])`` and ``DrainSet::Unknown`` apart on purpose, and\nso must every hop after it: a 404 (this coord predates the read route), a\n502/504 from the transport, or a body in an unrecognised shape is UNKNOWN,\nnever \"no machine is drained\" (``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The browser client\n(`useFleetDrain.ts`) is written to that rule and renders UNKNOWN on each\nof them; the 404 arm in particular is the EXPECTED reading during the\nwindow where this console is a deploy ahead of coord.",
+        "operationId": "api_v1_operations_fleet_drain_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Drain Api V1 Operations Fleet Drain Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Drain",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Stop coord sending one machine new work until ``until``.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim\n\u2014 because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``\nis serialised as RFC 3339; ``device_id`` as its canonical UUID string.\n\nCoord's refusals are typed and mean different things:\n``admin_required`` (not an admin in your own tenant),\n``device_not_in_tenant`` (the drain reaches every tenant that shares the\nmachine, so the caller must be one of them), and a 400 from\n``validate_drain``. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on\nthis path may imply that it does.",
+        "operationId": "api_v1_operations_fleet_drain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Drain Api V1 Operations Fleet Drain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Drain",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/health": {
       "get": {
         "description": "Return the fleet-health rollup from coord (tenant-scoped).\n\nThe body is coord's ``get_fleet_health`` envelope, passed through\nuntouched: ``devices`` (the per-machine\n``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,\n``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,\n``kv_bucket`` and ``as_of``. This route declares no\n``response_model``, so nothing here filters a field coord adds.\n\nThose nine are what coord emits **today**. Two more are read by this\nrepo's client and appear nowhere in coord's source: ``FleetHealthPayload``\ndeclares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page\nbranches on ``alerts_scrape_up === false``. They are FORWARD\ndeclarations \u2014 deliberately absence-tolerant, since the client must\ntreat an absent flag as *measured* \u2014 so they are not part of this\ncontract and this route synthesises neither. The branch reading them\nis unreachable until coord grows them.\n\nThe contract is written down because the sibling resource-samples\nroute learned the lesson first: this\ndocstring is what FastAPI renders into ``openapi-schema.json`` /\n``openapi-schema.base.json``, which are committed and drift-gated by\n``backend-ci.yml``, so it is this repo's contract of record for the\nroute. Until now it described none of a wire its own browser reads\non a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,\n``SpawnModal.tsx``).\n\nThe fields that make the surface honest rather than merely working:\n\n* ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:\n  ``healthy | degraded | stale | partitioned | abandoned``, plus\n  ``unknown`` when the stored string did not parse. It is\n  non-optional in coord's snapshot, so today's coord always sends\n  it; callers still treat an absent one as *unknown* rather than\n  healthy, which is the rule the whole surface rests on. Read the\n  vocabulary as OPEN: a state a newer coord adds must render\n  *unknown*, not fail to parse, so nothing on this path may narrow\n  it to a closed union.\n* ``stale`` is the newest value and the only DERIVED one \u2014 computed\n  at read time and never persisted (coord's ``devices_state_chk``\n  admits only the other four). It means **the heartbeat is fine and\n  the resource SAMPLER has gone quiet**, which is deliberately not\n  ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``\n  beside a WSL-lane sample 22 minutes old, and calling that a\n  network partition would have sent an operator to debug the wrong\n  layer.\n* ``devices[].heartbeat_state`` is the machine's PERSISTED ladder\n  state, before the freshness overlay \u2014 carried so that the overlay\n  **loses nothing**. It is the difference between \"this box is\n  unreachable\" and \"this box is fine and its publisher is quiet\",\n  and a caller that renders ``state`` alone cannot tell an operator\n  which. A spawn picker is the case that bites: ``stale`` is a\n  perfectly spawnable machine and ``partitioned`` is not.\n* ``devices[].state_raw`` is present **only** when the stored state\n  failed to parse (``state`` is then ``\"unknown\"``); it carries what\n  the row actually said. Omitted entirely in the common case, so its\n  presence is the anomaly marker \u2014 do not default it in.\n* ``devices[].newest_sample_age_secs`` is seconds since that\n  device's newest resource sample, and\n  ``devices[].sample_stale_after_secs`` is the threshold it was\n  graded against. **It is NOT the configured cadence**: coord\n  computes ``sample_interval_secs \u00d7 SAMPLE_STALE_INTERVALS`` with\n  that multiplier pinned at 4, falling back to a 30s interval where\n  the tenant set none \u2014 so the default threshold is 120s, not 30s.\n  **The threshold rides the wire for the same reason the resource\n  strip's floors do** \u2014 so the client keeps no constant of its own\n  and cannot disagree with coord about where stale begins, which is\n  exactly the disagreement a client re-deriving \"4 \u00d7 the interval\"\n  would eventually ship. ``null`` on either is UNKNOWN: not zero,\n  and not \"fresh\". They are also independently nullable: a device\n  with no sample in the lookback arrives with a null age and a\n  POPULATED threshold.\n* ``devices[].within_dispatch_window`` says whether coord would\n  actually expect this machine to answer. The roster stopped\n  dropping out-of-window devices and ships the answer instead, so\n  *listed* no longer implies *reachable*; the ``liveness`` block\n  (``within_dispatch_window`` / ``outside_dispatch_window`` /\n  ``heartbeat_ttl_secs``) is the same split rolled up.\n* ``excluded`` is ``null`` when coord did not MEASURE the exclusion\n  set \u2014 see ``excluded_error`` \u2014 and never means \"none excluded\".\n\n**The one caveat a caller must not read as an all-clear**, stated\nprecisely because the imprecise version is worse than none. A\nPostgres outage is NOT this case: the roster query acquires the pool\nfirst and its failure returns 500, which this proxy raises rather\nthan passing off as an empty fleet. The caveat is the narrower\n**mid-request** one \u2014 the roster succeeded and a LATER acquire did\nnot (pool exhaustion, an acquire timeout). coord then logs *\"no\nfreshness overlay, no alert rollup this tick\"* and still answers\n200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,\nindistinguishable from a genuinely quiet fleet, with every device's\n``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to\n``stale``** (a persisted ``'stale'`` string would still decode \u2014\ncoord parses the value so such a row is not silently dropped \u2014 but\nthe CHECK is what makes that improbable, not this path).\n\ncoord ships no flag distinguishing that tick from a healthy one, so\nzeros here are not evidence of quiet and an absent ``stale`` is not\nevidence of a live publisher\n(``[policy: silent-empty-is-unknown]``).",
@@ -81685,6 +81804,53 @@
           }
         ],
         "summary": "Get All Tasks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/undrain": {
+      "post": {
+        "description": "Release one machine back into the fleet before its drain expires.\n\nCoord answers with ``changed: false`` when the request altered nothing \u2014\nan undrain of a machine that was not held. That is passed through rather\nthan dressed up as a successful release: \"I released it\" and \"it was not\nheld\" are different outcomes and the operator is entitled to tell them\napart.",
+        "operationId": "api_v1_operations_fleet_undrain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndrainRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Undrain Api V1 Operations Fleet Undrain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Undrain",
         "tags": [
           "operations"
         ]
