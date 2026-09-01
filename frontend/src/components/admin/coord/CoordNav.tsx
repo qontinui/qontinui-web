@@ -574,6 +574,8 @@ function useRetainedValue<T>(initial: T): {
   value: T;
   hasRead: boolean;
   stale: boolean;
+  /** Take a ticket before issuing a read. */
+  issue: () => number;
   /** @returns whether this response's value was applied. */
   settle: (seq: number, delivered: { value: T } | null) => boolean;
 } {
@@ -585,21 +587,30 @@ function useRetainedValue<T>(initial: T): {
   const seqRef = useRef<ReturnType<typeof createReadSequence> | null>(null);
   if (seqRef.current === null) seqRef.current = createReadSequence();
 
+  // Re-exported rather than left to each caller's own counter. The hooks below
+  // minted their own, which was correct and a footgun: the module's `issued`
+  // stayed at zero forever, so anyone reaching for `issue()` on a nav axis
+  // would get `1`, fail `seq >= delivered` after the first poll, and have their
+  // reads SILENTLY declined — no error, no failing test.
+  const issue = useCallback(() => seqRef.current!.issue(), []);
+
   const settle = useCallback(
     (seq: number, delivered: { value: T } | null): boolean => {
       const sequence = seqRef.current!;
       const applied = sequence.settle(seq, delivered !== null);
-      if (applied && delivered) {
-        setValue(delivered.value);
-        setHasRead(true);
-      }
+      if (applied && delivered) setValue(delivered.value);
+      // Mirrored from the module rather than tracked a second time — two
+      // spellings of one fact is the drift this module exists to stop, and a
+      // hook that re-spells it is that drift one level up. It is React state
+      // because the badge re-renders on it; the ANSWER is the module's.
+      setHasRead(sequence.hasDelivered());
       setStale(sequence.isStale());
       return applied;
     },
     []
   );
 
-  return { value, hasRead, stale, settle };
+  return { value, hasRead, stale, issue, settle };
 }
 
 /**
@@ -653,12 +664,15 @@ function useAlertsBadge(): {
   const [known, setKnown] = useState(false);
   const countAxis = useRetainedValue(0);
   const criticalAxis = useRetainedValue(false);
-  const seqRef = useRef(0);
-  const { settle: settleCount } = countAxis;
-  const { settle: settleCritical } = criticalAxis;
+  const { issue: issueCount, settle: settleCount } = countAxis;
+  const { issue: issueCritical, settle: settleCritical } = criticalAxis;
 
   const fetchCount = useCallback(async () => {
-    const seq = ++seqRef.current;
+    // One ticket per axis, taken together before either read goes out. They
+    // stay in lockstep because every poll settles both exactly once, and each
+    // axis only ever compares against its own sequence.
+    const seq = issueCount();
+    const critSeq = issueCritical();
     // Two `limit=1` reads: the unresolved total for the number, and a
     // severity-filtered total for the red flag. The flag cannot come from
     // the returned rows — that is precisely the truncated-slice bug.
@@ -694,7 +708,7 @@ function useAlertsBadge(): {
       const critBody = readRollup(criticals.value);
       const critTotal = critBody.total_count;
       if (typeof critTotal === "number") {
-        settleCritical(seq, { value: critTotal > 0 });
+        settleCritical(critSeq, { value: critTotal > 0 });
       } else if (
         (critBody.alerts ?? []).some(
           (a) => a.severity === "critical" && !a.resolved_at
@@ -718,7 +732,7 @@ function useAlertsBadge(): {
         // to be honoured, and demanding its PRESENCE would turn a correct red
         // into silence for any build that drops null fields. Erring loud beats
         // erring calm on this axis.
-        settleCritical(seq, { value: true });
+        settleCritical(critSeq, { value: true });
       } else {
         // ...and absence does NOT. This arm used to answer `false` here, which
         // asserts a fleet-wide negative from a `limit=1` window: the 2026-08-14
@@ -727,13 +741,13 @@ function useAlertsBadge(): {
         // the same error pointed the other way, and it is worse, because it is
         // the reassuring direction. A read that did not answer the question
         // settles as a NON-delivery, and the badge says the accent is unknown.
-        settleCritical(seq, null);
+        settleCritical(critSeq, null);
       }
     } else {
       log.warn("alerts badge severity fetch failed", criticals.reason);
-      settleCritical(seq, null);
+      settleCritical(critSeq, null);
     }
-  }, [settleCount, settleCritical]);
+  }, [issueCount, issueCritical, settleCount, settleCritical]);
 
   useEffect(() => {
     fetchCount();
@@ -805,11 +819,10 @@ function useNotificationsBadge(): {
   stale: boolean;
 } {
   const countAxis = useRetainedValue(0);
-  const seqRef = useRef(0);
-  const { settle } = countAxis;
+  const { issue, settle } = countAxis;
 
   const fetchCount = useCallback(async () => {
-    const seq = ++seqRef.current;
+    const seq = issue();
     try {
       const body = await httpClient.get<{ unread_count?: number }>(
         NOTIFICATIONS_API,
@@ -829,7 +842,7 @@ function useNotificationsBadge(): {
       log.warn("notifications badge fetch failed", err);
       settle(seq, null);
     }
-  }, [settle]);
+  }, [issue, settle]);
 
   useEffect(() => {
     fetchCount();
