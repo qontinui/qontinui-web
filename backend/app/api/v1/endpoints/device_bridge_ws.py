@@ -1097,35 +1097,36 @@ async def _runner_proxy_relay(
         # exact prior value so an older mobile build is unaffected.
         request_id = _relay_request_id(request)
         liveness = await _relay_device_liveness(request, device_uuid, user_id)
+        # Built ONCE and spread into both the body and the log line, so the two
+        # surfaces cannot drift about what was known.
+        #
+        # Present only when the coord read actually answered. A failed lookup
+        # leaves both keys off entirely rather than sending ``null``, because
+        # ``null`` already carries a strong meaning here — the column is NULL,
+        # so the runner has never registered — and a lookup that failed has no
+        # basis for that claim. See ``_DeviceLiveness``. On the log surface the
+        # stakes are the same: a ``ws_connected_at=None`` kwarg would make one
+        # query return the never-registered rows and the coord-outage rows
+        # together, which is the collapse this whole change removes.
+        liveness_fields: dict[str, object] = (
+            {
+                # The claim clock — how long ago the runner last held a WS
+                # session. This is what separates "never registered"
+                # (``null``) from "flapping right now" (seconds ago).
+                "ws_connected_at": liveness.ws_connected_at,
+                # The heartbeat clock. A different fact; see
+                # ``_relay_device_liveness``.
+                "last_seen_at": liveness.last_seen_at,
+            }
+            if liveness.known
+            else {}
+        )
         content: dict[str, object] = {
             "detail": "runner not connected",
             "device_id": str(device_uuid),
             "request_id": request_id,
+            **liveness_fields,
         }
-        # Present ONLY when the coord read actually answered. A failed lookup
-        # leaves both keys off entirely rather than sending ``null``, because
-        # ``null`` already carries a strong meaning here — the column is NULL,
-        # so the runner has never registered — and a lookup that failed has no
-        # basis for that claim. See ``_DeviceLiveness``.
-        if liveness.known:
-            # The claim clock — how long ago the runner last held a WS
-            # session. This is what separates "never registered" (``null``)
-            # from "flapping right now" (seconds ago).
-            content["ws_connected_at"] = liveness.ws_connected_at
-            # The heartbeat clock. A different fact; see
-            # ``_relay_device_liveness``.
-            content["last_seen_at"] = liveness.last_seen_at
-        # The log carries the SAME keys as the body, present under exactly the
-        # same condition. A ``ws_connected_at=None`` kwarg here would put the
-        # ambiguity straight back on the surface an operator actually greps:
-        # a query for this event with a null clock would return the
-        # never-registered rows and the coord-outage rows together.
-        # ``liveness_known`` names which population a row is in without
-        # needing the absence to be noticed.
-        liveness_fields: dict[str, object] = {"liveness_known": liveness.known}
-        if liveness.known:
-            liveness_fields["ws_connected_at"] = liveness.ws_connected_at
-            liveness_fields["last_seen_at"] = liveness.last_seen_at
         logger.warning(
             "runner_proxy_relay_not_connected",
             device_id=str(device_uuid),
@@ -1133,6 +1134,9 @@ async def _runner_proxy_relay(
             path=path,
             method=request.method,
             request_id=request_id,
+            # Names which population a row is in without the absence of the
+            # two clocks having to be noticed.
+            liveness_known=liveness.known,
             **liveness_fields,
         )
         return JSONResponse(status_code=503, content=content)
