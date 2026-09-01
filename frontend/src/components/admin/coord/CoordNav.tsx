@@ -582,6 +582,9 @@ function useRetainedValue<T>(initial: T): {
   const [stale, setStale] = useState(false);
   const deliveredRef = useRef(0);
   const completedRef = useRef(0);
+  // Mirrors `hasRead`, because `settle` must read it in the same tick it
+  // sets it and state does not update synchronously.
+  const hasReadRef = useRef(false);
 
   const settle = useCallback(
     (seq: number, delivered: { value: T } | null): boolean => {
@@ -592,10 +595,17 @@ function useRetainedValue<T>(initial: T): {
       if (delivered && seq >= deliveredRef.current) {
         deliveredRef.current = seq;
         setValue(delivered.value);
+        hasReadRef.current = true;
         setHasRead(true);
         applied = true;
       }
-      setStale(deliveredRef.current < completedRef.current);
+      // `hasRead &&` is not redundant. Without it the very first read to
+      // finish without delivering publishes `stale: true` — "from an earlier
+      // read", when there has been no read. The count axes hide that behind
+      // the render gate; the critical axis is ungated, so it shipped the
+      // attribute. An axis that has never read is UNKNOWN, which is a
+      // different claim and has its own channel.
+      setStale(hasReadRef.current && deliveredRef.current < completedRef.current);
       return applied;
     },
     []
@@ -632,6 +642,14 @@ function useRetainedValue<T>(initial: T): {
  * `notificationsHealth.tsx` states the governing rule: *"The two scalars are
  * INDEPENDENT: coord can answer with one and not the other, and each renders
  * what is known about itself."*
+ *
+ * **One silence this badge still carries and cannot qualify.** The accent has
+ * nothing to attach to without a count, so a CONFIRMED critical whose count
+ * read has never landed renders nothing at all. Left that way deliberately:
+ * inventing a badge would mean inventing a number, which is the fabrication
+ * this surface is being fixed for, and the alerts PAGE is where an operator
+ * goes for the condition itself. Recorded rather than implied, because it is
+ * the last place a silence here means more than "nothing to show".
  */
 function useAlertsBadge(): {
   count: number;
@@ -684,14 +702,26 @@ function useAlertsBadge(): {
 
     if (criticals.status === "fulfilled") {
       const critBody = readRollup(criticals.value);
-      settleCritical(seq, {
-        value:
-          typeof critBody.total_count === "number"
-            ? critBody.total_count > 0
-            : // Degraded: the severity filter was dropped too, so fall back to
-              // inspecting whatever rows came back.
-              (critBody.alerts ?? []).some((a) => a.severity === "critical"),
-      });
+      const critTotal = critBody.total_count;
+      if (typeof critTotal === "number") {
+        settleCritical(seq, { value: critTotal > 0 });
+      } else if (
+        (critBody.alerts ?? []).some((a) => a.severity === "critical")
+      ) {
+        // Degraded — an un-upgraded coord dropped `severity` too — but a
+        // critical row IN the sample PROVES a critical exists. Existence
+        // survives sampling.
+        settleCritical(seq, { value: true });
+      } else {
+        // ...and absence does NOT. This arm used to answer `false` here, which
+        // asserts a fleet-wide negative from a `limit=1` window: the 2026-08-14
+        // defect above, inverted. That one was "a flag that is always on
+        // carries no information"; answering `false` from an empty sample is
+        // the same error pointed the other way, and it is worse, because it is
+        // the reassuring direction. A read that did not answer the question
+        // settles as a NON-delivery, and the badge says the accent is unknown.
+        settleCritical(seq, null);
+      }
     } else {
       log.warn("alerts badge severity fetch failed", criticals.reason);
       settleCritical(seq, null);
@@ -997,9 +1027,18 @@ export default function CoordNav() {
             critical: alertsBadge.critical && alertsBadge.count > 0,
             criticalKnown: alertsBadge.criticalKnown,
             criticalStale: alertsBadge.criticalStale,
+            // Three arms, not two. Suppressing the `≥` glyph on a zero and
+            // leaving the SENTENCE would have moved the vacuous claim into the
+            // channel the fix routed everything else into: "at LEAST" zero is
+            // true of every state there is. And the fresh-total sentence is not
+            // the fallback either — saying "coord's unpaged total" about a
+            // build that served no total would trade one false claim for a
+            // worse one.
             title: alertsBadge.known
               ? "unresolved alerts (coord's unpaged total)"
-              : "this coord build does not report a total — at LEAST this many",
+              : alertsBadge.count > 0
+                ? "this coord build does not report a total — at LEAST this many"
+                : "this coord build does not report a total, and the window it served was empty — how many there are is UNKNOWN",
           }
         : leaf.testId === "coord-nav-notifications"
           ? {

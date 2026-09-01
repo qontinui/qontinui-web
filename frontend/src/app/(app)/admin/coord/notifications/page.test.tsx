@@ -946,6 +946,76 @@ describe("CoordNotificationsPage", () => {
     ).toBeEnabled();
   });
 
+  it("does not say counts stopped updating before any of them started", async () => {
+    // A FIRST read that answers without the scalar is not a read that stopped
+    // carrying it. Flagging both alike put "no longer" and "since" in front of
+    // an operator who had never had a good read — and, worse, made the arm
+    // written for exactly this state unreachable, because it is checked after
+    // the stale one.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+    });
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("The unread count did not come back")
+    );
+    expect(strip).not.toHaveTextContent("no longer");
+    expect(strip).not.toHaveTextContent("stopped updating");
+    // `total` DID come back, and one missing scalar does not make the other
+    // unknown.
+    expect(screen.getByTestId("coord-notifications-total")).toHaveTextContent(
+      "900 total"
+    );
+  });
+
+  it("does not let a cursor page stale the head counts", async () => {
+    // `pagingFailed` exists in this file precisely so a failed "Load more"
+    // cannot paint the head counts stale while the 10s poller is still
+    // refreshing them. Writing the scalar verdict from `applyEnvelope` — which
+    // both reads call — reintroduced that coupling through the other door: a
+    // cursor page answering without the scalar flipped a green strip to
+    // "These counts stopped updating", as a direct result of the operator's
+    // own click.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: "opaque",
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ notification_id: "second" })],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-health")
+    ).toHaveTextContent("7 unread events");
+
+    await user.click(screen.getByTestId("coord-notifications-load-more"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-notifications-load-more")
+      ).not.toBeInTheDocument()
+    );
+
+    // The page landed and appended; the HEAD counts are the poller's business
+    // and are untouched.
+    expect(
+      screen.getByTestId("coord-notifications-health")
+    ).toHaveTextContent("7 unread events");
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
