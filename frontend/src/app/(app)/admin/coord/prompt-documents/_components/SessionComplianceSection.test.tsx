@@ -100,6 +100,42 @@ describe("SessionComplianceSection", () => {
     );
   });
 
+  /**
+   * The status probe, not the copy. `isRouteUnavailable` used to be
+   * `/ failed: (404|405|501) /` over the whole message — and the tail of that
+   * message is `await response.text()`, the raw upstream body the operations
+   * proxy fills with coord's own `resp.text`.
+   *
+   * What makes this worse here than elsewhere is the caller: every arm reads
+   * `error: isRouteUnavailable(err) ? null : message(...)`. A misread does not
+   * mislabel a visible error, it DELETES it — the operator is shown the calm
+   * "coord doesn't serve this yet" notice and never learns there was a 500.
+   * That is #1110's all-clear-over-a-failed-read, reached through the status
+   * probe rather than through an empty slot.
+   */
+  it("does not read a status quoted in the response BODY as route-unavailable", async () => {
+    getMock.mockRejectedValue(
+      new Error(
+        "GET /api/v1/operations/coord/session-compliance/config failed: 500 - " +
+          "proxy relaying: GET /coord/session-compliance failed: 404 - gone"
+      )
+    );
+
+    render(<SessionComplianceSection />);
+
+    // The real status reaches the operator. Each failing read raises its own
+    // notice, so this is `findAll` — the assertion is that the 500 is stated,
+    // not how many arms state it.
+    const stated = await screen.findAllByText(/failed: 500/);
+    expect(stated.length).toBeGreaterThan(0);
+    // ...and the sentence that would have replaced it is absent. Asserting
+    // both directions matters: a build rendering the error AND the all-clear
+    // still tells the operator to stop looking.
+    expect(
+      screen.queryByTestId("compliance-unavailable")
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the enforcement panel with derived applicability", async () => {
     routeGets();
 
