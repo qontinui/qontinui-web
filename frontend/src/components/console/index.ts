@@ -103,6 +103,9 @@ export {
   staleDetail,
 } from "./readFailure";
 
+export { createReadSequence } from "./readSequence";
+export type { ReadSequence } from "./readSequence";
+
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";
 
