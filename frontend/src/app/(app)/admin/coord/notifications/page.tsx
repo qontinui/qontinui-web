@@ -505,6 +505,22 @@ export default function CoordNotificationsPage() {
         );
         if (typeof body?.unread_count === "number") {
           setUnreadCount(body.unread_count);
+          // The mark-read door is a DELIVERY of this scalar, and the
+          // bookkeeping has to say so — coord computed it for this principal
+          // just now, which is the same fact a head read carries.
+          //
+          // It was left out when `applyEnvelope` became the sole author of the
+          // verdict, and the `scalarSeenRef` gate then made the omission
+          // PERMANENT in one direction: against a feed that never carries the
+          // scalar, a mark-all would write a real `0` into state while
+          // `scalarSeenRef` stayed false, so `scalarStale` could never be set
+          // and the `unreadCount == null` arm could never fire again. The strip
+          // settled into a green "you have seen everything coord recorded" over
+          // a number the FEED has never delivered, with no read able to
+          // dislodge it. The mirror case is as bad the other way: a fresh POST
+          // scalar left labelled "these counts stopped updating".
+          scalarSeenRef.current = true;
+          setScalarStale(false);
         }
         setError(null);
         // `unread_only` view: marked rows no longer match the filter.
