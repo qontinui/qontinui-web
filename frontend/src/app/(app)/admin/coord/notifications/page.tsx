@@ -312,21 +312,49 @@ export default function CoordNotificationsPage() {
    */
   const queryGenRef = useRef(0);
 
-  const applyEnvelope = useCallback((body: NotificationsResponse) => {
-    // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
-    // previous value stands rather than silently reading zero — and, since
-    // standing silently is what made the strip quote a frozen number as
-    // current, absence now also says so.
-    if (typeof body.total === "number") setTotal(body.total);
-    if (typeof body.unread_count === "number") {
-      setUnreadCount(body.unread_count);
-      setScalarStale(false);
-    } else {
-      // Only meaningful once a scalar HAS arrived; before that `unreadCount`
-      // is null and the deriver's own "did not come back" arm speaks.
-      setScalarStale(true);
-    }
-  }, []);
+  /** Has a read ever delivered `unread_count`? A ref, because the writer below
+   *  has to consult it in the same tick it sets it. */
+  const scalarSeenRef = useRef(false);
+
+  /**
+   * `fromHead` is not cosmetic. `applyEnvelope` now writes a staleness VERDICT
+   * as well as values, and only the head read is entitled to one.
+   *
+   * `pagingFailed` exists in this file precisely because "a failed Load more
+   * must not paint the head counts stale, since the 10s poller is still
+   * refreshing them" — and writing `scalarStale` from a paging response
+   * reintroduced that coupling through the other door: a cursor page answering
+   * without the scalar flipped a green strip to "These counts stopped
+   * updating" and dropped the figure from the mark-all tooltip, as a direct
+   * result of the operator's own click, self-healing only on the next tick.
+   * Values are still applied from either path — they are server scalars for
+   * the same query — but the verdict follows the read the strip is derived
+   * from.
+   */
+  const applyEnvelope = useCallback(
+    (body: NotificationsResponse, fromHead: boolean) => {
+      // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
+      // previous value stands rather than silently reading zero — and, since
+      // standing silently is what made the strip quote a frozen number as
+      // current, absence now also says so.
+      if (typeof body.total === "number") setTotal(body.total);
+      if (typeof body.unread_count === "number") {
+        setUnreadCount(body.unread_count);
+        scalarSeenRef.current = true;
+        if (fromHead) setScalarStale(false);
+      } else if (fromHead && scalarSeenRef.current) {
+        // Gated on having SEEN one. Without that gate the very first read,
+        // answering without the scalar, produced "These counts stopped
+        // updating / the feed is answering but NO LONGER carries the counts" —
+        // "no longer" and "since" both asserting an earlier good read that
+        // never happened. That state has its own arm and its own sentence
+        // ("The unread count did not come back"), and setting this flag ahead
+        // of it made that arm unreachable from this page.
+        setScalarStale(true);
+      }
+    },
+    []
+  );
 
   /** Fetch the head page. `merge` keeps already-loaded later pages. */
   const fetchHead = useCallback(
@@ -357,7 +385,7 @@ export default function CoordNotificationsPage() {
           setNextCursor(body.next_cursor ?? null);
           setPagingFailed(false);
         }
-        applyEnvelope(body);
+        applyEnvelope(body, true);
         setMigrationPending(false);
         setLoaded(true);
         // This query has now answered — the list may speak for it.
@@ -412,7 +440,7 @@ export default function CoordNotificationsPage() {
       // otherwise a fully-deduped page leaves an enabled button that does
       // nothing when clicked.
       setNextCursor(page.length === 0 ? null : (body.next_cursor ?? null));
-      applyEnvelope(body);
+      applyEnvelope(body, false);
       setError(null);
       setPagingFailed(false);
     } catch (e) {
