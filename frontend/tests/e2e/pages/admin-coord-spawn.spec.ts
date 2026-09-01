@@ -56,7 +56,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
             {
               device_id: "00000000-0000-0000-0000-deadbeefcafe",
               hostname: "test-host",
-              status: "healthy",
+              // `state`, not `status`: `status` is not a key coord's
+              // `DeviceHealthSnapshot` has ever served, so the old fixture
+              // left the picker's state rendering unexercised end-to-end.
+              state: "healthy",
+              heartbeat_state: "healthy",
             },
           ],
         }),
@@ -130,7 +134,11 @@ test.describe("Admin - Coord spawn-from-plan", () => {
             {
               device_id: "00000000-0000-0000-0000-deadbeefcafe",
               hostname: "test-host",
-              status: "healthy",
+              // `state`, not `status`: `status` is not a key coord's
+              // `DeviceHealthSnapshot` has ever served, so the old fixture
+              // left the picker's state rendering unexercised end-to-end.
+              state: "healthy",
+              heartbeat_state: "healthy",
             },
           ],
         }),
@@ -174,9 +182,7 @@ test.describe("Admin - Coord spawn-from-plan", () => {
     // dropdown selection; repos requires at least one checkbox; intent
     // + initial-prompt are free-text.
     await page.getByTestId("coord-spawn-device-select").click();
-    await page
-      .getByRole("option", { name: /test-host/ })
-      .click();
+    await page.getByRole("option", { name: /test-host/ }).click();
 
     await page.getByTestId("coord-spawn-repo-qontinui-web").click();
     await page.getByTestId("coord-spawn-intent").fill("test spawn from e2e");

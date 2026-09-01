@@ -744,7 +744,25 @@ export type CoordHealthJoin =
   | {
       matched: true;
       device_id: string;
-      /** Coord `DeviceState`, serde-lowercase. Absent => `unknown`. */
+      /**
+       * Coord `DeviceState`, serde-lowercase: `healthy` | `degraded` |
+       * `stale` | `partitioned` | `abandoned`, plus `unknown` where coord's
+       * stored string did not parse. Absent => `unknown`, never healthy.
+       *
+       * `stale` is the derived overlay (the heartbeat is fine, the resource
+       * sampler has gone quiet) and is graded by `deviceStateBadgeVariant`,
+       * which owns the badge mapping for all of them — do not band this
+       * string here.
+       *
+       * **This join carries the VERDICT only.** Coord also serves
+       * `heartbeat_state`, the persisted ladder state under the overlay, and
+       * `FleetHealthDevice` now reads it — but `buildMachineGroups` drops it
+       * on the way into `MachineGroup`, so `MachineCard` renders `stale` and
+       * `partitioned` as the same bare badge. That is a real gap and it is
+       * NOT closed here: threading the field through means editing
+       * `fleetResources.ts`, which open PR #1149 is rewriting. Do it once
+       * #1149 lands.
+       */
       state?: string;
     }
   | { matched: false };

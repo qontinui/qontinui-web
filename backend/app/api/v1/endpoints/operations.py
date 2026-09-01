@@ -3894,7 +3894,107 @@ async def post_coord_notifications_mark_read(
 async def get_fleet_health(
     tenant_id: UUID = Depends(get_tenant_id),
 ) -> Any:
-    """Return the fleet-health rollup from coord (tenant-scoped)."""
+    """Return the fleet-health rollup from coord (tenant-scoped).
+
+    The body is coord's ``get_fleet_health`` envelope, passed through
+    untouched: ``devices`` (the per-machine
+    ``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,
+    ``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,
+    ``kv_bucket`` and ``as_of``. This route declares no
+    ``response_model``, so nothing here filters a field coord adds.
+
+    Those nine are what coord emits **today**. Two more are read by this
+    repo's client and appear nowhere in coord's source: ``FleetHealthPayload``
+    declares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page
+    branches on ``alerts_scrape_up === false``. They are FORWARD
+    declarations — deliberately absence-tolerant, since the client must
+    treat an absent flag as *measured* — so they are not part of this
+    contract and this route synthesises neither. The branch reading them
+    is unreachable until coord grows them.
+
+    The contract is written down because the sibling resource-samples
+    route learned the lesson first: this
+    docstring is what FastAPI renders into ``openapi-schema.json`` /
+    ``openapi-schema.base.json``, which are committed and drift-gated by
+    ``backend-ci.yml``, so it is this repo's contract of record for the
+    route. Until now it described none of a wire its own browser reads
+    on a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,
+    ``SpawnModal.tsx``).
+
+    The fields that make the surface honest rather than merely working:
+
+    * ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:
+      ``healthy | degraded | stale | partitioned | abandoned``, plus
+      ``unknown`` when the stored string did not parse. It is
+      non-optional in coord's snapshot, so today's coord always sends
+      it; callers still treat an absent one as *unknown* rather than
+      healthy, which is the rule the whole surface rests on. Read the
+      vocabulary as OPEN: a state a newer coord adds must render
+      *unknown*, not fail to parse, so nothing on this path may narrow
+      it to a closed union.
+    * ``stale`` is the newest value and the only DERIVED one — computed
+      at read time and never persisted (coord's ``devices_state_chk``
+      admits only the other four). It means **the heartbeat is fine and
+      the resource SAMPLER has gone quiet**, which is deliberately not
+      ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``
+      beside a WSL-lane sample 22 minutes old, and calling that a
+      network partition would have sent an operator to debug the wrong
+      layer.
+    * ``devices[].heartbeat_state`` is the machine's PERSISTED ladder
+      state, before the freshness overlay — carried so that the overlay
+      **loses nothing**. It is the difference between "this box is
+      unreachable" and "this box is fine and its publisher is quiet",
+      and a caller that renders ``state`` alone cannot tell an operator
+      which. A spawn picker is the case that bites: ``stale`` is a
+      perfectly spawnable machine and ``partitioned`` is not.
+    * ``devices[].state_raw`` is present **only** when the stored state
+      failed to parse (``state`` is then ``"unknown"``); it carries what
+      the row actually said. Omitted entirely in the common case, so its
+      presence is the anomaly marker — do not default it in.
+    * ``devices[].newest_sample_age_secs`` is seconds since that
+      device's newest resource sample, and
+      ``devices[].sample_stale_after_secs`` is the threshold it was
+      graded against. **It is NOT the configured cadence**: coord
+      computes ``sample_interval_secs × SAMPLE_STALE_INTERVALS`` with
+      that multiplier pinned at 4, falling back to a 30s interval where
+      the tenant set none — so the default threshold is 120s, not 30s.
+      **The threshold rides the wire for the same reason the resource
+      strip's floors do** — so the client keeps no constant of its own
+      and cannot disagree with coord about where stale begins, which is
+      exactly the disagreement a client re-deriving "4 × the interval"
+      would eventually ship. ``null`` on either is UNKNOWN: not zero,
+      and not "fresh". They are also independently nullable: a device
+      with no sample in the lookback arrives with a null age and a
+      POPULATED threshold.
+    * ``devices[].within_dispatch_window`` says whether coord would
+      actually expect this machine to answer. The roster stopped
+      dropping out-of-window devices and ships the answer instead, so
+      *listed* no longer implies *reachable*; the ``liveness`` block
+      (``within_dispatch_window`` / ``outside_dispatch_window`` /
+      ``heartbeat_ttl_secs``) is the same split rolled up.
+    * ``excluded`` is ``null`` when coord did not MEASURE the exclusion
+      set — see ``excluded_error`` — and never means "none excluded".
+
+    **The one caveat a caller must not read as an all-clear**, stated
+    precisely because the imprecise version is worse than none. A
+    Postgres outage is NOT this case: the roster query acquires the pool
+    first and its failure returns 500, which this proxy raises rather
+    than passing off as an empty fleet. The caveat is the narrower
+    **mid-request** one — the roster succeeded and a LATER acquire did
+    not (pool exhaustion, an acquire timeout). coord then logs *"no
+    freshness overlay, no alert rollup this tick"* and still answers
+    200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,
+    indistinguishable from a genuinely quiet fleet, with every device's
+    ``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to
+    ``stale``** (a persisted ``'stale'`` string would still decode —
+    coord parses the value so such a row is not silently dropped — but
+    the CHECK is what makes that improbable, not this path).
+
+    coord ships no flag distinguishing that tick from a healthy one, so
+    zeros here are not evidence of quiet and an absent ``stale`` is not
+    evidence of a live publisher
+    (``[policy: silent-empty-is-unknown]``).
+    """
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
