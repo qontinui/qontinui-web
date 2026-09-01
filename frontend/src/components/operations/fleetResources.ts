@@ -275,6 +275,98 @@ export interface ResourceSampleRow {
    * of magnitude with nothing else in the row saying so.
    */
   saturation_source?: string | null;
+  // -------------------------------------------------------------------------
+  // The socket census — plan
+  // `2026-08-31-devops-runner-9876-accept-path-starved-by-close-wait-sockets`,
+  // stored by alembic revision `fleet_res_tel_05_socket_census`.
+  //
+  // REPORTING ONLY, and that is a constraint rather than a stage. Unlike
+  // `pressure` and `saturation`, this lane carries NO server-computed ratio,
+  // NO floor and NO verdict, and it must never gate dispatch or fold into
+  // `headroom` — so there is deliberately no `classifySocketCensus` helper and
+  // no strip column beside the Saturation cell. Adding one would be inventing
+  // a threshold in TypeScript, which is the §C1 defect this module's header
+  // exists to forbid.
+  //
+  // Optional on the wire for the same reason as the saturation counts: a coord
+  // that predates the census sends no such key at all, and "the publisher has
+  // no probe" and "coord never mentioned it" are different facts. Until both
+  // the coord reader and the runner publisher ship, every one of these is
+  // `undefined` on every row.
+  // -------------------------------------------------------------------------
+  /**
+   * The listener port the socket census on this row was taken on — `9876`
+   * (primary runner), `9877` / `9878` (secondaries).
+   *
+   * Every `sock_*` count below is scoped to THIS port and means nothing
+   * without it, which is why it is a field rather than a constant: this fleet
+   * runs several runners per box, and the whole 2026-08-31 diagnosis was that
+   * ONE listener was starved while its two neighbours accepted normally.
+   *
+   * `null` with non-null counts is malformed — counts with no subject — and a
+   * reader must treat that combination as unmeasured rather than guess a port.
+   */
+  sock_probe_port?: number | null;
+  /**
+   * `CLOSE_WAIT` sockets whose **local** port is `sock_probe_port` — so
+   * SERVER-side: the listener's own process owns the descriptor and never
+   * dropped it after the peer sent FIN.
+   *
+   * This is the starvation signal, and it read **148** on the runner's `:9876`
+   * on 2026-08-31 against a known-zero baseline while `:9875` and `:3001` on
+   * the same host connected normally.
+   *
+   * **`null` is unknown, never zero — and here a zero is a real reading.** A
+   * measured `0` is the healthy baseline the incident's growth figure was
+   * taken against; `null` means no probe ran (no `ss`, no `netstat`, or a
+   * publisher predating the census). Rendering `null` as `0` would paint every
+   * un-probed machine with the exact all-clear this dimension exists to
+   * disprove.
+   */
+  sock_close_wait_local?: number | null;
+  /**
+   * `CLOSE_WAIT` sockets whose **remote** port is `sock_probe_port` — so
+   * CLIENT-side: some probe process on the same box owns the descriptor, not
+   * the listener.
+   *
+   * Split from `sock_close_wait_local` rather than summed with it because the
+   * two indict different processes while a single total reads identically for
+   * both — a client-side leak does not starve the listener's accept path at
+   * all. The split is what makes a loopback census legible, since a probe
+   * running on the listener's own host sees BOTH ends of every `127.0.0.1`
+   * connection. **Never add this into the `*_local` figures.**
+   */
+  sock_close_wait_remote?: number | null;
+  /**
+   * `ESTABLISHED` sockets whose local port is `sock_probe_port`. A control,
+   * not a symptom: the denominator that makes a raw `CLOSE_WAIT` count a
+   * statement about the LISTENER rather than about traffic volume.
+   */
+  sock_established_local?: number | null;
+  /**
+   * `TIME_WAIT` sockets whose local port is `sock_probe_port`. The second
+   * control: `TIME_WAIT` is the normal terminal state of a connection the
+   * server closed, so a high `CLOSE_WAIT` beside a near-zero `TIME_WAIT` is
+   * the 2026-08-31 signature, while a high `CLOSE_WAIT` beside a high
+   * `TIME_WAIT` is ordinary churn.
+   */
+  sock_time_wait_local?: number | null;
+  /**
+   * WHICH instrument produced the counts — `"ss"` | `"netstat"` |
+   * `"unavailable"`, or null.
+   *
+   * The same class of field as `saturation_source`, for the same reason: `ss`
+   * reads the kernel's sockets over netlink `sock_diag` while Windows
+   * `netstat` is a different implementation with different truncation
+   * behaviour under load, so a publisher that falls back emits numbers on a
+   * different footing with nothing else in the row saying so.
+   *
+   * `"unavailable"` is a MEASUREMENT and not an absence — the publisher ran
+   * and neither instrument was reachable — so a row may carry it with all four
+   * counts null, and that is strictly more informative than a row that says
+   * nothing at all.
+   */
+  sock_source?: string | null;
   source: string;
   /** SERVER-computed. `null` = the lane has no pressure opinion. */
   pressure: LanePressure | null;
