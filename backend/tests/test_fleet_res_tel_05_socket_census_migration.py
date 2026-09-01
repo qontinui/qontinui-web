@@ -786,3 +786,33 @@ def test_upgrade_is_idempotent(_admin_url: str) -> None:
         run_alembic(backend_root(), db_url, "upgrade", _REVISION_ID)
         _assert_columns_present(engine)
         _assert_columns_commented(engine)
+
+
+def test_no_executed_sql_contains_a_sqlalchemy_bind_parameter() -> None:
+    """`op.execute("... :9876 ...")` is parsed by SQLAlchemy as a BIND PARAMETER.
+
+    This is not hypothetical: the first cut of this revision wrote ``:9876``,
+    ``:9875``, ``:3001`` and ``1:1`` into COMMENT ON COLUMN text, and every one
+    of them became a required bind param. CI failed with
+    ``InvalidRequestError: A value is required for bind parameter '9876'`` —
+    at *downgrade-then-upgrade* time, i.e. the reversibility gate, not the
+    forward run, which is the slower place to find it.
+
+    A colon followed by a word character inside executed SQL is the whole
+    hazard, so this asserts on the shape rather than on the specific ports.
+    Spell ports as ``port 9876`` and ratios as ``one-for-one`` in comment text.
+    """
+    import re
+
+    source = _revision_source()
+    offenders: list[str] = []
+    for block in re.finditer(r'op\.execute\(\s*"""(.*?)"""', source, re.S):
+        for hit in re.finditer(r":\w", block.group(1)):
+            start = max(0, hit.start() - 60)
+            offenders.append(block.group(1)[start : hit.start() + 10].replace("\n", " "))
+
+    assert not offenders, (
+        "executed SQL contains SQLAlchemy bind-parameter syntax (':' + word char); "
+        "these will fail at migration time, not at import time:\n  "
+        + "\n  ".join(offenders)
+    )
