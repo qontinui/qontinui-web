@@ -1029,6 +1029,51 @@ _FACET_AGE_DAYS_SQL = (
 )
 
 
+async def live_row_count(session: AsyncSession, tenant_id: UUID) -> int:
+    """Count ``tenant_id``'s RETRIEVAL-LIVE rows — the query denominator.
+
+    The same number :func:`facets` publishes as
+    ``MemoryContentFacets.live_row_count``, and deliberately the same
+    SQL predicate: both count on :data:`_RETRIEVAL_LIVE_PREDICATE`, so
+    ``POST /memory/query``'s denominator and ``GET /memory/stats``'
+    cannot drift into two different notions of "live". Liveness is
+    defined in exactly one place; this is a second CALLER of it, not a
+    second definition.
+
+    It exists as its own function rather than as a ``facets`` call
+    because ``/memory/query`` needs the denominator and nothing else:
+    the facets statement also computes two grouped tallies, four
+    percentiles and a title sample, all of which the query response
+    discards. One ``count(*)`` on the same indexes is the whole cost.
+
+    **Tenant-wide, and NOT narrowed by any request's filters.** It takes
+    no ``kinds``/``scopes``/``scope_ref``/``since``/``as_of``, because
+    :data:`_RETRIEVAL_LIVE_PREDICATE` takes none — a denominator that
+    moved with the caller's filters could itself read 0 for a mistyped
+    filter, which is precisely the ambiguity the field exists to remove.
+    As with every aggregate over this constant, the count is
+    retrieval-live MODULO ``scope_ref`` narrowing (see the constant's
+    own note), so it is an UPPER bound on what a narrow-scoped query
+    could have matched — which is the direction that keeps "the corpus
+    holds N rows and you matched none" true.
+    """
+    return int(
+        (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT count(*)
+                    FROM coord.memory_records r
+                    WHERE r.tenant_id = :tenant_id
+                      AND {_RETRIEVAL_LIVE_PREDICATE}
+                    """
+                ),
+                {"tenant_id": tenant_id},
+            )
+        ).scalar_one()
+    )
+
+
 def _validity_filters(
     *,
     kinds: list[str] | None,

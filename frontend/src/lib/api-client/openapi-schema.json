@@ -26980,6 +26980,108 @@
         "title": "MemoryLinkOut",
         "type": "object"
       },
+      "MemoryQueryEcho": {
+        "description": "The parameters the query ACTUALLY ran with (``query_echo``).\n\nNot a copy of the request body \u2014 the SERVER-SIDE RESOLVED values, so\nthat anything the request did not say becomes visible. ``scopes``\nleft unset resolves to the endpoint's default pair; ``limit`` and\n``link_expansion`` resolve to their schema defaults; an empty\n``kinds`` list collapses to ``null`` (no kind filter) exactly as the\nfilter builder sees it. A caller comparing this against what it\nbelieves it sent can see, in the SAME response as the hits, that its\nquery was narrower or wider than it intended.\n\nThat is the half an unrecognized-key 422 cannot cover. A key spelled\nright and VALUED wrong \u2014 a ``scope_ref`` that names no session, a\n``since`` far in the future, a ``min_importance`` above every row \u2014\nis a perfectly well-formed request that legitimately matches\nnothing, and the echo is what lets the caller see which of its own\nfilters did that.",
+        "properties": {
+          "anchored_to_count": {
+            "title": "Anchored To Count",
+            "type": "integer"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "link_expansion": {
+            "title": "Link Expansion",
+            "type": "boolean"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text",
+          "kinds",
+          "scopes",
+          "scope_ref",
+          "limit",
+          "link_expansion",
+          "min_importance",
+          "since",
+          "as_of",
+          "anchored_to_count"
+        ],
+        "title": "MemoryQueryEcho",
+        "type": "object"
+      },
       "MemoryQueryHit": {
         "description": "One fused retrieval hit.\n\n``anchor_state`` is the watcher's roll-up verdict over the record's\nanchors \u2014 ``none`` (anchorless, today's Ebbinghaus lifecycle),\n``fresh``, ``moved`` or ``gone``. It is carried on every hit because\n``moved`` is ADVISORY: the record stays retrievable and normally\nranked, and the only thing that makes it useful is that the reader\nis told the ground truth shifted under it. A flag the response does\nnot carry is a flag nobody can act on.\n\nTyped ``str`` rather than a ``Literal`` on purpose: this is a READ\nshape over a column the watcher owns, and a value this build has\nnever heard of must render, not 500.",
         "properties": {
@@ -27087,7 +27189,8 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
+        "additionalProperties": false,
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.\n\n**Unknown keys are REJECTED (422), not ignored.** Pydantic's default\nis ``extra=\"ignore\"``, which made a misspelled or invented filter\n(``scope`` for ``scopes``, ``kind`` for ``kinds``, a parameter this\nbuild does not have) vanish server-side: the query then ran WIDER\nthan the caller asked and answered ``hits: []`` for a reason the\ncaller could not see. That empty list was the single most misread\nsignal on this endpoint \u2014 sessions filed fleet-infra findings\nagainst it (finding ``f425dc15``, retracted by ``a69e5881`` the same\nday). A 422 naming the offending field is the only answer that tells\nthe caller the call was wrong rather than the corpus empty.",
         "properties": {
           "anchored_to": {
             "anyOf": [
@@ -27249,7 +27352,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
-        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.",
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
         "properties": {
           "anchored_arm": {
             "default": "not_requested",
@@ -27260,6 +27363,10 @@
             ],
             "title": "Anchored Arm",
             "type": "string"
+          },
+          "anchored_hit_count": {
+            "title": "Anchored Hit Count",
+            "type": "integer"
           },
           "anchored_hits": {
             "items": {
@@ -27284,6 +27391,13 @@
             "title": "Link Arm",
             "type": "string"
           },
+          "live_row_count": {
+            "title": "Live Row Count",
+            "type": "integer"
+          },
+          "query_echo": {
+            "$ref": "#/components/schemas/MemoryQueryEcho"
+          },
           "vector_arm": {
             "enum": [
               "hybrid",
@@ -27297,7 +27411,10 @@
         "required": [
           "hits",
           "vector_arm",
-          "link_arm"
+          "link_arm",
+          "anchored_hit_count",
+          "live_row_count",
+          "query_echo"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
@@ -77659,7 +77776,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
