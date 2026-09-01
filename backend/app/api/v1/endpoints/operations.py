@@ -3404,6 +3404,9 @@ async def get_dev_action_detail(
 # - GET    /operations/notifications                     — append-only event feed
 # - POST   /operations/notifications/mark-read           — per-principal read state
 # - GET    /operations/fleet/health                      — fleet rollup
+# - GET    /operations/fleet/drain                       — active machine drains
+# - POST   /operations/fleet/drain                       — drain a machine (admin)
+# - POST   /operations/fleet/undrain                     — release one (admin)
 # - GET    /operations/claude-accounts                   — per-device Claude
 #                                                          account roster
 # - GET    /operations/fleet/volumes                     — free space, all devices
@@ -3996,6 +3999,224 @@ async def get_fleet_health(
     (``[policy: silent-empty-is-unknown]``).
     """
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
+
+
+# ---- Machine drain / undrain --------------------------------------------
+#
+# Plan ``2026-09-01-device-drain-does-not-reach-agent-session-spawning``
+# Phase 4b. Three routes proxying coord's §D2 drain surface so the Dev Ops
+# console can render, set and release a machine's drain — the operator lever
+# for quiescing a box before a rebuild.
+#
+# A drain stops coord sending a machine **new** work: CI jobs, builds, and
+# (this plan's Phases 1-3) agent-session spawns and continuation dispatch. It
+# does not stop work already running there. It is the ONE deliberate hard
+# filter in a ladder that otherwise only deprioritises, which is safe for two
+# reasons coord's ``fleet_drain.rs`` states and this proxy preserves: it is an
+# explicit operator action, and it carries a MANDATORY expiry.
+#
+# Auth posture, mirroring coord's own:
+#   GET  — any authenticated user whose tenant resolves. Reading which
+#          machines are out of the fleet is exactly the transparency the
+#          console exists for, and coord re-checks on its own layer.
+#   POST — coord-tenant ADMIN (``require_coord_tenant_admin``). Coord ALSO
+#          gates twice: ``rbac::is_tenant_admin`` in the operator's own
+#          tenant, and a ``coord.tenant_devices`` ownership floor, because a
+#          drain's EFFECT is fleet-wide across every tenant sharing the
+#          machine. The web-side gate is a UX/defence-in-depth layer, never
+#          the enforcement.
+#
+# Two wire facts about coord encoded ONCE here, so no caller rediscovers them:
+#
+# 1. ``DrainRequest`` and ``UndrainRequest`` are ``#[serde(deny_unknown_fields)]``.
+#    One extra JSON key is a 422 for the whole write, so the body is assembled
+#    HERE from a closed model rather than forwarded verbatim from the browser.
+# 2. There is no ``drained_by`` on either body, and there must never be one.
+#    Coord stamps the author from its authenticated ``OperatorContext``; an
+#    audit trail with a client-asserted author is not an audit trail.
+
+#: Coord's ceiling on a drain deadline (``fleet_drain::MAX_DRAIN_DAYS``).
+#: Pinned here so a too-far-out deadline is a local 422 rather than a round
+#: trip that comes back as a Rust string.
+_MAX_DRAIN_DAYS = 30
+
+
+class DrainRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/drain``.
+
+    ``extra="forbid"`` is not decoration — coord's struct is
+    ``deny_unknown_fields``, so a stray key would return a 422 carrying a
+    serde message. Rejecting it here makes it a local, legible 422 and keeps
+    the wire body exactly the shape coord accepts.
+
+    ``until`` is REQUIRED and is the whole point of §D2: *a drain with no
+    deadline is how a machine silently leaves the fleet forever.* It is not
+    ``| None``, it has no default, and nothing in this module may grow one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    #: RFC 3339 deadline. Validated below against the same two bounds
+    #: coord's ``validate_drain`` applies, so the common mistakes do not
+    #: need a round trip to be named.
+    until: datetime
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        """Reject a whitespace-only reason.
+
+        ``min_length`` alone admits ``"   "``, which coord then refuses with
+        ``reason: required, non-blank``. The reason is what the audit row and
+        the other operators' alert will say, so a blank one defeats the
+        record the write exists to leave.
+        """
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+    @field_validator("until")
+    @classmethod
+    def _until_is_a_near_future_deadline(cls, v: datetime) -> datetime:
+        """Mirror coord's ``validate_drain`` bounds.
+
+        A deadline in the past would be a no-op reported as a success, and one
+        further out than ``_MAX_DRAIN_DAYS`` is a permanent removal wearing an
+        expiry's clothes — which is precisely what the mandatory deadline
+        exists to prevent. Coord rejects both; naming them here turns a 400
+        with a Rust message into a typed 422 at the door.
+
+        A naive datetime is read as UTC rather than rejected: the browser
+        sends an offset-bearing RFC 3339 string, and a client that does not is
+        far likelier to mean UTC than to mean the server's local zone.
+        """
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        if v <= now:
+            raise ValueError(
+                "until must be in the future (a drain that has already "
+                "expired would be a no-op reported as a success)"
+            )
+        if v > now + timedelta(days=_MAX_DRAIN_DAYS):
+            raise ValueError(
+                f"until must be within {_MAX_DRAIN_DAYS} days — a longer "
+                "deadline is a permanent removal wearing an expiry's clothes; "
+                "re-drain instead"
+            )
+        return v
+
+
+class UndrainRequestBody(BaseModel):
+    """Closed body for ``POST /operations/fleet/undrain``.
+
+    A reason is required here too, and for the same purpose: releasing a
+    machine early is as much an operator decision as holding it, and coord
+    records both.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason must not be blank")
+        return v.strip()
+
+
+@router.get("/fleet/drain")
+async def get_fleet_drain(
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Return which machines coord is currently holding out of the fleet.
+
+    Proxies coord's ``GET /coord/fleet/drain``, body passed through untouched
+    — this route declares no ``response_model``, so nothing here filters a
+    field coord adds.
+
+    The body carries the ACTIVE drain entries keyed by device UUID, each with
+    ``until``, ``reason``, ``drained_by`` and ``drained_at``. Expiry is
+    evaluated by coord on READ (there is no sweeper and no expiry job), so an
+    entry that has lapsed simply stops appearing; a caller holding a response
+    across the deadline must re-read rather than assume.
+
+    ``drained_by`` may come back as coord's ``[redacted]`` placeholder for a
+    principal that may not see operator identities. That is a value, not an
+    absence — "someone drained this and you are not being told who" is a
+    different fact from "nobody is recorded", and a caller that renders the
+    placeholder as blank reports the second.
+
+    **The one thing a caller must not do with a failure here.** Coord keeps
+    ``DrainSet::Known(vec![])`` and ``DrainSet::Unknown`` apart on purpose, and
+    so must every hop after it: a 404 (this coord predates the read route), a
+    502/504 from the transport, or a body in an unrecognised shape is UNKNOWN,
+    never "no machine is drained" (``[policy: silent-empty-is-unknown]``,
+    ``[policy: unknown-must-not-render-as-a-default]``). The browser client
+    (`useFleetDrain.ts`) is written to that rule and renders UNKNOWN on each
+    of them; the 404 arm in particular is the EXPECTED reading during the
+    window where this console is a deploy ahead of coord.
+    """
+    return await _proxy_coord_get("/coord/fleet/drain", tenant_id=tenant_id)
+
+
+@router.post("/fleet/drain")
+async def post_fleet_drain(
+    body: DrainRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Stop coord sending one machine new work until ``until``.
+
+    Body is assembled from the closed model above — never forwarded verbatim
+    — because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``
+    is serialised as RFC 3339; ``device_id`` as its canonical UUID string.
+
+    Coord's refusals are typed and mean different things:
+    ``admin_required`` (not an admin in your own tenant),
+    ``device_not_in_tenant`` (the drain reaches every tenant that shares the
+    machine, so the caller must be one of them), and a 400 from
+    ``validate_drain``. They pass through with coord's own status code so the
+    console can tell them apart rather than rendering one "failed".
+
+    This does NOT stop work already running on the machine, and nothing on
+    this path may imply that it does.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/drain",
+        {
+            "device_id": str(body.device_id),
+            "until": body.until.isoformat(),
+            "reason": body.reason,
+        },
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
+
+
+@router.post("/fleet/undrain")
+async def post_fleet_undrain(
+    body: UndrainRequestBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Release one machine back into the fleet before its drain expires.
+
+    Coord answers with ``changed: false`` when the request altered nothing —
+    an undrain of a machine that was not held. That is passed through rather
+    than dressed up as a successful release: "I released it" and "it was not
+    held" are different outcomes and the operator is entitled to tell them
+    apart.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/undrain",
+        {"device_id": str(body.device_id), "reason": body.reason},
+        tenant_id=tenant_id,
+        structured_errors=True,
+    )
 
 
 # ---- Claude account roster (per device) ---------------------------------
