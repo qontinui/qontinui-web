@@ -64,10 +64,11 @@ export interface NotificationsHealth {
    * (`migrationPending`) put a promise of "ALL 137 unread… cannot be undone"
    * directly under a strip rendering that same 137 as `–`.
    *
-   * False in exactly the four arms below where the strip declines to speak for
+   * False in exactly the five arms below where the strip declines to speak for
    * the read: nothing was ever read, nothing has been read YET, the last read
-   * failed (the counts are real but frozen), or coord has the routes and not
-   * the table.
+   * failed (the counts are real but frozen), the last read SUCCEEDED and
+   * carried no scalar (frozen just the same, for a different reason), or coord
+   * has the routes and not the table.
    *
    * **Named for the READ, not for the counts** — which is what it was called
    * first, and which overpromised in exactly the way this module exists to
@@ -87,6 +88,27 @@ export interface NotificationsHealthInput {
   total: number | null;
   /** True once a read has SUCCEEDED — never merely "a read finished". */
   loaded: boolean;
+  /**
+   * The most recent SUCCESSFUL read carried no `unread_count`, while an
+   * earlier one did.
+   *
+   * The third way a scalar stops being current, and the one this module shipped
+   * blind to. `failed` covers a read that did not land; the `unreadCount ==
+   * null` arm below covers a scalar that has NEVER arrived. Neither covers the
+   * pair in between, which `page.tsx` produces on its own: `applyEnvelope`
+   * writes a scalar only `if (typeof … === "number")` and otherwise leaves the
+   * previous value standing, while `setLoaded(true)` fires on any successful
+   * GET. So a coord build that stops carrying the field — the same degrade this
+   * module argues is reachable two hundred lines down — leaves `loaded` true,
+   * `failed` false and a frozen number in state, and the strip painted GREEN
+   * over it: "7 unread events / nothing is blocked by these". The mark-all
+   * tooltip then promised all seven.
+   *
+   * Found by auditing the nav badge, which polls the same route and had the
+   * identical hole — so the fix landed there first and the page was briefly the
+   * less careful of the two surfaces reading one scalar.
+   */
+  scalarStale: boolean;
   /** coord has the routes but not the table yet. */
   migrationPending: boolean;
   /**
@@ -166,13 +188,19 @@ function countBadges(
  * question a consumer actually asks before spending a number.
  */
 function readIsCurrent(input: NotificationsHealthInput): boolean {
-  return input.loaded && !input.migrationPending && !input.failed;
+  return (
+    input.loaded &&
+    !input.migrationPending &&
+    !input.failed &&
+    !input.scalarStale
+  );
 }
 
 export function deriveNotificationsHealth(
   input: NotificationsHealthInput
 ): NotificationsHealth {
-  const { unreadCount, total, loaded, migrationPending, failed } = input;
+  const { unreadCount, total, loaded, migrationPending, failed, scalarStale } =
+    input;
   /**
    * Nothing has been read, or what was read cannot be trusted — neither scalar
    * is reportable, so neither is reported.
@@ -219,6 +247,22 @@ export function deriveNotificationsHealth(
         headline: "These counts stopped updating",
         detail:
           "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+        badges: countBadges(unreadCount, total),
+        readIsCurrent: false,
+      };
+    }
+    if (scalarStale) {
+      // The read LANDED and brought no scalar, so the numbers on screen are
+      // from an earlier one. Same shape as the arm above — real numbers, shown,
+      // and not quotable elsewhere — and a different sentence, because the
+      // remedy is different: nothing here is failing, coord has simply stopped
+      // answering with this field, and telling the operator the feed could not
+      // be re-read would send them after an outage that is not happening.
+      return {
+        level: "amber",
+        headline: "These counts stopped updating",
+        detail:
+          "the feed is answering but no longer carries the counts — what has arrived since is UNKNOWN",
         badges: countBadges(unreadCount, total),
         readIsCurrent: false,
       };

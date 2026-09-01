@@ -777,13 +777,36 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 >   whole fix is a sighted-mouse-user feature and everyone else is left with the
 >   unqualified claim. Test the accessible TEXT, not the attribute.
 > - **`count > 0` as a render gate makes the qualification unreachable for a
->   retained ZERO** — the asymmetry this section already names four hundred
->   lines up (*"a retained count of 7 is kept and labelled old while a retained
->   0 would be thrown away"*). A last-good `0` then goes dark and renders
->   nothing at all, on every console page, which states the absence in the
->   loudest medium there is. Gate the exception on *"a read has delivered a
->   count"*, not on the flag alone: a zero that was NEVER read has no retained
->   fact to qualify and must stay silent.
+>   retained ZERO** — the asymmetry this section names in its own words above
+>   (*"a retained count of 7 is kept and labelled old while a retained 0 would
+>   be thrown away"*). A last-good `0` then goes dark and renders nothing at
+>   all, on every console page, which states the absence in the loudest medium
+>   there is. Gate the exception on *"a read has delivered a count"*, not on the
+>   flag alone: a zero that was NEVER read has no retained fact to qualify and
+>   must stay silent. Watch what the new gate ADMITS, too: it let a retained
+>   `critical` accent render in a red pill around a `0`, because until then a
+>   zero could not render and the contradiction was unreachable.
+>
+> **Two independent reads want two independent verdicts.** Splitting them so one
+>   failure cannot stale the other is only the first half; reporting the
+>   currency of only ONE of them leaves the other making an unqualified claim,
+>   which is the same defect one axis over. `useAlertsBadge` reads a count and a
+>   severity flag; a severity read that failed — or has never landed — is not
+>   evidence that nothing is critical, and rendering it as a calm badge is an
+>   established negative built out of an unknown. Each axis carries its own
+>   `hasRead` / `stale`.
+>
+> **And derive staleness from SEQUENCES, not from a boolean set in a `catch`.**
+>   On any poller whose replies can overtake each other, a flag set on failure
+>   and cleared on success is wrong in both directions: a superseded rejection
+>   re-stales a number that was just refreshed, and the obvious guard for THAT
+>   (ignore anything but the newest request issued) discards a superseded but
+>   SUCCESSFUL read, rendering nothing where a real number arrived. Track the
+>   newest read that *finished* and the newest that *delivered a value*; stale
+>   is `delivered < completed`. Note this is NOT the page-level generation
+>   guard it looks like: there, a superseded reply answers a DIFFERENT question
+>   (the previous filter) and must be discarded; here both reads ask the same
+>   question, so discarding the older *answer* is pure information loss.
 >
 > And name the flag for what it CARRIES. *"The most recent poll failed"* was
 > false in two states this same file produces — a 2xx carrying no scalar (the
