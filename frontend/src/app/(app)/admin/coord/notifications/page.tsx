@@ -252,6 +252,22 @@ export default function CoordNotificationsPage() {
    * failed.
    */
   const [pagingFailed, setPagingFailed] = useState(false);
+  /**
+   * The most recent SUCCESSFUL head read carried no `unread_count`, while an
+   * earlier one did — so the scalars on screen are frozen even though nothing
+   * failed.
+   *
+   * `applyEnvelope` below treats an absent scalar as UNKNOWN and leaves the
+   * previous value standing, which is right; what was missing is anyone SAYING
+   * so. `readFailed` is false (the read landed) and `loaded` is true, so the
+   * strip took the green arm and reported a number from an earlier read as
+   * current, and the mark-all tooltip promised it.
+   *
+   * Found from the other end: the nav badge polls this same route on its own
+   * timer and had the identical hole, so it was fixed there first — leaving the
+   * page, briefly, the LESS careful of two surfaces reading one scalar.
+   */
+  const [scalarStale, setScalarStale] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [migrationPending, setMigrationPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -298,10 +314,18 @@ export default function CoordNotificationsPage() {
 
   const applyEnvelope = useCallback((body: NotificationsResponse) => {
     // Scalars, never `notifications.length`. Absence is UNKNOWN, so the
-    // previous value stands rather than silently reading zero.
+    // previous value stands rather than silently reading zero — and, since
+    // standing silently is what made the strip quote a frozen number as
+    // current, absence now also says so.
     if (typeof body.total === "number") setTotal(body.total);
-    if (typeof body.unread_count === "number")
+    if (typeof body.unread_count === "number") {
       setUnreadCount(body.unread_count);
+      setScalarStale(false);
+    } else {
+      // Only meaningful once a scalar HAS arrived; before that `unreadCount`
+      // is null and the deriver's own "did not come back" arm speaks.
+      setScalarStale(true);
+    }
   }, []);
 
   /** Fetch the head page. `merge` keeps already-loaded later pages. */
@@ -520,6 +544,9 @@ export default function CoordNotificationsPage() {
     // It also folded in mark-read failures, which say nothing about whether
     // the counts are fresh.
     failed: readFailed,
+    // ...and the third way they stop being current, which neither of the two
+    // above can express: a read that LANDED carrying no scalar.
+    scalarStale,
   });
 
   /**
