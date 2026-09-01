@@ -676,7 +676,7 @@ async def list_sessions(
         None,
         description="Exact match on the Claude Code session uuid — the "
         "archive's own identity column and the SAME id space as "
-        "coord.agent_sessions.id / coord.sessions.claude_code_session_id. This "
+        "coord's agent_sessions.id / sessions.claude_code_session_id. This "
         "is the forward half of the session <-> archive round trip: the "
         "reverse (archive row -> /sessions/{coord_session_id}) already ships. "
         "NOT unique on its own — one Claude session archived under two account "
@@ -686,7 +686,7 @@ async def list_sessions(
     ),
     coord_session_id: UUID | None = Query(
         None,
-        description="Exact match on the coord.sessions id the archive row "
+        description="Exact match on the coord sessions id the archive row "
         "recorded. A SOFT link coord garbage-collects underneath us, and "
         "unindexed (a scan) — prefer claude_session_id, which is indexed.",
     ),

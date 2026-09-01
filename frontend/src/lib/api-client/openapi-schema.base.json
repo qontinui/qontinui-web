@@ -85737,7 +85737,7 @@
             }
           },
           {
-            "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across `coord.sessions` and `coord.agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+            "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
             "in": "query",
             "name": "shape",
             "required": false,
@@ -85750,7 +85750,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across `coord.sessions` and `coord.agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+              "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
               "title": "Shape"
             }
           },
@@ -85792,7 +85792,7 @@
             }
           },
           {
-            "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers `coord.sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+            "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
             "in": "query",
             "name": "status",
             "required": false,
@@ -85810,7 +85810,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers `coord.sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+              "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
               "title": "Status"
             }
           }
@@ -100494,7 +100494,7 @@
             }
           },
           {
-            "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord.agent_sessions.id / coord.sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+            "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
             "in": "query",
             "name": "claude_session_id",
             "required": false,
@@ -100507,12 +100507,12 @@
                   "type": "null"
                 }
               ],
-              "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord.agent_sessions.id / coord.sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+              "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
               "title": "Claude Session Id"
             }
           },
           {
-            "description": "Exact match on the coord.sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+            "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
             "in": "query",
             "name": "coord_session_id",
             "required": false,
@@ -100526,7 +100526,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Exact match on the coord.sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+              "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
               "title": "Coord Session Id"
             }
           },

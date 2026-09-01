@@ -6195,7 +6195,7 @@ async def list_coord_sessions(
         default=None,
         description="Omitted (default) — coord's `/sessions` payload passed "
         "through unchanged. `consolidated` — the D1 join+union across "
-        "`coord.sessions` and `coord.agent_sessions` with a first-class "
+        "coord's `sessions` and `agent_sessions` with a first-class "
         "`row_class` discriminant. See the block comment above.",
     ),
     device: UUID | None = Query(
@@ -6216,7 +6216,7 @@ async def list_coord_sessions(
         default=None,
         description="Lifecycle filter. `shape=consolidated` only. coord's own "
         "agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; "
-        "`live` also covers `coord.sessions.state='active'`, `stale` covers "
+        "`live` also covers coord's `sessions.state='active'`, `stale` covers "
         "`stale` + `pending_resolution`, `closed` covers `closed`.",
     ),
     # `get_tenant_id` captures the caller's Cognito bearer into the
