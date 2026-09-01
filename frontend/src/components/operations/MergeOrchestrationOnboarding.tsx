@@ -622,8 +622,14 @@ export function AuditStep({ ready }: AuditStepProps) {
       // Defensive: if a synchronous 200 with a profile ever comes back (legacy
       // coord), use it directly — not the primary path.
       if (res.status === 200 && data.starter_profile) {
-        setAuditResult(data as AuditResponse);
+        const landed = data as AuditResponse;
+        setAuditResult(landed);
         setEditedProfile(data.starter_profile);
+        // Pre-fill in the SAME commit as auditResult/editedProfile (not a
+        // separate `useEffect` keyed on auditResult) — see the note above
+        // `defaultGithubRemote`'s two call sites for why a second commit is
+        // a race, not just an extra render.
+        setGithubRemote(defaultGithubRemote(landed.repo));
         return;
       }
       // Primary path: 202 {agent_id, repo, status:"running"}. Store the
@@ -674,6 +680,9 @@ export function AuditStep({ ready }: AuditStepProps) {
             audit_confidence: data.audit_confidence ?? null,
           });
           setEditedProfile(data.starter_profile);
+          // Pre-fill in the SAME commit as auditResult/editedProfile — see
+          // the note at `defaultGithubRemote`'s call sites.
+          setGithubRemote(defaultGithubRemote(repo));
           setAuditAgentId(null);
           setBusy(false);
         } else if (data.status === "failed") {
@@ -710,13 +719,22 @@ export function AuditStep({ ready }: AuditStepProps) {
     };
   }, [auditAgentId, auditResult, repo]);
 
-  // Pre-fill the remote from the audited slug once, when the audit lands.
-  // Keyed on `auditResult` (which only changes when a NEW audit completes or
-  // is discarded), so a later operator edit is never clobbered.
-  useEffect(() => {
-    if (!auditResult) return;
-    setGithubRemote(defaultGithubRemote(auditResult.repo));
-  }, [auditResult]);
+  // NOTE: the remote used to be pre-filled by a separate `useEffect` keyed on
+  // `auditResult`. That effect ran a full render-commit AFTER the one that
+  // set `auditResult`/`editedProfile` (and therefore after
+  // `starter-profile-cards` mounted), so a test (or a fast operator) that
+  // read `github-remote-input` right after the profile cards appeared could
+  // observe it still empty — a genuine two-commit race, not a mock/module
+  // leak. It reproduced in ~20% of fully ISOLATED runs of this file's own
+  // test suite (no other test file involved), which lines up with the
+  // ~23% false-red rate observed on the "Frontend CI" workflow. Setting
+  // `githubRemote` inline at both `setAuditResult` call sites (above, and in
+  // the poll effect below) folds the prefill into the SAME commit and
+  // removes the race outright, while preserving the original semantics: it
+  // still only overwrites the field at the moment a NEW auditResult lands
+  // (including via "Discard & retry", which resets auditResult to null so a
+  // subsequent audit re-triggers this same inline prefill), so an operator's
+  // in-between edit is still never clobbered.
 
   const acceptProfile = useCallback(async () => {
     if (!auditResult || !editedProfile) return;
