@@ -129,7 +129,7 @@ export const NOTIFICATIONS_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
  * dodge: a `/g` regex carries `lastIndex` across `.test()` calls, so
  * alternating calls on one instance return alternating answers.
  */
-const UUID_RE_GLOBAL =
+const UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /** Stand-in for an elided UUID. Keeps the surrounding sentence readable. */
@@ -146,7 +146,7 @@ const ELISION = "…";
  * Do not call this on expanded-panel strings — see the module header.
  */
 export function scrubUuids(value: string): string {
-  return value.replace(UUID_RE_GLOBAL, ELISION);
+  return value.replace(UUID_RE, ELISION);
 }
 
 /**

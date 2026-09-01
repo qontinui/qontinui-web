@@ -819,6 +819,47 @@ describe("CoordNotificationsPage", () => {
     );
   });
 
+  it("keeps mark-all live on a zero the feed has stopped confirming", async () => {
+    // The DISCRIMINATION for the pair above, and the arm the first cut of this
+    // fix missed. `applyEnvelope` RETAINS the previous scalar across a failed
+    // poll, so a fresh `0` and a frozen `0` are the same value in state — and a
+    // predicate reading the value alone disables the button in both. Here the
+    // strip is rendering "These counts stopped updating" and saying, in words,
+    // that what has arrived since is unknown; the button must not be the one
+    // surface still treating that zero as knowledge.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+        unread_count: 0,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // Fresh zero: disabled, per the test above.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        "These counts stopped updating"
+      )
+    );
+    // Same `unreadCount === 0` in state; different answer, because the read
+    // behind it is no longer current.
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeEnabled();
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
