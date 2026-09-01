@@ -27,7 +27,9 @@ const DEFAULT_APP_ID = "qontinui-web";
 // custom id still works for runners that manage other apps.
 const KNOWN_APP_IDS = ["qontinui-web", "runner", "qontinui-mobile"];
 
-function countStates(config?: { stateMachine?: { states?: unknown[] } }): number {
+function countStates(config?: {
+  stateMachine?: { states?: unknown[] };
+}): number {
   return config?.stateMachine?.states?.length ?? 0;
 }
 
@@ -57,7 +59,7 @@ export function UiBridgePanel() {
 
   const totalStates = useMemo(
     () => specs.reduce((acc, s) => acc + countStates(s.config), 0),
-    [specs],
+    [specs]
   );
 
   // The list and the graph are two queries against the same relay to the same
@@ -160,8 +162,8 @@ export function UiBridgePanel() {
                 subject={`spec pages or the state-machine graph for ${appId}`}
               />
             </div>
-          ) : (
-            <div className="space-y-2 empty:hidden [&:not(:empty)]:mb-3">
+          ) : specList.isError || specGraph.isError ? (
+            <div className="mb-3 space-y-2">
               {specList.isError && (
                 <RelayFailure
                   errors={[specList.error]}
@@ -175,7 +177,7 @@ export function UiBridgePanel() {
                 />
               )}
             </div>
-          )}
+          ) : null}
           {!specList.isLoading && !specList.isError && (
             <>
               <div className="mb-3 flex gap-6 text-sm">
