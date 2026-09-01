@@ -716,9 +716,19 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > count stops being quotable, missing `migrationPending`, so it promised
 > *"Marks ALL 137 unread… cannot be undone"* under a strip rendering that same
 > 137 as `–`. The fix is not a fifth spelling but a field on the derived object
-> (`health.countsAreCurrent`), with the deriver *branching* on it so its arms
+> (`health.readIsCurrent`), with the deriver *branching* on it so its arms
 > cannot drift from what it publishes. **A deriver that already knows something
 > should return it.**
+>
+> **Name that field for the READ, not for what was counted** — it was
+> `countsAreCurrent` first, and the rename is part of the rule rather than a
+> tidy-up. The two questions are independent: a read can be perfectly current
+> and still carry a `null` scalar (`deriveNotificationsHealth` has an arm
+> headlined *"The unread count did not come back"* that returns
+> `readIsCurrent: true`). A field named for the counts invites
+> `health.countsAreCurrent ? unreadCount! : …` at every consumer, and the type
+> will not stop it — so the published verdict answers one question, and a
+> consumer that wants a number asks BOTH: this flag, then the scalar itself.
 >
 > The same audit found the mirror-image error: a flag deliberately SPLIT for one
 > surface's sake (`pagingFailed`, kept out of `readFailed` so a failed page
@@ -737,6 +747,19 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > and the intent was the bug**: folding the two failures into one boolean was a
 > deliberate choice with a comment arguing for it, so no assertion about the
 > sentence that choice produces could ever have caught it.
+>
+> **And "count the consumers" means every surface that READS the scalar, not
+> every surface inside the route.** The same sweep counted four consumers of
+> `unread_count` on `/admin/coord/notifications` and fixed all four; the fifth
+> is `CoordNav`'s tab badge, which polls the same route at 60s, renders on
+> EVERY console page, and is named in the page's own module doc ("the nav badge
+> polls at 60s — it is a background hint"). It retained its count across a
+> failed poll — correct, and half the rule — while rendering it unqualified,
+> so the widest-reach number in the console was the one with no way to say it
+> had stopped moving, and its `title` was `undefined` where the sibling alerts
+> badge has carried one all along. Both nav badges now publish `stale`; the
+> shared renderer dims the badge and appends the qualification to its `title`.
+> **A route boundary is not a consumer boundary** — the poll is.
 >
 > The rule that would have: **when you split a flag, test that the two states
 > produce two DIFFERENT outputs** — assert the discrimination itself, not each
