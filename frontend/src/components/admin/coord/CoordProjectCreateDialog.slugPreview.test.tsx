@@ -48,6 +48,10 @@ vi.mock("@/contexts/tenant-context", () => ({
 }));
 
 import { CoordProjectCreateDialog } from "./CoordProjectCreateDialog";
+import {
+  parseTenantCreateError,
+  TenantCreateError,
+} from "@/components/sessions/api";
 
 /** The machine constraint that must never reach the operator's eyes. */
 const RAW_CONSTRAINT = "[a-z0-9]";
@@ -165,5 +169,124 @@ describe("a name that cannot produce an id", () => {
   it("still refuses an empty name, which is the ONE client-side gate", async () => {
     renderDialog();
     expect(submitButton()).toBeDisabled();
+  });
+});
+
+/**
+ * The preview and coord's answer are two renderings of ONE rejection.
+ *
+ * #1183 made them agree — `projectCreateErrorMessage`'s `invalid_name` arm now
+ * renders coord's reason through `projectSlugProblemMessage`, the preview's own
+ * function. It asserted that agreement as a PURE FUNCTION, and both surfaces
+ * are rendered by this component at the same time, so the agreement was never
+ * looked at on screen. Rendered, it printed the identical sentence twice, both
+ * in `text-destructive`, stacked.
+ *
+ * The second half is worse and is the same defect displaced in time: the error
+ * box was cleared only on open and on the next submit, never when the name
+ * changed. Coord's answer is about the name that was SUBMITTED, so editing
+ * `ab` into `abc` left "A short id needs at least 3 letters or digits." sitting
+ * under a preview reading `Short id: abc` — a precise claim about a name the
+ * field no longer held, which is exactly the contradiction #1183 existed to
+ * remove.
+ */
+describe("the preview and coord's answer, on one surface", () => {
+  /** Reject the way `createTenant` really does — through both envelopes. */
+  function rejectWith(status: number, coordBody: Record<string, unknown>) {
+    const wire = JSON.stringify({ detail: JSON.stringify(coordBody) });
+    const { code, detail } = parseTenantCreateError(wire);
+    createTenantMock.mockRejectedValue(
+      new TenantCreateError(status, code, detail)
+    );
+  }
+
+  const TOO_SHORT = "A short id needs at least 3 letters or digits.";
+
+  it("says one rejection ONCE, not twice", async () => {
+    const user = userEvent.setup();
+    rejectWith(400, { error: "invalid_name", reason: "too_short" });
+    renderDialog();
+
+    await user.type(nameInput(), "ab");
+    // Before the request there is one sentence, in the preview.
+    expect(
+      screen.getByTestId("coord-project-create-preview-problem").textContent
+    ).toBe(TOO_SHORT);
+
+    await user.click(submitButton());
+
+    // After it there is still ONE. Counting the matches is the assertion:
+    // "the error box says the right thing" passes just as well when the
+    // preview is saying it a second time directly above.
+    expect(await screen.findAllByText(TOO_SHORT)).toHaveLength(1);
+    // The half that survives is the one that ANNOUNCES — coord answered the
+    // click, and `role="alert"` is what tells a screen reader so.
+    expect(screen.getByTestId("coord-project-create-error").textContent).toBe(
+      TOO_SHORT
+    );
+    expect(
+      screen.queryByTestId("coord-project-create-preview-problem")
+    ).not.toBeTruthy();
+  });
+
+  it("drops coord's answer once the name it was about is gone", async () => {
+    const user = userEvent.setup();
+    rejectWith(400, { error: "invalid_name", reason: "too_short" });
+    renderDialog();
+
+    await user.type(nameInput(), "ab");
+    await user.click(submitButton());
+    expect(
+      await screen.findByTestId("coord-project-create-error")
+    ).toBeTruthy();
+
+    await user.type(nameInput(), "c");
+
+    // `abc` derives a perfectly good id. A sentence saying it needs at least
+    // three characters is no longer about anything on screen.
+    expect(
+      screen.getByTestId("coord-project-create-preview-slug").textContent
+    ).toBe("abc");
+    expect(screen.queryByTestId("coord-project-create-error")).not.toBeTruthy();
+    expect(nameInput().getAttribute("aria-invalid")).not.toBe("true");
+  });
+
+  it("brings it back if the name comes back", async () => {
+    const user = userEvent.setup();
+    rejectWith(400, { error: "invalid_name", reason: "too_short" });
+    renderDialog();
+
+    await user.type(nameInput(), "ab");
+    await user.click(submitButton());
+    await user.type(nameInput(), "c");
+    expect(screen.queryByTestId("coord-project-create-error")).not.toBeTruthy();
+
+    await user.keyboard("{Backspace}");
+
+    // Coord's answer for `ab` is still coord's answer for `ab`. Discarding it
+    // would send the user back for a round-trip to be told the same thing.
+    expect(screen.getByTestId("coord-project-create-error").textContent).toBe(
+      TOO_SHORT
+    );
+    expect(screen.getAllByText(TOO_SHORT)).toHaveLength(1);
+  });
+
+  it("keeps an answer the preview could NOT have given", async () => {
+    const user = userEvent.setup();
+    rejectWith(409, { error: "slug_taken", slug: "my-pizzeria" });
+    renderDialog();
+
+    await user.type(nameInput(), "My Pizzeria!");
+    await user.click(submitButton());
+
+    // `slug_taken` and `reserved_name` are the answers the preview is
+    // structurally unable to mirror, so nothing is being said twice here and
+    // both halves must stay: the id the name derives, and the fact it is gone.
+    expect(
+      (await screen.findByTestId("coord-project-create-error")).textContent
+    ).toBe("That name is taken. Pick a different one.");
+    expect(
+      screen.getByTestId("coord-project-create-preview-slug").textContent
+    ).toBe("my-pizzeria");
   });
 });

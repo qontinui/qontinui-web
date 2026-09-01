@@ -294,6 +294,49 @@ describe("isMigrationPending", () => {
       isMigrationPending(new Error("GET /x failed: 500 - PR #503 exploded"))
     ).toBe(false);
   });
+
+  it("does not match a whole `failed: 503` QUOTED in the body", () => {
+    // What `/failed:\s*503\b/` still let through, and the reason this reads
+    // the status field. The body is `await response.text()`, so it can carry a
+    // complete inner failure line — a proxy relaying what it got, coord
+    // reporting its own upstream. The old probe could not tell coord's status
+    // from a status coord was merely repeating, and answered `true`: a real
+    // 500 rendered as the quiet "nothing here yet".
+    expect(
+      isMigrationPending(
+        new Error(
+          "GET /api/v1/operations/notifications failed: 500 - " +
+            "proxy error: GET /coord/notifications failed: 503 - pending"
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("does not match the degrade TOKEN without the status", () => {
+    // The `schema_migration_pending` clause was dropped with the regex, and
+    // for the same reason: it is a substring test against upstream prose. A
+    // 500 that relays coord's earlier envelope carries the token verbatim.
+    expect(
+      isMigrationPending(
+        new Error(
+          'GET /x failed: 500 - relayed {"error":"schema_migration_pending"}'
+        )
+      )
+    ).toBe(false);
+  });
+
+  it("still recognises the degrade the token clause used to cover", () => {
+    // Nothing is lost by dropping it: coord pairs the token with a 503, so the
+    // status arm answers every case the token arm was pinned for. This is the
+    // over-correction guard for the two assertions above.
+    expect(
+      isMigrationPending(
+        new Error(
+          'GET /x failed: 503 - {"error":"schema_migration_pending","missing":"coord.notifications.kind"}'
+        )
+      )
+    ).toBe(true);
+  });
 });
 
 describe("isContractError", () => {
@@ -328,6 +371,19 @@ describe("isContractError", () => {
       false
     );
     expect(isContractError(new Error("coord is not reachable"))).toBe(false);
+  });
+
+  it("does not read a 400 out of the response BODY", () => {
+    // The other half of the pair, and it fails the other way: an unanchored
+    // probe made THIS one fire on a real 500, telling the operator their
+    // request was malformed when the server had simply broken. The two
+    // predicates decide against each other, so a body-driven answer in either
+    // corrupts both — here it also flips `isMigrationPending`'s disjointness.
+    const relayed = new Error(
+      "POST /x failed: 500 - upstream said: POST /coord/mark-read failed: 400 - bad body"
+    );
+    expect(isContractError(relayed)).toBe(false);
+    expect(isMigrationPending(relayed)).toBe(false);
   });
 });
 
