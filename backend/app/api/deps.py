@@ -180,6 +180,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         CoordTokenInvalidError,
         coord_jwks_client,
         describe_token_rejection,
+        identity_mismatch_remedy_fields,
     )
 
     try:
@@ -218,9 +219,9 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
                 served_kids=exc.served_kids,
                 note=(
                     "caller presented a token minted by a different coord "
-                    "than COORD_URL points at; check which coord this "
-                    "backend verifies against"
+                    "than this backend verifies against"
                 ),
+                **identity_mismatch_remedy_fields(),
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
