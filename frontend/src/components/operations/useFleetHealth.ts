@@ -67,6 +67,26 @@ export interface FleetHealthDevice {
    * unknown-not-healthy is the rule the whole surface rests on.
    */
   state?: string;
+  /**
+   * The device's PERSISTED heartbeat state, before the freshness overlay —
+   * `DeviceHealthSnapshot.heartbeat_state`, the same serde-lowercase
+   * `DeviceState` vocabulary as `state` minus `stale`, which is never
+   * persisted.
+   *
+   * It exists so the overlay **loses nothing**. `state` is the VERDICT and
+   * may read `stale`; this is what coord's heartbeat ladder actually holds,
+   * so a reader can still see that a `stale` machine is otherwise `healthy`.
+   * That difference is operational, not cosmetic: `stale` means coord hears
+   * the machine and has stopped hearing its telemetry, so the box is
+   * reachable and perfectly usable, while `partitioned` means it stopped
+   * answering at all. Rendering `state` alone paints those the same.
+   *
+   * Absent on a coord predating the axis (plan
+   * `2026-08-27-fleet-telemetry-has-no-saturation-dimension-but-memory`
+   * Phase 4, coord `b00558b5`). Absent is UNKNOWN — do not fall back to
+   * `state`, which would manufacture agreement the wire never claimed.
+   */
+  heartbeat_state?: string;
 }
 
 /**
