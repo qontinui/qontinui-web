@@ -565,6 +565,119 @@ describe("CoordNav", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("never paints a retained-zero badge red off an older severity read", async () => {
+    // The state the retained-zero gate CREATED. Until it landed, `count === 0`
+    // could not render at all, so a `critical` retained from an older poll was
+    // invisible; the gate made it reachable and it rendered `0*` inside a red
+    // pill — the accent saying a critical alert is unresolved, the number
+    // saying none are, and the accent being both the louder claim and the
+    // older read.
+    let alertsCall = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      const critical = u.includes("severity=critical");
+      alertsCall += 1;
+      // Poll 1: 5 alerts, 3 of them critical.
+      if (alertsCall <= 2) {
+        return Promise.resolve({
+          alerts: [],
+          total_count: critical ? 3 : 5,
+        });
+      }
+      // Poll 2: the count drops to zero; the severity read fails, so
+      // `critical` stays true from poll 1.
+      if (alertsCall <= 4) {
+        return critical
+          ? Promise.reject(new Error("GET … failed: 500 - boom"))
+          : Promise.resolve({ alerts: [], total_count: 0 });
+      }
+      // Poll 3: the count read fails too — the retained zero now renders.
+      return Promise.reject(new Error("GET … failed: 500 - boom"));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      const red = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(red.className).toContain("text-red-200");
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId("coord-nav-alerts-badge")
+        ).not.toBeInTheDocument()
+      );
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const retained = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(retained).toHaveTextContent("0*");
+      // The whole point: a fresher zero outranks an older critical.
+      expect(retained.className).not.toContain("text-red-200");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so when the severity read has not answered, instead of looking calm", async () => {
+    // "No red" has three causes and only one of them is "nothing is critical".
+    // Splitting the two reads so a severity failure cannot stale the COUNT was
+    // half the fix; reporting only the count's currency left the accent making
+    // an unqualified claim — an established negative built out of an unknown,
+    // in the one place an operator most needs it not to be.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      return u.includes("severity=critical")
+        ? Promise.reject(new Error("GET … failed: 500 - boom"))
+        : Promise.resolve({ alerts: [], total_count: 42 });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    // The COUNT is current — that split is still right, and still tested.
+    expect(badge).toHaveAttribute("data-read-stale", "false");
+    expect(badge).not.toHaveTextContent("*");
+    // The ACCENT is not, and now says so.
+    expect(badge).toHaveAttribute("data-critical-known", "false");
+    expect(badge.getAttribute("title")).toMatch(/critical is UNKNOWN/);
+    expect(badge.textContent).toMatch(/critical is UNKNOWN/);
+    expect(badge.className).not.toContain("text-red-200");
+  });
+
+  it("does not render a lower bound of zero, which is true of everything", async () => {
+    // The degraded arm (`total_count` absent) counts the returned window, and
+    // an empty window is a legitimate answer — so `≥0*` was reachable, arriving
+    // information-free and stacked with the staleness marker in the one place
+    // the design is trying to stay legible.
+    let alertsCall = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      alertsCall += 1;
+      // An un-upgraded coord: no `total_count`, and an empty window.
+      if (alertsCall <= 2) return Promise.resolve({ alerts: [] });
+      return Promise.reject(new Error("GET … failed: 500 - boom"));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      await waitFor(() => expect(alertsCall).toBeGreaterThan(1));
+      await vi.advanceTimersByTimeAsync(60_000);
+      const badge = await screen.findByTestId("coord-nav-alerts-badge");
+      expect(badge).toHaveAttribute("data-total-known", "false");
+      expect(badge).toHaveTextContent("0*");
+      expect(badge).not.toHaveTextContent("≥");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("renders no badge when the rollup is empty or unavailable", async () => {
     httpGet.mockRejectedValue(new Error("boom"));
     render(<CoordNav />);
@@ -911,6 +1024,60 @@ describe("CoordNav", () => {
         expect(after).toHaveAttribute("data-read-stale", "false");
         expect(after).toHaveTextContent("9");
         expect(after).not.toHaveTextContent("*");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a superseded reply's NUMBER while still calling it uncurrent", async () => {
+      // The other direction of the ordering problem, and the one the first
+      // guard got wrong. "Ignore anything but the newest request ISSUED" drops
+      // a superseded but SUCCESSFUL read: poll A hangs, poll B fails, A then
+      // answers with a real number — and the badge discarded it and rendered
+      // nothing at all. That is information loss, the opposite of the stale
+      // arm's "those numbers are real and still actionable".
+      //
+      // Sequences, not a boolean: A delivered (seq 1), B completed without
+      // delivering (seq 2), so the number is A's and it is uncurrent.
+      let resolveA: ((v: unknown) => void) | null = null;
+      let call = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        if (!String(url).startsWith("/api/v1/operations/notifications")) {
+          return Promise.resolve({ alerts: [] });
+        }
+        call += 1;
+        if (call === 1) {
+          return new Promise((resolve) => {
+            resolveA = resolve;
+          });
+        }
+        return Promise.reject(new Error("GET … failed: 500 - boom"));
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        // B fires and fails while A is still in flight. Nothing has ever been
+        // delivered, so nothing renders.
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() => expect(call).toBeGreaterThan(1));
+        expect(
+          screen.queryByTestId("coord-nav-notifications-badge")
+        ).not.toBeInTheDocument();
+
+        // Now A lands, late, with a real number.
+        await act(async () => {
+          resolveA?.({ unread_count: 12 });
+          await Promise.resolve();
+        });
+
+        const badge = await screen.findByTestId(
+          "coord-nav-notifications-badge"
+        );
+        // Kept — a real read delivered it.
+        expect(badge).toHaveTextContent("12");
+        // ...and marked, because a NEWER read finished without replacing it.
+        expect(badge).toHaveAttribute("data-read-stale", "true");
+        expect(badge).toHaveTextContent("12*");
       } finally {
         vi.useRealTimers();
       }

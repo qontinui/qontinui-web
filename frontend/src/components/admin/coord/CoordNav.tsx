@@ -537,6 +537,74 @@ function readRollup(body: unknown): AlertsRollup {
 }
 
 /**
+ * One retained value, and the honest answer to "did the latest read refresh
+ * it?".
+ *
+ * Both nav badges keep their last good value across a failed poll — the right
+ * call, and half of R6's stale arm; the other half is saying so. Three axes
+ * across the two badges owe the same bookkeeping (the alert count, the
+ * critical flag, the unread count), and hand-rolling it three times is the
+ * drift this lineage exists to stop.
+ *
+ * **Staleness is a comparison of SEQUENCES, not a boolean set in a catch.** The
+ * first cut set a flag in the failure path and cleared it in the success path,
+ * which is wrong in both directions once replies can overtake each other on a
+ * 60s timer:
+ *
+ *  - a superseded REJECTION landing after a newer success re-staled a number
+ *    that had just been refreshed;
+ *  - and the guard that fixed that (`return` unless this is the newest request
+ *    ISSUED) threw away a superseded but SUCCESSFUL read — poll A hangs, poll B
+ *    fails, A then answers with a real number, and the badge discards it and
+ *    renders nothing. That is information loss, the opposite of the stale arm's
+ *    "those numbers are real and still actionable".
+ *
+ * So: `completed` is the newest read that finished, `delivered` the newest that
+ * carried a value, and **stale ⇔ delivered < completed** — a newer read
+ * finished and did not replace what is on screen. It says nothing about WHY
+ * (rejection, or a 2xx carrying no scalar: a coord build predating the field,
+ * which `notificationsHealth.tsx` argues is reachable), because the badge does
+ * not know why and must not say.
+ *
+ * `hasRead` is separate: has any read ever delivered? It gates the RETAINED
+ * ZERO — see the render gate — and a value never read has no retained fact to
+ * qualify.
+ */
+function useRetainedValue<T>(initial: T): {
+  value: T;
+  hasRead: boolean;
+  stale: boolean;
+  /** @returns whether this response's value was applied. */
+  settle: (seq: number, delivered: { value: T } | null) => boolean;
+} {
+  const [value, setValue] = useState<T>(initial);
+  const [hasRead, setHasRead] = useState(false);
+  const [stale, setStale] = useState(false);
+  const deliveredRef = useRef(0);
+  const completedRef = useRef(0);
+
+  const settle = useCallback(
+    (seq: number, delivered: { value: T } | null): boolean => {
+      completedRef.current = Math.max(completedRef.current, seq);
+      let applied = false;
+      // `>=` rather than `>`: an out-of-order success must not overwrite a
+      // newer one, but the same seq settling twice is not a thing.
+      if (delivered && seq >= deliveredRef.current) {
+        deliveredRef.current = seq;
+        setValue(delivered.value);
+        setHasRead(true);
+        applied = true;
+      }
+      setStale(deliveredRef.current < completedRef.current);
+      return applied;
+    },
+    []
+  );
+
+  return { value, hasRead, stale, settle };
+}
+
+/**
  * Live unresolved-alert count for the Alerts tab badge. Best-effort — a failed
  * poll renders no badge, never an error.
  *
@@ -552,12 +620,18 @@ function readRollup(body: unknown): AlertsRollup {
  * `known: false` means the deployed coord served no `total_count`. The caller
  * renders `≥N` — the truncated length is a LOWER BOUND, never the truth.
  *
- * `stale: true` means the number on screen is from an EARLIER read — see
- * `useNotificationsBadge` below, which is where that flag is argued for. Both
- * badges retain their count across a failed poll and both therefore owe the
- * same qualification; they share one rendering path, so fixing only the one
- * this follow-up came from would leave the identical unlabelled claim on the
- * tab beside it.
+ * **Two axes, and each one answers for itself.** The number and the critical
+ * accent come from two reads that FAIL INDEPENDENTLY, so they get two
+ * `useRetainedValue`s rather than one flag between them. `Promise.all` had made
+ * that impossible — it rejects on the first rejection, so a failed severity
+ * read beside a succeeded count read staled a number from that very poll — and
+ * `allSettled` alone was not enough either: splitting them and then reporting
+ * only the count's currency left the ACCENT making an unqualified claim, which
+ * is the same defect one axis over. A severity read that failed, or that has
+ * never landed, is not evidence that nothing is critical.
+ * `notificationsHealth.tsx` states the governing rule: *"The two scalars are
+ * INDEPENDENT: coord can answer with one and not the other, and each renders
+ * what is known about itself."*
  */
 function useAlertsBadge(): {
   count: number;
@@ -565,85 +639,79 @@ function useAlertsBadge(): {
   known: boolean;
   hasRead: boolean;
   stale: boolean;
+  criticalKnown: boolean;
+  criticalStale: boolean;
 } {
-  const [count, setCount] = useState(0);
-  const [critical, setCritical] = useState(false);
   const [known, setKnown] = useState(false);
-  const [hasRead, setHasRead] = useState(false);
-  const [stale, setStale] = useState(false);
+  const countAxis = useRetainedValue(0);
+  const criticalAxis = useRetainedValue(false);
   const seqRef = useRef(0);
+  const { settle: settleCount } = countAxis;
+  const { settle: settleCritical } = criticalAxis;
 
   const fetchCount = useCallback(async () => {
-    // Fire-and-forget on a 60s timer with no ordering guard was fine while
-    // nothing here made a claim about WHEN a number was read. `stale` does, so
-    // a reply that outlives the next tick can now set or clear a label about
-    // the wrong read: A hangs, B succeeds and clears the flag, A rejects and
-    // re-sets it over a number nine seconds old. The page next door carries
-    // this same guard and says why — *narrowing a race is not closing it*.
     const seq = ++seqRef.current;
     // Two `limit=1` reads: the unresolved total for the number, and a
     // severity-filtered total for the red flag. The flag cannot come from
     // the returned rows — that is precisely the truncated-slice bug.
     //
-    // `allSettled`, not `all`: the two reads FAIL INDEPENDENTLY, and `all`
-    // rejects on the first rejection, so a severity read that failed beside a
-    // count read that SUCCEEDED landed in the catch and labelled a number from
-    // this very poll as "from an earlier read". `useFleetAlarmBadge`, the third
-    // poller in this nav, already models it this way for the same reason.
+    // `allSettled`, not `all`: see the docblock. The two reads fail
+    // independently and each axis settles on its own answer.
     const [all, criticals] = await Promise.allSettled([
       httpClient.get<unknown>(`${ALERTS_API}?include_resolved=false&limit=1`),
       httpClient.get<unknown>(
         `${ALERTS_API}?include_resolved=false&severity=critical&limit=1`
       ),
     ]);
-    if (seq !== seqRef.current) return;
 
     if (all.status === "fulfilled") {
       const allBody = readRollup(all.value);
-      if (typeof allBody.total_count === "number") {
-        setCount(allBody.total_count);
-        setKnown(true);
-      } else {
-        // Degraded: an un-upgraded coord ignores `limit` and answers with the
-        // capped window. Its length is a floor, and the badge says so.
-        setCount(allBody.alerts?.length ?? 0);
-        setKnown(false);
-      }
-      // The number the badge renders came from THIS read, whatever the
-      // severity read did.
-      setHasRead(true);
-      setStale(false);
+      const total = allBody.total_count;
+      const isTotal = typeof total === "number";
+      // Degraded: an un-upgraded coord ignores `limit` and answers with the
+      // capped window. Its length is a floor, and the badge says so.
+      const applied = settleCount(seq, {
+        value: isTotal ? total : (allBody.alerts?.length ?? 0),
+      });
+      // Only alongside the value it describes — a superseded reply that the
+      // axis declined must not leave `known` describing a number it did not
+      // deliver.
+      if (applied) setKnown(isTotal);
     } else {
       log.warn("alerts badge fetch failed", all.reason);
-      // The count is KEPT (see the notifications hook) and now labelled.
-      setStale(true);
+      settleCount(seq, null);
     }
 
     if (criticals.status === "fulfilled") {
       const critBody = readRollup(criticals.value);
-      if (typeof critBody.total_count === "number") {
-        setCritical(critBody.total_count > 0);
-      } else {
-        // Degraded: the severity filter was dropped too, so fall back to
-        // inspecting whatever rows came back.
-        setCritical(
-          (critBody.alerts ?? []).some((a) => a.severity === "critical")
-        );
-      }
+      settleCritical(seq, {
+        value:
+          typeof critBody.total_count === "number"
+            ? critBody.total_count > 0
+            : // Degraded: the severity filter was dropped too, so fall back to
+              // inspecting whatever rows came back.
+              (critBody.alerts ?? []).some((a) => a.severity === "critical"),
+      });
     } else {
-      // Retained, like the count: a failed severity read is no evidence that
-      // nothing is critical. It does not set `stale`, which is a statement
-      // about the NUMBER on the badge and not about the accent.
       log.warn("alerts badge severity fetch failed", criticals.reason);
+      settleCritical(seq, null);
     }
-  }, []);
+  }, [settleCount, settleCritical]);
 
   useEffect(() => {
     fetchCount();
   }, [fetchCount]);
   useVisiblePoll(fetchCount, ALERTS_POLL_MS);
 
-  return { count, critical, known, hasRead, stale };
+  return {
+    count: countAxis.value,
+    critical: criticalAxis.value,
+    known,
+    hasRead: countAxis.hasRead,
+    stale: countAxis.stale,
+    criticalKnown: criticalAxis.hasRead,
+    criticalStale: criticalAxis.stale,
+  };
 }
 
 /** Live UNREAD-notification count for the Notifications tab badge.
@@ -673,99 +741,69 @@ function useAlertsBadge(): {
  *  the page's own module doc names it ("the nav badge polls at 60s — it is a
  *  background hint") while the sweep stayed inside the route.
  *
- *  So `stale` is published beside the count. The number is still kept — the
- *  argument above is unchanged and correct — it is now labelled. Deliberately
- *  not a second lower bound: a stale unread count is not a floor, because the
- *  operator may have marked rows read in another tab, so it can be wrong in
- *  either direction and `≥` would be a fresh false claim rather than a hedge.
- *  It is `*`, the "see the note" marker, and the note is the `title` and the
- *  screen-reader text beside it.
+ *  So the count goes through `useRetainedValue`, which publishes `stale`
+ *  alongside it. The number is still kept — the argument above is unchanged and
+ *  correct — it is now labelled. Deliberately not a second lower bound: a stale
+ *  unread count is not a floor, because the operator may have marked rows read
+ *  in another tab, so it can be wrong in either direction and `≥` would be a
+ *  fresh false claim rather than a hedge. It is `*`, the "see the note" marker,
+ *  and the note is the `title` and the screen-reader text beside it.
  *
- *  **`stale` means the most recent read did not REPLACE this number** — not
- *  "the poll failed", and the difference is load-bearing in both directions. A
- *  read that lands carrying no `unread_count` (the coord build that predates
- *  the scalar, which the page's `applyEnvelope` documents as reachable)
- *  refreshed nothing, so it sets the flag as surely as a rejection does. That
- *  is why the flag is set in the scalar-less arm and cleared only where
- *  `setCount` actually runs.
+ *  **A 2xx carrying no `unread_count` is a read that refreshed nothing**, so it
+ *  settles as a non-delivery and stales the badge exactly as a rejection does.
+ *  That degrade is reachable rather than theoretical — `notificationsHealth.tsx`
+ *  makes the argument, for a coord build that predates the scalar or a partial
+ *  degrade — and without this a build that omits it permanently would render
+ *  the first poll's number as current forever.
  *
- *  What it deliberately does NOT cover: a poll that never RAN. `useVisiblePoll`
- *  skips ticks on a hidden tab, so a tab hidden for hours shows an hours-old
- *  count with `stale` false until the visibility handler's refetch lands. A
- *  poll that did not run is not a poll that failed, and this badge has no
- *  clock; giving it one would mean rendering an age, which is a different
- *  feature from the one this flag is.
- *
- *  `hasRead` is separate, and it exists for the RETAINED ZERO. A badge only
- *  renders at `count > 0`, so without it a last-good read of `0` followed by an
- *  outage renders nothing at all — silence, read as "nothing unread", which is
- *  the fabricated absence in its loudest medium. The style guide names this
- *  exact asymmetry: *"a retained count of 7 is kept and labelled old while a
- *  retained 0 would be thrown away, though both are equally fetched."* A zero
- *  that was NEVER read still renders nothing, which is right — there is no
- *  retained fact to qualify.
- *
- *  The 503 is opted out of `HttpClient`'s 5xx retry
- *  (`NOTIFICATIONS_REQUEST_OPTIONS`): during the pre-migration window this poll
- *  runs on every console page, and the default policy measures at 5 requests
- *  over ~15s — so retrying would make a badge nobody can see yet cost five
- *  requests a minute per open console tab.
- *
- *  ⚠️ It deliberately does NOT copy `useAlertsBadge`'s `setCount(alerts.length)`.
- *  `/coord/notifications` is genuinely paged, so the returned row count is the
- *  PAGE SIZE — a badge reading it would pin at that constant forever no matter
- *  how many unread events exist. `unread_count` is a server-computed scalar,
- *  distinct from the page, and it is the only honest source for this number. */
+ *  What `stale` deliberately does NOT cover: a poll that never RAN.
+ *  `useVisiblePoll` skips ticks on a hidden tab, so a tab hidden for hours
+ *  shows an hours-old count with `stale` false until the visibility handler's
+ *  refetch lands. A poll that did not run is not a poll that failed, and this
+ *  badge has no clock; giving it one would mean rendering an age, which is a
+ *  different feature from the one this flag is. */
 function useNotificationsBadge(): {
   count: number;
   hasRead: boolean;
   stale: boolean;
 } {
-  const [count, setCount] = useState(0);
-  const [hasRead, setHasRead] = useState(false);
-  const [stale, setStale] = useState(false);
+  const countAxis = useRetainedValue(0);
   const seqRef = useRef(0);
+  const { settle } = countAxis;
 
   const fetchCount = useCallback(async () => {
-    // See the alerts hook: an unguarded reply that outlives the next tick can
-    // set or clear a claim about the wrong read.
     const seq = ++seqRef.current;
     try {
       const body = await httpClient.get<{ unread_count?: number }>(
         NOTIFICATIONS_API,
         NOTIFICATIONS_REQUEST_OPTIONS
       );
-      if (seq !== seqRef.current) return;
       const unread = body?.unread_count;
-      // A response without the scalar is UNKNOWN, not zero — leave the
-      // previous value alone rather than silently clearing the badge.
-      if (typeof unread === "number" && Number.isFinite(unread)) {
-        setCount(unread);
-        setHasRead(true);
-        // ...and only HERE is the badge current again, because only here was
-        // the number actually replaced.
-        setStale(false);
-      } else {
-        // A read that LANDED and refreshed nothing, which is the SAME fact
-        // about the rendered number as a rejection — see the docblock. Not
-        // clearing the flag here would have been half of it: without setting
-        // it, a coord build that permanently omits the scalar renders the
-        // first poll's number as current forever.
-        setStale(true);
-      }
+      // A response without the scalar is UNKNOWN, not zero — the previous
+      // value stands, and settles as a NON-delivery so the badge says the most
+      // recent read did not replace it.
+      settle(
+        seq,
+        typeof unread === "number" && Number.isFinite(unread)
+          ? { value: unread }
+          : null
+      );
     } catch (err) {
-      if (seq !== seqRef.current) return;
       log.warn("notifications badge fetch failed", err);
-      setStale(true);
+      settle(seq, null);
     }
-  }, []);
+  }, [settle]);
 
   useEffect(() => {
     fetchCount();
   }, [fetchCount]);
   useVisiblePoll(fetchCount, NOTIFICATIONS_POLL_MS);
 
-  return { count, hasRead, stale };
+  return {
+    count: countAxis.value,
+    hasRead: countAxis.hasRead,
+    stale: countAxis.stale,
+  };
 }
 
 /**
@@ -887,6 +925,28 @@ const STALE_TITLE_SUFFIX =
   "has happened since is unknown. It is not a floor: it can be wrong in " +
   "either direction.";
 
+/**
+ * The accent's own qualification, on its own axis.
+ *
+ * The critical flag comes from a SECOND read that fails independently of the
+ * count's, so "no red" has three causes and only one of them is *"nothing is
+ * critical"*. The other two — that read failed, or it has never landed — are
+ * unknowns, and rendering them as a calm badge is the established-negative
+ * claim R6 exists to stop, made in the one place an operator most needs it not
+ * to be.
+ *
+ * It is a `title` clause rather than a second glyph: the accent already has a
+ * colour and the count already has `*`, and a 10px badge cannot carry a third
+ * visual vocabulary without becoming unreadable. `data-critical-known` /
+ * `data-critical-stale` carry it for a test.
+ */
+const CRITICAL_UNKNOWN_CLAUSE =
+  "Whether any of them is critical is UNKNOWN: that is a separate read, and " +
+  "it has not answered.";
+const CRITICAL_STALE_CLAUSE =
+  "Whether any of them is critical is from an earlier read — that is a " +
+  "separate read, and the most recent one did not answer.";
+
 const TAB_BASE =
   "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors whitespace-nowrap";
 const TAB_IDLE = "text-muted-foreground hover:text-foreground hover:bg-muted";
@@ -922,13 +982,21 @@ export default function CoordNav() {
         ? {
             testId: "coord-nav-alerts-badge",
             count: alertsBadge.count,
-            critical: alertsBadge.critical,
             // `false` means the deployed coord served no `total_count`, so
             // the number is a LOWER BOUND and gets the `≥` qualifier rather
             // than being printed as if it were the truth.
             totalKnown: alertsBadge.known,
             hasRead: alertsBadge.hasRead,
             stale: alertsBadge.stale,
+            // A retained `critical` is not allowed to outrank a FRESHER count
+            // that says zero. Before the retained-zero gate below, `count === 0`
+            // could not render at all, so this was unreachable; the gate made
+            // it reachable and it renders as `0*` in a red pill — the accent
+            // claiming an unresolved critical, the number claiming none, and
+            // the accent being both the loudest and the older of the two.
+            critical: alertsBadge.critical && alertsBadge.count > 0,
+            criticalKnown: alertsBadge.criticalKnown,
+            criticalStale: alertsBadge.criticalStale,
             title: alertsBadge.known
               ? "unresolved alerts (coord's unpaged total)"
               : "this coord build does not report a total — at LEAST this many",
@@ -947,6 +1015,11 @@ export default function CoordNav() {
               totalKnown: undefined as boolean | undefined,
               hasRead: notificationsBadge.hasRead,
               stale: notificationsBadge.stale,
+              // Notifications have no severity axis at all, so these stay off
+              // the badge entirely rather than asserting a property the
+              // surface does not have — the same reasoning as `totalKnown`.
+              criticalKnown: undefined as boolean | undefined,
+              criticalStale: undefined as boolean | undefined,
               // It HAD no title at all, alone among the badges this nav
               // renders — so the one channel that could have carried the
               // staleness qualification was empty, and a hover over the
@@ -980,17 +1053,35 @@ export default function CoordNav() {
                   ? "bg-primary-foreground/20"
                   : "bg-muted text-foreground"
             )}
-            title={
-              badge.stale ? `${badge.title} ${STALE_TITLE_SUFFIX}` : badge.title
-            }
+            title={[
+              badge.title,
+              badge.stale ? STALE_TITLE_SUFFIX : null,
+              // Ordered after the count's own clause: the number is what the
+              // badge primarily says, and the accent qualifies it.
+              badge.criticalKnown === false
+                ? CRITICAL_UNKNOWN_CLAUSE
+                : badge.criticalStale
+                  ? CRITICAL_STALE_CLAUSE
+                  : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             data-total-known={badge.totalKnown}
+            data-critical-known={badge.criticalKnown}
+            data-critical-stale={badge.criticalStale}
             // Emitted in both states — unlike `data-total-known` above, which
             // the notifications branch deliberately leaves `undefined` so React
             // omits it. Here `"false"` is a real answer ("the last read
             // replaced this number"), distinct from a badge that never asked.
             data-read-stale={badge.stale}
           >
-            {badge.totalKnown === false ? "≥" : ""}
+            {/* `≥` only where it says something. "At least zero" is true of
+                every state there is, and the degraded arm reaches exactly that
+                whenever an un-upgraded coord answers with an empty window —
+                so the lower bound would arrive information-free, and stacked
+                with `*`, in the one place the design is trying to stay
+                legible. */}
+            {badge.totalKnown === false && badge.count > 0 ? "≥" : ""}
             {badge.count}
             {/* Visible, and not a colour or an opacity. Dimming the number was
                 the first cut, and it makes the STALE state the hardest one to
@@ -1007,8 +1098,18 @@ export default function CoordNav() {
                 Without this line the qualification is a sighted-mouse-user
                 feature, which leaves everyone else with exactly the unqualified
                 claim being fixed. */}
-            {badge.stale && (
-              <span className="sr-only"> {STALE_TITLE_SUFFIX}</span>
+            {(badge.stale ||
+              badge.criticalKnown === false ||
+              badge.criticalStale) && (
+              <span className="sr-only">
+                {" "}
+                {badge.stale ? STALE_TITLE_SUFFIX : ""}
+                {badge.criticalKnown === false
+                  ? ` ${CRITICAL_UNKNOWN_CLAUSE}`
+                  : badge.criticalStale
+                    ? ` ${CRITICAL_STALE_CLAUSE}`
+                    : ""}
+              </span>
             )}
           </span>
         )}

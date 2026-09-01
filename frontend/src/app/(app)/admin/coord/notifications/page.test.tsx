@@ -860,6 +860,92 @@ describe("CoordNotificationsPage", () => {
     ).toBeEnabled();
   });
 
+  it("does not paint green over counts the feed stopped carrying", async () => {
+    // The third way a scalar stops being current, and the one this page shipped
+    // blind to. `applyEnvelope` retains an absent scalar (right) while
+    // `setLoaded(true)` fires on any successful GET, so a coord build that
+    // stops sending `unread_count` leaves `loaded` true, `readFailed` FALSE and
+    // a frozen number in state — and the strip took the green arm over it.
+    //
+    // Found from the nav badge, which polls this same route and had the
+    // identical hole; fixing it there first briefly made the nav the MORE
+    // careful of the two surfaces reading one scalar.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    expect(
+      await screen.findByTestId("coord-notifications-health")
+    ).toHaveTextContent("7 unread events");
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+    // Its OWN sentence: nothing is failing here, so telling the operator the
+    // feed could not be re-read would send them after an outage that is not
+    // happening.
+    expect(strip).toHaveTextContent("the feed is answering but no longer");
+    // The number is retained and shown — it is real — and no longer quotable.
+    expect(strip).toHaveTextContent("7");
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).not.toHaveAttribute("title", expect.stringContaining("ALL 7"));
+  });
+
+  it("keeps mark-all live when the scalar stopped coming back at zero", async () => {
+    // The same degrade over a retained ZERO — last round's defect surviving in
+    // the scalar-less arm rather than the failed one. `unreadCount` is a frozen
+    // `0`, so the affirmative-zero predicate would grey the button out under a
+    // strip that is simultaneously saying the counts stopped updating.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+        unread_count: 0,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        "These counts stopped updating"
+      )
+    );
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeEnabled();
+  });
+
   describe("the ?ref= banner", () => {
     // The banner reads `window.location` once on mount. The outer `beforeEach`
     // puts the URL back to `/` for every test in the file, so this leaves no
