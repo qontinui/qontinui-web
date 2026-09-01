@@ -231,13 +231,25 @@ revision with dependency labels, and do not author an ``alembic merge``.
 Head resolution
 ===============
 
-``down_revision = "grantorig_01"``, re-resolved at authoring time (2026-09-01)
-by AST-parsing all 519 revision files in ``backend/alembic/versions`` and
-taking every ``revision`` id that is no other file's ``down_revision``
-(handling tuple ``down_revision``s): exactly **one** head on ``origin/main``,
-``grantorig_01``. If main moves again before this merges, re-chain — and prove
-it with ``ScriptDirectory.from_config(...).get_heads()`` returning exactly ONE
-head, never by reading one file. The ``Revises:`` line in this docstring is the
+``down_revision = "pmf_scope_cols_01"``, RE-POINTED at implementation closeout
+(2026-09-01) and this is the second value it has held — the first is why this
+section exists.
+
+Authored against ``grantorig_01``, which was the single head of 519 revisions
+when this file was written. By closeout ``main`` had gained four commits
+carrying ``coord_wusod_01`` (the adjacent work-unit-SoD plan) and
+``pmf_scope_cols_01`` on top of it, both chaining off ``grantorig_01`` — so
+this revision and ``pmf_scope_cols_01`` were siblings and the tree had TWO
+heads. Re-pointed to the live tip; the chain is now
+``grantorig_01 -> coord_wusod_01 -> pmf_scope_cols_01 -> vetev_01``, 522
+revisions, exactly one head.
+
+Re-resolved both times by AST-parsing every revision file in
+``backend/alembic/versions`` and taking each ``revision`` id that is no other
+file's ``down_revision`` (handling tuple ``down_revision``s). If main moves
+again before this merges, re-chain — and prove it with
+``ScriptDirectory.from_config(...).get_heads()`` returning exactly ONE head,
+never by reading one file. The ``Revises:`` line in this docstring is the
 only other place the parent is written; re-point it in the same edit.
 """
 
@@ -247,7 +259,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "vetev_01"
-down_revision: str | Sequence[str] | None = "grantorig_01"
+down_revision: str | Sequence[str] | None = "pmf_scope_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
