@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the spawn-capacity lane (threads + sessions)
 
 Revision ID: lasac_01
-Revises: grantorig_01
+Revises: pmf_scope_cols_01
 Create Date: 2026-08-30
 
 Phase 3a of plan
@@ -187,7 +187,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "lasac_01"
-down_revision: str | Sequence[str] | None = "grantorig_01"
+down_revision: str | Sequence[str] | None = "pmf_scope_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
