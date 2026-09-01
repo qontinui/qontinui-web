@@ -332,6 +332,12 @@ export default function CoordNotificationsPage() {
    * page's audit produced.
    *
    * A ref, because a settling read has to see its own writes in the same tick.
+   *
+   * This page reads `isStale()` and never `hasDelivered()` — `unreadCount ===
+   * null` is the same question here, and provably so: `setUnreadCount` runs iff
+   * `settle(…) && carried`, which is exactly when the module advances
+   * `delivered`. Stated rather than left to be rediscovered, because two
+   * spellings of one fact is what this module exists to stop.
    */
   const scalarSeqRef = useRef<ReturnType<typeof createReadSequence> | null>(
     null
