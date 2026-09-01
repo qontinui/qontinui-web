@@ -29,7 +29,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 let pathname = "/admin/coord/pipeline";
@@ -442,12 +442,20 @@ describe("CoordNav", () => {
     // claim on the tab beside it — which is the "applied it only where the
     // migration happened to be large" failure the style guide records for
     // /prompt-injections.
-    let call = 0;
+    // URL-keyed, and counted PER ROUTE. A single counter over every request
+    // would be coupled to the order the three `use*Badge()` hooks happen to
+    // fire in, so re-ordering them — a change with no other observable effect —
+    // would silently re-point which requests get the success bodies.
+    let alertsCall = 0;
     httpGet.mockImplementation((url: unknown) => {
-      call += 1;
-      if (call <= 2)
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      alertsCall += 1;
+      if (alertsCall <= 2)
         return Promise.resolve(
-          String(url).includes("severity=critical")
+          u.includes("severity=critical")
             ? { alerts: [], total_count: 0 }
             : { alerts: [], total_count: 42 }
         );
@@ -467,8 +475,8 @@ describe("CoordNav", () => {
         )
       );
       const stale = screen.getByTestId("coord-nav-alerts-badge");
-      expect(stale).toHaveTextContent("42");
-      expect(stale.getAttribute("title")).toMatch(/stopped moving/);
+      expect(stale).toHaveTextContent("42*");
+      expect(stale.getAttribute("title")).toMatch(/did not replace it/);
       // The base title still says WHICH number this is — the staleness
       // clause is appended to it, not substituted for it, so the two things
       // the badge cannot vouch for (`totalKnown`, `stale`) stay separable.
@@ -476,6 +484,85 @@ describe("CoordNav", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not stale a count whose own read succeeded beside a failed sibling", async () => {
+    // `useAlertsBadge` issues TWO reads and they fail independently. Under
+    // `Promise.all` the first rejection takes the whole poll into the catch, so
+    // a severity read that failed beside a count read that SUCCEEDED marked a
+    // number from this very poll as "from an earlier read" — a fresh false
+    // claim, made by the flag added to stop false claims. `allSettled` keeps
+    // them apart: the count is current, the accent is simply retained.
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      return u.includes("severity=critical")
+        ? Promise.reject(new Error("GET … failed: 500 - boom"))
+        : Promise.resolve({ alerts: [], total_count: 42 });
+    });
+    render(<CoordNav />);
+
+    const badge = await screen.findByTestId("coord-nav-alerts-badge");
+    expect(badge).toHaveTextContent("42");
+    expect(badge).toHaveAttribute("data-read-stale", "false");
+    expect(badge).not.toHaveTextContent("*");
+  });
+
+  it("keeps a RETAINED zero visible, because silence is an absence claim", async () => {
+    // The style guide's own words: "a retained count of 7 is kept and labelled
+    // old while a retained 0 would be thrown away, though both are equally
+    // fetched." A badge that only renders above zero has no way to carry the
+    // qualification for the zero case at all, so a last-good `0` followed by an
+    // outage renders NOTHING — on every console page — and an operator reads
+    // that silence as "all clear".
+    let alertsCall = 0;
+    httpGet.mockImplementation((url: unknown) => {
+      const u = String(url);
+      if (!u.startsWith("/api/v1/operations/alerts")) {
+        return Promise.resolve({ notifications: [] });
+      }
+      alertsCall += 1;
+      if (alertsCall <= 2)
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      return Promise.reject(new Error("GET … failed: 500 - boom"));
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      render(<CoordNav />);
+      // A read that ANSWERED zero renders nothing — an all-clear fleet should
+      // look like one. That arm is unchanged.
+      await waitFor(() => expect(alertsCall).toBeGreaterThan(1));
+      expect(
+        screen.queryByTestId("coord-nav-alerts-badge")
+      ).not.toBeInTheDocument();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      const retained = await screen.findByTestId("coord-nav-alerts-badge");
+      // Same zero, now RETAINED rather than answered — so it is rendered and
+      // marked instead of being indistinguishable from an all-clear.
+      expect(retained).toHaveTextContent("0*");
+      expect(retained).toHaveAttribute("data-read-stale", "true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stays silent for a zero that was NEVER read", async () => {
+    // The other side of the exception, and the reason it is keyed on `hasRead`
+    // rather than on `stale` alone: a first poll that fails has no retained
+    // fact to qualify, so rendering `0*` would invent a measurement.
+    httpGet.mockRejectedValue(new Error("GET … failed: 500 - boom"));
+    render(<CoordNav />);
+
+    await waitFor(() => expect(httpGet).toHaveBeenCalled());
+    expect(
+      screen.queryByTestId("coord-nav-alerts-badge")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-nav-notifications-badge")
+    ).not.toBeInTheDocument();
   });
 
   it("renders no badge when the rollup is empty or unavailable", async () => {
@@ -752,15 +839,16 @@ describe("CoordNav", () => {
         );
         expect(fresh).toHaveTextContent("7");
         // The attribute is EMITTED on the fresh arm too — "false" is the
-        // answer "the last poll landed", which is a different claim from a
-        // badge that never asked the question.
+        // answer "the last read replaced this number", which is a different
+        // claim from a badge that never asked the question.
         expect(fresh).toHaveAttribute("data-read-stale", "false");
         const freshTitle = fresh.getAttribute("title");
+        const freshText = fresh.textContent;
         // It had no title at all before this; the one channel that could
         // carry the qualification was empty.
         expect(freshTitle).toBeTruthy();
-        expect(freshTitle).not.toMatch(/stopped moving/);
-        expect(fresh.className).not.toContain("opacity-60");
+        expect(freshTitle).not.toMatch(/did not replace it/);
+        expect(freshText).toBe("7");
 
         await vi.advanceTimersByTimeAsync(60_000);
         await waitFor(() =>
@@ -772,16 +860,55 @@ describe("CoordNav", () => {
         // The number is still KEPT — that half was always right.
         expect(stale).toHaveTextContent("7");
         const staleTitle = stale.getAttribute("title");
-        expect(staleTitle).toMatch(/stopped moving/);
-        // Not a lower bound: an operator marking rows read in another tab
-        // moves this count DOWN, so `≥` would be a fresh false claim.
-        expect(stale).not.toHaveTextContent("≥");
-        // Dimmed, not recoloured — a stale count is not a condition.
-        expect(stale.className).toContain("opacity-60");
-        expect(stale.className).not.toContain("text-red-200");
-        // The two states produce two DIFFERENT outputs. This is the assertion
-        // that could not have been satisfied before.
+        expect(staleTitle).toMatch(/did not replace it/);
+        // A VISIBLE marker, not a colour or an opacity: the qualification has
+        // to survive being read, and dimming 10px bold text makes the stale
+        // state the hardest one to read.
+        expect(stale).toHaveTextContent("7*");
+        // ...and the same words in the accessible name, since `title` on this
+        // span is not one — the link's name comes from its content.
+        expect(stale.textContent).toMatch(/did not replace it/);
+        // The two states produce two DIFFERENT outputs, in every channel. This
+        // is the assertion that could not have been satisfied before.
         expect(staleTitle).not.toBe(freshTitle);
+        expect(stale.textContent).not.toBe(freshText);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("goes stale on a 2xx that carried no scalar, not just on a rejection", async () => {
+      // `stale` is "the most recent read did not REPLACE this number", and a
+      // 200 with no `unread_count` did not. The first cut only declined to
+      // CLEAR the flag here, which is half of it: against a coord build that
+      // permanently omits the scalar — the degrade the page's `applyEnvelope`
+      // documents as reachable — the badge then renders poll 1's number as
+      // current forever, undimmed and unmarked.
+      let call = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        if (String(url).startsWith("/api/v1/operations/notifications")) {
+          call += 1;
+          return call === 1
+            ? Promise.resolve({ unread_count: 7 })
+            : Promise.resolve({ notifications: [] });
+        }
+        return Promise.resolve({ alerts: [] });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        const badge = await screen.findByTestId(
+          "coord-nav-notifications-badge"
+        );
+        expect(badge).toHaveAttribute("data-read-stale", "false");
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() => expect(call).toBeGreaterThan(1));
+        const after = screen.getByTestId("coord-nav-notifications-badge");
+        // The number is retained — the read said nothing about it — and now
+        // marked, because nothing refreshed it.
+        expect(after).toHaveTextContent("7*");
+        expect(after).toHaveAttribute("data-read-stale", "true");
       } finally {
         vi.useRealTimers();
       }
@@ -819,6 +946,55 @@ describe("CoordNav", () => {
         const badge = screen.getByTestId("coord-nav-notifications-badge");
         expect(badge).toHaveTextContent("7");
         expect(badge).toHaveAttribute("data-read-stale", "true");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("lets a superseded reply say nothing about the read that overtook it", async () => {
+      // Fire-and-forget on a 60s timer was fine while nothing here made a claim
+      // about WHEN a number was read. `stale` does. Poll A hangs past the next
+      // tick; poll B succeeds and refreshes the count; A then rejects — and
+      // without a guard that rejection marks B's fresh number as coming from an
+      // earlier read. The page next door carries the same guard and says why:
+      // narrowing a race is not closing it.
+      let rejectA: ((e: Error) => void) | null = null;
+      let call = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        if (!String(url).startsWith("/api/v1/operations/notifications")) {
+          return Promise.resolve({ alerts: [] });
+        }
+        call += 1;
+        if (call === 1) {
+          return new Promise((_resolve, reject) => {
+            rejectA = reject;
+          });
+        }
+        return Promise.resolve({ unread_count: 9 });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        // A is still in flight; B fires on the next tick and lands.
+        await vi.advanceTimersByTimeAsync(60_000);
+        const badge = await screen.findByTestId(
+          "coord-nav-notifications-badge"
+        );
+        expect(badge).toHaveTextContent("9");
+
+        // Now A fails, describing a read two polls old. Inside `act` so the
+        // rejection's handler AND any state update it makes are flushed before
+        // the assertion — without that this test passes with the guard removed,
+        // which makes it a test of nothing.
+        await act(async () => {
+          rejectA?.(new Error("GET … failed: 500 - boom"));
+          await Promise.resolve();
+        });
+
+        const after = screen.getByTestId("coord-nav-notifications-badge");
+        expect(after).toHaveAttribute("data-read-stale", "false");
+        expect(after).toHaveTextContent("9");
+        expect(after).not.toHaveTextContent("*");
       } finally {
         vi.useRealTimers();
       }
