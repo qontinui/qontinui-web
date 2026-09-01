@@ -89,6 +89,39 @@ import type {
 const API = `${ApiConfig.API_BASE_URL}/api/v1/operations`;
 
 /**
+ * How one device's coord state reads in the picker.
+ *
+ * The verdict alone is not enough here, and this is the surface where that
+ * costs something. `stale` is coord's derived overlay — the heartbeat is
+ * fine and the resource SAMPLER has gone quiet — so a `stale` machine is
+ * reachable and perfectly spawnable, while `partitioned` and `abandoned`
+ * mean coord cannot reach the box at all. Rendered as bare `(stale)` beside
+ * a bare `(partitioned)` in the same muted grey, an operator picking a
+ * machine to spawn on cannot tell the usable one from the dead one.
+ *
+ * coord ships `heartbeat_state` for exactly this: the persisted ladder state
+ * underneath the overlay, so the overlay loses nothing. When it disagrees
+ * with the verdict, both are shown.
+ *
+ * Deliberately NOT special-cased on the string `"stale"`: any future derived
+ * overlay coord adds gets the same treatment, and a build that has never
+ * heard of it still renders both halves truthfully. An absent
+ * `heartbeat_state` (a coord predating the field) falls through to the
+ * verdict alone rather than inventing agreement.
+ *
+ * Returns `""` when there is no verdict to qualify. That case is guarded at
+ * the only call site, but the empty string is the contract rather than an
+ * accident: `heartbeat_state` explains a verdict and cannot stand in for a
+ * missing one, and an absent state is `unknown` — a judgement this label does
+ * not own.
+ */
+export function deviceStateLabel(d: FleetHealthDevice): string {
+  if (!d.state) return "";
+  if (!d.heartbeat_state || d.heartbeat_state === d.state) return d.state;
+  return `${d.state}, heartbeat ${d.heartbeat_state}`;
+}
+
+/**
  * Canonical repo slug list. Mirrors the set coord uses for
  * `declared_overlap_paths` repo scoping. Operators can still
  * declare repos that aren't in this list by typing them into the
@@ -977,7 +1010,7 @@ export function SpawnModal({
                       </span>
                       {d.state && (
                         <span className="ml-2 text-xs text-muted-foreground">
-                          ({d.state})
+                          ({deviceStateLabel(d)})
                         </span>
                       )}
                     </SelectItem>
