@@ -69,7 +69,6 @@ import {
   UNKNOWN_COUNTS_DETAIL,
   readIsUnknown,
   relativeTime,
-  rowAccentClass,
   staleDetail,
   type FilterChipOption,
   type HealthBadge,
@@ -636,7 +635,7 @@ function SessionConsoleRow({
     <RecordRow
       identity={<span title={row.id}>{row.id.slice(0, 8)}</span>}
       rowKey={rowKey}
-      accent={rowAccentClass(status)}
+      attention={status.attention}
       expanded={expanded}
       onToggle={onToggle}
       data-testid="sessions-console-row"
