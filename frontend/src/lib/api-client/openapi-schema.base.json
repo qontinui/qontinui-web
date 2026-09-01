@@ -21100,6 +21100,36 @@
         "title": "FleetDeferredQuestionResponse",
         "type": "object"
       },
+      "FleetDrainBody": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /operations/fleet/drain`` \u2014 coord's ``DrainRequest``.\n\n``model_config`` forbids extra keys because coord's own struct carries\n``#[serde(deny_unknown_fields)]``: a typo'd field name must fail at this\ndoor with a field-level message rather than reach coord and be reported as\nan opaque deserialization error.",
+        "properties": {
+          "device_id": {
+            "description": "The coord device to stop dispatching work to.",
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "description": "REQUIRED, non-blank. It lands in the `coord.user_overrides` row, the `coord.alerts` row and the `operator_audit` stamp \u2014 the audit trail is the whole point of routing this through coord rather than a shell.",
+            "title": "Reason",
+            "type": "string"
+          },
+          "until": {
+            "description": "REQUIRED expiry (RFC 3339, timezone-aware). A drain without a deadline is a permanent removal wearing an expiry's clothes, which is exactly what coord's \u00a7D2 contract forbids \u2014 so there is no default and no open-ended form. Coord additionally refuses a deadline in the past or more than 30 days out.",
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "until",
+          "reason"
+        ],
+        "title": "FleetDrainBody",
+        "type": "object"
+      },
       "FleetPolicyPut": {
         "additionalProperties": false,
         "description": "Closed body for the fleet-policy write.\n\n``extra=\"forbid\"`` is not decoration: coord's own struct is\n``deny_unknown_fields``, so a stray key would come back as a 422 from\ncoord with a Rust serde message. Rejecting it here turns that into a\nlocal, legible 422 and keeps the wire body exactly the shape coord\naccepts.\n\nDeliberately absent:\n\n* ``updated_by`` \u2014 coord stamps the author from its authenticated\n  ``OperatorContext``. An audit trail with a client-asserted author is not\n  an audit trail, and coord's wire shape has no such field to spoof.\n* ``controls`` \u2014 optional on coord's side, but ``#[serde(default)]`` on a\n  NON-``Option`` field, so omitting it and sending ``{}`` are the SAME\n  value to coord and sending ``null`` is a 422. It is omitted because this\n  door has no business authoring control values \u2014 and because omission is\n  indistinguishable from a default, ``fleet_resources`` is refused outright\n  below rather than trusted to a comment.\n* ``tenant_id`` \u2014 resolved from the caller's credential, never the body.",
@@ -21311,6 +21341,27 @@
           "domain"
         ],
         "title": "FleetPolicyWriteResult",
+        "type": "object"
+      },
+      "FleetUndrainBody": {
+        "additionalProperties": false,
+        "description": "Body of ``POST /operations/fleet/undrain`` \u2014 coord's ``UndrainRequest``.\n\nNo ``until``: releasing a hold has no deadline. Coord answers\n``changed: false`` when the device was not drained, which the console\nreports as \"it was not paused\" rather than dressing it up as a release.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "FleetUndrainBody",
         "type": "object"
       },
       "FolderCreateRequest": {
@@ -77514,6 +77565,118 @@
         ]
       }
     },
+    "/api/v1/operations/coord/audit/recent": {
+      "get": {
+        "description": "Return recent ``coord.operator_audit`` rows for the caller's tenant.\n\nCoord answers ``{\"audit\": [...], \"count\": <n>}`` ordered\n``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,\n``action``, ``resource_kind``, ``resource_key``, ``metadata`` and\n``occurred_at``.\n\n**``metadata`` is where the blast radius lives**, and it is per-action\nrather than a fixed schema \u2014 `operator_disable.rs` computes\n``affected_tenant_ids`` before stamping, the kill switch stamps\n``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``\n/ ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that\nnormalised it into a fixed shape would silently drop whatever the next\nwriter computes, which is the one field an operator reading this feed\nactually needs.\n\n``operator_id`` is the acting operator coord resolved from the bearer. A\nrow reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID\nsignature of a coord writer that used ``resolve_operator_id(&headers)``\ninstead of ``ctx.operator_id`` \u2014 the header it reads is one this service\nnever sends. That is a coord-side defect to report, not a real operator,\nand the console labels it as such rather than rendering a plausible id.",
+        "operationId": "api_v1_operations_coord_audit_recent_get",
+        "parameters": [
+          {
+            "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by action. A trailing `*` is a PREFIX match (`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); anything else is an exact match. Forwarded to coord verbatim \u2014 the prefix grammar is coord's, not this proxy's.",
+              "title": "Action"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at >= since`.",
+              "title": "Since"
+            }
+          },
+          {
+            "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "RFC 3339. Restrict to rows where `occurred_at < before`.",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Coord Audit Recent Api V1 Operations Coord Audit Recent Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Coord Audit Recent",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/cognito/groups": {
       "get": {
         "description": "List every Cognito group in the shared pool. Superuser-gated.\n\nRead-only: no audit row and no rate limit (it changes nothing and the\ndashboard polls it), but it shares the error mapper so a throttle reads\n429 and a bad pool id reads 500 rather than both reading 502.",
@@ -81278,6 +81441,80 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/ci-runners": {
+      "get": {
+        "description": "Return coord's mirror of the self-hosted CI runners and their labels.\n\nCoord answers::\n\n    {\n      \"runners\": [\n        {\n          \"device_id\": \"<uuid>\",\n          \"hostname\": \"<str>\",\n          \"ci_runner_status\": \"<str|null>\",\n          \"ci_runner_labels\": [\"self-hosted\", \"qontinui\", ...],\n          \"last_seen_at\": \"<rfc3339|null>\"\n        }\n      ],\n      \"as_of\": \"<rfc3339>\",\n      \"freshness_secs\": <int>\n    }\n\n``ci_runner_labels`` is the set coord's registrar last mirrored from\nGitHub's `actions/runners` listing \u2014 the same set GitHub matches a job's\n`runs-on` against. A host missing the custom `qontinui` label draws no\n`[self-hosted, qontinui]` job, which is what makes this read worth\nsurfacing: it is the only place the console can see routing eligibility.\n\n``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and\n``freshness_secs`` is coord's SELECTION WINDOW \u2014 not an age. Coord's own\nwords: \"the freshness window the query was executed under, in seconds\",\nsourced from ``merge_scheduler::ci_runner_freshness_secs()``\n(``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).\nThe rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A\nconsumer that renders it as \"N seconds old\" prints a constant as if it were\na measurement; the real per-row age is ``as_of - last_seen_at``, which is\nwhy ``last_seen_at`` is on the wire. All three pass through untouched.\n\nForwarded verbatim \u2014 this proxy adds no shape of its own, so a coord that\ngrows a field serves it to the console without a change here.",
+        "operationId": "api_v1_operations_fleet_ci_runners_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Ci Runners Api V1 Operations Fleet Ci Runners Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get Fleet Ci Runners",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/drain": {
+      "post": {
+        "description": "Stop coord dispatching CI and build work to one machine, until ``until``.\n\nSame shape as :func:`post_pr_merge_kill_switch` \u2014 the admin dependency,\nthe ``_proxy_coord_post`` helper, and coord's status codes forwarded\nverbatim: 400 on an out-of-window expiry, 403 when the caller is not an\noperator admin or the device is not bound to the caller's tenant\n(``device_not_in_tenant``).\n\nA **blank reason never reaches coord** \u2014 :class:`FleetDrainBody` refuses it\nhere, so it is a 422 from this door rather than coord's 400. That is the\none place this proxy is stricter than the route it fronts, and it is\ndeliberate: the field is required by both, and refusing it one hop earlier\nnames the field instead of returning coord's error string.\n\nCoord, in one versioned transaction:\n\n1. Writes the entry into ``coord.fleet_runtime_policy.drain`` JSONB\n   (``{\"<device_uuid>\": {\"until\", \"reason\", \"drained_by\", \"drained_at\"}}``)\n   via ``fleet_policy::apply_policy_edit_tx`` \u2014 a numbered, immutable\n   snapshot. **Zero new columns.**\n2. INSERTs a ``coord.user_overrides(override_kind='fleet_drain_set')`` row.\n3. INSERTs a ``coord.alerts`` row so other operators see it.\n4. Stamps ``auth_sso::audit_mutation`` with ``ctx.operator_id`` \u2014 the\n   operator resolved from the forwarded bearer, never a header-derived id.\n   (`resolve_operator_id(&headers)` reads an `X-Qontinui-Operator-Id`\n   header this service never sends and falls back to `Uuid::nil()`, which\n   violates `operator_audit`'s FK and is then swallowed by\n   `audit_mutation`'s fire-and-forget warn. This path does not go near it.)\n\nReturns coord's ``DrainResponse``: ``{device_id, drained, until, reason,\ndrained_by, drained_at, version, changed}``. ``changed`` is ``false`` when\nthe request altered nothing.\n\n**Scope, stated because the control that calls this must say it too:** the\ndrain map is consulted by coord's CI dispatch and build dispatch and by\nnothing else. GitHub Actions routing, agent-session spawning and the\nmerge-train slot clamp are all unaffected \u2014 see the section comment above.",
+        "operationId": "api_v1_operations_fleet_drain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetDrainBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Drain Api V1 Operations Fleet Drain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Drain",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/health": {
       "get": {
         "description": "Return the fleet-health rollup from coord (tenant-scoped).\n\nThe body is coord's ``get_fleet_health`` envelope, passed through\nuntouched: ``devices`` (the per-machine\n``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,\n``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,\n``kv_bucket`` and ``as_of``. This route declares no\n``response_model``, so nothing here filters a field coord adds.\n\nThose nine are what coord emits **today**. Two more are read by this\nrepo's client and appear nowhere in coord's source: ``FleetHealthPayload``\ndeclares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page\nbranches on ``alerts_scrape_up === false``. They are FORWARD\ndeclarations \u2014 deliberately absence-tolerant, since the client must\ntreat an absent flag as *measured* \u2014 so they are not part of this\ncontract and this route synthesises neither. The branch reading them\nis unreachable until coord grows them.\n\nThe contract is written down because the sibling resource-samples\nroute learned the lesson first: this\ndocstring is what FastAPI renders into ``openapi-schema.json`` /\n``openapi-schema.base.json``, which are committed and drift-gated by\n``backend-ci.yml``, so it is this repo's contract of record for the\nroute. Until now it described none of a wire its own browser reads\non a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,\n``SpawnModal.tsx``).\n\nThe fields that make the surface honest rather than merely working:\n\n* ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:\n  ``healthy | degraded | stale | partitioned | abandoned``, plus\n  ``unknown`` when the stored string did not parse. It is\n  non-optional in coord's snapshot, so today's coord always sends\n  it; callers still treat an absent one as *unknown* rather than\n  healthy, which is the rule the whole surface rests on. Read the\n  vocabulary as OPEN: a state a newer coord adds must render\n  *unknown*, not fail to parse, so nothing on this path may narrow\n  it to a closed union.\n* ``stale`` is the newest value and the only DERIVED one \u2014 computed\n  at read time and never persisted (coord's ``devices_state_chk``\n  admits only the other four). It means **the heartbeat is fine and\n  the resource SAMPLER has gone quiet**, which is deliberately not\n  ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``\n  beside a WSL-lane sample 22 minutes old, and calling that a\n  network partition would have sent an operator to debug the wrong\n  layer.\n* ``devices[].heartbeat_state`` is the machine's PERSISTED ladder\n  state, before the freshness overlay \u2014 carried so that the overlay\n  **loses nothing**. It is the difference between \"this box is\n  unreachable\" and \"this box is fine and its publisher is quiet\",\n  and a caller that renders ``state`` alone cannot tell an operator\n  which. A spawn picker is the case that bites: ``stale`` is a\n  perfectly spawnable machine and ``partitioned`` is not.\n* ``devices[].state_raw`` is present **only** when the stored state\n  failed to parse (``state`` is then ``\"unknown\"``); it carries what\n  the row actually said. Omitted entirely in the common case, so its\n  presence is the anomaly marker \u2014 do not default it in.\n* ``devices[].newest_sample_age_secs`` is seconds since that\n  device's newest resource sample, and\n  ``devices[].sample_stale_after_secs`` is the threshold it was\n  graded against. **It is NOT the configured cadence**: coord\n  computes ``sample_interval_secs \u00d7 SAMPLE_STALE_INTERVALS`` with\n  that multiplier pinned at 4, falling back to a 30s interval where\n  the tenant set none \u2014 so the default threshold is 120s, not 30s.\n  **The threshold rides the wire for the same reason the resource\n  strip's floors do** \u2014 so the client keeps no constant of its own\n  and cannot disagree with coord about where stale begins, which is\n  exactly the disagreement a client re-deriving \"4 \u00d7 the interval\"\n  would eventually ship. ``null`` on either is UNKNOWN: not zero,\n  and not \"fresh\". They are also independently nullable: a device\n  with no sample in the lookback arrives with a null age and a\n  POPULATED threshold.\n* ``devices[].within_dispatch_window`` says whether coord would\n  actually expect this machine to answer. The roster stopped\n  dropping out-of-window devices and ships the answer instead, so\n  *listed* no longer implies *reachable*; the ``liveness`` block\n  (``within_dispatch_window`` / ``outside_dispatch_window`` /\n  ``heartbeat_ttl_secs``) is the same split rolled up.\n* ``excluded`` is ``null`` when coord did not MEASURE the exclusion\n  set \u2014 see ``excluded_error`` \u2014 and never means \"none excluded\".\n\n**The one caveat a caller must not read as an all-clear**, stated\nprecisely because the imprecise version is worse than none. A\nPostgres outage is NOT this case: the roster query acquires the pool\nfirst and its failure returns 500, which this proxy raises rather\nthan passing off as an empty fleet. The caveat is the narrower\n**mid-request** one \u2014 the roster succeeded and a LATER acquire did\nnot (pool exhaustion, an acquire timeout). coord then logs *\"no\nfreshness overlay, no alert rollup this tick\"* and still answers\n200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,\nindistinguishable from a genuinely quiet fleet, with every device's\n``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to\n``stale``** (a persisted ``'stale'`` string would still decode \u2014\ncoord parses the value so such a row is not silently dropped \u2014 but\nthe CHECK is what makes that improbable, not this path).\n\ncoord ships no flag distinguishing that tick from a healthy one, so\nzeros here are not evidence of quiet and an absent ``stale`` is not\nevidence of a live publisher\n(``[policy: silent-empty-is-unknown]``).",
@@ -81685,6 +81922,53 @@
           }
         ],
         "summary": "Get All Tasks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/undrain": {
+      "post": {
+        "description": "Release a machine's drain hold so coord dispatches to it again.\n\nSame auth, helper and error mapping as :func:`post_fleet_drain`. Coord\nwrites no audit side effects when nothing changed \u2014 an undrain of a device\nthat was not drained returns ``changed: false`` and stamps nothing, because\n\"an audit feed that records requests rather than changes is one operators\nstop reading\" (`fleet_drain.rs`).",
+        "operationId": "api_v1_operations_fleet_undrain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FleetUndrainBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Undrain Api V1 Operations Fleet Undrain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Undrain",
         "tags": [
           "operations"
         ]
