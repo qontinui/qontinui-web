@@ -75,9 +75,14 @@ describe("CoordNotificationsPage", () => {
     });
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-unread-count")
-    ).toHaveTextContent("137 unread");
+    // `waitFor` on the CONTENT: both badges are rendered unconditionally and
+    // read `– unread` / `– total` until the head read lands, so `findBy`
+    // resolves immediately and a chained assertion races the read.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-unread-count")
+      ).toHaveTextContent("137 unread")
+    );
     expect(screen.getByTestId("coord-notifications-total")).toHaveTextContent(
       "900 total"
     );
@@ -238,7 +243,9 @@ describe("CoordNotificationsPage", () => {
     const button = await screen.findByTestId(
       "coord-notifications-mark-all-read"
     );
-    expect(button).toHaveAttribute("data-mark-all-scope", "everything");
+    await waitFor(() =>
+      expect(button).toHaveAttribute("data-mark-all-scope", "everything")
+    );
     expect(button).toHaveTextContent("Mark all read");
     await user.click(button);
 
@@ -359,9 +366,11 @@ describe("CoordNotificationsPage", () => {
     render(<CoordNotificationsPage />);
 
     // The good load.
-    expect(
-      await screen.findByTestId("coord-notifications-unread-count")
-    ).toHaveTextContent("137 unread");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-unread-count")
+      ).toHaveTextContent("137 unread")
+    );
     expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
       "data-health-level",
       "green"
@@ -663,9 +672,15 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+    const button = await screen.findByTestId(
+      "coord-notifications-mark-all-read"
+    );
+    await waitFor(() =>
+      expect(button).toHaveAttribute(
+        "title",
+        expect.stringContaining("ALL 137 unread")
+      )
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
@@ -699,9 +714,11 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"))
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await screen.findByTestId("coord-notifications-pending");
@@ -737,9 +754,11 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toBeEnabled();
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeEnabled()
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await screen.findByTestId("coord-notifications-pending");
@@ -1218,10 +1237,16 @@ describe("CoordNotificationsPage", () => {
       const user = userEvent.setup();
       render(<CoordNotificationsPage />);
 
-      // UUID_B is not on the page, so the banner starts on its last arm.
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/not on the page that is loaded/);
+      // UUID_B is not on the page, so the banner SETTLES on its last arm.
+      // Not "starts" — it starts on the loading arm, which is the whole reason
+      // this has to wait on the content: the banner renders as soon as
+      // `linkedRef` is set from the mount effect, before the head read lands,
+      // and `findBy` resolves on element EXISTENCE.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/not on the page that is loaded/)
+      );
 
       await user.click(screen.getByTestId("coord-notification-mark-read"));
       await screen.findByText(/Could not mark read/);
@@ -1332,9 +1357,11 @@ describe("CoordNotificationsPage", () => {
       withRef(UUID_B);
       render(<CoordNotificationsPage />);
 
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/deployment state, not a missing event/);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/deployment state, not a missing event/)
+      );
     });
 
     it("still blames the feed when the feed is what failed", async () => {
@@ -1344,9 +1371,11 @@ describe("CoordNotificationsPage", () => {
       withRef(UUID_B);
       render(<CoordNotificationsPage />);
 
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/feed above failed to load/);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/feed above failed to load/)
+      );
     });
   });
 });
