@@ -33434,6 +33434,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "relay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerRelay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running_task_count": {
             "default": 0,
             "title": "Running Task Count",
@@ -35053,6 +35063,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "relay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerRelay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running_task_count": {
             "default": 0,
             "title": "Running Task Count",
@@ -35272,6 +35292,57 @@
           "line"
         ],
         "title": "RunnerProcessSessionOutputLine",
+        "type": "object"
+      },
+      "RunnerRelay": {
+        "description": "Cloud-relay state a runner reports about itself.\n\nRT6 of plan\n``2026-08-30-mobile-account-usage-relay-503-runner-runtime-starvation``.\n\nA mobile relay 503 is ``coord.devices.ws_session_id IS NULL``, and the two\nfaults that produce it need opposite remedies:\n\n* the runner never registered (unpaired, wrong tier, switched off, or\n  pointed at the wrong backend), and\n* the runner registers and drops every few seconds.\n\n``connected`` alone cannot separate them \u2014 a flapping relay reports ``True``\nin whichever heartbeat lands inside a connection \u2014 so the operator sees one\nerror message for two problems. These fields separate them:\n\n* ``consecutive_quick_disconnects > 0`` means churning, whatever\n  ``connected`` says.\n* ``last_connected_at_ms is None`` means never registered in that runner\n  process's lifetime.\n* a set ``last_connected_at_ms`` with ``connected is False`` means\n  registered, then dropped \u2014 the fault actually observed on 2026-08-30.\n\nEvery field is optional because a runner predating the change omits the\nwhole block. Absent is UNKNOWN, never \"healthy\" and never \"never paired\".",
+        "properties": {
+          "connected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected"
+          },
+          "consecutive_quick_disconnects": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutive Quick Disconnects"
+          },
+          "last_connected_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Connected At Ms"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "title": "RunnerRelay",
         "type": "object"
       },
       "RunnerStatus": {
