@@ -33,6 +33,7 @@ import {
   CoordAdminOnly,
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
+import { AUTHOR_RED, WAITING_AMBER } from "@/components/console";
 import { OPERATIONS_API } from "./utils";
 
 const log = createLogger("MergeOrchestrationOnboarding");
@@ -1115,14 +1116,14 @@ function WorktreeAllocationNotice({
     detail =
       "The repo is registered and reconciled. Agents can allocate worktrees against it now.";
   } else if (known === "blocked_no_remote") {
-    tint = "border-red-500/40 bg-red-500/10 text-red-200";
+    tint = AUTHOR_RED;
     icon = <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />;
     headline = "Agent worktree allocation: blocked (no remote)";
     detail = remote
       ? "Coord could not use the remote you supplied, so there is nothing to mirror-clone. Fix the clone URL and accept again — the profile itself is already saved."
       : "No GitHub remote was recorded, so there is nothing to mirror-clone. Re-run accept with the repo's clone URL filled in — the profile itself is already saved.";
   } else if (known === "pending_first_reconcile") {
-    tint = "border-amber-500/40 bg-amber-500/10 text-amber-200";
+    tint = WAITING_AMBER;
     icon = <Loader2 className="h-3 w-3 mt-0.5 shrink-0" />;
     headline = "Agent worktree allocation: pending first reconcile";
     detail =
