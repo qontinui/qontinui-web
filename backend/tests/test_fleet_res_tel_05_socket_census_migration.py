@@ -87,13 +87,20 @@ from tests._alembic_harness import (
 # because a stale pin rewinds too far and replays unrelated non-idempotent
 # revisions, surfacing as someone else's `DuplicateTable`.
 #
-# It is `pmf_scope_cols_01`, the chain head measured with the repo's own gate
-# (`scripts/ci/count_alembic_heads.py`) at authoring time. The family prefix
-# says nothing about the chain edge — `fleet_res_tel_04` is the sibling that
-# added the saturation columns to this same table and is NOT this revision's
-# parent — so read `down_revision` rather than inferring it from the name.
+# It is `vetev_01`, the chain head measured with the repo's own gate
+# (`scripts/ci/count_alembic_heads.py`). The family prefix says nothing about
+# the chain edge — `fleet_res_tel_04` is the sibling that added the saturation
+# columns to this same table and is NOT this revision's parent — so read
+# `down_revision` rather than inferring it from the name.
+#
+# This pin has already moved once: the revision was authored against
+# `pmf_scope_cols_01` and re-pointed onto `vetev_01` when #1212 landed on top.
+# That re-point edited the revision alone and left this constant behind, so the
+# guard below failed the PR — which is the guard doing its job. **A future
+# re-point must edit BOTH files in the same commit**, exactly as that test's
+# failure message instructs.
 _REVISION_ID = "fleet_res_tel_05_socket_census"
-_PARENT_REVISION_ID = "pmf_scope_cols_01"
+_PARENT_REVISION_ID = "vetev_01"
 _REVISION_FILENAME = "fleet_res_tel_05_socket_census.py"
 
 _TABLE = "device_resource_samples"
@@ -697,6 +704,7 @@ def test_a_null_socket_reading_is_distinguishable_from_zero(
                      WHERE device_id = :d
                     """
                 ),
+                {"d": str(device_id)},
             )
         with engine.connect() as conn:
             zeroed = conn.execute(
