@@ -19,13 +19,24 @@
  *     not actually been migrated.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { PlanRow } from "./PlanRow";
 
+// One shared spy, so the Phase 3 cases can assert that Spawn DID or DID NOT
+// navigate. `vi.hoisted` is required: `vi.mock` is hoisted above every plain
+// `const`, so a bare module-scope `vi.fn()` would still be undefined when the
+// factory runs.
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push }),
 }));
+
+beforeEach(() => {
+  push.mockClear();
+});
 
 function renderRow(
   plan: Parameters<typeof PlanRow>[0]["plan"],
@@ -265,6 +276,143 @@ describe("PlanRow body signals", () => {
       },
       true
     );
+    for (const id of [
+      "coord-plan-card",
+      "coord-plan-status-tag",
+      "coord-plan-card-dates",
+      "coord-plan-card-link",
+      "coord-plan-card-spawn-btn",
+    ]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+  });
+});
+
+describe("PlanRow spawn guard (Phase 3)", () => {
+  /**
+   * The incident this plan was written for: an operator picked a bodyless row
+   * off this console and sent a session at a plan that does not exist. The
+   * chips above make that visible; these cases pin that the SPAWN action
+   * itself now costs a deliberate second click on exactly the rows that earn
+   * one — and costs nothing at all everywhere else.
+   */
+
+  /** Expand, click Spawn once, and report what happened. */
+  async function clickSpawn(plan: Parameters<typeof PlanRow>[0]["plan"]) {
+    const user = userEvent.setup();
+    renderRow(plan, true);
+    await user.click(screen.getByTestId("coord-plan-card-spawn-btn"));
+    return user;
+  }
+
+  it("confirms before spawning when the document is proven absent", async () => {
+    await clickSpawn({
+      slug: "2026-09-01-x",
+      status: "in_progress",
+      has_body: false,
+      body_provenance: "never_scanned",
+    });
+
+    // The first click states the cost instead of navigating.
+    expect(push).not.toHaveBeenCalled();
+    const notice = screen.getByTestId("coord-plan-spawn-body-confirm");
+    expect(notice).toHaveAttribute("data-risk", "absent");
+    expect(notice).toHaveTextContent("This work unit has no plan document.");
+    expect(notice).toHaveTextContent(/have to author the plan/);
+    // ...and the button says what the next click will do.
+    expect(screen.getByTestId("coord-plan-card-spawn-btn")).toHaveTextContent(
+      "Spawn anyway"
+    );
+  });
+
+  it("is a confirm, not a block — the second click spawns", async () => {
+    // Spawning a session to AUTHOR the plan from good metadata is a
+    // legitimate and common move (§9). The guard must never remove it.
+    const user = await clickSpawn({
+      slug: "2026-09-01-x",
+      status: "draft",
+      has_body: false,
+    });
+    await user.click(screen.getByTestId("coord-plan-card-spawn-btn"));
+    expect(push).toHaveBeenCalledWith("/admin/coord/spawn");
+  });
+
+  it("is reversible — Cancel puts the row back", async () => {
+    const user = await clickSpawn({
+      slug: "2026-09-01-x",
+      status: "draft",
+      has_body: false,
+    });
+    await user.click(screen.getByTestId("coord-plan-card-spawn-cancel"));
+    expect(screen.queryByTestId("coord-plan-spawn-body-confirm")).toBeNull();
+    expect(screen.getByTestId("coord-plan-card-spawn-btn")).toHaveTextContent(
+      "Spawn"
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("confirms on unknown + never_scanned, worded as UNPROVEN", async () => {
+    await clickSpawn({
+      slug: "2026-09-01-x",
+      status: "in_progress",
+      has_body: "unknown",
+      body_provenance: "never_scanned",
+      body_unknown_reason: "capture_off",
+    });
+
+    expect(push).not.toHaveBeenCalled();
+    const notice = screen.getByTestId("coord-plan-spawn-body-confirm");
+    expect(notice).toHaveAttribute("data-risk", "unproven");
+    // An unknown confirm that reads like a false confirm fails the honesty
+    // gate, so the assertion is on the words, not only on the appearance.
+    expect(notice).toHaveTextContent(/UNPROVEN, not proof of absence/);
+    expect(notice).not.toHaveTextContent(
+      "This work unit has no plan document."
+    );
+    expect(notice).toHaveTextContent(/switched off/);
+  });
+
+  it.each([
+    [
+      "unknown + scanned (the two weak signals disagree)",
+      { has_body: "unknown" as const, body_provenance: "scanned" as const },
+    ],
+    [
+      "unknown + scanned_locally",
+      {
+        has_body: "unknown" as const,
+        body_provenance: "scanned_locally" as const,
+      },
+    ],
+    ["a document that exists", { has_body: true }],
+    ["a row the backend never annotated", {}],
+  ])("spawns straight through on %s", async (_label, signal) => {
+    await clickSpawn({ slug: "2026-09-01-x", status: "in_progress", ...signal });
+
+    expect(screen.queryByTestId("coord-plan-spawn-body-confirm")).toBeNull();
+    expect(push).toHaveBeenCalledWith("/admin/coord/spawn");
+  });
+
+  it("spawns straight through on a TERMINAL unit, however bodyless", async () => {
+    // A shipped work unit that never had a document is not a defect, so it
+    // is not a spawn worth interrupting either.
+    await clickSpawn({
+      slug: "2026-08-16-shipped",
+      status: "shipped",
+      has_body: false,
+      body_provenance: "never_scanned",
+    });
+
+    expect(screen.queryByTestId("coord-plan-spawn-body-confirm")).toBeNull();
+    expect(push).toHaveBeenCalledWith("/admin/coord/spawn");
+  });
+
+  it("keeps every frozen testid alive while confirming (D4a)", async () => {
+    await clickSpawn({
+      slug: "2026-09-01-x",
+      status: "draft",
+      has_body: false,
+    });
     for (const id of [
       "coord-plan-card",
       "coord-plan-status-tag",

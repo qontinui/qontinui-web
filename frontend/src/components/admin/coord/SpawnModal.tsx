@@ -48,6 +48,37 @@
  * coord-side agent_id is surfaced; the parent decides whether to
  * navigate (we don't auto-route — operators are spawning many agents
  * in sequence during readiness waves).
+ *
+ * ## The body guard (plan `2026-09-02-bodyless-work-units-…`, Phase 3)
+ *
+ * An anchored spawn points a session at a coord work unit, and a work unit is
+ * a slug with no body. Nothing on this path used to ask whether a plan
+ * document exists; an operator one-clicked Spawn on a bodyless row, wrote
+ * "implement this plan", and a machine account burned a session discovering
+ * there was none.
+ *
+ * The optional {@link SpawnModalProps.workUnit} prop closes that. When the
+ * opener hands it a row whose signals say the document is missing (or cannot
+ * be confirmed), the modal states the cost, requires one acknowledgement
+ * before Spawn enables, and SEEDS the prompt to say *author the plan* instead
+ * of leaving it blank for "implement this plan" to be typed into.
+ *
+ * Three properties, each load-bearing:
+ *
+ *   - **It is not a block.** Spawning a session to AUTHOR the plan from good
+ *     metadata is a legitimate and common move — it is how the originating
+ *     incident was resolved. One checkbox, no dead end (§9).
+ *   - **It is not a second modal.** This surface's idiom for "here is
+ *     something you should know" is an inline notice panel
+ *     (`coord-spawn-unanchored-notice`, `coord-spawn-device-notice`,
+ *     `coord-spawn-account-notice`), and a Dialog on top of a Dialog is not
+ *     that. The hue comes from the shared body-signal chip rather than being
+ *     minted here, so an `unknown` never borrows a `false`'s colour.
+ *   - **Absent means absent.** A caller that passes no `workUnit` — every
+ *     caller before this change, and any build whose backend predates the
+ *     fields — gets exactly today's modal. "Not told" is silence about a
+ *     document, not evidence of one, and it must not mint a new interruption
+ *     on a path that never had one.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -74,6 +105,16 @@ import {
 } from "@/components/ui/select";
 import { Rocket } from "lucide-react";
 import { ApiConfig } from "@/services/api-config";
+// The guard's PREDICATE and its COPY are shared with `/plans`' row action, so
+// the two entry points cannot answer "does this deserve a confirm?"
+// differently. Only the layout below is this file's.
+import {
+  describeHasBody,
+  deriveSpawnBodyConfirm,
+  seedSpawnPrompt,
+  type SpawnBodySubject,
+} from "@/components/admin/coord/planBodySignal";
+import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 // The fleet-health wire shapes are IMPORTED, not re-declared. This file used
 // to carry its own copy of `FleetHealthDevice`, and it drifted exactly the way
 // a second mirror does: coord grew a fifth `DeviceState` (`stale`, a derived
@@ -499,6 +540,15 @@ export interface SpawnModalProps {
    * a device, one repo and a prompt.
    */
   planSlug?: string;
+  /**
+   * The anchored work unit's row, for the body guard and the seeded prompt.
+   *
+   * `planSlug` above stays the anchor that reaches the wire; this carries only
+   * what the guard reads plus the title it puts in the seeded prompt. Optional
+   * by design: absent changes nothing at all (see the module doc), so an
+   * unanchored spawn simply omits it.
+   */
+  workUnit?: SpawnBodySubject & Pick<CoordPlanRow, "title">;
   /** Plan phase pre-seed; the user can override before submitting. */
   initialPhase?: string;
   /** Called after a successful spawn with the coord response body. */
@@ -509,9 +559,44 @@ export function SpawnModal({
   open,
   onClose,
   planSlug = "",
+  workUnit,
   initialPhase,
   onSuccess,
 }: SpawnModalProps) {
+  /** An unanchored spawn is one with no work-unit slug. It is a normal
+   *  state, not an error: `coord.sessions.work_unit_slug` is nullable and
+   *  the sessions list carries no work-unit predicate. What it gives up is
+   *  the advance declared-overlap signal, not claims or tenant scoping.
+   *
+   *  Moved up from beside `canSubmit` because the body guard now reads it,
+   *  and the guard's answer has to exist before the reset effect that seeds
+   *  the prompt from it. */
+  const anchored = planSlug.trim().length > 0;
+
+  /** Whether this spawn needs a confirm first, and on which arm — `null` for
+   *  every case that must behave exactly as it always did. An unanchored
+   *  spawn is anchored to no work unit, so there is nothing to guard. */
+  const bodyConfirm = useMemo(
+    () => (anchored ? deriveSpawnBodyConfirm(workUnit) : null),
+    [anchored, workUnit]
+  );
+  /** The ARM, as a primitive. The reset effect below depends on this rather
+   *  than on `bodyConfirm` or `workUnit`: an object identity that changes on
+   *  a parent re-render would re-run the reset and silently discard whatever
+   *  the operator had typed. */
+  const bodyRisk = bodyConfirm?.risk ?? null;
+  const workUnitTitle = workUnit?.title;
+  /** The registry's own chip for this row's verdict, reused verbatim so the
+   *  modal and `/plans` cannot describe the same work unit differently.
+   *  `null` only in the cases {@link bodyConfirm} is null too. */
+  const bodyMarker = useMemo(
+    () =>
+      bodyConfirm === null
+        ? null
+        : describeHasBody(workUnit?.has_body, workUnit?.body_unknown_reason),
+    [bodyConfirm, workUnit?.has_body, workUnit?.body_unknown_reason]
+  );
+
   const [phase, setPhase] = useState(initialPhase ?? "");
   const [deviceId, setDeviceId] = useState("");
   const [selectedRepos, setSelectedRepos] = useState<string[]>([]);
@@ -521,6 +606,10 @@ export function SpawnModal({
   const [initialPrompt, setInitialPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Has the operator acknowledged the body guard? Only consulted when
+   *  {@link bodyConfirm} is non-null, so it never gates a spawn that was
+   *  never flagged. */
+  const [bodyAcknowledged, setBodyAcknowledged] = useState(false);
 
   const [devices, setDevices] = useState<FleetHealthDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
@@ -592,10 +681,23 @@ export function SpawnModal({
     setOtherRepos("");
     setIntent("");
     setOverlapPaths("");
-    setInitialPrompt("");
+    // The one field that is NOT always blanked. When the work unit may have
+    // no plan, the blank prompt is the hazard: it is what "implement this
+    // plan" got typed into. Seed the honest instruction instead — the
+    // operator can still edit or clear it, and every unflagged spawn opens
+    // empty exactly as before.
+    setInitialPrompt(
+      bodyRisk === null
+        ? ""
+        : seedSpawnPrompt(bodyRisk, {
+            slug: planSlug.trim(),
+            ...(workUnitTitle === undefined ? {} : { title: workUnitTitle }),
+          })
+    );
+    setBodyAcknowledged(false);
     setError(null);
     setSubmitting(false);
-  }, [open, initialPhase]);
+  }, [open, initialPhase, bodyRisk, planSlug, workUnitTitle]);
 
   // Populate device dropdown from coord fleet health.
   useEffect(() => {
@@ -809,12 +911,6 @@ export function SpawnModal({
   const accountPin = account === ACCOUNT_AUTO ? "" : account;
   const pinnedRow = deviceAccounts.find((a) => a.account_label === accountPin);
 
-  /** An unanchored spawn is one with no work-unit slug. It is a normal
-   *  state, not an error: `coord.sessions.work_unit_slug` is nullable and
-   *  the sessions list carries no work-unit predicate. What it gives up is
-   *  the advance declared-overlap signal, not claims or tenant scoping. */
-  const anchored = planSlug.trim().length > 0;
-
   /** Exactly what coord requires — nothing more.
    *
    *  `target_device_id`, a non-empty `repos[]` and `initial_prompt` are the
@@ -827,12 +923,19 @@ export function SpawnModal({
    *  The device predicate stays `deviceIdValid`, NOT `length > 0`: coord
    *  types `target_device_id` as `Uuid`, so a typed non-uuid is a 422 either
    *  way — catching it here is strictly cheaper, and relaxing the anchor
-   *  fields is no reason to give that back. */
+   *  fields is no reason to give that back.
+   *
+   *  The body guard is the ONE frontend-invented predicate here, and it is
+   *  deliberate: it costs a single click on the rows that earn it and nothing
+   *  at all on every other spawn. It gates the button rather than the request
+   *  — coord would accept this body — because the point is that the operator
+   *  reads what the session will have to do, not that the spawn is refused. */
   const canSubmit =
     !submitting &&
     deviceIdValid &&
     allRepos.length > 0 &&
-    initialPrompt.trim().length > 0;
+    initialPrompt.trim().length > 0 &&
+    (bodyConfirm === null || bodyAcknowledged);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -949,6 +1052,58 @@ export function SpawnModal({
               overlap signal from declared paths; file claims, tenant scoping
               and worktree allocation are unchanged.
             </p>
+          )}
+
+          {bodyConfirm && (
+            /* Directly under the Plan field, because it is a statement ABOUT
+               that plan. Neutral container, shared chip: the hue comes from
+               `describeHasBody` so an `unknown` cannot borrow a `false`'s
+               colour, and nothing here mints a red or an amber of its own
+               (style guide §4.1). `data-risk` carries the arm so a page spec
+               or a test can tell the two apart without reading the prose. */
+            <div
+              className="space-y-2 rounded-md border border-border bg-muted/40 p-2"
+              data-testid="coord-spawn-body-confirm"
+              data-risk={bodyConfirm.risk}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {bodyMarker && (
+                  <span
+                    data-testid={`${bodyMarker.testId}-spawn`}
+                    title={bodyMarker.title}
+                    className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] leading-none ${bodyMarker.className}`}
+                  >
+                    {bodyMarker.label}
+                  </span>
+                )}
+                <span
+                  className="text-xs font-medium text-foreground"
+                  data-testid={bodyConfirm.testId}
+                >
+                  {bodyConfirm.headline}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {bodyConfirm.detail}
+              </p>
+              {/* One checkbox, never a refusal: authoring the plan from the
+                  work unit's metadata is a legitimate spawn and the reason
+                  this is a confirm rather than a block (§9). */}
+              <label
+                htmlFor="spawn-body-ack"
+                className="flex cursor-pointer items-start gap-2 text-xs text-foreground"
+              >
+                <Checkbox
+                  id="spawn-body-ack"
+                  checked={bodyAcknowledged}
+                  onCheckedChange={(v) => setBodyAcknowledged(v === true)}
+                  data-testid="coord-spawn-body-ack"
+                />
+                <span>{bodyConfirm.acknowledge}</span>
+              </label>
+            </div>
           )}
 
           <div className="space-y-1.5">
@@ -1328,6 +1483,16 @@ export function SpawnModal({
               placeholder="You are Wave N of plan X. Your scope: ..."
               data-testid="coord-spawn-initial-prompt"
             />
+            {/* A pre-filled field with no explanation reads as one the
+                operator must not touch, and this one they should. */}
+            {bodyConfirm && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="coord-spawn-prompt-seed-notice"
+              >
+                {bodyConfirm.promptNote}
+              </p>
+            )}
           </div>
 
           {error && (

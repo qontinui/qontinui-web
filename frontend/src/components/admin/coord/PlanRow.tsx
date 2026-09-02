@@ -42,8 +42,25 @@
  *
  * Terminal units render neither marker (`showsBodySignal`). They still CARRY
  * both fields — suppression is a render decision, not a wire one.
+ *
+ * ## The spawn guard (Phase 3)
+ *
+ * The chips say what is true; the Spawn button is where it costs something.
+ * On a row whose signals say the document is missing — or cannot be confirmed
+ * — Spawn takes TWO clicks: the first states the cost inline and relabels the
+ * button "Spawn anyway", the second navigates. Deliberately not a dialog: this
+ * row's disclosure idiom is the detail panel it is already sitting in, and a
+ * modal for a sentence is a modal for a sentence. Deliberately not a block
+ * either — spawning a session to AUTHOR the plan from good metadata is a
+ * legitimate move and is how the originating incident was resolved (§9).
+ *
+ * `deriveSpawnBodyConfirm` is shared with `SpawnModal`, so the two entry
+ * points cannot disagree about which rows deserve the interruption. A row the
+ * backend did not annotate gets no confirm at all: "not told" is silence about
+ * a document, not evidence of one.
  */
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +79,7 @@ import {
 import {
   describeBodyProvenance,
   describeHasBody,
+  deriveSpawnBodyConfirm,
   showsBodySignal,
   type BodyMarker,
 } from "@/components/admin/coord/planBodySignal";
@@ -123,6 +141,20 @@ export function PlanRow({
   const { at, verb } = rowTimeFor(plan);
   const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
   const markers = bodyMarkers(plan);
+  /** Non-null on a row whose Spawn deserves a confirm first. */
+  const spawnConfirm = deriveSpawnBodyConfirm(plan);
+  /** Whether the operator has clicked Spawn once on such a row. Local to the
+   *  row: the confirm is a step in one operator's action, not row state
+   *  anything else reads. */
+  const [confirmingSpawn, setConfirmingSpawn] = useState(false);
+
+  // A collapsed row abandons its confirm rather than remembering it. The
+  // detail unmounts on collapse, so a remembered one would re-appear armed —
+  // a "Spawn anyway" button the operator did not ask for in the state they
+  // are now in.
+  useEffect(() => {
+    if (!expanded) setConfirmingSpawn(false);
+  }, [expanded]);
 
   return (
     <RecordRow
@@ -207,22 +239,65 @@ export function PlanRow({
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {/* First, on its own line, so the cost is READ before the button
+                that spends it is reached. Present only AFTER the operator has
+                asked to spawn: the chips above are already this row's
+                unprompted signal, and this is the one attached to the
+                action. */}
+            {confirmingSpawn && spawnConfirm && (
+              <p
+                className="basis-full rounded-md border border-border bg-muted/40 p-2 text-xs text-muted-foreground"
+                data-testid="coord-plan-spawn-body-confirm"
+                data-risk={spawnConfirm.risk}
+                role="status"
+                aria-live="polite"
+              >
+                <span className="font-medium text-foreground">
+                  {spawnConfirm.headline}
+                </span>{" "}
+                {spawnConfirm.detail}
+              </p>
+            )}
             <Link href={href} data-testid="coord-plan-card-link">
               <Button variant="outline" size="sm">
                 Open full page
                 <ExternalLink className="h-3 w-3 ml-1" />
               </Button>
             </Link>
+            {/* The SAME button, in two steps — not a second control. The
+                relabel is what makes the second click deliberate; the testid
+                is the frozen authored contract (D4a) and stays on it. */}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push("/admin/coord/spawn")}
+              onClick={() => {
+                if (spawnConfirm && !confirmingSpawn) {
+                  setConfirmingSpawn(true);
+                  return;
+                }
+                router.push("/admin/coord/spawn");
+              }}
               data-testid="coord-plan-card-spawn-btn"
-              title="Spawn an agent from this plan"
+              data-confirming={confirmingSpawn ? "true" : undefined}
+              title={
+                spawnConfirm
+                  ? `${spawnConfirm.headline} ${spawnConfirm.detail}`
+                  : "Spawn an agent from this plan"
+              }
             >
               <Rocket className="h-3 w-3 mr-1" />
-              Spawn
+              {confirmingSpawn ? "Spawn anyway" : "Spawn"}
             </Button>
+            {confirmingSpawn && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmingSpawn(false)}
+                data-testid="coord-plan-card-spawn-cancel"
+              >
+                Cancel
+              </Button>
+            )}
             {plan.current_phase && (
               <Badge variant="outline" className="text-xs">
                 phase: {plan.current_phase}
