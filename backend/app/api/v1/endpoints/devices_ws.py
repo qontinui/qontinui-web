@@ -43,6 +43,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from qontinui_schemas.common import utc_now
 
 from app.config.redis_config import get_redis
+from app.core.config import coord_device_setting_name
 from app.crud import device_connection as device_connection_crud
 from app.crud import device_crud
 from app.db.session import AsyncSessionLocal
@@ -107,15 +108,24 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # that reason is deliberately vague, so THIS log line is the whole
         # diagnostic surface. Name the coord URL we actually dialled and the
         # concrete exception class of the underlying transport fault: a
-        # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
-        # a genuinely slow coord are different incidents with different fixes,
+        # ConnectTimeout to the wrong device coord and a ReadTimeout from a
+        # genuinely slow coord are different incidents with different fixes,
         # and `error=str(exc)` alone has repeatedly failed to separate them.
+        #
+        # Name the SETTING too, derived rather than written out. This comment
+        # used to say "the wrong COORD_DEVICE_URL", which is true on a split
+        # box and false everywhere else — on a single-coord deployment the URL
+        # dialled comes from COORD_URL and COORD_DEVICE_URL is unset, so a
+        # reader sent to it would find nothing to correct. That is the same
+        # drift the identity alarm below was repaired for; a hard-coded
+        # setting name is right for one configuration only.
         logger.error(
             "devices_ws_jwks_unavailable",
             error=str(exc),
             failure=type(exc).__name__,
             cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
             coord_url=coord_jwks_client.coord_url,
+            coord_url_setting=coord_device_setting_name(),
         )
         # 1011 = internal error / service overload.
         await reject(

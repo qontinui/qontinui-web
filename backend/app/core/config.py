@@ -209,7 +209,13 @@ class Settings(BaseSettings):
         description=(
             "Base URL of the coord that issues DEVICE identities, when that "
             "is not the same coord as COORD_URL. Unset (the default) means "
-            "'same as COORD_URL', so every existing deployment is unchanged."
+            "'same as COORD_URL', so every existing deployment is unchanged. "
+            "Splits the VERIFY side only: minting still goes through the "
+            "COORD_ADMIN_SECRET bridge at COORD_URL, so while a split is "
+            "active a device token minted THROUGH this backend is rejected "
+            "here as a foreign issuer. Pair devices directly with this coord. "
+            "The backend announces the split at boot "
+            "(`coord_device_url_split_active`)."
         ),
     )
     COORD_ADMIN_SECRET: str | None = Field(
