@@ -126,6 +126,9 @@ export function useCodeExecutionFiles(
               project_id: projectId,
               file_path: filePath,
             }),
+            // Safe to re-issue: `validate_file_path` only runs path-traversal /
+            // exists / .py checks and returns a dict; no writes.
+            idempotent: true,
           }
         );
 

@@ -109,6 +109,8 @@ export async function validateConstraintConfig(
   const response = await httpClient.fetch(`${API}/validate`, {
     method: "POST",
     body: JSON.stringify({ toml }),
+    // Safe to re-issue: `validate_constraint_config` only validates, writes nothing.
+    idempotent: true,
   });
   if (!response.ok) {
     const text = await response.text();

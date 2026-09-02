@@ -324,9 +324,13 @@ describe("usePlanLibrary — kind correction", () => {
     });
 
     expect(ok).toBe(true);
-    expect(patchMock).toHaveBeenCalledWith("/api/v1/plan-library/abc/kind", {
-      kind: "handoff",
-    });
+    // `idempotent: true` opts the PATCH back into 5xx retry — the handler is
+    // a full assignment of kind + kind_locked, so a re-issue is a no-op.
+    expect(patchMock).toHaveBeenCalledWith(
+      "/api/v1/plan-library/abc/kind",
+      { kind: "handoff" },
+      expect.objectContaining({ idempotent: true })
+    );
     // The list carries `kind` and `kind_locked`; a stale row would show the
     // correction as not having happened.
     expect(getMock).toHaveBeenCalled();
