@@ -25,13 +25,50 @@ on:
     - cron: '0 4 * * *'
   workflow_dispatch:
 
-# Cancel in-progress runs when a newer commit lands on the same ref. Without
-# this, every push or PR update spawns a fresh ~1h+ E2E run while the prior
-# one keeps grinding — six concurrent 5h runs were observed in flight at
-# once before this guard was added.
+# CANCEL ONLY THE PR LANE. The original guard here was a bare
+# `cancel-in-progress: true`, added because every push or PR update spawned a
+# fresh ~1h+ E2E run while the prior one kept grinding - six concurrent 5h runs
+# were observed in flight at once. That problem is real and the PR lane below
+# still solves it; what the bare flag also did was cancel the two lanes this
+# workflow exists to report on.
+#
+# It contradicted this file's own `push:` comment. That comment states the
+# workflow must trigger on `merge-candidate*` refs so "the required `Test
+# Summary` + `Backend E2E Tests` contexts report and a candidate proposal gets a
+# real CI verdict instead of hanging in awaiting-ci". A cancelled run does not
+# report those contexts. `ci_baseline.rs` `ingest_workflow_run` returns before
+# the write when `is_supersession_conclusion` matches (`cancelled` | `stale`),
+# so the verdict is dropped SILENTLY and the proposal sits in `awaiting-ci` -
+# precisely the failure the trigger was added to prevent. `E2E Integration
+# Tests` is not on `ci_observer.rs` `BENIGN_SUPERSESSION_WORKFLOWS`
+# (`test-coverage-producer`, `deploy-coord`), so nothing downgrades it.
+#
+# `main` has the same shape: the group a prospective land's
+# `(push, refs/heads/main)` event enters is `reaper_at_risk` by `ci_observer.rs`
+# `run_is_reaper_at_risk`, and `true` upgrades GitHub's pending-reap into an
+# actual cancellation on a main SHA's baseline.
+#
+# THE GROUP IS ALSO EVENT-KEYED NOW, and that is not cosmetic here. This
+# workflow has FOUR triggers, and `schedule`, `workflow_dispatch` and
+# `push: main` all resolve `github.ref` to `refs/heads/main` - so before this
+# change the 04:00 UTC cron and a main land shared one group and could cancel
+# each other outright. Keying by `github.event_name` separates them, the shape
+# `qontinui-coord/.github/workflows/ci.yml` already uses
+# (`ci-${{ github.event_name }}-${{ github.ref }}`).
+#
+# The PR lane is where the saving was and it keeps cancelling: coord excludes
+# PR-lane runs from the no-reap blocking set (`ci_observer.rs`
+# `is_excluded_from_blocking` - "a main push neither cancels nor invalidates a
+# PR run") and reads PR checks through `coord.pr_check_runs_latest`, partitioned
+# by `(repo, head_sha, name)`, so a superseded attempt sits in a different
+# partition and is never consulted for the new head. Superseding a ~1h sharded
+# Playwright run is exactly the waste the original guard was aimed at.
+#
+# `false` on the other lanes does not pile runs up: GitHub keeps at most one
+# PENDING run per group, so the ceiling is one running plus one queued.
 concurrency:
-  group: e2e-tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend-tests:
