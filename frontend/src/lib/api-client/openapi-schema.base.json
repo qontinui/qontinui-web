@@ -15726,6 +15726,35 @@
         "title": "DomainKnowledgeUpdate",
         "type": "object"
       },
+      "DrainRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/drain``.\n\n``extra=\"forbid\"`` is not decoration \u2014 coord's struct is\n``deny_unknown_fields``, so a stray key would return a 422 carrying a\nserde message. Rejecting it here makes it a local, legible 422 and keeps\nthe wire body exactly the shape coord accepts.\n\n``until`` is REQUIRED and is the whole point of \u00a7D2: *a drain with no\ndeadline is how a machine silently leaves the fleet forever.* It is not\n``| None``, it has no default, and nothing in this module may grow one.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "until",
+          "reason"
+        ],
+        "title": "DrainRequestBody",
+        "type": "object"
+      },
       "EditCommandHistoryResponse": {
         "description": "Schema for command history list",
         "properties": {
@@ -26931,6 +26960,108 @@
         "title": "MemoryLinkOut",
         "type": "object"
       },
+      "MemoryQueryEcho": {
+        "description": "The parameters the query ACTUALLY ran with (``query_echo``).\n\nNot a copy of the request body \u2014 the SERVER-SIDE RESOLVED values, so\nthat anything the request did not say becomes visible. ``scopes``\nleft unset resolves to the endpoint's default pair; ``limit`` and\n``link_expansion`` resolve to their schema defaults; an empty\n``kinds`` list collapses to ``null`` (no kind filter) exactly as the\nfilter builder sees it. A caller comparing this against what it\nbelieves it sent can see, in the SAME response as the hits, that its\nquery was narrower or wider than it intended.\n\nThat is the half an unrecognized-key 422 cannot cover. A key spelled\nright and VALUED wrong \u2014 a ``scope_ref`` that names no session, a\n``since`` far in the future, a ``min_importance`` above every row \u2014\nis a perfectly well-formed request that legitimately matches\nnothing, and the echo is what lets the caller see which of its own\nfilters did that.",
+        "properties": {
+          "anchored_to_count": {
+            "title": "Anchored To Count",
+            "type": "integer"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "link_expansion": {
+            "title": "Link Expansion",
+            "type": "boolean"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text",
+          "kinds",
+          "scopes",
+          "scope_ref",
+          "limit",
+          "link_expansion",
+          "min_importance",
+          "since",
+          "as_of",
+          "anchored_to_count"
+        ],
+        "title": "MemoryQueryEcho",
+        "type": "object"
+      },
       "MemoryQueryHit": {
         "description": "One fused retrieval hit.\n\n``anchor_state`` is the watcher's roll-up verdict over the record's\nanchors \u2014 ``none`` (anchorless, today's Ebbinghaus lifecycle),\n``fresh``, ``moved`` or ``gone``. It is carried on every hit because\n``moved`` is ADVISORY: the record stays retrievable and normally\nranked, and the only thing that makes it useful is that the reader\nis told the ground truth shifted under it. A flag the response does\nnot carry is a flag nobody can act on.\n\nTyped ``str`` rather than a ``Literal`` on purpose: this is a READ\nshape over a column the watcher owns, and a value this build has\nnever heard of must render, not 500.",
         "properties": {
@@ -27038,7 +27169,8 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
+        "additionalProperties": false,
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.\n\n**Unknown keys are REJECTED (422), not ignored.** Pydantic's default\nis ``extra=\"ignore\"``, which made a misspelled or invented filter\n(``scope`` for ``scopes``, ``kind`` for ``kinds``, a parameter this\nbuild does not have) vanish server-side: the query then ran WIDER\nthan the caller asked and answered ``hits: []`` for a reason the\ncaller could not see. That empty list was the single most misread\nsignal on this endpoint \u2014 sessions filed fleet-infra findings\nagainst it (finding ``f425dc15``, retracted by ``a69e5881`` the same\nday). A 422 naming the offending field is the only answer that tells\nthe caller the call was wrong rather than the corpus empty.",
         "properties": {
           "anchored_to": {
             "anyOf": [
@@ -27200,7 +27332,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
-        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.",
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
         "properties": {
           "anchored_arm": {
             "default": "not_requested",
@@ -27211,6 +27343,10 @@
             ],
             "title": "Anchored Arm",
             "type": "string"
+          },
+          "anchored_hit_count": {
+            "title": "Anchored Hit Count",
+            "type": "integer"
           },
           "anchored_hits": {
             "items": {
@@ -27235,6 +27371,13 @@
             "title": "Link Arm",
             "type": "string"
           },
+          "live_row_count": {
+            "title": "Live Row Count",
+            "type": "integer"
+          },
+          "query_echo": {
+            "$ref": "#/components/schemas/MemoryQueryEcho"
+          },
           "vector_arm": {
             "enum": [
               "hybrid",
@@ -27248,7 +27391,10 @@
         "required": [
           "hits",
           "vector_arm",
-          "link_arm"
+          "link_arm",
+          "anchored_hit_count",
+          "live_row_count",
+          "query_echo"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
@@ -48854,6 +49000,29 @@
           }
         },
         "title": "UIBridgeTransitionUpdate",
+        "type": "object"
+      },
+      "UndrainRequestBody": {
+        "additionalProperties": false,
+        "description": "Closed body for ``POST /operations/fleet/undrain``.\n\nA reason is required here too, and for the same purpose: releasing a\nmachine early is as much an operator decision as holding it, and coord\nrecords both.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "reason"
+        ],
+        "title": "UndrainRequestBody",
         "type": "object"
       },
       "UnifiedWorkflowListResponse": {
@@ -76852,7 +77021,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -78949,7 +79118,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
+        "description": "Delete a Cognito group. 404 if no such group, 400 if the name cannot\nsatisfy Cognito's ``groupName`` constraint (``validated_group_name``).\nSuperuser-gated, rate-limited (the lowest limit of the four \u2014 this is\nthe only irreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
@@ -79025,7 +79194,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
@@ -79135,7 +79304,7 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
@@ -82635,6 +82804,73 @@
         ]
       }
     },
+    "/api/v1/operations/fleet/drain": {
+      "get": {
+        "description": "Return which machines coord is currently holding out of the fleet.\n\nProxies coord's ``GET /coord/fleet/drain``, body passed through untouched\n\u2014 this route declares no ``response_model``, so nothing here filters a\nfield coord adds.\n\nThe body carries the ACTIVE drain entries keyed by device UUID, each with\n``until``, ``reason``, ``drained_by`` and ``drained_at``. Expiry is\nevaluated by coord on READ (there is no sweeper and no expiry job), so an\nentry that has lapsed simply stops appearing; a caller holding a response\nacross the deadline must re-read rather than assume.\n\n``drained_by`` may come back as coord's ``[redacted]`` placeholder for a\nprincipal that may not see operator identities. That is a value, not an\nabsence \u2014 \"someone drained this and you are not being told who\" is a\ndifferent fact from \"nobody is recorded\", and a caller that renders the\nplaceholder as blank reports the second.\n\n**The one thing a caller must not do with a failure here.** Coord keeps\n``DrainSet::Known(vec![])`` and ``DrainSet::Unknown`` apart on purpose, and\nso must every hop after it: a 404 (this coord predates the read route), a\n502/504 from the transport, or a body in an unrecognised shape is UNKNOWN,\nnever \"no machine is drained\" (``[policy: silent-empty-is-unknown]``,\n``[policy: unknown-must-not-render-as-a-default]``). The browser client\n(`useFleetDrain.ts`) is written to that rule and renders UNKNOWN on each\nof them; the 404 arm in particular is the EXPECTED reading during the\nwindow where this console is a deploy ahead of coord.",
+        "operationId": "api_v1_operations_fleet_drain_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fleet Drain Api V1 Operations Fleet Drain Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Fleet Drain",
+        "tags": [
+          "operations"
+        ]
+      },
+      "post": {
+        "description": "Stop coord sending one machine new work until ``until``.\n\nBody is assembled from the closed model above \u2014 never forwarded verbatim\n\u2014 because coord's ``DrainRequest`` is ``deny_unknown_fields``. ``until``\nis serialised as RFC 3339; ``device_id`` as its canonical UUID string.\n\nCoord's refusals are typed and mean different things:\n``admin_required`` (not an admin in your own tenant),\n``device_not_in_tenant`` (the drain reaches every tenant that shares the\nmachine, so the caller must be one of them), and a 400 from\n``validate_drain``. They pass through with coord's own status code so the\nconsole can tell them apart rather than rendering one \"failed\".\n\nThis does NOT stop work already running on the machine, and nothing on\nthis path may imply that it does.",
+        "operationId": "api_v1_operations_fleet_drain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Drain Api V1 Operations Fleet Drain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Drain",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/fleet/health": {
       "get": {
         "description": "Return the fleet-health rollup from coord (tenant-scoped).\n\nThe body is coord's ``get_fleet_health`` envelope, passed through\nuntouched: ``devices`` (the per-machine\n``DeviceHealthSnapshot`` roster), ``count``, ``by_state``,\n``liveness``, ``excluded`` / ``excluded_error``, ``alerts``,\n``kv_bucket`` and ``as_of``. This route declares no\n``response_model``, so nothing here filters a field coord adds.\n\nThose nine are what coord emits **today**. Two more are read by this\nrepo's client and appear nowhere in coord's source: ``FleetHealthPayload``\ndeclares ``alerts_scrape_up`` and ``pageout``, and the Dev Ops page\nbranches on ``alerts_scrape_up === false``. They are FORWARD\ndeclarations \u2014 deliberately absence-tolerant, since the client must\ntreat an absent flag as *measured* \u2014 so they are not part of this\ncontract and this route synthesises neither. The branch reading them\nis unreachable until coord grows them.\n\nThe contract is written down because the sibling resource-samples\nroute learned the lesson first: this\ndocstring is what FastAPI renders into ``openapi-schema.json`` /\n``openapi-schema.base.json``, which are committed and drift-gated by\n``backend-ci.yml``, so it is this repo's contract of record for the\nroute. Until now it described none of a wire its own browser reads\non a 10s poll (``useFleetHealth.ts``, ``useFleetAlarmBadge.ts``,\n``SpawnModal.tsx``).\n\nThe fields that make the surface honest rather than merely working:\n\n* ``devices[].state`` is coord's ``DeviceState``, serde-lowercase:\n  ``healthy | degraded | stale | partitioned | abandoned``, plus\n  ``unknown`` when the stored string did not parse. It is\n  non-optional in coord's snapshot, so today's coord always sends\n  it; callers still treat an absent one as *unknown* rather than\n  healthy, which is the rule the whole surface rests on. Read the\n  vocabulary as OPEN: a state a newer coord adds must render\n  *unknown*, not fail to parse, so nothing on this path may narrow\n  it to a closed union.\n* ``stale`` is the newest value and the only DERIVED one \u2014 computed\n  at read time and never persisted (coord's ``devices_state_chk``\n  admits only the other four). It means **the heartbeat is fine and\n  the resource SAMPLER has gone quiet**, which is deliberately not\n  ``partitioned``: on 2026-08-27 this read said ``{healthy: 4}``\n  beside a WSL-lane sample 22 minutes old, and calling that a\n  network partition would have sent an operator to debug the wrong\n  layer.\n* ``devices[].heartbeat_state`` is the machine's PERSISTED ladder\n  state, before the freshness overlay \u2014 carried so that the overlay\n  **loses nothing**. It is the difference between \"this box is\n  unreachable\" and \"this box is fine and its publisher is quiet\",\n  and a caller that renders ``state`` alone cannot tell an operator\n  which. A spawn picker is the case that bites: ``stale`` is a\n  perfectly spawnable machine and ``partitioned`` is not.\n* ``devices[].state_raw`` is present **only** when the stored state\n  failed to parse (``state`` is then ``\"unknown\"``); it carries what\n  the row actually said. Omitted entirely in the common case, so its\n  presence is the anomaly marker \u2014 do not default it in.\n* ``devices[].newest_sample_age_secs`` is seconds since that\n  device's newest resource sample, and\n  ``devices[].sample_stale_after_secs`` is the threshold it was\n  graded against. **It is NOT the configured cadence**: coord\n  computes ``sample_interval_secs \u00d7 SAMPLE_STALE_INTERVALS`` with\n  that multiplier pinned at 4, falling back to a 30s interval where\n  the tenant set none \u2014 so the default threshold is 120s, not 30s.\n  **The threshold rides the wire for the same reason the resource\n  strip's floors do** \u2014 so the client keeps no constant of its own\n  and cannot disagree with coord about where stale begins, which is\n  exactly the disagreement a client re-deriving \"4 \u00d7 the interval\"\n  would eventually ship. ``null`` on either is UNKNOWN: not zero,\n  and not \"fresh\". They are also independently nullable: a device\n  with no sample in the lookback arrives with a null age and a\n  POPULATED threshold.\n* ``devices[].within_dispatch_window`` says whether coord would\n  actually expect this machine to answer. The roster stopped\n  dropping out-of-window devices and ships the answer instead, so\n  *listed* no longer implies *reachable*; the ``liveness`` block\n  (``within_dispatch_window`` / ``outside_dispatch_window`` /\n  ``heartbeat_ttl_secs``) is the same split rolled up.\n* ``excluded`` is ``null`` when coord did not MEASURE the exclusion\n  set \u2014 see ``excluded_error`` \u2014 and never means \"none excluded\".\n\n**The one caveat a caller must not read as an all-clear**, stated\nprecisely because the imprecise version is worse than none. A\nPostgres outage is NOT this case: the roster query acquires the pool\nfirst and its failure returns 500, which this proxy raises rather\nthan passing off as an empty fleet. The caveat is the narrower\n**mid-request** one \u2014 the roster succeeded and a LATER acquire did\nnot (pool exhaustion, an acquire timeout). coord then logs *\"no\nfreshness overlay, no alert rollup this tick\"* and still answers\n200, serving ``alerts`` as ``{critical: 0, warning: 0, info: 0}``,\nindistinguishable from a genuinely quiet fleet, with every device's\n``newest_sample_age_secs`` left ``null`` and **no device OVERLAID to\n``stale``** (a persisted ``'stale'`` string would still decode \u2014\ncoord parses the value so such a row is not silently dropped \u2014 but\nthe CHECK is what makes that improbable, not this path).\n\ncoord ships no flag distinguishing that tick from a healthy one, so\nzeros here are not evidence of quiet and an absent ``stale`` is not\nevidence of a live publisher\n(``[policy: silent-empty-is-unknown]``).",
@@ -83042,6 +83278,53 @@
           }
         ],
         "summary": "Get All Tasks",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/fleet/undrain": {
+      "post": {
+        "description": "Release one machine back into the fleet before its drain expires.\n\nCoord answers with ``changed: false`` when the request altered nothing \u2014\nan undrain of a machine that was not held. That is passed through rather\nthan dressed up as a successful release: \"I released it\" and \"it was not\nheld\" are different outcomes and the operator is entitled to tell them\napart.",
+        "operationId": "api_v1_operations_fleet_undrain_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndrainRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Post Fleet Undrain Api V1 Operations Fleet Undrain Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Fleet Undrain",
         "tags": [
           "operations"
         ]
@@ -87036,11 +87319,11 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains three fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {
-            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
             "in": "query",
             "name": "scope",
             "required": false,
@@ -87053,7 +87336,7 @@
                   "type": "null"
                 }
               ],
-              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
               "title": "Scope"
             }
           },
@@ -87091,6 +87374,84 @@
               ],
               "description": "RFC 3339 timestamp; only rows updated at-or-after are returned.",
               "title": "Since"
+            }
+          },
+          {
+            "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+            "in": "query",
+            "name": "shape",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+              "title": "Shape"
+            }
+          },
+          {
+            "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "live",
+                    "stale",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+              "title": "Status"
             }
           }
         ],
@@ -101770,6 +102131,43 @@
               ],
               "description": "Soft link to a coord work unit. Never resolved; a slug with no matching work unit simply returns its sessions.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+            "in": "query",
+            "name": "claude_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+              "title": "Claude Session Id"
+            }
+          },
+          {
+            "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+            "in": "query",
+            "name": "coord_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+              "title": "Coord Session Id"
             }
           },
           {

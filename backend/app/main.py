@@ -318,6 +318,14 @@ async def startup_event():
         boot_side_effects_skipped=skip_side_effects,
     )
 
+    # Announce a device-identity split before anything depends on it. Pure
+    # logging (no network, no shared rows), so it runs even when boot side
+    # effects are skipped: the whole point is that this configuration is
+    # otherwise only discovered at the first token rejection.
+    from app.services.coord_jwks import warn_if_device_coord_split
+
+    warn_if_device_coord_split()
+
     # Suppress the benign Windows-Proactor ConnectionResetError raised when a
     # WS client force-RSTs us (Python bug #39010 lineage). No-op on non-Windows
     # since the transport type won't match there.

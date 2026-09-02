@@ -44,7 +44,12 @@ from jwt.exceptions import (
     PyJWTError,
 )
 
-from app.core.config import coord_device_base
+from app.core.config import (
+    coord_device_base,
+    coord_device_setting_name,
+    coord_device_split_active,
+    settings,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -178,6 +183,85 @@ def describe_token_rejection(exc: CoordTokenInvalidError) -> str:
     return "Device token failed verification."
 
 
+def identity_mismatch_remedy_fields() -> dict[str, str]:
+    """Which knob a ``coord_identity_mismatch`` reader should actually turn.
+
+    The alarm's whole value is that it names the coord this backend verifies
+    against. Naming the wrong *setting* alongside it throws that away: this
+    log line used to say "check COORD_URL" at both terminal callers, but the
+    URL dialled comes from :func:`coord_device_base`, which follows
+    ``COORD_DEVICE_URL`` when that is set. On a split box — the only
+    deployment where the two differ, and the deployment ``COORD_DEVICE_URL``
+    was added for — COORD_URL is precisely the knob that must NOT be moved:
+    it is paired with ``COORD_ADMIN_SECRET``, and repointing it fail-fast-es
+    the backend at boot (measured 2026-08-25; see :func:`coord_device_base`).
+
+    So the advice is derived from the configuration in force rather than
+    written out at each call site, where it had already gone stale once.
+    """
+    setting = coord_device_setting_name()
+    if coord_device_split_active():
+        remedy = (
+            f"{setting} selects the coord whose JWKS this backend verifies "
+            "against; correct THAT value. Do not repoint COORD_URL — it is "
+            "paired with COORD_ADMIN_SECRET and repointing it fails this "
+            "backend at startup."
+        )
+    else:
+        remedy = (
+            f"{setting} selects the coord whose JWKS this backend verifies "
+            "against; either correct it, or set COORD_DEVICE_URL to the coord "
+            "that issues device identities and leave COORD_URL on the "
+            "admin/proxy bridge."
+        )
+    return {"coord_url_setting": setting, "remedy": remedy}
+
+
+def warn_if_device_coord_split() -> bool:
+    """Announce at boot the one configuration that cannot verify its own mints.
+
+    ``COORD_DEVICE_URL`` split the VERIFY side of device identity off
+    ``COORD_URL``. It did not — and structurally cannot — split the MINT
+    side: every door that hands out a device JWT (the pairing doors and the
+    machine-credential exchange) reaches coord through the admin bridge,
+    which authenticates with ``COORD_ADMIN_SECRET``. That secret is paired
+    with exactly ONE coord (measured 2026-08-25: 200 against the local coord,
+    401 against the fleet coord), so those doors are bound to ``COORD_URL``
+    and repointing them is not available.
+
+    The consequence is real and was silent: while the split is active, a
+    token minted *through this backend* is signed by ``COORD_URL``'s coord
+    and presented back to a verifier reading ``COORD_DEVICE_URL``'s JWKS, so
+    it lands in :class:`CoordTokenForeignIssuerError` — correctly classified,
+    but only ever discovered at the first rejection.
+
+    This is not repointed here, because repointing is the thing that 401s.
+    Nor is it an error: a split box is expected to pair its runner *directly*
+    with the device coord, which is a working configuration. What was missing
+    is the announcement — the stated posture of plan
+    ``2026-08-25-coord-jwt-kid-collides-across-environments`` ("make the
+    misconfiguration announce itself") applied one layer earlier than the
+    rejection.
+
+    Returns True when the warning was emitted, so the posture is assertable
+    without booting the app.
+    """
+    if not coord_device_split_active():
+        return False
+    logger.warning(
+        "coord_device_url_split_active",
+        device_coord_url=coord_device_base(),
+        bridge_coord_url=settings.COORD_URL.rstrip("/"),
+        note=(
+            "device tokens are VERIFIED against device_coord_url but MINTED "
+            "through the COORD_ADMIN_SECRET bridge at bridge_coord_url; a "
+            "token this backend issues will be rejected here as a foreign "
+            "issuer. Pair devices directly with device_coord_url."
+        ),
+    )
+    return True
+
+
 def _example_key(cls: type[CoordTokenInvalidError]) -> str:
     """``CoordTokenNotYetValidError`` -> ``not_yet_valid``.
 
@@ -255,8 +339,20 @@ class CoordJWKSClient:
         self._http_timeout_s = http_timeout_s
         self._forced_cooldown_s = forced_cooldown_s
         self._jwks: dict[str, Any] | None = None
-        self._fetched_at: float = 0.0
-        self._forced_at: float = 0.0
+        # Both stamps are ``time.monotonic`` readings, NOT wall-clock times
+        # (see ``get_jwks``), and ``None`` means "never", not "at zero".
+        #
+        # A ``0.0`` sentinel was safe only while these were wall-clock
+        # stamps, where ``now - 0.0`` is ~1.8e9 and so never inside any
+        # window. ``monotonic``'s origin is arbitrary and on both Linux and
+        # Windows is near process/host boot, so ``now - 0.0`` can legitimately
+        # be a small number: a kid miss arriving within
+        # ``forced_cooldown_s`` of boot would read as "already refetched
+        # recently" and skip the one forced re-fetch that recovers from a
+        # coord key-id change. ``self._jwks is not None`` does not cover it,
+        # because ``_forced_at`` is set independently of the cache.
+        self._fetched_at: float | None = None
+        self._forced_at: float | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -322,19 +418,37 @@ class CoordJWKSClient:
         error split exists to diagnose. Rate-limited by
         ``_FORCED_REFRESH_COOLDOWN_S``; when the cooldown is in force the
         cached copy is served and the caller's lookup fails as it would have.
+
+        Both the TTL and the cooldown are measured on ``time.monotonic``,
+        which never steps. On the wall clock a single BACKWARD adjustment —
+        an NTP step, a VM resume, a container host correcting its RTC —
+        makes ``now - self._fetched_at`` negative, so the cache reads as
+        fresh for the whole size of the jump and the forced re-fetch reads
+        as still in cooldown. Both suppressions land on the one path that
+        exists to escape a stale JWKS, reproducing this module's own
+        incident: hours of ``401`` / ``WS 1008`` against a token that is
+        perfectly good. The sibling ``cognito_jwks`` already throttles on
+        ``monotonic``, and its comment claims all three doors throttle
+        identically — a claim this makes true.
         """
         async with self._lock:
-            now = time.time()
+            now = time.monotonic()
             if force_refresh:
-                if self._jwks is not None and (now - self._forced_at) < (
-                    self._forced_cooldown_s
+                if (
+                    self._jwks is not None
+                    and self._forced_at is not None
+                    and (now - self._forced_at) < self._forced_cooldown_s
                 ):
                     # Already refetched recently: serve the cache rather than
                     # letting a stream of unknown kids drive one coord
                     # round-trip per request.
                     return self._jwks
                 self._forced_at = now
-            elif self._jwks is not None and (now - self._fetched_at) < self._ttl_s:
+            elif (
+                self._jwks is not None
+                and self._fetched_at is not None
+                and (now - self._fetched_at) < self._ttl_s
+            ):
                 return self._jwks
 
             jwks = await self._fetch_jwks()

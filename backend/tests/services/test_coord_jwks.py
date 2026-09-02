@@ -23,11 +23,12 @@ from typing import Any
 
 import jwt as pyjwt
 import pytest
-import structlog
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
 )
 
+from app.core.config import settings
+from app.services import coord_jwks as coord_jwks_module
 from app.services.coord_jwks import (
     _MAX_KID_CHARS,
     CoordJWKSClient,
@@ -36,7 +37,9 @@ from app.services.coord_jwks import (
     CoordTokenInvalidError,
     CoordTokenNotYetValidError,
     describe_token_rejection,
+    identity_mismatch_remedy_fields,
     token_rejection_examples,
+    warn_if_device_coord_split,
 )
 
 # ---------------------------------------------------------------------------
@@ -536,7 +539,9 @@ async def test_oversized_kid_is_truncated_before_it_reaches_a_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_verify_token_does_not_raise_the_identity_alarm_itself() -> None:
+async def test_verify_token_does_not_raise_the_identity_alarm_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``coord_identity_mismatch`` belongs to the TERMINAL callers only.
 
     ``app.api.v1.endpoints.memory`` runs every bearer through
@@ -548,6 +553,14 @@ async def test_verify_token_does_not_raise_the_identity_alarm_itself() -> None:
     WARNING on routine successful traffic, which buries the one line the
     alarm exists to surface. ``deps`` and ``devices_ws`` raise it instead,
     because for them a rejection really is terminal.
+
+    Observes the module logger directly. The `structlog.configure` capture
+    this test shipped with could not fail: the app configures structlog with
+    `cache_logger_on_first_use=True` (`app/core/logging_helpers.py`), so a
+    module logger that has already emitted keeps its original processor
+    chain and a later reconfigure captures nothing — leaving a negative
+    assertion that passes for the wrong reason. Found while adding the
+    positive assertions below, which do not survive that.
     """
     private, jwk = _ed25519_keypair()
     client = _FakeClient(jwks={"keys": [jwk]})
@@ -560,19 +573,11 @@ async def test_verify_token_does_not_raise_the_identity_alarm_itself() -> None:
         headers={"kid": "abc123XYZ/Example=", "typ": "JWT"},
     )
 
-    emitted: list[str] = []
+    recorder = _record(monkeypatch)
+    with pytest.raises(CoordTokenForeignIssuerError):
+        await client.verify_token(token)
 
-    def _capture(logger, method_name, event_dict):
-        emitted.append(str(event_dict.get("event", "")))
-        raise structlog.DropEvent
-
-    structlog.configure(processors=[_capture])
-    try:
-        with pytest.raises(CoordTokenForeignIssuerError):
-            await client.verify_token(token)
-    finally:
-        structlog.reset_defaults()
-
+    emitted = [w["event"] for w in recorder.warnings]
     assert "coord_identity_mismatch" not in emitted, (
         f"verify_token must not raise the alarm itself; emitted={emitted}"
     )
@@ -686,6 +691,92 @@ async def test_forced_refetch_cooldown_expires() -> None:
 
 
 # ---------------------------------------------------------------------------
+# The TTL and the cooldown are measured on a clock that never steps.
+#
+# Both are "has enough time passed" questions, and both answer by SUPPRESSING
+# a fetch. On the wall clock a single backward adjustment — an NTP step, a VM
+# resume, a container host correcting its RTC — makes the elapsed term
+# negative, so both suppressions engage for the whole size of the jump. That
+# lands on the one path that exists to escape a stale JWKS, which is this
+# module's own incident: hours of 401 / WS 1008 against a good token.
+# ---------------------------------------------------------------------------
+
+
+class _FakeMonotonic:
+    """A monotonic clock the test advances by hand."""
+
+    def __init__(self) -> None:
+        self.now = 10_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _freeze_wall_clock_and_control_monotonic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> _FakeMonotonic:
+    """Pin `time.time` and hand the test `time.monotonic`.
+
+    This pairing is what makes the assertions below DISCRIMINATING. Simply
+    stepping `time.time` backwards proves nothing: with a TTL or cooldown of
+    0 both clocks answer "expired", so such a test passes against the old
+    wall-clock code too. Freezing `time.time` while advancing `monotonic`
+    separates them — elapsed time exists on exactly one of the two clocks,
+    so only a module reading `monotonic` can see it.
+    """
+    fake = _FakeMonotonic()
+    monkeypatch.setattr(time, "monotonic", fake)
+    # Frozen AT the real current instant, not at an arbitrary one: the
+    # fixtures mint their tokens with `int(time.time())`, so a constant of
+    # our own choosing would put `iat`/`exp` months away from the clock PyJWT
+    # validates against and every token would fail as not-yet-valid or
+    # expired — a green-looking test of the wrong thing.
+    frozen = time.time()
+    monkeypatch.setattr(time, "time", lambda: frozen)
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_ttl_is_measured_on_a_clock_that_never_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An expired cache must refetch even when the wall clock has not moved.
+
+    A frozen (or backward-stepped) wall clock is what an NTP correction or a
+    VM resume looks like from inside the process. On `time.time` the cache
+    then reads as fresh for the size of the jump, which is hours of `401` /
+    `WS 1008` against a token that is perfectly good.
+    """
+    old_private, old_jwk = _ed25519_keypair()
+    _, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("beefbeefbeefbeef")
+
+    fake = _freeze_wall_clock_and_control_monotonic(monkeypatch)
+    # The second JWKS still carries the ORIGINAL kid. That is what isolates
+    # the TTL: presenting a kid the cache does not know would drive the
+    # FORCED re-fetch instead, and then the fetch count says nothing about
+    # whether the TTL expired at all.
+    client = _RotatingClient(
+        {"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}, ttl_s=60
+    )
+
+    token = _mint_jwt(old_private, _coord_claims())
+    await client.verify_token(token)
+    assert client.fetches == 1
+
+    # 90s of real elapsed time — visible only on the monotonic clock.
+    fake.advance(90)
+
+    assert (await client.verify_token(token))["iss"] == "qontinui-coord"
+    assert client.fetches == 2, (
+        "the TTL must expire on elapsed time, not on the wall clock"
+    )
+
+
+# ---------------------------------------------------------------------------
 # The DOCUMENTED 401 bodies must be the ones this module actually produces.
 #
 # `events.py` carried a hand-copied 401 example — "Invalid or expired token",
@@ -783,6 +874,249 @@ def test_phase_completed_documents_exactly_the_401s_it_can_return() -> None:
         "the legacy runner bearer was retired in Phase 5 of the unified "
         "devices registry; this door takes a coord-issued device-token JWT"
     )
+
+
+@pytest.mark.asyncio
+async def test_forced_cooldown_is_measured_on_the_same_clock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cooldown must release on elapsed time too.
+
+    This is the worse half: the cooldown gates the kid-miss recovery path,
+    so a cooldown that never releases means a coord key-id change stays
+    unrecoverable — with every rejection classified, correctly but
+    uselessly, as a foreign issuer.
+    """
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("c0ffeec0ffeec0ff")
+
+    fake = _freeze_wall_clock_and_control_monotonic(monkeypatch)
+    # A TTL long enough that only the FORCED path can drive a re-fetch.
+    client = _RotatingClient(
+        {"keys": [old_jwk]}, {"keys": [new_jwk]}, ttl_s=86_400, forced_cooldown_s=30
+    )
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+    assert client.fetches == 1
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+
+    # First miss: one forced re-fetch, which happens to recover the key.
+    assert (await client.verify_token(token))["iss"] == "qontinui-coord"
+    assert client.fetches == 2
+
+    # Still inside the cooldown: an unknown kid must NOT drive another fetch.
+    fake.advance(5)
+    unknown = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": _thumbprint_kid("9999999999999999"), "typ": "JWT"},
+    )
+    with pytest.raises(CoordTokenForeignIssuerError):
+        await client.verify_token(unknown)
+    assert client.fetches == 2, "the cooldown must still be in force at +5s"
+
+    # Past the cooldown: recovery is available again, on elapsed time alone.
+    fake.advance(60)
+    with pytest.raises(CoordTokenForeignIssuerError):
+        await client.verify_token(unknown)
+    assert client.fetches == 3, (
+        "the cooldown must release on elapsed time, not on the wall clock"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_kid_miss_just_after_boot_is_not_read_as_a_recent_refetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The "never forced yet" sentinel must not look like "forced just now".
+
+    `monotonic`'s origin is arbitrary and sits near host boot, so a `0.0`
+    sentinel — safe while these stamps were wall-clock readings, where
+    `now - 0.0` is ~1.8e9 — becomes a small number under `monotonic`. A kid
+    miss arriving within the cooldown of boot would then read as "already
+    refetched recently" and skip the single forced re-fetch that recovers
+    from a coord key-id change. The cache guard does not cover it, because
+    the forced stamp is set independently of the cache.
+    """
+    old_private, old_jwk = _ed25519_keypair()
+    new_private, new_jwk = _ed25519_keypair()
+    new_jwk["kid"] = _thumbprint_kid("0123456789abcdef")
+
+    fake = _FakeMonotonic()
+    fake.now = 5.0  # five seconds since boot, inside a 30s cooldown
+    monkeypatch.setattr(time, "monotonic", fake)
+
+    client = _RotatingClient(
+        {"keys": [old_jwk]}, {"keys": [new_jwk]}, ttl_s=86_400, forced_cooldown_s=30
+    )
+    await client.verify_token(_mint_jwt(old_private, _coord_claims()))
+    assert client.fetches == 1
+
+    token = pyjwt.encode(
+        _coord_claims(),
+        new_private,
+        algorithm="EdDSA",
+        headers={"kid": new_jwk["kid"], "typ": "JWT"},
+    )
+    assert (await client.verify_token(token))["iss"] == "qontinui-coord", (
+        "the first kid miss must force a re-fetch even moments after boot"
+    )
+    assert client.fetches == 2
+
+
+# ---------------------------------------------------------------------------
+# The identity alarm must name the knob that is actually in force.
+# ---------------------------------------------------------------------------
+
+
+def test_remedy_names_the_setting_in_force(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unsplit and split boxes get different, individually-correct advice."""
+    fields = identity_mismatch_remedy_fields()
+    assert fields["coord_url_setting"] == "COORD_URL"
+    assert "COORD_DEVICE_URL" in fields["remedy"], (
+        "an unsplit box's remedy should offer the override as the way out"
+    )
+
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://device-coord.example.io")
+    fields = identity_mismatch_remedy_fields()
+    assert fields["coord_url_setting"] == "COORD_DEVICE_URL"
+    assert "Do not repoint COORD_URL" in fields["remedy"]
+
+
+def test_split_remedy_never_sends_the_reader_to_coord_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression this closes, stated as the thing that must not recur.
+
+    Both terminal callers used to log "check COORD_URL". On a split box that
+    is the one setting bound to `COORD_ADMIN_SECRET`, so following the advice
+    fail-fast-es the backend at boot — a rejection message that costs the
+    reader an outage is worse than the vague one it replaced.
+    """
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://device-coord.example.io")
+    remedy = identity_mismatch_remedy_fields()["remedy"]
+
+    # It may MENTION COORD_URL — it must, to say "not that one" — but never
+    # as the value to correct.
+    assert "correct THAT value" in remedy
+    assert "COORD_DEVICE_URL selects" in remedy
+
+
+def test_terminal_callers_emit_the_remedy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Source-level pin on both `coord_identity_mismatch` sites.
+
+    The advice is only useful where it is logged, and nothing else fails if a
+    caller drops it: the alarm still fires, just without the knob. Pinned at
+    the source because the alternative is exercising a WS handshake and a
+    FastAPI dependency purely to read a log field.
+    """
+    import inspect
+
+    from app.api import deps
+    from app.api.v1.endpoints import devices_ws
+
+    for func in (devices_ws.websocket_device_unified_endpoint, deps._verify_device_jwt):
+        source = inspect.getsource(func)
+        idx = source.index("coord_identity_mismatch")
+        handler = source[idx : idx + 600]
+        assert "identity_mismatch_remedy_fields()" in handler, (
+            f"{func.__name__} must log which setting governs the URL it dialled"
+        )
+        assert "COORD_URL points at" not in handler, (
+            f"{func.__name__} must not name COORD_URL as the knob to turn"
+        )
+
+
+# ---------------------------------------------------------------------------
+# The mint/verify split announces itself at boot.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingLogger:
+    """Stands in for the module logger.
+
+    Deliberately NOT a `structlog.configure` processor: the app configures
+    structlog with `cache_logger_on_first_use=True`
+    (`app/core/logging_helpers.py`), so a module-level logger that has
+    already emitted once keeps its original processor chain and a
+    reconfigure silently captures nothing. A negative assertion still
+    passes under that failure, which is exactly how it goes unnoticed.
+
+    Records every level, not just ``warning``: the module also logs
+    ``coord_jwks_fetched`` at INFO on the ordinary fetch path, and a stand-in
+    that answers only one method turns an unrelated log call into an
+    ``AttributeError`` inside the code under test.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def _record(self, level: str, event: str, **kw: Any) -> None:
+        self.events.append({"level": level, "event": event, **kw})
+
+    def debug(self, event: str, **kw: Any) -> None:
+        self._record("debug", event, **kw)
+
+    def info(self, event: str, **kw: Any) -> None:
+        self._record("info", event, **kw)
+
+    def warning(self, event: str, **kw: Any) -> None:
+        self._record("warning", event, **kw)
+
+    def error(self, event: str, **kw: Any) -> None:
+        self._record("error", event, **kw)
+
+    @property
+    def warnings(self) -> list[dict[str, Any]]:
+        return [e for e in self.events if e["level"] == "warning"]
+
+
+def _record(monkeypatch: pytest.MonkeyPatch) -> _RecordingLogger:
+    recorder = _RecordingLogger()
+    monkeypatch.setattr(coord_jwks_module, "logger", recorder)
+    return recorder
+
+
+def test_no_split_warning_when_one_coord_serves_both(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every existing deployment must boot exactly as silently as before."""
+    recorder = _record(monkeypatch)
+    assert warn_if_device_coord_split() is False
+    assert recorder.warnings == []
+
+
+def test_split_announces_itself_with_both_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The split is only otherwise discovered at the first token rejection.
+
+    `COORD_DEVICE_URL` split the VERIFY side off `COORD_URL`; the MINT doors
+    stay on the admin bridge because `COORD_ADMIN_SECRET` is paired with one
+    coord. So a token this backend issues does not verify here. That is a
+    supported configuration — a split box pairs its runner directly with the
+    device coord — but it must not be silent.
+    """
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://device-coord.example.io")
+
+    recorder = _record(monkeypatch)
+    assert warn_if_device_coord_split() is True
+
+    assert len(recorder.warnings) == 1
+    event = recorder.warnings[0]
+    assert event["event"] == "coord_device_url_split_active"
+    assert event["device_coord_url"] == "https://device-coord.example.io"
+    assert event["bridge_coord_url"] == settings.COORD_URL.rstrip("/")
+    # Naming only one of the two URLs would leave the reader unable to tell
+    # which half is wrong, which is the state this replaces.
+    assert event["device_coord_url"] != event["bridge_coord_url"]
 
 
 @pytest.mark.asyncio

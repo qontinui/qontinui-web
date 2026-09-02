@@ -66,8 +66,11 @@ this replaced said 30/35 and was already one short of `agent-registry`, so
 re-count rather than trusting this number either). "33 routes" below always means
 the top-level set.
 
-**In scope next, by construction:** `/admin/agent-claims`, `/admin/agent-sessions`,
-and any operator surface added after them. The guide is named
+**In scope next, by construction:** `/admin/agent-claims`, `/sessions`,
+and any operator surface added after them. (`/admin/agent-sessions` was named
+here until `2026-08-26-sessions-console-consolidation` Phase 3 folded it, and
+`/environments/sessions`, into `/sessions` behind 308s — the scope claim moved
+with the surface, it did not shrink.) The guide is named
 `console-ui-style-guide.md` rather than `coord-console-style-guide.md` for exactly
 this reason: narrowing the claim later is a rename, widening it later means every
 citation already written points at the wrong scope.
@@ -1060,7 +1063,7 @@ route, and **no shipped module under `console/` has any runtime dependency on
 do import values from `operations/` and `admin/coord/` — that is
 `attention.test.ts`, the cross-surface palette oracle described below, and it is
 supposed to. Test files ship nothing.) That is what lets `/admin/coord/*`,
-`/admin/agent-claims` and `/admin/agent-sessions` share them without sharing a
+`/admin/agent-claims` and `/sessions` share them without sharing a
 data model, and it is what makes R1's *"derived, never a second fetch"*
 structurally true rather than a thing reviewers have to remember to check.
 

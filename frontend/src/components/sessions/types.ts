@@ -81,6 +81,21 @@ export interface SessionRow extends SessionToolActivity {
   repo: string | null;
   branch: string | null;
   /**
+   * The bridge to the OTHER coord id space —
+   * `coord.agent_sessions.id`, i.e. the `claude --session-id` uuid.
+   *
+   * Optional AND nullable, and the two mean different things that a consumer
+   * must render identically as unknown: `null` is coord saying this session
+   * has no Claude session id at all (a shell, a workflow — so no
+   * `agent_sessions` row CAN exist), while ABSENT is a coord that did not
+   * serve the key. Neither is a transcript that is missing.
+   *
+   * Deliberately NOT a foreign key on coord's side, and NOT unique — the
+   * column carries only a non-unique partial index, so anything joining on it
+   * must bound the fan-out the way `operations.py`'s consolidated arm does.
+   */
+  claude_code_session_id?: string | null;
+  /**
    * Which AI CLI hosts this session — `"claude"`, `"codex"`, … Mirrors
    * `coord.sessions.provider` (Phase 6 of the session-restore redesign),
    * propagated from the runner's `TerminalSessionRecord.provider`. `null` when
@@ -301,8 +316,10 @@ export interface AgentStatusResponse {
 /**
  * Lineage action kind — one row of the UNION ALL timeline coord builds
  * across `agent_worktrees` / `claims_audit` / `build_events` /
- * `merge_proposals`. Mirrors the shape in
- * `components/admin/agent-sessions/AgentSessionsDashboard.tsx`.
+ * `merge_proposals`. This was mirrored from
+ * `components/admin/agent-sessions/AgentSessionsDashboard.tsx`, which
+ * `2026-08-26-sessions-console-consolidation` Phase 3 deleted; this is now
+ * the only declaration.
  */
 export type LineageActionKind =
   | "agent_worktree"

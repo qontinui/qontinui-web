@@ -8,10 +8,12 @@
  * grouped by kind under collapsible headers. Pure presentation — the
  * caller owns fetching + loading/error/empty states.
  *
- * Used by BOTH the admin Coordination Audit dashboard
- * (`components/admin/agent-sessions/AgentSessionsDashboard.tsx`) and the
- * per-session drill-down (`SessionDetail.tsx`), so the worktree/claim/
- * build/merge timeline renders identically in both places.
+ * Used by the per-session drill-down (`SessionDetail.tsx`) and by the
+ * consolidated console's row expansion (`SessionRowExpansion.tsx`), so the
+ * worktree/claim/build/merge timeline renders identically in both places. The
+ * third caller — the admin Coordination Audit dashboard at
+ * `components/admin/agent-sessions/AgentSessionsDashboard.tsx` — was deleted
+ * by `2026-08-26-sessions-console-consolidation` Phase 3.
  */
 
 import { useMemo } from "react";
