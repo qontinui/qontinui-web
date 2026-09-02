@@ -1,8 +1,10 @@
 # Console UI Style Guide
 
-**Version:** 0.2.1 (Phase 1 — §3 filled in from the shipped primitives)
-**Last Updated:** 2026-08-24
-**Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`
+**Version:** 0.2.2 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+records the patterns the first post-guide page had to add)
+**Last Updated:** 2026-08-25
+**Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
+`2026-08-20-fleet-served-agent-skills.md` Phase 3
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -56,9 +58,12 @@ This guide governs **operator and monitoring surfaces in `qontinui-web`** — th
 pages whose job is to let one person watch a fleet of machines and act on what
 they see.
 
-**In scope today:** every route under `src/app/(app)/admin/coord/` — **30
+**In scope today:** every route under `src/app/(app)/admin/coord/` — **33
 top-level routes plus 5 dynamic detail routes** (`[agent_id]`, `[slug]`, `[id]`,
-`[name]`, `[version]`), i.e. 35 `page.tsx` files. "30 routes" below always means
+`[name]`, `[version]`), i.e. 38 `page.tsx` files (re-counted on disk 2026-08-25,
+when `agent-commands` and `agent-skills` joined the migration census; the count
+this replaced said 30/35 and was already one short of `agent-registry`, so
+re-count rather than trusting this number either). "33 routes" below always means
 the top-level set.
 
 **In scope next, by construction:** `/admin/agent-claims`, `/admin/agent-sessions`,
@@ -1218,6 +1223,48 @@ Three authored testids moved from `MergePipeline.tsx` into the primitives that n
 own them — `pipeline-search` (`queryTestId`), `pipeline-filter-<id>`
 (`testIdPrefix`) and `row-reason` (`reasonTestId`'s default). They render
 identically; the oracle asserting all three unmodified is the evidence.
+
+### 3.3 Patterns the agent text-unit console added — recorded under §6.4
+
+`/admin/coord/agent-commands` and `/admin/coord/agent-skills` (plan
+`2026-08-20-fleet-served-agent-skills.md`, Phase 3) are the first console pages
+built after this guide. They compose the shapes §2 shows — health strip, one-line
+rows, filter tabs with `–`-not-`0` counts, `p-3 sm:p-6 space-y-4` body, an
+authored kind→attention table with an agreement test — by hand, out of
+`_agent-text-units/_lib/unitRows.ts`.
+
+> **They hand-roll shapes [§3.2](#32-the-console-primitives) now ships, and that
+> is migration debt, not a design choice.** They were authored while §3 was still
+> a stub, and Phase 1 (`51168755`) landed the primitives in parallel. Nothing here
+> imports `@/components/console` yet; the health strip, the row and the filter
+> strip should each become `<HealthStrip>`, `<RecordRow>`/`<RecordList>` and
+> `<FilterTabs>`, and `ATTENTION_BY_KIND` should go through `attentionOf` and join
+> `console/attention.test.ts`'s registry. Recorded rather than done in this PR —
+> it is a migration of a landed surface, and it belongs with the wave that moves
+> the rest of Family B.
+
+They also introduce **two patterns this guide did not cover**, recorded here as
+§6.4 requires rather than shipped silently. Neither has a primitive yet; both
+belong in `components/console/` when a second surface needs them.
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Layer switch** | `_agent-text-units/_components/UnitEditor.tsx` (`LayerSwitch`) | A segmented two-state control naming the STORED LAYER a write goes to, each segment carrying whether that layer holds a row (`stored` / `none`) and a lock glyph when the viewer may read but not write it. | R6's filter tabs *narrow a view*; this *changes the write target*. Rendering a destructive-scope selector as a filter tab would be the worst possible confusion, so it is deliberately a different control. |
+| **File tab strip** | `_agent-text-units/_components/UnitFileTabs.tsx` | An editable path list over a `files` map: select, add, rename, delete, with the unit's entrypoint pinned (`validate_files` refuses a unit without it) and every path checked against the backend's own `validate_relative_path` while typing. | Nothing in the console edits a *set* of texts as one record. A command is the degenerate one-entry case of the same strip, so the two kinds stay one component. |
+
+Two notes for whoever extracts them:
+
+- **The layer switch's "stored / none" suffix is load-bearing, not decoration.** A
+  blank editor at a layer with no row means *nothing is stored here*, never *the
+  text is empty* — the runner's embedded copy is never uploaded, so qontinui-web
+  cannot pre-fill it and must not imply it could. Same `silent-empty-is-unknown`
+  discipline as R6's unfetched count.
+- **This surface's `ATTENTION_BY_KIND` has three `"none"` kinds and one
+  `"author"`,** and that asymmetry is the point: an account override and a fleet
+  default are normal states, while an override byte-identical to the fleet default
+  (`account-pinned`) silently stops fleet edits reaching that account and nothing
+  but a human clears it. An authoring surface that painted its normal states red
+  would re-create the exact bug [§4](#4-the-attention-palette) exists to prevent.
 
 ---
 

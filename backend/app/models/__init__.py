@@ -9,7 +9,7 @@ from app.models.action_execution import (
     ActionExecutionStatus,
     ActionExecutionType,
 )
-from app.models.agent_command import AgentCommand, AgentCommandVersion
+from app.models.agent_text_unit import AgentTextUnit, AgentTextUnitVersion
 from app.models.ai_prompt import AIPromptTemplate, PromptSequence
 from app.models.analytics_event import AnalyticsEvent
 from app.models.annotation import Annotation, AnnotationSet
@@ -495,8 +495,8 @@ __all__ = [
     # Skills (user-created parameterized step templates)
     "Skill",
     # Agent commands (account overrides of the runner's embedded defaults)
-    "AgentCommand",
-    "AgentCommandVersion",
+    "AgentTextUnit",
+    "AgentTextUnitVersion",
     # Known Issues (verified/discovered issues tracked across executions)
     "KnownIssue",
     # Feedback Scores (Opik integration — quality metrics)
