@@ -727,6 +727,14 @@ async def query_records(
     ``agent``/``session``-scoped rows are only visible when the request
     names those scopes AND supplies the matching ``scope_ref``.
 
+    ``title_prefix`` is an exact, case-sensitive prefix filter on
+    ``title``, ANDed with every arm above. It is the HEAD-RESOLUTION
+    door: a dossier head is titled ``DOSSIER <slug> — <issue>`` while its
+    contributions and deltas must not share that prefix, so
+    ``title_prefix="DOSSIER <slug> —"`` returns the head alone where the
+    bare key ranks it behind its own contributions. ``%`` and ``_`` in
+    the value are literal.
+
     The semantic arm needs a vector, and this endpoint never computes
     one. It runs only when the caller supplies ``query_embedding`` (with
     its ``query_embedding_model``) AND this tenant's corpus is entirely
@@ -791,6 +799,9 @@ async def query_records(
         "scope_ref": payload.scope_ref,
         "min_importance": payload.min_importance,
         "since": payload.since,
+        # Applied inside the shared WHERE fragment, so every arm below
+        # (vector, FTS, link expansion, anchored) honours it.
+        "title_prefix": payload.title_prefix,
     }
     vector_arm: Literal["hybrid", "skipped_no_embedding", "skipped_migrating"]
     vector_hits: list[tuple[UUID, float]]

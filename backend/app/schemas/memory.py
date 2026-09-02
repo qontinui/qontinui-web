@@ -405,6 +405,28 @@ class MemoryQueryRequest(BaseModel):
     since: datetime | None = None
     as_of: datetime | None = None
     min_importance: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Exact, case-sensitive prefix match on ``title``, ANDed with EVERY
+    # retrieval arm (FTS, vector, link expansion, anchored) so a hit can
+    # never arrive from an arm that skipped the filter. It exists for HEAD
+    # RESOLUTION: a dossier head is titled ``DOSSIER <slug> — <issue>``
+    # and its contributions/deltas MUST NOT share that prefix
+    # (``DOSSIER-CONTRIB <slug> — …`` / ``DOSSIER-DELTA <slug> — …``), so
+    # ``title_prefix="DOSSIER <slug> —"`` returns the head alone where FTS
+    # on the bare key ranks it behind its own contributions (measured at
+    # rank 4 of 4) and can page it out under the 50-hit cap. ``%`` and
+    # ``_`` in the value are literal characters, never wildcards. An
+    # empty prefix is rejected rather than silently meaning "no filter".
+    title_prefix: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description=(
+            "Exact case-sensitive prefix match on `title`, ANDed with the "
+            "FTS/vector/link arms. For resolving a dossier HEAD "
+            "(`DOSSIER <slug> —`); contributions and deltas must not share "
+            "the prefix. `%` and `_` are literal, not wildcards."
+        ),
+    )
     limit: int = Field(default=DEFAULT_QUERY_LIMIT, ge=1, le=MAX_QUERY_LIMIT)
     link_expansion: bool = Field(
         default=False,
