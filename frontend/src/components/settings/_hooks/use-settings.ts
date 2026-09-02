@@ -56,6 +56,9 @@ export function useSettings() {
       setLoading(true);
       const response = await httpClient.fetch(`${SETTINGS_BASE}/reset`, {
         method: "POST",
+        // Safe to re-issue: `reset_settings` deletes the user's Redis settings
+        // key and returns defaults; a repeat delete is a no-op.
+        idempotent: true,
       });
       if (response.ok) {
         const data = await response.json();
