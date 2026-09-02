@@ -160,7 +160,7 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "pmf_scope_cols_01"``, the local single head measured with
+``down_revision = "atu_02_atu_provenance"``, the local single head measured with
 ``scripts/ci/count_alembic_heads.py`` before authoring (``HEAD_COUNT=1``).
 Nothing is reserved: coord re-points ``down_revision`` at land time, and
 ``alembic-graph-pr.yml`` gates any fork that results.
@@ -172,7 +172,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ptbe_01_primary_tree_branch_events"
-down_revision: str = "pmf_scope_cols_01"
+down_revision: str = "atu_02_atu_provenance"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
