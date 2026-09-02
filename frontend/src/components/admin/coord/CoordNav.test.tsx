@@ -344,7 +344,7 @@ describe("CoordNav", () => {
     expect(claims).toHaveAttribute("href", "/admin/agent-claims");
     expect(screen.getByTestId("coord-nav-sessions")).toHaveAttribute(
       "href",
-      "/admin/agent-sessions"
+      "/sessions"
     );
     expect(screen.getByTestId("coord-nav-members")).toHaveAttribute(
       "href",

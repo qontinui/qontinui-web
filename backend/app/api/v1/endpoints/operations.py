@@ -5924,13 +5924,261 @@ async def websocket_ci_status(
 # tight.
 
 
+# ---- The consolidated sessions list (D1) --------------------------------
+#
+# Plan `2026-08-26-sessions-console-consolidation.md` Phase 1, D1.
+#
+# ## The boundary this does NOT cross
+#
+# `2026-05-30-web-coord-schema-boundary-decoupling.md` Phase 2 removed
+# every direct read of `coord.*` from this backend, and that decision
+# stands: the join below is assembled in PYTHON over TWO coord HTTP reads
+# (`GET /sessions` and `GET /coord/agent-sessions`), not in SQL over
+# coord's schema. Web owns presentation and authz; coord owns its tables.
+#
+# The consequence is stated rather than hidden: this is an
+# application-level join, so it is bounded by what each coord route
+# returns (`/coord/agent-sessions` caps at 500 rows) and it cannot see a
+# row either route filtered out. Everything below that cannot be
+# established is reported as UNKNOWN (`row_class: null`), never as an
+# answer. A SQL join coord-side would be strictly better and is a
+# coord-repo change; it is deliberately out of this phase's scope
+# (Phases 1-4 are qontinui-web only).
+#
+# ## The three row classes (D1) and the fourth answer (D2)
+#
+# | `row_class`      | what it means |
+# |------------------|---------------|
+# | `linked`         | a `coord.sessions` row bridged to a `coord.agent_sessions` row |
+# | `lifecycle_only` | a `coord.sessions` row with `claude_code_session_id IS NULL` — no Claude session id exists, so no `agent_sessions` row CAN exist |
+# | `agent_only`     | a `coord.agent_sessions` row no `coord.sessions` row bridges (`POST /agents/allocate` writes one and never the other) |
+# | `null`           | **UNKNOWN** — the agent half did not answer, or it answered without the bridged row |
+#
+# `null` is the whole point of D2. A bridged session whose agent row is
+# simply not in the (capped, filtered) agent payload has NOT been shown
+# to have no agent row, and calling that `lifecycle_only` would be the
+# `silent-empty-is-unknown` mistake with a discriminant attached — the
+# same class of error `coord`'s own
+# `crates/coord/tests/session_liveness_id_space.rs` exists to pin, where
+# a join miss manufactured a confident `owner_live = Some(false)` and fed
+# it to a reclaim engine armed in production.
+#
+# ## The non-unique bridge (trap 2 / trap 9)
+#
+# `coord.sessions.claude_code_session_id` carries only a **NON-unique
+# partial index** (`coord_session_identity_01.py`), and `create_session`
+# is `ON CONFLICT (id) DO NOTHING` keyed on `id` alone — so a session
+# that re-registers produces a SECOND `coord.sessions` row sharing one
+# `claude_code_session_id`. Coord's two shipped precedents are
+# `worktree_observer.rs:1716` (`EXISTS`, because it projects nothing from
+# the session side) and `session_worktrees.rs:710`
+# (`ORDER BY started_at DESC, id DESC LIMIT 1`, because it does).
+#
+# This surface projects the agent half onto the row, so it takes the
+# second: :func:`_bridge_owners` picks exactly ONE `coord.sessions` row
+# per `claude_code_session_id` — the newest by `(started_at, id)` — and
+# every OTHER row sharing that bridge is reported UNKNOWN rather than
+# being handed a lineage that may belong to a different incarnation. The
+# `id` tiebreak makes the pick total, so the result is deterministic as
+# well as single-valued.
+#
+# Note the direction that CANNOT fan out and why it still matters:
+# `coord.agent_sessions.id` is that table's PRIMARY KEY, so at most one
+# agent row answers any one bridge value. The fan-out lives entirely on
+# the `coord.sessions` side, which is the side this bounds.
+
+#: The `?shape=` value that selects the consolidated projection.
+#:
+#: The DEFAULT (no `shape`) is coord's payload passed through byte-for-byte,
+#: exactly as before. This is not a feature flag hiding incomplete work — both
+#: arms are complete — it is a projection selector on a route with two live
+#: consumers during a staged migration: `/sessions`' shipped fat-card list
+#: (`SessionsList.tsx`) and the new console. Phase 1 deliberately keeps the old
+#: pages reachable so the two can be compared on a live fleet; Phase 3 deletes
+#: the old surface and with it this selector.
+_SESSIONS_SHAPE_CONSOLIDATED = "consolidated"
+
+#: `?status=` vocabulary. Deliberately coord's OWN agent-session lifecycle
+#: words (`routes_phase3.rs::agent_session_status`) rather than a fourth
+#: spelling, because `/admin/agent-sessions?status=` already speaks it and
+#: the §3 redirect table maps `?live=` onto `?status=live`.
+_SESSIONS_STATUS_VALUES = ("live", "stale", "closed")
+
+#: `coord.sessions.state` values that each `?status=` word covers. `active`
+#: is live; `stale` and `pending_resolution` are both "coord thinks this has
+#: stopped talking"; `closed` is terminal.
+_STATE_BY_STATUS: dict[str, frozenset[str]] = {
+    "live": frozenset({"active"}),
+    "stale": frozenset({"stale", "pending_resolution"}),
+    "closed": frozenset({"closed"}),
+}
+
+#: Rows to ask `/coord/agent-sessions` for when assembling the join. Coord
+#: clamps to its own `[1, 500]` ceiling (`AGENT_SESSIONS_LIST_MAX_LIMIT`), so
+#: this is that ceiling spelled out rather than a number web invented. Above
+#: it the join is INCOMPLETE, not wrong: a bridged row coord truncated off the
+#: end lands in the UNKNOWN class, which is the whole reason that class exists.
+_AGENT_SESSIONS_JOIN_LIMIT = 500
+
+#: Lifecycle-row fields the `?q=` needle is matched against.
+#:
+#: coord's `/sessions` route has no search parameter, so this half is filtered
+#: here while the agent half is searched coord-side (full-text over
+#: `label` / `derived_name` / `search_text`). The two are therefore not the
+#: same search, and the difference is disclosed rather than smoothed over: a
+#: `q` that matches an agent session's activity text will not match its
+#: lifecycle twin's `intent.purpose` unless the words happen to coincide.
+_SESSION_QUERY_FIELDS = (
+    "id",
+    "repo",
+    "branch",
+    "session_kind",
+    "provider",
+    "device_id",
+)
+
+
+def _session_matches_query(row: dict[str, Any], needle: str) -> bool:
+    """Case-insensitive substring match over a lifecycle row's readable fields.
+
+    ``needle`` is expected already lowercased and stripped by the caller.
+    """
+    for field in _SESSION_QUERY_FIELDS:
+        value = row.get(field)
+        if value and needle in str(value).lower():
+            return True
+    intent = row.get("intent")
+    if isinstance(intent, dict):
+        for value in intent.values():
+            if isinstance(value, str) and needle in value.lower():
+                return True
+    return False
+
+
+def _sort_key_newest_first(row: dict[str, Any]) -> tuple[str, str]:
+    """`(started_at, id)` as sortable strings, newest LAST under `sorted()`.
+
+    RFC3339 timestamps from coord sort correctly as strings (fixed-width,
+    zero-padded, UTC `Z`). A missing `started_at` sorts oldest, which is the
+    conservative pick: a row that never recorded a start must not win the
+    bridge from one that did.
+    """
+    started = row.get("started_at") or ""
+    return (str(started), str(row.get("id") or ""))
+
+
+def _bridge_owners(lifecycle: list[dict[str, Any]]) -> dict[str, str]:
+    """Map each `claude_code_session_id` to the ONE `coord.sessions.id` that
+    owns it — the newest by `(started_at, id)`.
+
+    This is the Python spelling of coord's
+    `ORDER BY sess.started_at DESC, sess.id DESC LIMIT 1`
+    (`session_worktrees.rs:710`). See the module block above for why the
+    bound is mandatory rather than defensive.
+    """
+    owners: dict[str, dict[str, Any]] = {}
+    for row in lifecycle:
+        bridge = row.get("claude_code_session_id")
+        if not bridge:
+            continue
+        key = str(bridge)
+        current = owners.get(key)
+        if current is None or _sort_key_newest_first(row) > _sort_key_newest_first(
+            current
+        ):
+            owners[key] = row
+    return {bridge: str(row.get("id") or "") for bridge, row in owners.items()}
+
+
+def _consolidate_sessions(
+    lifecycle: list[dict[str, Any]],
+    agents: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Join the lifecycle half to the agent half and emit D1's row classes.
+
+    ``agents is None`` means the agent read did NOT land. Every row then
+    carries ``row_class: null`` — UNKNOWN — including the rows whose bridge
+    column is null and which we could otherwise classify: with no agent
+    payload there is also no ``agent_only`` half, so a list that silently
+    dropped those rows while confidently classifying the rest would be
+    describing a fleet it did not read. One failed read, one honest answer.
+    """
+    if agents is None:
+        return [{**row, "row_class": None, "agent_session": None} for row in lifecycle]
+
+    agents_by_id: dict[str, dict[str, Any]] = {}
+    for agent in agents:
+        agent_id = agent.get("id")
+        if agent_id:
+            # `coord.agent_sessions.id` is the PRIMARY KEY, so this cannot
+            # collide; the guard is against a malformed payload, not a fan-out.
+            agents_by_id.setdefault(str(agent_id), agent)
+
+    owners = _bridge_owners(lifecycle)
+    consumed: set[str] = set()
+    out: list[dict[str, Any]] = []
+
+    for row in lifecycle:
+        bridge = row.get("claude_code_session_id")
+        if not bridge:
+            # Structural, not observational: a `terminal_shell` / `workflow` /
+            # `automation` / `debug` session has no Claude session id at all
+            # (plan §2.2), so no `agent_sessions` row CAN exist for it. This is
+            # the one absence this function is entitled to call an answer.
+            out.append({**row, "row_class": "lifecycle_only", "agent_session": None})
+            continue
+        key = str(bridge)
+        # Deliberately NOT named `agent`: the loops above and below bind that
+        # name to a `dict[str, Any]` element, so reusing it here for a
+        # `.get()` result — which is `dict[str, Any] | None` — is a real type
+        # collision, not a lint nit (mypy [assignment]).
+        agent_half = agents_by_id.get(key)
+        if agent_half is None or owners.get(key) != str(row.get("id") or ""):
+            # Either the agent half did not carry the bridged row (capped or
+            # filtered out), or this is an OLDER `coord.sessions` row sharing
+            # the bridge and the newest one owns it. Both are UNKNOWN: we have
+            # not shown this row has no agent half, and we will not hand it one
+            # that may belong to a different incarnation.
+            out.append({**row, "row_class": None, "agent_session": None})
+            continue
+        consumed.add(key)
+        out.append({**row, "row_class": "linked", "agent_session": agent_half})
+
+    for agent in agents:
+        agent_id = agent.get("id")
+        if not agent_id or str(agent_id) in consumed:
+            continue
+        if str(agent_id) in owners:
+            # Bridged by SOME lifecycle row, just not one that claimed it above
+            # (the owner was filtered out of this response). Emitting it as
+            # `agent_only` would assert an absence we did not observe.
+            continue
+        out.append(
+            {
+                # The lifecycle keys — `state`, `session_kind`, `intent`,
+                # `started_at`, `last_heartbeat_at`, `closed_at`, `provider` —
+                # are ABSENT, not null. There is no `coord.sessions` row, so
+                # there is no value to report; a `null` here would read as
+                # "coord wrote null", which is a different claim. The renderer
+                # keys on `row_class` and prints `–`.
+                "id": str(agent_id),
+                "device_id": agent.get("device_id"),
+                "row_class": "agent_only",
+                "agent_session": agent,
+            }
+        )
+
+    return out
+
+
 @router.get("/sessions")
 async def list_coord_sessions(
     request: Request,
     scope: str | None = Query(
         default=None,
         description="`active` (default) | `all` — session-state filter, "
-        "passthrough to coord. Orthogonal to `tenant_scope`.",
+        "passthrough to coord. Orthogonal to `tenant_scope`. Ignored when "
+        "`shape=consolidated`, which always reads `all` (see below).",
     ),
     tenant_scope: str | None = Query(
         default=None,
@@ -5942,6 +6190,34 @@ async def list_coord_sessions(
     since: str | None = Query(
         default=None,
         description="RFC 3339 timestamp; only rows updated at-or-after are returned.",
+    ),
+    shape: str | None = Query(
+        default=None,
+        description="Omitted (default) — coord's `/sessions` payload passed "
+        "through unchanged. `consolidated` — the D1 join+union across "
+        "coord's `sessions` and `agent_sessions` with a first-class "
+        "`row_class` discriminant. See the block comment above.",
+    ),
+    device: UUID | None = Query(
+        default=None,
+        description="Restrict to sessions on this coord device. "
+        "`shape=consolidated` only. Spelled `device` (not `device_id`) "
+        "because `/environments/sessions?device=` already builds exactly this "
+        "deep link and the Phase 3 redirect preserves it verbatim.",
+    ),
+    q: str | None = Query(
+        default=None,
+        description="Free-text filter. `shape=consolidated` only. The agent "
+        "half is searched coord-side (full-text over label / derived_name / "
+        "activity); the lifecycle half is matched here over the fields coord's "
+        "`/sessions` route exposes, which carries no search parameter.",
+    ),
+    status: Literal["live", "stale", "closed"] | None = Query(
+        default=None,
+        description="Lifecycle filter. `shape=consolidated` only. coord's own "
+        "agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; "
+        "`live` also covers coord's `sessions.state='active'`, `stale` covers "
+        "`stale` + `pending_resolution`, `closed` covers `closed`.",
     ),
     # `get_tenant_id` captures the caller's Cognito bearer into the
     # request-scoped ContextVar so `_proxy_coord_get(..., tenant_id=...)`
@@ -5957,12 +6233,35 @@ async def list_coord_sessions(
     independent axes — see plan
     `2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.
 
-    Wire shape from coord::
+    Wire shape from coord (the default, `shape` omitted)::
 
         { "count": <int>, "scope": "<active|all>", "sessions": [SessionRow, ...] }
 
     Where ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.
+
+    With ``shape=consolidated`` the envelope gains three fields and every
+    row gains two (plan `2026-08-26-sessions-console-consolidation` D1)::
+
+        { "count": <int>, "scope": "all", "shape": "consolidated",
+          "sessions": [ { ...SessionRow,
+                          "row_class": "linked"|"lifecycle_only"|"agent_only"|null,
+                          "agent_session": {...}|null }, ... ],
+          "row_class_counts": {"linked": n, "lifecycle_only": n,
+                               "agent_only": n, "unknown": n},
+          "agent_half": {"read": "ok"} | {"read": "failed", "detail": "..."} }
+
+    ``row_class: null`` is UNKNOWN and is load-bearing — see the block
+    comment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.
+
+    **Tenant scoping is coord's and is unchanged** (trap 7). Both reads
+    forward the caller's bearer and coord scopes by device→tenant; the
+    `device` / `q` / `status` filtering applied web-side below is a
+    PRESENTATION narrowing of rows coord already authorised, never the
+    security boundary. Removing it could only ever show the caller MORE of
+    their own tenant's rows, never another tenant's.
     """
+    consolidated = (shape or "").strip().lower() == _SESSIONS_SHAPE_CONSOLIDATED
+
     params: dict[str, Any] = {}
     if tenant_scope == "all":
         # Multi-tenant: coord's single-tenant `OperatorContext` cannot
@@ -5979,13 +6278,103 @@ async def list_coord_sessions(
     # Default + explicit `active` (single-tenant home): send NEITHER
     # param — coord derives the home tenant fail-closed from the
     # forwarded Cognito bearer's `OperatorContext`.
-    if scope is not None:
+    if consolidated:
+        # `all`, always, and not because the caller asked. The `agent_only`
+        # class is a SET DIFFERENCE against the bridged ids, so it is only
+        # sound over the complete lifecycle set: read `scope=active` and every
+        # closed session's bridge disappears, promoting its perfectly-linked
+        # agent row to a fabricated `agent_only`. The `status` filter below
+        # then narrows the result, which is the same view the caller asked for
+        # and a sound one.
+        params["scope"] = "all"
+    elif scope is not None:
         params["scope"] = scope
     if since is not None:
         params["since"] = since
-    return await _proxy_coord_get(
+
+    payload = await _proxy_coord_get(
         "/sessions", params=params or None, tenant_id=tenant_id
     )
+    if not consolidated:
+        return payload
+
+    lifecycle = [
+        row
+        for row in (payload.get("sessions") or [] if isinstance(payload, dict) else [])
+        if isinstance(row, dict)
+    ]
+
+    # ---- the agent half -------------------------------------------------
+    #
+    # A failure here degrades to UNKNOWN rather than 502ing the whole list:
+    # the lifecycle half IS an answer and the operator should see it. What it
+    # must never do is degrade to "these rows have no agent session", which is
+    # why `_consolidate_sessions` takes `None` (not `[]`) for a failed read.
+    agent_params: dict[str, Any] = {"limit": _AGENT_SESSIONS_JOIN_LIMIT}
+    if device is not None:
+        agent_params["device_id"] = str(device)
+    if q:
+        agent_params["q"] = q
+    if status is not None:
+        agent_params["status"] = status
+    agents: list[dict[str, Any]] | None
+    agent_half: dict[str, Any]
+    try:
+        agent_payload = await _proxy_coord_get(
+            "/coord/agent-sessions", params=agent_params, tenant_id=tenant_id
+        )
+        agents = [
+            row
+            for row in (
+                agent_payload.get("sessions") or []
+                if isinstance(agent_payload, dict)
+                else []
+            )
+            if isinstance(row, dict)
+        ]
+        agent_half = {"read": "ok"}
+    except HTTPException as exc:
+        # `CoordTransportUnavailable` (a 502/504 web invented because coord was
+        # never reached) and a status coord genuinely returned are both here,
+        # and the detail names which — see that class's docstring.
+        agents = None
+        agent_half = {
+            "read": "failed",
+            "detail": f"{exc.status_code}: {exc.detail}",
+        }
+        logger.warning(
+            "sessions_consolidated_agent_half_failed",
+            status=exc.status_code,
+            transport_failure=isinstance(exc, CoordTransportUnavailable),
+        )
+
+    # ---- presentation filters (NOT the security boundary — trap 7) ------
+    if device is not None:
+        lifecycle = [
+            row for row in lifecycle if str(row.get("device_id") or "") == str(device)
+        ]
+    if status is not None:
+        wanted = _STATE_BY_STATUS[status]
+        lifecycle = [row for row in lifecycle if str(row.get("state") or "") in wanted]
+    if q:
+        needle = q.strip().lower()
+        if needle:
+            lifecycle = [
+                row for row in lifecycle if _session_matches_query(row, needle)
+            ]
+
+    rows = _consolidate_sessions(lifecycle, agents)
+    counts = {"linked": 0, "lifecycle_only": 0, "agent_only": 0, "unknown": 0}
+    for row in rows:
+        counts[row.get("row_class") or "unknown"] += 1
+    return {
+        "count": len(rows),
+        "scope": "all",
+        "shape": _SESSIONS_SHAPE_CONSOLIDATED,
+        "sessions": rows,
+        "row_class_counts": counts,
+        "agent_half": agent_half,
+    }
 
 
 @router.get("/sessions/{session_id}")
@@ -9360,6 +9749,26 @@ async def _write_cognito_group_audit(
         )
 
 
+def _invalid_parameter_http(exc: CognitoInvalidParameterError) -> HTTPException:
+    """400 carrying the malformed argument's real reason.
+
+    ``CognitoInvalidParameterError`` is a SUBCLASS of ``CognitoAdminError``,
+    so every ``except CognitoInvalidParameterError`` arm below must sit
+    BEFORE that route's generic arm — otherwise the generic one swallows it
+    and answers 502, telling the operator AWS is broken when the input was
+    simply invalid. 502 stays reserved for a genuinely broken upstream, which
+    is the only thing that makes it a useful signal.
+
+    Redundant with ``_cognito_http_error``'s own ``CognitoInvalidParameterError``
+    branch for any route that only catches the generic ``CognitoAdminError``
+    (``validated_group_name`` already keeps a malformed PATH group name from
+    ever reaching AWS on the four membership routes) — kept as an explicit,
+    load-bearing arm anyway so a caller that raises this type is answered
+    correctly even if a future edit reorders or drops that branch.
+    """
+    return HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get("/coord/cognito/groups")
 async def list_cognito_groups(
     current_user: UserModel = Depends(require_admin),
@@ -9872,9 +10281,10 @@ async def delete_cognito_group(
     ),
     db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Delete a Cognito group. 404 if no such group. Superuser-gated,
-    rate-limited (the lowest limit of the four — this is the only
-    irreversible one), and audited with the acting superuser.
+    """Delete a Cognito group. 404 if no such group, 400 if the name cannot
+    satisfy Cognito's ``groupName`` constraint (``validated_group_name``).
+    Superuser-gated, rate-limited (the lowest limit of the four — this is
+    the only irreversible one), and audited with the acting superuser.
 
     Refuses **409** before touching AWS when the delete would take
     something else down with it — see the module comment above
@@ -9882,6 +10292,12 @@ async def delete_cognito_group(
     why the harm is deferred to each operator's next login rather than
     swept immediately.
     """
+    # No handler-level name check needed here: `group_name` already came
+    # through the `validated_group_name` dependency above, which runs BEFORE
+    # this body — and so before the guards below ever spend a coord
+    # round-trip on a name Cognito could never have held. Without that
+    # ordering, `my tenant-home` would trip Guard 2 and ask the operator to
+    # `allow_home_group` their way past a group that cannot exist.
     # The bearer is what authenticates the coord read below; `require_admin`
     # resolves no coord tenant and so never captures it.
     capture_caller_bearer(request)
@@ -9954,6 +10370,9 @@ async def delete_cognito_group(
 
     try:
         await asyncio.to_thread(cognito_admin.delete_group, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -9998,6 +10417,9 @@ async def list_cognito_group_users(
     """
     try:
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10025,7 +10447,8 @@ async def add_cognito_group_user(
     """Add a user (resolved by email) to a Cognito group. Superuser-gated,
     rate-limited, audited.
 
-    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    404 if no user has that email; 409 if the email is ambiguous (>1 match);
+    400 if the email or the group name is one Cognito rejects as malformed.
     """
     try:
         username = await asyncio.to_thread(
@@ -10033,6 +10456,11 @@ async def add_cognito_group_user(
         )
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`. An email
+        # Cognito will not accept in a `ListUsers` filter is the caller's
+        # typo, not a broken pool.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10045,6 +10473,9 @@ async def add_cognito_group_user(
 
     try:
         await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10081,7 +10512,8 @@ async def remove_cognito_group_user(
     """Remove a user (resolved by email) from a Cognito group.
     Superuser-gated, rate-limited, audited.
 
-    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    404 if no user has that email; 409 if the email is ambiguous (>1 match);
+    400 if the email or the group name is one Cognito rejects as malformed.
     """
     try:
         username = await asyncio.to_thread(
@@ -10089,6 +10521,11 @@ async def remove_cognito_group_user(
         )
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`. An email
+        # Cognito will not accept in a `ListUsers` filter is the caller's
+        # typo, not a broken pool.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10103,6 +10540,9 @@ async def remove_cognito_group_user(
         await asyncio.to_thread(
             cognito_admin.remove_user_from_group, username, group_name
         )
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,

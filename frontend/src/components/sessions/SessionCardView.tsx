@@ -1,43 +1,39 @@
 "use client";
 
 /**
- * /environments/sessions/[key] — session identity card detail (P4 of plan
- * `2026-07-02-digital-twin-session-identity-registry`).
+ * SessionCardView — the twin identity card: name, status, machine binding,
+ * restore capability, the "working on" snapshot, recent commits, the card's
+ * own lineage list, and the Transcript / Live-tail tabs.
  *
- * `key` is a session UUID or name; names can be AMBIGUOUS, so the coord
- * resolver (`GET /api/v1/admin/agent-sessions/{key}`) returns
- * `{"resolved": [card, ...], "count": N}` newest-first and this page
- * renders every match (one card in the common case). Each card shows
- * name, status, the bound machine/environment (machine name links back to
- * /environments/machines), the "working on" summary + session snapshot,
- * recent commits, and the lineage timeline.
+ * **Extracted, not rewritten.** This was declared inside
+ * `app/(app)/environments/sessions/[key]/page.tsx` and was reachable from that
+ * route alone. Plan `2026-08-26-sessions-console-consolidation.md` D5 requires
+ * it on the merged `/sessions/[key]` view, and the honest way to put it there
+ * is to move the one component both pages render rather than to grow a second
+ * copy that drifts. Phase 3 deleted that page (it 308s to `/sessions/[key]`
+ * now); this component survived, and `/sessions/[key]` is its only caller.
+ *
+ * `twin-session-card` is carried forward **verbatim** — Spec-CI asserts on it
+ * (trap 5), and a testid must not be renamed in the PR that moves what it
+ * points at. Same for `resume-capability-badge`, which `ResumePanel` owns.
+ *
+ * The only addition is {@link SessionCardViewProps.archiveSlot}: the merged
+ * page renders the PERMANENT transcript store beside coord's live one there
+ * (§1 — there are two stores and they are different things). It is optional,
+ * which is what let the environments page keep rendering exactly what it
+ * rendered before for the one phase it outlived the extraction.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import {
-  Activity,
-  AlertTriangle,
-  ArrowLeft,
-  GitCommitHorizontal,
-  History,
-  Loader2,
-  RefreshCw,
-  Server,
-} from "lucide-react";
+import { Activity, GitCommitHorizontal, History, Server } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { relativeTime } from "@/components/operations/utils";
-import { LiveTailPane } from "@/components/sessions/LiveTailPane";
-import { ResumePanel } from "@/components/sessions/ResumePanel";
-import { TranscriptPane } from "@/components/sessions/TranscriptPane";
-import {
-  AgentSessionsApiError,
-  resolveAgentSession,
-  type SessionCard,
-} from "@/services/agent-sessions-api";
+import { LiveTailPane } from "./LiveTailPane";
+import { ResumePanel } from "./ResumePanel";
+import { TranscriptPane } from "./TranscriptPane";
+import type { SessionCard } from "@/services/agent-sessions-api";
 
 function shortSha(sha: string): string {
   return sha.length > 7 ? sha.slice(0, 7) : sha;
@@ -71,7 +67,21 @@ function Field({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function SessionCardView({ card }: { card: SessionCard }) {
+export interface SessionCardViewProps {
+  card: SessionCard;
+  /**
+   * Rendered directly under the Transcript / Live-tail tabs.
+   *
+   * Those tabs are coord's warm→cold stream — authoritative while the session
+   * is open and for ~7 days after it closes. The PERMANENT copy lives in
+   * qontinui-web's own archive and is a different object with a different
+   * lifetime, so it goes BESIDE them and is labelled, never merged into the
+   * same tab strip as though there were one transcript.
+   */
+  archiveSlot?: ReactNode;
+}
+
+export function SessionCardView({ card, archiveSlot }: SessionCardViewProps) {
   const displayName = card.name ?? card.derived_name;
   const workingOn = card.working_on;
   const snapshot = workingOn?.session ?? null;
@@ -146,7 +156,12 @@ function SessionCardView({ card }: { card: SessionCard }) {
         {/* Restore capability + "Resume here…" (plan
             `2026-07-09-runner-session-history-cloud-sync`, Phase 4).
             Reads the session's newest `restore-record` event and offers
-            the Phase-7 handoff toward a picked target device. */}
+            the Phase-7 handoff toward a picked target device.
+
+            The badge IS the honesty contract and this view only surfaces it:
+            `full` → conversation + terminal, `terminal_only` → a FRESH
+            conversation with the terminal and cwd only, no restore record →
+            not resumable. Nothing here restates or upgrades that claim. */}
         <ResumePanel
           sessionId={card.id}
           sessionClosed={card.status === "closed"}
@@ -255,112 +270,9 @@ function SessionCardView({ card }: { card: SessionCard }) {
             />
           </TabsContent>
         </Tabs>
+
+        {archiveSlot}
       </div>
-    </div>
-  );
-}
-
-export default function SessionDetailPage() {
-  const params = useParams<{ key: string }>();
-  const decodedKey = decodeURIComponent(params.key);
-
-  const [cards, setCards] = useState<SessionCard[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const fetchCard = useCallback(async () => {
-    try {
-      const data = await resolveAgentSession(decodedKey);
-      setCards(data.resolved);
-      setNotFound(false);
-      setLoadError(null);
-    } catch (err) {
-      if (err instanceof AgentSessionsApiError && err.status === 404) {
-        setNotFound(true);
-        setLoadError(null);
-      } else {
-        setLoadError(
-          err instanceof Error ? err.message : "Failed to load session"
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [decodedKey]);
-
-  useEffect(() => {
-    fetchCard();
-  }, [fetchCard]);
-
-  return (
-    <div className="p-6 space-y-6" data-testid="twin-session-detail-page">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href="/environments/sessions">
-              <ArrowLeft className="size-4" />
-              Sessions
-            </Link>
-          </Button>
-          <h2 className="text-lg font-semibold font-mono">{decodedKey}</h2>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setLoading(true);
-            fetchCard();
-          }}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <RefreshCw className="size-4" />
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="size-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : notFound ? (
-        <div className="text-center py-12">
-          <AlertTriangle className="size-10 mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No session matches <span className="font-mono">{decodedKey}</span>.
-          </p>
-        </div>
-      ) : loadError ? (
-        <div className="text-center py-12">
-          <AlertTriangle className="size-10 mx-auto mb-3 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t load session.
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">{loadError}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4"
-            onClick={() => {
-              setLoading(true);
-              fetchCard();
-            }}
-          >
-            <RefreshCw className="size-4" />
-            Retry
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {(cards?.length ?? 0) > 1 && (
-            <p className="text-xs text-muted-foreground">
-              {cards?.length} sessions share this name (newest first).
-            </p>
-          )}
-          {cards?.map((card) => (
-            <SessionCardView key={card.id} card={card} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
