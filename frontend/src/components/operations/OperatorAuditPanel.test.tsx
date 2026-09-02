@@ -75,6 +75,75 @@ describe("the read", () => {
     await waitFor(() => expect(getMock).toHaveBeenCalled());
     expect(getMock.mock.calls[0]?.[0] as string).not.toContain("action=");
   });
+
+  it("sends no resource_key until the search is applied", async () => {
+    getMock.mockResolvedValue({ audit: [DRAIN_ROW], count: 1 });
+    await openPanel();
+    expect(getMock.mock.calls[0]?.[0] as string).not.toContain("resource_key=");
+  });
+
+  it("filters by resource_key on Apply, and stops on Clear", async () => {
+    getMock.mockResolvedValue({ audit: [DRAIN_ROW], count: 1 });
+    await openPanel();
+    getMock.mockClear();
+
+    fireEvent.change(screen.getByTestId("operator-audit-resource-key"), {
+      target: { value: "22222222-2222-2222-2222-222222222222" },
+    });
+    fireEvent.click(screen.getByTestId("operator-audit-resource-key-apply"));
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    expect(getMock.mock.calls[0]?.[0] as string).toContain(
+      "resource_key=22222222-2222-2222-2222-222222222222"
+    );
+
+    getMock.mockClear();
+    fireEvent.click(screen.getByTestId("operator-audit-resource-key-clear"));
+    await waitFor(() => expect(getMock).toHaveBeenCalled());
+    expect(getMock.mock.calls[0]?.[0] as string).not.toContain(
+      "resource_key="
+    );
+  });
+});
+
+describe("authorization-check noise", () => {
+  const NOISE_ROW: AuditRow = {
+    audit_id: "aud-noise",
+    operator_id: "11111111-1111-1111-1111-111111111111",
+    action: "rbac.allow",
+    resource_kind: "http.route",
+    resource_key: "GET /admin/coord/audit/recent",
+    metadata: { method: "GET" },
+    occurred_at: "2026-08-31T12:05:00Z",
+  };
+
+  it("hides require_role rows by default, and counts them rather than dropping them silently", async () => {
+    getMock.mockResolvedValue({ audit: [DRAIN_ROW, NOISE_ROW], count: 2 });
+    await openPanel();
+
+    expect(
+      await screen.findByTestId(`audit-row-${DRAIN_ROW.audit_id}`)
+    ).toBeTruthy();
+    expect(screen.queryByTestId(`audit-row-${NOISE_ROW.audit_id}`)).toBeNull();
+    expect(screen.getByText(/1 hidden/)).toBeTruthy();
+  });
+
+  it("shows them again when the toggle is switched off", async () => {
+    getMock.mockResolvedValue({ audit: [DRAIN_ROW, NOISE_ROW], count: 2 });
+    await openPanel();
+    await screen.findByTestId(`audit-row-${DRAIN_ROW.audit_id}`);
+
+    fireEvent.click(screen.getByTestId("operator-audit-hide-auth-checks"));
+    expect(
+      await screen.findByTestId(`audit-row-${NOISE_ROW.audit_id}`)
+    ).toBeTruthy();
+  });
+
+  it("says so, rather than rendering a bare empty state, when every row in the window is noise", async () => {
+    getMock.mockResolvedValue({ audit: [NOISE_ROW], count: 1 });
+    await openPanel();
+    const hidden = await screen.findByTestId("operator-audit-all-hidden");
+    expect(hidden.textContent).toMatch(/authorization checks/);
+  });
 });
 
 describe("a drain is answerable — who, when, why, and how far", () => {

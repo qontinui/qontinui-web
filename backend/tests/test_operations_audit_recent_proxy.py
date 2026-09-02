@@ -128,6 +128,41 @@ class TestAuditRecentProxy:
         assert params["action"] == "fleet.*"
         assert params["limit"] == 100
 
+    def test_forwards_resource_kind_and_resource_key_verbatim(self, client: TestClient):
+        """These two were stranded by the proxy — declared nowhere, so a
+        caller could not narrow to a resource_kind (e.g. isolate the
+        `http.route` authorization-check noise `require_role` stamps on every
+        request) or search by resource_key (e.g. "who touched THIS host"),
+        even though coord has served both since coord#1735."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"audit": [_DRAIN_ROW], "count": 1}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            client.get(
+                f"{AUDIT_PATH}?resource_kind=coord.fleet_runtime_policy"
+                f"&resource_key=drain:22222222-2222-2222-2222-222222222222"
+            )
+
+        params = instance.get.call_args.kwargs["params"]
+        assert params["resource_kind"] == "coord.fleet_runtime_policy"
+        assert params["resource_key"] == ("drain:22222222-2222-2222-2222-222222222222")
+
+    def test_resource_kind_prefix_grammar_forwards_verbatim(self, client: TestClient):
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(
+                json_data={"audit": [], "count": 0}
+            )
+            _configure_mock_client(MockClient, instance)
+
+            client.get(f"{AUDIT_PATH}?resource_kind=http.route")
+
+        params = instance.get.call_args.kwargs["params"]
+        assert params["resource_kind"] == "http.route"
+
     def test_forwards_the_time_window(self, client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()

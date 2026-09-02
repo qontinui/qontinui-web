@@ -227,6 +227,24 @@ export function isNilOperator(row: AuditRow): boolean {
 }
 
 /**
+ * The `resource_kind` `require_role` stamps on EVERY authorized request
+ * through its layer — GETs included — before the handler runs. Every such
+ * row shares this value; that is the coord runbook's own words: "those rows
+ * are all `http.route`".
+ *
+ * A row carrying it named no target and no value written, and looks the same
+ * whether the request it authorized went on to succeed, 404 or 422 — reading
+ * it as a change (or letting it swamp real ones under an unfiltered view) is
+ * exactly the failure this constant exists to stop.
+ */
+export const AUTHORIZATION_CHECK_RESOURCE_KIND = "http.route";
+
+/** True for a `require_role` authorization-check row, never a real write. */
+export function isAuthorizationCheck(row: AuditRow): boolean {
+  return row.resource_kind === AUTHORIZATION_CHECK_RESOURCE_KIND;
+}
+
+/**
  * Parse a response body into the read union.
  *
  * A body that is not an object, or whose `audit` is not a list, is

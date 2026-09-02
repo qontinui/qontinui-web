@@ -59,6 +59,7 @@ import {
   DEFAULT_AUDIT_FILTER_ID,
   blastRadiusOf,
   describeAuditAction,
+  isAuthorizationCheck,
   isNilOperator,
   parseAuditPayload,
   reasonOf,
@@ -233,10 +234,24 @@ export function OperatorAuditPanel() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const filter = useMemo(() => resolveAuditFilter(filterId), [filterId]);
 
+  // `require_role` stamps a `resource_kind=http.route` row on EVERY
+  // authorized request through its layer, GETs included — so this panel's
+  // own polling writes into the feed it renders. Hidden by default so the
+  // feed opens on the rows that answer "who did this", not the noise
+  // reading it generates; the count stays visible so the toggle is never a
+  // silent narrowing.
+  const [hideAuthChecks, setHideAuthChecks] = useState(true);
+
+  // Applied separately from the input's live value so typing does not
+  // re-fetch on every keystroke — only `resourceKeyFilter` feeds `load`.
+  const [resourceKeyInput, setResourceKeyInput] = useState("");
+  const [resourceKeyFilter, setResourceKeyFilter] = useState("");
+
   const load = useCallback(async () => {
     setRead({ state: "loading" });
     const params = new URLSearchParams({ limit: String(AUDIT_LIMIT) });
     if (filter.action) params.set("action", filter.action);
+    if (resourceKeyFilter) params.set("resource_key", resourceKeyFilter);
     try {
       const body = await httpClient.get<unknown>(
         `${OPERATOR_AUDIT_API}?${params.toString()}`
@@ -251,7 +266,7 @@ export function OperatorAuditPanel() {
             : "the audit feed could not be read.",
       });
     }
-  }, [filter.action]);
+  }, [filter.action, resourceKeyFilter]);
 
   // Read on mount and on a filter change; NOT polled. An audit trail is
   // append-only history, not liveness — the reason to re-read it is that you
@@ -259,6 +274,12 @@ export function OperatorAuditPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const allRows = read.state === "ok" ? read.rows : [];
+  const hiddenAuthChecks = allRows.filter(isAuthorizationCheck).length;
+  const visibleRows = hideAuthChecks
+    ? allRows.filter((row) => !isAuthorizationCheck(row))
+    : allRows;
 
   return (
     <CollapsiblePanel
@@ -270,7 +291,7 @@ export function OperatorAuditPanel() {
       summary={
         read.state === "ok" ? (
           <Badge variant="outline" className="text-[10px]">
-            {read.rows.length}
+            {visibleRows.length}
           </Badge>
         ) : (
           <Badge variant="outline" className="text-[10px]">
@@ -323,6 +344,65 @@ export function OperatorAuditPanel() {
           </span>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={hideAuthChecks}
+              onChange={(e) => setHideAuthChecks(e.target.checked)}
+              data-testid="operator-audit-hide-auth-checks"
+            />
+            Hide authorization checks
+            {hiddenAuthChecks > 0 ? ` (${hiddenAuthChecks} hidden)` : ""}
+          </label>
+        </div>
+
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setResourceKeyFilter(resourceKeyInput.trim());
+          }}
+        >
+          <label
+            htmlFor="operator-audit-resource-key"
+            className="text-xs text-muted-foreground"
+          >
+            Resource key
+          </label>
+          <input
+            id="operator-audit-resource-key"
+            type="text"
+            className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+            placeholder="e.g. a device id — who touched THIS host"
+            value={resourceKeyInput}
+            onChange={(e) => setResourceKeyInput(e.target.value)}
+            data-testid="operator-audit-resource-key"
+          />
+          <Button
+            type="submit"
+            variant="outline"
+            size="sm"
+            data-testid="operator-audit-resource-key-apply"
+          >
+            Apply
+          </Button>
+          {resourceKeyFilter ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setResourceKeyInput("");
+                setResourceKeyFilter("");
+              }}
+              data-testid="operator-audit-resource-key-clear"
+            >
+              Clear
+            </Button>
+          ) : null}
+        </form>
+
         {read.state === "unavailable" ? (
           <div
             className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/5 px-3 py-2"
@@ -345,20 +425,32 @@ export function OperatorAuditPanel() {
           </div>
         ) : (
           <RecordList
-            items={read.state === "ok" ? read.rows : []}
+            items={visibleRows}
             loaded={read.state === "ok"}
             itemKey={(row, i) => row.audit_id || `audit-${i}`}
             expandedKey={openKey}
             onExpandedKeyChange={setOpenKey}
             empty={
-              <p className="text-xs text-muted-foreground">
-                No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
-                rows for this tenant at all &mdash; coord applies the filter
-                BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches, not
-                &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read
-                succeeded; this is a measurement, not a failed look. Widen the
-                filter to see whether anything else was written.
-              </p>
+              allRows.length > 0 ? (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="operator-audit-all-hidden"
+                >
+                  All {allRows.length} row(s) in this window are authorization
+                  checks (<span className="font-mono">http.route</span>),
+                  hidden by &ldquo;Hide authorization checks&rdquo; above
+                  &mdash; not a real write. Turn it off to see them.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No <span className="font-mono">{filter.action ?? "*"}</span>{" "}
+                  rows for this tenant at all &mdash; coord applies the filter
+                  BEFORE the {AUDIT_LIMIT}-row limit, so this is zero matches, not
+                  &ldquo;none in the last {AUDIT_LIMIT}&rdquo;. The read
+                  succeeded; this is a measurement, not a failed look. Widen the
+                  filter to see whether anything else was written.
+                </p>
+              )
             }
             renderRow={(row, ctx) => (
               <AuditRowView
