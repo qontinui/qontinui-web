@@ -29,6 +29,64 @@ export type { CiCapacityDisclosureProps } from "./CiCapacityDisclosure";
 export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
+export { CoordDispatchDisclosure } from "./CoordDispatchDisclosure";
+export type { CoordDispatchDisclosureProps } from "./CoordDispatchDisclosure";
+export {
+  DEFAULT_DRAIN_WINDOW_ID,
+  DRAIN_WINDOWS,
+  MAX_DRAIN_DAYS,
+  describeDrainResult,
+  drainConfirmText,
+  drainScopeSentences,
+  drainUntilIso,
+  reasonRefusal,
+  resolveDrainWindow,
+  undrainConfirmText,
+} from "./coordDrain";
+export type { DrainResponse, DrainWindow } from "./coordDrain";
+export {
+  CI_ROUTING_LABELS,
+  describeMirrorFreshness,
+  hasLabel,
+  indexCiRunners,
+  isRoutingLabel,
+  matchesFleetRouting,
+  mergeCiRunners,
+  mirrorRowAgeSecs,
+  missingRoutingLabels,
+  normalizeCiRunnerStatus,
+  parseCiRunnersPayload,
+} from "./ciRunnerMirror";
+export type {
+  CiRunnerMirrorRead,
+  CoordCiRunnerRow,
+  CoordCiRunnersPayload,
+} from "./ciRunnerMirror";
+export {
+  CI_RUNNER_MIRROR_API,
+  CI_RUNNER_MIRROR_POLL_MS,
+  useCiRunnerMirror,
+} from "./useCiRunnerMirror";
+export { OPERATOR_AUDIT_API, OperatorAuditPanel } from "./OperatorAuditPanel";
+export {
+  AUDIT_FILTERS,
+  DEFAULT_AUDIT_FILTER_ID,
+  NIL_OPERATOR_ID,
+  blastRadiusOf,
+  describeAuditAction,
+  isNilOperator,
+  parseAuditPayload,
+  reasonOf,
+  resolveAuditFilter,
+} from "./operatorAudit";
+export type {
+  AuditActionLabel,
+  AuditFilter,
+  AuditRead,
+  AuditRow,
+  BlastRadius,
+  BlastRadiusItem,
+} from "./operatorAudit";
 export { CiStatusPanel } from "./CiStatusPanel";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";

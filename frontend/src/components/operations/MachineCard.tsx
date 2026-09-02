@@ -37,6 +37,7 @@ import {
   deviceStateBadgeVariant,
 } from "./FleetHealthSummary";
 import { CiCapacityDisclosure } from "./CiCapacityDisclosure";
+import { CoordDispatchDisclosure } from "./CoordDispatchDisclosure";
 import type { CiCapacityJoin } from "./ciCapacity";
 import type { MachineGroup, MachineVolumes, VolumeReading } from "./types";
 
@@ -742,6 +743,34 @@ export function MachineCard({
             page exists. Collapsed, so opening it is a deliberate act. */}
         {ciCapacity && <CiCapacityDisclosure join={ciCapacity} />}
 
+        {/* Coord dispatch — the reversible, audited, expiring pause coord has
+            shipped since §D2 and the console could not reach until plan
+            `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 1. It
+            sits directly under CI capacity because they are the same question
+            asked at two layers: how much work MAY this machine take, and is
+            coord sending it any right now. Collapsed for the same reason that
+            one is — it is a consent surface, not a preference.
+
+            It is NOT called "Disable", and the copy inside says why: coord's
+            drain map reaches coord's own CI and build dispatch and nothing
+            else. GitHub keeps routing `[self-hosted, qontinui]` jobs here and
+            sessions can still be spawned in. */}
+        <CoordDispatchDisclosure
+          hostname={machine.hostname}
+          deviceId={
+            machine.coordHealth?.matched
+              ? machine.coordHealth.device_id
+              : undefined
+          }
+          // Derived from the ROW'S OWN SOURCE, not from `isCiInfrastructure`.
+          // That flag means "no runner-inventory row", which a device-registry
+          // CI host can also have; this prop is specifically "coord's mirror
+          // named this, so it is a GitHub Actions runner", which is the
+          // population whose devices advertise `ci_runner` and are therefore
+          // invisible to both readers of the drain map.
+          ciInfrastructure={machine.ciRunner?.source === "coord-mirror"}
+        />
+
         {/* Summary footer */}
         <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-border text-xs text-muted-foreground">
           {machine.coordHealthOnly ? (
@@ -759,9 +788,17 @@ export function MachineCard({
               </span>
             </>
           )}
-          {machine.ciRunner && machine.ciRunner.status !== "offline" && (
-            <span>CI runner active</span>
-          )}
+          {/* `idle`/`busy` explicitly, never `!== "offline"`. With `unknown` a
+              real status (a mirrored row whose `ci_runner_status` coord did not
+              report), the negative form calls a runner nobody has heard from
+              "active" — a wrong claim in the direction that hides a problem,
+              and the exact form `FleetOverview`'s CI stat was fixed away from.
+              A row's own badge says `status unknown`; this line must agree. */}
+          {machine.ciRunner &&
+            (machine.ciRunner.status === "idle" ||
+              machine.ciRunner.status === "busy") && (
+              <span>CI runner active</span>
+            )}
           {/* The cross-links HealthSummaryCard carried per device. They only
               resolve for a matched coord device — the trees view is keyed on
               `device_id`. */}

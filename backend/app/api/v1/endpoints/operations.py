@@ -3998,6 +3998,390 @@ async def get_fleet_health(
     return await _proxy_coord_get("/coord/fleet/health", tenant_id=tenant_id)
 
 
+# ---- Machine drain / undrain (coord dispatch pause) ----------------------
+#
+# Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 1. Coord has
+# shipped `POST /coord/fleet/drain` / `/undrain` since
+# `2026-08-02-fleet-resource-telemetry-and-ci-allocation` §D2 — with a
+# mandatory expiry and a four-way audit trail — and qontinui-web had NO proxy
+# for either, so the console could not reach the one reversible, audited lever
+# the fleet already owns. These two routes are that exposure; no new coord code
+# is involved.
+#
+# ## What a drain actually does — and the three things it does NOT do
+#
+# `fleet_drain::drained_device_ids{,_on}` has exactly TWO consumers, both
+# coord's own dispatch selectors: `ci_dispatch.rs` and `build_dispatcher.rs`.
+# Measured against `qontinui-coord` `origin/main`, 2026-08-31:
+#
+#   * It does NOT change GitHub Actions routing. A drained host still draws
+#     `runs-on: [self-hosted, qontinui]` jobs, because GitHub matches on the
+#     runner's LABEL set and coord's drain map is invisible to GitHub.
+#   * It does NOT gate agent-session spawning. `agents_spawn.rs` and
+#     `spawn_authorization.rs` reference the drain map zero times, and
+#     `PICK_ONLINE_DEVICE_SQL` filters on the tenant binding, `last_seen_at`
+#     freshness and the `ci_runner` capability exclusion — never on drain.
+#   * It does NOT reach the merge-train slot clamp. Neither
+#     `merge_scheduler.rs` nor `device_state.rs` references `fleet_drain`, so a
+#     drained machine still counts toward `effective_slot_cap` (the plan's
+#     Phase 3, deliberately not shipped here).
+#
+# That is why the UI control these feed is named "Pause coord dispatch" and
+# never "Disable": a control that overstates its reach is worse than no control,
+# because an operator reaches for it in an incident and believes the host is
+# out.
+#
+# ## Why the expiry is a first-class REQUIRED field
+#
+# Coord's `DrainRequest::until` is a non-`Option` `DateTime<Utc>` — §D2 requires
+# the expiry, and a missing key is a hard reject at coord's door rather than a
+# defaulted forever. Modelling it here as a required Pydantic field puts the
+# same contract in this service's OpenAPI schema and answers a MISSING `until`
+# with a sentence naming the field, instead of forwarding a body coord will
+# reject with a serde error. Coord still owns the RANGE rule
+# (`MAX_DRAIN_DAYS = 30`, and "must be in the future"); duplicating it here
+# would be a second copy of a policy this service does not own, so those two
+# 400s are forwarded from coord verbatim.
+
+
+class FleetDrainBody(BaseModel):
+    """Body of ``POST /operations/fleet/drain`` — coord's ``DrainRequest``.
+
+    ``model_config`` forbids extra keys because coord's own struct carries
+    ``#[serde(deny_unknown_fields)]``: a typo'd field name must fail at this
+    door with a field-level message rather than reach coord and be reported as
+    an opaque deserialization error.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID = Field(
+        description="The coord device to stop dispatching work to.",
+    )
+    until: datetime = Field(
+        description="REQUIRED expiry (RFC 3339, timezone-aware). A drain "
+        "without a deadline is a permanent removal wearing an expiry's "
+        "clothes, which is exactly what coord's §D2 contract forbids — so "
+        "there is no default and no open-ended form. Coord additionally "
+        "refuses a deadline in the past or more than 30 days out.",
+    )
+    reason: str = Field(
+        # The three rows this text names are deliberately NOT spelled as
+        # `coord.<table>` here: `test_coord_schema_boundary_guard` reads every
+        # non-docstring literal, and a `Field(description=...)` is executable
+        # even though it is prose. Naming them schema-qualified would trip the
+        # read-boundary guard on a string that is rendered into OpenAPI and
+        # never executed as SQL.
+        description="REQUIRED, non-blank. It lands in coord's user-override "
+        "row, its alert row and the `operator_audit` stamp — the audit trail "
+        "is the whole point of routing this through coord rather than a "
+        "shell.",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason: required, non-blank")
+        return v
+
+    @field_validator("until")
+    @classmethod
+    def _until_is_aware(cls, v: datetime) -> datetime:
+        """Reject a naive timestamp rather than guessing its zone.
+
+        A naive `until` reaches coord as a string with no offset, where it
+        parses as UTC — so a browser in UTC+2 sending local wall-clock time
+        would silently shorten or lengthen the drain by two hours. The expiry
+        is the safety property here; guessing it is not acceptable.
+        """
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            raise ValueError(
+                "until: must carry a UTC offset (RFC 3339, e.g. "
+                "2026-08-31T18:00:00Z). A naive timestamp has no defined "
+                "instant and the expiry is the point of the field."
+            )
+        return v
+
+
+class FleetUndrainBody(BaseModel):
+    """Body of ``POST /operations/fleet/undrain`` — coord's ``UndrainRequest``.
+
+    No ``until``: releasing a hold has no deadline. Coord answers
+    ``changed: false`` when the device was not drained, which the console
+    reports as "it was not paused" rather than dressing it up as a release.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: UUID
+    reason: str
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("reason: required, non-blank")
+        return v
+
+
+@router.post("/fleet/drain")
+async def post_fleet_drain(
+    body: FleetDrainBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Stop coord dispatching CI and build work to one machine, until ``until``.
+
+    Same shape as :func:`post_pr_merge_kill_switch` — the admin dependency,
+    the ``_proxy_coord_post`` helper, and coord's status codes forwarded
+    verbatim: 400 on an out-of-window expiry, 403 when the caller is not an
+    operator admin or the device is not bound to the caller's tenant
+    (``device_not_in_tenant``).
+
+    A **blank reason never reaches coord** — :class:`FleetDrainBody` refuses it
+    here, so it is a 422 from this door rather than coord's 400. That is the
+    one place this proxy is stricter than the route it fronts, and it is
+    deliberate: the field is required by both, and refusing it one hop earlier
+    names the field instead of returning coord's error string.
+
+    Coord, in one versioned transaction:
+
+    1. Writes the entry into ``coord.fleet_runtime_policy.drain`` JSONB
+       (``{"<device_uuid>": {"until", "reason", "drained_by", "drained_at"}}``)
+       via ``fleet_policy::apply_policy_edit_tx`` — a numbered, immutable
+       snapshot. **Zero new columns.**
+    2. INSERTs a ``coord.user_overrides(override_kind='fleet_drain_set')`` row.
+    3. INSERTs a ``coord.alerts`` row so other operators see it.
+    4. Stamps ``auth_sso::audit_mutation`` with ``ctx.operator_id`` — the
+       operator resolved from the forwarded bearer, never a header-derived id.
+       (`resolve_operator_id(&headers)` reads an `X-Qontinui-Operator-Id`
+       header this service never sends and falls back to `Uuid::nil()`, which
+       violates `operator_audit`'s FK and is then swallowed by
+       `audit_mutation`'s fire-and-forget warn. This path does not go near it.)
+
+    Returns coord's ``DrainResponse``: ``{device_id, drained, until, reason,
+    drained_by, drained_at, version, changed}``. ``changed`` is ``false`` when
+    the request altered nothing.
+
+    **Scope, stated because the control that calls this must say it too:** the
+    drain map is consulted by coord's CI dispatch and build dispatch and by
+    nothing else. GitHub Actions routing, agent-session spawning and the
+    merge-train slot clamp are all unaffected — see the section comment above.
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/drain",
+        body.model_dump(mode="json"),
+        tenant_id=tenant_id,
+    )
+
+
+@router.post("/fleet/undrain")
+async def post_fleet_undrain(
+    body: FleetUndrainBody,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Release a machine's drain hold so coord dispatches to it again.
+
+    Same auth, helper and error mapping as :func:`post_fleet_drain`. Coord
+    writes no audit side effects when nothing changed — an undrain of a device
+    that was not drained returns ``changed: false`` and stamps nothing, because
+    "an audit feed that records requests rather than changes is one operators
+    stop reading" (`fleet_drain.rs`).
+    """
+    return await _proxy_coord_post(
+        "/coord/fleet/undrain",
+        body.model_dump(mode="json"),
+        tenant_id=tenant_id,
+    )
+
+
+# ---- CI-runner label mirror ----------------------------------------------
+#
+# Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 2, and a
+# DATA-PATH phase only: `CiRunnerBadge.tsx` has rendered label chips since the
+# self-hosted CI runners plan. What was missing is the data reaching it.
+#
+# ## Why this route exists instead of a widened device read
+#
+# The GitHub-side runners ARE in `coord.devices` — coord's
+# `ci_runner_registrar` UPSERTs one row per GitHub runner through the same
+# `device_state::register_device` a Tauri runner uses, and already parses and
+# persists GitHub's `labels[]` into `coord.devices.ci_runner_labels`. But those
+# rows are STRUCTURALLY INVISIBLE to this service's own device read: the
+# registrar registers with `user_id = None` and no `capability_user_paired`,
+# while `device_crud.list_devices` requires
+# `user_id == current_user.id AND capability_user_paired IS TRUE`
+# (`device_crud.py`). So `GET /operations/fleet`'s `ci_runners` map is dead
+# surface for the GitHub fleet, and the `CI Runners x/y` stat reads 0/0.
+#
+# Loosening that filter was the tempting fix and is the wrong one: the filter
+# is doing real work for user-paired devices — it is what keeps one tenant's
+# workstations out of another's fleet list. A read route on coord, which owns
+# the rows and can scope them itself, is the smaller and safer change.
+#
+# ## What this shows is a MIRROR, and the UI must say so
+#
+# Nothing here reads GitHub. Coord's registrar polls
+# `GET /repos/{repo}/actions/runners` on a ~60 s cadence and the page reads
+# what that poll last wrote — so the label set can be up to a poll stale, and
+# `freshness_secs` / `as_of` are on the wire precisely so the console can label
+# it rather than imply live truth (plan §5 Q2).
+#
+# ## Auth — admin, because that is what coord enforces
+#
+# `require_coord_tenant_admin`. Most GET proxies in this file use
+# `get_tenant_id` and let coord scope the read, and this one was written that
+# way first, on the reasoning that the Dev Ops page is viewable by the
+# Developer tier and admin-gating telemetry would blank a read-only fact for
+# those viewers. **Coord does not implement that posture**:
+# `fleet_ci_runners::get_fleet_ci_runners` calls
+# `rbac::deny_unless_tenant_admin` before it queries anything, so a
+# Developer-tier caller gets a 403 from coord regardless. Matching the gate here
+# keeps this door's posture equal to the route it fronts and stops the comment
+# describing a behaviour the system does not have. The console degrades
+# honestly either way — the hook lands on `unavailable`, which renders as
+# "label state unknown", never as a host with no labels.
+
+
+@router.get("/fleet/ci-runners")
+async def get_fleet_ci_runners(
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return coord's mirror of the self-hosted CI runners and their labels.
+
+    Coord answers::
+
+        {
+          "runners": [
+            {
+              "device_id": "<uuid>",
+              "hostname": "<str>",
+              "ci_runner_status": "<str|null>",
+              "ci_runner_labels": ["self-hosted", "qontinui", ...],
+              "last_seen_at": "<rfc3339|null>"
+            }
+          ],
+          "as_of": "<rfc3339>",
+          "freshness_secs": <int>
+        }
+
+    ``ci_runner_labels`` is the set coord's registrar last mirrored from
+    GitHub's `actions/runners` listing — the same set GitHub matches a job's
+    `runs-on` against. A host missing the custom `qontinui` label draws no
+    `[self-hosted, qontinui]` job, which is what makes this read worth
+    surfacing: it is the only place the console can see routing eligibility.
+
+    ``as_of`` / ``freshness_secs`` describe the READ, not GitHub, and
+    ``freshness_secs`` is coord's SELECTION WINDOW — not an age. Coord's own
+    words: "the freshness window the query was executed under, in seconds",
+    sourced from ``merge_scheduler::ci_runner_freshness_secs()``
+    (``COORD_CI_RUNNER_FRESHNESS_SECS``, a configured constant, default 180).
+    The rows are those coord saw in ``(as_of - freshness_secs, as_of]``. A
+    consumer that renders it as "N seconds old" prints a constant as if it were
+    a measurement; the real per-row age is ``as_of - last_seen_at``, which is
+    why ``last_seen_at`` is on the wire. All three pass through untouched.
+
+    Forwarded verbatim — this proxy adds no shape of its own, so a coord that
+    grows a field serves it to the console without a change here.
+    """
+    return await _proxy_coord_get("/coord/fleet/ci-runners", tenant_id=tenant_id)
+
+
+# ---- Operator audit feed -------------------------------------------------
+#
+# Plan `2026-08-20-fleet-page-runner-enable-disable-switch` Phase 5, and it
+# closes that plan's §7 metric rather than adding a feature.
+#
+# The metric reads: *"the action is auditable — who, when, which repos, and how
+# to reverse it"*. Coord has WRITTEN `coord.operator_audit` all along and mounts
+# `GET /admin/coord/audit/recent` behind its own admin router — and qontinui-web
+# had no proxy, so the table was written and **unreadable from the console**.
+# The plan's own §1 makes the case: the 2026-08-20 delabel of `msi-wsl` was
+# undone at some later point and *nothing anywhere records who did it or when*.
+# An audit trail no operator can read is the same as none.
+#
+# ## Auth: admin, matching coord's own gate
+#
+# `require_coord_tenant_admin`. Coord mounts this route on its
+# `rbac::require_role(admin)` + `require_sso` router (`routes.rs`), so a
+# non-administrator gets a 403 from coord regardless; asking here first turns a
+# two-service round trip into one clean answer, and keeps this door's posture
+# equal to the route it fronts. This is the opposite call from
+# `/fleet/ci-runners` above — deliberately: that one serves telemetry every
+# viewer of the page may see, this one serves an operator identity feed.
+#
+# ## Tenant scoping is coord's, and is NOT a parameter
+#
+# Coord derives the tenant from the caller's own `OperatorContext` and never
+# from a query param, so there is no scope to widen from this side and none is
+# offered. The filters below are exactly coord's: `action` (exact, or a prefix
+# match when it ends in `*`), `since` / `before` (RFC 3339 on `occurred_at`),
+# and `limit` (coord clamps to `[1, 1000]`, default 200).
+
+
+@router.get("/coord/audit/recent")
+async def get_coord_audit_recent(
+    action: str | None = Query(
+        default=None,
+        description="Filter by action. A trailing `*` is a PREFIX match "
+        "(`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); "
+        "anything else is an exact match. Forwarded to coord verbatim — the "
+        "prefix grammar is coord's, not this proxy's.",
+    ),
+    since: str | None = Query(
+        default=None,
+        description="RFC 3339. Restrict to rows where `occurred_at >= since`.",
+    ),
+    before: str | None = Query(
+        default=None,
+        description="RFC 3339. Restrict to rows where `occurred_at < before`.",
+    ),
+    limit: int | None = Query(
+        default=None,
+        ge=1,
+        description="Max rows. Coord clamps to `[1, 1000]` and defaults to 200.",
+    ),
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Return recent ``coord.operator_audit`` rows for the caller's tenant.
+
+    Coord answers ``{"audit": [...], "count": <n>}`` ordered
+    ``occurred_at DESC``, each row carrying ``audit_id``, ``operator_id``,
+    ``action``, ``resource_kind``, ``resource_key``, ``metadata`` and
+    ``occurred_at``.
+
+    **``metadata`` is where the blast radius lives**, and it is per-action
+    rather than a fixed schema — `operator_disable.rs` computes
+    ``affected_tenant_ids`` before stamping, the kill switch stamps
+    ``affected_repos``, and ``fleet.drain.set`` stamps ``device_id`` / ``until``
+    / ``drained`` / ``version``. It is forwarded UNTOUCHED: a proxy that
+    normalised it into a fixed shape would silently drop whatever the next
+    writer computes, which is the one field an operator reading this feed
+    actually needs.
+
+    ``operator_id`` is the acting operator coord resolved from the bearer. A
+    row reading ``00000000-0000-0000-0000-000000000000`` is the nil-UUID
+    signature of a coord writer that used ``resolve_operator_id(&headers)``
+    instead of ``ctx.operator_id`` — the header it reads is one this service
+    never sends. That is a coord-side defect to report, not a real operator,
+    and the console labels it as such rather than rendering a plausible id.
+    """
+    params: dict[str, Any] = {}
+    if action:
+        params["action"] = action
+    if since:
+        params["since"] = since
+    if before:
+        params["before"] = before
+    if limit is not None:
+        params["limit"] = limit
+    return await _proxy_coord_get(
+        "/admin/coord/audit/recent",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
 # ---- Claude account roster (per device) ---------------------------------
 #
 # Plan `2026-08-25-general-purpose-session-spawn-machine-account-prompt`
