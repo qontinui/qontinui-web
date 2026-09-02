@@ -1101,3 +1101,81 @@ def test_the_budget_arms_cite_the_budget_plan_not_the_apt_plan(tmp_path):
     )
     assert "2026-08-27-web-backend-coverage-producer-timeout" in out
     assert "2026-08-19-ci-apt-hang" not in out
+
+
+# ---------------------------------------------------------------------------
+# The guard's own trigger — a path-scoped gate does not guard a file it never
+# runs on.
+# ---------------------------------------------------------------------------
+
+BACKEND_CI = WORKFLOWS / "backend-ci.yml"
+
+
+def _backend_ci_paths(workflow: dict, trigger: str) -> list[str]:
+    """The ``paths:`` filter of one backend-ci trigger, failing closed.
+
+    Mirrors ``tests/test_coord_down_envelope_contract.py::_ci_paths``, which
+    closes the identical hole for the files THAT guard reads. Duplicated rather
+    than imported: a test module importing a helper out of a sibling test
+    module couples two guards' lifetimes for four lines.
+    """
+    # PyYAML (YAML 1.1) parses the bare key `on` as the boolean True.
+    triggers = workflow.get("on", workflow.get(True))
+    assert isinstance(triggers, dict), (
+        f"Could not read the `on:` block of {BACKEND_CI}. This guard cannot "
+        "verify its own trigger, so it fails rather than passing vacuously."
+    )
+    block = triggers.get(trigger)
+    assert isinstance(block, dict), (
+        f"backend-ci.yml has no `on.{trigger}` mapping. If the trigger was "
+        "restructured, retarget this guard — do not delete it."
+    )
+    paths = block.get("paths")
+    assert isinstance(paths, list) and paths, (
+        f"`on.{trigger}.paths` is missing or empty in {BACKEND_CI}. An "
+        "unfiltered trigger would actually be safe here, but it is far more "
+        "likely the filter moved; assert loudly instead of guessing."
+    )
+    return [str(entry) for entry in paths]
+
+
+def test_backend_ci_triggers_on_every_workflow_this_module_reads():
+    """Every marker workflow must be able to run the guard that asserts on it.
+
+    This module reads the workflow FILES and asserts things about them, so it
+    is only a gate on the changes that trigger it. For most of this module's
+    life only `backend-ci.yml` was in backend-ci's `paths:` filter, which meant
+    an edit to any of the other seven markers ran no Backend CI at all.
+
+    That is the hole `62ffe43ee` fell through. It changed `e2e-tests.yml`'s
+    `cancel-in-progress` to an expression and left four prose copies of the old
+    fixed value behind; its own PR triggered no Backend CI, so
+    `test_every_external_cancel_note_matches_its_workflow_concurrency` first
+    failed AFTER the merge — on `main`, and on every unrelated PR opened behind
+    it, where it reads as someone else's diff being broken.
+
+    Both triggers are checked: a filter added to one and forgotten on the other
+    is exactly the asymmetry that makes a gate look armed while half of it is
+    not.
+    """
+    if not BACKEND_CI.is_file():
+        pytest.fail(
+            f"Workflow not found: {BACKEND_CI}. This guard asserts on workflow "
+            "files and can only fire if backend-ci is triggered by them; a "
+            "missing workflow fails rather than passes."
+        )
+    workflow = yaml.safe_load(BACKEND_CI.read_text(encoding="utf-8"))
+    assert isinstance(workflow, dict), f"{BACKEND_CI} did not parse as a mapping."
+
+    for trigger in ("pull_request", "push"):
+        filters = _backend_ci_paths(workflow, trigger)
+        for name in MARKER_WORKFLOWS + TRIPWIRE_WORKFLOWS:
+            relative = f".github/workflows/{name}"
+            assert relative in filters, (
+                f"`{relative}` is asserted on by this module but is not in "
+                f"backend-ci.yml's `on.{trigger}.paths`. A commit touching only "
+                "that workflow would not run this guard, so a budget or a "
+                "cancel note could drift out of agreement with its own job and "
+                "reach `main` unchallenged. Add it to BOTH the pull_request "
+                "and push filters."
+            )

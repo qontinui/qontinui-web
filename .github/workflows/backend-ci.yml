@@ -33,6 +33,31 @@ on:
       # the frontend entries above and the nightly note below describe; the
       # repo already applies this fix in web-boundary-lint.yml.
       - 'scripts/ci/**'
+      # The OTHER workflows `backend/tests/test_ci_timeout_marker.py` reads.
+      # That module asserts, against the workflow FILES, that every marker
+      # carries a job budget matching its job and an EXTERNAL_CANCEL_NOTE
+      # matching its workflow's real `concurrency:` config. It scans eight
+      # workflows; only `backend-ci.yml` was listed here, so an edit to the
+      # other seven did not run the guard that asserts on it.
+      #
+      # That is not hypothetical: `62ffe43ee` changed `e2e-tests.yml`'s
+      # `cancel-in-progress` to an expression and left four prose copies of the
+      # old fixed value behind. Its own PR ran no Backend CI at all, so the
+      # marker test first failed AFTER the merge — on `main`, and on every
+      # unrelated PR opened behind it.
+      #
+      # Same path-scoped-gate trap the frontend and scripts/ci entries above
+      # describe; this is its fourth instance in this one filter.
+      # `test_ci_timeout_marker.py` asserts every MARKER_WORKFLOWS entry
+      # appears in BOTH filters, so adding a marker workflow without adding it
+      # here is now a test failure rather than a silent hole.
+      - '.github/workflows/backend-coverage-producer.yml'
+      - '.github/workflows/cross-browser-survey.yml'
+      - '.github/workflows/e2e-tests.yml'
+      - '.github/workflows/migration-reversal.yml'
+      - '.github/workflows/spec-ci.yml'
+      - '.github/workflows/style-gate.yml'
+      - '.github/workflows/verify-frontend-deploy.yml'
   push:
     # main is intentionally NOT here: the per-test coverage producer that used to
     # ride this gating workflow on push-to-main now lives in the standalone,
@@ -47,6 +72,13 @@ on:
       - 'frontend/src/services/admin-dev-service.ts'
       - 'frontend/src/app/(app)/digital-twin/_lib/types.ts'
       - 'scripts/ci/**'
+      - '.github/workflows/backend-coverage-producer.yml'
+      - '.github/workflows/cross-browser-survey.yml'
+      - '.github/workflows/e2e-tests.yml'
+      - '.github/workflows/migration-reversal.yml'
+      - '.github/workflows/spec-ci.yml'
+      - '.github/workflows/style-gate.yml'
+      - '.github/workflows/verify-frontend-deploy.yml'
   # Nightly run with NO path filter. The "Check OpenAPI snapshot is up to date"
   # step regenerates the snapshot with the sibling repos installed — notably
   # qontinui-cloud-control, which is git-cloned + `pip install -e`'d in the test
