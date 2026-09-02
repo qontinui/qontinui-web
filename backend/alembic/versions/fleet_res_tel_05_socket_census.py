@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the socket-census lane (per-listener TCP states)
 
 Revision ID: fleet_res_tel_05_socket_census
-Revises: pmf_scope_cols_01
+Revises: vetev_01
 Create Date: 2026-09-01
 
 Phase 2a of plan
@@ -281,7 +281,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fleet_res_tel_05_socket_census"
-down_revision: str | Sequence[str] | None = "pmf_scope_cols_01"
+down_revision: str | Sequence[str] | None = "vetev_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
