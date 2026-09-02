@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import InterfaceError, OperationalError
@@ -174,6 +175,31 @@ app.add_middleware(RequestIDMiddleware)
 # Add security headers middleware (executes after CORS in request flow)
 app.add_middleware(SecurityHeadersMiddleware)
 logger.info("security_headers_middleware_enabled", environment=settings.ENVIRONMENT)
+
+# Response compression. Nothing else in the stack does it: the Elastic
+# Beanstalk nginx overlay (`backend/.platform/nginx/conf.d/`) sets timeouts
+# only, an ALB does not compress at all, and the CloudFront distribution's
+# `Compress` behaviour is scoped to `images/*` served from S3 — not this API.
+#
+# It earns its place on the fleet's `.claude/` corpus, which the runner fetches
+# on the spawn critical path inside a 4 s budget and resolves FAIL-SOFT, so a
+# link too slow to finish degrades to cache and then to embedded defaults rather
+# than erroring. Measured over that corpus (87 units, 2026-08-25): 1,988,661
+# bytes uncompressed against ~701,500 gzipped at level 6, i.e. 486 KB/s of
+# sustained throughput required versus 171. The gzip figure moves by a few tens
+# of bytes between runs because the measurement harness mints fresh row ids.
+# That is complementary to the metadata projection on
+# `/api/v1/agent-text-units/index`, not a substitute — the projection carries a
+# cold resolve, compression carries the body fetch that follows it.
+#
+# Added INSIDE CORSMiddleware (which is added after this, so it stays
+# outermost), and outside everything else, so it compresses the final body.
+# Streaming is safe: Starlette's GZipMiddleware excludes `text/event-stream`
+# outright (`DEFAULT_EXCLUDED_CONTENT_TYPES`, verified in the pinned 1.3.1),
+# passes non-HTTP scopes straight through, and never double-encodes a response
+# that already carries a `Content-Encoding`.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
+logger.info("gzip_middleware_enabled", minimum_size=1024, compresslevel=6)
 
 # Response headers a browser client is allowed to READ.
 #
