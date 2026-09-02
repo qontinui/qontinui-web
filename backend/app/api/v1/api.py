@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     agent_commands,
     agent_registry,
     agent_sessions,
+    agent_text_units,
     ai_prompts,
     analytics,
     annotations,
@@ -368,7 +369,12 @@ api_router.include_router(
 )
 # Skills (user-created parameterized step templates)
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
-# Agent commands (account overrides of the runner's embedded default commands)
+# Agent text units — the kind-discriminated `.claude/` corpus (commands, skills)
+api_router.include_router(
+    agent_text_units.router, prefix="/agent-text-units", tags=["agent-text-units"]
+)
+# Thin compatibility alias over the same corpus, kind='command'. A runner built
+# before the text-unit cutover still calls it; delete once none do.
 api_router.include_router(
     agent_commands.router, prefix="/agent-commands", tags=["agent-commands"]
 )
