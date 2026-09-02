@@ -1574,7 +1574,7 @@
             "type": "array"
           },
           "pagination": {
-            "$ref": "#/components/schemas/app__services__agent_command_service__Pagination"
+            "$ref": "#/components/schemas/app__services__agent_text_unit_service__Pagination"
           }
         },
         "required": [
@@ -1585,7 +1585,7 @@
         "type": "object"
       },
       "AgentCommandResponse": {
-        "description": "Response for one account override.",
+        "description": "Response for one command, in the pre-text-unit wire shape.",
         "properties": {
           "body": {
             "title": "Body",
@@ -1718,7 +1718,7 @@
             "type": "array"
           },
           "pagination": {
-            "$ref": "#/components/schemas/app__services__agent_command_service__Pagination"
+            "$ref": "#/components/schemas/app__services__agent_text_unit_service__Pagination"
           }
         },
         "required": [
@@ -1955,6 +1955,515 @@
           "agents"
         ],
         "title": "AgentRegistryResponse",
+        "type": "object"
+      },
+      "AgentTextUnitCreate": {
+        "description": "Request to create (or replace) a text unit.",
+        "properties": {
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "is_invocable": {
+            "default": true,
+            "title": "Is Invocable",
+            "type": "boolean"
+          },
+          "is_shared": {
+            "default": false,
+            "title": "Is Shared",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "command",
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Commit"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          }
+        },
+        "required": [
+          "name",
+          "files"
+        ],
+        "title": "AgentTextUnitCreate",
+        "type": "object"
+      },
+      "AgentTextUnitIndexResponse": {
+        "description": "The same listing as ``AgentTextUnitListResponse``, minus every body.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentTextUnitMetadata"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/app__services__agent_text_unit_service__Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "AgentTextUnitIndexResponse",
+        "type": "object"
+      },
+      "AgentTextUnitListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentTextUnitResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/app__services__agent_text_unit_service__Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "AgentTextUnitListResponse",
+        "type": "object"
+      },
+      "AgentTextUnitMetadata": {
+        "description": "One unit WITHOUT its ``files`` map \u2014 the corpus **index** row.\n\nThis exists because the full listing does not fit the client that needs it.\nThe runner resolves the corpus on the **spawn critical path** inside a 4 s\nbudget (``agent_commands/mod.rs`` ``FETCH_TIMEOUT``), and resolution is\nfail-soft: a link too slow to finish the fetch degrades to cache and then to\nthe runner's embedded defaults, so the served corpus *silently vanishes*\nrather than erroring. Sizing that budget against the real payload is what\nplan ``2026-08-20-fleet-served-agent-skills`` Phase 5 requires, and the real\npayload is dominated almost entirely by ``files`` \u2014 measured over the fleet\ncorpus (87 units, measured 2026-08-25), dropping it takes the list response\nfrom 1,988,661 bytes to 47,093 \u2014 2.4%. Everything else here is small enough\nthat the numbers do not move.\n\n``checksum`` is the point of the projection, not decoration: it is the same\ncanonical ``files``-map digest the full response carries, so a warm client\nfetches this index alone and pulls bodies only for the units whose digest\nmoved. ``file_paths`` and ``byte_count`` describe the map without carrying\nit \u2014 enough to notice a file that was REMOVED from a unit, and to budget the\nbody fetch that follows, before spending a byte on text.\n\nDeliberately NOT ``AgentTextUnitResponse`` with an optional ``files``.\nMaking that field nullable would weaken the single-unit ``GET`` and the full\nlisting for every consumer in order to describe a shape neither of them ever\nreturns; two models keep both wires honestly typed.",
+        "properties": {
+          "byte_count": {
+            "title": "Byte Count",
+            "type": "integer"
+          },
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "entrypoint": {
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "file_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "File Paths",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_invocable": {
+            "default": true,
+            "title": "Is Invocable",
+            "type": "boolean"
+          },
+          "is_shared": {
+            "default": false,
+            "title": "Is Shared",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "source": {
+            "default": "user",
+            "title": "Source",
+            "type": "string"
+          },
+          "source_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Commit"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "entrypoint",
+          "file_paths",
+          "byte_count",
+          "current_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentTextUnitMetadata",
+        "type": "object"
+      },
+      "AgentTextUnitResponse": {
+        "description": "Response for one text unit.",
+        "properties": {
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "entrypoint": {
+            "title": "Entrypoint",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_invocable": {
+            "default": true,
+            "title": "Is Invocable",
+            "type": "boolean"
+          },
+          "is_shared": {
+            "default": false,
+            "title": "Is Shared",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "source": {
+            "default": "user",
+            "title": "Source",
+            "type": "string"
+          },
+          "source_commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Commit"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "files",
+          "entrypoint",
+          "current_version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentTextUnitResponse",
+        "type": "object"
+      },
+      "AgentTextUnitUpdate": {
+        "description": "Request to update a text unit. All fields optional.",
+        "properties": {
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description"
+          },
+          "files": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
+          "is_invocable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Invocable"
+          },
+          "is_shared": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Shared"
+          }
+        },
+        "title": "AgentTextUnitUpdate",
+        "type": "object"
+      },
+      "AgentTextUnitVersionListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentTextUnitVersionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/app__services__agent_text_unit_service__Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "title": "AgentTextUnitVersionListResponse",
+        "type": "object"
+      },
+      "AgentTextUnitVersionResponse": {
+        "description": "Response for one row of the append-only version chain.",
+        "properties": {
+          "agent_text_unit_id": {
+            "title": "Agent Text Unit Id",
+            "type": "string"
+          },
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description"
+          },
+          "checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checksum"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "restored_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restored From"
+          },
+          "version_number": {
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "agent_text_unit_id",
+          "version_number",
+          "files",
+          "created_at"
+        ],
+        "title": "AgentTextUnitVersionResponse",
         "type": "object"
       },
       "AggregatedTaskRuns": {
@@ -35562,7 +36071,7 @@
         "type": "object"
       },
       "RevertRequest": {
-        "description": "Revert an override to the body of an earlier version.",
+        "description": "Revert a unit to the content of an earlier version.\n\nDefined once and shared by both the text-unit API and the legacy\n``/agent-commands`` alias \u2014 two identical models under one name would fork\nthe published OpenAPI component into two qualified names for no gain.",
         "properties": {
           "version_number": {
             "minimum": 1.0,
@@ -54599,7 +55108,7 @@
         "title": "ActivityLogResponse",
         "type": "object"
       },
-      "app__services__agent_command_service__Pagination": {
+      "app__services__agent_text_unit_service__Pagination": {
         "properties": {
           "has_more": {
             "title": "Has More",
@@ -56545,7 +57054,7 @@
     },
     "/api/v1/agent-commands": {
       "get": {
-        "description": "Only OVERRIDES are listed \u2014 commands with no override are not rows.",
+        "description": "Account overrides plus unshadowed fleet defaults, ``kind='command'``.\n\n``invocable_only=True`` is hardcoded, not a parameter. This wire shape has\nno field for ``is_invocable``, and its consumer is a runner that writes\nevery command it is handed into ``.claude/commands/`` \u2014 so a returned\n``_gate-registration`` would become an invocable ``/_gate-registration`` on\nan unrebuilt device. Filtering here is the only place that can prevent it.\nThe underscore units remain readable through the current API and the\nconsole; they are simply never handed to a provisioning client.",
         "operationId": "api_v1_agent_commands_get",
         "parameters": [
           {
@@ -56616,13 +57125,13 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "List this account's agent command overrides",
+        "summary": "List the agent commands this account resolves to",
         "tags": [
           "agent-commands"
         ]
       },
       "post": {
-        "description": "Upsert by ``(organization_id, name)``; appends a new version.",
+        "description": "Upsert by ``(organization_id, 'command', name)``; appends a version.",
         "operationId": "api_v1_agent_commands_post",
         "parameters": [
           {
@@ -56688,7 +57197,7 @@
     },
     "/api/v1/agent-commands/{name}": {
       "delete": {
-        "description": "Removes the account's customization only \u2014 there is no default row.",
+        "description": "Removes the account's customization only \u2014 the fleet default survives.",
         "operationId": "api_v1_agent_commands_name_delete",
         "parameters": [
           {
@@ -56738,7 +57247,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Delete an override so the embedded default applies again",
+        "summary": "Delete an override so the next layer down applies again",
         "tags": [
           "agent-commands"
         ]
@@ -56800,7 +57309,7 @@
             "CookieOrBearerScheme": []
           }
         ],
-        "summary": "Get one agent command override",
+        "summary": "Get one agent command",
         "tags": [
           "agent-commands"
         ]
@@ -57202,6 +57711,854 @@
         "summary": "Put Agent Pref",
         "tags": [
           "agent-registry"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units": {
+      "get": {
+        "description": "The resolved view: account overrides, plus unshadowed fleet defaults.",
+        "operationId": "api_v1_agent_text_units_get",
+        "parameters": [
+          {
+            "description": "Filter to one kind, e.g. 'command'",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one kind, e.g. 'command'",
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "description": "List the fleet-default layer",
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "List the fleet-default layer",
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include fleet defaults the account has not overridden \u2014 the RESOLVED view the runner needs",
+            "in": "query",
+            "name": "include_fleet_defaults",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Include fleet defaults the account has not overridden \u2014 the RESOLVED view the runner needs",
+              "title": "Include Fleet Defaults",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Drop the non-invocable units (the underscore-prefixed copy-source specs). A client that PROVISIONS units to disk must pass true: a `_gate-registration.md` written into `.claude/commands/` becomes an invocable slash command. A client that EDITS the corpus wants the default, false, so the specs stay visible.",
+            "in": "query",
+            "name": "invocable_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Drop the non-invocable units (the underscore-prefixed copy-source specs). A client that PROVISIONS units to disk must pass true: a `_gate-registration.md` written into `.claude/commands/` becomes an invocable slash command. A client that EDITS the corpus wants the default, false, so the specs stay visible.",
+              "title": "Invocable Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict the listing to these unit names. This is how a client that already holds the index fetches bodies for exactly the units whose `checksum` moved, in one request rather than one round trip per unit. Names are matched inside the `kind` filter, so pass `kind` too when a name exists under more than one. At most 500.",
+            "in": "query",
+            "name": "names",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict the listing to these unit names. This is how a client that already holds the index fetches bodies for exactly the units whose `checksum` moved, in one request rather than one round trip per unit. Names are matched inside the `kind` filter, so pass `kind` too when a name exists under more than one. At most 500.",
+              "title": "Names"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List the agent text units this account resolves to",
+        "tags": [
+          "agent-text-units"
+        ]
+      },
+      "post": {
+        "description": "Upsert by ``(layer, kind, name)``; appends a new version.",
+        "operationId": "api_v1_agent_text_units_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "description": "Write the fleet-default layer",
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Write the fleet-default layer",
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTextUnitCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Create or replace an agent text unit",
+        "tags": [
+          "agent-text-units"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units/index": {
+      "get": {
+        "description": "The resolved view with every `files` map replaced by its digest.\n\nSame rows, same filters, same pagination as `GET \"\"` \u2014 see\n`AgentTextUnitService.list_unit_index`, which shares the query rather than\nre-deriving it. Measured over the fleet corpus (87 units, 2026-08-25) this\nis 47,093 bytes against the full listing's 1,988,661 \u2014 2.4% \u2014 which is what\nputs a cold resolve back\ninside the runner's 4 s spawn-path fetch budget.\n\nThe intended exchange is two calls: read this index, diff `checksum` against\nthe cache, then `GET \"\"?names=\u2026` for the units that moved.\n\nDeclared BEFORE `GET /{name}`, which would otherwise match `/index`. The\ncost is that a unit literally named `index` is not addressable through that\nroute \u2014 it is still listed, editable and provisioned like any other, and the\ncodebase already accepts this trade for `/search` and `/stats` elsewhere.",
+        "operationId": "api_v1_agent_text_units_index_get",
+        "parameters": [
+          {
+            "description": "Filter to one kind, e.g. 'command'",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to one kind, e.g. 'command'",
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "description": "List the fleet-default layer",
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "List the fleet-default layer",
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Include fleet defaults the account has not overridden \u2014 the RESOLVED view the runner needs",
+            "in": "query",
+            "name": "include_fleet_defaults",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Include fleet defaults the account has not overridden \u2014 the RESOLVED view the runner needs",
+              "title": "Include Fleet Defaults",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Drop the non-invocable units (the underscore-prefixed copy-source specs). A client that PROVISIONS units to disk must pass true: a `_gate-registration.md` written into `.claude/commands/` becomes an invocable slash command. A client that EDITS the corpus wants the default, false, so the specs stay visible.",
+            "in": "query",
+            "name": "invocable_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Drop the non-invocable units (the underscore-prefixed copy-source specs). A client that PROVISIONS units to disk must pass true: a `_gate-registration.md` written into `.claude/commands/` becomes an invocable slash command. A client that EDITS the corpus wants the default, false, so the specs stay visible.",
+              "title": "Invocable Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Restrict the listing to these unit names. This is how a client that already holds the index fetches bodies for exactly the units whose `checksum` moved, in one request rather than one round trip per unit. Names are matched inside the `kind` filter, so pass `kind` too when a name exists under more than one. At most 500.",
+            "in": "query",
+            "name": "names",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict the listing to these unit names. This is how a client that already holds the index fetches bodies for exactly the units whose `checksum` moved, in one request rather than one round trip per unit. Names are matched inside the `kind` filter, so pass `kind` too when a name exists under more than one. At most 500.",
+              "title": "Names"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitIndexResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List the agent text units WITHOUT their bodies",
+        "tags": [
+          "agent-text-units"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units/{name}": {
+      "delete": {
+        "description": "Removes the addressed layer's row only \u2014 the embedded default is not one.",
+        "operationId": "api_v1_agent_text_units_name_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Delete a unit so the next layer down applies again",
+        "tags": [
+          "agent-text-units"
+        ]
+      },
+      "get": {
+        "description": "Resolves ``account override \u2192 fleet default``.",
+        "operationId": "api_v1_agent_text_units_name_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The unit kind, e.g. 'command' or 'skill'",
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "description": "The unit kind, e.g. 'command' or 'skill'",
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_fleet_defaults",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Include Fleet Defaults",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Get one agent text unit",
+        "tags": [
+          "agent-text-units"
+        ]
+      },
+      "patch": {
+        "description": "A ``files`` change appends a version; other fields do not.",
+        "operationId": "api_v1_agent_text_units_name_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTextUnitUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Update an agent text unit",
+        "tags": [
+          "agent-text-units"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units/{name}/revert": {
+      "post": {
+        "description": "Appends a NEW version whose files equal the target's \u2014 never a rewrite.",
+        "operationId": "api_v1_agent_text_units_name_revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Revert a unit to an earlier version",
+        "tags": [
+          "agent-text-units"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units/{name}/versions": {
+      "get": {
+        "description": "History belongs to the addressed layer only \u2014 never a fleet fallback.",
+        "operationId": "api_v1_agent_text_units_name_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fleet_default",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fleet Default",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitVersionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "List a unit's version history",
+        "tags": [
+          "agent-text-units"
         ]
       }
     },
