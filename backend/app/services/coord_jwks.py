@@ -84,7 +84,7 @@ _MAX_KID_CHARS = 64
 # for exactly this reason. The sibling `cognito_jwks` no longer lacks a
 # cooldown — web #1076 gave it this same 30s — so keep the two in step if
 # this number moves. Both now measure the window on `time.monotonic`, so
-# neither is fooled by a clock step; see `_fetch`'s docstring for why that
+# neither is fooled by a clock step; see `get_jwks`'s docstring for why that
 # clock and not the wall one.
 #
 # What still differs is the NEVER-FORCED sentinel, not the clock. This door
