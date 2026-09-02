@@ -52,6 +52,7 @@ from app.services.coord_jwks import (
     CoordTokenInvalidError,
     coord_jwks_client,
     describe_token_rejection,
+    jwks_failure_log_fields,
 )
 from app.services.runner_websocket_manager import get_runner_websocket_manager
 from app.websockets.safe_send import (
@@ -109,13 +110,7 @@ async def websocket_device_unified_endpoint(websocket: WebSocket) -> None:
         # ConnectTimeout to the wrong COORD_DEVICE_URL and a ReadTimeout from
         # a genuinely slow coord are different incidents with different fixes,
         # and `error=str(exc)` alone has repeatedly failed to separate them.
-        logger.error(
-            "devices_ws_jwks_unavailable",
-            error=str(exc),
-            failure=type(exc).__name__,
-            cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
-            coord_url=coord_jwks_client.coord_url,
-        )
+        logger.error("devices_ws_jwks_unavailable", **jwks_failure_log_fields(exc))
         # 1011 = internal error / service overload.
         await reject(
             websocket,
