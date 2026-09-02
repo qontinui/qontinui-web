@@ -62,6 +62,19 @@ function isActiveTenantScopedUrl(url: string): boolean {
 
 export interface HttpOptions extends RequestInit {
   skipAuth?: boolean;
+  /**
+   * Retry budget for THIS request only (default 3). The first request is
+   * made before the retry chain is entered, and the chain runs the request
+   * once more before its own attempt counter applies, so the default costs up
+   * to 5 requests with 1s + 2s + 4s of backoff between them.
+   *
+   * A non-default value builds a private `RetryStrategy` for this call and
+   * never touches the client's shared one — so `maxRetries: 0` on one call
+   * cannot silently zero retries for every later caller of the singleton (it
+   * used to). `0` means exactly one request (it used to cost two, because the
+   * chain re-ran the request before checking its budget) and is stronger than
+   * the method rule below: it also suppresses the 429 arm.
+   */
   maxRetries?: number;
   /**
    * Per-request client-side timeout in milliseconds. Defaults to
@@ -75,8 +88,26 @@ export interface HttpOptions extends RequestInit {
    */
   timeoutMs?: number;
   /**
-   * Response statuses this request must NOT retry, even though the default
-   * policy retries 429 and every 5xx.
+   * The caller's claim that re-issuing this exact request (same URL, method
+   * and body) changes nothing — e.g. a `POST /search` whose body is a query,
+   * or a `PATCH` whose body is a full assignment rather than a delta.
+   *
+   * Retry is method-aware (RFC 9110 §9.2.2): `GET`/`HEAD`/`PUT`/`DELETE`/
+   * `OPTIONS` retry a 429 and every 5xx; `POST`/`PATCH` retry a 429 only,
+   * because a 5xx from a proxy in front of a slow backend (a `504` after the
+   * backend already committed) says nothing about whether the side effect
+   * happened, and re-issuing would duplicate it. `idempotent: true` widens
+   * ONLY the 5xx arm and ONLY for `POST`/`PATCH`; it is a no-op on methods
+   * that are already idempotent. `noRetryStatuses` still narrows it.
+   *
+   * A 5xx suppressed by the method rule is logged once at warn, so a
+   * mis-classified endpoint is findable in the field.
+   */
+  idempotent?: boolean;
+  /**
+   * Response statuses this request must NOT retry. Always narrows: it wins
+   * over both the method rule and `idempotent`, so `idempotent: true` with
+   * `noRetryStatuses: [503]` means "retry every 5xx except 503".
    *
    * For a status that is a real transient fault, retrying is right. For one a
    * server returns *deliberately and persistently*, it is pure waste: the
@@ -87,14 +118,59 @@ export interface HttpOptions extends RequestInit {
    * The live case is coord's `503 schema_migration_pending` (see the
    * `/admin/coord/notifications` surface): coord answers it for as long as a
    * table's alembic revision has not deployed, which is by design a window of
-   * hours or days, not a blip.
+   * hours or days, not a blip. The other is a 429 that is a deliberate cap
+   * rather than transient pressure — 429 otherwise retries for every method,
+   * so `[429]` is how a caller makes it fail fast.
    *
-   * Per-request and threaded as an ARGUMENT, deliberately — unlike
-   * `maxRetries`, which reassigns the shared `retryStrategy` and so changes
-   * behaviour for every other caller of this client. Default `[]` preserves
-   * the existing policy exactly.
+   * Applied inside the retry chain as well as before it, so a chain entered
+   * on a retryable status cannot go on to retry an opted-out one. Per-request
+   * and threaded as an argument; default `[]`.
    */
   noRetryStatuses?: number[];
+}
+
+/**
+ * Methods whose retry carries no duplication risk (RFC 9110 §9.2.2). Every
+ * other method — in practice `POST` and `PATCH` — is treated as
+ * non-idempotent unless the request says otherwise.
+ */
+const IDEMPOTENT_METHODS: ReadonlySet<string> = new Set([
+  "GET",
+  "HEAD",
+  "PUT",
+  "DELETE",
+  "OPTIONS",
+]);
+
+/**
+ * The single retry decision, as a pure function of the response status and
+ * the request's own policy. Used by `HttpClient` both to decide whether to
+ * enter the retry chain and, threaded into `RetryStrategy.executeWithRetry`,
+ * on every later response inside it.
+ *
+ * - `noRetryStatuses` wins outright — an opted-out status never retries.
+ * - `429` retries for every method: the server refused to process the request
+ *   (RFC 6585 §4), so nothing can have been committed.
+ * - A `5xx` retries only when re-issuing is safe: the method is idempotent by
+ *   definition, or the caller declared the request `idempotent`.
+ * - Nothing else retries.
+ *
+ * `method` is compared case-insensitively (`RequestInit.method` is), and an
+ * empty/undefined method is `GET`, matching `fetch`'s own default.
+ */
+export function isRetryableStatus(args: {
+  status: number;
+  method: string;
+  idempotent?: boolean;
+  noRetryStatuses?: number[];
+}): boolean {
+  const { status, method, idempotent = false, noRetryStatuses } = args;
+  if (noRetryStatuses?.includes(status)) return false;
+  if (status === 429) return true;
+  if (status >= 500) {
+    return idempotent || IDEMPOTENT_METHODS.has((method || "GET").toUpperCase());
+  }
+  return false;
 }
 
 /**
@@ -235,24 +311,83 @@ export class HttpClient {
   async fetch(url: string, options: HttpOptions = {}): Promise<Response> {
     const {
       skipAuth = false,
-      maxRetries = 3,
+      maxRetries,
       timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
       noRetryStatuses,
+      idempotent = false,
       ...fetchOptions
     } = options;
 
-    // Override retry strategy max retries if specified
-    if (maxRetries !== 3) {
-      this.retryStrategy = new RetryStrategy({ maxRetries });
-    }
+    // Normalize the method ONCE, here, and write it back so every consumer
+    // below (the retry rule, the CSRF header check) sees the same canonical
+    // spelling. `RequestInit.method` is case-insensitive; `fetch` defaults it
+    // to GET.
+    const method = (fetchOptions.method ?? "GET").toUpperCase();
+    fetchOptions.method = method;
+
+    // A per-request `maxRetries` gets a PRIVATE strategy, threaded down as an
+    // argument like `noRetryStatuses`. The shared field is never reassigned
+    // after construction — it used to be, and one `maxRetries: 0` caller then
+    // zeroed retries for every later request on the singleton client.
+    const retryStrategy =
+      maxRetries === undefined
+        ? this.retryStrategy
+        : this.retryStrategy.withMaxRetries(maxRetries);
+
+    const isRetryable = this.buildRetryPredicate(
+      url,
+      method,
+      idempotent,
+      noRetryStatuses
+    );
 
     return this.executeRequestWithRetry(
       url,
       fetchOptions,
       skipAuth,
       timeoutMs,
-      noRetryStatuses
+      retryStrategy,
+      isRetryable
     );
+  }
+
+  /**
+   * One predicate per request, built from the request's own policy and used
+   * both to decide whether to enter the retry chain and inside it. Wraps the
+   * pure `isRetryableStatus` with the once-per-request warn for a 5xx the
+   * METHOD rule suppressed — a `noRetryStatuses` suppression is the caller's
+   * deliberate choice and is not warned (a poller behind it would spam).
+   */
+  private buildRetryPredicate(
+    url: string,
+    method: string,
+    idempotent: boolean,
+    noRetryStatuses: number[] | undefined
+  ): (response: Response) => boolean {
+    let warned = false;
+    return (response: Response): boolean => {
+      const status = response.status;
+      const retryable = isRetryableStatus({
+        status,
+        method,
+        idempotent,
+        noRetryStatuses,
+      });
+      if (
+        !retryable &&
+        status >= 500 &&
+        !noRetryStatuses?.includes(status) &&
+        !warned
+      ) {
+        warned = true;
+        console.warn(
+          `[HttpClient] ${method} ${url} answered ${status}; not retried because ` +
+            "the method is non-idempotent — pass idempotent: true if this " +
+            "endpoint is safe to re-issue"
+        );
+      }
+      return retryable;
+    };
   }
 
   private async executeRequestWithRetry(
@@ -260,7 +395,8 @@ export class HttpClient {
     options: RequestInit,
     skipAuth: boolean,
     timeoutMs: number,
-    noRetryStatuses?: number[],
+    retryStrategy: RetryStrategy,
+    isRetryable: (response: Response) => boolean,
     attempt: number = 1
   ): Promise<Response> {
     // Execute single request
@@ -349,19 +485,22 @@ export class HttpClient {
       this.maybeHandleAuthRejection(response.status, skipAuth);
     }
 
-    // Use RetryStrategy for rate limiting and server errors — unless the
-    // caller declared this status deliberate-and-persistent rather than
-    // transient (`noRetryStatuses`), in which case retrying only multiplies
-    // the request count and the latency to reach the same answer. Checked
-    // BEFORE entering the chain, so an opted-out status costs exactly one
-    // request.
-    if (
-      (response.status === 429 || response.status >= 500) &&
-      !noRetryStatuses?.includes(response.status)
-    ) {
-      return this.retryStrategy.executeWithRetry(
+    // Enter the retry chain only when this request's policy says the status
+    // is retryable (`isRetryableStatus`: 429 for every method, 5xx only when
+    // re-issuing is safe, never an opted-out status). Checked BEFORE entering
+    // the chain so a non-retryable status costs exactly one request, and
+    // handed INTO the chain so every later response is judged by the same
+    // rule — a 429 cannot be a side door into retrying a 5xx.
+    //
+    // `canRetry` guards the budget at the door: the chain runs the request
+    // once more BEFORE its own attempt counter applies, so without this a
+    // `maxRetries: 0` request was still re-issued once — exactly the
+    // duplication the callers passing it were trying to avoid.
+    if (retryStrategy.canRetry(attempt) && isRetryable(response)) {
+      return retryStrategy.executeWithRetry(
         () => this.executeSingleRequest(url, options, skipAuth, timeoutMs),
-        attempt
+        attempt,
+        isRetryable
       );
     }
 
