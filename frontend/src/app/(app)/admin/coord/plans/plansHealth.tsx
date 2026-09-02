@@ -31,6 +31,22 @@ export interface PlansHealth {
 }
 
 /**
+ * A `shepherd-*` slug is coord's OWN auto-generated unlandable-PR
+ * merge-escalation tracking unit (`pr_merge/shepherd_reconcile.rs`), not a
+ * plan any human or agent authored. It lives in `coord.work_units` because
+ * that table is the generic work-unit primitive, but it carries an internal
+ * status (`tier3_dispatched`) this page's vocabulary has no reason to know —
+ * `describePlanStatus` correctly renders it as unrecognised, which is honest,
+ * but the honest fix here is "this row doesn't belong on a PLANS page" rather
+ * than "give it a label". `coord_work_unit_list`'s own `exclude_slug_prefix`
+ * doc names shepherd rows for exactly this reason, and the web proxy already
+ * forwards the parameter end-to-end (`operations.py` `list_coord_plans`).
+ * Shared here because `/plans` and `/spawn` both fetch this list and both
+ * read `derivePlansHealth` off it.
+ */
+export const SHEPHERD_SLUG_PREFIX = "shepherd-";
+
+/**
  * The page's health, derived from the rows already on it (R1) — never a second
  * fetch.
  *

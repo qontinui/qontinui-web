@@ -716,9 +716,23 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > count stops being quotable, missing `migrationPending`, so it promised
 > *"Marks ALL 137 unread… cannot be undone"* under a strip rendering that same
 > 137 as `–`. The fix is not a fifth spelling but a field on the derived object
-> (`health.countsAreCurrent`), with the deriver *branching* on it so its arms
+> (`health.readIsCurrent`), with the deriver *branching* on it so its arms
 > cannot drift from what it publishes. **A deriver that already knows something
 > should return it.**
+>
+> **Name that field for the READ, not for what was counted** — it was
+> `countsAreCurrent` first, and the rename is part of the rule rather than a
+> tidy-up. The two questions are independent: a read can be perfectly current
+> and still carry a `null` scalar — the FIRST read to answer without one is
+> current, and `deriveNotificationsHealth` has an arm headlined *"The unread
+> count did not come back"* that returns `readIsCurrent: true` for it. Note
+> what that does NOT license: a read that used to carry the scalar and has
+> STOPPED is a fact about the read, and is uncurrent. Raising the same flag for
+> both makes the first arm unreachable and puts *"no longer"* in front of an
+> operator who never had a good read. A field named for the counts invites
+> `health.countsAreCurrent ? unreadCount! : …` at every consumer, and the type
+> will not stop it — so the published verdict answers one question, and a
+> consumer that wants a number asks BOTH: this flag, then the scalar itself.
 >
 > The same audit found the mirror-image error: a flag deliberately SPLIT for one
 > surface's sake (`pagingFailed`, kept out of `readFailed` so a failed page
@@ -737,6 +751,74 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > and the intent was the bug**: folding the two failures into one boolean was a
 > deliberate choice with a comment arguing for it, so no assertion about the
 > sentence that choice produces could ever have caught it.
+>
+> **And "count the consumers" means every surface that READS the scalar, not
+> every surface inside the route.** The same sweep counted four consumers of
+> `unread_count` on `/admin/coord/notifications` and fixed all four; the fifth
+> is `CoordNav`'s tab badge, which polls the same route at 60s, renders on
+> EVERY console page, and is named in the page's own module doc ("the nav badge
+> polls at 60s — it is a background hint"). It retained its count across a
+> failed poll — correct, and half the rule — while rendering it unqualified,
+> so the widest-reach number in the console was the one with no way to say it
+> had stopped moving, and its `title` was `undefined` where the sibling alerts
+> badge has carried one all along. Both nav badges now publish `stale` and the
+> shared renderer marks it — a visible `*`, the qualification appended to
+> `title`, and the same words in `sr-only` text.
+> **A route boundary is not a consumer boundary** — the poll is.
+>
+> Three things that pass for done and are not, all found reviewing the fix
+> above rather than the code it fixed:
+>
+> - **Do not signal a stale number by DIMMING it.** The first cut used
+>   `opacity-60`, which makes the state you most need to read the hardest one
+>   to read — 10px bold text at 60% — and is a lone non-text visual difference
+>   besides. A visible glyph survives at any contrast and composes with the
+>   `≥` this same badge already uses (`≥2*`).
+> - **A `title` is not an accessible name.** The badge is a non-focusable
+>   `<span>` with text content inside a link, so the link's name is computed
+>   from that content and the tooltip is never reached; there is no hover for a
+>   keyboard user either. Without an `sr-only` copy of the qualification, the
+>   whole fix is a sighted-mouse-user feature and everyone else is left with the
+>   unqualified claim. Test the accessible TEXT, not the attribute.
+> - **`count > 0` as a render gate makes the qualification unreachable for a
+>   retained ZERO** — the asymmetry this section names in its own words above
+>   (*"a retained count of 7 is kept and labelled old while a retained 0 would
+>   be thrown away"*). A last-good `0` then goes dark and renders nothing at
+>   all, on every console page, which states the absence in the loudest medium
+>   there is. Gate the exception on *"a read has delivered a count"*, not on the
+>   flag alone: a zero that was NEVER read has no retained fact to qualify and
+>   must stay silent. Watch what the new gate ADMITS, too: it let a retained
+>   `critical` accent render in a red pill around a `0`, because until then a
+>   zero could not render and the contradiction was unreachable.
+>
+> **Two independent reads want two independent verdicts.** Splitting them so one
+>   failure cannot stale the other is only the first half; reporting the
+>   currency of only ONE of them leaves the other making an unqualified claim,
+>   which is the same defect one axis over. `useAlertsBadge` reads a count and a
+>   severity flag; a severity read that failed — or has never landed — is not
+>   evidence that nothing is critical, and rendering it as a calm badge is an
+>   established negative built out of an unknown. Each axis carries its own
+>   `hasRead` / `stale`.
+>
+> **And derive staleness from SEQUENCES, not from a boolean set in a `catch`.**
+>   On any poller whose replies can overtake each other, a flag set on failure
+>   and cleared on success is wrong in both directions: a superseded rejection
+>   re-stales a number that was just refreshed, and the obvious guard for THAT
+>   (ignore anything but the newest request issued) discards a superseded but
+>   SUCCESSFUL read, rendering nothing where a real number arrived. Track the
+>   newest read that *finished* and the newest that *delivered a value*; stale
+>   is `delivered < completed`. Note this is NOT the page-level generation
+>   guard it looks like: there, a superseded reply answers a DIFFERENT question
+>   (the previous filter) and must be discarded; here both reads ask the same
+>   question, so discarding the older *answer* is pure information loss.
+>
+> And name the flag for what it CARRIES. *"The most recent poll failed"* was
+> false in two states this same file produces — a 2xx carrying no scalar (the
+> read landed and refreshed nothing) and, under `Promise.all`, a poll whose
+> second read failed beside a first that succeeded. **`stale` means the most
+> recent read did not REPLACE this number**, which is one fact the code
+> actually holds, and it is symmetric: the scalar-less answer must SET the flag,
+> not merely decline to clear it.
 >
 > The rule that would have: **when you split a flag, test that the two states
 > produce two DIFFERENT outputs** — assert the discrimination itself, not each

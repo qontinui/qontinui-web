@@ -216,7 +216,7 @@ _TURN_INDEX_DEFAULT_LIMIT = 200
 #: :data:`app.main.CORS_EXPOSE_HEADERS` publishes it in
 #: ``Access-Control-Expose-Headers``.
 #:
-#: The CORS half is not a formality. Only six response headers are
+#: The CORS half is not a formality. Exactly seven response headers are
 #: CORS-safelisted, and none of these is among them, so a browser on a
 #: different origin from the API — the shape ``ApiConfig.IS_REMOTE_BACKEND``
 #: exists for — gets ``null`` from ``response.headers.get(...)`` for every one

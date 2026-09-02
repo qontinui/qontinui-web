@@ -6,6 +6,7 @@ import {
   describePlanStatus,
   planIdentity,
   planRest,
+  planRowTime,
   PLAN_ATTENTION_BY_TONE,
   PLAN_STATUS_PALETTE,
   PLAN_TONE_CLASS,
@@ -46,11 +47,25 @@ describe("describePlanStatus", () => {
       "blocked",
       "superseded",
       "obsolete",
+      "partial",
+      "partially",
     ]) {
       const tag = describePlanStatus(raw);
       expect(tag.recognised).toBe(true);
       expect(tag.label).not.toBe(raw);
     }
+  });
+
+  it("labels partial/partially as active, the same bucket as in_progress", () => {
+    // Not a canonical plan-discipline word, but a real, recurring free-text
+    // stamp coord accepts unconditionally under its Free-status rule — see
+    // the KNOWN comment. Both spellings collapse to one label.
+    const partial = describePlanStatus("partial");
+    const partially = describePlanStatus("partially");
+    expect(partial.label).toBe("Partial");
+    expect(partially.label).toBe("Partial");
+    expect(partial.tone).toBe("active");
+    expect(partially.tone).toBe("active");
   });
 
   it("labels vetted_unattested as a normal state, not an error", () => {
@@ -157,5 +172,45 @@ describe("planIdentity / planRest", () => {
     expect(planIdentity("adhoc-cleanup")).toBe("adhoc-cleanup");
     expect(planIdentity("single")).toBe("single");
     expect(planRest("single")).toBe("single");
+  });
+});
+
+describe("planRowTime", () => {
+  // Plan 2026-09-02-coord-work-units-carry-no-authoring-date: the row's time
+  // is shipped → authored → ingested, and `updated_at` — a scanner touch every
+  // ~68 s — is never a candidate. Each fixture sets `updated_at` to the NEWEST
+  // instant so a chain that still consulted it would be caught.
+  const updated_at = "2026-09-02T12:00:00Z";
+
+  it("reports the first shipped transition over everything else", () => {
+    expect(
+      planRowTime({
+        first_shipped_at: "2026-08-01T00:00:00Z",
+        authored_at: "2026-05-01T00:00:00Z",
+        created_at: "2026-06-28T00:00:00Z",
+        updated_at,
+      })
+    ).toEqual({ at: "2026-08-01T00:00:00Z", verb: "Shipped" });
+  });
+
+  it("reports the authoring date for an unshipped plan", () => {
+    expect(
+      planRowTime({
+        authored_at: "2026-05-01T00:00:00Z",
+        created_at: "2026-06-28T00:00:00Z",
+        updated_at,
+      })
+    ).toEqual({ at: "2026-05-01T00:00:00Z", verb: "Authored" });
+  });
+
+  it("falls back to the INGEST date under its own name, never as 'Authored' or 'Created'", () => {
+    expect(
+      planRowTime({ created_at: "2026-06-28T00:00:00Z", updated_at })
+    ).toEqual({ at: "2026-06-28T00:00:00Z", verb: "Ingested" });
+  });
+
+  it("reports NO time rather than the scanner touch when nothing else is recorded", () => {
+    expect(planRowTime({ updated_at }).at).toBeNull();
+    expect(planRowTime({}).at).toBeNull();
   });
 });
