@@ -279,6 +279,103 @@ function requireRows<T>(value: unknown, what: string): T[] {
 
 const TENANT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+// ---------------------------------------------------------------------------
+// Cognito group-name validation (mirrors the backend, next to the input)
+// ---------------------------------------------------------------------------
+//
+// Cognito constrains `groupName` to `[\p{L}\p{M}\p{S}\p{N}\p{P}]+`, which
+// excludes whitespace — so `test admins` is rejected. The backend now answers
+// that with a 400 naming the reason (web #1099 for create; its follow-up for
+// delete / list-members / add-member / remove-member). This is the layer in
+// front of that: the operator should never have to make a network round-trip,
+// or read an HTTP status, to learn that a space is not allowed.
+//
+// `\p{…}` escapes need the `u` flag, which is why this regex can say exactly
+// what AWS says rather than approximating it.
+
+const COGNITO_GROUP_NAME_RE = /^[\p{L}\p{M}\p{S}\p{N}\p{P}]+$/u;
+const COGNITO_GROUP_NAME_MAX = 128;
+
+/**
+ * Why `name` cannot be a Cognito group name, as a sentence for a human — or
+ * `null` when it can.
+ *
+ * Deliberately NOT the regex itself. The tenant-slug field one card up prints
+ * `Must match ^[a-z0-9][a-z0-9-]{0,63}$`, which is a machine constraint pasted
+ * into a human sentence; an operator reading it still has to work out what
+ * they typed wrong. Mirrors the backend's `invalid_group_name_reason` in the
+ * same order, so the two layers never disagree about which rule bit.
+ */
+function groupNameProblem(name: string): string | null {
+  if (!name) return "A group name is required.";
+  if (name.length > COGNITO_GROUP_NAME_MAX) {
+    return `Group names are at most ${COGNITO_GROUP_NAME_MAX} characters.`;
+  }
+  if (COGNITO_GROUP_NAME_RE.test(name)) return null;
+  if (/\s/.test(name)) return "Group names can't contain spaces.";
+  return "Group names can't contain spaces or control characters.";
+}
+
+/**
+ * A valid name derived from `name`, or `null` when there is nothing to offer.
+ *
+ * Offered as a one-click fix rather than printed as advice: the operator's
+ * intent (`test admins`) is unambiguous, and retyping it is work the page can
+ * simply do.
+ */
+function suggestGroupName(name: string): string | null {
+  const fixed = name
+    // Every character Cognito rejects is whitespace or a control character,
+    // so one class covers the whole complement.
+    .replace(/[\s\p{C}]+/gu, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, COGNITO_GROUP_NAME_MAX);
+  if (!fixed || fixed === name || groupNameProblem(fixed) !== null) return null;
+  return fixed;
+}
+
+/**
+ * The inline validation line under a group-name input: the reason, and the
+ * one-click fix where one exists.
+ *
+ * `role="alert"` because the message appears as the operator types — a
+ * screen-reader user who has already moved past the field would otherwise
+ * never learn the submit button went away.
+ */
+function GroupNameHint({
+  problem,
+  suggestion,
+  onAccept,
+  testId,
+}: {
+  problem: string | null;
+  suggestion: string | null;
+  onAccept: (value: string) => void;
+  testId: string;
+}) {
+  if (!problem) return null;
+  return (
+    <p
+      className="text-xs text-destructive flex flex-wrap items-center gap-1.5"
+      role="alert"
+      data-testid={testId}
+    >
+      <span>{problem}</span>
+      {suggestion && (
+        <button
+          type="button"
+          className="underline underline-offset-2 hover:no-underline"
+          onClick={() => onAccept(suggestion)}
+          data-testid={`${testId}-fix`}
+        >
+          Use “{suggestion}”
+        </button>
+      )}
+    </p>
+  );
+}
+
 // ===========================================================================
 // Section a — Your tenant + roles
 // ===========================================================================
@@ -1033,6 +1130,14 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [submitting, setSubmitting] = useState(false);
 
   const slugValid = tenantSlug === "" || TENANT_SLUG_RE.test(tenantSlug);
+  // Validated against the TRIMMED value because that is what `addMapping`
+  // submits — validating the raw text would flag a trailing space the request
+  // never carries.
+  const groupIdProblem =
+    groupId.trim() === "" ? null : groupNameProblem(groupId.trim());
+  const groupIdSuggestion = groupIdProblem
+    ? suggestGroupName(groupId.trim())
+    : null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1077,13 +1182,22 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
       toast.error("Tenant slug must match ^[a-z0-9][a-z0-9-]{0,63}$.");
       return;
     }
+    const gid = groupId.trim();
+    // The Group ID becomes a Cognito group name whenever "Also create" is on,
+    // and coord's mapping is keyed on it either way — so a name Cognito can
+    // never hold is wrong on both halves, whichever half runs.
+    const namingProblem = groupNameProblem(gid);
+    if (namingProblem) {
+      toast.error(namingProblem);
+      return;
+    }
     setSubmitting(true);
     try {
-      const gid = groupId.trim();
       const slug = tenantSlug.trim();
       // Step 1 (optional, superuser-only): ensure the Cognito group exists, so
       // the mapping is never orphaned. A pre-existing group (409) is fine.
       let groupCreated = false;
+      let groupReused = false;
       if (alsoCreateGroup && isSuperuser) {
         const gres = await httpClient.fetch(
           `${OPERATIONS_API}/coord/cognito/groups`,
@@ -1095,13 +1209,20 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
             }),
           }
         );
-        if (gres.status !== 409) {
-          if (!gres.ok) {
-            const text = await gres.text();
-            throw new Error(
-              `Create group failed: HTTP ${gres.status} ${text}`.trim()
-            );
-          }
+        if (gres.status === 409) {
+          // Reusing an existing group is correct — SAYING so is the fix. This
+          // arm used to be silent, and the success toast then read "Mapping
+          // added", so the operator could not tell a group that was created
+          // from one that was quietly reused.
+          groupReused = true;
+        } else if (!gres.ok) {
+          // ONE prefix, not two. `backendErrorMessage` returns the backend's
+          // own sentence — and since #1099's follow-up a malformed name is a
+          // 400 that names the real reason — while the `catch` below adds
+          // "Add failed:". Nesting `HTTP 400 {"detail":…}` in between made the
+          // reason the least readable part of the line.
+          throw new Error(await backendErrorMessage(gres));
+        } else {
           groupCreated = true;
         }
       }
@@ -1119,13 +1240,22 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
         }
       );
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        const reason = await backendErrorMessage(res);
+        // A partial failure LEAVES A POOL-WIDE GROUP BEHIND. Reporting only
+        // the mapping failure hides an orphan that a non-superuser cannot even
+        // see, let alone clean up — so the message has to name it.
+        throw new Error(
+          groupCreated
+            ? `${reason} — the Cognito group "${gid}" WAS created and is now unmapped. Delete it in the Cognito Groups section below if you are not about to retry.`
+            : reason
+        );
       }
       toast.success(
         groupCreated
           ? `Group "${gid}" created + mapping added`
-          : "Mapping added"
+          : groupReused
+            ? `Group "${gid}" already existed; mapping added`
+            : "Mapping added"
       );
       setGroupId("");
       setTenantSlug("");
@@ -1295,7 +1425,14 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
                 value={groupId}
                 onChange={(e) => setGroupId(e.target.value)}
                 placeholder="e.g. qontinui-admins"
+                aria-invalid={groupIdProblem !== null}
                 data-testid="map-group-id"
+              />
+              <GroupNameHint
+                problem={groupIdProblem}
+                suggestion={groupIdSuggestion}
+                onAccept={setGroupId}
+                testId="map-group-id-problem"
               />
             </div>
             <div className="space-y-1">
@@ -1362,7 +1499,7 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
           <div className="flex justify-end">
             <Button
               onClick={addMapping}
-              disabled={submitting || !slugValid}
+              disabled={submitting || !slugValid || groupIdProblem !== null}
               data-testid="map-submit"
             >
               <Plus className="h-4 w-4" />
@@ -2044,6 +2181,13 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  // Validated against the TRIMMED value because that is what `createGroup`
+  // submits; an empty field shows nothing (the submit handler says "required").
+  const newNameProblem =
+    newName.trim() === "" ? null : groupNameProblem(newName.trim());
+  const newNameSuggestion = newNameProblem
+    ? suggestGroupName(newName.trim())
+    : null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2179,8 +2323,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
 
   const createGroup = useCallback(async () => {
     const group_name = newName.trim();
-    if (!group_name) {
-      toast.error("Group name is required.");
+    const namingProblem = groupNameProblem(group_name);
+    if (namingProblem) {
+      toast.error(namingProblem);
       return;
     }
     setCreating(true);
@@ -2196,8 +2341,9 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
         return;
       }
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} ${text}`.trim());
+        // One prefix, not two — the `catch` below adds "Create failed:", and
+        // the backend's 400 already names the reason.
+        throw new Error(await backendErrorMessage(res));
       }
       toast.success(`Created group ${group_name}`);
       setNewName("");
@@ -2319,7 +2465,14 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="e.g. qontinui-admins"
+                    aria-invalid={newNameProblem !== null}
                     data-testid="cognito-new-name"
+                  />
+                  <GroupNameHint
+                    problem={newNameProblem}
+                    suggestion={newNameSuggestion}
+                    onAccept={setNewName}
+                    testId="cognito-new-name-problem"
                   />
                 </div>
                 <div className="space-y-1">
@@ -2338,7 +2491,7 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
               <div className="flex justify-end">
                 <Button
                   onClick={createGroup}
-                  disabled={creating}
+                  disabled={creating || newNameProblem !== null}
                   data-testid="cognito-create-submit"
                 >
                   <Plus className="h-4 w-4" />
