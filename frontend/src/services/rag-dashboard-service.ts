@@ -116,6 +116,8 @@ export class RAGDashboardService {
     const response = await this.httpClient.fetch(url, {
       method: "POST",
       body: JSON.stringify(request),
+      // Safe to re-issue: `search_embeddings` is a similarity read, no rows written.
+      idempotent: true,
     });
 
     if (!response.ok) {

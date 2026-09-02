@@ -257,6 +257,9 @@ export function useDiscoveryConfig({
             {
               method: "PATCH",
               body: JSON.stringify({ description }),
+              // Safe to re-issue: `update_state` sets `description` to the
+              // given value — full field assignment, no delta.
+              idempotent: true,
             }
           );
         } catch (error) {
