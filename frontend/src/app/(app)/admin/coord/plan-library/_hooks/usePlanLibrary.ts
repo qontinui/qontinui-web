@@ -212,9 +212,15 @@ export function usePlanLibrary() {
   const correctKind = useCallback(
     async (id: string, kind: WorkArtifactKind): Promise<boolean> => {
       try {
-        await httpClient.patch<WorkArtifactSummary>(`${API}/${id}/kind`, {
-          kind,
-        });
+        await httpClient.patch<WorkArtifactSummary>(
+          `${API}/${id}/kind`,
+          { kind },
+          {
+            // Safe to re-issue: `patch_work_artifact_kind` SETS kind and
+            // kind_locked to the given value; repeat is a no-op, 409 is stable.
+            idempotent: true,
+          }
+        );
         toast.success(`Kind set to "${kind}" and locked against re-scans.`);
         await load();
         return true;

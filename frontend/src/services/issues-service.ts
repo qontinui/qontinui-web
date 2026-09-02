@@ -104,7 +104,10 @@ export class IssuesService {
     id: string,
     data: DetectedIssueUpdate
   ): Promise<DetectedIssue> {
-    return this.httpClient.patch<DetectedIssue>(`${BASE_URL}/${id}`, data);
+    return this.httpClient.patch<DetectedIssue>(`${BASE_URL}/${id}`, data, {
+      // Safe to re-issue: `update_issue` assigns fields; resolved_at is stamped once.
+      idempotent: true,
+    });
   }
 
   /**

@@ -405,6 +405,8 @@ export class TemplateCaptureService {
       {
         method: "PATCH",
         body: JSON.stringify({ state_hint: stateHint }),
+        // Safe to re-issue: `set_candidate_state_hint` assigns `state_hint`, no delta.
+        idempotent: true,
       }
     );
 
@@ -425,6 +427,8 @@ export class TemplateCaptureService {
       {
         method: "PATCH",
         body: JSON.stringify({ name }),
+        // Safe to re-issue: `set_candidate_name` assigns `name`, no delta.
+        idempotent: true,
       }
     );
 
@@ -530,6 +534,8 @@ export class TemplateCaptureService {
       {
         method: "PATCH",
         body: JSON.stringify(updates),
+        // Safe to re-issue: `update_profile` assigns the body's fields, no delta.
+        idempotent: true,
       }
     );
 

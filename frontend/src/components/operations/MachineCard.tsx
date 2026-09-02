@@ -401,6 +401,9 @@ export function MachineCard({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: next }),
+        // Safe to re-issue: `rename_machine` UPSERTs the (user, hostname) row
+        // (DELETEs it for an empty name) — pure assignment, repeat is a no-op.
+        idempotent: true,
       });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);

@@ -120,6 +120,9 @@ export function UIBridgeStateMachinePage() {
           {
             method: "PATCH",
             body: JSON.stringify(updates),
+            // Safe to re-issue: `update_state` assigns each present field to
+            // the given value and commits — pure field assignment.
+            idempotent: true,
           }
         );
         if (!res.ok) {
