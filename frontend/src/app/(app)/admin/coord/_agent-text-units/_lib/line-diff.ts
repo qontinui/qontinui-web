@@ -2,9 +2,9 @@
  * Minimal line diff for the version-comparison view.
  *
  * Written locally rather than pulled in as a dependency: the repo ships no diff
- * library, and command bodies are markdown of a few hundred to a couple of
+ * library, and unit files are markdown (or shell) of a few hundred to a couple of
  * thousand lines — well inside what a plain LCS table handles. Adding a diff
- * package for one settings page would be the heavier option.
+ * package for one console page would be the heavier option.
  *
  * Guarded by `MAX_LCS_CELLS`: the LCS table is O(n·m), so for pathologically
  * large bodies we degrade to a positional comparison and say so, rather than
