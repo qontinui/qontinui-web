@@ -47,11 +47,25 @@ describe("describePlanStatus", () => {
       "blocked",
       "superseded",
       "obsolete",
+      "partial",
+      "partially",
     ]) {
       const tag = describePlanStatus(raw);
       expect(tag.recognised).toBe(true);
       expect(tag.label).not.toBe(raw);
     }
+  });
+
+  it("labels partial/partially as active, the same bucket as in_progress", () => {
+    // Not a canonical plan-discipline word, but a real, recurring free-text
+    // stamp coord accepts unconditionally under its Free-status rule — see
+    // the KNOWN comment. Both spellings collapse to one label.
+    const partial = describePlanStatus("partial");
+    const partially = describePlanStatus("partially");
+    expect(partial.label).toBe("Partial");
+    expect(partially.label).toBe("Partial");
+    expect(partial.tone).toBe("active");
+    expect(partially.tone).toBe("active");
   });
 
   it("labels vetted_unattested as a normal state, not an error", () => {
