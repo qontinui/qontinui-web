@@ -1,7 +1,7 @@
 """project.agent_commands -> project.agent_text_units (kind + files map)
 
 Revision ID: atu_01_agent_text_units
-Revises: coordtouch_01
+Revises: vetev_01
 Create Date: 2026-08-24
 
 Phase 2 of plan ``2026-08-20-fleet-served-agent-skills``.
@@ -91,7 +91,7 @@ revision: str = "atu_01_agent_text_units"
 # locally in ~2s. There is no data dependency on the parent either way: this
 # revision only creates `agent_text_units*`, so ordering is arbitrary and only
 # single-headedness matters.
-down_revision: str | Sequence[str] | None = "pmf_scope_cols_01"
+down_revision: str | Sequence[str] | None = "vetev_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
