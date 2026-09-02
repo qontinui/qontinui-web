@@ -25,6 +25,7 @@
  * | `statusRow` atoms | R2, R3, R4 — the badge, the accent, the timestamp |
  * | `attention` | R3 — the severity vocabulary and its palette invariant |
  * | `time` | supports R2 — `relativeTime` / `absoluteTime` |
+ * | `useRetainedValue` | R6 — a KEPT value publishes whether the last read replaced it |
  * | `diff` / `DiffTable` | supports R5 — the version diff a detail panel shows |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
@@ -105,6 +106,9 @@ export {
 
 export { createReadSequence } from "./readSequence";
 export type { ReadSequence } from "./readSequence";
+
+export { useRetainedValue } from "./useRetainedValue";
+export type { RetainedValue } from "./useRetainedValue";
 
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";
