@@ -1005,6 +1005,157 @@ class TestHybridQuery:
         assert len(with_ref.json()["hits"]) == 1
 
 
+# One dossier slug, three rows that all match the FTS key: the HEAD plus a
+# contribution and a delta whose titles deliberately do NOT carry the
+# head's ``DOSSIER <slug> —`` prefix. This is the shape
+# ``title_prefix`` exists for (plan
+# ``2026-09-02-steering-layers-unreadable-without-a-credential`` Phase 2):
+# FTS on the bare key finds all three and cannot tell the head apart.
+_DOSSIER_HEAD_TITLE = "DOSSIER x-slug — head"
+_DOSSIER_HEAD_PREFIX = "DOSSIER x-slug —"
+_DOSSIER_ROWS: list[tuple[str, str]] = [
+    (_DOSSIER_HEAD_TITLE, "dossier x-slug head statement of the issue"),
+    ("DOSSIER-CONTRIB x-slug — c1", "dossier x-slug contribution one"),
+    ("DELTA on dossier x-slug", "dossier x-slug delta since last read"),
+]
+_DOSSIER_QUERY = "dossier x-slug"
+
+
+class TestTitlePrefix:
+    """``title_prefix`` narrows EVERY arm to titles starting with it."""
+
+    def _seed(self, mc: MemoryClient) -> None:
+        resp = mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(content, title=title, kind="mental_model")
+                    for title, content in _DOSSIER_ROWS
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["deduped_count"] == 0
+
+    def _query(self, mc: MemoryClient, **extra: Any) -> dict[str, Any]:
+        resp = mc.client.post(
+            "/api/v1/memory/query",
+            json={"query_text": _DOSSIER_QUERY, **extra},
+        )
+        assert resp.status_code == 200, resp.text
+        body: dict[str, Any] = resp.json()
+        return body
+
+    def test_omitted_prefix_returns_all_three(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        titles = {h["title"] for h in self._query(mc)["hits"]}
+        assert titles == {title for title, _content in _DOSSIER_ROWS}
+
+    def test_prefix_returns_only_the_head_fts_only(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        body = self._query(mc, title_prefix=_DOSSIER_HEAD_PREFIX)
+        assert body["vector_arm"] == "skipped_no_embedding"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+
+    def test_prefix_filters_the_vector_arm_too(self, mc: MemoryClient) -> None:
+        # With a query vector the semantic arm runs, and under the
+        # hashing stub it returns EVERY row by cosine order (no floor).
+        # If the filter lived only beside the tsquery, the two
+        # non-head rows would still arrive through this arm and the
+        # RRF fuse would surface them. They must not.
+        self._seed(mc)
+        body = self._query(
+            mc,
+            title_prefix=_DOSSIER_HEAD_PREFIX,
+            query_embedding=_client_vector(_DOSSIER_QUERY),
+            query_embedding_model=EMBEDDING_MODEL_TAG,
+        )
+        assert body["vector_arm"] == "hybrid"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+        assert body["hits"][0]["vector_rank"] == 1
+        assert body["hits"][0]["fts_rank"] == 1
+
+    def test_prefix_filters_the_link_arm_too(
+        self, mc: MemoryClient, db: AsyncEngine
+    ) -> None:
+        # Link the head to the contribution, then expand: the neighbour
+        # matches the FTS key and is one hop from the seed, so without
+        # the filter on the graph arm it would come back with link_rank.
+        self._seed(mc)
+        ids = {
+            str(title): memory_id
+            for title, memory_id in asyncio.run(_dossier_ids(db, mc.tenant_id))
+        }
+        asyncio.run(
+            _link(
+                db,
+                mc.tenant_id,
+                ids[_DOSSIER_HEAD_TITLE],
+                ids["DOSSIER-CONTRIB x-slug — c1"],
+            )
+        )
+        body = self._query(mc, title_prefix=_DOSSIER_HEAD_PREFIX, link_expansion=True)
+        assert body["link_arm"] == "expanded"
+        assert [h["title"] for h in body["hits"]] == [_DOSSIER_HEAD_TITLE]
+
+    def test_percent_in_prefix_is_literal_not_a_wildcard(
+        self, mc: MemoryClient
+    ) -> None:
+        # ``DOSSIER%`` would match all "DOSSIER…" titles under a raw LIKE
+        # (the head AND the contribution). Escaped, it matches nothing.
+        self._seed(mc)
+        assert self._query(mc, title_prefix="DOSSIER%")["hits"] == []
+        # ``_`` is LIKE's single-character wildcard; ``DOSSIER_x-slug``
+        # would otherwise match the head through its space.
+        assert self._query(mc, title_prefix="DOSSIER_x-slug")["hits"] == []
+        # And a literal ``%`` in a real title IS matched by a literal
+        # ``%`` in the prefix.
+        mc.client.post(
+            "/api/v1/memory/records",
+            json={
+                "records": [
+                    _record(
+                        "dossier x-slug percent-titled row",
+                        title="100% dossier x-slug",
+                    )
+                ]
+            },
+        )
+        hits = self._query(mc, title_prefix="100% dossier")["hits"]
+        assert [h["title"] for h in hits] == ["100% dossier x-slug"]
+
+    def test_prefix_is_case_sensitive(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        assert self._query(mc, title_prefix="dossier x-slug —")["hits"] == []
+
+    def test_prefix_is_a_prefix_not_a_substring(self, mc: MemoryClient) -> None:
+        self._seed(mc)
+        assert self._query(mc, title_prefix="x-slug —")["hits"] == []
+
+
+async def _dossier_ids(engine: AsyncEngine, tenant_id: UUID) -> list[tuple[str, str]]:
+    async with engine.connect() as conn:
+        rows = await conn.execute(
+            text(
+                "SELECT title, memory_id FROM coord.memory_records WHERE tenant_id = :t"
+            ),
+            {"t": tenant_id},
+        )
+        return [(str(r.title), str(r.memory_id)) for r in rows]
+
+
+async def _link(engine: AsyncEngine, tenant_id: UUID, src: str, dst: str) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO coord.memory_links "
+                "(tenant_id, source_id, target_id, relation) "
+                "VALUES (:t, CAST(:s AS uuid), CAST(:d AS uuid), 'related')"
+            ),
+            {"t": tenant_id, "s": src, "d": dst},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Supersede / delete lifecycle
 # ---------------------------------------------------------------------------
