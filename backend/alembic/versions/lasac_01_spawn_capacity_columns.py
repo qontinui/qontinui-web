@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the spawn-capacity lane (threads + sessions)
 
 Revision ID: lasac_01
-Revises: vetev_01
+Revises: atu_02_atu_provenance
 Create Date: 2026-08-30
 
 Phase 3a of plan
@@ -187,7 +187,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "lasac_01"
-down_revision: str | Sequence[str] | None = "vetev_01"
+down_revision: str | Sequence[str] | None = "atu_02_atu_provenance"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
