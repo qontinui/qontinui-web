@@ -291,10 +291,10 @@ depends_on: str | Sequence[str] | None = None
 # at it would fork the graph — which `alembic-graph-pr.yml`'s `alembic-heads-pr`
 # job (a required check on `web-protect-main`) fails the PR for.
 #
-# down_revision is therefore the LOCAL head at authoring time, computed with the
-# repo's own gate: `python scripts/ci/count_alembic_heads.py` over 521 revision
-# files reported `HEAD_COUNT=1 / HEAD=pmf_scope_cols_01` at origin/main
-# `e9f7496a`.
+# down_revision is therefore the LIVE head, computed with the repo's own gate:
+# `python scripts/ci/count_alembic_heads.py`. It was `pmf_scope_cols_01` at
+# authoring time (origin/main `e9f7496a`) and is now `vetev_01`, which #1212
+# landed on top of it — see the re-point note at the end of this block.
 #
 # It is NOT `coordtouch_01`, which this revision was originally briefed to
 # revise. `coordtouch_01` is not a head and has not been one for some time —
@@ -303,9 +303,15 @@ depends_on: str | Sequence[str] | None = None
 # a live head computation, never off a name or a brief.
 #
 # That head can MOVE between authoring and the first CI run; `fleet_res_tel_04`
-# was re-pointed twice for exactly that reason. A stale local head is expected
-# on a busy repo, which is why the fork check is a REQUIRED status check and not
-# a lint — rebase onto the new head when it fires.
+# was re-pointed twice for exactly that reason, and this revision has now been
+# re-pointed once (`pmf_scope_cols_01` -> `vetev_01`). A stale local head is
+# expected on a busy repo, which is why the fork check is a REQUIRED status
+# check and not a lint — rebase onto the new head when it fires.
+#
+# A re-point is TWO edits, not one. `test_fleet_res_tel_05_socket_census_migration.py`
+# pins this parent in `_PARENT_REVISION_ID` so its walk cannot rewind past the
+# revision under test, and that guard is what caught the first re-point editing
+# only this file. Change both in the same commit.
 
 _TABLE = "coord.device_resource_samples"
 
