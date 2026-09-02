@@ -69,7 +69,7 @@ import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
-import { derivePlansHealth } from "./plansHealth";
+import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
@@ -185,6 +185,7 @@ export default function CoordPlansListPage() {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
       qs.set("limit", String(FETCH_LIMIT));
+      qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`

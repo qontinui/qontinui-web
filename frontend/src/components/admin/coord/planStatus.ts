@@ -187,6 +187,13 @@ const KNOWN: Record<string, { label: string; tone: PlanStatusTone }> = {
   vetted_unattested: { label: "Vetted (unattested)", tone: "pending" },
   in_progress: { label: "In progress", tone: "active" },
   "in-progress": { label: "In progress", tone: "active" },
+  // Not canonical (plan-discipline's Free category is `draft`, `in_progress`,
+  // `blocked` — not this), but a real, recurring free-text stamp: 13 of the
+  // ~70 work units this page could not label on 2026-09-02 carried one of
+  // these two spellings. Same active bucket as `in_progress` — both mean
+  // "started, not done".
+  partial: { label: "Partial", tone: "active" },
+  partially: { label: "Partial", tone: "active" },
   ready: { label: "Ready", tone: "ready" },
   shipped: { label: "Shipped", tone: "shipped" },
   blocked: { label: "Blocked", tone: "blocked" },
