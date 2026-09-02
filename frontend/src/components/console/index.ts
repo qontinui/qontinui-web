@@ -34,7 +34,7 @@
  * TESTS do import values from `operations/` and `admin/coord/`: that is
  * `attention.test.ts`, the cross-surface palette oracle, and it is supposed
  * to. Test files ship nothing.) That is what lets `/admin/coord/*`,
- * `/admin/agent-claims` and `/admin/agent-sessions` share these without
+ * `/admin/agent-claims` and `/sessions` share these without
  * sharing a data model, and it is a property to CHECK when adding a
  * primitive, not one to assume: the one import that broke it
  * (`relativeTime`, out of the 730-line merge-train route catalogue) looked
@@ -102,6 +102,9 @@ export {
   readIsUnknown,
   staleDetail,
 } from "./readFailure";
+
+export { createReadSequence } from "./readSequence";
+export type { ReadSequence } from "./readSequence";
 
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";

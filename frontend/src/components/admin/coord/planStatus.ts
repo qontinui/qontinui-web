@@ -66,10 +66,74 @@ export interface CoordPlanRow {
   title?: string;
   status?: string;
   current_phase?: string | null;
-  /** coord `work_units.created_at` — the sort key operators asked for. */
+  /**
+   * coord `work_units.authored_at` — when the plan was WRITTEN, derived from
+   * the `YYYY-MM-DD` prefix of its slug (the runner's `authored_at_from_stem`
+   * and the alembic backfill share that one derivation; plan
+   * `2026-09-02-coord-work-units-carry-no-authoring-date`). NULL / absent
+   * means "not recorded" — an undated slug, or a coord that predates the
+   * column — and is rendered as exactly that, never coerced to `created_at`.
+   */
+  authored_at?: string | null;
+  /**
+   * coord `work_units.created_at` — when coord first INGESTED the row (the
+   * INSERT default), NOT when the plan was authored: for most of the corpus
+   * it is a bulk-backfill date. Rendered under the word "ingested" for that
+   * reason; "created" is the label this field used to wear, and it was a lie.
+   */
   created_at?: string | null;
+  /**
+   * coord `work_units.updated_at` — bumped by every scanner upsert (~68 s), so
+   * it says when the row was last TOUCHED, not when anything happened to the
+   * plan. Shown in the detail panel, labelled; never the row's time.
+   */
   updated_at?: string | null;
-  shipped_at?: string | null;
+  /**
+   * coord `work_units.first_shipped_at` — derived from
+   * `work_unit_status_history`: the first transition INTO `shipped`, NULL
+   * until then. (A `shipped_at` field used to sit here; nothing ever served
+   * it, so the row's time was silently `updated_at` for every plan.)
+   */
+  first_shipped_at?: string | null;
+}
+
+/**
+ * The explicit rendering for a row with NO time at all — no shipped, authored
+ * or ingest timestamp — handed to `<RowTime absent>` so the cell says what it
+ * knows instead of `relativeTime`'s generic "never" (a plan is not something
+ * that has "never" happened).
+ */
+export const PLAN_TIME_ABSENT = {
+  label: "no date recorded",
+  title:
+    "coord holds no shipped, authoring or ingestion time for this work unit.",
+} as const;
+
+/**
+ * The timestamp a plan ROW reports: the semantically-right one for the plan's
+ * state, never just "the newest column we have". Shared by `<PlanRow>` and
+ * `<SpawnPlanRow>` so the two lists cannot disagree about what a plan's time
+ * means.
+ *
+ * `updated_at` is deliberately NOT in this chain. The runner's scanner
+ * re-upserts every on-disk plan roughly every 68 s, so `updated_at` is "when
+ * the scanner last touched the row" — a four-month-old draft read "Updated 1m
+ * ago" for as long as its file existed. A scanner touch is not a plan event;
+ * the value stays in the detail panel, labelled, where it is honest.
+ *
+ * `created_at` is the INGESTION time, so it is named as such rather than under
+ * "Created". An absent `authored_at` is UNKNOWN and falls through to the
+ * ingest date under ITS name — never silently promoted to "authored".
+ */
+export function planRowTime(
+  plan: Pick<CoordPlanRow, "first_shipped_at" | "authored_at" | "created_at">
+): { at: string | null; verb: string } {
+  if (plan.first_shipped_at) {
+    return { at: plan.first_shipped_at, verb: "Shipped" };
+  }
+  if (plan.authored_at) return { at: plan.authored_at, verb: "Authored" };
+  if (plan.created_at) return { at: plan.created_at, verb: "Ingested" };
+  return { at: null, verb: "Authored" };
 }
 
 /** Colour families, shared with the merge pipeline's status vocabulary. */

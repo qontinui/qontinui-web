@@ -53,9 +53,12 @@ import {
   DevenvApiError,
   listApplications,
   listEnvironments,
+  listMachines,
   type Application,
   type Environment,
+  type Machine,
 } from "@/services/devenv-api";
+import { SessionsCrossLinkCard } from "@/components/environments/SessionsCrossLinkCard";
 
 const NONE_APPLICATION = "__none__";
 
@@ -68,6 +71,9 @@ function errMessage(err: unknown, fallback: string): string {
 export default function EnvironmentsPage() {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  // `null` until the read answers — the cross-link card renders that as
+  // UNKNOWN rather than as "no machines".
+  const [machines, setMachines] = useState<Machine[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -78,12 +84,14 @@ export default function EnvironmentsPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [envs, apps] = await Promise.all([
+      const [envs, apps, machineRows] = await Promise.all([
         listEnvironments(),
         listApplications(),
+        listMachines(),
       ]);
       setEnvironments(envs);
       setApplications(apps);
+      setMachines(machineRows);
     } catch (err) {
       toast.error(errMessage(err, "Failed to load environments"));
     } finally {
@@ -171,7 +179,7 @@ export default function EnvironmentsPage() {
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href="/environments/sessions">
+            <Link href="/sessions">
               <Activity className="size-4" />
               Sessions
             </Link>
@@ -269,6 +277,15 @@ export default function EnvironmentsPage() {
           </Dialog>
         </div>
       </div>
+
+      {/*
+       * Deleting `/environments/sessions` (plan
+       * `2026-08-26-sessions-console-consolidation` Phase 3) must not cost the
+       * machines↔sessions pairing that made it exist. `?device=` survives the
+       * 308 verbatim; this card is what keeps the pairing discoverable rather
+       * than merely reachable-if-you-already-have-the-URL.
+       */}
+      <SessionsCrossLinkCard machines={machines} />
 
       {environments.length === 0 ? (
         <div className="rounded-lg border border-border p-12 text-center">
