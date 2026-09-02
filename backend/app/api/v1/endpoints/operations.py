@@ -4314,9 +4314,10 @@ async def get_fleet_ci_runners(
 #
 # Coord derives the tenant from the caller's own `OperatorContext` and never
 # from a query param, so there is no scope to widen from this side and none is
-# offered. The filters below are exactly coord's: `action` (exact, or a prefix
-# match when it ends in `*`), `since` / `before` (RFC 3339 on `occurred_at`),
-# and `limit` (coord clamps to `[1, 1000]`, default 200).
+# offered. The filters below are exactly coord's: `action` / `resource_kind` /
+# `resource_key` (each exact, or a prefix match when it ends in `*`), `since` /
+# `before` (RFC 3339 on `occurred_at`), and `limit` (coord clamps to
+# `[1, 1000]`, default 200).
 
 
 @router.get("/coord/audit/recent")
@@ -4327,6 +4328,23 @@ async def get_coord_audit_recent(
         "(`fleet.*` catches `fleet.drain.set` and `fleet.drain.clear`); "
         "anything else is an exact match. Forwarded to coord verbatim — the "
         "prefix grammar is coord's, not this proxy's.",
+    ),
+    resource_kind: str | None = Query(
+        default=None,
+        description="Filter by resource_kind — the table/object class a "
+        "handler-stamped row names (e.g. `coord.fleet_runtime_policy`). Same "
+        "exact-or-trailing-`*` grammar as `action`. `require_role` stamps "
+        "`http.route` on every authorized request, GETs included, so "
+        "`resource_kind=http.route` selects exactly that authorization-check "
+        "class rather than a real write.",
+    ),
+    resource_key: str | None = Query(
+        default=None,
+        description="Filter by resource_key — WHICH resource of that kind "
+        "(a device id, an operator id, a tenant slug). Same grammar as "
+        "`action`. This is how 'who touched THIS host' is answered without "
+        "pulling an action family and scanning client-side for a row that "
+        "may have scrolled past `limit`.",
     ),
     since: str | None = Query(
         default=None,
@@ -4369,6 +4387,10 @@ async def get_coord_audit_recent(
     params: dict[str, Any] = {}
     if action:
         params["action"] = action
+    if resource_kind:
+        params["resource_kind"] = resource_kind
+    if resource_key:
+        params["resource_key"] = resource_key
     if since:
         params["since"] = since
     if before:

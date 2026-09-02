@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIT_FILTERS,
+  AUTHORIZATION_CHECK_RESOURCE_KIND,
   DEFAULT_AUDIT_FILTER_ID,
   NIL_OPERATOR_ID,
   blastRadiusOf,
   describeAuditAction,
+  isAuthorizationCheck,
   isNilOperator,
   parseAuditPayload,
   reasonOf,
@@ -134,6 +136,27 @@ describe("blastRadiusOf", () => {
     expect(blastRadiusOf(row({ metadata: { device_id: null } })).unstated).toBe(
       true
     );
+  });
+});
+
+describe("isAuthorizationCheck", () => {
+  it("catches a require_role stamp — resource_kind=http.route", () => {
+    expect(
+      isAuthorizationCheck(
+        row({
+          action: "rbac.allow",
+          resource_kind: AUTHORIZATION_CHECK_RESOURCE_KIND,
+          resource_key: "GET /admin/coord/audit/recent",
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("does not misreport a real write", () => {
+    expect(isAuthorizationCheck(row())).toBe(false);
+    expect(
+      isAuthorizationCheck(row({ resource_kind: null }))
+    ).toBe(false);
   });
 });
 
