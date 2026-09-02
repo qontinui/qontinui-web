@@ -14,6 +14,7 @@
 // ============================================================================
 
 import { ApiConfig } from "@/services/api-config";
+import type { HttpOptions } from "@/services/http-client";
 import { httpClient } from "@/services/service-factory";
 
 /** Base URL for the devenv surface. */
@@ -454,7 +455,7 @@ async function parseError(res: Response): Promise<DevenvApiError> {
   return new DevenvApiError(res.status, message, code);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: HttpOptions): Promise<T> {
   // `httpClient.fetch` attaches the Bearer token (+ credentials, CSRF, and the
   // 401-refresh / 429-5xx retry). We keep the raw Response so the devenv error
   // envelope (`{detail:{code,message}}` → DevenvApiError) is preserved rather
@@ -500,6 +501,8 @@ export function updateApplication(
   return request<Application>(`/applications/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_application` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 
@@ -562,6 +565,8 @@ export function updateMachine(
   return request<Machine>(`/machines/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_machine` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 
@@ -627,6 +632,8 @@ export function updateEnvironment(
   return request<Environment>(`/environments/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+    // Safe to re-issue: `update_environment` assigns exclude_unset fields, no delta.
+    idempotent: true,
   });
 }
 

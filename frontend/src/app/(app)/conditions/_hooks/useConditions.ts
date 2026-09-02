@@ -98,7 +98,12 @@ export function useConditions() {
       setSaving(true);
       await httpClient.patch(
         `${API}/groups/${encodeURIComponent(groupId)}`,
-        data
+        data,
+        {
+          // Safe to re-issue: coord `patch_group` SETs only the present fields
+          // to the given values (+ updated_at = now()); no delta.
+          idempotent: true,
+        }
       );
       toast.success("Group updated");
       await loadGroups();
@@ -157,7 +162,12 @@ export function useConditions() {
       setSaving(true);
       await httpClient.patch(
         `${API}/items/${encodeURIComponent(conditionId)}`,
-        data
+        data,
+        {
+          // Safe to re-issue: coord `patch_condition` SETs text/position/
+          // group_id/enabled to the given values; no delta.
+          idempotent: true,
+        }
       );
       // A `group_id` change is a MOVE — surface it distinctly.
       toast.success(
