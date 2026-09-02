@@ -99,16 +99,17 @@ export function selectionIds(selection: MarkReadSelection): string[] | null {
  * and the coord PR deploying, which the plan sequences as *days*.
  *
  * Measured, not estimated (`http-client.test.ts`, "retries a 5xx by default"):
- * the default policy costs **5 requests and ~15s** of wall clock, because the
- * first request happens before `executeWithRetry` is even entered and that
- * helper runs the request once more before its own attempt counter applies.
- * The page's 10s poller would therefore overlap its own retry chain twice
- * over, and the nav badge would multiply the whole thing by every open console
- * tab — all to re-learn an answer that will not change for days.
+ * the default policy costs **5 requests and 7s** (1s + 2s + 4s) of wall clock,
+ * because the first request happens before `executeWithRetry` is even entered
+ * and that helper runs the request once more before its own attempt counter
+ * applies. The page's 10s poller would therefore overlap its own retry chain,
+ * and the nav badge would multiply the whole thing by every open console tab
+ * — all to re-learn an answer that will not change for days.
  *
- * Scoped per-request rather than by lowering `maxRetries`: that option
- * reassigns the client's SHARED `retryStrategy` and would silently disable
- * retries for every other caller in the app.
+ * These are GETs, so the method-aware rule (`isRetryableStatus`) leaves their
+ * 5xx retry ON — the opt-out is still needed. Scoped per-request via
+ * `noRetryStatuses` rather than `maxRetries: 0`, which would also suppress the
+ * 429 arm this poller wants kept.
  */
 export const NOTIFICATIONS_REQUEST_OPTIONS: { noRetryStatuses: number[] } = {
   noRetryStatuses: [503],
