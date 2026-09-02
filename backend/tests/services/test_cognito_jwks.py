@@ -375,9 +375,68 @@ async def test_cooldown_does_not_block_the_cold_fetch_or_real_rotation() -> None
             return sets[idx]
 
     client = _ZeroCooldownClient()
-    # Force the window open so this asserts recovery, not the throttle.
-    client._forced_at = -1e9
+    # This used to pre-set ``client._forced_at = -1e9`` to force the window
+    # open — a workaround for the ``0.0`` sentinel, which on a low-uptime host
+    # read as "forced just now". With ``None`` meaning "never forced" the
+    # first miss is unthrottled by construction, so the assertion below now
+    # exercises the real path rather than one the test pre-arranged.
     token = _mint(new_private, _id_token_claims(), kid="rotated-key")
 
     assert (await client.verify_token(token))["iss"] == _ISSUER
     assert client.fetch_count == 2
+
+
+@pytest.mark.asyncio
+async def test_a_kid_miss_just_after_boot_is_not_read_as_a_recent_refetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The "never forced yet" sentinel must not look like "forced just now".
+
+    The cooldown is measured on ``time.monotonic``, whose origin is arbitrary
+    and on both Linux and Windows sits near host boot. A ``0.0`` sentinel is
+    safe only against a WALL-CLOCK stamp, where ``now - 0.0`` is ~1.8e9 and so
+    outside every window; under ``monotonic`` it is legitimately a small
+    number, so the FIRST kid miss on a low-uptime host read as "already
+    refetched recently" and skipped the single forced re-fetch that recovers
+    from a Cognito key rotation. Every such token is then rejected for an
+    unknown ``kid`` — a valid credential, refused, for the whole cooldown.
+
+    ``self._jwks is not None`` does not cover it: the cold fetch populates the
+    cache without ever setting the forced stamp.
+
+    Reverting ``_forced_at`` to ``0.0`` fails this test and passes the two
+    throttle tests above; this one is therefore specific to that sentinel.
+
+    The sibling ``coord_jwks`` client fixed the same sentinel when it moved to
+    ``monotonic``. This door was already on ``monotonic``, so it had carried
+    the defect from the start — which is why it needed its own pin.
+    """
+    new_private, new_jwk = _rsa_keypair(kid="rotated-key")
+    _, old_jwk = _rsa_keypair(kid="old-key")
+    sets = [{"keys": [old_jwk]}, {"keys": [old_jwk, new_jwk]}]
+
+    class _RotatingClient(CognitoJWKSClient):
+        def __init__(self) -> None:
+            super().__init__(issuer=_ISSUER, allowed_audiences=[_WEB_CLIENT])
+            self.fetch_count = 0
+
+        async def _fetch_jwks(self) -> dict[str, Any]:
+            idx = min(self.fetch_count, len(sets) - 1)
+            self.fetch_count += 1
+            return sets[idx]
+
+    # Five seconds since boot — inside the 30s cooldown, which is the whole
+    # point. Pinned rather than left to the host: on a long-uptime box
+    # ``monotonic()`` is large enough that the `0.0` sentinel escapes the
+    # window by luck, and the test would pass against the unfixed code.
+    monkeypatch.setattr(time, "monotonic", lambda: 5.0)
+
+    client = _RotatingClient()
+    token = _mint(new_private, _id_token_claims(), kid="rotated-key")
+
+    assert (await client.verify_token(token))["iss"] == _ISSUER, (
+        "the first kid miss must force a re-fetch even moments after boot"
+    )
+    assert client.fetch_count == 2, (
+        "cold fetch + one forced refresh; a suppressed forced refresh leaves 1"
+    )
