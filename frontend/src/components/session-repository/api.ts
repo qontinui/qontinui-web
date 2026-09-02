@@ -219,21 +219,75 @@ export async function getSessionTurns(
   );
 }
 
-export interface ExportedBody {
+/**
+ * The export's provenance headers, as READ — every field is `null` when the
+ * header could not be read, which is not the same as a value of "none".
+ *
+ * The server sends all seven on every 200 and publishes them in
+ * `Access-Control-Expose-Headers` (`app.main.CORS_EXPOSE_HEADERS`). A `null`
+ * here therefore means the exposure regressed, or an older backend is
+ * answering — never "the server had nothing to say". Callers must render that
+ * as UNKNOWN and must not fall back to a value that makes the check pass.
+ */
+export interface ExportProvenance {
+  /** `X-Content-Sha256` — the digest of the bytes THIS response served. */
+  servedSha256: string | null;
+  /**
+   * `X-Content-Sha256-Stored` — the digest the ARCHIVE recorded, or `null`
+   * where the row has none (the server sends the literal `"none"`).
+   *
+   * This is the only value a download may be checked against. The served
+   * digest is computed from the same bytes being checked, so comparing the
+   * two proves the wire, not the archive.
+   */
+  storedSha256: string | null;
+  /** `X-Content-Sha256-Match` — the SERVER's own served-vs-stored verdict. */
+  serverMatch: boolean | null;
+  /**
+   * `X-Digest-Verifiable` — whether the stored digest can be checked against
+   * the session's ORIGINAL file at all. `false` for a `coord_redacted` body
+   * even when the digest matches, because a digest over redacted bytes
+   * proves nothing about the original.
+   */
+  digestVerifiable: boolean | null;
+  /**
+   * `X-Body-Source` — which of the two writers produced THESE bytes.
+   *
+   * Not redundant with the summary row's `body_source`: this one describes
+   * the response in hand, so the two differ exactly when the row a caller is
+   * holding has gone stale against the archive — the case in which the row
+   * would have the panel say the wrong thing about the download.
+   */
+  bodySource: string | null;
+}
+
+export interface ExportedBody extends ExportProvenance {
   /** The JSONL exactly as the archive holds it. */
   text: string;
-  /** `X-Content-Sha256` as SERVED — compared against the head row, not trusted. */
-  servedSha256: string | null;
   byteLength: number;
+}
+
+/** `"true"`/`"false"` as sent; anything else — including absent — is unknown. */
+function readBool(res: Response, name: string): boolean | null {
+  const raw = res.headers.get(name);
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
 }
 
 /**
  * `GET /{id}/export` — the archived JSONL, byte-verbatim.
  *
- * Uses raw `fetch` because the served digest travels in `X-Content-Sha256`
- * and `httpClient.get` discards headers. The caller is responsible for saying
- * what the digest means: for a `coord_redacted` row it verifies the stored
- * REDACTED copy and nothing else (plan §5).
+ * Uses raw `fetch` because the provenance travels in headers and
+ * `httpClient.get` discards them. All seven are read, not just the digest:
+ * the server has already done the served-vs-stored comparison and already
+ * knows whether that digest means anything against the original, and
+ * re-deriving either answer here is how a client ends up contradicting the
+ * response it is holding.
+ *
+ * The caller is responsible for saying what the digest means: for a
+ * `coord_redacted` row it covers the stored REDACTED copy and nothing else
+ * (plan §5).
  */
 export async function exportSessionBody(
   id: string,
@@ -248,10 +302,23 @@ export async function exportSessionBody(
     );
   }
   const text = await res.text();
+  const stored = res.headers.get("X-Content-Sha256-Stored");
   return {
     text,
-    servedSha256: res.headers.get("X-Content-Sha256"),
     byteLength: new TextEncoder().encode(text).length,
+    servedSha256: res.headers.get("X-Content-Sha256"),
+    // The route sends the literal "none" for a row with no recorded digest.
+    // Folding it to null keeps "nothing recorded" and "could not read the
+    // header" in the same shape, which is correct: both are "no digest to
+    // check against", and neither may be treated as a passing comparison.
+    storedSha256: stored && stored !== "none" ? stored : null,
+    serverMatch: readBool(res, "X-Content-Sha256-Match"),
+    digestVerifiable: readBool(res, "X-Digest-Verifiable"),
+    bodySource: res.headers.get("X-Body-Source"),
+    // `X-Claude-Session-Id` and `X-Tenant-Source` are sent and published too.
+    // They are deliberately not parsed here: nothing in this UI reads them,
+    // and carrying an unread field is how the seven-header set drifted out of
+    // use in the first place. Add them when a caller needs them.
   };
 }
 

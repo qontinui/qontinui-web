@@ -207,6 +207,73 @@ def _export_filename(slug: str) -> str:
     return f"{cleaned[:200]}.md"
 
 
+#: The custom response headers ``GET /{artifact_id}/export`` carries.
+#:
+#: Spelled ONCE for the same reason
+#: :data:`app.api.v1.endpoints.session_repository.EXPORT_PROVENANCE_HEADERS` is:
+#: :func:`_artifact_export_provenance` builds the response from this tuple and
+#: :data:`app.main.CORS_EXPOSE_HEADERS` publishes it in
+#: ``Access-Control-Expose-Headers``, and the two must not drift.
+#:
+#: Until this constant existed the set was published only in PART. ``#1177``
+#: added ``X-Content-Sha256`` to the CORS list because the session-repository
+#: export happens to send a header of the same name, so this route's digest
+#: became browser-readable as a side effect while the three headers that say
+#: WHICH artifact and WHICH VERSION the digest is over stayed invisible. A
+#: verifiable digest that cannot be attributed to a version is a worse answer
+#: than no digest, because it looks complete.
+ARTIFACT_EXPORT_HEADERS: tuple[str, ...] = (
+    "X-Content-Sha256",
+    "X-Artifact-Kind",
+    "X-Artifact-Slug",
+    "X-Artifact-Version",
+)
+
+#: The custom response headers the whole-corpus ZIP export carries.
+#:
+#: ``X-Export-Truncated`` is the reason this set must be CORS-published rather
+#: than merely sent. It is emitted on BOTH branches precisely so a reader
+#: cannot mistake its absence for "nothing went wrong" — and a cross-origin
+#: browser reads ``null`` for an unpublished header, which is exactly the
+#: absence that reasoning rules out. Unpublished, the deliberate design of the
+#: header is defeated by the transport and an INCOMPLETE archive reads as
+#: complete.
+CORPUS_EXPORT_HEADERS: tuple[str, ...] = (
+    "X-Export-Artifact-Count",
+    "X-Export-Truncated",
+)
+
+
+def _artifact_export_provenance(
+    row: WorkArtifact, *, digest: str, exported_version: int
+) -> dict[str, str]:
+    """The single-artifact export's headers, keyed by :data:`ARTIFACT_EXPORT_HEADERS`.
+
+    The route's sole producer of them, so the tuple CORS publishes and the
+    names actually sent have one spelling between them.
+    """
+    return {
+        "X-Content-Sha256": digest,
+        "X-Artifact-Kind": row.kind,
+        "X-Artifact-Slug": row.slug,
+        "X-Artifact-Version": str(exported_version),
+    }
+
+
+def _corpus_export_provenance(
+    *, artifact_count: int, truncated: bool
+) -> dict[str, str]:
+    """The ZIP export's headers, keyed by :data:`CORPUS_EXPORT_HEADERS`.
+
+    Explicit on BOTH branches. A header present only when something went wrong
+    trains readers to ignore its absence.
+    """
+    return {
+        "X-Export-Artifact-Count": str(artifact_count),
+        "X-Export-Truncated": "true" if truncated else "false",
+    }
+
+
 def _export_archive_name(row: WorkArtifact, used: set[str]) -> str:
     """A unique ``<kind>/<slug>.md`` path for one entry in a bulk archive.
 
@@ -1795,10 +1862,11 @@ async def export_corpus(
         media_type="application/zip",
         headers={
             "Content-Disposition": (f'attachment; filename="plan-library-{stamp}.zip"'),
-            "X-Export-Artifact-Count": str(len(rows)),
-            # Explicit on BOTH branches. A header present only when something
-            # went wrong trains readers to ignore its absence.
-            "X-Export-Truncated": "true" if truncated else "false",
+            # Built from CORPUS_EXPORT_HEADERS, which app.main publishes in
+            # Access-Control-Expose-Headers — without that a cross-origin
+            # browser reads None for X-Export-Truncated, the one answer the
+            # both-branches rule exists to make impossible.
+            **_corpus_export_provenance(artifact_count=len(rows), truncated=truncated),
         },
     )
 
@@ -2188,11 +2256,12 @@ async def export_work_artifact(
             ),
             # Provenance travels beside the bytes, never inside them — see the
             # verbatim rule. A consumer can verify the round trip from headers
-            # alone.
-            "X-Content-Sha256": digest,
-            "X-Artifact-Kind": row.kind,
-            "X-Artifact-Slug": row.slug,
-            "X-Artifact-Version": str(exported_version),
+            # alone, which requires all four to be READABLE: they are built
+            # from ARTIFACT_EXPORT_HEADERS and published by app.main in
+            # Access-Control-Expose-Headers.
+            **_artifact_export_provenance(
+                row, digest=digest, exported_version=exported_version
+            ),
         },
     )
 
