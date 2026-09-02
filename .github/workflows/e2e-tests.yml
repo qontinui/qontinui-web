@@ -190,7 +190,7 @@ jobs:
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 20-minute cap expired (it normally runs 1m54s-2m26s, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow declares 'concurrency: cancel-in-progress: true', so a newer push to the same ref supersedes it. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::This job was cancelled. Either its 20-minute cap expired (it normally runs 1m54s-2m26s, so that would mean something wedged, not that your tests failed) or the run was cancelled externally - this workflow auto-supersedes its pull_request lane ONLY, so a newer push to the same ref supersedes this job when it ran on a PR, and does NOT when it ran on a main or merge-candidate push, where a manual cancel is the remaining external cause. Either way a cancelled job reports no test results at all: 'gh pr checks' will render it as 'fail' with zero failing steps, and that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
 
   # Full 4-shard suite. Runs on pushes to main/develop, on the nightly schedule,
   # and on workflow_dispatch — never on PRs and never on coord's merge-candidate*
@@ -895,7 +895,7 @@ jobs:
           # declared at this job's `timeout-minutes`.
           JOB_TIMEOUT_MINUTES: '60'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow declares `concurrency: cancel-in-progress: true`, so a newer push to the same ref supersedes the run - that, or a manual cancel, are the external causes. A coord merge-train reap is NOT one of them in this job: its own `if:` skips every refs/heads/merge-candidate ref, so it never runs on one to be reaped
+            this workflow auto-supersedes its `pull_request` lane ONLY, and this job never runs on that event - its own `if:` excludes it - so GitHub does not auto-supersede this job at all, which leaves a manual cancel as the external cause. A coord merge-train reap is NOT one either: that same `if:` skips every refs/heads/merge-candidate ref, so it never runs on one to be reaped
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
@@ -1186,10 +1186,13 @@ jobs:
 
   # The cross-browser-survey job lives in its own workflow file
   # (.github/workflows/cross-browser-survey.yml) so it isn't subject
-  # to this workflow's `cancel-in-progress: true` (line 21) — the
-  # slowest matrix entry (Mobile Chrome) takes ~30min and was being
-  # cancelled mid-run by every push to main. See that file for
-  # details.
+  # to this workflow's `concurrency:` block above — the slowest matrix
+  # entry (Mobile Chrome) takes ~30min and was being cancelled mid-run
+  # by every push to main. That block no longer supersedes a main push
+  # at all (it auto-supersedes the pull_request lane only), so the
+  # original reason is gone; the survey stays in its own file because
+  # it is a separate cadence, not because of this guard. See that file
+  # for details.
 
   test-summary:
     name: Test Summary
@@ -1261,4 +1264,4 @@ jobs:
       - name: Explain a cancelled job (no apt step here)
         if: cancelled()
         run: |
-          echo "::notice title=Job cancelled - NOT a verdict on this diff::Test Summary was cancelled. It only downloads artifacts and tallies results (3-9s observed), so its 10-minute cap expiring would mean a wedged download, not a test failure; the other possibility is an external cancel, since this workflow declares 'concurrency: cancel-in-progress: true'. Either way this job produced no tally at all, and 'gh pr checks' renders a cancelled job as 'fail' with zero failing steps - that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
+          echo "::notice title=Job cancelled - NOT a verdict on this diff::Test Summary was cancelled. It only downloads artifacts and tallies results (3-9s observed), so its 10-minute cap expiring would mean a wedged download, not a test failure; the other possibility is an external cancel - this workflow auto-supersedes its pull_request lane ONLY, so a newer push supersedes this job when it ran on a PR, while on a main or merge-candidate push a manual cancel is the remaining external cause. Either way this job produced no tally at all, and 'gh pr checks' renders a cancelled job as 'fail' with zero failing steps - that rendering says nothing about the code under test. Re-run if you need a verdict. See plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure."
