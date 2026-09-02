@@ -106,6 +106,7 @@ import json
 import re
 import zipfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import get_args
 from urllib.parse import quote
@@ -604,26 +605,12 @@ _CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
 #: carve-out against BOTH shapes for that reason.
 _COORD_DB_ERROR = "db_error"
 
-#: The ``(status, coord error code)`` pairs that mean *coord answered about the
-#: citations sub-resource*, rather than *coord is unreachable*. Passed ONLY on
-#: the citations hop (:meth:`_CoordProbe.link_for`), so the presence hop keeps
-#: its unguarded reading — see :func:`_is_transport_failure` for why that
-#: asymmetry is what makes the carve-out safe.
-#:
-#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
-#: code with 503 and ``db_error`` with 500, and pinning each code to the status
-#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
-#: tripping behaviour rather than inheriting the carve-out.
-_CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
-    503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
-    500: frozenset({_COORD_DB_ERROR}),
-}
-
 #: The ``op`` tokens that mean *this 5xx is about the CITATIONS sub-resource*.
 #:
-#: The pairing above keys on ``error``, and coord's crate-wide sweep took away
-#: that field's ability to name a door. ``to_safe_body`` writes ``"error":
-#: "db_error"`` UNCONDITIONALLY — it is a literal in the constructor, identical
+#: The ``(status, error code)`` pairing that carries this set
+#: (:data:`_CITATION_ANSWERED`, below) keys on ``error``, and coord's crate-wide
+#: sweep took away that field's ability to name a door. ``to_safe_body`` writes
+#: ``"error": "db_error"`` UNCONDITIONALLY — a literal in the constructor, identical
 #: for every ``SafeOp`` — so ``(500, db_error)`` no longer says "the query THIS
 #: hop asked for failed"; it says "a query somewhere inside coord failed", and
 #: ``tenant_scope.resolve`` and ``work_unit.list`` say it in exactly the same
@@ -674,6 +661,60 @@ _CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
 #: this set only ever subtracts from an exception that already exists.
 _CITATION_ANSWERING_OPS = frozenset(
     {"work_unit.citations.read", "work_unit.citations.delivery"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _CoordAnswered:
+    """One hop's carve-out: which 5xx are *coord answering* about its subject.
+
+    ONE value rather than two keyword arguments, and that is the whole reason
+    the type exists. The carve-out has two halves — the ``(status, error code)``
+    pairs, and the ``op`` tokens that keep them — and they are not independent.
+    The codes ALONE are precisely what this module granted BEFORE the op test,
+    which is to say the over-granting the op test was written to remove: coord
+    writes ``db_error`` at every narrowed door, so a hop admitting the code and
+    not the token inherits every other door's 500 as an answer about its own
+    subject.
+
+    Handing those to a call site as two optional parameters makes that
+    regression an OMISSION rather than a decision, and a silent one — the
+    symptom is ``coord_available: true`` reported through a fleet-wide outage,
+    not an exception, and nothing in this module's own suite would go red. It
+    is the same failure shape ``actor_kind`` is REQUIRED for on
+    :class:`_CoordProbe` and :func:`_soft_tenant_id`: *a default would quietly
+    hand the next call site the arm it forgot to ask for*. A constructor that
+    demands both halves leaves only the carve-out AS A WHOLE forgettable, and
+    omitting that is the safe direction — an unguarded hop trips.
+    """
+
+    #: ``{status: {coord error code, …}}``. Pairs, not a flat set of codes, so
+    #: an unexpected pairing fails CLOSED — see :data:`_CITATION_ANSWERED`.
+    codes: Mapping[int, frozenset[str]]
+    #: The ``op`` tokens that keep the pairing. Used only to REFUSE it, never
+    #: to grant it — see :data:`_CITATION_ANSWERING_OPS`.
+    ops: frozenset[str]
+
+
+#: The ``(status, coord error code)`` pairs that mean *coord answered about the
+#: citations sub-resource*, rather than *coord is unreachable* — together with
+#: the ``op`` tokens that keep that reading (:data:`_CITATION_ANSWERING_OPS`),
+#: because the two halves are one decision and passing either without the
+#: other is the pre-op-test over-granting (:class:`_CoordAnswered`). Passed
+#: ONLY on the citations hop (:meth:`_CoordProbe.link_for`), so the presence
+#: hop keeps its unguarded reading — see :func:`_is_transport_failure` for why
+#: that asymmetry is what makes the carve-out safe.
+#:
+#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
+#: code with 503 and ``db_error`` with 500, and pinning each code to the status
+#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
+#: tripping behaviour rather than inheriting the carve-out.
+_CITATION_ANSWERED = _CoordAnswered(
+    codes={
+        503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
+        500: frozenset({_COORD_DB_ERROR}),
+    },
+    ops=_CITATION_ANSWERING_OPS,
 )
 
 
@@ -865,8 +906,7 @@ def _is_transport_failure(
     *,
     body_error: str | None = None,
     body_op: str | None = None,
-    answered_codes: Mapping[int, frozenset[str]] | None = None,
-    answered_ops: frozenset[str] | None = None,
+    answered: _CoordAnswered | None = None,
 ) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
@@ -882,9 +922,9 @@ def _is_transport_failure(
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
 
-    ``answered_codes`` — the ONE exception, and it is granted on the BODY, not
-    on the status. It maps a status to the coord error codes that, AT that
-    status, mean coord answered about the sub-resource being read:
+    ``answered`` — the ONE exception, and it is granted on the BODY, not on
+    the status. Its ``codes`` map a status to the coord error codes that, AT
+    that status, mean coord answered about the sub-resource being read:
 
     * ``503`` + ``citation_surface_unavailable`` — the unit is yours and the
       relation backing the citation join is absent (a pre-migration window).
@@ -895,14 +935,19 @@ def _is_transport_failure(
       on the ``error`` code, which is ``db_error`` in BOTH — so the carve-out
       came through the narrowing untouched (see :data:`_COORD_DB_ERROR`).
 
-    ``answered_ops`` NARROWS that exception and can only ever refuse it, because
-    the ``error`` code above is no longer able to name a door: coord writes
-    ``db_error`` for every failed query it renders, and only ``op`` says which
-    read broke. A body naming an operation outside :data:`_CITATION_ANSWERING_OPS`
-    is coord answering about something that is not this sub-resource, so it keeps
-    its ordinary transport reading and trips; a body carrying NO ``op`` is
-    granted the carve-out exactly as before. That constant carries the full
-    reasoning and the deploy-direction argument for it.
+    ``answered.ops`` NARROWS that exception and can only ever refuse it,
+    because the ``error`` code above is no longer able to name a door: coord
+    writes ``db_error`` for every failed query it renders, and only ``op`` says
+    which read broke. A body naming an operation outside the set is coord
+    answering about something that is not this sub-resource, so it keeps its
+    ordinary transport reading and trips; a body carrying NO ``op`` is granted
+    the carve-out exactly as before. :data:`_CITATION_ANSWERING_OPS` carries the
+    full reasoning and the deploy-direction argument for it.
+
+    The two arrive as ONE value rather than two parameters, and that is a
+    property of the classifier and not a convenience: the codes without the ops
+    ARE the reading this narrowing removed, so :class:`_CoordAnswered` exists so
+    that a caller cannot ask for it by forgetting an argument.
 
     Both are the same class as the 401/403/405 above, one status band up: coord
     answering *about one sub-resource*. Each must land as a per-slug
@@ -934,7 +979,7 @@ def _is_transport_failure(
        mapping raises a bare string at 502/504. None parse to an object with an
        ``error`` field, so none can match.
     2. *An unguarded presence PHASE runs first* — the WEAKER item, and it is a
-       phase, not a concurrent canary. ``answered_codes`` is passed only on the
+       phase, not a concurrent canary. ``answered`` is passed only on the
        citations hop, which is never reached until this slug's
        ``{base}/{slug}`` returned 200. The fan-out serialises the two harder
        than that: :meth:`_CoordProbe._get` acquires ``self._gate`` once per
@@ -968,7 +1013,7 @@ def _is_transport_failure(
     per-slug, that costs ``2N`` coord round-trips per request instead of
     ``N+1`` and a trip, and leaves ``coord_available`` true throughout.
 
-    ``answered_ops`` does NOT rescue those two, and it is worth being exact
+    ``answered.ops`` does NOT rescue those two, and it is worth being exact
     about which axis it narrows. Both of them ARE the citation read failing —
     coord's citation-500 handler renders them, so both arrive naming
     ``work_unit.citations.read`` — and both are fleet-wide anyway. The op test
@@ -1000,14 +1045,19 @@ def _is_transport_failure(
     environment, a local coord. The window it covers is exactly the one where
     this service is ahead of the coord in front of it.
     """
-    if answered_codes is not None and body_error is not None:
-        declared = answered_codes.get(http_status)
+    if answered is not None and body_error is not None:
+        declared = answered.codes.get(http_status)
         if declared is not None and body_error in declared:
             # ``op`` only ever REFUSES. Absent, the carve-out is granted as it
             # always was (a coord predating the sweep, and the hand-rolled 503
             # on every coord); present and foreign, coord is answering about
             # another operation and this falls through to the 5xx reading.
-            if body_op is None or answered_ops is None or body_op in answered_ops:
+            #
+            # There is no "codes but no ops" arm to write, and that is the
+            # point of :class:`_CoordAnswered`: a carve-out that granted every
+            # token would be the pre-op-test behaviour, so it is not a state a
+            # call site can reach by omission.
+            if body_op is None or body_op in answered.ops:
                 return False
     return http_status >= 500
 
@@ -1095,7 +1145,7 @@ class _CoordProbe:
         #: serde_urlencoded, whose ``bool`` is ``FromStr`` and accepts ONLY
         #: ``true``/``false`` — under it ``?with_citations=1`` fails the whole
         #: ``Query`` extractor with a **400**, and a 400 on the PRESENCE hop
-        #: carries no ``answered_codes`` carve-out, so every row on the page
+        #: carries no ``answered`` carve-out, so every row on the page
         #: would read ``unavailable``: a blank page. ``true`` is truthy under
         #: BOTH, so this side stays correct whichever way coord's half is
         #: written. That matters because this service ships FIRST: the value
@@ -1117,8 +1167,7 @@ class _CoordProbe:
         path: str,
         *,
         params: dict[str, str] | None = None,
-        answered_codes: Mapping[int, frozenset[str]] | None = None,
-        answered_ops: frozenset[str] | None = None,
+        answered: _CoordAnswered | None = None,
     ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
@@ -1143,21 +1192,23 @@ class _CoordProbe:
         coord's inline citations (see ``_presence_params``); the citations hop
         takes none.
 
-        ``answered_codes`` forwards to :func:`_is_transport_failure` and
-        extends that same reading to the typed 5xx coord answers ON the
-        citations sub-resource — ``503 citation_surface_unavailable`` when the
-        relation is unreadable, ``500 db_error`` when that one slug's SELECT
-        failed — but only when coord's own declared error code is in the body,
-        so an untyped 5xx from a load balancer still trips. It is passed on the
-        citations hop ONLY: the presence hop stays unguarded on purpose, which
-        is what keeps a coord-wide failure tripping (see
-        :func:`_is_transport_failure`).
+        ``answered`` forwards to :func:`_is_transport_failure` and extends that
+        same reading to the typed 5xx coord answers ON the citations
+        sub-resource — ``503 citation_surface_unavailable`` when the relation is
+        unreadable, ``500 db_error`` when that one slug's SELECT failed — but
+        only when coord's own declared error code is in the body, so an untyped
+        5xx from a load balancer still trips. It is passed on the citations hop
+        ONLY: the presence hop stays unguarded on purpose, which is what keeps a
+        coord-wide failure tripping (see :func:`_is_transport_failure`).
 
-        ``answered_ops`` rides with it and can only narrow it. The ``op`` token
-        is lifted from the SAME parse (:func:`_coord_error_op`) that renders it
-        into the reason line, so what the operator is shown and what the
-        classifier acted on cannot disagree — one read of the body decides the
-        classification, the reason and, now, which door the 5xx was about.
+        Its ``ops`` half rides in the same value and can only narrow it, and
+        rides there rather than beside it because the ``codes`` half alone is
+        the over-granting the ``op`` test removed (:class:`_CoordAnswered`). The
+        ``op`` token is lifted from the SAME parse (:func:`_coord_error_op`)
+        that renders it into the reason line, so what the operator is shown and
+        what the classifier acted on cannot disagree — one read of the body
+        decides the classification, the reason and, now, which door the 5xx was
+        about.
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -1203,8 +1254,7 @@ class _CoordProbe:
                     exc.status_code,
                     body_error=_coord_error_field(parsed),
                     body_op=_coord_error_op(parsed),
-                    answered_codes=answered_codes,
-                    answered_ops=answered_ops,
+                    answered=answered,
                 ):
                     self._trip(detail)
                 return None, exc.status_code, detail
@@ -1440,13 +1490,15 @@ class _CoordProbe:
             # answer about the citation relation — 503 when it is unreadable,
             # 500 when this slug's SELECT failed — not a verdict on coord's
             # reachability. An untyped 5xx is still an outage and still trips.
-            answered_codes=_CITATION_ANSWERED,
+            #
             # …and, on a coord that names WHICH read failed, only when the read
             # it names is one this hop asked for. `db_error` is coord's generic
             # code since the crate-wide sweep, so the code alone no longer
             # identifies the door; the `op` token does. Absent ⇒ granted, so a
-            # coord predating the sweep keeps today's behaviour exactly.
-            answered_ops=_CITATION_ANSWERING_OPS,
+            # coord predating the sweep keeps today's behaviour exactly. The
+            # two travel as ONE value so this call site cannot ask for the
+            # first half and silently get the pre-op-test reading.
+            answered=_CITATION_ANSWERED,
         )
         if cites is None:
             # Includes 401/403/404/405 and coord's typed 503/500 — absence of

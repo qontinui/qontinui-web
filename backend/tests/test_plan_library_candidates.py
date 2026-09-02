@@ -1649,6 +1649,12 @@ class TestCoordServiceUnavailableOnTheCitationRead:
     exactly as before. Reverting the refusal reds only the first pair;
     requiring the field reds only the second, plus the two pre-existing arms
     whose bodies carry no ``op`` at all.
+
+    The foreign tokens are three, and the third is not redundant. Two name
+    coord operations this module never asks for; ``work_unit.read`` is the one
+    it DOES — on the unguarded presence hop, one line earlier, for this same
+    slug — which makes it the token the set is most likely to be widened with
+    and the one whose admission would do the most damage.
     """
 
     async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
@@ -1922,7 +1928,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
         It is also the third arm of the ``op`` read.
         ``TestCoordsOpTokenNamesWhichReadFailed`` pins the inline arm and the
         presence hop; this is the citations SUB-RESOURCE, which is neither —
-        it is the only one of the three reached through ``answered_codes``, so
+        it is the only one of the three reached through ``answered``, so
         it is the only one where rendering the reason and granting the
         carve-out are the same code path.
         """
@@ -2223,7 +2229,83 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert resp.json()["coord_available"] is False
+        body = resp.json()
+        assert body["coord_available"] is False
+        # The 503 arm renders the same three whitelisted identifiers the 500
+        # arm does, off the same parse that refused the carve-out — asserted
+        # here because the whole claim of the op test is that the operator
+        # cannot be shown one token while the classifier acted on another.
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert reason == (
+            "coord returned 503: citation_surface_unavailable: work_unit.list: 42P01"
+        ), reason
+
+    async def test_the_PRESENCE_hops_own_op_is_foreign_to_this_carve_out(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``work_unit.read`` is the token this set is most likely to grow.
+
+        The two foreign tokens pinned above name coord operations this module
+        never asks for — ``tenant_scope.resolve`` and ``work_unit.list``. The
+        one it DOES ask for is ``work_unit.read``: it is what
+        :meth:`_CoordProbe.link_for`'s own PRESENCE hop performs, one line
+        earlier, on this very slug. That makes it the token a maintainer widens
+        the set with "for consistency" — and the reading it would buy is
+        exactly wrong. The presence hop is deliberately UNGUARDED (it is the
+        canary that keeps a coord-wide fault tripping), so admitting its op
+        here would carve out the one failure that both hops share, on the hop
+        that was supposed to catch it.
+
+        A ``work_unit.read`` 500 arriving on the ``/citations`` path is also not
+        coord answering about the citations: it says the SLUG read broke, which
+        this hop already got a 200 for. Whatever that is, it is not evidence
+        about this sub-resource, and the set subtracts it.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("sibling-op"),
+                work_unit_slug=_slug("wu-sibling-op"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps(
+                        {
+                            "error": "db_error",
+                            "pg_code": "57014",
+                            "op": "work_unit.read",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False, (
+            "`work_unit.read` is the sibling hop's op, not this sub-resource's "
+            "— admitting it would carve out a fault on the one hop left "
+            "unguarded to catch it"
+        )
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert reason == "coord returned 500: db_error: work_unit.read: 57014", reason
 
     async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -2597,7 +2679,7 @@ class TestCoordErrorBodiesDoNotEgress:
 
         The fake fails EVERY path, so the 500 lands on the PRESENCE hop — the
         first read of the first slug, before anything of coord's has answered.
-        That hop carries no ``answered_codes`` and never will: it is the
+        That hop carries no ``answered`` carve-out and never will: it is the
         unguarded canary that keeps a coord-wide fault tripping the circuit, so
         ``coord_available`` is false here for a reason that survives the
         per-slug carve-out on the citations hop. The citations hop's own typed
