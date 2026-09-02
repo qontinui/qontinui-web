@@ -48,15 +48,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDownUp, Filter, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  ArrowDownUp,
+  FileQuestion,
+  Filter,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
 import {
   CollapsiblePanel,
+  FilterChips,
   HealthStrip,
   RecordList,
   readIsUnknown,
 } from "@/components/console";
 import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
+import {
+  HAS_BODY_FILTERS,
+  PROVENANCE_FILTERS,
+  filterPlansByBodySignal,
+  hasBodyFilterValue,
+  type BodyProvenance,
+  type HasBodyFilter,
+  type PlanBodySignalBlock,
+} from "@/components/admin/coord/planBodySignal";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
 import { derivePlansHealth } from "./plansHealth";
@@ -99,11 +115,28 @@ interface PlansListResponse {
   limit?: number;
   offset?: number;
   count?: number;
+  /**
+   * Why a `has_body: false` on this page is (or is not) evidence — computed
+   * once per request by the proxy. Absent when the page had no rows to
+   * annotate, and on a backend that predates the signals.
+   */
+  body_signal?: PlanBodySignalBlock;
+}
+
+/** Add or remove one value — the `FilterChips` caller owns the set. */
+function toggle<V extends string>(prev: V[], value: V): V[] {
+  return prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value];
 }
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
   const [sort, setSort] = useState<SortKey>("created_desc");
+  // Both body filters are CLIENT-side, unlike `status`: the proxy derives
+  // these fields, it does not take them as query parameters, so they filter
+  // the window that was fetched. That also means their counts are real —
+  // computed from the same rows the list renders — rather than R6's `–`.
+  const [provenance, setProvenance] = useState<BodyProvenance[]>([]);
+  const [hasBody, setHasBody] = useState<HasBodyFilter[]>([]);
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
@@ -250,7 +283,39 @@ export default function CoordPlansListPage() {
     () => data?.work_units ?? data?.plans ?? [],
     [data]
   );
-  const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
+  // The chip counts describe the WINDOW, so they are derived from `plans` —
+  // before the body filters are applied, or every count but the selected one
+  // would collapse to 0 the moment a chip was clicked.
+  const provenanceCounts = useMemo(() => {
+    const counts = new Map<BodyProvenance, number>();
+    for (const p of plans) {
+      if (p.body_provenance) {
+        counts.set(p.body_provenance, (counts.get(p.body_provenance) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [plans]);
+  const hasBodyCounts = useMemo(() => {
+    const counts = new Map<HasBodyFilter, number>();
+    for (const p of plans) {
+      const v = hasBodyFilterValue(p.has_body);
+      if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return counts;
+  }, [plans]);
+  // A backend that predates the signals serves neither field. Offering a
+  // filter over a vocabulary no row carries would let an operator select a
+  // chip and empty the list — a control that can only ever answer "none" to a
+  // question nobody was told the answer to.
+  const bodySignalsServed = plans.some(
+    (p) => p.body_provenance !== undefined || p.has_body !== undefined
+  );
+  const filtered = useMemo(
+    () => filterPlansByBodySignal(plans, { provenance, hasBody }),
+    [plans, provenance, hasBody]
+  );
+  const sorted = useMemo(() => sortPlans(filtered, sort), [filtered, sort]);
+  const bodyFiltered = provenance.length > 0 || hasBody.length > 0;
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
   // "oldest created" answer drawn from this window can be wrong.
@@ -325,6 +390,53 @@ export default function CoordPlansListPage() {
           <RefreshCw className="h-3 w-3" />
         </Button>
       </div>
+
+      {/* Does this "Plan" have a plan? Plan `2026-09-02-bodyless-work-units-…`.
+          A second row rather than more controls on the first: these two answer
+          a different question from status/sort, and the strips are only
+          rendered at all once a backend has actually told us the answer. */}
+      {bodySignalsServed && (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          data-testid="coord-plans-body-filters"
+        >
+          <FileQuestion className="h-4 w-4 text-muted-foreground" />
+          <FilterChips
+            label="document"
+            testIdPrefix="coord-plans-has-body-filter"
+            options={HAS_BODY_FILTERS.map((o) => ({
+              ...o,
+              count: hasBodyCounts.get(o.value) ?? 0,
+            }))}
+            selected={hasBody}
+            onToggle={(v) => setHasBody((prev) => toggle(prev, v))}
+            onClear={() => setHasBody([])}
+            title={
+              data?.body_signal?.miss_reason
+                ? "This page could not establish whether a document exists — " +
+                  `${data.body_signal.miss_reason}. Every miss is reported ` +
+                  "unknown rather than as a missing document."
+                : "Whether a plan artifact exists for this work unit."
+            }
+          />
+          <FilterChips
+            label="scanner"
+            testIdPrefix="coord-plans-provenance-filter"
+            options={PROVENANCE_FILTERS.map((o) => ({
+              ...o,
+              count: provenanceCounts.get(o.value) ?? 0,
+            }))}
+            selected={provenance}
+            onToggle={(v) => setProvenance((prev) => toggle(prev, v))}
+            onClear={() => setProvenance([])}
+            title={
+              "Whether a plan scanner has ever seen a file for this work " +
+              "unit. A SCREEN, not a verdict — measured 2026-09-02 on one " +
+              "device it has 27.6% precision and 90.4% recall."
+            }
+          />
+        </div>
+      )}
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
           summary badge keeps the signal visible while they are closed. */}
@@ -406,6 +518,18 @@ export default function CoordPlansListPage() {
             >
               No plans matched status={status === "any" ? "any" : status} at the
               last good read — this list has not refreshed since.
+            </p>
+          ) : bodyFiltered ? (
+            // The body filters are client-side, so "nothing matched" here is a
+            // statement about the WINDOW, not about coord. Saying
+            // "No plans matching status=any" over a window that holds
+            // {plans.length} rows would blame the wrong control.
+            <p
+              className="text-sm text-muted-foreground italic"
+              data-testid="coord-plans-body-filtered-empty"
+            >
+              None of the {plans.length} work units in this window match the
+              document filter.
             </p>
           ) : (
             <p

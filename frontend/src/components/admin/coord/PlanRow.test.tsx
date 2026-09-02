@@ -141,3 +141,138 @@ describe("PlanRow detail (R5) and the frozen testids (D4a)", () => {
     ).toBe(link);
   });
 });
+
+describe("PlanRow body signals", () => {
+  /**
+   * Plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`,
+   * Phases 1, 2 and 5a. The copy and the derivation are covered by
+   * `planBodySignal.test.ts` and by the backend; what is asserted here is
+   * that the ROW wires them through — the original defect on this surface was
+   * a rendering one, and the failure mode this plan is about is a signal that
+   * reads as more (or less) certain than it is.
+   */
+
+  it("renders unknown as its own visible chip — never blank, never a tick", () => {
+    renderRow({
+      slug: "2026-09-01-x",
+      status: "in_progress",
+      body_provenance: "never_scanned",
+      has_body: "unknown",
+      body_unknown_reason: "empty_corpus_for_org",
+    });
+    const chip = screen.getByTestId("coord-plan-has-body-unknown");
+    expect(chip).toHaveTextContent("document unknown");
+    // Not the settled answers — in either direction.
+    expect(screen.queryByTestId("coord-plan-has-body-true")).toBeNull();
+    expect(screen.queryByTestId("coord-plan-has-body-false")).toBeNull();
+    // ...and the reason is reachable, not swallowed.
+    expect(chip.getAttribute("title")).toContain("not the principal");
+  });
+
+  it("labels never_scanned as a SCREEN and states its precision", () => {
+    renderRow({
+      slug: "2026-09-01-x",
+      status: "draft",
+      body_provenance: "never_scanned",
+      has_body: false,
+    });
+    const chip = screen.getByTestId("coord-plan-provenance-never-scanned");
+    expect(chip).toHaveTextContent("no document seen");
+    expect(chip.getAttribute("title")).toContain("SCREEN, not a verdict");
+    expect(chip.getAttribute("title")).toContain("27.6% precision");
+  });
+
+  it("distinguishes scanned_locally from scanned (Phase 5a)", () => {
+    renderRow({
+      slug: "2026-09-01-x",
+      status: "draft",
+      body_provenance: "scanned_locally",
+      has_body: "unknown",
+      body_unknown_reason: "capture_off",
+    });
+    expect(
+      screen.getByTestId("coord-plan-provenance-scanned-locally")
+    ).toHaveTextContent("one machine only");
+  });
+
+  it("renders NO provenance chip for scanned — it is not proof of a body", () => {
+    renderRow({
+      slug: "2026-09-01-x",
+      status: "draft",
+      body_provenance: "scanned",
+      has_body: true,
+    });
+    expect(screen.queryByTestId("coord-plan-provenance-never-scanned")).toBeNull();
+    expect(
+      screen.queryByTestId("coord-plan-provenance-scanned-locally")
+    ).toBeNull();
+    expect(screen.getByTestId("coord-plan-has-body-true")).toBeInTheDocument();
+  });
+
+  it("suppresses the whole marker group on a TERMINAL unit", () => {
+    // A shipped work unit that never had a document is not a defect — badging
+    // it would spend the signal's credibility on correctly-closed work.
+    renderRow({
+      slug: "2026-08-16-shipped",
+      status: "shipped",
+      body_provenance: "never_scanned",
+      has_body: false,
+    });
+    expect(screen.queryByTestId("coord-plan-body-signal")).toBeNull();
+    expect(screen.queryByTestId("coord-plan-provenance-never-scanned")).toBeNull();
+    expect(screen.queryByTestId("coord-plan-has-body-false")).toBeNull();
+    // ...and the row is otherwise unchanged.
+    expect(screen.getByTestId("coord-plan-status-tag")).toHaveTextContent(
+      "Shipped"
+    );
+  });
+
+  it("renders nothing at all when the backend served no signals", () => {
+    // A build that predates the fields must not render "no document" over
+    // rows it was simply never told about.
+    renderRow({ slug: "2026-09-01-x", status: "draft" });
+    expect(screen.queryByTestId("coord-plan-body-signal")).toBeNull();
+  });
+
+  it("repeats the markers in the detail, where the caveat can be READ", () => {
+    // The row's chips are dropped below `sm` and their caveat lives in a
+    // `title`, which a touch device cannot hover.
+    renderRow(
+      {
+        slug: "2026-09-01-x",
+        status: "in_progress",
+        body_provenance: "never_scanned",
+        has_body: "unknown",
+        body_unknown_reason: "capture_never_configured",
+      },
+      true
+    );
+    const detail = screen.getByTestId("coord-plan-has-body-unknown-detail");
+    expect(detail).toHaveTextContent("document unknown");
+    expect(detail).toHaveTextContent(/ever been written/);
+    expect(
+      screen.getByTestId("coord-plan-provenance-never-scanned-detail")
+    ).toHaveTextContent(/SCREEN, not a verdict/);
+  });
+
+  it("keeps every frozen testid alive alongside the new chips (D4a)", () => {
+    renderRow(
+      {
+        slug: "2026-09-01-x",
+        status: "in_progress",
+        body_provenance: "never_scanned",
+        has_body: false,
+      },
+      true
+    );
+    for (const id of [
+      "coord-plan-card",
+      "coord-plan-status-tag",
+      "coord-plan-card-dates",
+      "coord-plan-card-link",
+      "coord-plan-card-spawn-btn",
+    ]) {
+      expect(screen.getByTestId(id)).toBeInTheDocument();
+    }
+  });
+});

@@ -396,6 +396,39 @@ async def get_audit_actor_principal(
     return await _resolve_actor_principal(user, credentials)
 
 
+async def get_audit_actor_user_optional(
+    user: User | None = Depends(current_active_user_optional),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),
+) -> User | None:
+    """:func:`get_audit_actor_user`, but ``None`` instead of a 401.
+
+    For a route that is ALREADY authenticated by some other dependency and
+    wants the organization-scoped principal as an EXTRA, not as a gate. The
+    motivating one is ``/operations/plans``: it is gated by ``get_tenant_id``
+    (a coord-resolvable bearer) and additionally joins the org-scoped plan
+    library to say whether each work unit has a document. Depending on the
+    strict variant there would newly 401 any caller whose bearer coord
+    resolves but this decision tree does not — narrowing a route's auth as a
+    side effect of adding a signal to it.
+
+    ``None`` is therefore "no organization-scoped principal on this request",
+    and the caller must render that as UNKNOWN rather than as an empty scope.
+    Scoping such a request to the shared NULL bucket would report one
+    principal's corpus as another's, which is the failure the strict variant's
+    401 exists to prevent — so this returns ``None`` and does not guess.
+
+    Every 401/503 the decision tree raises is folded into that ``None``: a
+    bearer that fails device verification is not a principal, and neither is
+    an unreachable coord JWKS. Both are honestly "we do not know who this is",
+    and neither is a reason to fail a route this dependency does not gate.
+    """
+    try:
+        principal = await _resolve_actor_principal(user, credentials)
+    except HTTPException:
+        return None
+    return principal.user
+
+
 async def get_audit_actor_user_id(
     user: User | None = Depends(current_active_user_optional),
     credentials: HTTPAuthorizationCredentials | None = Depends(_optional_bearer_scheme),

@@ -51,6 +51,14 @@ import {
   type RowStatus,
   type StatusPalette,
 } from "@/components/console/statusRow";
+// Type-only, and that is what keeps the pair acyclic: `planBodySignal` imports
+// VALUES from here (`isTerminalPlanStatus`), this imports only types from
+// there, and a type import erases at build time.
+import type {
+  BodyProvenance,
+  BodyUnknownReason,
+  HasBody,
+} from "./planBodySignal";
 
 /**
  * One coord work-unit as the web proxy serves it.
@@ -70,6 +78,21 @@ export interface CoordPlanRow {
   created_at?: string | null;
   updated_at?: string | null;
   shipped_at?: string | null;
+  /**
+   * Does this "Plan" have a plan? The three fields below are derived
+   * SERVER-SIDE by `operations.py` `list_coord_plans` (plan
+   * `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`), not
+   * by any component — one definition that this list, the detail route and
+   * the spawn guard all read. Optional because a build predating them serves
+   * none, and "not told" is not one of the values.
+   *
+   * The copy, the tones and the filters live in `planBodySignal.ts`; the types
+   * are imported from there rather than restated, so the union cannot drift
+   * from the one the wire actually carries.
+   */
+  body_provenance?: BodyProvenance;
+  has_body?: HasBody;
+  body_unknown_reason?: BodyUnknownReason | null;
 }
 
 /** Colour families, shared with the merge pipeline's status vocabulary. */
@@ -232,6 +255,53 @@ export function derivePlanStatus(
     reason: plan.current_phase ? `phase ${plan.current_phase}` : undefined,
     attention: PLAN_ATTENTION_BY_TONE[tag.tone],
   };
+}
+
+/**
+ * Statuses that read as "done", normalised.
+ *
+ * A MIRROR of `backend/app/models/work_artifact.py` `TERMINAL_STATUSES`, and
+ * of its normalisation (upper-case, every run of non-alphanumerics collapsed
+ * to `_`, edges trimmed) — so `"in progress"`, `"in-progress"` and
+ * `"In_Progress"` compare equal. Keep the two lists in step; there is no
+ * shared vocabulary to import, because `coord.work_units.status` is opaque
+ * text with no schema on either side.
+ *
+ * Like the backend's, this is a READING of an opaque column rather than a
+ * vocabulary: an unlisted status is not rejected, it simply does not count as
+ * done.
+ */
+const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  "SHIPPED",
+  "COMPLETE",
+  "COMPLETED",
+  "DONE",
+  "LANDED",
+  "MERGED",
+  "ABANDONED",
+  "SUPERSEDED",
+  "CANCELLED",
+  "CANCELED",
+  "OBSOLETE",
+  "CLOSED",
+  "WITHDRAWN",
+]);
+
+/**
+ * True when this work unit is finished.
+ *
+ * Used to suppress the body-signal badges: a `shipped` work unit that never
+ * had a document is not a defect (`plan-discipline` — with no plan files,
+ * citing the PRs and stamping the status ARE the ritual), and a badge on it
+ * would spend the signal's credibility on correctly-closed work. See
+ * `planBodySignal.showsBodySignal`.
+ */
+export function isTerminalPlanStatus(status?: string | null): boolean {
+  const normalised = (status ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return TERMINAL_STATUSES.has(normalised);
 }
 
 /**

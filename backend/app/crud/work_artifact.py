@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -272,6 +273,61 @@ async def list_artifacts(
         .all()
     )
     return list(rows), total
+
+
+async def count_artifacts(
+    db: AsyncSession, *, org_id: UUID | None, kind: str | None = None
+) -> int:
+    """How many artifacts this organization holds, optionally of one kind.
+
+    Exists for the callers that need the CORPUS SIZE and no rows —
+    ``/operations/plans``' body-signal join asks "does this org hold any
+    ``plan`` artifact at all?", and answering it through
+    :func:`list_artifacts` would pay for a page of rows it discards. Zero here
+    is a measurement, which is the whole point: it is what distinguishes "this
+    slug has no body" from "this principal's org has no corpus to miss in".
+    """
+    stmt = select(func.count()).select_from(WorkArtifact).where(_org_scope(org_id))
+    if kind is not None:
+        stmt = stmt.where(WorkArtifact.kind == kind)
+    return int((await db.execute(stmt)).scalar_one())
+
+
+async def work_unit_slugs_with_artifacts(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    slugs: Sequence[str],
+    kind: str,
+) -> set[str]:
+    """Which of ``slugs`` have an artifact of ``kind`` in this org's bucket.
+
+    ONE bounded query over a whole page of work units, never one lookup per
+    row: the ``/plans`` console fetches up to coord's 500-row clamp, and 500
+    round trips per render is not a join, it is a loop.
+
+    ``work_unit_slug`` is populated only for ``kind == "plan"`` (the runner's
+    ``body_push`` writes the stem for that kind and NULL for every other), so
+    the kind filter is what makes the answer mean "has a plan document"
+    rather than "is mentioned by some artifact".
+
+    Returns the slugs that MATCHED. A slug absent from the result is a miss,
+    which is not the same claim as "has no body" — see
+    :mod:`app.services.plan_body_signal` for the three-valued reading the
+    caller must apply on top of it.
+    """
+    if not slugs:
+        return set()
+    stmt = (
+        select(WorkArtifact.work_unit_slug)
+        .where(
+            _org_scope(org_id),
+            WorkArtifact.kind == kind,
+            WorkArtifact.work_unit_slug.in_(list(slugs)),
+        )
+        .distinct()
+    )
+    return {s for s in (await db.execute(stmt)).scalars().all() if s}
 
 
 async def get_artifact(
