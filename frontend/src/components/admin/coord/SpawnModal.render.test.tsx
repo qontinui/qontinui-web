@@ -793,3 +793,166 @@ describe("SpawnModal account roster — states that must not be invented", () =>
     ).toMatch(/active now/i);
   });
 });
+
+/**
+ * The body guard — plan `2026-09-02-bodyless-work-units-…` Phase 3.
+ *
+ * An anchored spawn points a session at a coord work unit, and a work unit is
+ * a slug with no body. The incident: an operator one-clicked Spawn on a
+ * bodyless row, wrote "implement this plan", and a machine account burned a
+ * session discovering there was none.
+ *
+ * Two properties are pinned throughout, and they pull in opposite directions
+ * on purpose:
+ *
+ *   1. the guard FIRES, with honest words, on exactly the rows that earn it;
+ *   2. it is INVISIBLE everywhere else — including on a row the backend never
+ *      annotated, because "not told" is silence about a document rather than
+ *      evidence of one, and a new interruption on a path that never had one is
+ *      its own regression.
+ */
+describe("SpawnModal body guard", () => {
+  const WORK_UNIT = { status: "in_progress", title: "A filed defect" };
+
+  function renderWithWorkUnit(workUnit?: Record<string, unknown>) {
+    fetchMock.mockResolvedValue(rosterOf([]));
+    return render(
+      <SpawnModal
+        open
+        onClose={() => {}}
+        planSlug="2026-09-01-example-plan"
+        initialPhase="1"
+        {...(workUnit ? { workUnit } : {})}
+      />
+    );
+  }
+
+  it("confirms on a proven absence and gates submit until acknowledged", async () => {
+    const user = userEvent.setup();
+    renderWithWorkUnit({ ...WORK_UNIT, has_body: false });
+
+    const notice = await screen.findByTestId("coord-spawn-body-confirm");
+    expect(notice).toHaveAttribute("data-risk", "absent");
+    expect(
+      screen.getByTestId("coord-spawn-body-confirm-absent")
+    ).toHaveTextContent("This work unit has no plan document.");
+    // The shared chip travels with it, so the modal and `/plans` cannot
+    // describe the same work unit differently.
+    expect(
+      screen.getByTestId("coord-plan-has-body-false-spawn")
+    ).toHaveTextContent("no plan document");
+
+    const submit = screen.getByTestId(
+      "coord-spawn-submit"
+    ) as HTMLButtonElement;
+    // Fill everything coord actually requires; the prompt is already seeded.
+    await user.type(screen.getByTestId("coord-spawn-device-input"), DEVICE);
+    await user.click(screen.getByTestId("coord-spawn-repo-qontinui-web"));
+    expect(submit.disabled).toBe(true);
+
+    // One click, never a refusal: spawning a session to AUTHOR the plan is a
+    // legitimate move and is how the originating incident was resolved.
+    await user.click(screen.getByTestId("coord-spawn-body-ack"));
+    expect(submit.disabled).toBe(false);
+  });
+
+  it("seeds the prompt to AUTHOR the plan, not to implement it", async () => {
+    renderWithWorkUnit({ ...WORK_UNIT, has_body: false });
+
+    const prompt = (await screen.findByTestId(
+      "coord-spawn-initial-prompt"
+    )) as HTMLTextAreaElement;
+    // The incident in one assertion: a blank prompt is what "implement this
+    // plan" got typed into.
+    expect(prompt.value).toContain("AUTHOR the plan");
+    expect(prompt.value).not.toMatch(/implement/i);
+    expect(prompt.value).toContain("2026-09-01-example-plan");
+    expect(prompt.value).toContain("A filed defect");
+    // ...and the operator is told why it arrived pre-filled, so it does not
+    // read as a field they must not touch.
+    expect(
+      screen.getByTestId("coord-spawn-prompt-seed-notice")
+    ).toHaveTextContent(/Edit it freely/);
+  });
+
+  it("words the unknown arm as UNPROVEN, never as a proven absence", async () => {
+    renderWithWorkUnit({
+      ...WORK_UNIT,
+      has_body: "unknown",
+      body_provenance: "never_scanned",
+      body_unknown_reason: "capture_never_configured",
+    });
+
+    const notice = await screen.findByTestId("coord-spawn-body-confirm");
+    expect(notice).toHaveAttribute("data-risk", "unproven");
+    expect(notice).toHaveTextContent(/UNPROVEN, not proof of absence/);
+    expect(notice).not.toHaveTextContent("This work unit has no plan document.");
+    // The arm is named, not just the ignorance.
+    expect(notice).toHaveTextContent(/ever been written/);
+    // The chip is the amber unknown, not the settled one.
+    expect(
+      screen.getByTestId("coord-plan-has-body-unknown-spawn")
+    ).toHaveTextContent("document unknown");
+    expect(screen.queryByTestId("coord-plan-has-body-false-spawn")).toBeNull();
+
+    // ...and the prompt sends the session to LOOK first.
+    const prompt = screen.getByTestId(
+      "coord-spawn-initial-prompt"
+    ) as HTMLTextAreaElement;
+    expect(prompt.value).toContain("Look for the plan FIRST");
+    expect(prompt.value).toContain("AUTHOR it");
+  });
+
+  it.each([
+    [
+      "unknown + scanned — two weak signals that DISAGREE",
+      { has_body: "unknown", body_provenance: "scanned" },
+    ],
+    [
+      "unknown + scanned_locally",
+      { has_body: "unknown", body_provenance: "scanned_locally" },
+    ],
+    ["a document that exists", { has_body: true }],
+    ["a row the backend never annotated", {}],
+  ])("stays silent on %s", async (_label, signal) => {
+    renderWithWorkUnit({ ...WORK_UNIT, ...signal });
+
+    await screen.findByTestId("coord-spawn-device-input");
+    expect(screen.queryByTestId("coord-spawn-body-confirm")).toBeNull();
+    expect(screen.queryByTestId("coord-spawn-body-ack")).toBeNull();
+    // The prompt is left blank, exactly as it always was.
+    expect(
+      (screen.getByTestId("coord-spawn-initial-prompt") as HTMLTextAreaElement)
+        .value
+    ).toBe("");
+  });
+
+  it("stays silent on a TERMINAL unit, however bodyless", async () => {
+    renderWithWorkUnit({
+      status: "shipped",
+      has_body: false,
+      body_provenance: "never_scanned",
+    });
+
+    await screen.findByTestId("coord-spawn-device-input");
+    expect(screen.queryByTestId("coord-spawn-body-confirm")).toBeNull();
+  });
+
+  it("changes nothing for a caller that passes no work unit at all", async () => {
+    // Every call site before this change, and every build whose backend
+    // predates the fields.
+    const user = userEvent.setup();
+    renderWithWorkUnit();
+
+    const input = await screen.findByTestId("coord-spawn-device-input");
+    expect(screen.queryByTestId("coord-spawn-body-confirm")).toBeNull();
+
+    const submit = screen.getByTestId(
+      "coord-spawn-submit"
+    ) as HTMLButtonElement;
+    await user.type(input, DEVICE);
+    await fillNonDeviceRequirements(user);
+    // No acknowledgement exists, so none can be required.
+    expect(submit.disabled).toBe(false);
+  });
+});

@@ -8,7 +8,7 @@
  * console and send a session at a plan that does not exist. That happened.
  *
  * Plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`,
- * Phases 1, 2 and 5a. **The derivation is the backend's** — one wire field
+ * Phases 1, 2, 3 and 5a. **The derivation is the backend's** — one wire field
  * that the list, the detail route and the Phase 3 spawn guard all read, rather
  * than three consumers each re-implementing "is `metadata.source_path`
  * present" and disagreeing the first time a value is added to it. This module
@@ -47,7 +47,18 @@
  * first two steps ARE the ritual. Badging all 21 of them would spend the
  * signal on correctly-closed work. See {@link showsBodySignal} — the FIELDS are
  * still computed and still on the wire, so a later consumer is not blocked;
- * only the render is suppressed.
+ * only the render is suppressed. The spawn guard below inherits that
+ * suppression, for the same reason.
+ *
+ * ## The spawn guard (Phase 3)
+ *
+ * The badges make bodylessness visible on the registry; they do not stop the
+ * one-click path that caused the incident. {@link deriveSpawnBodyConfirm} is
+ * the single predicate BOTH spawn entry points read — `/plans`' row action and
+ * `/spawn`'s modal — so "does this deserve a confirm?" is decided once rather
+ * than twice, differently. {@link seedSpawnPrompt} is the other half:
+ * `initial_prompt` is REQUIRED by coord, and it being blank is what let an
+ * operator hand-write *"implement this plan"* at a slug with no plan.
  */
 
 import { INERT, UNKNOWN_AMBER } from "@/components/console/statusRow";
@@ -236,6 +247,177 @@ export function describeHasBody(
  */
 export function showsBodySignal(plan: Pick<CoordPlanRow, "status">): boolean {
   return !isTerminalPlanStatus(plan.status);
+}
+
+// ============================================================================
+// The spawn guard (Phase 3) — the incident this plan was written for.
+// ============================================================================
+
+/**
+ * Which arm of the spawn confirm fired, and at what strength.
+ *
+ * The two are DIFFERENT claims and must never be worded alike. `absent` is a
+ * statement of fact the corpus supports; `unproven` is a statement of
+ * ignorance. Rendering the second in the words of the first is exactly the
+ * unprovable-answer-as-proven defect this plan exists to close, so the arm is
+ * carried as data and the copy is derived from it — never inferred from the
+ * prose later.
+ */
+export type SpawnBodyRisk = "absent" | "unproven";
+
+/** The work-unit fields the guard reads. Nothing else about the row matters. */
+export type SpawnBodySubject = Pick<
+  CoordPlanRow,
+  "status" | "has_body" | "body_provenance" | "body_unknown_reason"
+>;
+
+/** The words a spawn surface puts in front of the operator before spawning. */
+export interface SpawnBodyConfirm {
+  risk: SpawnBodyRisk;
+  /** One line, stated at exactly the strength the evidence supports. */
+  headline: string;
+  /** What the spawn will actually cost, and why we can say so. */
+  detail: string;
+  /** The label on the control that proceeds anyway. */
+  acknowledge: string;
+  /** Why the initial prompt arrived pre-filled — see {@link seedSpawnPrompt}.
+   *  A seeded field with no explanation reads as a field the operator must
+   *  not touch, and this one they should. */
+  promptNote: string;
+  /** Stable hook for tests and page specs. */
+  testId: string;
+}
+
+/**
+ * Should this spawn be confirmed first — and if so, on which arm?
+ *
+ * `null` means spawn exactly as the surface always did. The six inputs and
+ * their answers, all deliberate:
+ *
+ * | `has_body` | `body_provenance` | verdict |
+ * |---|---|---|
+ * | `true` | anything | `null` — there is a document |
+ * | `false` | anything | `absent` — a join miss against a populated corpus |
+ * | `"unknown"` | `never_scanned` | `unproven` — two weak signals AGREEING |
+ * | `"unknown"` | `scanned` / `scanned_locally` | `null` — they disagree |
+ * | anything | anything, TERMINAL status | `null` — see {@link showsBodySignal} |
+ * | absent | anything | `null` — this build was not told |
+ *
+ * The two `null`s at the bottom are the ones worth defending. Two weak
+ * signals that DISAGREE are not grounds to interrupt an operator: a scanner
+ * saw a file, the corpus cannot confirm it, and neither of those is evidence
+ * of absence. And a MISSING field is unknown about the field — not evidence
+ * of a body, but not evidence against one either — so it must not mint a new
+ * interruption on a path that never had one.
+ *
+ * This is **not a block** in any arm. Spawning a session *to author* the plan
+ * from good metadata is a legitimate and common move — it is how the
+ * originating incident was actually resolved. The goal is to make
+ * bodylessness visible, never to make the cheap path unavailable (§9).
+ */
+export function deriveSpawnBodyConfirm(
+  plan: SpawnBodySubject | null | undefined
+): SpawnBodyConfirm | null {
+  if (!plan) return null;
+  // A `shipped` unit that never had a document is not a defect, so it is not
+  // a spawn worth interrupting either. Same rule as the badges, same reason.
+  if (!showsBodySignal(plan)) return null;
+
+  if (plan.has_body === false) {
+    return {
+      risk: "absent",
+      headline: "This work unit has no plan document.",
+      detail:
+        "The plan library holds no artifact for this slug, and capture is " +
+        "live for a populated corpus — so this absence is evidence, not a " +
+        "gap in what we can see. The session you are about to spawn will " +
+        "have to author the plan before it can implement anything.",
+      acknowledge: "I understand — spawn a session to author the plan",
+      promptNote:
+        "Seeded because this work unit has no plan document: it tells the " +
+        "session to author one from the unit's metadata rather than to " +
+        "implement a plan that does not exist. Edit it freely.",
+      testId: "coord-spawn-body-confirm-absent",
+    };
+  }
+
+  if (plan.has_body === "unknown" && plan.body_provenance === "never_scanned") {
+    const why = plan.body_unknown_reason
+      ? UNKNOWN_REASON_COPY[plan.body_unknown_reason]
+      : null;
+    return {
+      risk: "unproven",
+      headline: "No plan document could be confirmed for this work unit.",
+      detail:
+        `The plan library could not settle it${why ? ` — ${why}` : ""}, and ` +
+        "no plan scanner has ever seen a file for this unit either. That is " +
+        "UNPROVEN, not proof of absence: the document may exist and be " +
+        `invisible from here. ${SCREEN_CAVEAT} The session may find a plan; ` +
+        "it may instead have to author one.",
+      acknowledge: "I understand — spawn a session that may have to author it",
+      promptNote:
+        "Seeded because no plan document could be confirmed for this work " +
+        "unit: it tells the session to look for the plan first and to author " +
+        "one only if there is none. Edit it freely.",
+      testId: "coord-spawn-body-confirm-unproven",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * The initial prompt a spawn surface seeds when the plan may not exist.
+ *
+ * `initial_prompt` is REQUIRED by coord, so the operator writes one either
+ * way; the only question is what the blank one says. The originating incident
+ * was an operator hand-writing *"implement this plan"* at a slug with no plan,
+ * and the session working out for itself that it had to author one instead.
+ * The console should not require that.
+ *
+ * The two arms differ in the same way {@link deriveSpawnBodyConfirm}'s do —
+ * `absent` sends the session straight to authoring, `unproven` sends it to
+ * look first — because a prompt that asserts absence we cannot prove would
+ * make the session skip a plan that is really there.
+ *
+ * Only metadata the caller actually HAS reaches the text: the title line is
+ * omitted rather than invented, and no phase, status or finding is restated
+ * here. The session is pointed AT the work unit's metadata instead, which is
+ * the copy that survives the metadata changing.
+ */
+export function seedSpawnPrompt(
+  risk: SpawnBodyRisk,
+  workUnit: { slug: string; title?: string }
+): string {
+  const slug = workUnit.slug.trim();
+  const title = (workUnit.title ?? "").trim();
+  const header = [
+    `Work unit: ${slug}`,
+    ...(title === "" ? [] : [`Title: ${title}`]),
+  ].join("\n");
+
+  if (risk === "absent") {
+    return (
+      `${header}\n\n` +
+      "There is NO plan document for this work unit — the plan library holds " +
+      "no artifact for it. Do not spend the session hunting for one.\n\n" +
+      "Your job is to AUTHOR the plan from the work unit's own metadata: " +
+      "read the unit in coord (its metadata carries the findings of whoever " +
+      "filed it), then write the plan from that. Vet it before any code is " +
+      "written."
+    );
+  }
+
+  return (
+    `${header}\n\n` +
+    "Whether a plan document exists for this work unit is UNKNOWN — no plan " +
+    "scanner has ever seen a file for it, and the plan library could not " +
+    "settle it either way.\n\n" +
+    "Look for the plan FIRST, by this exact slug, in the plan library and in " +
+    "the plan corpus. If you find one, work it. If you do not, AUTHOR it " +
+    "from the work unit's own metadata in coord (its metadata carries the " +
+    "findings of whoever filed it) rather than reporting the plan as missing."
+  );
 }
 
 // ============================================================================
