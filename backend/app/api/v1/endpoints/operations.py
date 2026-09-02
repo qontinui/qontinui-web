@@ -9516,6 +9516,26 @@ async def _write_cognito_group_audit(
         )
 
 
+def _invalid_parameter_http(exc: CognitoInvalidParameterError) -> HTTPException:
+    """400 carrying the malformed argument's real reason.
+
+    ``CognitoInvalidParameterError`` is a SUBCLASS of ``CognitoAdminError``,
+    so every ``except CognitoInvalidParameterError`` arm below must sit
+    BEFORE that route's generic arm — otherwise the generic one swallows it
+    and answers 502, telling the operator AWS is broken when the input was
+    simply invalid. 502 stays reserved for a genuinely broken upstream, which
+    is the only thing that makes it a useful signal.
+
+    Redundant with ``_cognito_http_error``'s own ``CognitoInvalidParameterError``
+    branch for any route that only catches the generic ``CognitoAdminError``
+    (``validated_group_name`` already keeps a malformed PATH group name from
+    ever reaching AWS on the four membership routes) — kept as an explicit,
+    load-bearing arm anyway so a caller that raises this type is answered
+    correctly even if a future edit reorders or drops that branch.
+    """
+    return HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get("/coord/cognito/groups")
 async def list_cognito_groups(
     current_user: UserModel = Depends(require_admin),
@@ -10028,9 +10048,10 @@ async def delete_cognito_group(
     ),
     db: AsyncSession = Depends(get_async_db),
 ) -> dict[str, Any]:
-    """Delete a Cognito group. 404 if no such group. Superuser-gated,
-    rate-limited (the lowest limit of the four — this is the only
-    irreversible one), and audited with the acting superuser.
+    """Delete a Cognito group. 404 if no such group, 400 if the name cannot
+    satisfy Cognito's ``groupName`` constraint (``validated_group_name``).
+    Superuser-gated, rate-limited (the lowest limit of the four — this is
+    the only irreversible one), and audited with the acting superuser.
 
     Refuses **409** before touching AWS when the delete would take
     something else down with it — see the module comment above
@@ -10038,6 +10059,12 @@ async def delete_cognito_group(
     why the harm is deferred to each operator's next login rather than
     swept immediately.
     """
+    # No handler-level name check needed here: `group_name` already came
+    # through the `validated_group_name` dependency above, which runs BEFORE
+    # this body — and so before the guards below ever spend a coord
+    # round-trip on a name Cognito could never have held. Without that
+    # ordering, `my tenant-home` would trip Guard 2 and ask the operator to
+    # `allow_home_group` their way past a group that cannot exist.
     # The bearer is what authenticates the coord read below; `require_admin`
     # resolves no coord tenant and so never captures it.
     capture_caller_bearer(request)
@@ -10110,6 +10137,9 @@ async def delete_cognito_group(
 
     try:
         await asyncio.to_thread(cognito_admin.delete_group, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10154,6 +10184,9 @@ async def list_cognito_group_users(
     """
     try:
         users = await asyncio.to_thread(cognito_admin.list_users_in_group, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10181,7 +10214,8 @@ async def add_cognito_group_user(
     """Add a user (resolved by email) to a Cognito group. Superuser-gated,
     rate-limited, audited.
 
-    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    404 if no user has that email; 409 if the email is ambiguous (>1 match);
+    400 if the email or the group name is one Cognito rejects as malformed.
     """
     try:
         username = await asyncio.to_thread(
@@ -10189,6 +10223,11 @@ async def add_cognito_group_user(
         )
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`. An email
+        # Cognito will not accept in a `ListUsers` filter is the caller's
+        # typo, not a broken pool.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10201,6 +10240,9 @@ async def add_cognito_group_user(
 
     try:
         await asyncio.to_thread(cognito_admin.add_user_to_group, username, group_name)
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10237,7 +10279,8 @@ async def remove_cognito_group_user(
     """Remove a user (resolved by email) from a Cognito group.
     Superuser-gated, rate-limited, audited.
 
-    404 if no user has that email; 409 if the email is ambiguous (>1 match).
+    404 if no user has that email; 409 if the email is ambiguous (>1 match);
+    400 if the email or the group name is one Cognito rejects as malformed.
     """
     try:
         username = await asyncio.to_thread(
@@ -10245,6 +10288,11 @@ async def remove_cognito_group_user(
         )
     except CognitoAmbiguousEmailError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`. An email
+        # Cognito will not accept in a `ListUsers` filter is the caller's
+        # typo, not a broken pool.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
@@ -10259,6 +10307,9 @@ async def remove_cognito_group_user(
         await asyncio.to_thread(
             cognito_admin.remove_user_from_group, username, group_name
         )
+    except CognitoInvalidParameterError as exc:
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,
