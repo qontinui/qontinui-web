@@ -83,10 +83,18 @@ _MAX_KID_CHARS = 64
 # 30s mirrors coord's own `auth_sso::FORCED_REFRESH_COOLDOWN`, which exists
 # for exactly this reason. The sibling `cognito_jwks` no longer lacks a
 # cooldown — web #1076 gave it this same 30s — so keep the two in step if
-# this number moves. They are NOT yet equivalent, though: that door measures
-# the window on `time.monotonic` and this one still measures it on the wall
-# clock, so only one of them is immune to a clock step. Closing that is its
-# own row on plan `2026-08-25-coord-jwt-kid-collides-across-environments`.
+# this number moves. Both now measure the window on `time.monotonic`, so
+# neither is fooled by a clock step; see `_fetch`'s docstring for why that
+# clock and not the wall one.
+#
+# What still differs is the NEVER-FORCED sentinel, not the clock. This door
+# spells it `None` and guards on `is not None`; `cognito_jwks` spells it
+# `0.0`, which on `monotonic` is a live reading a few seconds after host
+# boot rather than a value far in the past — so its first kid miss in that
+# window reads as "already refetched recently" and skips the one forced
+# re-fetch that recovers from a rotation. That is the open half of the row
+# on plan `2026-08-25-coord-jwt-kid-collides-across-environments`; do not
+# read this paragraph as describing THIS door.
 _FORCED_REFRESH_COOLDOWN_S = 30
 
 
