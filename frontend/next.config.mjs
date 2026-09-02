@@ -207,6 +207,17 @@ const nextConfig = {
         destination: '/operations',
         permanent: true,
       },
+      // Plan `2026-08-20-fleet-served-agent-skills.md` Phase 3:
+      // `/settings/agent-commands` was an ACCOUNT-only editor over a corpus
+      // that now has a fleet layer as well, and the operator console owns both.
+      // Retired in the same change that added `/admin/coord/agent-commands` —
+      // two editors over one corpus is how the two diverge. The old feature dir
+      // is deleted, so this is the only thing mounted at the old path.
+      {
+        source: '/settings/agent-commands',
+        destination: '/admin/coord/agent-commands',
+        permanent: true,
+      },
       // Plan 2026-08-25-coord-console-intent-and-devops-sections Phase 4:
       // /admin/coord/fleet became /admin/coord/pipeline. The tab has been
       // labelled "Pipeline" since the 2026-07-14 redesign, and after that

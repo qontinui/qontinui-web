@@ -13,7 +13,8 @@
  *
  *   Pipeline · Pull Requests · Gates · Alerts(•N) · Notifications(•N)
  *                                                   ← direct, daily
- *   Work ▾    Plans / Plan Library / Questions / Agents / History / Lands
+ *   Work ▾    Plans / Plan Library / Questions / Agents / Agent Commands /
+ *             Agent Skills / History / Lands
  *   Merge ▾   Pull Decisions / Automation Rules / Gate Clearance /
  *             Merge Settings°
  *   Intent ▾  Prompt Documents / Policies / Policy Edit Review
@@ -91,11 +92,13 @@ import {
   NotebookText,
   Package,
   Plug,
+  Puzzle,
   Rocket,
   Scale,
   ScrollText,
   Server,
   ShieldCheck,
+  SquareTerminal,
   Stethoscope,
   UserCog,
   Users,
@@ -246,6 +249,32 @@ const GROUPS: NavGroup[] = [
         label: "Agents",
         icon: ScrollText,
         testId: "coord-nav-agents",
+      },
+      {
+        // Sits beside Agents deliberately: Agents is the per-agent registry,
+        // these two are the TEXT those agents are handed at spawn. Filing them
+        // under "Merge" — where the other authoring surfaces (Policies, Prompt
+        // Documents) happen to live — would put agent tooling behind a label
+        // that actively misdirects; nothing about a slash command is about
+        // merging. The direct row is at its five-tab cap (see the header note),
+        // so this group is where they belong. Plan
+        // `2026-08-20-fleet-served-agent-skills.md`, Phase 3.
+        //
+        // Distinct path from `/admin/coord/agents`, and neither of the two
+        // prefixes the other: `isLeafActive` matches `pathname === href ||
+        // pathname.startsWith(href + "/")`, so `/admin/coord/agent-commands`
+        // never satisfies `/admin/coord/agents/` and the pair cannot
+        // double-highlight — the same reasoning as the Onboarding pair.
+        href: "/admin/coord/agent-commands",
+        label: "Agent Commands",
+        icon: SquareTerminal,
+        testId: "coord-nav-agent-commands",
+      },
+      {
+        href: "/admin/coord/agent-skills",
+        label: "Agent Skills",
+        icon: Puzzle,
+        testId: "coord-nav-agent-skills",
       },
       {
         href: "/admin/coord/prompt-injections",

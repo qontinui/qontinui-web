@@ -865,6 +865,90 @@ describe("CoordNav", () => {
     ).not.toBeInTheDocument();
   });
 
+
+  // ---------------------------------------------------------------------------
+  // Agent Commands / Agent Skills — plan `2026-08-20-fleet-served-agent-skills`,
+  // Phase 3. Both live in WORK beside Agents, not in Merge: filing agent tooling
+  // under a group labelled "Merge" fails the discoverability gate.
+  // ---------------------------------------------------------------------------
+
+
+  // ---------------------------------------------------------------------------
+  // Agent Commands / Agent Skills — plan `2026-08-20-fleet-served-agent-skills`,
+  // Phase 3. Both live in WORK beside Agents, not in Merge: filing agent tooling
+  // under a group labelled "Merge" fails the discoverability gate.
+  // ---------------------------------------------------------------------------
+
+  it("offers Agent Commands and Agent Skills in the Work group, beside Agents", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-work"));
+    const commands = await screen.findByTestId("coord-nav-agent-commands");
+    expect(commands).toBeVisible();
+    expect(commands).toHaveTextContent("Agent Commands");
+    expect(commands).toHaveAttribute("href", "/admin/coord/agent-commands");
+
+    const skills = screen.getByTestId("coord-nav-agent-skills");
+    expect(skills).toBeVisible();
+    expect(skills).toHaveTextContent("Agent Skills");
+    expect(skills).toHaveAttribute("href", "/admin/coord/agent-skills");
+
+    // Beside the existing Agents item, in the same group.
+    expect(screen.getByTestId("coord-nav-agents")).toBeVisible();
+  });
+
+
+  it("keeps agent tooling out of the Merge group", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-merge"));
+    // Control: prove the Merge group actually OPENED, so the two absence
+    // assertions below mean "not in Merge" rather than "nothing rendered yet".
+    // This was `coord-nav-policies` when the test was written; plan
+    // `2026-08-25-coord-console-intent-and-devops-sections` Phase 3 moved
+    // Policies into the new Intent group, so the control now names an item
+    // that is still in Merge.
+    await screen.findByTestId("coord-nav-pull-decisions");
+    expect(
+      screen.queryByTestId("coord-nav-agent-commands")
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("coord-nav-agent-skills")
+    ).not.toBeInTheDocument();
+  });
+
+
+  it("shows both agent-tooling items to a plain member", async () => {
+    const user = userEvent.setup();
+    render(<CoordNav />);
+
+    await user.click(screen.getByTestId("coord-nav-group-work"));
+    // The corpus is READABLE by any member; only a fleet-layer WRITE is
+    // superuser-gated, and that gate lives on the page, not on the nav.
+    expect(await screen.findByTestId("coord-nav-agent-commands")).toBeVisible();
+    expect(screen.getByTestId("coord-nav-agent-skills")).toBeVisible();
+  });
+
+
+  // A FOURTH `/admin/coord/agent*` href landed on main while this branch was
+  // open (`agent-registry`, in ACCESS not Work). It shares the same string
+  // prefix as the Work trio and is the exact shape the test above exists to
+  // catch, so it gets pinned rather than assumed: no Work crumb may claim it.
+  it("leaves every Work crumb alone on /admin/coord/agent-registry", () => {
+    pathname = "/admin/coord/agent-registry";
+    render(<CoordNav />);
+
+    for (const id of [
+      "coord-nav-agents-active",
+      "coord-nav-agent-commands-active",
+      "coord-nav-agent-skills-active",
+    ]) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+  });
+
   describe("polling is gated on tab visibility", () => {
     /**
      * The nav renders on every console page, so these two badges are the
