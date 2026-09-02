@@ -152,6 +152,20 @@ API_PREFIX = "/api/v1/operations"
 
 
 class TestPlansEndpoints:
+    """The two read routes now SHAPE their answer, so they make two calls.
+
+    Plan ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans``
+    annotates each work unit with whether it actually has a plan document,
+    which needs the tenant's ``plan_capture`` dial — a SECOND coord read,
+    issued after the work-unit page. So the assertions below read
+    ``call_args_list[0]`` (the work-unit read, which is what these tests are
+    about) rather than ``call_args`` (the LAST call, now the dial), and the
+    body compares coord's own keys rather than the whole dict.
+
+    The signals themselves are covered by ``test_operations_plans_proxy.py``
+    and ``test_plan_body_signal.py``.
+    """
+
     def test_list_plans(self, client: TestClient):
         # The "Plans" dashboard now proxies coord's generic work-unit
         # surface; the list envelope is `{work_units: [...]}`.
@@ -174,12 +188,18 @@ class TestPlansEndpoints:
             resp = client.get(f"{API_PREFIX}/plans?status=in_progress")
 
         assert resp.status_code == 200
-        assert resp.json() == coord_payload
-        called_url = instance.get.call_args.args[0]
+        body = resp.json()
+        assert body["limit"] == coord_payload["limit"]
+        assert body["offset"] == coord_payload["offset"]
+        assert [r["slug"] for r in body["work_units"]] == [
+            "2026-05-19-coordinator-production-readiness"
+        ]
+        work_unit_call = instance.get.call_args_list[0]
+        called_url = work_unit_call.args[0]
         assert called_url.endswith("/coord/work-units")
-        called_params = instance.get.call_args.kwargs.get("params", {})
+        called_params = work_unit_call.kwargs.get("params", {})
         assert called_params.get("status") == "in_progress"
-        _assert_tenant_header_forwarded(instance.get.call_args)
+        _assert_tenant_header_forwarded(work_unit_call)
 
     def test_list_plans_no_filters(self, client: TestClient):
         mock_resp = _mock_response(
@@ -191,6 +211,10 @@ class TestPlansEndpoints:
             _configure_mock_client(MockClient, instance)
             resp = client.get(f"{API_PREFIX}/plans")
         assert resp.status_code == 200
+        # An EMPTY page annotates nothing, so this route still makes exactly
+        # one call — the dial read is not paid for when there is nothing to
+        # explain.
+        assert instance.get.await_count == 1
         called_url = instance.get.call_args.args[0]
         assert called_url.endswith("/coord/work-units")
         called_params = instance.get.call_args.kwargs.get("params")
@@ -214,10 +238,14 @@ class TestPlansEndpoints:
             _configure_mock_client(MockClient, instance)
             resp = client.get(f"{API_PREFIX}/plans/my-plan")
         assert resp.status_code == 200
-        assert resp.json() == coord_payload
-        called_url = instance.get.call_args.args[0]
+        body = resp.json()
+        assert body["recent_history"] == []
+        assert body["work_unit"]["slug"] == "my-plan"
+        assert body["work_unit"]["title"] == "My Plan"
+        work_unit_call = instance.get.call_args_list[0]
+        called_url = work_unit_call.args[0]
         assert called_url.endswith("/coord/work-units/my-plan")
-        _assert_tenant_header_forwarded(instance.get.call_args)
+        _assert_tenant_header_forwarded(work_unit_call)
 
     def test_get_plan_history(self, client: TestClient):
         # Work-unit history rows: {from_status?, to_status, transitioned_at,

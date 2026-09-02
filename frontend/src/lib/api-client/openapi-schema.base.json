@@ -84967,7 +84967,7 @@
     },
     "/api/v1/operations/plans": {
       "get": {
-        "description": "List work-units from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}``.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
+        "description": "List work-units from coord, annotated with the two body signals.\n\nProxies coord ``GET /coord/work-units``; the response envelope is\n``{\"work_units\": [...], \"limit\": N, \"offset\": N}`` \u2014 plus, when the page\nholds rows, a ``body_signal`` block, and per row ``body_provenance``,\n``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`\nand :mod:`app.services.plan_body_signal`.\n\nThis used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:\ncoord's list already carries ``metadata`` per row, but a verbatim\npass-through has no derivation hook, and the alternative \u2014 deriving in the\nReact components \u2014 is one rule implemented three times (list, detail,\nspawn guard) that would disagree with itself the first time a value was\nadded to it.\n\nThe signals are computed only when there are rows to annotate. An empty\npage has nothing to explain, and paying a coord round trip plus two\nqueries to say so about no rows is waste, not honesty.\n\ncoord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;\nthis proxy simply never forwarded them, so the console could neither page\npast the first window nor ask for a slug subset. Forwarding them needs no\ncoord change.\n\n``exclude_slug_prefix`` is the one genuinely new parameter, and it ships\nahead of its coord half deliberately. ``ListQuery`` is\n``#[derive(Debug, Deserialize, Default)]`` with ``#[serde(default)]`` on\nevery field and no ``deny_unknown_fields``, so a coord that does not know\nthe parameter **ignores** it and returns the unfiltered page rather than\nerroring. Callers must therefore treat the exclusion as best-effort until\ncoord's half deploys \u2014 a page that renders shepherd rows is a coord that\nhas not caught up, not a bug here. (coord's side now documents that\npermissiveness as a contract rather than leaving it an accident; drop this\nparagraph once that build is deployed everywhere.)\n\nBoth prefix filters take ``min_length=1``. An empty ``exclude_slug_prefix``\nwould reach coord as ``slug NOT LIKE '' || '%'`` \u2014 i.e. ``NOT LIKE '%'``,\nwhich excludes EVERY row. A console that forwarded an empty input box would\nthen render a blank list, and the paragraph above tells the operator to\nread an unexpected page as \"coord has not caught up\". Rejecting the empty\nstring here is the honest failure; coord normalizes it as well, so neither\nside depends on the other for this.",
         "operationId": "api_v1_operations_plans_get",
         "parameters": [
           {
@@ -85084,6 +85084,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Coord Plans",
         "tags": [
           "operations"
@@ -85092,7 +85100,7 @@
     },
     "/api/v1/operations/plans/{slug}": {
       "get": {
-        "description": "Return a single work-unit from coord (tenant-scoped).\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...]}``.",
+        "description": "Return a single work-unit from coord, annotated with the body signals.\n\nProxies coord ``GET /coord/work-units/{slug}``; the response envelope\nis ``{\"work_unit\": {...}, \"recent_history\": [...], \"citations\": [...]}``.\n\nThe same annotation the list route applies, through the same helper and\nover a one-row page: the detail surface must not be able to disagree with\nthe row the operator clicked to reach it.",
         "operationId": "api_v1_operations_plans_slug_get",
         "parameters": [
           {
@@ -85127,6 +85135,14 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Coord Plan",
         "tags": [
           "operations"

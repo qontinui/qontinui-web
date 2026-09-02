@@ -63,6 +63,7 @@ from websockets.asyncio.client import connect as websockets_connect  # noqa: E40
 from app.api.admin_deps import require_admin
 from app.api.deps import (
     get_async_db,
+    get_audit_actor_user_optional,
     get_current_active_user_async,
     get_current_user_from_ws,
 )
@@ -103,6 +104,12 @@ from app.services.coord_identity import (
     get_coord_identity_for_token,
 )
 from app.services.dev_dashboard_service import get_fleet_registry
+from app.services.plan_body_signal import (
+    PLAN_CAPTURE_DOMAIN,
+    CaptureDial,
+    derive_body_provenance,
+    resolve_body_knowledge,
+)
 from app.websockets.safe_send import safe_close, safe_send_json
 
 # Timeout for coord proxy reads. The merge queue is a small JSON payload
@@ -3432,6 +3439,106 @@ async def get_dev_action_detail(
 # ``/plans*`` paths so the frontend API client doesn't churn; only the
 # coord UPSTREAM path moves to the operator-readable ``/coord/work-units*``
 # surface (operator TenantId/Cognito auth — same bearer forwarding).
+#
+# ...and that framing is exactly the defect plan
+# ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`` closes.
+# A work unit has no body. The UX asserted a document the data layer never
+# carried, so an operator could one-click Spawn on a row for a plan that does
+# not exist. These two read routes are the ONLY place in the fleet that can
+# see both layers — coord's work units and qontinui-web's own
+# ``agent.work_artifacts`` — so they stop being verbatim pass-throughs and
+# start SHAPING the response with two body signals. The derivation itself,
+# and the reason the verdict is three-valued, live in
+# :mod:`app.services.plan_body_signal`; this module owns only the two reads it
+# needs (coord's ``plan_capture`` dial, and the work-unit page itself).
+
+
+def _capture_dial_from_policy(payload: Any) -> CaptureDial:
+    """Project coord's fleet-policy body onto the body-signal's dial view.
+
+    Reuses :func:`_fleet_policy_view` rather than re-reading coord's keys:
+    that projection is where this module already encodes which of coord's
+    fields belong to the asked-for domain, and a second reading of the same
+    body is a second thing to keep in step.
+    """
+    view = _fleet_policy_view(payload, domain=PLAN_CAPTURE_DOMAIN, can_edit=False)
+    return CaptureDial(
+        level=view.effective_level,
+        resolved_scope=view.resolved_scope,
+        readable=True,
+    )
+
+
+async def _read_plan_capture_dial(tenant_id: UUID) -> CaptureDial:
+    """Read the tenant's ``plan_capture`` dial, or report it UNREADABLE.
+
+    A failed read is never "off". The dial is the thing that says whether an
+    absent plan document is evidence at all, so answering "off" for a read we
+    could not make would convert a coord blip into a page of accusations —
+    the exact inversion the tri-state exists to prevent. The exception is
+    swallowed into :meth:`CaptureDial.unreadable` rather than raised because
+    this is a SIGNAL on a list route, not the list itself: coord being slow
+    must not take the operator's Plans page down with it.
+    """
+    try:
+        payload = await _proxy_coord_get(
+            "/coord/fleet-policy",
+            params={"domain": PLAN_CAPTURE_DOMAIN},
+            tenant_id=tenant_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — UNKNOWN is the answer, not a 502
+        logger.warning(
+            "plans.capture_dial_unreadable",
+            error=str(exc),
+            detail="body-signal misses will report unknown, never false",
+        )
+        return CaptureDial.unreadable()
+    return _capture_dial_from_policy(payload)
+
+
+async def _apply_body_signals(
+    rows: list[dict[str, Any]],
+    *,
+    db: AsyncSession,
+    user: UserModel | None,
+    tenant_id: UUID,
+) -> dict[str, Any]:
+    """Stamp the two body signals onto ``rows``; return the page-level block.
+
+    Per row, additive and never replacing an existing field:
+
+    * ``body_provenance`` — ``scanned`` | ``scanned_locally`` |
+      ``never_scanned``. Derived from ``metadata.source_path`` alone, so it
+      costs no query and is available even when everything else is unknown.
+      It is a **screen**, not a verdict (27.6% precision on the one device it
+      was measured on); the console states that in the marker's tooltip.
+    * ``has_body`` — ``true`` | ``false`` | ``"unknown"``, plus
+      ``body_unknown_reason`` naming which arm produced an unknown.
+
+    ``body_provenance`` is stamped for EVERY row including terminal ones. A
+    ``shipped`` work unit that never had a document is not a defect
+    (``plan-discipline``: with no plan files, citing the PRs and stamping the
+    status ARE the ritual), so the console suppresses the badge there — but
+    suppressing the FIELD would block any later consumer that wants it, and a
+    render decision does not belong in a wire contract.
+    """
+    for row in rows:
+        row["body_provenance"] = derive_body_provenance(row.get("metadata"))
+
+    capture = await _read_plan_capture_dial(tenant_id)
+    knowledge = await resolve_body_knowledge(
+        db,
+        user,
+        slugs=[slug for row in rows if isinstance(slug := row.get("slug"), str)],
+        capture=capture,
+    )
+    for row in rows:
+        slug = row.get("slug")
+        row["has_body"] = knowledge.has_body(slug if isinstance(slug, str) else None)
+        row["body_unknown_reason"] = knowledge.unknown_reason(
+            slug if isinstance(slug, str) else None
+        )
+    return knowledge.as_signal_block()
 
 
 @router.get("/plans")
@@ -3454,11 +3561,33 @@ async def list_coord_plans(
     limit: int | None = Query(default=None, ge=1, le=500),
     offset: int | None = Query(default=None, ge=0),
     tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_async_db),
+    # OPTIONAL, and that is deliberate: this route is gated by
+    # `get_tenant_id` (a coord-resolvable bearer), which is a WIDER door than
+    # the plan library's dual-auth tree. Depending on the strict variant would
+    # newly 401 callers whose bearer coord resolves but that tree does not —
+    # narrowing a route's auth as a side effect of adding a signal to it. A
+    # `None` principal reports `has_body: unknown`, never an empty scope.
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
 ) -> Any:
-    """List work-units from coord (tenant-scoped).
+    """List work-units from coord, annotated with the two body signals.
 
     Proxies coord ``GET /coord/work-units``; the response envelope is
-    ``{"work_units": [...], "limit": N, "offset": N}``.
+    ``{"work_units": [...], "limit": N, "offset": N}`` — plus, when the page
+    holds rows, a ``body_signal`` block, and per row ``body_provenance``,
+    ``has_body`` and ``body_unknown_reason``. See :func:`_apply_body_signals`
+    and :mod:`app.services.plan_body_signal`.
+
+    This used to ``return await _proxy_coord_get(...)`` verbatim. It cannot:
+    coord's list already carries ``metadata`` per row, but a verbatim
+    pass-through has no derivation hook, and the alternative — deriving in the
+    React components — is one rule implemented three times (list, detail,
+    spawn guard) that would disagree with itself the first time a value was
+    added to it.
+
+    The signals are computed only when there are rows to annotate. An empty
+    page has nothing to explain, and paying a coord round trip plus two
+    queries to say so about no rows is waste, not honesty.
 
     coord's ``ListQuery`` has always accepted ``slug_prefix`` and ``offset``;
     this proxy simply never forwarded them, so the console could neither page
@@ -3495,22 +3624,49 @@ async def list_coord_plans(
         params["limit"] = limit
     if offset is not None:
         params["offset"] = offset
-    return await _proxy_coord_get(
+    payload = await _proxy_coord_get(
         "/coord/work-units", params=params or None, tenant_id=tenant_id
     )
+    if not isinstance(payload, dict):
+        # A shape this proxy has no envelope for. Forward it unchanged rather
+        # than wrapping coord's answer in an envelope of our own invention.
+        return payload
+    raw_rows = payload.get("work_units")
+    rows = (
+        [row for row in raw_rows if isinstance(row, dict)]
+        if isinstance(raw_rows, list)
+        else []
+    )
+    if rows:
+        payload["body_signal"] = await _apply_body_signals(
+            rows, db=db, user=actor, tenant_id=tenant_id
+        )
+    return payload
 
 
 @router.get("/plans/{slug}")
 async def get_coord_plan(
     slug: str,
     tenant_id: UUID = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_async_db),
+    # Optional for the same reason the list route's is — see there.
+    actor: UserModel | None = Depends(get_audit_actor_user_optional),
 ) -> Any:
-    """Return a single work-unit from coord (tenant-scoped).
+    """Return a single work-unit from coord, annotated with the body signals.
 
     Proxies coord ``GET /coord/work-units/{slug}``; the response envelope
-    is ``{"work_unit": {...}, "recent_history": [...]}``.
+    is ``{"work_unit": {...}, "recent_history": [...], "citations": [...]}``.
+
+    The same annotation the list route applies, through the same helper and
+    over a one-row page: the detail surface must not be able to disagree with
+    the row the operator clicked to reach it.
     """
-    return await _proxy_coord_get(f"/coord/work-units/{slug}", tenant_id=tenant_id)
+    payload = await _proxy_coord_get(f"/coord/work-units/{slug}", tenant_id=tenant_id)
+    if isinstance(payload, dict) and isinstance(payload.get("work_unit"), dict):
+        payload["body_signal"] = await _apply_body_signals(
+            [payload["work_unit"]], db=db, user=actor, tenant_id=tenant_id
+        )
+    return payload
 
 
 @router.get("/plans/{slug}/history")
