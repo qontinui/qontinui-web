@@ -1,7 +1,10 @@
 /**
  * The body-signal copy, the suppression rule, and the two client-side filters.
  *
- * Plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`.
+ * Plan `2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans`,
+ * plus Phase 3's spawn guard (`deriveSpawnBodyConfirm` / `seedSpawnPrompt`),
+ * which is a pure predicate over the same three wire fields and belongs in
+ * the same file as the copy it chooses between.
  * The DERIVATION is the backend's and is tested there
  * (`backend/tests/test_plan_body_signal.py`); what is asserted here is that
  * the console renders each value honestly, and never renders an unprovable
@@ -17,8 +20,10 @@ import { describe, expect, it } from "vitest";
 import {
   describeBodyProvenance,
   describeHasBody,
+  deriveSpawnBodyConfirm,
   filterPlansByBodySignal,
   hasBodyFilterValue,
+  seedSpawnPrompt,
   showsBodySignal,
   type BodyProvenance,
   type HasBodyFilter,
@@ -134,6 +139,141 @@ describe("showsBodySignal — terminal suppression", () => {
     // signal on exactly the rows nobody has a vocabulary for.
     expect(showsBodySignal(row({ status: "collecting-evidence" }))).toBe(true);
     expect(showsBodySignal(row({ status: undefined }))).toBe(true);
+  });
+});
+
+describe("deriveSpawnBodyConfirm — the spawn guard (Phase 3)", () => {
+  /**
+   * The predicate both spawn entry points read. All six inputs are pinned
+   * here, because the two `null`s at the bottom are the ones a later change
+   * is most likely to "fix" into an interruption: two weak signals that
+   * DISAGREE are not evidence, and a field nobody served is not evidence
+   * either.
+   */
+
+  it("confirms on a proven absence, and says so as a fact", () => {
+    const c = deriveSpawnBodyConfirm(
+      row({ status: "in_progress", has_body: false })
+    );
+    expect(c).not.toBeNull();
+    expect(c!.risk).toBe("absent");
+    expect(c!.headline).toBe("This work unit has no plan document.");
+    // The COST is what the operator is being asked to accept, so it has to
+    // be in the words — not just the fact.
+    expect(c!.detail).toMatch(/have to author the plan/);
+  });
+
+  it("confirms on unknown + never_scanned, worded as UNPROVEN", () => {
+    const c = deriveSpawnBodyConfirm(
+      row({
+        status: "draft",
+        has_body: "unknown",
+        body_provenance: "never_scanned",
+      })
+    );
+    expect(c).not.toBeNull();
+    expect(c!.risk).toBe("unproven");
+    // The honesty gate: this arm must never read like the `absent` arm.
+    expect(c!.headline).toContain("No plan document could be confirmed");
+    expect(c!.detail).toContain("UNPROVEN, not proof of absence");
+    expect(c!.detail).toContain("SCREEN, not a verdict");
+    expect(c!.headline).not.toBe(
+      deriveSpawnBodyConfirm(row({ has_body: false }))!.headline
+    );
+    expect(c!.testId).not.toBe(
+      deriveSpawnBodyConfirm(row({ has_body: false }))!.testId
+    );
+  });
+
+  it("names WHICH unknown arm fired, rather than saying only 'unknown'", () => {
+    const c = deriveSpawnBodyConfirm(
+      row({
+        has_body: "unknown",
+        body_provenance: "never_scanned",
+        body_unknown_reason: "empty_corpus_for_org",
+      })
+    );
+    // Reused verbatim from the chip's own copy — one vocabulary, not two.
+    expect(c!.detail).toContain("not the principal");
+  });
+
+  it("does NOT confirm when the two weak signals DISAGREE", () => {
+    // A scanner saw a file and the corpus cannot confirm it. Neither of
+    // those is evidence of absence, and interrupting on their disagreement
+    // spends the confirm's credibility on nothing.
+    for (const provenance of ["scanned", "scanned_locally"] as const) {
+      expect(
+        deriveSpawnBodyConfirm(
+          row({ has_body: "unknown", body_provenance: provenance })
+        )
+      ).toBeNull();
+    }
+    // ...and an `unknown` with no provenance at all is the same case: the
+    // screen said nothing, so nothing agrees with the verdict.
+    expect(deriveSpawnBodyConfirm(row({ has_body: "unknown" }))).toBeNull();
+  });
+
+  it("does NOT confirm when the document is there", () => {
+    expect(
+      deriveSpawnBodyConfirm(
+        row({ has_body: true, body_provenance: "never_scanned" })
+      )
+    ).toBeNull();
+  });
+
+  it("does NOT confirm on a TERMINAL unit, however bodyless", () => {
+    // Same rule as the badges: a shipped unit that never had a document is
+    // not a defect, so it is not a spawn worth interrupting.
+    for (const status of ["shipped", "obsolete", "SUPERSEDED", "landed"]) {
+      expect(
+        deriveSpawnBodyConfirm(
+          row({ status, has_body: false, body_provenance: "never_scanned" })
+        )
+      ).toBeNull();
+    }
+  });
+
+  it("does NOT confirm when the backend served no signal at all", () => {
+    // "Not told" is silence about a document, not evidence of one — and it
+    // must not mint a new interruption on a path that never had one.
+    expect(deriveSpawnBodyConfirm(row({ status: "in_progress" }))).toBeNull();
+    expect(deriveSpawnBodyConfirm(undefined)).toBeNull();
+    expect(deriveSpawnBodyConfirm(null)).toBeNull();
+  });
+});
+
+describe("seedSpawnPrompt — author, not implement", () => {
+  const unit = { slug: "2026-09-01-x", title: "A defect filed from elsewhere" };
+
+  it("tells the session to AUTHOR the plan when there is none", () => {
+    const p = seedSpawnPrompt("absent", unit);
+    expect(p).toContain("AUTHOR the plan");
+    expect(p).toContain("There is NO plan document");
+    // The originating incident in one assertion: the seeded prompt must not
+    // send a session to implement a plan that does not exist.
+    expect(p).not.toMatch(/implement/i);
+  });
+
+  it("tells the session to LOOK FIRST when absence is unproven", () => {
+    const p = seedSpawnPrompt("unproven", unit);
+    expect(p).toContain("UNKNOWN");
+    expect(p).toContain("Look for the plan FIRST");
+    // ...and still names authoring as the fallback, so an unfound plan ends
+    // in a written one rather than in a report that it is missing.
+    expect(p).toContain("AUTHOR it");
+  });
+
+  it("carries the slug, and the title only when there is one", () => {
+    expect(seedSpawnPrompt("absent", unit)).toContain(
+      "Work unit: 2026-09-01-x"
+    );
+    expect(seedSpawnPrompt("absent", unit)).toContain(
+      "Title: A defect filed from elsewhere"
+    );
+    // No title is not an empty title: the line is omitted, never invented.
+    expect(seedSpawnPrompt("absent", { slug: "2026-09-01-x" })).not.toContain(
+      "Title:"
+    );
   });
 });
 
