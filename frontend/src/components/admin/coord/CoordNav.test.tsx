@@ -26,6 +26,10 @@
  *    `unknown` count, which is the one that must survive: a trigger that
  *    showed only breaches would render a fleet whose telemetry has gone dark
  *    exactly like a healthy one
+ *  - ...and that the alarm's RETAINED counts say they are retained — the same
+ *    four channels the two tab badges carry, per axis, plus the retained-zero
+ *    marker this trigger needs more than they do because here an all-clear is
+ *    rendered as silence
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1558,9 +1562,385 @@ describe("CoordNav", () => {
       expect(
         screen.queryByTestId("coord-nav-devops-unknown-badge")
       ).not.toBeInTheDocument();
+      // ...and not the retained-zero marker either. That one is keyed on
+      // `hasRead`, so a fleet whose FIRST reads failed has no retained
+      // all-clear to qualify and inventing one would be a measurement.
+      expect(
+        screen.queryByTestId("coord-nav-devops-retained-all-clear-badge")
+      ).not.toBeInTheDocument();
       expect(screen.getByTestId("coord-nav-group-devops")).toHaveTextContent(
         /^Dev Ops$/
       );
+    });
+
+    // ------------------------------------------------------------------------
+    // The retained counts, and whether they admit to being retained.
+    //
+    // `useFleetAlarmBadge` KEEPS its last good counts across a failed poll,
+    // which is right and argued at length in its own docstring. It then
+    // rendered them exactly like counts a poll had just confirmed — the silent
+    // half of R6's stale arm, the same defect #1206 fixed one badge over, on
+    // the third poller `CoordNav` mounts.
+    // ------------------------------------------------------------------------
+
+    /**
+     * Route the nav's four reads, failing the fleet ones after `okPolls`
+     * successful rounds. `which` picks WHICH fleet read starts failing, which
+     * is what makes the per-axis assertions below possible.
+     */
+    function routeFleetFailingAfter(
+      health: unknown,
+      samples: unknown,
+      okPolls: number,
+      which: "health" | "samples" | "both"
+    ) {
+      let healthCalls = 0;
+      let sampleCalls = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples")) {
+          sampleCalls += 1;
+          if (which !== "health" && sampleCalls > okPolls)
+            return Promise.reject(new Error("GET … failed: 500 - boom"));
+          return Promise.resolve(samples);
+        }
+        if (u.includes("fleet/health")) {
+          healthCalls += 1;
+          if (which !== "samples" && healthCalls > okPolls)
+            return Promise.reject(new Error("GET … failed: 500 - boom"));
+          return Promise.resolve(health);
+        }
+        if (u.startsWith("/api/v1/operations/notifications")) {
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        }
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+    }
+
+    it("marks a retained count as retained, in all four channels", async () => {
+      routeFleetFailingAfter(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [sample("d-1", "a", "breach")], history: [] },
+        1,
+        "both"
+      );
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        const fresh = await screen.findByTestId("coord-nav-devops-breach-badge");
+        expect(fresh).toHaveTextContent("1 refusing work");
+        expect(fresh).toHaveAttribute("data-read-stale", "false");
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-breach-badge")
+          ).toHaveAttribute("data-read-stale", "true")
+        );
+        const stale = screen.getByTestId("coord-nav-devops-breach-badge");
+        // 1. the visible glyph, directly after the number
+        expect(stale).toHaveTextContent("1* refusing work");
+        // 2. the tooltip keeps its own sentence AND gains the qualification
+        expect(stale.getAttribute("title")).toContain(
+          "coord's admission actually enforces"
+        );
+        expect(stale.getAttribute("title")).toContain("from an earlier read");
+        // 3. the screen-reader note — `title` is not an accessible name on a
+        //    span with content, so without this the qualification reaches only
+        //    a sighted mouse user.
+        expect(
+          stale.querySelector(".sr-only")?.textContent
+        ).toContain("from an earlier read");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("qualifies only the axis that failed: a dead samples read leaves `unhealthy` fresh", async () => {
+      // The two reads fail independently and the counts do not all depend on
+      // both. `unhealthy` is coord's HEALTH read alone; the four admission
+      // counts are health AND samples. One flag across all five would either
+      // over-claim on `unhealthy` or under-claim on the other four.
+      routeFleetFailingAfter(
+        { devices: [coordDevice("d-1", "msi", "degraded")] },
+        { latest: [sample("d-1", "a", "warn")], history: [] },
+        1,
+        "samples"
+      );
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await screen.findByTestId("coord-nav-devops-warn-badge");
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-warn-badge")
+          ).toHaveAttribute("data-read-stale", "true")
+        );
+        // The health read kept answering, so this count IS current and must not
+        // wear the marker — an over-claim is as wrong as an under-claim.
+        const unhealthy = screen.getByTestId(
+          "coord-nav-devops-unhealthy-badge"
+        );
+        expect(unhealthy).toHaveAttribute("data-read-stale", "false");
+        expect(unhealthy).toHaveTextContent("1 unhealthy");
+        expect(unhealthy).not.toHaveTextContent("*");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("treats a 2xx carrying no device roster as a read that refreshed nothing", async () => {
+      // `devices` is OPTIONAL on `FleetHealthPayload`, and the /fleet/health
+      // route's own OpenAPI contract documents a mid-request degrade that still
+      // answers 200. `counts` collapses to ZERO without a roster, and ZERO
+      // renders as SILENCE here — so treating the absence as data would turn a
+      // degraded coord into a confident, unqualified all-clear.
+      let healthCalls = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples"))
+          return Promise.resolve({ latest: [], history: [] });
+        if (u.includes("fleet/health")) {
+          healthCalls += 1;
+          // The degrade: a 200 whose envelope carries no roster at all.
+          return Promise.resolve(
+            healthCalls === 1
+              ? { devices: [coordDevice("d-1", "msi", "degraded")] }
+              : { as_of: "2026-08-25T12:00:00Z" }
+          );
+        }
+        if (u.startsWith("/api/v1/operations/notifications"))
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-unhealthy-badge")
+          ).toHaveTextContent("1 unhealthy")
+        );
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() => expect(healthCalls).toBeGreaterThan(1));
+        // The machine is still counted — the roster we hold is the last one
+        // coord actually sent — and it now says it is a retained figure.
+        const badge = screen.getByTestId("coord-nav-devops-unhealthy-badge");
+        expect(badge).toHaveTextContent("1* unhealthy");
+        expect(badge).toHaveAttribute("data-read-stale", "true");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps an EMPTY roster as a delivery — `devices: []` is a real answer", async () => {
+      // The other side of the predicate, and the reason it tests for an ARRAY
+      // rather than for truthiness. Asserted through the RETAINED-ZERO marker
+      // rather than through the quiet first render, because a first render is
+      // quiet either way: a never-delivered axis and a delivered-empty one both
+      // render nothing, so only the failing SECOND poll separates them.
+      let polls = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples") || u.includes("fleet/health")) {
+          if (u.includes("fleet/health")) polls += 1;
+          if (polls > 1)
+            return Promise.reject(new Error("GET … failed: 500 - boom"));
+          return Promise.resolve(
+            u.includes("fleet/health")
+              ? { devices: [] }
+              : { latest: [], history: [] }
+          );
+        }
+        if (u.startsWith("/api/v1/operations/notifications"))
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await waitFor(() => expect(polls).toBe(1));
+        expect(
+          screen.queryByTestId("coord-nav-devops-retained-all-clear-badge")
+        ).not.toBeInTheDocument();
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        // An empty roster IS a retained fact, so the failed poll that follows
+        // has something to qualify. Read `devices: []` as a non-delivery and
+        // this marker never appears, because nothing was ever delivered.
+        const marker = await screen.findByTestId(
+          "coord-nav-devops-retained-all-clear-badge"
+        );
+        expect(marker).toHaveTextContent("0* alarms");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps an EMPTY lane list as a delivery — that is the telemetry-dark answer", async () => {
+      // `latest: []` is exactly the fleet-gone-dark case the `unknown` count is
+      // built to render, so it must REPLACE the lane verdicts rather than
+      // leaving the previous ones standing behind a stale marker.
+      let sampleCalls = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples")) {
+          sampleCalls += 1;
+          return Promise.resolve(
+            sampleCalls === 1
+              ? { latest: [sample("d-1", "a", "breach")], history: [] }
+              : { latest: [], history: [] }
+          );
+        }
+        if (u.includes("fleet/health"))
+          return Promise.resolve({
+            devices: [coordDevice("d-1", "msi", "healthy")],
+          });
+        if (u.startsWith("/api/v1/operations/notifications"))
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-breach-badge")
+          ).toHaveTextContent("1 refusing work")
+        );
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        // The lane went dark. That is a current, delivered fact — `unknown`,
+        // unmarked — not a retained breach wearing a `*`.
+        const unknown = await screen.findByTestId(
+          "coord-nav-devops-unknown-badge"
+        );
+        expect(unknown).toHaveTextContent("1 unknown");
+        expect(unknown).toHaveAttribute("data-read-stale", "false");
+        expect(
+          screen.queryByTestId("coord-nav-devops-breach-badge")
+        ).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not restamp the sample clock for a reply it declined", async () => {
+      // The clock `summarizeFleetAdmission` ages lanes against is stamped on a
+      // samples SUCCESS. A superseded reply is a success the axis DECLINED, and
+      // stamping for it would make the stamp describe rows that were thrown
+      // away — springing lanes an even newer read had already aged into `stale`
+      // back to a fresh verdict.
+      //
+      // Reached by hanging the mount poll's samples read past the next one.
+      let releaseFirstSamples: (v: unknown) => void = () => {};
+      const firstSamples = new Promise((resolve) => {
+        releaseFirstSamples = resolve;
+      });
+      // `age_secs: 100` against a 120 s threshold: current when it lands,
+      // stale 30 s later, and fresh again if the clock is wrongly restamped.
+      const rows = {
+        latest: [sample("d-1", "a", "breach", 100)],
+        history: [],
+      };
+      let sampleCalls = 0;
+      httpGet.mockImplementation((url: unknown) => {
+        const u = String(url);
+        if (u.includes("fleet/resource-samples")) {
+          sampleCalls += 1;
+          return sampleCalls === 1 ? firstSamples : Promise.resolve(rows);
+        }
+        if (u.includes("fleet/health"))
+          return Promise.resolve({
+            devices: [coordDevice("d-1", "msi", "healthy")],
+          });
+        if (u.startsWith("/api/v1/operations/notifications"))
+          return Promise.resolve({ notifications: [], unread_count: 0 });
+        return Promise.resolve({ alerts: [], total_count: 0 });
+      });
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        // The second poll delivers the rows; the first is still hanging.
+        await vi.advanceTimersByTimeAsync(60_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-breach-badge")
+          ).toHaveTextContent("1 refusing work")
+        );
+
+        // 30 s on, the lane has aged past the threshold. Stop short of the
+        // third poll, which would deliver the rows again and reset the clock
+        // legitimately.
+        await vi.advanceTimersByTimeAsync(30_000);
+        await waitFor(() =>
+          expect(
+            screen.getByTestId("coord-nav-devops-stale-badge")
+          ).toHaveTextContent("1 stale")
+        );
+
+        // Now the superseded reply lands. It carries the same rows, so nothing
+        // about the lane changed — only the clock is at risk.
+        await act(async () => {
+          releaseFirstSamples(rows);
+          await firstSamples;
+        });
+        expect(
+          screen.getByTestId("coord-nav-devops-stale-badge")
+        ).toHaveTextContent("1 stale");
+        expect(
+          screen.queryByTestId("coord-nav-devops-breach-badge")
+        ).not.toBeInTheDocument();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("keeps a marker for a retained ALL-CLEAR it can no longer vouch for", async () => {
+      // The reason this trigger needs the retained zero more than the tab
+      // badges do: here an all-clear is rendered as SILENCE, so a last-good
+      // all-clear whose next poll fails states "nothing is wrong" in the
+      // loudest medium the nav has, on no current evidence.
+      routeFleetFailingAfter(
+        { devices: [coordDevice("d-1", "msi", "healthy")] },
+        { latest: [sample("d-1", null, "ok")], history: [] },
+        1,
+        "both"
+      );
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        render(<CoordNav />);
+        // A read that ANSWERED all-clear renders nothing. That arm is
+        // unchanged — an all-clear fleet should look like an all-clear.
+        await waitFor(() => expect(httpGet).toHaveBeenCalled());
+        expect(
+          screen.queryByTestId("coord-nav-devops-retained-all-clear-badge")
+        ).not.toBeInTheDocument();
+
+        await vi.advanceTimersByTimeAsync(60_000);
+        const marker = await screen.findByTestId(
+          "coord-nav-devops-retained-all-clear-badge"
+        );
+        expect(marker).toHaveTextContent("0* alarms");
+        expect(marker).toHaveAttribute("data-read-stale", "true");
+        expect(marker.getAttribute("title")).toContain("no fleet alarms");
+        // One marker, not five `0*` pills — an alarm's worth of visual weight
+        // for the absence of alarms is what makes a nav trigger unscannable.
+        for (const id of [
+          "coord-nav-devops-breach-badge",
+          "coord-nav-devops-warn-badge",
+          "coord-nav-devops-stale-badge",
+          "coord-nav-devops-unknown-badge",
+          "coord-nav-devops-unhealthy-badge",
+        ]) {
+          expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+        }
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

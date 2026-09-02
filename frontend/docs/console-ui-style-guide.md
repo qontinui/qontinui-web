@@ -766,6 +766,43 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > `title`, and the same words in `sr-only` text.
 > **A route boundary is not a consumer boundary** — the poll is.
 >
+> **A FILE boundary is not one either — and that is where the sweep stopped
+> next.** Having established that the poll is the unit, the fix swept the two
+> badges its own hook file owned and shipped. `CoordNav` mounts a THIRD poller:
+> `useFleetAlarmBadge`, five fleet counts on the `Dev Ops ▾` trigger, rendered
+> on every console page from a sibling module. It retained its counts across a
+> failed poll — with a docstring arguing the retain half, exactly as the
+> notifications badge had — and rendered them in none of the four channels the
+> two badges beside it had just been given. The sweep unit is *every value the
+> component tree keeps across a failed read*, and each pass so far has drawn a
+> boundary one level out from the last: route → poll → module.
+>
+> **Where silence IS the all-clear, the retained zero matters more, not less.**
+> The `count > 0` gate above is a bug on a tab badge because a last-good `0`
+> goes dark. On the fleet trigger, *rendering nothing* is the deliberate design
+> — an all-clear fleet should look like an all-clear — so the same gate makes a
+> retained, unverifiable all-clear indistinguishable from a fresh one, in a
+> surface whose `unknown` count exists to stop precisely that class of
+> false-safe. A cluster of counts cannot answer this with five `0*` pills
+> without spending an alarm's worth of visual weight on the absence of alarms;
+> one muted marker for the whole retained all-clear is the form that keeps a
+> trigger scannable and still refuses to claim the all-clear is current.
+>
+> **And ask the delivery question of the ENVELOPE, not just of the transport.**
+> `stale` means *the latest read did not replace this value*, so a 2xx whose
+> body carried no list is a non-delivery exactly as a rejection is. Where the
+> derived count collapses to zero without that list — and where zero renders as
+> silence — reading the absence as data converts a degraded backend into a
+> confident all-clear. Distinguish an ABSENT list from an EMPTY one: `[]` is a
+> real answer and must replace what is on screen, which is why the predicate
+> tests `Array.isArray`, never truthiness.
+>
+> **When a second module needs the bookkeeping, MOVE it — do not re-spell it.**
+> `useRetainedValue` was private to `CoordNav`; the fleet hook is imported BY
+> `CoordNav`, so leaving it there offered only an import cycle or a second
+> spelling. It lives in `components/console` beside `readSequence`, which is
+> the same argument that module makes one layer down.
+>
 > Three things that pass for done and are not, all found reviewing the fix
 > above rather than the code it fixed:
 >

@@ -62,7 +62,7 @@
  * split rather than appending again.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -117,8 +117,8 @@ import { httpClient } from "@/services/service-factory";
 import { NOTIFICATIONS_REQUEST_OPTIONS } from "@/components/admin/coord/notificationStatus";
 import { useFleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
 import { useVisiblePoll } from "@/components/admin/coord/useVisiblePoll";
-import { createReadSequence } from "@/components/console";
-import type { FleetAlarmBadge } from "@/components/admin/coord/useFleetAlarmBadge";
+import { useRetainedValue } from "@/components/console";
+import type { FleetAlarm } from "@/components/admin/coord/useFleetAlarmBadge";
 
 const log = createLogger("CoordNav");
 
@@ -579,70 +579,6 @@ function readRollup(body: unknown): AlertsRollup {
 }
 
 /**
- * One retained value, and the honest answer to "did the latest read refresh
- * it?".
- *
- * Both nav badges keep their last good value across a failed poll — the right
- * call, and half of R6's stale arm; the other half is saying so. Three axes
- * across the two badges owe the same bookkeeping (the alert count, the
- * critical flag, the unread count), and hand-rolling it three times is the
- * drift this lineage exists to stop.
- *
- * The arithmetic is `console/readSequence.ts` — imported, not re-spelled,
- * because `/admin/coord/notifications` needs the same verdict about the same
- * scalar and two spellings of it drift invisibly. That module carries the
- * argument for why staleness is a comparison of SEQUENCES rather than a flag
- * set in a `catch`, and both wrong answers that produced it. This hook is the
- * React shell around it: state for what renders, refs for what settles.
- *
- * `hasRead` is separate: has any read ever delivered? It gates the RETAINED
- * ZERO — see the render gate — and a value never read has no retained fact to
- * qualify.
- */
-function useRetainedValue<T>(initial: T): {
-  value: T;
-  hasRead: boolean;
-  stale: boolean;
-  /** Take a ticket before issuing a read. */
-  issue: () => number;
-  /** @returns whether this response's value was applied. */
-  settle: (seq: number, delivered: { value: T } | null) => boolean;
-} {
-  const [value, setValue] = useState<T>(initial);
-  const [hasRead, setHasRead] = useState(false);
-  const [stale, setStale] = useState(false);
-  // The sequence lives in a ref: `settle` has to read its own writes in the
-  // same tick, and state does not update synchronously.
-  const seqRef = useRef<ReturnType<typeof createReadSequence> | null>(null);
-  if (seqRef.current === null) seqRef.current = createReadSequence();
-
-  // Re-exported rather than left to each caller's own counter. The hooks below
-  // minted their own, which was correct and a footgun: the module's `issued`
-  // stayed at zero forever, so anyone reaching for `issue()` on a nav axis
-  // would get `1`, fail `seq >= delivered` after the first poll, and have their
-  // reads SILENTLY declined — no error, no failing test.
-  const issue = useCallback(() => seqRef.current!.issue(), []);
-
-  const settle = useCallback(
-    (seq: number, delivered: { value: T } | null): boolean => {
-      const sequence = seqRef.current!;
-      const applied = sequence.settle(seq, delivered !== null);
-      if (applied && delivered) setValue(delivered.value);
-      // Mirrored from the module rather than tracked a second time — two
-      // spellings of one fact is the drift this module exists to stop, and a
-      // hook that re-spells it is that drift one level up. It is React state
-      // because the badge re-renders on it; the ANSWER is the module's.
-      setHasRead(sequence.hasDelivered());
-      setStale(sequence.isStale());
-      return applied;
-    },
-    []
-  );
-
-  return { value, hasRead, stale, issue, settle };
-}
-
-/**
  * Live unresolved-alert count for the Alerts tab badge. Best-effort — a failed
  * poll renders no badge, never an error.
  *
@@ -914,8 +850,43 @@ function useNotificationsBadge(): {
  * `summarizeFleetAdmission` — there is no client-side band here that could put
  * a machine in the red badge while the dispatcher is still happily electing
  * it.
+ *
+ * ## The retained counts carry the same four channels as the tab badges
+ *
+ * This cluster keeps its last good counts across a failed poll (the argument is
+ * in `useFleetAlarmBadge`, and it is right). It used to render them with no
+ * qualification whatsoever — no `*`, no `title` clause, no screen-reader note,
+ * no `data-read-stale` — while the two tab badges beside it had all four. So
+ * the same `*` marker, the same `STALE_TITLE_SUFFIX` and the same `sr-only`
+ * note apply here, for the reasons argued at those constants.
+ *
+ * **Per badge, not per cluster.** `unhealthy` is the health read alone; the
+ * four admission counts are health AND samples. Marking a fresh `unhealthy`
+ * stale because the samples read failed would be the over-claim this lineage
+ * has now corrected twice, and marking the admission counts fresh because the
+ * health read landed would be the under-claim.
+ *
+ * ## ...and a retained ZERO is the one this trigger most needs
+ *
+ * Everywhere else a retained zero going dark is a badge disappearing. Here
+ * silence IS the all-clear — the design decision three paragraphs up — so a
+ * last-good all-clear whose next poll fails renders as a confident "nothing is
+ * wrong", stated in the loudest medium the trigger has. That is the exact
+ * false-safe the `unknown` count exists to prevent, reached one layer out
+ * through the READ rather than through the payload.
+ *
+ * So an all-zero cluster we can no longer vouch for keeps ONE muted marker
+ * rather than five `0*` pills: five would be an alarm's worth of visual weight
+ * for the absence of alarms, on a nav trigger that has to stay scannable. A
+ * cluster that has never READ still renders nothing — there is no retained fact
+ * to qualify, and inventing one would be the same fabrication pointed the other
+ * way.
  */
-function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
+function FleetAlarmBadges({ alarm }: { alarm: FleetAlarm }) {
+  const { counts, hasRead, healthStale, samplesStale } = alarm;
+  // The admission counts are computed from BOTH reads, so either one failing
+  // leaves them uncurrent. `unhealthy` never touches the samples.
+  const admissionStale = healthStale || samplesStale;
   const badges: Array<{
     key: string;
     testId: string;
@@ -923,6 +894,7 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
     label: string;
     tone: "critical" | "attention" | "muted";
     title: string;
+    stale: boolean;
   }> = [
     {
       key: "unhealthy",
@@ -931,6 +903,7 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
       label: "unhealthy",
       tone: "critical",
       title: "machines coord reports in a state other than healthy",
+      stale: healthStale,
     },
     {
       key: "breach",
@@ -939,6 +912,7 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
       label: "refusing work",
       tone: "critical",
       title: "lanes below the floor coord's admission actually enforces",
+      stale: admissionStale,
     },
     {
       key: "warn",
@@ -947,6 +921,7 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
       label: "delaying work",
       tone: "attention",
       title: "lanes inside coord's amber band — work is deferred, not rejected",
+      stale: admissionStale,
     },
     {
       key: "stale",
@@ -954,7 +929,12 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
       count: counts.stale,
       label: "stale",
       tone: "muted",
+      // Two different clocks, and they are deliberately not merged: this count
+      // is about the age of the SAMPLE coord served, while `data-read-stale` is
+      // about whether our latest read replaced it. A lane can be either,
+      // neither, or both.
       title: "lanes whose last sample is too old to be a claim about now",
+      stale: admissionStale,
     },
     {
       key: "unknown",
@@ -964,29 +944,57 @@ function FleetAlarmBadges({ counts }: { counts: FleetAlarmBadge }) {
       tone: "muted",
       title:
         "lanes coord reports no admission verdict for — not healthy, not red",
+      stale: admissionStale,
     },
   ];
+  const shown = badges.filter((b) => b.count > 0);
+  // Nothing to show, something was once read, and the reads behind that
+  // all-clear are no longer current — see the docblock. `admissionStale`
+  // subsumes `healthStale`, so this covers a stale `unhealthy` zero too.
+  const retainedAllClear = shown.length === 0 && hasRead && admissionStale;
   return (
     <>
-      {badges
-        .filter((b) => b.count > 0)
-        .map((b) => (
-          <span
-            key={b.key}
-            data-testid={b.testId}
-            title={b.title}
-            className={cn(
-              "rounded-full px-1.5 text-[10px] font-bold leading-4 whitespace-nowrap",
-              b.tone === "critical"
-                ? "bg-red-500/25 text-red-200"
-                : b.tone === "attention"
-                  ? "bg-amber-500/25 text-amber-200"
-                  : "bg-muted text-foreground"
-            )}
-          >
-            {b.count} {b.label}
-          </span>
-        ))}
+      {shown.map((b) => (
+        <span
+          key={b.key}
+          data-testid={b.testId}
+          title={[b.title, b.stale ? STALE_TITLE_SUFFIX : null]
+            .filter(Boolean)
+            .join(" ")}
+          // Emitted in both states: `"false"` is a real answer ("the latest read
+          // replaced this number"), distinct from a badge that never asked.
+          data-read-stale={b.stale}
+          className={cn(
+            "rounded-full px-1.5 text-[10px] font-bold leading-4 whitespace-nowrap",
+            b.tone === "critical"
+              ? "bg-red-500/25 text-red-200"
+              : b.tone === "attention"
+                ? "bg-amber-500/25 text-amber-200"
+                : "bg-muted text-foreground"
+          )}
+        >
+          {b.count}
+          {/* Directly after the number, like the tab badges — the `*` qualifies
+              the figure, not the label. */}
+          {b.stale ? "*" : ""} {b.label}
+          {/* `title` is not an accessible name here: the trigger's name is
+              computed from its descendants' CONTENT, and this span has content,
+              so the tooltip is never reached. Without this line the
+              qualification is a sighted-mouse-user feature. */}
+          {b.stale && <span className="sr-only"> {STALE_TITLE_SUFFIX}</span>}
+        </span>
+      ))}
+      {retainedAllClear && (
+        <span
+          data-testid="coord-nav-devops-retained-all-clear-badge"
+          data-read-stale="true"
+          title={`no fleet alarms ${STALE_TITLE_SUFFIX}`}
+          className="rounded-full px-1.5 text-[10px] font-bold leading-4 whitespace-nowrap bg-muted text-foreground"
+        >
+          0* alarms
+          <span className="sr-only"> {STALE_TITLE_SUFFIX}</span>
+        </span>
+      )}
     </>
   );
 }
@@ -1228,7 +1236,7 @@ export default function CoordNav() {
         >
           <GroupIcon className="h-3.5 w-3.5" />
           {group.label}
-          {group.id === "devops" && <FleetAlarmBadges counts={fleetAlarm} />}
+          {group.id === "devops" && <FleetAlarmBadges alarm={fleetAlarm} />}
           {activeItem && (
             <>
               <span className="opacity-60">·</span>
