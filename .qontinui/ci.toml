@@ -11,8 +11,9 @@
 # line number — line numbers in those files move constantly and a stale citation
 # makes the invariant unauditable.
 #
-# Five gates are stronger than "mirrored": web-boundary-lint, forbid-public-
-# schema, alembic-single-head, gitignore-tracked-files and ruff-version-parity
+# Six gates are stronger than "mirrored": web-boundary-lint, forbid-public-
+# schema, alembic-single-head, coord-column-drop-guard, gitignore-tracked-files
+# and ruff-version-parity
 # invoke the SAME committed script the workflow invokes (scripts/ci/*.py), so
 # there is nothing left to keep in sync — the two lanes cannot drift because
 # there is only one copy of the logic. That is the
@@ -273,6 +274,24 @@ name = "alembic-single-head"
 # the argv stays bare. `--baseline-ref` only selects the remediation text — it
 # cannot move the verdict — so the two lanes are the same gate.
 command = ["python", "scripts/ci/count_alembic_heads.py"]
+
+[[steps]]
+name = "coord-column-drop-guard"
+# coord-column-drop-guard.yml, step "Check coord.* drops against coord's read
+# contract (PR)". Offline AST scan of the alembic revision files changed vs
+# origin/main for a coord.* DROP/RENAME; only when one is found does it fetch
+# coord's read-surface manifest (GET https://coord.qontinui.io/schema/read-
+# surfaces) and fail if a deployed or main coord still reads the surface. The
+# common case — no coord.* drop — costs no network call at all, which is why
+# this gate CAN live here beside alembic-single-head.
+#
+# THREE lanes share this script: the PR check (REQUIRED from Phase 3 of plan
+# 2026-09-03-coord-column-drop-guard-on-web-migrations), this manifest, and
+# .pre-commit-config.yaml's `coord-column-drop-guard` hook. The workflow passes
+# `--base-ref origin/main` explicitly; here the default already IS
+# `origin/main` and a runner checkout has it, so the argv stays bare. An
+# unreachable manifest is exit 2 (UNKNOWN), never a pass.
+command = ["python", "scripts/ci/check_coord_column_drops.py"]
 
 [[steps]]
 name = "gitignore-tracked-files"
