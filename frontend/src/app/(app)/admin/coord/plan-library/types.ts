@@ -132,6 +132,8 @@ export interface WorkArtifactDetail extends WorkArtifactSummary {
 
 export interface WorkArtifactListResponse {
   items: WorkArtifactSummary[];
+  /** This page's length (`items.length`); `total` is the unpaged total. */
+  count: number;
   total: number;
   offset: number;
   limit: number;
@@ -289,6 +291,8 @@ export interface PlanCandidate {
 
 export interface PlanCandidateResponse {
   items: PlanCandidate[];
+  /** This page's length (`items.length`); `total` is the unpaged total. */
+  count: number;
   total: number;
   offset: number;
   limit: number;
