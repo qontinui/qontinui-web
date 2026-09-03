@@ -10,8 +10,11 @@ name: Style Gate (shadow)
 # rust-vision-core crate) per route in BOTH of its gating modes and reports the
 # findings in the job summary:
 #
-#   * `analyze` — runs all 5 page-wide analyzers (layout, elements, typography,
-#     color) with NO element ids and NO specs required. This is the broad,
+#   * `analyze` — runs the 4 page-wide analyzers (layout, elements, typography,
+#     color) with NO element ids and NO specs required. The crate has five, but
+#     `--analyzer all` resolves to these four: `dynamic` needs two frames, which
+#     this bin does not accept, so `parse_analyzer` REJECTS it with a usage
+#     error rather than including it. This is the broad,
 #     day-one signal: it works the moment a snapshot+frame exist. Invoked with
 #     `--analyzer all --fail-on critical`, so it exits 2 iff a finding is at/above
 #     CRITICAL (and 0 otherwise — without --fail-on the bin always exits 0, so the
