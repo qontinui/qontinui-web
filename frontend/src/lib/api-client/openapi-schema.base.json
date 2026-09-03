@@ -33666,6 +33666,458 @@
         "title": "RatingRead",
         "type": "object"
       },
+      "ReconciliationAxisA": {
+        "description": "Axis A \u2014 coord's STORED ``work_units.status``.\n\n``present`` is \"a coord work unit exists for this stem\". ``status`` is as\nOPAQUE here as everywhere else in this module: coord accepts an\noff-vocabulary status deliberately (its Free transition tier), so a word in\nno vocabulary reads as OPEN rather than as an error.",
+        "properties": {
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          }
+        },
+        "required": [
+          "readable",
+          "present"
+        ],
+        "title": "ReconciliationAxisA",
+        "type": "object"
+      },
+      "ReconciliationAxisB": {
+        "description": "Axis B \u2014 the plan document's status stamp, **from the artifact store**.\n\n``source`` is stated on the axis as well as on the response because this\nis the half that differs from the qontinui-dev-notes reconciler, which\nreads the body off ``origin/main`` of the plans repo. Here there is no git\ncheckout, so the document layer is ``agent.work_artifacts``.\n\n``complete`` is ``document_state == \"present\"`` and nothing else. When it\nis ``False`` there is no document to compare and the row is UNKNOWN \u2014 the\nroute refuses to emit any other verdict for such a row.",
+        "properties": {
+          "adapter_readable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapter Readable"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "document_state": {
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "source": {
+            "const": "artifact_store",
+            "default": "artifact_store",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          },
+          "variant_count": {
+            "default": 1,
+            "title": "Variant Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "readable",
+          "present",
+          "document_state",
+          "complete"
+        ],
+        "title": "ReconciliationAxisB",
+        "type": "object"
+      },
+      "ReconciliationAxisC": {
+        "description": "Axis C \u2014 coord's DERIVED ``delivery`` verdict. Never re-derived here.\n\n``{shipped, evidence_complete, evidence_gaps}`` exactly as coord's by-slug\ndoor emitted it (D4: ONE field name, ONE predicate, ONE place \u2014 web does\nnot recompute degradation from citations' ``merged`` flags).\n\n**Read ``evidence_complete`` BEFORE ``shipped``.** When it is ``False``,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The cascade encodes that mechanically: ``EVIDENCE_INCOMPLETE``\nprecedes every arm that reads ``shipped``.\n\n``evidence_gaps`` is carried VERBATIM and never collapsed to a count or a\nboolean; it is the only place two of coord's three modelled gaps are\nvisible at all.",
+        "properties": {
+          "citation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Count"
+          },
+          "computed": {
+            "default": false,
+            "title": "Computed",
+            "type": "boolean"
+          },
+          "evidence_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Complete"
+          },
+          "evidence_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "shipped": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipped"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          }
+        },
+        "required": [
+          "readable",
+          "present"
+        ],
+        "title": "ReconciliationAxisC",
+        "type": "object"
+      },
+      "ReconciliationFacets": {
+        "description": "The D3 honesty block: exhaustive facets, a denominator, a blind-spot flag.\n\nModelled on coord's ``coord_memory_overview`` contract:\n\n* ``by_class`` carries **every** member of the cascade INCLUDING the zeros,\n  so \"no rows of class X\" is a stated fact rather than an absence;\n* ``by_verdict`` likewise carries all three groups including zeros;\n* ``denominator`` is explicit and ``sum(by_class) == sum(by_verdict) ==\n  denominator``;\n* ``corpus_complete`` is ``False`` for a partial read, as an explicit blind\n  spot, and ``corpus_incomplete_reasons`` names each one.\n\nThe denominator is the WHOLE population, not the page: an off-page row is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` and counted, never omitted.",
+        "properties": {
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "by_verdict": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Verdict",
+            "type": "object"
+          },
+          "corpus_complete": {
+            "title": "Corpus Complete",
+            "type": "boolean"
+          },
+          "corpus_incomplete_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corpus Incomplete Reasons",
+            "type": "array"
+          },
+          "denominator": {
+            "title": "Denominator",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "denominator",
+          "by_class",
+          "by_verdict",
+          "corpus_complete"
+        ],
+        "title": "ReconciliationFacets",
+        "type": "object"
+      },
+      "ReconciliationResponse": {
+        "description": "A page of reconciled plan stems plus the honesty flags for the read.",
+        "properties": {
+          "axis_c_computed_count": {
+            "title": "Axis C Computed Count",
+            "type": "integer"
+          },
+          "axis_c_scope": {
+            "const": "page",
+            "default": "page",
+            "title": "Axis C Scope",
+            "type": "string"
+          },
+          "coord_available": {
+            "default": true,
+            "title": "Coord Available",
+            "type": "boolean"
+          },
+          "document_axis_complete": {
+            "title": "Document Axis Complete",
+            "type": "boolean"
+          },
+          "document_axis_source": {
+            "const": "artifact_store",
+            "default": "artifact_store",
+            "title": "Document Axis Source",
+            "type": "string"
+          },
+          "document_missing_count": {
+            "title": "Document Missing Count",
+            "type": "integer"
+          },
+          "document_present_count": {
+            "title": "Document Present Count",
+            "type": "integer"
+          },
+          "facets": {
+            "$ref": "#/components/schemas/ReconciliationFacets"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "ordering": {
+            "const": "slug_asc",
+            "default": "slug_asc",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "work_unit_population_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Population Reason"
+          },
+          "work_unit_population_state": {
+            "default": "included",
+            "enum": [
+              "included",
+              "unavailable"
+            ],
+            "title": "Work Unit Population State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "document_axis_complete",
+          "document_present_count",
+          "document_missing_count",
+          "axis_c_computed_count",
+          "facets"
+        ],
+        "title": "ReconciliationResponse",
+        "type": "object"
+      },
+      "ReconciliationRow": {
+        "description": "One plan stem, its three axis readings, and the resulting class.",
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "axis_a": {
+            "$ref": "#/components/schemas/ReconciliationAxisA"
+          },
+          "axis_b": {
+            "$ref": "#/components/schemas/ReconciliationAxisB"
+          },
+          "axis_c": {
+            "$ref": "#/components/schemas/ReconciliationAxisC"
+          },
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "document_axis_complete": {
+            "title": "Document Axis Complete",
+            "type": "boolean"
+          },
+          "document_state": {
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "disagree",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "document_state",
+          "document_axis_complete",
+          "axis_a",
+          "axis_b",
+          "axis_c",
+          "classification",
+          "verdict",
+          "reason"
+        ],
+        "title": "ReconciliationRow",
+        "type": "object"
+      },
       "RecordingListResponse": {
         "description": "List of recordings response",
         "properties": {
@@ -89812,6 +90264,83 @@
           }
         ],
         "summary": "Follow-ups a plan identified but nobody owns yet",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/reconciliation": {
+      "get": {
+        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).",
+        "operationId": "api_v1_plan_library_reconciliation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
+              "title": "Include Coord",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Does each plan's record agree with reality? (three-way reconciliation)",
         "tags": [
           "plan-library"
         ]

@@ -1564,3 +1564,112 @@ async def load_prompt_chains(
         frontier = next_frontier
 
     return chains
+
+
+# ═══════════ three-way status reconciliation (plan-library Phase 4) ═══════════
+#
+# ``GET /plan-library/reconciliation`` compares the document layer against
+# coord's stored status and its derived delivery verdict, so its population is
+# the WHOLE plan corpus — not the unshipped slice ``list_plan_candidates``
+# selects. A plan whose document says ``draft`` while coord stored ``shipped``
+# is the headline finding, and every status filter here would hide it.
+
+#: Hard ceiling on plan artifacts pulled into one reconciliation read.
+#:
+#: Generous rather than binding (the document layer held 18 plan rows on
+#: 2026-09-03 against ~1500 addressable stems), and NEVER applied silently: the
+#: reader reports truncation and the route turns it into ``corpus_complete:
+#: false`` with a named reason. A denominator that quietly stopped counting is
+#: the defect class this whole surface exists to close.
+RECONCILE_MAX_ARTIFACTS = 5000
+
+
+@dataclass(frozen=True, slots=True)
+class ReconcileArtifact:
+    """One plan artifact, projected onto the columns reconciliation reads.
+
+    Deliberately NOT a :class:`~app.models.work_artifact.WorkArtifact`: the
+    population is the whole corpus, and ``body`` is a ``Text`` column on the
+    same table, so loading ORM rows would pull every plan BODY into memory to
+    answer a question that needs a status word. Bodies are fetched separately
+    and only for the page (:func:`load_artifact_bodies`).
+    """
+
+    id: UUID
+    slug: str
+    title: str
+    #: The scanner's parsed status word, verbatim and OPAQUE.
+    status: str
+    source_repo: str | None
+    source_path: str | None
+    work_unit_slug: str | None
+    updated_at: datetime
+
+
+async def list_plan_artifacts_for_reconciliation(
+    db: AsyncSession,
+    *,
+    org_id: UUID | None,
+    limit: int = RECONCILE_MAX_ARTIFACTS,
+) -> tuple[list[ReconcileArtifact], bool]:
+    """Every ``kind='plan'`` artifact in the caller's org scope.
+
+    Returns ``(rows, truncated)``. ``truncated`` is ``True`` when the corpus
+    is larger than ``limit`` — read one row past the cap to tell "exactly at
+    the cap" from "more than the cap", because those are different facts and
+    only the second is a blind spot.
+
+    Ordered by ``(slug, id)`` so the reconciliation page is stable: plan stems
+    are date-prefixed, which makes slug order chronological, and unlike
+    ``updated_at`` it does not move under a re-scan mid-page.
+    """
+    stmt = (
+        select(
+            WorkArtifact.id,
+            WorkArtifact.slug,
+            WorkArtifact.title,
+            WorkArtifact.status,
+            WorkArtifact.source_repo,
+            WorkArtifact.source_path,
+            WorkArtifact.work_unit_slug,
+            WorkArtifact.updated_at,
+        )
+        .where(_org_scope(org_id), WorkArtifact.kind == "plan")
+        .order_by(WorkArtifact.slug.asc(), WorkArtifact.id.asc())
+        .limit(limit + 1)
+    )
+    rows = (await db.execute(stmt)).all()
+    truncated = len(rows) > limit
+    return (
+        [
+            ReconcileArtifact(
+                id=row.id,
+                slug=row.slug,
+                title=row.title,
+                status=row.status,
+                source_repo=row.source_repo,
+                source_path=row.source_path,
+                work_unit_slug=row.work_unit_slug,
+                updated_at=_aware(row.updated_at),
+            )
+            for row in rows[:limit]
+        ],
+        truncated,
+    )
+
+
+async def load_artifact_bodies(
+    db: AsyncSession, ids: Sequence[UUID]
+) -> dict[UUID, str]:
+    """The bodies of the named artifacts, keyed by id.
+
+    Bounded by the caller — reconciliation asks only for the page it is about
+    to return — because ``body`` is the one column on this table with no upper
+    size and pulling the corpus's worth of it would dwarf the read.
+    """
+    if not ids:
+        return {}
+    stmt = select(WorkArtifact.id, WorkArtifact.body).where(
+        WorkArtifact.id.in_(list(ids))
+    )
+    return {row.id: row.body for row in (await db.execute(stmt)).all()}
