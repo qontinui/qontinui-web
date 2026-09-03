@@ -44,6 +44,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -1119,6 +1121,246 @@ async def find_kind_forks(
 # ranks. No criticality score, no weighting, no "priority" column — a
 # hardcoded score would be a guess frozen into SQL, and every consumer would
 # then be arguing with the guess instead of with the evidence.
+#
+# The POPULATION is a union of both corpus layers, and that is plan
+# ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``. It used
+# to be ``agent.work_artifacts`` alone — the layer that holds plan BODIES —
+# while the question this read answers, *which plan still needs work?*, is
+# answered by fields the OPERATIONAL layer owns. Measured 2026-09-03: 18 plan
+# artifacts against 635 non-terminal date-slugged coord work units, 606 of
+# them resolving to a real plan file, so selection saw 2.1% of the addressable
+# corpus and ``/vet-imp-sweep`` truthfully reported "nothing to do" over it.
+#
+# The remedy is the join DIRECTION, not a body backfill. Copying ~1,469 plan
+# files into a second store was scoped and rejected by the operator: selection
+# needs identity and status, not prose, and the two layers already overlap on
+# identity alone.
+
+
+#: The slug prefix coord uses for the work units IT generates — one
+#: ``shepherd-<owner>-<repo>-<pr>`` unit per Tier-3 unlandable-PR escalation.
+#: They are merge bookkeeping, never plans (839 of 2,389 units on 2026-09-03),
+#: and coord's own list door takes this as ``exclude_slug_prefix`` so the
+#: exclusion is server-side — it has to be, because the list is
+#: ``updated_at DESC`` under a page cap and the shepherd rows share an
+#: ``updated_at``.
+COORD_SHEPHERD_SLUG_PREFIX = "shepherd-"
+
+#: The shape of a plan slug: ``YYYY-MM-DD-<stem>``, the fleet's plan filename
+#: convention and the identifier every other surface joins on (``Depends-On:``,
+#: the ``Plan: <stem>`` PR marker, ``$QONTINUI_PLANS_DIR`` filenames).
+#:
+#: A SHAPE test, not a vocabulary: ``coord.work_units`` also holds units that
+#: were never plans at all, and this is the one structural property that
+#: separates them without asking coord to classify its own rows.
+_PLAN_SLUG_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
+
+def is_plan_shaped_slug(slug: str) -> bool:
+    """Could this coord work-unit slug be a plan?
+
+    Date-slugged and not one of coord's own ``shepherd-*`` escalations. Both
+    halves are necessary: the date prefix admits the plan corpus, and the
+    shepherd exclusion removes the largest single class of non-plan units.
+
+    Deliberately permissive about everything else — a slug that LOOKS like a
+    plan and is not costs one extra candidate row an agent can dismiss, while
+    a slug wrongly rejected is invisible, which is the failure this whole
+    union exists to remove.
+    """
+    if slug.startswith(COORD_SHEPHERD_SLUG_PREFIX):
+        return False
+    return _PLAN_SLUG_DATE_PREFIX.match(slug) is not None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateWorkUnit:
+    """One ``coord.work_units`` row, projected onto the candidate arm.
+
+    Built by the endpoint layer from coord's HTTP work-unit list — web never
+    reads coord's Postgres (module invariant 4 of
+    ``app/api/v1/endpoints/plan_library.py``, enforced by
+    ``tests/test_coord_schema_boundary_guard.py``), so this type is the shape
+    the coord half crosses into the CRUD layer as, and nothing here knows how
+    it was fetched.
+
+    Only the fields selection actually uses. ``status`` is as OPAQUE here as
+    it is on an artifact: coord carried 59 distinct status strings on
+    2026-09-03 — ``d1``, ``fix``, ``all``, ``code``, ``phases`` and a
+    backtick-quoted ``needs_rework`` among them, and 492 rows holding the
+    empty string — and it is read through the same :func:`is_terminal_status`
+    the artifact half uses, so an unrecognised word counts as NOT-yet-terminal.
+    """
+
+    slug: str
+    status: str
+    title: str | None
+    #: coord's ``metadata.source_path`` — the plan FILE this unit was scanned
+    #: from, when there was one. Its presence is the only evidence this read
+    #: has that a document exists at all, and it is what separates a candidate
+    #: whose body merely was not synced from one that has no document
+    #: anywhere.
+    source_path: str | None
+    #: coord's ``metadata.repo``, as a list so it lines up with the artifact
+    #: half's ``repos``. Empty when coord recorded none.
+    repos: tuple[str, ...]
+    created_at: datetime
+    updated_at: datetime
+    #: ``coalesce(first_in_progress_at, created_at)`` — this arm's half of the
+    #: stable ordering. ``first_in_progress_at`` is coord's own derivation from
+    #: its status history and is ABSENT rather than zero when no transition was
+    #: recorded, which is why the fallback is explicit here rather than left to
+    #: the sort.
+    order_key: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PlanCandidateRow:
+    """One row of the candidate population, from whichever layer holds it.
+
+    EXACTLY ONE of the two is set. A row carrying an ``artifact`` is what this
+    read has always returned — the document layer's row, with a body behind an
+    id. A row carrying a ``work_unit`` is a plan coord knows about and the
+    library has never captured: it has no id, and its ``source_path`` (when
+    coord recorded one) is the only handle on its body.
+
+    A frozen pair rather than a widened ``WorkArtifact`` because the two are
+    genuinely different rows from different stores; making one impersonate the
+    other is how a null-filled artifact ends up looking like a captured one.
+    """
+
+    artifact: WorkArtifact | None = None
+    work_unit: CandidateWorkUnit | None = None
+
+
+def _plan_candidate_filters(org_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """The document layer's arm of the population, unchanged since Phase 6.
+
+    Non-terminal ``kind='plan'`` artifacts in the caller's org scope, reading
+    the OPAQUE ``status`` through the SQL twin of :func:`normalize_status`
+    against :data:`app.models.work_artifact.TERMINAL_STATUSES`. An
+    unrecognised status counts as not-yet-shipped — the library mirrors what
+    the fleet wrote and an unknown word must not silently hide a plan.
+
+    Returned as the predicates rather than as a statement because the union
+    path selects the SAME rows twice with different column lists (the sort
+    keys, then the bodies of whatever survived the merge), and the one thing
+    that must not drift between those two reads is which rows they are over.
+    """
+    return (
+        _org_scope(org_id),
+        WorkArtifact.kind == "plan",
+        _normalized_status().not_in(tuple(sorted(TERMINAL_STATUSES))),
+    )
+
+
+def _artifact_order_key() -> ColumnElement[datetime]:
+    """``coalesce(authored_at, created_at)`` — the artifact arm's sort key."""
+    return func.coalesce(WorkArtifact.authored_at, WorkArtifact.created_at)
+
+
+def _aware(moment: datetime) -> datetime:
+    """Force a timestamp onto UTC so the two arms are comparable.
+
+    Both columns are ``timestamptz`` and coord serialises RFC 3339, so a naive
+    value should be impossible — but the merge below SORTS across the two
+    arms, and Python raises rather than degrading when it compares an aware
+    datetime with a naive one. Normalising is cheaper than a page-500 that
+    only reproduces against one store's data.
+    """
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
+async def _slugs_claimed_by_plan_artifacts(
+    db: AsyncSession, *, org_id: UUID | None, slugs: Sequence[str]
+) -> set[str]:
+    """Which of these coord slugs already have a plan artifact — ANY status.
+
+    The de-duplication key for the union. Matched against BOTH ``work_unit_slug``
+    (the declared soft link, which the runner scanner writes with the plan's own
+    stem) and ``slug`` (the stem itself), because an artifact captured without
+    the link still IS the document for that work unit and a page showing it
+    twice — once with a body, once without — would be the visible symptom.
+
+    Deliberately NOT restricted to the non-terminal arm. A coord unit whose
+    artifact reads ``SHIPPED`` is suppressed, which keeps the document layer's
+    terminal filter — the one this route has always applied — the single place
+    that decision is made. The alternative emits a second, id-less row for a
+    plan the library says is done, and ``document_state`` would have to call it
+    ``present`` while carrying nothing to fetch the body with.
+    """
+    if not slugs:
+        return set()
+    wanted = set(slugs)
+    stmt = select(WorkArtifact.slug, WorkArtifact.work_unit_slug).where(
+        _org_scope(org_id),
+        WorkArtifact.kind == "plan",
+        or_(
+            WorkArtifact.slug.in_(wanted),
+            WorkArtifact.work_unit_slug.in_(wanted),
+        ),
+    )
+    claimed: set[str] = set()
+    for slug, work_unit_slug in (await db.execute(stmt)).all():
+        if slug in wanted:
+            claimed.add(slug)
+        if work_unit_slug in wanted:
+            claimed.add(work_unit_slug)
+    return claimed
+
+
+def _unclaimed_work_units(
+    work_units: Iterable[CandidateWorkUnit], claimed: set[str]
+) -> list[CandidateWorkUnit]:
+    """The work-unit arm: plan-shaped, non-terminal, and NOT already a row.
+
+    Sorted by this arm's half of the stable default — ``coalesce(
+    first_in_progress_at, created_at) ASC``, slug breaking ties so paging is
+    deterministic. No re-weighting and no cap: open question 2 of the plan
+    settles that a ``vetted``-first ordering would be exactly the "guess frozen
+    into SQL" design decision D6 forbids, and 411 of the 635 units carried an
+    empty status, which would make it a guess over the least-known rows.
+    """
+    return sorted(
+        (
+            unit
+            for unit in work_units
+            if unit.slug not in claimed
+            and is_plan_shaped_slug(unit.slug)
+            and not is_terminal_status(unit.status)
+        ),
+        key=lambda unit: (_aware(unit.order_key), unit.slug),
+    )
+
+
+def _merge_arms(
+    artifact_keys: Sequence[tuple[datetime, UUID]],
+    work_units: Sequence[CandidateWorkUnit],
+) -> list[UUID | CandidateWorkUnit]:
+    """Interleave the two already-sorted arms into one ordered population.
+
+    A hand-written merge rather than a ``sorted()`` over the concatenation,
+    for one reason: each arm carries its OWN tie-breaker (``id`` for the
+    artifacts, ``slug`` for the work units) and those are not comparable with
+    each other. Merging preserves each arm's internal order verbatim while
+    ordering ACROSS the arms on the timestamp alone, so the artifact half of
+    any page is exactly the sequence the pre-union SQL produced.
+
+    Ties between the arms go to the artifact (``<=``), so a page containing no
+    work-unit rows is bit-for-bit the old page.
+    """
+    merged: list[UUID | CandidateWorkUnit] = []
+    i = j = 0
+    while i < len(artifact_keys) and j < len(work_units):
+        if artifact_keys[i][0] <= _aware(work_units[j].order_key):
+            merged.append(artifact_keys[i][1])
+            i += 1
+        else:
+            merged.append(work_units[j])
+            j += 1
+    merged.extend(key for _, key in artifact_keys[i:])
+    merged.extend(work_units[j:])
+    return merged
 
 
 async def list_plan_candidates(
@@ -1127,42 +1369,118 @@ async def list_plan_candidates(
     org_id: UUID | None,
     offset: int = 0,
     limit: int = 25,
-) -> tuple[list[WorkArtifact], int]:
-    """Unshipped ``kind='plan'`` artifacts, oldest-vetted-first.
+    work_units: Sequence[CandidateWorkUnit] | None = None,
+) -> tuple[list[PlanCandidateRow], int]:
+    """The candidate population — the UNION of both corpus layers.
 
-    "Unshipped" reads the OPAQUE ``status`` through
-    :func:`normalize_status` against
-    :data:`app.models.work_artifact.TERMINAL_STATUSES`. An unrecognised status
-    counts as not-yet-shipped — the library mirrors what the fleet wrote and
-    an unknown word must not silently hide a plan.
+    ::
 
-    Ordering is a STABLE DEFAULT and nothing more:
-    ``coalesce(authored_at, created_at) ASC, id ASC``. ``authored_at`` is the
-    plan's own front-matter timestamp when the scanner captured one, falling
-    back to when the library first saw it; ``id`` breaks ties so paging is
-    deterministic. There is no scoring pass.
+        candidates := artifacts(kind='plan', ¬terminal)
+                    ∪ work_units(date-slugged, ¬terminal, ¬shepherd-*)
+                      minus those an artifact already claims
+
+    ``work_units`` is coord's half, already fetched by the endpoint layer in
+    ONE list read (web never reads coord's Postgres). Pass ``None`` — which is
+    what a coord outage, and ``include_coord=false``, both produce — and this
+    degrades to the document-layer-only population it returned before the
+    union, byte for byte: the same single query, the same count, the same
+    ordering. **The union can only ever ADD rows**, so this read never returns
+    fewer than it used to, which is what keeps the route's own invariant 5
+    ("an unavailable coord is UNKNOWN, never empty") true of the population as
+    well as of the per-row fields.
+
+    Terminal classification is the SAME on both arms — :func:`normalize_status`
+    against :data:`app.models.work_artifact.TERMINAL_STATUSES`, in SQL for the
+    artifacts and in Python for the work units — so an unrecognised status
+    counts as not-yet-terminal on either side. That matters more for coord's
+    half than for the library's: it carried 59 distinct status strings on
+    2026-09-03, 492 of them the empty string.
+
+    Ordering is a STABLE DEFAULT and nothing more. The artifact arm keeps
+    ``coalesce(authored_at, created_at) ASC, id ASC`` exactly; the work-unit
+    arm sorts on ``coalesce(first_in_progress_at, created_at) ASC, slug ASC``;
+    and where the two arms tie on the timestamp the artifact wins, so a page
+    that contains no work-unit rows is identical to the pre-union page. There
+    is no scoring pass on either side.
+
+    ``total`` and paging are computed over the whole union. The merge is done
+    here rather than in SQL because coord's half arrives over HTTP: only the
+    first ``offset + limit`` rows of either arm can appear in the requested
+    window, so the artifact arm is read as ``(id, order_key)`` pairs to that
+    bound — no bodies — and only the ids that survive the merge are hydrated.
     """
-    base = select(WorkArtifact).where(
-        _org_scope(org_id),
-        WorkArtifact.kind == "plan",
-        _normalized_status().not_in(tuple(sorted(TERMINAL_STATUSES))),
-    )
-    count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-    total = int((await db.execute(count_stmt)).scalar_one())
+    filters = _plan_candidate_filters(org_id)
+    order_key = _artifact_order_key()
+    base = select(WorkArtifact).where(*filters)
 
-    order_key = func.coalesce(WorkArtifact.authored_at, WorkArtifact.created_at)
-    rows = (
-        (
-            await db.execute(
-                base.order_by(order_key.asc(), WorkArtifact.id.asc())
-                .offset(offset)
-                .limit(limit)
+    if work_units is None:
+        count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
+        total = int((await db.execute(count_stmt)).scalar_one())
+        rows = (
+            (
+                await db.execute(
+                    base.order_by(order_key.asc(), WorkArtifact.id.asc())
+                    .offset(offset)
+                    .limit(limit)
+                )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
+        return [PlanCandidateRow(artifact=row) for row in rows], total
+
+    claimed = await _slugs_claimed_by_plan_artifacts(
+        db, org_id=org_id, slugs=[unit.slug for unit in work_units]
     )
-    return list(rows), total
+    extra = _unclaimed_work_units(work_units, claimed)
+
+    count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
+    artifact_total = int((await db.execute(count_stmt)).scalar_one())
+    total = artifact_total + len(extra)
+
+    # Only the first ``offset + limit`` rows of EITHER arm can land in the
+    # requested window, so neither arm is read past that bound. The artifact
+    # arm is read as ``(id, sort key)`` pairs — the full ORM row carries
+    # ``body``, and hydrating a whole arm to throw most of it away is how a
+    # widened population turns into a memory problem.
+    window = offset + limit
+    key_stmt = (
+        select(WorkArtifact.id, order_key.label("order_key"))
+        .where(*filters)
+        .order_by(order_key.asc(), WorkArtifact.id.asc())
+        .limit(window)
+    )
+    artifact_keys = [
+        (_aware(row.order_key), row.id) for row in (await db.execute(key_stmt))
+    ]
+    merged = _merge_arms(artifact_keys, extra[:window])[offset : offset + limit]
+
+    page_ids = [entry for entry in merged if isinstance(entry, UUID)]
+    hydrated: dict[UUID, WorkArtifact] = {}
+    if page_ids:
+        rows = (
+            (
+                await db.execute(
+                    select(WorkArtifact).where(WorkArtifact.id.in_(page_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        hydrated = {row.id: row for row in rows}
+
+    page: list[PlanCandidateRow] = []
+    for entry in merged:
+        if isinstance(entry, UUID):
+            artifact = hydrated.get(entry)
+            # Absent only if the row vanished between the two reads, which is
+            # a shorter page rather than a 500 — the same reading the detail
+            # route gives a peer that disappeared mid-request.
+            if artifact is not None:
+                page.append(PlanCandidateRow(artifact=artifact))
+        else:
+            page.append(PlanCandidateRow(work_unit=entry))
+    return page, total
 
 
 async def load_depends_on(

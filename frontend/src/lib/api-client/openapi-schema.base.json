@@ -30931,7 +30931,7 @@
         "type": "object"
       },
       "PlanCandidate": {
-        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.",
+        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.\n\nA candidate comes from EITHER layer of the corpus \u2014 an\n``agent.work_artifacts`` row, a non-terminal ``coord.work_units`` row, or\nboth \u2014 and ``document_state`` is what says which. Read it before reading\nany of the document-layer fields below: on a row that has no artifact,\nthose fields are not observations.",
         "properties": {
           "age_days": {
             "title": "Age Days",
@@ -30955,10 +30955,27 @@
             "title": "Created At",
             "type": "string"
           },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
+          "document_state": {
+            "default": "present",
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "kind": {
             "title": "Kind",
@@ -31040,7 +31057,6 @@
           }
         },
         "required": [
-          "id",
           "kind",
           "kind_locked",
           "slug",
@@ -31098,6 +31114,26 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "work_unit_population_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Population Reason"
+          },
+          "work_unit_population_state": {
+            "default": "included",
+            "enum": [
+              "included",
+              "unavailable"
+            ],
+            "title": "Work Unit Population State",
+            "type": "string"
           }
         },
         "required": [
@@ -89340,7 +89376,7 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {

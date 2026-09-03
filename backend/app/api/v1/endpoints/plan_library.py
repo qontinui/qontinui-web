@@ -38,6 +38,17 @@ Invariants this module is responsible for
    to the local signals with the coord-sourced fields explicitly flagged
    ``unavailable`` rather than failing the whole read — and never renders an
    unreachable coord as "this plan has no PRs".
+
+   Since ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``
+   this covers the POPULATION as well as the fields. ``/candidates`` selects
+   from the union of ``agent.work_artifacts`` and coord's non-terminal
+   work units, so an unreadable coord would otherwise silently shrink the
+   candidate set rather than flag it. It degrades to the artifact-only
+   population — the one this route had before the union, so it can never
+   return FEWER rows than it used to — and says so in
+   ``work_unit_population_state``. That flag is distinct from
+   ``coord_available`` because a 4xx on the population door is coord ANSWERING
+   and must not trip the page-wide circuit.
 6. **``/candidates`` emits no score.** Design decision D6: the read exposes
    the ranking inputs, the agent ranks. A hardcoded criticality score would be
    a guess frozen into SQL.
@@ -173,6 +184,7 @@ from app.schemas.plan_library import (
     WorkArtifactUpsert,
     WorkArtifactUpsertResponse,
     WorkArtifactVersionRead,
+    WorkUnitPopulationState,
 )
 from app.services.permissions import resolve_personal_organization
 
@@ -193,6 +205,25 @@ router = APIRouter(route_class=StrictQueryRoute)
 #: service and a page of candidates can reference many distinct work units;
 #: this bounds the fan-out without serialising it.
 _COORD_FANOUT = 6
+
+#: Page size for the POPULATION read (:meth:`_CoordProbe.candidate_units`).
+#: coord clamps its work-unit list to ``[1, 500]`` server-side, so this asks
+#: for the largest page it will serve — the read is paged to exhaustion and a
+#: smaller page would only multiply round-trips.
+_COORD_UNIT_PAGE_LIMIT = 500
+
+#: Hard ceiling on pages of that read, so a coord whose paging never
+#: terminates cannot hold this request open indefinitely. At
+#: :data:`_COORD_UNIT_PAGE_LIMIT` it admits 10,000 work units, against 2,389
+#: rows (1,550 after the ``shepherd-*`` exclusion) on this fleet on
+#: 2026-09-03 — generous rather than binding.
+#:
+#: Reaching it is a TRUNCATED population, which is why it is logged rather
+#: than absorbed. It cannot make the read return fewer rows than it did before
+#: the union — the artifact arm is unaffected — but it can make ``total``
+#: short, and a count that quietly stopped counting is the defect class this
+#: whole plan is about.
+_COORD_UNIT_MAX_PAGES = 20
 
 #: Hard ceiling on artifacts in one bulk export (Phase 4 of plan
 #: ``2026-08-16-plan-corpus-authority-and-run-provenance``). The zip is built in
@@ -406,6 +437,67 @@ def _open_followup(
         created_by=edge.created_by,
         created_at=edge.created_at,
         age_days=_age_days(edge.created_at, now),
+    )
+
+
+def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCandidate:
+    """Project a candidate that exists ONLY as a coord work unit.
+
+    The row the union added: a plan coord holds work for and the library never
+    captured a body of. Everything it carries came out of the SINGLE population
+    read (:meth:`_CoordProbe.candidate_units`), so rendering it costs no
+    further coord traffic.
+
+    Three fields are the honest part of this projection:
+
+    * ``id`` is ``None``. There is no artifact, so there is nothing to address
+      the body routes with, and inventing an id would make a phantom look
+      fetchable.
+    * ``document_state`` separates ``unsynced`` — coord recorded a
+      ``source_path``, so a plan FILE exists and only the body sync is missing
+      — from ``absent``, meaning no document has been seen anywhere. The second
+      is the subject of
+      ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans``, not
+      of this route, and collapsing the two would hide that boundary.
+    * ``unmet_depends_on`` and ``prompt_chain`` are empty because they are
+      document-layer edges and there is no artifact to walk them from — UNKNOWN,
+      not "unblocked". ``document_state`` is what tells a consumer to read them
+      that way; coord's ``metadata.depends_on`` is deliberately not folded in,
+      because "unmet" is a judgement about a target's status that only the
+      artifact rows support.
+
+    The ``coord`` block is ``linked`` on the work-unit half — the unit is
+    exactly what this row came from — and ``unavailable`` on the PR half. The
+    population read carries no citations, and reporting an empty list there
+    would assert "this plan has no PRs" off a read that never asked.
+    """
+    return PlanCandidate(
+        id=None,
+        kind="plan",
+        kind_locked=False,
+        slug=unit.slug,
+        title=unit.title or unit.slug,
+        status=unit.status,
+        repos=list(unit.repos),
+        source_repo=unit.repos[0] if unit.repos else None,
+        source_path=unit.source_path,
+        work_unit_slug=unit.slug,
+        authored_at=None,
+        created_at=unit.created_at,
+        last_touched=unit.updated_at,
+        age_days=_age_days(unit.order_key, now),
+        coord=CandidateCoordLink(
+            work_unit_slug=unit.slug,
+            work_unit_state="linked",
+            work_unit_status=unit.status,
+            work_unit_title=unit.title,
+            linked_prs_state="unavailable",
+            unavailable_reason=(
+                "not fetched: this candidate came from coord's work-unit list, "
+                "which carries no PR citations"
+            ),
+        ),
+        document_state="unsynced" if unit.source_path else "absent",
     )
 
 
@@ -1139,6 +1231,113 @@ def _is_transport_failure(
     return http_status >= 500
 
 
+def _coord_datetime(raw: object) -> datetime | None:
+    """Parse one RFC 3339 timestamp out of coord's JSON, or ``None``.
+
+    coord serialises ``DateTime<Utc>``, so the ``Z`` suffix is the normal
+    shape and :meth:`datetime.fromisoformat` has accepted it since 3.11. A
+    value that does not parse is treated as ABSENT rather than raised on: this
+    is a projection of another service's payload, and one unreadable timestamp
+    must not 500 a read whose whole job is to survive coord's weather.
+
+    Anything returned is tz-aware, because the candidate ordering compares it
+    against ``timestamptz`` columns.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
+    """Project ONE row of coord's work-unit list onto the candidate arm.
+
+    ``None`` means *this row is not a plan candidate*, and it is deliberately
+    the only rejection channel — there are four reasons, and none of them is
+    an error:
+
+    * the row is not an object, or carries no usable ``slug``;
+    * the slug is not plan-shaped (:func:`~app.crud.work_artifact.is_plan_shaped_slug`
+      — date-slugged, and not one of coord's own ``shepherd-*`` merge
+      escalations);
+    * it carries no ``created_at`` this read can parse, leaving nothing to
+      order it by;
+    * its status reads as terminal.
+
+    The terminal test is :func:`~app.crud.work_artifact.is_terminal_status` —
+    the SAME ``normalize_status`` / ``TERMINAL_STATUSES`` pair the artifact arm
+    uses, deliberately rather than a coord-specific vocabulary. coord's status
+    column is as opaque as the library's and considerably wilder: 59 distinct
+    strings on 2026-09-03, including ``d1``, ``fix``, ``all``, ``code``,
+    ``phases`` and a backtick-quoted ``needs_rework``, with 492 rows holding
+    the empty string. An unrecognised word counts as NOT-yet-terminal on both
+    sides, which is the artifact half's own stated rule: an unknown word must
+    not silently hide a plan.
+
+    ``metadata`` is probed rather than assumed — it is free-form JSON coord
+    writes from several producers — and only two keys are lifted:
+    ``source_path`` (the plan file the unit was scanned from, and the only
+    evidence this read has that a document exists at all) and ``repo``.
+    """
+    if not isinstance(raw, dict):
+        return None
+    slug = raw.get("slug")
+    if not isinstance(slug, str) or not crud.is_plan_shaped_slug(slug):
+        return None
+
+    status = raw.get("status")
+    status = status if isinstance(status, str) else ""
+    if crud.is_terminal_status(status):
+        return None
+
+    created_at = _coord_datetime(raw.get("created_at"))
+    if created_at is None:
+        # Every ordering this row could take is anchored on ``created_at``
+        # (``first_in_progress_at`` is explicitly absent-not-zero), so a row
+        # without one cannot be placed in a stable page at all.
+        return None
+
+    metadata = raw.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    source_path = metadata.get("source_path")
+    repo = metadata.get("repo")
+
+    title = raw.get("title")
+    return crud.CandidateWorkUnit(
+        slug=slug,
+        status=status,
+        title=title if isinstance(title, str) else None,
+        source_path=source_path if isinstance(source_path, str) else None,
+        repos=(repo,) if isinstance(repo, str) and repo else (),
+        created_at=created_at,
+        updated_at=_coord_datetime(raw.get("updated_at")) or created_at,
+        # coord derives ``first_in_progress_at`` from its status history and
+        # reports it ABSENT — not zero — when no transition was recorded, so
+        # the fallback is spelled here rather than left to the sort.
+        order_key=_coord_datetime(raw.get("first_in_progress_at")) or created_at,
+    )
+
+
+def _coord_unit_rows(payload: object) -> list[object] | None:
+    """The ``work_units`` list out of coord's list envelope.
+
+    ``None`` for a payload this read does not recognise — which must not be
+    read as an empty population. coord answers
+    ``{work_units, limit, offset}``; a body missing the key is a coord this
+    read cannot parse, and reporting that as "no work units" is precisely the
+    absence-is-zero mistake the module's invariant 5 forbids.
+    """
+    if not isinstance(payload, dict):
+        return None
+    rows = payload.get("work_units")
+    if not isinstance(rows, list):
+        return None
+    return list(rows)
+
+
 class _CoordProbe:
     """One page's coord reads, with a fail-fast circuit.
 
@@ -1340,6 +1539,83 @@ class _CoordProbe:
                 self._trip(detail)
                 return None, None, detail
         return payload, 200, None
+
+    async def candidate_units(
+        self,
+    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+        """coord's whole plan-shaped, non-terminal work-unit population.
+
+        The OTHER half of the candidate population, and the reason this plan
+        exists: ``agent.work_artifacts`` holds only the plans whose BODY was
+        synced (18 on 2026-09-03, against 635 non-terminal date-slugged work
+        units), and the body sync is opt-in and off by default. Selection asks
+        *which plan still needs work?*, which is answered by fields the
+        operational layer owns, so the population is read from there too.
+
+        Returns ``(units, reason)``. ``units is None`` means coord could not
+        be read and the caller must degrade to the artifact-only population —
+        **UNKNOWN, never an empty population**; ``reason`` then says what
+        happened, in the same whitelisted form the per-row
+        ``unavailable_reason`` carries.
+
+        ONE read per page, not one per row. It is paged to exhaustion against
+        coord's own cap (:data:`_COORD_UNIT_PAGE_LIMIT`), filtered
+        SERVER-side on ``exclude_slug_prefix`` — it has to be, because the
+        list is ``updated_at DESC`` under a page cap and coord's 839
+        ``shepherd-*`` rows share an ``updated_at``, so a client-side filter
+        over one page can see almost nothing else. Every field a work-unit-only
+        candidate needs arrives here, so those rows never round-trip to coord
+        again: widening the population must not multiply the per-slug fan-out,
+        which stays bounded by the PAGE (:data:`_COORD_FANOUT` over at most
+        ``limit`` artifact-backed slugs) exactly as it was before.
+
+        The read goes through :meth:`_get`, so a transport failure trips the
+        page-wide circuit here — before any per-slug read pays its own
+        timeout — and ``coord_available`` reports it. A 4xx does not trip
+        (coord answering is not coord being down), which is why the population
+        state is reported as its own flag rather than inferred from
+        ``coord_available``: a 403 on this door would otherwise degrade the
+        population silently.
+
+        A short page ends the paging: coord clamps ``limit`` itself and
+        returns what it has, so fewer rows than asked for is the last page.
+        """
+        units: list[crud.CandidateWorkUnit] = []
+        offset = 0
+        for _ in range(_COORD_UNIT_MAX_PAGES):
+            payload, http_status, error = await self._get(
+                self._coord_base,
+                params={
+                    "limit": str(_COORD_UNIT_PAGE_LIMIT),
+                    "offset": str(offset),
+                    "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
+                },
+            )
+            if payload is None:
+                return None, error or f"coord returned {http_status} for work units"
+            rows = _coord_unit_rows(payload)
+            if rows is None:
+                return None, (
+                    "coord's work-unit list carried no `work_units` array; "
+                    "the candidate population could not be read"
+                )
+            for raw in rows:
+                unit = _coord_candidate_unit(raw)
+                if unit is not None:
+                    units.append(unit)
+            if len(rows) < _COORD_UNIT_PAGE_LIMIT:
+                return units, None
+            offset += len(rows)
+
+        logger.warning(
+            "plan_library.candidate_population_truncated",
+            pages=_COORD_UNIT_MAX_PAGES,
+            page_limit=_COORD_UNIT_PAGE_LIMIT,
+            kept=len(units),
+            detail="coord's work-unit list did not terminate within the page cap; "
+            "`total` counts only what was read",
+        )
+        return units, None
 
     @staticmethod
     def _inline_citations(payload: object) -> tuple[list[object], str | None] | None:
@@ -1952,16 +2228,40 @@ async def list_plan_candidates(
 ) -> PlanCandidateResponse:
     """Candidate selection for agents — signals, never a verdict.
 
-    Returns unshipped ``kind='plan'`` artifacts, each carrying the inputs an
-    agent needs to decide what to pick up next: ``status``, ``repos``,
-    ``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,
-    ``last_touched``, and the ``prompt_chain`` that produced the plan.
+    Returns unshipped plans, each carrying the inputs an agent needs to decide
+    what to pick up next: ``status``, ``repos``, ``unmet_depends_on``,
+    ``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and
+    the ``prompt_chain`` that produced the plan.
+
+    **The population is the UNION of both corpus layers** — non-terminal
+    ``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,
+    non-``shepherd-*`` work units that no artifact already claims. Plan
+    ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn
+    from the document layer alone this read saw 13 of 606 addressable plans,
+    because that layer holds plan BODIES and fills only under an opt-in body
+    sync, while the question this route answers is settled by fields the
+    OPERATIONAL layer owns. Each item's ``document_state`` says which layer it
+    came from, and a work-unit-only row carries a null ``id`` — there is no
+    artifact to give it one, so it is resolved by ``source_path`` instead.
+
+    The union can only ADD rows: coord's half is a best-effort read, and when
+    it fails the population degrades to exactly the artifact-only one this
+    route returned before, flagged by ``work_unit_population_state:
+    "unavailable"``. That flag is separate from ``coord_available`` on
+    purpose — a 403 on the population door is coord ANSWERING, so it never
+    trips the page-wide circuit, and without its own flag the route would
+    silently fall back to a 2% view of the corpus while reporting coord
+    healthy.
 
     **There is no criticality score** (design decision D6). A hardcoded score
     would be a guess frozen into SQL; the read exposes the evidence and the
     agent ranks. The only ordering is a stable default — oldest-vetted-first
-    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) — with no
-    weighting of any kind.
+    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit
+    rows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to
+    an artifact so a page without them is unchanged) — with no weighting of any
+    kind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:
+    411 of the 635 carried an empty status, which would make that a guess over
+    the least-known rows.
 
     Coord-owned fields (the work unit and its PR citations) come over coord's
     HTTP API, never from coord's Postgres schema. Two things the payload is
@@ -1989,20 +2289,44 @@ async def list_plan_candidates(
     """
     current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
-    rows, total = await crud.list_plan_candidates(
-        db, org_id=org_id, offset=offset, limit=limit
+
+    # The coord half of the POPULATION, read once, before the population query
+    # that consumes it. ``None`` degrades the union to the artifact-only
+    # population — never to an empty one.
+    probe: _CoordProbe | None = None
+    units: list[crud.CandidateWorkUnit] | None = None
+    population_reason: str | None = "not fetched (include_coord=false)"
+    if include_coord:
+        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
+        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
+        units, population_reason = await probe.candidate_units()
+    population_state: WorkUnitPopulationState = (
+        "included" if units is not None else "unavailable"
     )
 
-    ids = [row.id for row in rows]
+    rows, total = await crud.list_plan_candidates(
+        db, org_id=org_id, offset=offset, limit=limit, work_units=units
+    )
+
+    artifacts = [row.artifact for row in rows if row.artifact is not None]
+    ids = [artifact.id for artifact in artifacts]
     depends = await crud.load_depends_on(db, ids)
     chains = await crud.load_prompt_chains(db, ids)
 
     links: dict[str, CandidateCoordLink] = {}
     coord_available = True
-    if include_coord:
-        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
-        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
-        slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
+    if probe is not None:
+        # Per-slug reads are for the ARTIFACT-backed rows only. A work-unit-only
+        # row was produced BY the population read and already carries every
+        # coord field this route renders for it, so asking coord about it again
+        # would multiply the fan-out by exactly the factor the widened
+        # population unlocks. The artifact-backed rows keep the two-hop read
+        # unchanged: their citations are not in the list payload, and a modern
+        # coord fuses presence and citations into one round-trip anyway
+        # (``?with_citations=true`` / the agent door's unconditional inline),
+        # so serving their presence half from the list would save nothing and
+        # would cost the inline-citation short-circuit.
+        slugs = sorted({a.work_unit_slug for a in artifacts if a.work_unit_slug})
         links = await _coord_links(slugs, probe)
         coord_available = not probe.degraded
 
@@ -2017,7 +2341,16 @@ async def list_plan_candidates(
 
     now = datetime.now(UTC)
     items: list[PlanCandidate] = []
-    for row in rows:
+    for candidate in rows:
+        row = candidate.artifact
+        if row is None:
+            # ``PlanCandidateRow`` sets exactly one side, so no artifact means
+            # the work-unit arm produced this row — a plan coord knows about
+            # and the library has never captured.
+            if candidate.work_unit is not None:
+                items.append(_work_unit_candidate(candidate.work_unit, now))
+            continue
+
         anchor = row.authored_at or row.created_at
         if anchor.tzinfo is None:  # pragma: no cover — the column is timestamptz
             anchor = anchor.replace(tzinfo=UTC)
@@ -2083,6 +2416,7 @@ async def list_plan_candidates(
                     for producer, relation, depth in chains.get(row.id, [])
                 ],
                 coord=coord_block,
+                document_state="present",
             )
         )
 
@@ -2092,6 +2426,10 @@ async def list_plan_candidates(
         offset=offset,
         limit=limit,
         coord_available=coord_available,
+        work_unit_population_state=population_state,
+        # ``None`` whenever the arm ran — ``candidate_units`` pairs a reason
+        # with a failure and never with a result.
+        work_unit_population_reason=population_reason,
         open_followups=[
             _open_followup(edge, origin, now) for edge, origin in followup_rows
         ],

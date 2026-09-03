@@ -186,6 +186,51 @@ CoordLinkState = Literal["linked", "dangling", "unavailable", "unlinked"]
 #:   really does mean "no citations" — this one IS a real zero.
 CoordPrState = Literal["available", "unavailable", "unlinked"]
 
+#: Whether this candidate has a plan DOCUMENT, and where.
+#:
+#: The mirror of :data:`CoordLinkState` on the other side of the join. That one
+#: says whether the coord work unit could be read; this one says whether the
+#: plan's BODY is in the library — and the two are independent, because
+#: ``/candidates`` draws its population from the union of both layers (plan
+#: ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``).
+#:
+#: * ``present``  — an ``agent.work_artifacts`` row backs this candidate. The
+#:   row carries an ``id``, so the body is fetchable from
+#:   ``GET /plan-library/{id}`` and ``…/{id}/export``.
+#: * ``unsynced`` — no artifact row, but coord's work unit records a
+#:   ``source_path``, so a plan FILE exists and only the body sync is missing
+#:   (``QONTINUI_PLAN_LIBRARY_SYNC``, opt-in and off by default). Resolve such
+#:   a plan by PATH; there is no id to export from.
+#: * ``absent``   — no artifact row and no ``source_path``: coord knows of the
+#:   work, and no document for it has been seen anywhere. Deliberately
+#:   distinct from ``unsynced`` — a consumer must be able to tell "the body
+#:   was never captured" from "there is nothing to capture", which is the
+#:   subject of the neighbouring plan
+#:   ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans``.
+#:
+#: ``present`` is the DEFAULT so every row that existed before the union — all
+#: of which are artifact-backed by construction — keeps its shape unchanged.
+DocumentState = Literal["present", "unsynced", "absent"]
+
+#: Whether the coord half of the candidate POPULATION was read.
+#:
+#: Distinct from :data:`CoordLinkState`, which is per-row, and from
+#: ``coord_available``, which reports the page-wide circuit: this says whether
+#: the union's work-unit arm ran at all. The distinction is load-bearing —
+#: coord answering the population read with a 401/403 is *coord answering*, so
+#: it never trips the circuit, and ``coord_available`` would stay ``true``
+#: while the route silently degraded to the document layer's ~2% view of the
+#: corpus. That silent degrade IS the defect this union exists to close, so it
+#: gets its own flag rather than being inferred.
+#:
+#: * ``included``    — coord's work-unit list was read; the population is the
+#:   union of both layers.
+#: * ``unavailable`` — it was not (coord unreadable, or ``include_coord=false``).
+#:   The population fell back to the document layer alone, which is exactly
+#:   what this route returned before the union. **UNKNOWN, not "there are no
+#:   work units".**
+WorkUnitPopulationState = Literal["included", "unavailable"]
+
 
 class CandidateCoordLink(BaseModel):
     """Everything coord-owned about a candidate, with its own honesty flags.
@@ -449,10 +494,24 @@ class PlanCandidate(BaseModel):
     """One unshipped plan with its ranking INPUTS attached.
 
     No score. See the section comment above.
+
+    A candidate comes from EITHER layer of the corpus — an
+    ``agent.work_artifacts`` row, a non-terminal ``coord.work_units`` row, or
+    both — and ``document_state`` is what says which. Read it before reading
+    any of the document-layer fields below: on a row that has no artifact,
+    those fields are not observations.
     """
 
-    id: UUID
+    #: The backing artifact's id, or ``None`` for a candidate that exists only
+    #: as a coord work unit (``document_state`` ``unsynced``/``absent``). There
+    #: is nothing to give it an id from — inventing one would make a phantom
+    #: addressable — so the body routes (``GET /plan-library/{id}``,
+    #: ``…/{id}/export``) simply do not apply to those rows; resolve them by
+    #: ``source_path`` instead.
+    id: UUID | None = None
     kind: str
+    #: Always ``False`` on a work-unit-only row: ``kind_locked`` is a property
+    #: of an artifact row, and there is none.
     kind_locked: bool
     slug: str
     title: str
@@ -463,14 +522,29 @@ class PlanCandidate(BaseModel):
     work_unit_slug: str | None = None
     authored_at: IsoDatetime | None = None
     created_at: IsoDatetime
-    #: When the library last saw a change to this artifact.
+    #: When the library last saw a change to this artifact — or, on a
+    #: work-unit-only row, coord's ``updated_at`` for the unit.
     last_touched: IsoDatetime
     #: Days since ``authored_at`` (falling back to ``created_at``) — the same
     #: timestamp the default ordering uses, exposed so the agent can weigh it.
+    #: A work-unit-only row measures it from the same timestamp ITS half of the
+    #: ordering uses, ``coalesce(first_in_progress_at, created_at)``.
     age_days: float
+    #: Derived from the DOCUMENT layer's ``depends_on`` edges. Empty on a row
+    #: with ``document_state`` other than ``present`` — there are no edges to
+    #: walk, so that empty list is UNKNOWN, **not** "this plan is unblocked".
+    #: coord's own ``metadata.depends_on`` is deliberately not folded in here:
+    #: it names slugs, and "unmet" is a judgement about the target's status
+    #: that only the artifact rows can support.
     unmet_depends_on: list[CandidateDependency] = Field(default_factory=list)
+    #: Same reading as ``unmet_depends_on``: provenance edges are document-layer
+    #: data, so this is empty-because-unlooked-at on a work-unit-only row.
     prompt_chain: list[CandidatePromptLink] = Field(default_factory=list)
     coord: CandidateCoordLink
+    #: **Additive.** Which layer(s) this candidate came from — see
+    #: :data:`DocumentState`. Defaults to ``present`` so an artifact-backed row
+    #: (every row this route emitted before the union) is unchanged.
+    document_state: DocumentState = "present"
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
@@ -532,6 +606,14 @@ class PlanCandidateResponse(BaseModel):
     #: ``False`` when ANY coord read degraded on this page. Per-row detail is
     #: in each item's ``coord`` block.
     coord_available: bool = True
+    #: **Additive.** Whether the union's work-unit arm ran — see
+    #: :data:`WorkUnitPopulationState`. ``unavailable`` means ``total`` counts
+    #: the DOCUMENT layer only, which on this fleet has been a ~2% view of the
+    #: addressable corpus; it is UNKNOWN, never "coord has no work units".
+    work_unit_population_state: WorkUnitPopulationState = "included"
+    #: Why the population arm degraded, when it did. Free-form, for the
+    #: operator; ``None`` whenever the arm ran.
+    work_unit_population_reason: str | None = None
     #: **Additive (Phase 7).** Work that has no plan yet — open
     #: ``spawned_followup`` edges, oldest first, bounded by the same ``limit``
     #: the candidate page uses. "What should I pick up next" is not answerable
