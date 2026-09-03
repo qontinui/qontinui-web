@@ -417,13 +417,23 @@ describe("AgentWriteAccessControl — the two protected families", () => {
     };
   }
 
+  /**
+   * Open the tier menu and pick `allow` — the choice that overrides coord's
+   * compile-time protection and so raises the confirmation.
+   *
+   * `pointerEventsCheck: 0` because Radix opens the menu on a pointer sequence
+   * jsdom does not fully model; the gates console's dropdown tests do the same.
+   */
   async function openConfirm(kind: PromptDocumentKind) {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const onSet = vi.fn().mockResolvedValue(true);
     const doc = protectedDoc(kind);
     render(<AgentWriteAccessControl doc={doc} saving={false} onSet={onSet} />);
     await user.click(
       screen.getByTestId(`doc-access-toggle-${doc.kind}-${doc.name}`)
+    );
+    await user.click(
+      await screen.findByTestId(`doc-access-tier-${doc.kind}-${doc.name}-allow`)
     );
     return { onSet };
   }
@@ -463,7 +473,7 @@ describe("AgentWriteAccessControl — the two protected families", () => {
    * protection.
    */
   it("does not confirm for a briefing coord does not protect", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const onSet = vi.fn().mockResolvedValue(true);
     const doc = protectedDoc("session_briefing");
     doc.name = "my-own-briefing";
@@ -473,7 +483,12 @@ describe("AgentWriteAccessControl — the two protected families", () => {
     await user.click(
       screen.getByTestId(`doc-access-toggle-${doc.kind}-${doc.name}`)
     );
+    await user.click(
+      await screen.findByTestId(`doc-access-tier-${doc.kind}-${doc.name}-allow`)
+    );
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onSet).toHaveBeenCalledWith(true);
+    // The tier, not the boolean: the write that reaches coord is
+    // `agent_write_tier`, so a boolean here would be the old defect.
+    expect(onSet).toHaveBeenCalledWith("allow");
   });
 });

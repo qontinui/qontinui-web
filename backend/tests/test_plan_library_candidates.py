@@ -63,6 +63,57 @@ def _slug(stem: str) -> str:
     return f"{stem}-{uuid4().hex[:10]}"
 
 
+#: The bare list paths ``/candidates`` reads the candidate POPULATION from —
+#: one per door tier. Filtered out of the per-slug call assertions below,
+#: which are about the fan-out and predate the union.
+_COORD_POPULATION_PATHS = ("/coord/work-units", "/coord/agent-work-units")
+
+
+def _artifacts(rows: list[crud.PlanCandidateRow]) -> list[WorkArtifact]:
+    """The artifact-backed half of a candidate page.
+
+    ``list_plan_candidates`` returns :class:`~app.crud.work_artifact.
+    PlanCandidateRow` since the population became the UNION of both corpus
+    layers (plan
+    ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``).
+    Every row is artifact-backed in the CRUD tests below, which pass no work
+    units and therefore exercise the degraded, document-layer-only arm.
+    """
+    return [row.artifact for row in rows if row.artifact is not None]
+
+
+def _coord_slug_calls(fake: AsyncMock) -> list[str]:
+    """Coord paths the page fetched PER SLUG — the population read removed.
+
+    ``/candidates`` now opens with ONE read of coord's work-unit list (the
+    union's other arm), which lands on the bare ``/coord/work-units`` /
+    ``/coord/agent-work-units`` path. The assertions below are about the
+    per-slug hops, so the population read is filtered out rather than counted
+    into them.
+    """
+    return [
+        call.args[0]
+        for call in fake.await_args_list
+        if call.args[0] not in _COORD_POPULATION_PATHS
+    ]
+
+
+def _coord_slug_calls_with_params(
+    fake: AsyncMock,
+) -> list[tuple[str, dict[str, str] | None]]:
+    """:func:`_coord_slug_calls`, keeping each hop's query parameters."""
+    return [
+        (call.args[0], call.kwargs.get("params"))
+        for call in fake.await_args_list
+        if call.args[0] not in _COORD_POPULATION_PATHS
+    ]
+
+
+def _coord_slug_call_count(fake: AsyncMock) -> int:
+    """How many PER-SLUG coord hops the page paid."""
+    return len(_coord_slug_calls(fake))
+
+
 async def _plan(
     db: AsyncSession,
     *,
@@ -116,7 +167,7 @@ class TestCandidateSelection:
 
         rows, total = await crud.list_plan_candidates(async_db_session, org_id=org)
         assert total == 1
-        assert [r.id for r in rows] == [live.id]
+        assert [r.id for r in _artifacts(rows)] == [live.id]
 
     async def test_terminal_status_matching_is_normalized(
         self, async_db_session: AsyncSession
@@ -132,7 +183,7 @@ class TestCandidateSelection:
             )
         rows, total = await crud.list_plan_candidates(async_db_session, org_id=org)
         assert total == 1
-        assert rows[0].status == "in-progress"
+        assert _artifacts(rows)[0].status == "in-progress"
 
     async def test_unknown_status_counts_as_unshipped(
         self, async_db_session: AsyncSession
@@ -166,12 +217,12 @@ class TestCandidateSelection:
         expected.sort()
 
         rows, _ = await crud.list_plan_candidates(async_db_session, org_id=org)
-        assert [r.id for r in rows] == [rid for _, rid in expected]
+        assert [r.id for r in _artifacts(rows)] == [rid for _, rid in expected]
 
         # Same query again → same order. Nothing here is time- or
         # insertion-order dependent.
         again, _ = await crud.list_plan_candidates(async_db_session, org_id=org)
-        assert [r.id for r in again] == [r.id for r in rows]
+        assert [r.id for r in _artifacts(again)] == [r.id for r in _artifacts(rows)]
 
     async def test_ordering_ties_break_on_id(
         self, async_db_session: AsyncSession
@@ -187,7 +238,8 @@ class TestCandidateSelection:
                 authored_at=same,
             )
         rows, _ = await crud.list_plan_candidates(async_db_session, org_id=org)
-        assert [r.id for r in rows] == sorted(r.id for r in rows)
+        ordered = _artifacts(rows)
+        assert [r.id for r in ordered] == sorted(r.id for r in ordered)
 
         page1, total = await crud.list_plan_candidates(
             async_db_session, org_id=org, offset=0, limit=2
@@ -196,7 +248,7 @@ class TestCandidateSelection:
             async_db_session, org_id=org, offset=2, limit=2
         )
         assert total == 4
-        assert [r.id for r in page1 + page2] == [r.id for r in rows]
+        assert [r.id for r in _artifacts(page1 + page2)] == [r.id for r in ordered]
 
     async def test_unmet_depends_on_excludes_shipped_targets(
         self, async_db_session: AsyncSession
@@ -482,7 +534,7 @@ class TestCandidatesHttp:
         ]
 
         # Both hops go over coord's HTTP API — never a coord.* SQL read.
-        called = [c.args[0] for c in fake.await_args_list]
+        called = _coord_slug_calls(fake)
         assert f"/coord/work-units/{wu}" in called
         assert f"/coord/work-units/{wu}/citations" in called
 
@@ -959,13 +1011,13 @@ class TestCoordDoorTierFollowsThePrincipal:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        called = [c.args[0] for c in fake.await_args_list]
+        called = _coord_slug_calls(fake)
         assert called == [
             f"/coord/work-units/{wu}",
             f"/coord/work-units/{wu}/citations",
         ], "the operator path is where two hops genuinely happen"
-        assert fake.await_count == 2
-        assert not any("agent-work-units" in path for path in called)
+        assert _coord_slug_call_count(fake) == 2
+        assert not any(path in _COORD_POPULATION_PATHS for path in called)
 
     async def test_a_device_principal_reads_the_agent_doors(
         self, device_client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -1007,7 +1059,7 @@ class TestCoordDoorTierFollowsThePrincipal:
             resp = await device_client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        called = [c.args[0] for c in fake.await_args_list]
+        called = _coord_slug_calls(fake)
         assert called == [f"/coord/agent-work-units/{wu}"], (
             "the device path must read the AGENT by-slug door — and only it: "
             "that door embeds the citations, so a second hop is a shape coord "
@@ -1059,7 +1111,7 @@ class TestCoordDoorTierFollowsThePrincipal:
         with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
             link = await probe.link_for(slug)
 
-        called = [c.args[0] for c in fake.await_args_list]
+        called = _coord_slug_calls(fake)
         assert called == [
             f"/coord/agent-work-units/{slug}",
             f"/coord/agent-work-units/{slug}/citations",
@@ -1080,7 +1132,7 @@ class TestCoordDoorTierFollowsThePrincipal:
             resp = await device_client.get(f"{API_PREFIX}/{plan.id}")
 
         assert resp.status_code == 200, resp.text
-        called = [c.args[0] for c in fake.await_args_list]
+        called = _coord_slug_calls(fake)
         assert all(path.startswith("/coord/agent-work-units/") for path in called), (
             called
         )
@@ -1124,7 +1176,7 @@ class TestCoordDoorTierFollowsThePrincipal:
             resp = await device_client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert fake.await_count == 1, "the inline citations were not used"
+        assert _coord_slug_call_count(fake) == 1, "the inline citations were not used"
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         link = row["coord"]
         assert link["linked_prs_state"] == "available"
@@ -1301,7 +1353,7 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [(c.args[0], c.kwargs.get("params")) for c in fake.await_args_list] == [
+        assert _coord_slug_calls_with_params(fake) == [
             (f"/coord/work-units/{wu}", {"with_citations": "true"})
         ], (
             "the operator presence hop must carry ?with_citations=true and be "
@@ -1336,7 +1388,7 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
             resp = await device_client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [(c.args[0], c.kwargs.get("params")) for c in fake.await_args_list] == [
+        assert _coord_slug_calls_with_params(fake) == [
             (f"/coord/agent-work-units/{wu}", None)
         ]
 
@@ -1371,7 +1423,10 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
         async def _coord_without_the_arm(
             path: str, *, params: dict[str, str] | None = None, **_: Any
         ) -> Any:
-            seen.append(params)
+            if path not in _COORD_POPULATION_PATHS:
+                # The population read opens every page now; ``seen`` is about
+                # the PRESENCE hop's parameters.
+                seen.append(params)
             if path.endswith("/citations"):
                 return {"citations": [_A_CITATION]}
             # Today's coord: the query key is unknown to the handler, so the
@@ -1389,7 +1444,7 @@ class TestOperatorPresenceHopAsksForTheCitationsInline:
             "the stub must actually be ignoring the parameter this phase adds "
             "— otherwise it models nothing"
         )
-        assert [c.args[0] for c in fake.await_args_list] == [
+        assert _coord_slug_calls(fake) == [
             f"/coord/work-units/{wu}",
             f"/coord/work-units/{wu}/citations",
         ], "the sub-resource fallback must still run against a coord without the arm"
@@ -1459,7 +1514,7 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
         # ONE call: the verdict came off the flag on the 200, not off a status
         # code from a second hop. Pinning that is the point — it is the arm
         # whose enforcement weakened.
-        assert [c.args[0] for c in fake.await_args_list] == [f"/coord/work-units/{wu}"]
+        assert _coord_slug_calls(fake) == [f"/coord/work-units/{wu}"]
 
         body = resp.json()
         assert body["coord_available"] is True, (
@@ -1518,9 +1573,9 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [c.args[0] for c in fake.await_args_list] == [
-            f"/coord/work-units/{wu}"
-        ], "a body declaring the read did not happen must not be re-asked"
+        assert _coord_slug_calls(fake) == [f"/coord/work-units/{wu}"], (
+            "a body declaring the read did not happen must not be re-asked"
+        )
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         link = row["coord"]
@@ -1555,7 +1610,7 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [c.args[0] for c in fake.await_args_list] == [f"/coord/work-units/{wu}"]
+        assert _coord_slug_calls(fake) == [f"/coord/work-units/{wu}"]
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         link = row["coord"]
@@ -1590,9 +1645,7 @@ class TestInlineCitationErrorIsNeverAnEmptyList:
             resp = await device_client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [c.args[0] for c in fake.await_args_list] == [
-            f"/coord/agent-work-units/{wu}"
-        ]
+        assert _coord_slug_calls(fake) == [f"/coord/agent-work-units/{wu}"]
 
         body = resp.json()
         assert body["coord_available"] is True
@@ -1649,6 +1702,12 @@ class TestCoordServiceUnavailableOnTheCitationRead:
     exactly as before. Reverting the refusal reds only the first pair;
     requiring the field reds only the second, plus the two pre-existing arms
     whose bodies carry no ``op`` at all.
+
+    The foreign tokens are three, and the third is not redundant. Two name
+    coord operations this module never asks for; ``work_unit.read`` is the one
+    it DOES — on the unguarded presence hop, one line earlier, for this same
+    slug — which makes it the token the set is most likely to be widened with
+    and the one whose admission would do the most damage.
     """
 
     async def test_a_503_on_the_citations_hop_is_per_slug_not_a_circuit_trip(
@@ -1870,7 +1929,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             "page-wide circuit — coord answered, and its presence hop had just "
             "served a query for this same request"
         )
-        assert fake.await_count == 2 * len(plans), (
+        assert _coord_slug_call_count(fake) == 2 * len(plans), (
             "the circuit short-circuited the remaining slugs, so rows whose "
             "own presence hop would have succeeded were never read"
         )
@@ -1922,7 +1981,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
         It is also the third arm of the ``op`` read.
         ``TestCoordsOpTokenNamesWhichReadFailed`` pins the inline arm and the
         presence hop; this is the citations SUB-RESOURCE, which is neither —
-        it is the only one of the three reached through ``answered_codes``, so
+        it is the only one of the three reached through ``answered``, so
         it is the only one where rendering the reason and granting the
         carve-out are the same code path.
         """
@@ -1970,7 +2029,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             "keys on the one field the sweep did NOT change, and missing it "
             "blanks every remaining row over one slug's PG fault"
         )
-        assert fake.await_count == 2 * len(plans), (
+        assert _coord_slug_call_count(fake) == 2 * len(plans), (
             "the circuit short-circuited the remaining slugs, so rows whose "
             "own presence hop would have succeeded were never read"
         )
@@ -2120,7 +2179,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             "a coord predating the sweep sends no `op`, and requiring one "
             "silently deletes the carve-out for it"
         )
-        assert fake.await_count == 2 * len(plans)
+        assert _coord_slug_call_count(fake) == 2 * len(plans)
         for plan in plans:
             link = next(i for i in body["items"] if i["id"] == str(plan.id))["coord"]
             assert link["work_unit_state"] == "linked"
@@ -2172,7 +2231,7 @@ class TestCoordServiceUnavailableOnTheCitationRead:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["coord_available"] is True
-        assert fake.await_count == 2 * len(plans)
+        assert _coord_slug_call_count(fake) == 2 * len(plans)
         for plan in plans:
             link = next(i for i in body["items"] if i["id"] == str(plan.id))["coord"]
             assert link["linked_prs_state"] == "unavailable"
@@ -2223,7 +2282,83 @@ class TestCoordServiceUnavailableOnTheCitationRead:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert resp.json()["coord_available"] is False
+        body = resp.json()
+        assert body["coord_available"] is False
+        # The 503 arm renders the same three whitelisted identifiers the 500
+        # arm does, off the same parse that refused the carve-out — asserted
+        # here because the whole claim of the op test is that the operator
+        # cannot be shown one token while the classifier acted on another.
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert reason == (
+            "coord returned 503: citation_surface_unavailable: work_unit.list: 42P01"
+        ), reason
+
+    async def test_the_PRESENCE_hops_own_op_is_foreign_to_this_carve_out(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``work_unit.read`` is the token this set is most likely to grow.
+
+        The two foreign tokens pinned above name coord operations this module
+        never asks for — ``tenant_scope.resolve`` and ``work_unit.list``. The
+        one it DOES ask for is ``work_unit.read``: it is what
+        :meth:`_CoordProbe.link_for`'s own PRESENCE hop performs, one line
+        earlier, on this very slug. That makes it the token a maintainer widens
+        the set with "for consistency" — and the reading it would buy is
+        exactly wrong. The presence hop is deliberately UNGUARDED (it is the
+        canary that keeps a coord-wide fault tripping), so admitting its op
+        here would carve out the one failure that both hops share, on the hop
+        that was supposed to catch it.
+
+        A ``work_unit.read`` 500 arriving on the ``/citations`` path is also not
+        coord answering about the citations: it says the SLUG read broke, which
+        this hop already got a 200 for. Whatever that is, it is not evidence
+        about this sub-resource, and the set subtracts it.
+        """
+        for _ in range(4):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug("sibling-op"),
+                work_unit_slug=_slug("wu-sibling-op"),
+            )
+
+        async def _fake(path: str, **_: Any) -> Any:
+            if path.endswith("/citations"):
+                raise HTTPException(
+                    status_code=500,
+                    detail=json.dumps(
+                        {
+                            "error": "db_error",
+                            "pg_code": "57014",
+                            "op": "work_unit.read",
+                        }
+                    ),
+                )
+            return {"work_unit": {"slug": "x", "status": "vetted"}}
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_fake),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["coord_available"] is False, (
+            "`work_unit.read` is the sibling hop's op, not this sub-resource's "
+            "— admitting it would carve out a fault on the one hop left "
+            "unguarded to catch it"
+        )
+        reason = next(
+            r["coord"]["unavailable_reason"]
+            for r in body["items"]
+            if r["coord"]["unavailable_reason"]
+        )
+        assert reason == "coord returned 500: db_error: work_unit.read: 57014", reason
 
     async def test_an_UNTYPED_500_on_the_citations_hop_still_trips(
         self, client: httpx.AsyncClient, async_db_session: AsyncSession
@@ -2502,7 +2637,7 @@ class TestUnknownIsNotAnObservation:
             resp = await device_client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert fake.await_count == 1, "the inline citations were not used"
+        assert _coord_slug_call_count(fake) == 1, "the inline citations were not used"
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         link = row["coord"]
         # The LIST is still a real answer — the caveat is per row.
@@ -2597,7 +2732,7 @@ class TestCoordErrorBodiesDoNotEgress:
 
         The fake fails EVERY path, so the 500 lands on the PRESENCE hop — the
         first read of the first slug, before anything of coord's has answered.
-        That hop carries no ``answered_codes`` and never will: it is the
+        That hop carries no ``answered`` carve-out and never will: it is the
         unguarded canary that keeps a coord-wide fault tripping the circuit, so
         ``coord_available`` is false here for a reason that survives the
         per-slug carve-out on the citations hop. The citations hop's own typed
@@ -3056,9 +3191,9 @@ class TestCoordsOpTokenNamesWhichReadFailed:
             resp = await client.get(CANDIDATES, params={"limit": 100})
 
         assert resp.status_code == 200, resp.text
-        assert [c.args[0] for c in fake.await_args_list] == [
-            f"/coord/work-units/{wu}"
-        ], "the verdict must come off the inline arm, not a second hop"
+        assert _coord_slug_calls(fake) == [f"/coord/work-units/{wu}"], (
+            "the verdict must come off the inline arm, not a second hop"
+        )
 
         row = next(i for i in resp.json()["items"] if i["id"] == str(plan.id))
         reason = row["coord"]["unavailable_reason"]
@@ -3249,3 +3384,567 @@ class TestCoordsOpTokenNamesWhichReadFailed:
         )
         assert excerpt.endswith("…"), "truncation is not marked"
         assert tail not in reason
+
+
+# ===========================================================================
+# The UNION population — both corpus layers, not just the one with bodies
+# ===========================================================================
+#
+# Plan ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``.
+# ``/candidates`` used to select from ``agent.work_artifacts`` alone — the
+# layer that holds plan BODIES, which fills only under an opt-in body sync. On
+# 2026-09-03 that was 18 rows against 635 non-terminal date-slugged coord work
+# units (606 of them resolving to a real plan file), so ``/vet-imp-sweep``
+# truthfully reported "nothing to do" over 606 addressable plans.
+#
+# The coord half is mocked at the SAME ``_proxy_coord_get`` seam the rest of
+# this module uses; the population read is coord's work-unit LIST door, one
+# call per page rather than one per row.
+
+
+def _coord_unit(
+    slug: str,
+    *,
+    status: str = "vetted",
+    title: str | None = None,
+    source_path: str | None = "plans/a-plan.md",
+    repo: str | None = "qontinui-dev-notes",
+    created_at: str = "2026-01-01T00:00:00Z",
+    first_in_progress_at: str | None = None,
+) -> dict[str, Any]:
+    """One row shaped like coord's ``GET /coord/…work-units`` list."""
+    metadata: dict[str, Any] = {}
+    if source_path is not None:
+        metadata["source_path"] = source_path
+    if repo is not None:
+        metadata["repo"] = repo
+    return {
+        "id": str(uuid4()),
+        "slug": slug,
+        "status": status,
+        "title": title if title is not None else f"Unit {slug}",
+        "metadata": metadata,
+        "created_at": created_at,
+        "updated_at": created_at,
+        "first_in_progress_at": first_in_progress_at,
+        "first_shipped_at": None,
+    }
+
+
+def _coord_with_population(
+    units: list[dict[str, Any]],
+    *,
+    work_unit: dict[str, Any] | None = None,
+    citations: list[dict[str, Any]] | None = None,
+) -> AsyncMock:
+    """A coord that answers the POPULATION list door and the by-slug doors.
+
+    The list door returns coord's real envelope, ``{work_units, limit,
+    offset}``, in ONE page — a page shorter than the requested limit is the
+    last one, which is coord's own paging contract.
+    """
+
+    async def _fake(path: str, **_: Any) -> Any:
+        if path in _COORD_POPULATION_PATHS:
+            return {"work_units": units, "limit": 500, "offset": 0}
+        if path.endswith("/citations"):
+            return {"citations": list(citations or [])}
+        body: dict[str, Any] = {
+            "work_unit": work_unit or {"slug": path.rsplit("/", 1)[-1]},
+            "recent_history": [],
+        }
+        if path.startswith("/coord/agent-work-units/"):
+            body["citations"] = list(citations or [])
+        return body
+
+    return AsyncMock(side_effect=_fake)
+
+
+class TestThePopulationIsNotBoundedByTheArtifactTable:
+    """Phase 3 — the guard that keeps the join direction honest.
+
+    Everything else in this file would still pass if someone re-derived the
+    candidate population from ``agent.work_artifacts``: the artifact-backed
+    assertions are all satisfied by the OLD query. This class is the one that
+    would not be, and it is deliberately stated as a COUNT rather than as a
+    property of any particular row — ``N`` non-terminal work units, ZERO
+    artifacts, ``N`` candidates. A population bounded by the document layer
+    can only answer 0.
+    """
+
+    async def test_zero_artifacts_and_N_work_units_yields_N_candidates(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        # No plan artifact is created at all: the document layer is EMPTY, so
+        # every row below can only have come from coord.
+        units = [_coord_unit(f"2026-09-0{i % 9 + 1}-guard-{i}") for i in range(30)]
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population(units),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == len(units), (
+            "the candidate population is bounded by the artifact table again — "
+            "with an empty document layer this can only be 0 or N, and 0 is "
+            "the regression this test exists for"
+        )
+        assert len(body["items"]) == len(units)
+        assert {row["slug"] for row in body["items"]} == {u["slug"] for u in units}
+        assert body["work_unit_population_state"] == "included"
+        assert body["work_unit_population_reason"] is None
+
+    async def test_the_population_read_is_ONE_call_not_one_per_row(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Widening the population must not multiply the coord fan-out.
+
+        A work-unit-only row arrives FROM the list read, so it must never
+        round-trip to coord again — otherwise the widened page costs one hop
+        per candidate, which is the cost this change was meant to avoid
+        paying.
+        """
+        units = [_coord_unit(f"2026-08-1{i}-fanout-{i}") for i in range(9)]
+        fake = _coord_with_population(units)
+
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert len(resp.json()["items"]) == len(units)
+        assert _coord_slug_call_count(fake) == 0, (
+            f"a work-unit-only row was re-read per slug: {_coord_slug_calls(fake)}"
+        )
+        assert fake.await_count == 1, "the population must be ONE list read"
+
+
+class TestWorkUnitOnlyRows:
+    async def test_a_work_unit_with_no_artifact_becomes_a_candidate(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        slug = "2026-09-01-only-in-coord"
+        unit = _coord_unit(
+            slug,
+            status="vetted",
+            title="Only in coord",
+            source_path="plans/2026-09-01-only-in-coord.md",
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population([unit]),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        row = next(r for r in resp.json()["items"] if r["slug"] == slug)
+        # No artifact, so no id — inventing one would make a phantom look
+        # fetchable from the body routes.
+        assert row["id"] is None
+        assert row["kind"] == "plan"
+        assert row["title"] == "Only in coord"
+        assert row["status"] == "vetted"
+        assert row["source_path"] == "plans/2026-09-01-only-in-coord.md"
+        assert row["work_unit_slug"] == slug
+        assert row["document_state"] == "unsynced"
+        # The work-unit half came from the list read; the PR half did not,
+        # and an empty list there is UNKNOWN rather than "no PRs".
+        assert row["coord"]["work_unit_state"] == "linked"
+        assert row["coord"]["work_unit_status"] == "vetted"
+        assert row["coord"]["linked_prs_state"] == "unavailable"
+        assert row["coord"]["linked_prs"] == []
+
+    async def test_no_source_path_anywhere_reads_absent_not_unsynced(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The bodyless plan's case, and it must stay distinguishable.
+
+        ``unsynced`` means a plan FILE exists and only the body sync is
+        missing; ``absent`` means no document has been seen anywhere. Those
+        demand different responses from a sweep — resolve by path, versus
+        do not spawn at all — so collapsing them would hand the neighbouring
+        plan's subject to this one.
+        """
+        with_file = _coord_unit("2026-09-02-has-a-file", source_path="plans/x.md")
+        without = _coord_unit("2026-09-02-has-no-file", source_path=None)
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population([with_file, without]),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        states = {r["slug"]: r["document_state"] for r in resp.json()["items"]}
+        assert states["2026-09-02-has-a-file"] == "unsynced"
+        assert states["2026-09-02-has-no-file"] == "absent"
+
+    async def test_shepherd_and_non_date_slugs_are_not_plans(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """coord's own bookkeeping is not a candidate.
+
+        ``shepherd-*`` is one unit per Tier-3 unlandable-PR escalation — 839
+        of 2,389 rows on 2026-09-03 — and a slug with no date prefix is not
+        plan-shaped. The exclusion is asked for server-side as well, but a
+        coord that ignored the parameter must not fill the page with them.
+        """
+        units = [
+            _coord_unit("2026-09-03-a-real-plan"),
+            _coord_unit("shepherd-qontinui-web-1234"),
+            _coord_unit("not-date-prefixed-at-all"),
+        ]
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population(units),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert [r["slug"] for r in body["items"]] == ["2026-09-03-a-real-plan"]
+        assert body["total"] == 1
+
+    async def test_an_unrecognised_coord_status_counts_as_NOT_terminal(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """coord's status column is as opaque as the library's, and wilder.
+
+        59 distinct strings on 2026-09-03 — ``d1``, ``fix``, ``all``,
+        ``code``, ``phases`` among them, and 492 rows holding the EMPTY
+        string. The artifact half's rule is that an unknown word must not
+        silently hide a plan; the coord half reads the same
+        ``normalize_status`` / ``TERMINAL_STATUSES`` pair, so it must behave
+        identically.
+        """
+        units = [
+            _coord_unit("2026-09-03-empty-status", status=""),
+            _coord_unit("2026-09-03-unknown-word", status="d1"),
+            _coord_unit("2026-09-03-backticked", status="`needs_rework`"),
+            # Terminal, in three spellings the normalizer must fold.
+            _coord_unit("2026-09-03-done-a", status="shipped"),
+            _coord_unit("2026-09-03-done-b", status="  Superseded "),
+            _coord_unit("2026-09-03-done-c", status="ABANDONED"),
+        ]
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population(units),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert sorted(r["slug"] for r in body["items"]) == [
+            "2026-09-03-backticked",
+            "2026-09-03-empty-status",
+            "2026-09-03-unknown-word",
+        ]
+        assert body["total"] == 3
+
+    async def test_work_unit_rows_order_on_first_in_progress_then_created(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The documented stable default, on this arm's own timestamps.
+
+        ``coalesce(first_in_progress_at, created_at) ASC`` — coord reports
+        ``first_in_progress_at`` ABSENT rather than zero when no transition
+        was recorded, so the fallback is explicit rather than left to the sort.
+        """
+        units = [
+            # created LAST, but entered in_progress FIRST.
+            _coord_unit(
+                "2026-09-03-late-created",
+                created_at="2026-05-01T00:00:00Z",
+                first_in_progress_at="2026-01-01T00:00:00Z",
+            ),
+            _coord_unit(
+                "2026-09-03-no-transition",
+                created_at="2026-03-01T00:00:00Z",
+                first_in_progress_at=None,
+            ),
+            _coord_unit(
+                "2026-09-03-mid",
+                created_at="2026-02-01T00:00:00Z",
+                first_in_progress_at="2026-02-15T00:00:00Z",
+            ),
+        ]
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population(units),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert [r["slug"] for r in resp.json()["items"]] == [
+            "2026-09-03-late-created",
+            "2026-09-03-mid",
+            "2026-09-03-no-transition",
+        ]
+
+
+class TestTheUnionDoesNotDuplicate:
+    async def test_a_row_in_BOTH_layers_is_emitted_once(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The artifact wins, and keeps everything it had.
+
+        The de-duplication key is the soft link the scanner writes — the
+        plan's own stem in ``work_unit_slug`` — so a plan present in both
+        layers must appear exactly once, artifact-backed, with its id, its
+        body reachable and its ``coord`` block populated per-slug as before.
+        """
+        slug = "2026-09-03-in-both-layers"
+        plan = await _plan(
+            async_db_session,
+            org_id=None,
+            slug=slug,
+            status="VETTED",
+            work_unit_slug=slug,
+        )
+        fake = _coord_with_population(
+            [_coord_unit(slug, status="in_progress", title="From coord")],
+            work_unit={"slug": slug, "status": "in_progress", "title": "From coord"},
+            citations=[_A_CITATION],
+        )
+
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1, "the union emitted the same plan twice"
+        row = body["items"][0]
+        assert row["id"] == str(plan.id)
+        assert row["document_state"] == "present"
+        assert row["status"] == "VETTED"
+        # Unchanged from before the union: the per-slug hop still runs for an
+        # artifact-backed row, so its citations are a real answer.
+        assert row["coord"]["work_unit_state"] == "linked"
+        assert row["coord"]["linked_prs_state"] == "available"
+        assert [p["pr_number"] for p in row["coord"]["linked_prs"]] == [1559]
+
+    async def test_an_artifact_with_no_soft_link_still_claims_its_slug(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``work_unit_slug`` is nullable, and the stem is the same identity.
+
+        An artifact captured without the soft link is still the document for
+        the work unit of the same stem. Joining on ``work_unit_slug`` alone
+        would show that plan twice — once with a body, once without — which is
+        the visible symptom the second half of the key exists to prevent.
+        """
+        slug = "2026-09-03-linked-by-stem-only"
+        await _plan(async_db_session, org_id=None, slug=slug, work_unit_slug=None)
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population([_coord_unit(slug)]),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["items"][0]["document_state"] == "present"
+
+    async def test_a_terminal_artifact_suppresses_its_work_unit_row(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The document layer's terminal filter stays the single decision.
+
+        Emitting a second, id-less row for a plan the library says is SHIPPED
+        would contradict the filter this route has always applied, and
+        ``document_state`` would have to read ``present`` while carrying
+        nothing to fetch the body with.
+        """
+        slug = "2026-09-03-shipped-in-the-library"
+        await _plan(
+            async_db_session,
+            org_id=None,
+            slug=slug,
+            status="SHIPPED",
+            work_unit_slug=slug,
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population([_coord_unit(slug, status="vetted")]),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["total"] == 0
+
+
+class TestTheUnionDegradesRatherThanShrinks:
+    """A coord that cannot be read must cost the ADDED rows, never the old ones.
+
+    Module invariant 5 applied to the population: an unavailable coord is
+    UNKNOWN, never empty. Driving the population purely from coord would have
+    inverted it — an outage would empty the route instead of degrading it —
+    which is why the population is a union rather than a replacement.
+    """
+
+    async def test_an_unreachable_coord_degrades_to_the_artifact_population(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        for i in range(3):
+            await _plan(async_db_session, org_id=None, slug=_slug(f"local-{i}"))
+
+        async def _coord_down(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=502, detail="coord is not reachable")
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_coord_down),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, "a coord outage must not fail this read"
+        body = resp.json()
+        assert body["total"] == 3, (
+            "the outage cost rows the document layer already held — the union "
+            "may only ever ADD"
+        )
+        assert all(r["document_state"] == "present" for r in body["items"])
+        assert body["coord_available"] is False
+        assert body["work_unit_population_state"] == "unavailable"
+        assert body["work_unit_population_reason"]
+
+    async def test_a_403_on_the_population_door_is_reported_not_silent(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """The case ``coord_available`` structurally cannot report.
+
+        A 4xx is coord ANSWERING, so it does not trip the page-wide circuit and
+        ``coord_available`` stays ``true``. Without its own flag the route
+        would fall back to the document layer — 2.1% of the addressable corpus
+        on this fleet — while reporting coord healthy, which is precisely the
+        silent shrink this plan exists to remove.
+        """
+        await _plan(async_db_session, org_id=None, slug=_slug("still-here"))
+
+        async def _coord_403(path: str, **_: Any) -> Any:
+            raise HTTPException(status_code=403, detail="tenant_not_resolved")
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(side_effect=_coord_403),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["coord_available"] is True, "a 4xx is coord answering"
+        assert body["work_unit_population_state"] == "unavailable"
+        assert "403" in (body["work_unit_population_reason"] or "")
+
+    async def test_a_body_with_no_work_units_key_is_UNKNOWN_not_empty(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """A coord this read cannot parse is not a coord with no work units."""
+        await _plan(async_db_session, org_id=None, slug=_slug("parse"))
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=AsyncMock(return_value={"unexpected": "shape"}),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert body["work_unit_population_state"] == "unavailable"
+        assert body["work_unit_population_reason"]
+
+    async def test_include_coord_false_reports_the_population_as_unavailable(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """ "We did not look" is not "there is nothing there" — here too."""
+        await _plan(async_db_session, org_id=None, slug=_slug("local-only"))
+        fake = AsyncMock(return_value={})
+
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            resp = await client.get(
+                CANDIDATES, params={"limit": 100, "include_coord": "false"}
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert fake.await_count == 0
+        assert body["total"] == 1
+        assert body["work_unit_population_state"] == "unavailable"
+        assert body["work_unit_population_reason"] == (
+            "not fetched (include_coord=false)"
+        )
+
+
+class TestTheUnionPagesAndCountsOverBothArms:
+    async def test_total_and_paging_span_the_union(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """``total`` is the union's size and the pages tile it exactly once."""
+        base = datetime(2026, 4, 1, tzinfo=UTC)
+        for i in range(3):
+            await _plan(
+                async_db_session,
+                org_id=None,
+                slug=_slug(f"art-{i}"),
+                authored_at=base + timedelta(days=i * 2),
+            )
+        units = [
+            _coord_unit(
+                f"2026-04-0{i + 1}-unit-{i}",
+                created_at=(base + timedelta(days=i * 2 + 1)).isoformat(),
+            )
+            for i in range(3)
+        ]
+        fake = _coord_with_population(units)
+
+        with patch("app.api.v1.endpoints.plan_library._proxy_coord_get", new=fake):
+            whole = await client.get(CANDIDATES, params={"limit": 100})
+            page1 = await client.get(CANDIDATES, params={"limit": 2, "offset": 0})
+            page2 = await client.get(CANDIDATES, params={"limit": 2, "offset": 2})
+            page3 = await client.get(CANDIDATES, params={"limit": 2, "offset": 4})
+
+        assert whole.status_code == 200, whole.text
+        assert whole.json()["total"] == 6
+        ordered = [r["slug"] for r in whole.json()["items"]]
+        # The two arms interleave on their own timestamps — this is the check
+        # that the merge is a merge and not a concatenation.
+        assert len({r["document_state"] for r in whole.json()["items"]}) == 2
+
+        paged: list[str] = []
+        for page in (page1, page2, page3):
+            assert page.status_code == 200, page.text
+            assert page.json()["total"] == 6
+            paged.extend(r["slug"] for r in page.json()["items"])
+        assert paged == ordered, "the pages do not tile the union"
+
+    async def test_an_artifact_wins_a_tie_so_an_all_artifact_page_is_unchanged(
+        self, client: httpx.AsyncClient, async_db_session: AsyncSession
+    ) -> None:
+        """Ties go to the document layer, so nothing about the old page moves."""
+        same = datetime(2026, 6, 6, tzinfo=UTC)
+        await _plan(
+            async_db_session, org_id=None, slug=_slug("tie-art"), authored_at=same
+        )
+
+        with patch(
+            "app.api.v1.endpoints.plan_library._proxy_coord_get",
+            new=_coord_with_population(
+                [_coord_unit("2026-06-06-tie-unit", created_at=same.isoformat())]
+            ),
+        ):
+            resp = await client.get(CANDIDATES, params={"limit": 100})
+
+        assert resp.status_code == 200, resp.text
+        states = [r["document_state"] for r in resp.json()["items"]]
+        assert states == ["present", "unsynced"]

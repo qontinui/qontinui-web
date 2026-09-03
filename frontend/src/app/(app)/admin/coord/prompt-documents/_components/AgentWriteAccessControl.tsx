@@ -13,8 +13,18 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Lock, LockOpen } from "lucide-react";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Check, Lock, LockOpen } from "lucide-react";
+import { tierHelp, tierLabel } from "../_lib/agentWriteTier";
+import {
+  AGENT_WRITE_TIERS,
   isAgentWriteTier,
   type AgentWriteTier,
   type PromptDocumentSummary,
@@ -22,17 +32,19 @@ import {
 
 /**
  * Per-document agent write access — the operator's control over whether agents
- * may write this document via `coord_write_prompt_document`.
+ * may write this document via `coord_write_prompt_document`, and on which TIER.
  *
  * ## Why this shows a SOURCE and not just a checkbox
  *
- * The underlying setting is three-state, not two:
+ * The underlying setting is three-state in TWO different ways at once, and a
+ * checkbox loses both.
  *
- * | `agent_writable` | Means |
+ * The first is *whether an operator has ruled at all*:
+ *
+ * | `agent_write_tier` | Means |
  * |---|---|
- * | `true` | the operator opened this document |
- * | `false` | the operator protected this document |
- * | `null` | **the operator has never ruled on it** — coord's built-in default decides |
+ * | a tier | the operator set this document to that tier |
+ * | `null` | **the operator has never ruled on it** — the kind, or coord's built-in default, decides |
  *
  * A two-state checkbox has to render `null` as one of the other two, and either
  * choice lies. Shown as unchecked, every unconfigured document looks
@@ -45,30 +57,48 @@ import {
  * control whose current value you cannot read correctly cannot be changed
  * safely.
  *
- * ## The badge reads coord's TIER; the toggle still writes the boolean
+ * ## The second three-state: the tier itself, which the badge AND the write now carry
  *
  * The same predictability gate is why the badge resolves
  * `agent_write_effective_tier` rather than `agent_write_effective`. The boolean
  * is coord's own LEGACY projection of the tier and is lossy in the permissive
  * direction: `allow_with_notification` projects to `true`, so a boolean read
- * shows a document on the notification tier as plainly open. The per-KIND
- * control on this page makes that tier settable, and a kind set to it resolves
- * every document under it — so the state the boolean cannot express is one this
- * page now produces.
+ * shows a document on the notification tier as plainly open.
+ *
+ * The WRITE used to stay two-state, and that was the defect. Coord's
+ * `PatchDocumentRequest` has always accepted an explicit `agent_write_tier`
+ * (its `TierWrite` enum distinguishes `Set(AgentWriteTier)` from
+ * `Legacy(bool)`), and coord's "at least allow" reading of a legacy `true`
+ * exists to keep OTHER two-state clients correct — it can preserve a stored
+ * `allow_with_notification`, but it can never produce one. So an operator who
+ * chose the notification tier here got plain `allow`, and their agent writes
+ * landed unannounced (measured on the Portofino tenant 2026-09-03, on
+ * `initiative` and `success_metric`). The picker below writes
+ * `agent_write_tier` and sends no boolean at all; the tier vocabulary and its
+ * help text come from `../_lib/agentWriteTier`, shared with the per-KIND
+ * control, so the two surfaces cannot drift into two meanings again.
+ *
+ * ## `(default)` is rendered, never offered
+ *
+ * `null` — "no setting on this document" — is a state coord reports and this
+ * control shows, and it is deliberately NOT a menu item. There is no wire
+ * encoding to clear a per-document tier back to `null` (`PromptDocumentUpdate`
+ * says so, and coord has no encoding for it either), so an option that offered
+ * it would be a control whose click coord cannot carry out. The menu offers
+ * exactly the three tiers coord accepts.
+ *
+ * ## The legacy boolean survives as a READ path
+ *
+ * A coord that predates the tier schema sends only `agent_write_effective`.
+ * `resolveAccess` still falls back to it, reading `true` as "at least allow"
+ * — the same reading coord gives a legacy `true` on the way in. That is a
+ * display fallback for an old server, not a write path.
  *
  * `agent_write_source` is read the same way, for the same reason: coord answers
  * `"operator_kind"` when a tenant setting on the KIND decided, and folding that
  * into `"default"` tells an operator that nobody has ruled on a document their
  * own kind-wide setting is deciding — wrong attribution and wrong remedy at
  * once, since the setting is not on the row the badge is attached to.
- *
- * The WRITE stays two-state. Coord accepts an explicit `agent_write_tier` on
- * the PATCH, but it also resolves this control's legacy `true` as "at least
- * allow" precisely so a two-state client stays correct, and a per-document tier
- * picker is a separate decision from rendering the tier honestly. The one place
- * that costs something is disclosed at the point of the click: protecting a
- * document that carries a stored `allow_with_notification` discards it, and
- * re-opening from here restores plain `allow`.
  *
  * ## Why overriding a built-in protection is confirmed
  *
@@ -101,8 +131,15 @@ export interface AgentWriteAccessControlProps {
   doc: PromptDocumentSummary;
   /** Disabled while any save is in flight. */
   saving: boolean;
-  /** Persist the new value. Resolves `true` when the write landed. */
-  onSet: (next: boolean) => Promise<boolean>;
+  /**
+   * Persist the chosen per-document TIER. Resolves `true` when the write
+   * landed.
+   *
+   * A tier, not a boolean: the boolean cannot express
+   * `allow_with_notification`, which is the state an operator asked this
+   * control for and did not get.
+   */
+  onSet: (tier: AgentWriteTier) => Promise<boolean>;
 }
 
 /**
@@ -129,7 +166,7 @@ export interface AgentWriteAccessControlProps {
  * `PromptDocumentSummary` is a cast over `JSON.parse` output, not a check, so a
  * coord serving a tier this build predates arrives here as an arbitrary string.
  * Enforcement fail-closes on a value it cannot read, so the honest display is
- * UNKNOWN — and the toggle must go dead, because its current position is not
+ * UNKNOWN — and the picker must go dead, because its current position is not
  * something this build can state.
  */
 type ResolvedAccess =
@@ -145,7 +182,8 @@ function resolveAccess(doc: PromptDocumentSummary): ResolvedAccess {
   }
   // A coord that predates the tier schema sends only the boolean. It cannot
   // express `allow_with_notification` at all, so `allow` here means "at least
-  // allow" — the same reading coord gives a legacy `true` on the way IN.
+  // allow" — the same reading coord gives a legacy `true` on the way IN. This
+  // is a READ fallback for an old server; nothing writes the boolean any more.
   if (doc.agent_write_effective !== undefined) {
     return {
       state: "known",
@@ -153,6 +191,64 @@ function resolveAccess(doc: PromptDocumentSummary): ResolvedAccess {
     };
   }
   return { state: "unreported" };
+}
+
+/**
+ * This document's OWN stored setting — the value this control writes, as
+ * distinct from the tier coord resolved for the row.
+ *
+ * Four outcomes, and collapsing any two of them misreports the control's
+ * position:
+ *
+ * - `none` — `null`, "no setting on this document". Rendered as `(default)`
+ *   and never offered as a choice: coord has no encoding to write it back.
+ * - `set` — an operator ruled on this row; that item is the current selection.
+ * - `unreported` — a coord that predates the field sent nothing. UNKNOWN, so
+ *   nothing is shown as selected rather than showing `(default)`, which would
+ *   be an assertion about a value this build never received.
+ * - `unrecognized` — a stored tier outside this build's vocabulary. Named, not
+ *   silently treated as unset, because the row IS carrying a setting.
+ */
+type StoredSetting =
+  | { state: "set"; tier: AgentWriteTier }
+  | { state: "none" }
+  | { state: "unreported" }
+  | { state: "unrecognized"; raw: string };
+
+function resolveStored(doc: PromptDocumentSummary): StoredSetting {
+  if (doc.agent_write_tier === undefined) return { state: "unreported" };
+  if (doc.agent_write_tier === null) return { state: "none" };
+  return isAgentWriteTier(doc.agent_write_tier)
+    ? { state: "set", tier: doc.agent_write_tier }
+    : { state: "unrecognized", raw: String(doc.agent_write_tier) };
+}
+
+/** The menu header naming this document's own stored setting. */
+function storedLabel(stored: StoredSetting): string {
+  switch (stored.state) {
+    case "set":
+      return `Set on this document: ${tierLabel(stored.tier)}`;
+    case "none":
+      return "Set on this document: (default) — no setting of its own";
+    case "unrecognized":
+      return `Set on this document: \`${stored.raw}\` — not recognised`;
+    case "unreported":
+      return "Set on this document: not reported by this coord";
+  }
+}
+
+/** The `data-stored` value the tests pin, so the four states stay four. */
+function storedAttr(stored: StoredSetting): string {
+  switch (stored.state) {
+    case "set":
+      return stored.tier;
+    case "none":
+      return "default";
+    case "unrecognized":
+      return "unrecognized";
+    case "unreported":
+      return "unreported";
+  }
 }
 
 /** The badge's base noun for a resolved tier. */
@@ -203,7 +299,8 @@ function sourceWord(source: PromptDocumentSummary["agent_write_source"]) {
  * ships `notification_enforced` on the per-kind response and nowhere on the
  * document one, so a claim made here would be a local paraphrase with no source
  * behind it, and it would go stale in the permissive direction the moment Phase
- * 2 of `2026-08-27-tenant-level-agent-authorable-stores` lands.
+ * 2 of `2026-08-27-tenant-level-agent-authorable-stores` lands. That is the
+ * same `notifyEnforced: null` arm the shared `tierHelp` takes for this surface.
  */
 const NOTIFY_TIER_NOTE =
   " This document is on the `allow_with_notification` tier: agents may write it, and the write is intended to carry a notification reference. Whether the deployed coord enforces that precondition is stated by the “Agent authorship by kind” control below — this badge does not claim it.";
@@ -324,41 +421,67 @@ function builtInReason(kind: PromptDocumentSummary["kind"]): string {
 }
 
 /**
- * The toggle's title — what THIS click does, including the two things the click
- * does that the badge above does not say.
+ * The trigger's title — what OPENING the menu offers, in the state the row is
+ * in.
  *
- * Kept out of the component body because it is a five-way branch on facts that
+ * Kept out of the component body because it is a four-way branch on facts that
  * are each individually easy to drop, and a title that silently loses one of
  * them is indistinguishable from a title that never had it.
  */
-function toggleTitle({
+function triggerTitle({
   resolved,
-  opening,
   overridesKind,
-  dropsNotifyTier,
 }: {
   resolved: ResolvedAccess;
-  opening: boolean;
   overridesKind: boolean;
-  dropsNotifyTier: boolean;
 }): string {
   if (resolved.state === "unrecognized") {
-    return `Unavailable: coord resolved this document to \`${resolved.raw}\`, a tier this console does not recognise, so which way this toggle points is unknown.`;
+    return `Unavailable: coord resolved this document to \`${resolved.raw}\`, a tier this console does not recognise, so the state this menu would change is unknown.`;
   }
   if (resolved.state === "unreported") {
     return "Unavailable until coord reports per-document agent write access";
   }
-  if (opening) {
-    return overridesKind
-      ? "Allow agents to write this document. Its kind is closed by a tenant setting — this writes a per-document setting that overrides the kind for this document alone."
-      : "Allow agents to write this document";
-  }
-  if (dropsNotifyTier) {
-    return "Protect this document from agent writes. This clears its stored `allow_with_notification` tier, and re-opening it from here restores plain `allow` — this two-state control cannot write the notification tier back.";
-  }
+  const base =
+    "Set this document's agent write tier — deny, allow, or allow with notification.";
   return overridesKind
-    ? "Protect this document from agent writes. Its kind is open by a tenant setting — this writes a per-document setting that overrides the kind for this document alone."
-    : "Protect this document from agent writes";
+    ? `${base} The tier in force comes from a tenant setting on its KIND; anything chosen here writes a per-document setting that overrides the kind for this document alone.`
+    : base;
+}
+
+/**
+ * The per-item title: what the tier MEANS (shared with the per-kind control),
+ * plus what choosing it does from THIS row.
+ *
+ * The two suffixes are the facts the shared help cannot know — they are about
+ * the row, not about the tier.
+ */
+function itemTitle({
+  tier,
+  overridesKind,
+  replacesStored,
+  confirms,
+}: {
+  tier: AgentWriteTier;
+  overridesKind: boolean;
+  replacesStored: AgentWriteTier | null;
+  confirms: boolean;
+}): string {
+  // `notifyEnforced: null` on purpose. Coord ships `notification_enforced` on
+  // the per-KIND response and nowhere on the document one, so this surface has
+  // no source for the claim and must not make it in either direction.
+  let title = tierHelp(tier, { subject: "document", notifyEnforced: null });
+  if (overridesKind) {
+    title +=
+      " Its kind is set by a tenant setting — this writes a per-document setting that overrides the kind for this document alone.";
+  }
+  if (replacesStored !== null) {
+    title += ` This replaces the \`${replacesStored}\` tier stored on this document; you can set it again from this menu.`;
+  }
+  if (confirms) {
+    title +=
+      " This document is protected by coord itself, not by a setting, so you will be asked to confirm.";
+  }
+  return title;
 }
 
 export function AgentWriteAccessControl({
@@ -366,59 +489,86 @@ export function AgentWriteAccessControl({
   saving,
   onSet,
 }: AgentWriteAccessControlProps) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  /** The tier awaiting confirmation, or `null` when nothing is pending. */
+  const [pending, setPending] = useState<AgentWriteTier | null>(null);
   const resolved = resolveAccess(doc);
+  const stored = resolveStored(doc);
   const { label, variant, title } = describe(doc, resolved);
 
-  // Never offer a toggle whose current value we cannot read: the operator would
-  // be flipping a switch without knowing which way it points, and coord would
-  // reject the PATCH field anyway on a build that does not know it. An
+  // Never offer a picker whose current value we cannot read: the operator would
+  // be moving a control without knowing where it currently sits, and coord
+  // would reject the PATCH field anyway on a build that does not know it. An
   // unrecognized tier is the same situation arriving by a different route — the
-  // value is there and this build cannot say which way it points.
+  // value is there and this build cannot say what it is.
   const known = resolved.state === "known";
-  const opening = known ? resolved.tier === "deny" : false;
-  // Overriding a COMPILE-TIME protection is the deliberate case.
-  //
-  // Keyed on `agent_write_builtin_default` — what the code says regardless of
-  // any override — NOT on `agent_write_source === "default"`. The latter looks
-  // equivalent and is not: `source` flips to "operator" the first time the
-  // document is written and never flips back, so that version of this guard
-  // would confirm the first time a meta-policy was opened and stay silent
-  // forever after. Open it, protect it again, and the third click would re-open
-  // a meta-policy with no prompt at all — the exact thing this dialog exists to
-  // prevent. Whether a document IS a meta-policy does not change when the row
-  // is written.
-  const overridesBuiltIn = opening && doc.agent_write_builtin_default === false;
-  /** Which of coord's two protected families this row belongs to. */
-  const isBriefing = doc.kind === "session_briefing";
+
   /**
-   * The state in force was decided by a setting on the KIND, so either click
-   * here writes a per-document setting that overrides it. Worth saying: the
-   * operator is not changing the setting they can see the effect of.
+   * The state in force was decided by a setting on the KIND, so any choice here
+   * writes a per-document setting that overrides it. Worth saying: the operator
+   * is not changing the setting they can see the effect of.
    */
   const overridesKind = doc.agent_write_source === "operator_kind";
-  /**
-   * Protecting this document would DISCARD a stored `allow_with_notification`,
-   * and this two-state toggle cannot put it back.
-   *
-   * Coord resolves the legacy `true` this control writes as "at least allow",
-   * which preserves a stored notification tier — but only while it is still
-   * stored. Protect the document and the stored tier becomes `deny`; re-open it
-   * and "at least allow" resolves to plain `allow`. The round trip is lossy in
-   * the permissive direction, and nothing on this page restores the tier, so
-   * the operator has to be told before the first click, not after the second.
-   */
-  const dropsNotifyTier =
-    !opening && doc.agent_write_tier === "allow_with_notification";
 
-  const apply = async () => {
+  /**
+   * Does choosing this tier override a COMPILE-TIME protection?
+   *
+   * Keyed on `agent_write_builtin_default` — what the code says regardless of
+   * any override — NOT on `agent_write_source === "default"`. The latter looks
+   * equivalent and is not: `source` flips to "operator" the first time the
+   * document is written and never flips back, so that version of this guard
+   * would confirm the first time a meta-policy was opened and stay silent
+   * forever after. Open it, protect it again, and the third click would re-open
+   * a meta-policy with no prompt at all — the exact thing this dialog exists to
+   * prevent. Whether a document IS a meta-policy does not change when the row
+   * is written.
+   *
+   * The `resolved.tier === "deny"` term keys on the state IN FORCE, not on the
+   * source, so it keeps that property: protect a meta-policy again and the next
+   * permissive choice is confirmed again. It also means switching an already
+   * open meta-policy between `allow` and `allow_with_notification` is not
+   * confirmed — that click does not widen access, and confirming a
+   * non-widening change trains the operator to dismiss the dialog.
+   */
+  const confirmsTier = (tier: AgentWriteTier) =>
+    tier !== "deny" &&
+    doc.agent_write_builtin_default === false &&
+    resolved.state === "known" &&
+    resolved.tier === "deny";
+
+  /** Which of coord's two protected families this row belongs to. */
+  const isBriefing = doc.kind === "session_briefing";
+
+  /**
+   * The stored tier this choice would REPLACE, or `null` when it replaces
+   * nothing an operator set.
+   *
+   * This used to be a one-way warning that protecting the document discarded a
+   * stored `allow_with_notification` which nothing on the page could put back.
+   * The menu can put it back now, so the honest note is that the value is
+   * replaced and re-selectable — the loss the old copy described is the defect
+   * this control no longer has. It is still worth naming: an operator moving a
+   * document off the notification tier should see that that is what they are
+   * doing, especially where the tier came from someone else's earlier decision.
+   */
+  const replacedBy = (tier: AgentWriteTier): AgentWriteTier | null =>
+    stored.state === "set" && stored.tier !== tier ? stored.tier : null;
+
+  const apply = async (tier: AgentWriteTier) => {
     // Only dismiss on success. `onSet` resolves false on any failure (the hook
     // catches and toasts), and closing the dialog anyway is a stronger success
     // signal than the toast is a failure one — the operator sees the dialog go
     // away and the badge unchanged, and reads that as "it worked, the badge is
     // stale" rather than "it failed".
-    if (await onSet(opening)) {
-      setConfirmOpen(false);
+    if (await onSet(tier)) {
+      setPending(null);
+    }
+  };
+
+  const choose = (tier: AgentWriteTier) => {
+    if (confirmsTier(tier)) {
+      setPending(tier);
+    } else {
+      void onSet(tier);
     }
   };
 
@@ -436,39 +586,91 @@ export function AgentWriteAccessControl({
             : String(doc.agent_write_effective)
         }
         data-tier={known ? resolved.tier : "unknown"}
+        data-stored={storedAttr(stored)}
       >
         {label}
       </Badge>
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 w-8 p-0"
-        disabled={saving || !known}
-        onClick={() => (overridesBuiltIn ? setConfirmOpen(true) : void apply())}
-        title={toggleTitle({
-          resolved,
-          opening,
-          overridesKind,
-          dropsNotifyTier,
-        })}
-        data-testid={`doc-access-toggle-${doc.kind}-${doc.name}`}
-      >
-        {/*
-          The icon shows the CURRENT state, not the action — the conventional
-          toggle affordance. Showing the action instead put an open padlock next
-          to a "Protected (default)" badge, two glyphs disagreeing about the same
-          fact in the same row. The action lives in the title and the confirm
-          dialog.
-        */}
-        {known && resolved.tier !== "deny" ? (
-          <LockOpen className="size-4" />
-        ) : (
-          <Lock className="size-4" />
-        )}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            disabled={saving || !known}
+            title={triggerTitle({ resolved, overridesKind })}
+            data-testid={`doc-access-toggle-${doc.kind}-${doc.name}`}
+          >
+            {/*
+              The icon shows the CURRENT state, not the action — the conventional
+              affordance. Showing the action instead put an open padlock next to
+              a "Protected (default)" badge, two glyphs disagreeing about the
+              same fact in the same row. The actions live in the menu, each with
+              its own title, and the consequential one in the confirm dialog.
+            */}
+            {known && resolved.tier !== "deny" ? (
+              <LockOpen className="size-4" />
+            ) : (
+              <Lock className="size-4" />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-72">
+          {/*
+            The row's OWN setting, named separately from the badge above it.
+            The badge says what coord resolved; this says what this control is
+            currently holding — and `(default)` is a real answer here, shown
+            without being offered, because coord has no encoding to write it
+            back.
+          */}
+          <DropdownMenuLabel
+            className="text-xs font-normal text-muted-foreground"
+            data-testid={`doc-access-stored-${doc.kind}-${doc.name}`}
+            data-stored={storedAttr(stored)}
+          >
+            {storedLabel(stored)}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {/*
+            Coord's three tiers, least permissive first — the local
+            `AGENT_WRITE_TIERS`, which `types.ts` documents as a wire contract
+            with coord's `AgentWriteTier::ALL`. Unlike the per-kind control there
+            is no server-sent vocabulary on the document response to intersect
+            with, so this is the full set coord accepts on the PATCH.
+          */}
+          {AGENT_WRITE_TIERS.map((tier) => {
+            const selected = stored.state === "set" && stored.tier === tier;
+            return (
+              <DropdownMenuItem
+                key={tier}
+                disabled={saving || selected}
+                title={itemTitle({
+                  tier,
+                  overridesKind,
+                  replacesStored: replacedBy(tier),
+                  confirms: confirmsTier(tier),
+                })}
+                onSelect={() => choose(tier)}
+                data-testid={`doc-access-tier-${doc.kind}-${doc.name}-${tier}`}
+                data-selected={selected ? "true" : "false"}
+              >
+                <Check
+                  className={selected ? "size-4" : "size-4 opacity-0"}
+                  aria-hidden
+                />
+                <span>{tierLabel(tier)}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open) setPending(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -515,6 +717,22 @@ export function AgentWriteAccessControl({
                     add, never weaken&rdquo; guarantee does not constrain it.
                   </p>
                 )}
+                {/*
+                  WHICH tier is being confirmed, named at the point of the
+                  click. The dialog used to describe one act because the control
+                  only had one; now that two different permissive tiers reach
+                  it, a dialog that said "allow agent writes" for both would
+                  hide the difference the operator just chose.
+                */}
+                {pending && (
+                  <p data-testid="confirm-open-tier">
+                    This sets the document to <code>{pending}</code>.{" "}
+                    {tierHelp(pending, {
+                      subject: "document",
+                      notifyEnforced: null,
+                    })}
+                  </p>
+                )}
                 <p className="text-muted-foreground">
                   This is reversible and every write stays versioned and
                   attributed. You can protect it again at any time, and the
@@ -528,7 +746,7 @@ export function AgentWriteAccessControl({
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                void apply();
+                if (pending) void apply(pending);
               }}
               disabled={saving}
               data-testid="confirm-open-meta-policy"

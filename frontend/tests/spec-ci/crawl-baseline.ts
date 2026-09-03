@@ -143,8 +143,10 @@ export const GLOBAL_SERVER_WAIVERS: readonly GlobalServerWaiver[] = [
     class: "ci-env",
     note:
       "CI-ENV-UNAVOIDABLE (hermetic lane). Backend proxy to coord agent " +
-      "sessions — no coord in CI; crawl-only route (/admin/agent-sessions). " +
-      "Same class as /api/v1/operations/.",
+      "sessions — no coord in CI. The /admin/agent-sessions ROUTE was " +
+      "deleted by 2026-08-26-sessions-console-consolidation Phase 3, but " +
+      "the API it proxied is still read by /sessions and /sessions/[key] " +
+      "(the resolver). Same class as /api/v1/operations/.",
   },
   {
     pattern: "/api/v1/strategy/",

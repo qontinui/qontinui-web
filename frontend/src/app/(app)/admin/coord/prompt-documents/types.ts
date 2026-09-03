@@ -360,12 +360,13 @@ export interface PromptDocumentSummary {
    * The operator's per-document setting as a TIER, unprojected — `null` (or
    * absent) for "this document carries no setting of its own".
    *
-   * Read for one thing only, and deliberately not more: whether PROTECTING this
-   * document would discard a notification tier that no control on this page can
-   * put back. `agent_writable` is the lossy projection of this field, and the
-   * two-state toggle writes through that projection, so coord resolves a legacy
-   * `true` as "at least allow" — a stored `allow_with_notification` survives a
-   * re-open only while it is still stored, and closing the document unstores it.
+   * This is the CONTROL's own value — what `AgentWriteAccessControl` reads to
+   * show which tier the operator set on this row (and `null` as "(default)",
+   * meaning no opinion of their own), and what it writes back through
+   * `PromptDocumentUpdate.agent_write_tier`. `agent_writable` is the lossy
+   * projection of this field, kept for clients that predate the tier; coord
+   * resolves a legacy `true` as "at least allow", which PRESERVES a stored
+   * `allow_with_notification` but can never produce one.
    *
    * Typed `string`, not `AgentWriteTier`: this interface is a cast over
    * `JSON.parse` output rather than a check, so a tier this build predates
@@ -517,13 +518,36 @@ export interface PromptDocumentUpdate {
    */
   attrs?: PromptDocumentAttrs;
   /**
-   * Set this document's per-document agent write access. `true` opens it,
-   * `false` protects it; omit to leave it alone.
+   * Set this document's per-document agent write access as an explicit TIER —
+   * the field `AgentWriteAccessControl` writes, and the only one of the two
+   * that can express `allow_with_notification`.
+   *
+   * Coord's `TierWrite` enum distinguishes `Set(AgentWriteTier)` from
+   * `Legacy(bool)` precisely so a three-state client does not have to round its
+   * intent through the boolean below. Typed as the union rather than `string`
+   * because this is a body this console CONSTRUCTS — unlike the read fields on
+   * `PromptDocumentSummary`, which are a cast over unvalidated wire data and so
+   * have to admit a tier this build predates.
    *
    * There is deliberately no way to clear it back to `null` (re-inherit the
-   * default) over the wire — coord has no encoding for it either. Unlike every
-   * other field here, setting this creates a VERSION: it is authority, and who
-   * changed it has to survive the next agent append.
+   * default) over the wire — coord has no encoding for it either. That is why
+   * the control offers exactly the three tiers and renders `null` as
+   * "(default)" without offering it: a settable "(default)" would be a control
+   * whose click coord cannot carry out. Unlike every other field here, setting
+   * this creates a VERSION: it is authority, and who changed it has to survive
+   * the next agent append.
+   */
+  agent_write_tier?: AgentWriteTier;
+  /**
+   * LEGACY two-state form of `agent_write_tier`. `true` opens the document,
+   * `false` protects it; omit to leave it alone.
+   *
+   * Lossy in the permissive direction and kept only for clients that predate
+   * the tier: coord reads a `true` as "at least allow", so a document carrying
+   * a stored `allow_with_notification` survives one — but a `true` can never
+   * PRODUCE that tier, which is how an operator asking for the notification
+   * tier got plain `allow`. Nothing in this console sends it any more; send
+   * `agent_write_tier` instead.
    */
   agent_writable?: boolean;
 }

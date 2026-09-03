@@ -341,6 +341,10 @@ def _iter_list_users(
         try:
             resp = client.list_users(**kwargs)
         except (BotoCoreError, ClientError) as exc:
+            # A ``Filter`` Cognito refuses to parse (e.g. a malformed email)
+            # is the caller's error, not a broken pool — the same
+            # 400-not-502 rule the group names get.
+            _raise_if_invalid_parameter(exc, operation="ListUsers", **log_context)
             logger.error(log_event, error=str(exc), **log_context)
             raise _wrap_aws_error(exc, f"ListUsers failed: {exc}") from exc
         users = resp.get("Users") or []
@@ -678,6 +682,62 @@ def invalid_group_name_reason(name: str) -> str | None:
     return None
 
 
+def _require_valid_group_name(group_name: str, *, operation: str) -> None:
+    """Raise :class:`CognitoInvalidParameterError` when ``group_name`` cannot
+    be a Cognito group name.
+
+    Every group function takes the name from the caller — a request body for
+    ``create``, a URL path segment for the rest — so every one of them can be
+    handed ``test admins``. Cognito validates ``groupName`` before it looks
+    anything up, so without this the answer is an ``InvalidParameterException``
+    that the generic wrapper collapses into a 502 claiming AWS is broken.
+
+    Refusing locally cannot deny a legitimate operation: a name this rejects
+    is one Cognito would refuse to create, so no group in the pool can bear
+    it, and there is nothing to delete, list or add a member to.
+    """
+    reason = invalid_group_name_reason(group_name)
+    if reason is None:
+        return
+    logger.info(
+        "cognito_group_name_invalid",
+        operation=operation,
+        group_name=group_name,
+        reason=reason,
+    )
+    raise CognitoInvalidParameterError(f"group_name {reason}")
+
+
+def _raise_if_invalid_parameter(
+    exc: Exception, *, operation: str, **context: Any
+) -> None:
+    """Re-raise ``exc`` as a typed client error when AWS called it malformed.
+
+    Returns normally for anything else, so a handler reads as::
+
+        except (BotoCoreError, ClientError) as exc:
+            _raise_if_invalid_parameter(exc, operation="DeleteGroup", ...)
+            ...wrap as CognitoAdminError...
+
+    A constraint the local pre-checks do not model still has to reach the
+    caller as the client error it is, carrying AWS's own ``Message`` so the
+    operator reads the real reason rather than a generic sentence.
+
+    Nothing about a ``BotoCoreError`` — a transport or credential failure —
+    is the caller's fault, so only a ``ClientError`` is inspected.
+    """
+    if not isinstance(exc, ClientError):
+        return
+    error = exc.response.get("Error", {})
+    if error.get("Code", "") != "InvalidParameterException":
+        return
+    message = error.get("Message") or str(exc)
+    logger.info(
+        "cognito_invalid_parameter", operation=operation, error=message, **context
+    )
+    raise CognitoInvalidParameterError(message) from exc
+
+
 def create_group(group_name: str, description: str | None = None) -> dict[str, Any]:
     """Create a group; return the created group's wire dict.
 
@@ -692,12 +752,7 @@ def create_group(group_name: str, description: str | None = None) -> dict[str, A
     any constraint we did not anticipate, so an unforeseen one surfaces as
     the client error it is rather than as a 502.
     """
-    reason = invalid_group_name_reason(group_name)
-    if reason is not None:
-        logger.info(
-            "cognito_create_group_invalid_name", group_name=group_name, reason=reason
-        )
-        raise CognitoInvalidParameterError(f"group_name {reason}")
+    _require_valid_group_name(group_name, operation="CreateGroup")
     client = _get_client()
     kwargs: dict[str, Any] = {"UserPoolId": _pool_id(), "GroupName": group_name}
     if description:
@@ -711,16 +766,9 @@ def create_group(group_name: str, description: str | None = None) -> dict[str, A
             raise CognitoGroupExistsError(
                 f"Group already exists: {group_name}"
             ) from exc
-        if code == "InvalidParameterException":
-            # A constraint the local pre-check does not model. Carry AWS's own
-            # message so the operator reads the real reason, not "502".
-            message = exc.response.get("Error", {}).get("Message") or str(exc)
-            logger.info(
-                "cognito_create_group_invalid_parameter",
-                group_name=group_name,
-                error=message,
-            )
-            raise CognitoInvalidParameterError(message) from exc
+        # A constraint the local pre-check does not model. Carries AWS's own
+        # message so the operator reads the real reason, not "502".
+        _raise_if_invalid_parameter(exc, operation="CreateGroup", group_name=group_name)
         logger.error(
             "cognito_create_group_failed", group_name=group_name, error=str(exc)
         )
@@ -737,11 +785,18 @@ def create_group(group_name: str, description: str | None = None) -> dict[str, A
 
 def delete_group(group_name: str) -> None:
     """Delete a group. No-op-safe is NOT assumed — a missing group surfaces
-    as a :class:`CognitoAdminError` the endpoint maps to 404."""
+    as a :class:`CognitoAdminError` the endpoint maps to 404.
+
+    Raises :class:`CognitoInvalidParameterError` (→ 400) for a name Cognito
+    could never have accepted in the first place — see
+    :func:`_require_valid_group_name`.
+    """
+    _require_valid_group_name(group_name, operation="DeleteGroup")
     client = _get_client()
     try:
         client.delete_group(UserPoolId=_pool_id(), GroupName=group_name)
     except (BotoCoreError, ClientError) as exc:
+        _raise_if_invalid_parameter(exc, operation="DeleteGroup", group_name=group_name)
         logger.error(
             "cognito_delete_group_failed", group_name=group_name, error=str(exc)
         )
@@ -755,7 +810,12 @@ def list_users_in_group(group_name: str) -> list[dict[str, Any]]:
 
     Each entry: ``{username, email, status, enabled}``. ``email`` is pulled
     from the user's ``Attributes`` list.
+
+    Raises :class:`CognitoInvalidParameterError` (→ 400) for a name Cognito
+    could never have accepted in the first place — see
+    :func:`_require_valid_group_name`.
     """
+    _require_valid_group_name(group_name, operation="ListUsersInGroup")
     client = _get_client()
     users: list[dict[str, Any]] = []
     try:
@@ -772,6 +832,9 @@ def list_users_in_group(group_name: str) -> list[dict[str, Any]]:
                     }
                 )
     except (BotoCoreError, ClientError) as exc:
+        _raise_if_invalid_parameter(
+            exc, operation="ListUsersInGroup", group_name=group_name
+        )
         logger.error(
             "cognito_list_users_in_group_failed",
             group_name=group_name,
@@ -831,13 +894,25 @@ def resolve_username_for_email(email: str) -> str | None:
 
 
 def add_user_to_group(username: str, group_name: str) -> None:
-    """Add ``username`` to ``group_name`` (``AdminAddUserToGroup``)."""
+    """Add ``username`` to ``group_name`` (``AdminAddUserToGroup``).
+
+    Raises :class:`CognitoInvalidParameterError` (→ 400) for a name Cognito
+    could never have accepted in the first place — see
+    :func:`_require_valid_group_name`.
+    """
+    _require_valid_group_name(group_name, operation="AdminAddUserToGroup")
     client = _get_client()
     try:
         client.admin_add_user_to_group(
             UserPoolId=_pool_id(), Username=username, GroupName=group_name
         )
     except (BotoCoreError, ClientError) as exc:
+        _raise_if_invalid_parameter(
+            exc,
+            operation="AdminAddUserToGroup",
+            username=username,
+            group_name=group_name,
+        )
         logger.error(
             "cognito_add_user_to_group_failed",
             username=username,
@@ -852,13 +927,25 @@ def add_user_to_group(username: str, group_name: str) -> None:
 
 
 def remove_user_from_group(username: str, group_name: str) -> None:
-    """Remove ``username`` from ``group_name`` (``AdminRemoveUserFromGroup``)."""
+    """Remove ``username`` from ``group_name`` (``AdminRemoveUserFromGroup``).
+
+    Raises :class:`CognitoInvalidParameterError` (→ 400) for a name Cognito
+    could never have accepted in the first place — see
+    :func:`_require_valid_group_name`.
+    """
+    _require_valid_group_name(group_name, operation="AdminRemoveUserFromGroup")
     client = _get_client()
     try:
         client.admin_remove_user_from_group(
             UserPoolId=_pool_id(), Username=username, GroupName=group_name
         )
     except (BotoCoreError, ClientError) as exc:
+        _raise_if_invalid_parameter(
+            exc,
+            operation="AdminRemoveUserFromGroup",
+            username=username,
+            group_name=group_name,
+        )
         logger.error(
             "cognito_remove_user_from_group_failed",
             username=username,

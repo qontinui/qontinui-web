@@ -64,18 +64,29 @@ export interface NotificationsHealth {
    * (`migrationPending`) put a promise of "ALL 137 unread… cannot be undone"
    * directly under a strip rendering that same 137 as `–`.
    *
-   * False in exactly the four arms below where the strip declines to speak for
+   * False in exactly the five arms below where the strip declines to speak for
    * the read: nothing was ever read, nothing has been read YET, the last read
-   * failed (the counts are real but frozen), or coord has the routes and not
-   * the table.
+   * failed (the counts are real but frozen), the last read SUCCEEDED and
+   * carried no scalar (frozen just the same, for a different reason), or coord
+   * has the routes and not the table.
    *
    * **Named for the READ, not for the counts** — which is what it was called
    * first, and which overpromised in exactly the way this module exists to
-   * stop. A current read can still carry a `null` `unread_count` (the arm below
-   * headlined "The unread count did not come back"), so the two questions are
-   * independent and a consumer that needs a number must ask BOTH: this flag,
-   * and then the scalar itself. A field named for the counts invites
+   * stop. A current read can still carry a `null` `unread_count`: the FIRST
+   * read to answer without one is current (nothing is failing, and nothing
+   * earlier has gone out of date), and takes the arm below headlined "The
+   * unread count did not come back". So the two questions stay independent and
+   * a consumer that needs a number must ask BOTH: this flag, and then the
+   * scalar itself. A field named for the counts invites
    * `health.readIsCurrent ? unreadCount! : …`, and the type would not stop it.
+   *
+   * `scalarStale` is the OTHER half of that and does not collapse the two
+   * questions back together: it is not "the scalar is missing", it is "a read
+   * that used to carry it has stopped", which is a fact about the READ. The
+   * distinction is load-bearing rather than pedantic — an audit briefly wired
+   * the page to raise the flag on the first scalar-less read too, which made
+   * the "did not come back" arm unreachable and put *"no longer"* and *"since"*
+   * in front of an operator who had never had a good read.
    */
   readIsCurrent: boolean;
 }
@@ -87,6 +98,27 @@ export interface NotificationsHealthInput {
   total: number | null;
   /** True once a read has SUCCEEDED — never merely "a read finished". */
   loaded: boolean;
+  /**
+   * The most recent SUCCESSFUL read carried no `unread_count`, while an
+   * earlier one did.
+   *
+   * The third way a scalar stops being current, and the one this module shipped
+   * blind to. `failed` covers a read that did not land; the `unreadCount ==
+   * null` arm below covers a scalar that has NEVER arrived. Neither covers the
+   * pair in between, which `page.tsx` produces on its own: `applyEnvelope`
+   * writes a scalar only `if (typeof … === "number")` and otherwise leaves the
+   * previous value standing, while `setLoaded(true)` fires on any successful
+   * GET. So a coord build that stops carrying the field — the same degrade this
+   * module argues is reachable two hundred lines down — leaves `loaded` true,
+   * `failed` false and a frozen number in state, and the strip painted GREEN
+   * over it: "7 unread events / nothing is blocked by these". The mark-all
+   * tooltip then promised all seven.
+   *
+   * Found by auditing the nav badge, which polls the same route and had the
+   * identical hole — so the fix landed there first and the page was briefly the
+   * less careful of the two surfaces reading one scalar.
+   */
+  scalarStale: boolean;
   /** coord has the routes but not the table yet. */
   migrationPending: boolean;
   /**
@@ -166,13 +198,19 @@ function countBadges(
  * question a consumer actually asks before spending a number.
  */
 function readIsCurrent(input: NotificationsHealthInput): boolean {
-  return input.loaded && !input.migrationPending && !input.failed;
+  return (
+    input.loaded &&
+    !input.migrationPending &&
+    !input.failed &&
+    !input.scalarStale
+  );
 }
 
 export function deriveNotificationsHealth(
   input: NotificationsHealthInput
 ): NotificationsHealth {
-  const { unreadCount, total, loaded, migrationPending, failed } = input;
+  const { unreadCount, total, loaded, migrationPending, failed, scalarStale } =
+    input;
   /**
    * Nothing has been read, or what was read cannot be trusted — neither scalar
    * is reportable, so neither is reported.
@@ -219,6 +257,22 @@ export function deriveNotificationsHealth(
         headline: "These counts stopped updating",
         detail:
           "the feed could not be re-read — what has arrived since the last good read is UNKNOWN",
+        badges: countBadges(unreadCount, total),
+        readIsCurrent: false,
+      };
+    }
+    if (scalarStale) {
+      // The read LANDED and brought no scalar, so the numbers on screen are
+      // from an earlier one. Same shape as the arm above — real numbers, shown,
+      // and not quotable elsewhere — and a different sentence, because the
+      // remedy is different: nothing here is failing, coord has simply stopped
+      // answering with this field, and telling the operator the feed could not
+      // be re-read would send them after an outage that is not happening.
+      return {
+        level: "amber",
+        headline: "These counts stopped updating",
+        detail:
+          "the counts are no longer being refreshed — the reads are landing without them, so what has arrived since is UNKNOWN",
         badges: countBadges(unreadCount, total),
         readIsCurrent: false,
       };

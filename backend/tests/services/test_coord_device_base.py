@@ -21,7 +21,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import coord_device_base, settings
+from app.core.config import (
+    coord_device_base,
+    coord_device_setting_name,
+    coord_device_split_active,
+    settings,
+)
 
 
 def test_unset_means_same_as_coord_url() -> None:
@@ -66,3 +71,50 @@ def test_empty_string_falls_back_rather_than_producing_a_bare_path(
     """
     monkeypatch.setattr(settings, "COORD_DEVICE_URL", "")
     assert coord_device_base() == settings.COORD_URL.rstrip("/")
+
+
+def test_setting_name_follows_the_value_actually_in_force(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The name must track `coord_device_base`, not be written out by hand.
+
+    A rejection handler tells the operator which knob to turn. Naming
+    `COORD_URL` on a split box names the ONE setting that must not be
+    repointed (see this module's docstring: the admin secret 401s against
+    the other coord), which is the same class of misdirection the whole
+    classification exists to remove.
+    """
+    assert coord_device_setting_name() == "COORD_URL"
+
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://coord.example.io")
+    assert coord_device_setting_name() == "COORD_DEVICE_URL"
+    assert coord_device_base() == "https://coord.example.io"
+
+    # An empty value falls back, so the name must fall back with it — the two
+    # answers are read together and a disagreement would be worse than either.
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "")
+    assert coord_device_setting_name() == "COORD_URL"
+    assert coord_device_base() == settings.COORD_URL.rstrip("/")
+
+
+def test_split_is_a_different_coord_not_merely_a_set_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Setting the override to COORD_URL's own value is not a split.
+
+    The split posture carries a real consequence (tokens minted through the
+    admin bridge fail this backend's own verifier), so claiming it for a
+    redundant-but-identical spelling would be a false alarm — and a boot-time
+    warning that cries wolf is the failure mode this whole plan is about.
+    """
+    assert coord_device_split_active() is False
+
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", settings.COORD_URL)
+    assert coord_device_split_active() is False
+
+    # ...including when only a trailing slash differs.
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", settings.COORD_URL + "/")
+    assert coord_device_split_active() is False
+
+    monkeypatch.setattr(settings, "COORD_DEVICE_URL", "https://coord.example.io")
+    assert coord_device_split_active() is True

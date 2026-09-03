@@ -138,9 +138,51 @@ describe("LandedWriteFeed — the loosening mark", () => {
     renderFeed({
       writes: [write({ version_number: 3, current_version: 3, loosening: false })],
     });
+    const line = screen.getByTestId("landed-writes-none-flagged");
+    // Unqualified, because the set it names and the set it has a verdict for
+    // are the same set.
+    expect(line).toHaveTextContent(/none of the writes on this page/i);
+    expect(line).not.toHaveTextContent(/no verdict/i);
+  });
+
+  it("scopes the reassurance to the CLASSIFIED rows and counts the rest", () => {
+    // The partial rollout — the ordinary state the day the classifier deploys,
+    // and one document's history can span both states. One served `false` was
+    // enough to license a sentence naming every row on the page, including the
+    // two coord never looked at. The set the line names must be the set it has
+    // a verdict for.
+    renderFeed({
+      writes: [
+        write({ name: "coordination", version_number: 14, current_version: 14, loosening: false }),
+        write({ name: "git-operations", version_number: 8, current_version: 8 }),
+        write({ name: "escalation-bar", version_number: 2, current_version: 2, loosening: null }),
+      ],
+    });
+
+    const line = screen.getByTestId("landed-writes-none-flagged");
+    expect(line).toHaveTextContent(
+      /none of the 1 write on this page that coord classified is a widening/i
+    );
+    expect(line).toHaveTextContent(
+      /the other 2 writes carry no verdict either way/i
+    );
+    // And NOT the unqualified sentence, which is the whole point.
+    expect(line).not.toHaveTextContent(/none of the writes on this page were/i);
+  });
+
+  it("counts a null verdict as silent, not as a served 'not a loosening'", () => {
+    // `null` is forwarded verbatim from coord and is explicitly not a verdict.
+    // A page that counted it as one would report an unclassified corpus as
+    // classified-and-clean.
+    renderFeed({
+      writes: [
+        write({ version_number: 3, current_version: 3, loosening: false }),
+        write({ name: "coordination", version_number: 14, current_version: 14, loosening: null }),
+      ],
+    });
     expect(
       screen.getByTestId("landed-writes-none-flagged")
-    ).toHaveTextContent(/none of the writes on this page/i);
+    ).toHaveTextContent(/the other 1 write carries no verdict either way/i);
   });
 });
 
@@ -522,12 +564,66 @@ describe("LandedWriteFeed — the filter and the flagged claim describe ONE set"
     renderFeed({ writes: [hiddenOrdinary, agentOrdinary] });
     fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
 
-    expect(
-      screen.getByTestId("landed-writes-filter-hidden")
-    ).not.toHaveTextContent(/widening what agents may do/i);
+    const note = screen.getByTestId("landed-writes-filter-hidden");
+    expect(note).not.toHaveTextContent(/widening what agents may do/i);
+    // Nor the other direction clause: this hidden row carries an explicit
+    // verdict, so nothing about it is unknown either.
+    expect(note).not.toHaveTextContent(/not classified in either direction/i);
     expect(
       screen.getByTestId("landed-writes-none-flagged")
     ).toBeInTheDocument();
+  });
+
+  it("counts hidden rows coord has not classified, in their own clause", () => {
+    // The residual `hiddenFlagged` cannot see. The visible row carries a
+    // verdict, so the page prints its reassurance — correctly, it is scoped to
+    // what is on screen — while a hidden row's direction is simply unknown.
+    // The author tally mentions that row and, being an author count, says
+    // nothing about direction. Without this clause nothing on the page does.
+    const hiddenSilent = write({
+      name: "engineering-priorities",
+      label: "Engineering Priorities",
+      version_number: 4,
+      current_version: 4,
+      edited_by: "josh@qontinui.io",
+    });
+    const agentOrdinary = write({
+      edited_by: "session:f1b444bd-6aff-4e9f-b000-c20d31f3216d",
+      loosening: false,
+    });
+    renderFeed({ writes: [hiddenSilent, agentOrdinary] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    const note = screen.getByTestId("landed-writes-filter-hidden");
+    expect(note).toHaveTextContent(
+      /That includes 1 write coord has not classified in either direction/i
+    );
+    // The stronger clause stays absent — the two facts are not merged.
+    expect(note).not.toHaveTextContent(/classified as widening/i);
+  });
+
+  it("states a hidden loosening and a hidden unclassified row separately", () => {
+    // Disjoint sets, two sentences, and the second reads "It also includes" so
+    // both take the hidden SET as their antecedent. Merging them would make a
+    // row coord positively classified indistinguishable from one nobody has
+    // looked at.
+    const hiddenSilent = write({
+      name: "coordination",
+      label: "Coordination",
+      version_number: 14,
+      current_version: 14,
+      edited_by: "system:seed",
+    });
+    renderFeed({ writes: [hiddenLoosening, hiddenSilent] });
+    fireEvent.click(screen.getByTestId("landed-writes-author-agent"));
+
+    const note = screen.getByTestId("landed-writes-filter-hidden");
+    expect(note).toHaveTextContent(
+      /That includes 1 write classified as widening what agents may do; turn the filter off to read it\./i
+    );
+    expect(note).toHaveTextContent(
+      /It also includes 1 write coord has not classified in either direction/i
+    );
   });
 
   it("still counts the hidden loosening when the filter empties the screen", () => {

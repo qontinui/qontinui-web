@@ -27518,6 +27518,108 @@
         "title": "MemoryLinkOut",
         "type": "object"
       },
+      "MemoryQueryEcho": {
+        "description": "The parameters the query ACTUALLY ran with (``query_echo``).\n\nNot a copy of the request body \u2014 the SERVER-SIDE RESOLVED values, so\nthat anything the request did not say becomes visible. ``scopes``\nleft unset resolves to the endpoint's default pair; ``limit`` and\n``link_expansion`` resolve to their schema defaults; an empty\n``kinds`` list collapses to ``null`` (no kind filter) exactly as the\nfilter builder sees it. A caller comparing this against what it\nbelieves it sent can see, in the SAME response as the hits, that its\nquery was narrower or wider than it intended.\n\nThat is the half an unrecognized-key 422 cannot cover. A key spelled\nright and VALUED wrong \u2014 a ``scope_ref`` that names no session, a\n``since`` far in the future, a ``min_importance`` above every row \u2014\nis a perfectly well-formed request that legitimately matches\nnothing, and the echo is what lets the caller see which of its own\nfilters did that.",
+        "properties": {
+          "anchored_to_count": {
+            "title": "Anchored To Count",
+            "type": "integer"
+          },
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "link_expansion": {
+            "title": "Link Expansion",
+            "type": "boolean"
+          },
+          "min_importance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Importance"
+          },
+          "query_text": {
+            "title": "Query Text",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Ref"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          }
+        },
+        "required": [
+          "query_text",
+          "kinds",
+          "scopes",
+          "scope_ref",
+          "limit",
+          "link_expansion",
+          "min_importance",
+          "since",
+          "as_of",
+          "anchored_to_count"
+        ],
+        "title": "MemoryQueryEcho",
+        "type": "object"
+      },
       "MemoryQueryHit": {
         "description": "One fused retrieval hit.\n\n``anchor_state`` is the watcher's roll-up verdict over the record's\nanchors \u2014 ``none`` (anchorless, today's Ebbinghaus lifecycle),\n``fresh``, ``moved`` or ``gone``. It is carried on every hit because\n``moved`` is ADVISORY: the record stays retrievable and normally\nranked, and the only thing that makes it useful is that the reader\nis told the ground truth shifted under it. A flag the response does\nnot carry is a flag nobody can act on.\n\nTyped ``str`` rather than a ``Literal`` on purpose: this is a READ\nshape over a column the watcher owns, and a value this build has\nnever heard of must render, not 500.",
         "properties": {
@@ -27625,7 +27727,8 @@
         "type": "object"
       },
       "MemoryQueryRequest": {
-        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.",
+        "additionalProperties": false,
+        "description": "``POST /memory/query`` body \u2014 hybrid RRF retrieval parameters.\n\n``query_text`` is ALWAYS required: the lexical arm is pure Postgres\n(``websearch_to_tsquery``), costs the caller nothing, and stays\nserver-side. ``query_embedding`` is the caller's own vector for the\nsemantic arm \u2014 omit it and that arm is SKIPPED (the response says so\nvia ``vector_arm``); the query degrades to FTS-only rather than\nmaking the backend embed.\n\n``query_embedding_model`` is REQUIRED whenever ``query_embedding`` is\npresent. Validating the vector's DIMENSION is not enough: every\n384-dim model would pass that check while living in a different\nspace, and the server has no other way to tell which space an\nincoming query is in.\n\n**Unknown keys are REJECTED (422), not ignored.** Pydantic's default\nis ``extra=\"ignore\"``, which made a misspelled or invented filter\n(``scope`` for ``scopes``, ``kind`` for ``kinds``, a parameter this\nbuild does not have) vanish server-side: the query then ran WIDER\nthan the caller asked and answered ``hits: []`` for a reason the\ncaller could not see. That empty list was the single most misread\nsignal on this endpoint \u2014 sessions filed fleet-infra findings\nagainst it (finding ``f425dc15``, retracted by ``a69e5881`` the same\nday). A 422 naming the offending field is the only answer that tells\nthe caller the call was wrong rather than the corpus empty.",
         "properties": {
           "anchored_to": {
             "anyOf": [
@@ -27787,7 +27890,7 @@
         "type": "object"
       },
       "MemoryQueryResponse": {
-        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.",
+        "description": "``POST /memory/query`` result.\n\n``vector_arm`` is REQUIRED and un-defaulted on purpose: FTS-only\nresults must never be indistinguishable from hybrid ones. Its three\nstates are the only ways a query can end:\n\n* ``hybrid`` \u2014 both arms ran and were RRF-fused.\n* ``skipped_no_embedding`` \u2014 the caller sent no ``query_embedding``,\n  so the semantic arm had no vector to run with.\n* ``skipped_migrating`` \u2014 the caller DID send a vector, but this\n  tenant still holds vectors written under a different model tag, so\n  scoring against that mixed corpus would compare across two\n  non-interchangeable spaces (Phase 0 measured min cosine 0.71 /\n  k=10 exact-order 0% between them). The arm is skipped until the\n  runner-paid reindex drains the tenant back to a single space. This\n  is driven off actual corpus state, never a timer or a flag, so it\n  clears itself the moment the last foreign-tag vector is rewritten.\n\n``link_arm`` is REQUIRED and un-defaulted for exactly the same\nreason: a result that never consulted the graph must never be\nindistinguishable from one that did, and the arm is default-off, so\n\"did it run\" is the common question rather than the rare one. Its\nthree states are the only ways the arm can end:\n\n* ``expanded`` \u2014 the expansion query RAN. (It running and finding no\n  neighbour is still ``expanded``: the graph was consulted and had\n  nothing to add, which is a different fact from not consulting it.)\n* ``skipped_disabled`` \u2014 the request did not set ``link_expansion``,\n  so no expansion query was issued.\n* ``skipped_no_seeds`` \u2014 the arm was requested, but the vector+FTS\n  fuse returned nothing to expand FROM. One-hop expansion is\n  seeded by the other arms' heads; with no head there is no hop.\n\n``query_echo``, ``live_row_count`` and ``anchored_hit_count`` are\nREQUIRED and un-defaulted for **exactly the same reason**, and the\nreason is worth stating rather than inheriting: an empty ``hits``\nwas the same six bytes for a query that was mis-spelled, a corpus\nthat was empty, a backend that was serving a different tenant, and a\nretrieval that landed in ``anchored_hits`` instead. Those are four\ndifferent diagnoses, and a caller could not tell them apart in one\ncall.\n\nGiving any of the three a DEFAULT would defeat the fix invisibly. An\noptional field is absent on an old backend and present on a new one,\nso a caller reading it would silently fall back to the same\nambiguity this change removes \u2014 and would do so without ever\nlearning which backend it was talking to. Un-defaulted means an old\npayload fails validation loudly, at the boundary, naming the missing\nfield; that is a diagnosable outage rather than a silent regression\nto zero information.",
         "properties": {
           "anchored_arm": {
             "default": "not_requested",
@@ -27798,6 +27901,10 @@
             ],
             "title": "Anchored Arm",
             "type": "string"
+          },
+          "anchored_hit_count": {
+            "title": "Anchored Hit Count",
+            "type": "integer"
           },
           "anchored_hits": {
             "items": {
@@ -27822,6 +27929,13 @@
             "title": "Link Arm",
             "type": "string"
           },
+          "live_row_count": {
+            "title": "Live Row Count",
+            "type": "integer"
+          },
+          "query_echo": {
+            "$ref": "#/components/schemas/MemoryQueryEcho"
+          },
           "vector_arm": {
             "enum": [
               "hybrid",
@@ -27835,7 +27949,10 @@
         "required": [
           "hits",
           "vector_arm",
-          "link_arm"
+          "link_arm",
+          "anchored_hit_count",
+          "live_row_count",
+          "query_echo"
         ],
         "title": "MemoryQueryResponse",
         "type": "object"
@@ -31401,7 +31518,7 @@
         "type": "object"
       },
       "PlanCandidate": {
-        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.",
+        "description": "One unshipped plan with its ranking INPUTS attached.\n\nNo score. See the section comment above.\n\nA candidate comes from EITHER layer of the corpus \u2014 an\n``agent.work_artifacts`` row, a non-terminal ``coord.work_units`` row, or\nboth \u2014 and ``document_state`` is what says which. Read it before reading\nany of the document-layer fields below: on a row that has no artifact,\nthose fields are not observations.",
         "properties": {
           "age_days": {
             "title": "Age Days",
@@ -31425,10 +31542,27 @@
             "title": "Created At",
             "type": "string"
           },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
+          "document_state": {
+            "default": "present",
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
             "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
           },
           "kind": {
             "title": "Kind",
@@ -31510,7 +31644,6 @@
           }
         },
         "required": [
-          "id",
           "kind",
           "kind_locked",
           "slug",
@@ -31568,6 +31701,26 @@
           "total": {
             "title": "Total",
             "type": "integer"
+          },
+          "work_unit_population_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Population Reason"
+          },
+          "work_unit_population_state": {
+            "default": "included",
+            "enum": [
+              "included",
+              "unavailable"
+            ],
+            "title": "Work Unit Population State",
+            "type": "string"
           }
         },
         "required": [
@@ -34098,6 +34251,458 @@
           "updated_at"
         ],
         "title": "RatingRead",
+        "type": "object"
+      },
+      "ReconciliationAxisA": {
+        "description": "Axis A \u2014 coord's STORED ``work_units.status``.\n\n``present`` is \"a coord work unit exists for this stem\". ``status`` is as\nOPAQUE here as everywhere else in this module: coord accepts an\noff-vocabulary status deliberately (its Free transition tier), so a word in\nno vocabulary reads as OPEN rather than as an error.",
+        "properties": {
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          }
+        },
+        "required": [
+          "readable",
+          "present"
+        ],
+        "title": "ReconciliationAxisA",
+        "type": "object"
+      },
+      "ReconciliationAxisB": {
+        "description": "Axis B \u2014 the plan document's status stamp, **from the artifact store**.\n\n``source`` is stated on the axis as well as on the response because this\nis the half that differs from the qontinui-dev-notes reconciler, which\nreads the body off ``origin/main`` of the plans repo. Here there is no git\ncheckout, so the document layer is ``agent.work_artifacts``.\n\n``complete`` is ``document_state == \"present\"`` and nothing else. When it\nis ``False`` there is no document to compare and the row is UNKNOWN \u2014 the\nroute refuses to emit any other verdict for such a row.",
+        "properties": {
+          "adapter_readable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adapter Readable"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "document_state": {
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "source": {
+            "const": "artifact_store",
+            "default": "artifact_store",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          },
+          "variant_count": {
+            "default": 1,
+            "title": "Variant Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "readable",
+          "present",
+          "document_state",
+          "complete"
+        ],
+        "title": "ReconciliationAxisB",
+        "type": "object"
+      },
+      "ReconciliationAxisC": {
+        "description": "Axis C \u2014 coord's DERIVED ``delivery`` verdict. Never re-derived here.\n\n``{shipped, evidence_complete, evidence_gaps}`` exactly as coord's by-slug\ndoor emitted it (D4: ONE field name, ONE predicate, ONE place \u2014 web does\nnot recompute degradation from citations' ``merged`` flags).\n\n**Read ``evidence_complete`` BEFORE ``shipped``.** When it is ``False``,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The cascade encodes that mechanically: ``EVIDENCE_INCOMPLETE``\nprecedes every arm that reads ``shipped``.\n\n``evidence_gaps`` is carried VERBATIM and never collapsed to a count or a\nboolean; it is the only place two of coord's three modelled gaps are\nvisible at all.",
+        "properties": {
+          "citation_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citation Count"
+          },
+          "computed": {
+            "default": false,
+            "title": "Computed",
+            "type": "boolean"
+          },
+          "evidence_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Complete"
+          },
+          "evidence_gaps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Gaps",
+            "type": "array"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          },
+          "readable": {
+            "title": "Readable",
+            "type": "boolean"
+          },
+          "shipped": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipped"
+          },
+          "unreadable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable Reason"
+          }
+        },
+        "required": [
+          "readable",
+          "present"
+        ],
+        "title": "ReconciliationAxisC",
+        "type": "object"
+      },
+      "ReconciliationFacets": {
+        "description": "The D3 honesty block: exhaustive facets, a denominator, a blind-spot flag.\n\nModelled on coord's ``coord_memory_overview`` contract:\n\n* ``by_class`` carries **every** member of the cascade INCLUDING the zeros,\n  so \"no rows of class X\" is a stated fact rather than an absence;\n* ``by_verdict`` likewise carries all three groups including zeros;\n* ``denominator`` is explicit and ``sum(by_class) == sum(by_verdict) ==\n  denominator``;\n* ``corpus_complete`` is ``False`` for a partial read, as an explicit blind\n  spot, and ``corpus_incomplete_reasons`` names each one.\n\nThe denominator is the WHOLE population, not the page: an off-page row is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` and counted, never omitted.",
+        "properties": {
+          "by_class": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Class",
+            "type": "object"
+          },
+          "by_verdict": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Verdict",
+            "type": "object"
+          },
+          "corpus_complete": {
+            "title": "Corpus Complete",
+            "type": "boolean"
+          },
+          "corpus_incomplete_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Corpus Incomplete Reasons",
+            "type": "array"
+          },
+          "denominator": {
+            "title": "Denominator",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "denominator",
+          "by_class",
+          "by_verdict",
+          "corpus_complete"
+        ],
+        "title": "ReconciliationFacets",
+        "type": "object"
+      },
+      "ReconciliationResponse": {
+        "description": "A page of reconciled plan stems plus the honesty flags for the read.",
+        "properties": {
+          "axis_c_computed_count": {
+            "title": "Axis C Computed Count",
+            "type": "integer"
+          },
+          "axis_c_scope": {
+            "const": "page",
+            "default": "page",
+            "title": "Axis C Scope",
+            "type": "string"
+          },
+          "coord_available": {
+            "default": true,
+            "title": "Coord Available",
+            "type": "boolean"
+          },
+          "document_axis_complete": {
+            "title": "Document Axis Complete",
+            "type": "boolean"
+          },
+          "document_axis_source": {
+            "const": "artifact_store",
+            "default": "artifact_store",
+            "title": "Document Axis Source",
+            "type": "string"
+          },
+          "document_missing_count": {
+            "title": "Document Missing Count",
+            "type": "integer"
+          },
+          "document_present_count": {
+            "title": "Document Present Count",
+            "type": "integer"
+          },
+          "facets": {
+            "$ref": "#/components/schemas/ReconciliationFacets"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationRow"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "ordering": {
+            "const": "slug_asc",
+            "default": "slug_asc",
+            "title": "Ordering",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "work_unit_population_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Work Unit Population Reason"
+          },
+          "work_unit_population_state": {
+            "default": "included",
+            "enum": [
+              "included",
+              "unavailable"
+            ],
+            "title": "Work Unit Population State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit",
+          "document_axis_complete",
+          "document_present_count",
+          "document_missing_count",
+          "axis_c_computed_count",
+          "facets"
+        ],
+        "title": "ReconciliationResponse",
+        "type": "object"
+      },
+      "ReconciliationRow": {
+        "description": "One plan stem, its three axis readings, and the resulting class.",
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "axis_a": {
+            "$ref": "#/components/schemas/ReconciliationAxisA"
+          },
+          "axis_b": {
+            "$ref": "#/components/schemas/ReconciliationAxisB"
+          },
+          "axis_c": {
+            "$ref": "#/components/schemas/ReconciliationAxisC"
+          },
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "document_axis_complete": {
+            "title": "Document Axis Complete",
+            "type": "boolean"
+          },
+          "document_state": {
+            "enum": [
+              "present",
+              "unsynced",
+              "absent"
+            ],
+            "title": "Document State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "source_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Path"
+          },
+          "source_repo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Repo"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "disagree",
+              "unknown"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "document_state",
+          "document_axis_complete",
+          "axis_a",
+          "axis_b",
+          "axis_c",
+          "classification",
+          "verdict",
+          "reason"
+        ],
+        "title": "ReconciliationRow",
         "type": "object"
       },
       "RecordingListResponse": {
@@ -79068,7 +79673,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -81165,7 +81770,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}": {
       "delete": {
-        "description": "Delete a Cognito group. 404 if no such group. Superuser-gated,\nrate-limited (the lowest limit of the four \u2014 this is the only\nirreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
+        "description": "Delete a Cognito group. 404 if no such group, 400 if the name cannot\nsatisfy Cognito's ``groupName`` constraint (``validated_group_name``).\nSuperuser-gated, rate-limited (the lowest limit of the four \u2014 this is\nthe only irreversible one), and audited with the acting superuser.\n\nRefuses **409** before touching AWS when the delete would take\nsomething else down with it \u2014 see the module comment above\n:data:`HOME_GROUP_SUFFIX` for the three guards, their overrides, and\nwhy the harm is deferred to each operator's next login rather than\nswept immediately.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_delete",
         "parameters": [
           {
@@ -81241,7 +81846,7 @@
     },
     "/api/v1/operations/coord/cognito/groups/{group_name}/users": {
       "delete": {
-        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Remove a user (resolved by email) from a Cognito group.\nSuperuser-gated, rate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_delete",
         "parameters": [
           {
@@ -81351,7 +81956,7 @@
         ]
       },
       "post": {
-        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match).",
+        "description": "Add a user (resolved by email) to a Cognito group. Superuser-gated,\nrate-limited, audited.\n\n404 if no user has that email; 409 if the email is ambiguous (>1 match);\n400 if the email or the group name is one Cognito rejects as malformed.",
         "operationId": "api_v1_operations_coord_cognito_groups_group_name_users_post",
         "parameters": [
           {
@@ -85002,7 +85607,7 @@
     },
     "/api/v1/operations/fleet/resource-samples": {
       "get": {
-        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
+        "description": "Proxy coord's ``GET /coord/devices/resource-samples`` (tenant-scoped).\n\nResponse shape (coord-authored \u2014 this proxy adds and removes\nnothing)::\n\n    {\n      \"latest\": [ResourceSampleRow, ...],   # newest per anchor\n      \"count\": <int>,\n      \"history\": [HistorySeries, ...],      # bounded sparkline window\n      \"window_secs\": <float>,               # EFFECTIVE, post-clamp\n      \"latest_lookback_secs\": <float>,\n      \"history_points_per_anchor\": <int>,\n      \"history_truncated\": <bool>,\n      \"schema_pending\": <bool>\n    }\n\nEach ``ResourceSampleRow`` carries a **server-computed** ``pressure``\n(``{ratio, basis}``, or ``null`` for \"no opinion\"), ``age_secs``, and\nthe admission fields ``floor`` / ``disk_floor``\n(``{basis, bytes, source, verdict, reject_bytes, reject_source}``),\n``pressure_floor``\n(``{basis, ratio, source, verdict, reject_ratio, reject_source}``),\n``saturation`` (``{ratio, basis}``), ``saturation_floor``\n(the same shape as ``pressure_floor``) and ``headroom``\n(``ok | warn | breach | unknown``). All are passed through untouched\non purpose:\n\n* ``pressure`` is the ONE lane-pressure definition that coord's CI\n  ranker also reads. Recomputing it here (or in the browser) is\n  exactly the dashboard/dispatcher drift \u00a7C0 exists to prevent.\n* ``age_secs`` is computed by Postgres in the same statement as the\n  row, so a browser never subtracts its own clock from a server\n  timestamp.\n* ``headroom`` is the VERDICT coord's admission acts on, and the\n  strip colours rows from it rather than from a client-side band\n  over ``pressure`` \u2014 the two could otherwise disagree exactly at\n  the boundary. It is not defaultable here: a row arriving without\n  these fields (a coord that predates them) must reach the browser\n  without them, which renders as *unknown*, never as healthy. Note\n  ``floor.basis`` \u2014 the floor is on a different column from the\n  ratio's divisors, so it cannot be collapsed into a pressure\n  threshold anywhere along this path.\n* ``reject_bytes`` is the SECOND enforcer on the same column: a\n  column can be guarded twice with deliberately different numbers\n  (host commit \u2014 supervisor defers at 5 GiB, ``ci_node`` rejects at\n  4 GiB), and the rejecting one sits lower so the recoverable wait\n  trips first. ``null`` means no rejecting enforcer governs the\n  column and must not be defaulted to ``bytes`` or to zero; absent\n  means an older coord. The envelope's ``headroom_warn_margin``\n  travels the same way \u2014 the client reads the amber margin off the\n  response rather than naming one.\n* ``pressure_floor`` is a threshold on the RATIO axis, not the byte\n  axis, and the two run in opposite directions: a byte floor is\n  crossed going down, a pressure ceiling going up. The Linux lanes\n  have no byte memory floor at all (nothing in the fleet floors\n  ``mem_available_bytes``) \u2014 their only guard is ``ci_node``'s\n  swap-ratio defer \u2014 so dropping this field would render a WSL row\n  under an active guard as unguarded. ``null`` on the Windows host\n  lane, whose guards are byte-based, is a fact about that lane and\n  is not the same as the field being absent.\n* A ``verdict`` of ``null`` means a threshold coord reports and\n  NOTHING enforces (``min_free_mem_bytes_wsl`` is exactly that: a\n  \u00a7D1 control that validates and versions with no consumer). It must\n  reach the browser as null so it can render \"set, not enforced\"\n  instead of inheriting a verb it does not have.\n* The **saturation** fields \u2014 ``threads_max``, ``threads_used``,\n  ``pids_max``, ``pids_used`` and ``saturation_source`` (alembic\n  ``fleet_res_tel_04``, qontinui-web#1104) \u2014 are a THIRD axis, and\n  the only one that is instrumentally independent of memory. On\n  2026-08-27 a container sat at 190,840 of a 192,146 kernel thread\n  ceiling (99.3%), no ``fork()`` on the box could succeed, and every\n  memory and disk figure this route returned was green *and\n  accurate*: they were all measuring a resource that had not run\n  out. Passed through untouched like everything else here, and with\n  the same rule doing more work than usual \u2014 **NULL must stay NULL**.\n  A fabricated ``0`` does not merely misreport on this axis, it\n  inverts the reading: ``threads_used = 0`` renders as *perfectly\n  idle* on the one column built to catch a saturated box, and a\n  ``NULLS LAST`` ranking would then promote the blind machine to the\n  front of the dispatch queue.\n* ``saturation_source`` (``cgroup`` | ``proc`` | ``job_object`` |\n  null) is not bookkeeping and must not be dropped as a label: a\n  cgroup counts **tasks (threads)** and ``/proc`` counts\n  **thread-group leaders**, which coord's own ``process_health.rs``\n  records as \"different quantities\" \u2014 they can differ by an order of\n  magnitude. A publisher that probes the cgroup, fails, and falls\n  back to ``/proc`` emits a number whose meaning changed with\n  nothing else in the row saying so. It carries no CHECK in the\n  schema (an unrecognised provenance label would otherwise fail the\n  whole INSERT and discard the memory and disk metrics on the same\n  row), so an unexpected value reaches the browser and renders as an\n  explicit unknown rather than being coerced here.\n* ``saturation`` and ``saturation_floor`` are the SERVER-COMPUTED\n  half of that axis, and the half the browser actually renders \u2014 the\n  five raw columns above only caption it. ``saturation`` is\n  ``{ratio, basis}`` with ``basis: \"threads\"``, computed as\n  ``threads_used / threads_max`` and falling back to the ``pids_*``\n  pair where a cgroup or job-object ceiling is the binding one;\n  ``saturation_floor`` is ``pressure_floor``'s shape on\n  ``basis: \"thread_ratio\"``. **The threshold travels on the wire for\n  the same reason the ratio does.** coord's dispatch ranking reads\n  this floor, so a client that named its own number could render\n  amber while the ranker had already stopped electing the machine \u2014\n  \u00a7C1's defect, one axis over. Both are optional and independently\n  nullable, and the caller reads the difference: keys **absent** is a\n  coord that predates the axis, ``null`` on every count is a\n  publisher whose runner predates the probe, and a count without its\n  ceiling is a probe that FAILED. All three render *unknown* \u2014 never\n  healthy, and never ``0``.\n* ``headroom`` composes all three axes, not two: coord grades the\n  worst of memory, disk and task saturation into the one verdict the\n  strip colours from. That is why the saturation ratio must not be\n  banded client-side \u2014 the composition is coord's, and a second one\n  in the browser would disagree with it exactly at the boundary. A\n  coord predating the axis sends no saturation fields, and the row's\n  ``headroom`` is then the worst of the two axes it does send; the\n  caller renders the third as *unreported* rather than inferring that\n  it is clear.\n* The **spawn-capacity** fields \u2014 ``thread_count`` and\n  ``active_terminal_sessions`` (alembic ``lasac_01``) \u2014 are a FOURTH\n  axis and, unlike ``threads_used``, are scoped to the *publishing\n  process* rather than to the lane. That distinction is the whole\n  point: on 2026-08-29 the primary runner wedged carrying 540 OS\n  threads against tokio's 512-slot blocking pool, 119 of them parked\n  mid-``CreateProcess``, so new spawns silently stopped while the box\n  sat at a few percent of its kernel thread ceiling and every memory,\n  commit and disk figure on this row read healthy *and accurate*. A\n  lane-wide saturation number cannot see that; a per-process thread\n  count is the direct proxy for it. Passed through untouched, with\n  the same NULL rule doing the same extra work: a fabricated ``0``\n  inverts rather than under-reports, since a live process cannot have\n  zero threads and zero renders as *maximally idle* on the one column\n  built to catch a saturated one.\n* ``active_terminal_sessions`` is the EXPLANATORY half and is never a\n  trip condition on its own \u2014 a machine can carry N sessions\n  comfortably or N sessions each leaking a stuck ``spawn_blocking``\n  call, and only the thread count separates those. It travels beside\n  ``thread_count`` for the same reason ``EffectiveFloor`` carries both\n  the threshold and the raw value: a verdict that prints only the\n  number it tripped on leaves the next incident's forensics unable to\n  ask whether it was work or a leak.\n\n``schema_pending: true`` means the sibling alembic migration\n(qontinui-web#949) has not reached coord's database yet \u2014 coord\ndegrades to an empty set rather than 500ing, and the caller must\nrender that as **unknown**, never as healthy.\n\nQuery params are forwarded verbatim WITHOUT local range validation:\ncoord clamps out-of-range values and echoes the effective bounds, and\na 422 here would turn a slightly-greedy render into a blank panel.",
         "operationId": "api_v1_operations_fleet_resource_samples_get",
         "parameters": [
           {
@@ -89366,11 +89971,11 @@
     },
     "/api/v1/operations/sessions": {
       "get": {
-        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.",
+        "description": "List active (default) or all sessions across one or all tenants\nthe caller belongs to.\n\n`scope` (session-state) and `tenant_scope` (tenant breadth) are\nindependent axes \u2014 see plan\n`2026-05-28-cross-org-tenant-membership-and-session-filter-split.md`.\n\nWire shape from coord (the default, `shape` omitted)::\n\n    { \"count\": <int>, \"scope\": \"<active|all>\", \"sessions\": [SessionRow, ...] }\n\nWhere ``SessionRow`` matches ``qontinui-coord/src/sessions.rs::SessionRow``.\n\nWith ``shape=consolidated`` the envelope gains three fields and every\nrow gains two (plan `2026-08-26-sessions-console-consolidation` D1)::\n\n    { \"count\": <int>, \"scope\": \"all\", \"shape\": \"consolidated\",\n      \"sessions\": [ { ...SessionRow,\n                      \"row_class\": \"linked\"|\"lifecycle_only\"|\"agent_only\"|null,\n                      \"agent_session\": {...}|null }, ... ],\n      \"row_class_counts\": {\"linked\": n, \"lifecycle_only\": n,\n                           \"agent_only\": n, \"unknown\": n},\n      \"agent_half\": {\"read\": \"ok\"} | {\"read\": \"failed\", \"detail\": \"...\"} }\n\n``row_class: null`` is UNKNOWN and is load-bearing \u2014 see the block\ncomment above :data:`_SESSIONS_SHAPE_CONSOLIDATED`.\n\n**Tenant scoping is coord's and is unchanged** (trap 7). Both reads\nforward the caller's bearer and coord scopes by device\u2192tenant; the\n`device` / `q` / `status` filtering applied web-side below is a\nPRESENTATION narrowing of rows coord already authorised, never the\nsecurity boundary. Removing it could only ever show the caller MORE of\ntheir own tenant's rows, never another tenant's.",
         "operationId": "api_v1_operations_sessions_get",
         "parameters": [
           {
-            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+            "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
             "in": "query",
             "name": "scope",
             "required": false,
@@ -89383,7 +89988,7 @@
                   "type": "null"
                 }
               ],
-              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`.",
+              "description": "`active` (default) | `all` \u2014 session-state filter, passthrough to coord. Orthogonal to `tenant_scope`. Ignored when `shape=consolidated`, which always reads `all` (see below).",
               "title": "Scope"
             }
           },
@@ -89421,6 +90026,84 @@
               ],
               "description": "RFC 3339 timestamp; only rows updated at-or-after are returned.",
               "title": "Since"
+            }
+          },
+          {
+            "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+            "in": "query",
+            "name": "shape",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Omitted (default) \u2014 coord's `/sessions` payload passed through unchanged. `consolidated` \u2014 the D1 join+union across coord's `sessions` and `agent_sessions` with a first-class `row_class` discriminant. See the block comment above.",
+              "title": "Shape"
+            }
+          },
+          {
+            "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Restrict to sessions on this coord device. `shape=consolidated` only. Spelled `device` (not `device_id`) because `/environments/sessions?device=` already builds exactly this deep link and the Phase 3 redirect preserves it verbatim.",
+              "title": "Device"
+            }
+          },
+          {
+            "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Free-text filter. `shape=consolidated` only. The agent half is searched coord-side (full-text over label / derived_name / activity); the lifecycle half is matched here over the fields coord's `/sessions` route exposes, which carries no search parameter.",
+              "title": "Q"
+            }
+          },
+          {
+            "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "live",
+                    "stale",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Lifecycle filter. `shape=consolidated` only. coord's own agent-session vocabulary, so `/admin/agent-sessions?status=` maps 1:1; `live` also covers coord's `sessions.state='active'`, `stale` covers `stale` + `pending_resolution`, `closed` covers `closed`.",
+              "title": "Status"
             }
           }
         ],
@@ -91434,7 +92117,7 @@
     },
     "/api/v1/plan-library/candidates": {
       "get": {
-        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped ``kind='plan'`` artifacts, each carrying the inputs an\nagent needs to decide what to pick up next: ``status``, ``repos``,\n``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,\n``last_touched``, and the ``prompt_chain`` that produced the plan.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) \u2014 with no\nweighting of any kind.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
+        "description": "Candidate selection for agents \u2014 signals, never a verdict.\n\nReturns unshipped plans, each carrying the inputs an agent needs to decide\nwhat to pick up next: ``status``, ``repos``, ``unmet_depends_on``,\n``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and\nthe ``prompt_chain`` that produced the plan.\n\n**The population is the UNION of both corpus layers** \u2014 non-terminal\n``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,\nnon-``shepherd-*`` work units that no artifact already claims. Plan\n``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn\nfrom the document layer alone this read saw 13 of 606 addressable plans,\nbecause that layer holds plan BODIES and fills only under an opt-in body\nsync, while the question this route answers is settled by fields the\nOPERATIONAL layer owns. Each item's ``document_state`` says which layer it\ncame from, and a work-unit-only row carries a null ``id`` \u2014 there is no\nartifact to give it one, so it is resolved by ``source_path`` instead.\n\nThe union can only ADD rows: coord's half is a best-effort read, and when\nit fails the population degrades to exactly the artifact-only one this\nroute returned before, flagged by ``work_unit_population_state:\n\"unavailable\"``. That flag is separate from ``coord_available`` on\npurpose \u2014 a 403 on the population door is coord ANSWERING, so it never\ntrips the page-wide circuit, and without its own flag the route would\nsilently fall back to a 2% view of the corpus while reporting coord\nhealthy.\n\n**There is no criticality score** (design decision D6). A hardcoded score\nwould be a guess frozen into SQL; the read exposes the evidence and the\nagent ranks. The only ordering is a stable default \u2014 oldest-vetted-first\n(``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit\nrows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to\nan artifact so a page without them is unchanged) \u2014 with no weighting of any\nkind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:\n411 of the 635 carried an empty status, which would make that a guess over\nthe least-known rows.\n\nCoord-owned fields (the work unit and its PR citations) come over coord's\nHTTP API, never from coord's Postgres schema. Two things the payload is\ncareful about:\n\n* ``work_unit_slug`` is a soft link with NO foreign key and it may dangle.\n  A missing work unit is a NORMAL result \u2014 null-joined as\n  ``work_unit_state: \"dangling\"``, never a 404 and never an error.\n* An unreachable or slow coord degrades to ``\"unavailable\"`` on the\n  affected fields, and the whole read still returns the local signals.\n  ``unavailable`` is UNKNOWN \u2014 it is NOT \"this plan has no PRs\". The two\n  are distinct values precisely so a consumer cannot confuse them.\n\n``open_followups`` (Phase 7, additive) carries work that has **no plan\nyet** \u2014 open ``spawned_followup`` edges, oldest first. It is a separate\nlist rather than extra ``items`` because a follow-up nobody has written is\nnot an artifact and has no id to be a candidate with; folding it into\n``items`` would mean inventing one. ``items`` is unchanged.\n\nTwo principals reach this route (module docstring, invariant 7) and the\ncoord half is fetched with whichever bearer they presented, so the coord\nreads follow the credential to the door tier that accepts it \u2014 the\noperator routes for a Cognito user, the ``agent-`` twins for the runner's\ndevice JWT. Nothing else about the response differs between them.",
         "operationId": "api_v1_plan_library_candidates_get",
         "parameters": [
           {
@@ -91870,6 +92553,83 @@
           }
         ],
         "summary": "Follow-ups a plan identified but nobody owns yet",
+        "tags": [
+          "plan-library"
+        ]
+      }
+    },
+    "/api/v1/plan-library/reconciliation": {
+      "get": {
+        "description": "Three writers share one fact \u2014 \"is this plan done?\" \u2014 and none reads the others.\n\n* **axis A** \u2014 coord ``work_units.status``, the STORED column.\n* **axis B** \u2014 the plan document's status stamp. **Here that is the\n  ARTIFACT STORE**, and every response says so in ``document_axis_source``.\n* **axis C** \u2014 coord's DERIVED ``delivery`` verdict\n  (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read\n  and forwarded verbatim. Web never re-derives it (D4).\n\nThe classification is a first-match-wins cascade of twelve members whose\nORDER is part of the spec (D6), vendored from qontinui-dev-notes together\nwith its test vectors and pinned by digest (D7). Two properties the order\nbuys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes\nevery arm that reads ``shipped``, and the two AGREE members are LAST, so no\nunreadable axis can fall through into agreement.\n\n**Read ``evidence_complete`` before ``shipped``.** When it is false,\n``shipped: false`` means coord COULD NOT ESTABLISH delivery \u2014 UNKNOWN, not\n\"undelivered\". The two demand opposite responses.\n\n**What this surface's document axis cannot do.** ``agent.work_artifacts``\nis sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)\nand can be silently FROZEN: the runner's body sync is constructed only\nunder ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's\n``plan_capture`` dial, and a store frozen weeks ago looks identical to an\nempty one. A comparator that read that as agreement would manufacture\nfleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,\nnever AGREE, ``document_axis_complete`` reports it at both row and response\nlevel, and the body is REFUSED if any such row carried another verdict. The\ngit-side reconciler in qontinui-dev-notes is the primary surface precisely\nbecause its axis B is ``origin/main`` of the plans repo (D1).\n\n**Axis C is per-page, and the off-page rows are counted, not dropped.**\nCoord has no bulk delivery door; the per-unit read measured 0.145 s median\n/ 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and\nno request can pay it (Phase 0.1). Every row outside the returned page is\nclassified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and\nstays in the denominator. Page through the corpus to derive it row by row.\n\n**The facet block is the answer, not the item list** (D3): exhaustive\nfacets INCLUDING the zeros, an explicit denominator that equals their sum,\nand ``corpus_complete`` with every blind spot named. \"No rows of class X\"\nis a stated fact here rather than an absence.\n\nThis route WRITES NOTHING. It has no status write, no worker and no\n``shipped`` write anywhere \u2014 ``shipped`` is derived, and a direct write is\na ``422 status_is_derived`` on coord's side. Where the reconciler finds\ndrift, the correction path is the existing ``plan-steward`` (D5).\n\nCoord is reached over its HTTP API only; nothing here touches coord's\nPostgres (module invariant 4, enforced by\n``tests/test_coord_schema_boundary_guard.py``).",
+        "operationId": "api_v1_plan_library_reconciliation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
+            "in": "query",
+            "name": "include_coord",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Read coord's work-unit list (axis A) and its derived delivery verdict (axis C). Set false for a document-layer-only read, in which BOTH coord axes report UNKNOWN \u2014 never agreement.",
+              "title": "Include Coord",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReconciliationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Does each plan's record agree with reality? (three-way reconciliation)",
         "tags": [
           "plan-library"
         ]
@@ -104225,6 +104985,43 @@
               ],
               "description": "Soft link to a coord work unit. Never resolved; a slug with no matching work unit simply returns its sessions.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+            "in": "query",
+            "name": "claude_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the Claude Code session uuid \u2014 the archive's own identity column and the SAME id space as coord's agent_sessions.id / sessions.claude_code_session_id. This is the forward half of the session <-> archive round trip: the reverse (archive row -> /sessions/{coord_session_id}) already ships. NOT unique on its own \u2014 one Claude session archived under two account homes is two rows \u2014 so this returns a list, and an empty list means 'this archive holds no row for that id', never 'that session had no transcript'.",
+              "title": "Claude Session Id"
+            }
+          },
+          {
+            "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+            "in": "query",
+            "name": "coord_session_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the coord sessions id the archive row recorded. A SOFT link coord garbage-collects underneath us, and unindexed (a scan) \u2014 prefer claude_session_id, which is indexed.",
+              "title": "Coord Session Id"
             }
           },
           {
