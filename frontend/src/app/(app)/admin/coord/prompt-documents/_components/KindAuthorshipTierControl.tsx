@@ -24,6 +24,7 @@ import {
   isAgentWriteTier,
   type AgentWriteTier,
 } from "../types";
+import { tierHelp, tierLabel } from "../_lib/agentWriteTier";
 
 /**
  * The per-KIND agent authorship tier — the operator's only lever over a kind
@@ -79,37 +80,17 @@ import {
  */
 
 /**
- * What each tier means, in the operator's terms.
+ * Tiers whose selection is confirmed rather than applied on the click.
  *
- * `allow_with_notification` is a FUNCTION of what coord reports, not a
- * constant: its meaning changed under this console when coord#1702 shipped the
- * precondition, and the string that lived here went on saying "NOT YET
- * ENFORCED — see the notice above" against a notice that no longer rendered.
- * A local constant describing a server behaviour is a copy that cannot follow
- * the server; taking the flag as an argument is what makes it follow.
+ * `tierHelp` and `tierLabel` used to live here. They now come from
+ * `../_lib/agentWriteTier`, shared with the per-DOCUMENT control: both surfaces
+ * set the same coord vocabulary, and two spellings of what a tier means is
+ * precisely how the per-document badge and its toggle came to disagree.
  */
-function tierHelp(tier: AgentWriteTier, enforced: boolean): string {
-  switch (tier) {
-    case "deny":
-      return "Agents may not author documents of this kind. Coord refuses the write and names the remedy.";
-    case "allow":
-      return "Agents may author documents of this kind, including names that do not exist yet. Every write is versioned and attributed.";
-    case "allow_with_notification":
-      return enforced
-        ? "Agents may author documents of this kind, but only with a notification reference: coord refuses the write unless it names a recent finding the same session posted about the document."
-        : "Intended: agents may author, but only with a notification reference. NOT ENFORCED by the coord this console is talking to — it behaves as `allow`.";
-  }
-}
-
-/** Tiers whose selection is confirmed rather than applied on the click. */
 const CONFIRMED_TIERS: readonly AgentWriteTier[] = [
   "allow",
   "allow_with_notification",
 ];
-
-function tierLabel(tier: AgentWriteTier): string {
-  return tier.replace(/_/g, " ");
-}
 
 /**
  * The badge for a row's CURRENT state.
@@ -480,7 +461,10 @@ export function KindAuthorshipTierControl() {
                           size="sm"
                           variant={row.tier === tier ? "default" : "outline"}
                           disabled={saving || row.tier === tier}
-                          title={tierHelp(tier, enforced)}
+                          title={tierHelp(tier, {
+                            subject: "kind",
+                            notifyEnforced: enforced,
+                          })}
                           onClick={() => {
                             if (CONFIRMED_TIERS.includes(tier)) {
                               setPending({ kind: row.kind, tier });
