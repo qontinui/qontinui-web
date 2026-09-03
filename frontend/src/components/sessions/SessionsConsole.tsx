@@ -37,6 +37,17 @@
  * the two is the trap plan §4 names in terms. So both are consulted, and
  * separately.
  *
+ * ## The WORK axis is a THIRD thing, and it is not liveness
+ *
+ * Plan `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4.
+ * `coord.sessions.session_status` (`working | blocked | stalled |
+ * waiting_human | finished`) answers *has the agent finished its work?*, which
+ * the `state` column above does not: a session can be `state=active` and
+ * `session_status=finished`, or `state=closed` having never finished. So it
+ * gets its own badge beside the status one and its own `FilterChips` facet —
+ * never a `?status=` tab, which filters `state`. Keeping the two apart is the
+ * feature.
+ *
  * ## Absence is not zero (D2)
  *
  * A `lifecycle_only` row renders `–` for transcript/lineage, never "none". An
@@ -78,12 +89,15 @@ import { Button } from "@/components/ui/button";
 import { listConsolidatedSessions } from "./api";
 import {
   SESSION_STATUS_PALETTE,
+  SESSION_WORK_PALETTE,
   agentSessionId,
   compareSessionRows,
   deriveSessionStatus,
+  deriveSessionWorkStatus,
   deriveSessionsHealth,
   hasAgentHalf,
   hasLifecycleHalf,
+  isSessionFinished,
   lastHeartbeatAt,
   lifecycleState,
   rowTimestamp,
@@ -239,6 +253,25 @@ export function SessionsConsole({
   const [kinds, setKinds] = useState<string[]>([]);
   const [providers, setProviders] = useState<string[]>([]);
   const [machines, setMachines] = useState<string[]>([]);
+  // The WORK axis facet (`coord.sessions.session_status`) — plan
+  // `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4. A
+  // fourth CLIENT facet, deliberately NOT a fifth `FilterTabs` tab:
+  //
+  // 1. The marker is already on every row coord served, so narrowing on it
+  //    needs no refetch — a server tab would pay a round trip to filter data
+  //    the browser is holding.
+  // 2. The `?status=` axis those tabs drive filters `state` — LIVENESS. Adding
+  //    `finished` there would make one control mean two orthogonal things, and
+  //    keeping liveness and work apart is the entire point of this feature: a
+  //    live session can be finished, and a closed one can be unfinished.
+  //
+  // NOT PERSISTED, deliberately. This console has no `localStorage` and no URL
+  // writeback for ANY facet — `?status=` is read once on mount via
+  // `parseStatusTab` and never written back. A sticky one here would be the
+  // only control on the page that remembered itself, and a filter an operator
+  // does not remember setting is a filter that silently hides rows on the next
+  // visit. Match the surface's idiom; do not add persistence here alone.
+  const [work, setWork] = useState<string[]>([]);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   // `?device=` is a deep link, so it is a SERVER filter (it narrows both halves
@@ -361,6 +394,37 @@ export function SessionsConsole({
     [rows, machineLabel]
   );
 
+  /**
+   * The work facet's vocabulary — AUTHORED (two members), not derived from the
+   * rows, so `maxVisible` is omitted and both chips render even at count `0`.
+   *
+   * Both counts are MEASURED over the rows already on the page, so R6's `0` is
+   * honest here — `–` would be the lie. What is deliberately NOT offered is a
+   * third "never reported" chip: `isSessionFinished` is total by design (see
+   * its doc), and splitting unknown out would put a chip on the page whose
+   * selection asserts something about rows nobody has heard from.
+   */
+  const workOptions = useMemo<FilterChipOption<string>[]>(() => {
+    let finished = 0;
+    for (const r of rows) if (isSessionFinished(r)) finished += 1;
+    return [
+      {
+        value: "finished",
+        label: "finished",
+        count: finished,
+        title:
+          "sessions that reported session_status=finished — the WORK axis. Orthogonal to live/stale/closed.",
+      },
+      {
+        value: "unfinished",
+        label: "unfinished",
+        count: rows.length - finished,
+        title:
+          "everything else — including sessions that have never reported a work status at all. Select this to HIDE finished sessions; a row we have heard nothing from stays visible, because absence is unknown, not a measured 'not finished'.",
+      },
+    ];
+  }, [rows]);
+
   const visible = useMemo(() => {
     const filtered = rows.filter((r) => {
       // EMPTY selection means NO filter — never a synthetic "any" option.
@@ -373,10 +437,20 @@ export function SessionsConsole({
       if (machines.length && !machines.includes(String(r.device_id ?? ""))) {
         return false;
       }
+      // Same rule, same shape: an empty `work` selection filters nothing. A row
+      // coord served no `session_status` for lands in `unfinished` and is
+      // therefore SHOWN whenever finished rows are being hidden — the safe
+      // direction for an unknown (`isSessionFinished`'s doc has the reasoning).
+      if (
+        work.length &&
+        !work.includes(isSessionFinished(r) ? "finished" : "unfinished")
+      ) {
+        return false;
+      }
       return true;
     });
     return [...filtered].sort((a, b) => compareSessionRows(a, b, { now }));
-  }, [rows, kinds, providers, machines, now]);
+  }, [rows, kinds, providers, machines, work, now]);
 
   const health = useMemo(
     () =>
@@ -524,6 +598,17 @@ export function SessionsConsole({
           maxVisible={6}
           testIdPrefix="sessions-console-machine"
         />
+        <FilterChips
+          label="work"
+          options={workOptions}
+          selected={work}
+          onToggle={(v) => setWork(toggle(work, v))}
+          onClear={() => setWork([])}
+          // No `maxVisible`: an AUTHORED two-member vocabulary, not a server
+          // list — the cap exists for vocabularies this page does not control.
+          testIdPrefix="sessions-console-work"
+          title="coord.sessions.session_status — the WORK axis, orthogonal to the live/stale/closed tabs above"
+        />
       </div>
 
       <RecordList
@@ -542,10 +627,20 @@ export function SessionsConsole({
           <EmptyState
             unknown={unknown}
             error={error}
+            // `work` counts here for the same reason every other facet does:
+            // a list emptied by "hide finished" must say a FILTER emptied it,
+            // not report an idle fleet. That is the same
+            // `silent-empty-is-unknown` reading the rest of this page applies —
+            // "nothing matched your filter" and "there are no sessions" are
+            // different sentences and the operator has to be told which.
             filtered={
               status !== "all" ||
               appliedQuery !== "" ||
-              kinds.length + providers.length + machines.length > 0
+              kinds.length +
+                providers.length +
+                machines.length +
+                work.length >
+                0
             }
           />
         }
@@ -596,6 +691,11 @@ function SessionConsoleRow({
   revalidation?: SessionRevalidationOptions;
 }) {
   const status = deriveSessionStatus(row, { now });
+  // The WORK axis, rendered BESIDE the liveness badge rather than folded into
+  // it. `null` for every row that has not declared itself finished — including
+  // the ones coord served no `session_status` for, which get no marker at all
+  // rather than a fabricated "unfinished" one.
+  const workStatus = deriveSessionWorkStatus(row);
   const machine = machineLabel(row.device_id);
   const kind = row.session_kind ?? null;
   const purpose = sessionPurpose(row);
@@ -719,7 +819,26 @@ function SessionConsoleRow({
           </span>
         </span>
       }
-      status={<StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />}
+      status={
+        // R2's status slot carries BOTH axes — two badges, never one merged
+        // word. `closed` (liveness, muted) and `finished` (work, green ✓) are
+        // the terminal words of different questions, and a row that is one and
+        // not the other has to be able to say so.
+        // `shrink-0` because this is a direct child of `RecordRow`'s flex row,
+        // where the truncating label owns the flex — without it a narrow
+        // viewport squeezes the two badges instead of the label.
+        <span className="flex items-center gap-1 shrink-0">
+          <StatusBadge status={status} palette={SESSION_STATUS_PALETTE} />
+          {workStatus && (
+            <span data-testid="sessions-console-row-work">
+              <StatusBadge
+                status={workStatus}
+                palette={SESSION_WORK_PALETTE}
+              />
+            </span>
+          )}
+        </span>
+      }
       reason={status.reason}
       time={
         <RowTime

@@ -105,6 +105,23 @@ export interface ConsolidatedSessionRow
   agent_session?: AgentSessionHalf | null;
   /** The bridge column. Present only on the lifecycle half. */
   claude_code_session_id?: string | null;
+  /**
+   * `coord.sessions.session_status` — the WORK axis, verbatim off the wire.
+   *
+   * A THIRD independent axis beside the two in this module's header, and coord
+   * says so in its own words: a row can be `state=active` AND
+   * `session_status=finished`, or `state=closed` AND never-finished. Liveness
+   * (`state`) and work (`session_status`) are orthogonal, and folding one into
+   * the other is the specific mistake this field exists to make impossible.
+   *
+   * Optional AND nullable, and — as everywhere else on this type — the two are
+   * the SAME claim: coord serializes the column with
+   * `skip_serializing_if = "Option::is_none"`, so an absent key means the
+   * session has never reported a work status, or coord is deployed ahead of the
+   * migration that added the column. Neither is "not finished" as a measured
+   * fact. See {@link isSessionFinished}.
+   */
+  session_status?: string | null;
 }
 
 /** Envelope from `GET /operations/sessions?shape=consolidated`. */
@@ -437,6 +454,144 @@ export function deriveSessionStatus(
     label: "active",
     reason: "heartbeat fresh",
     attention: SESSION_ATTENTION_BY_KIND.active,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The WORK axis — `coord.sessions.session_status`, whose terminal word is
+// `finished`. Deliberately a SECOND vocabulary beside `SessionStatusKind`
+// rather than a member of it.
+// ---------------------------------------------------------------------------
+//
+// Plan `2026-09-01-session-finished-marker-and-unfinished-resume.md` Phase 4.
+//
+// **Why not just add `finished` to {@link SessionStatusKind}.** That union
+// answers *is this session alive?* — one badge, one answer. The work axis
+// answers a different question, and the two cross: a session can be
+// `state=active` and `session_status=finished` (it declared its work done and
+// has not exited yet), or `state=closed` and never finished (it died
+// mid-task — the whole reason the resume half of this plan exists). Adding
+// `finished` to the liveness union would force one badge to answer two
+// questions, and the row would have to pick which of the two truths to hide.
+// So it is its own one-kind vocabulary, its own palette, and its own badge
+// rendered BESIDE the liveness one.
+
+/** The work axis's rendered vocabulary. One kind — the terminal one. */
+export type SessionWorkKind = "finished";
+
+/**
+ * The work axis's attention table, audited by `console/attention.test.ts`
+ * exactly like {@link SESSION_ATTENTION_BY_KIND}.
+ *
+ * `none`, and it is the calm family's textbook case rather than a shrug: a
+ * finished session is terminal on this axis, nothing is blocked on it, and
+ * nothing decays while it sits there. Amber would promise something clears it
+ * (nothing does — it is already done) and red would claim an operator must act
+ * (they need not). Style guide §4.1, "everything else … terminal".
+ */
+export const SESSION_WORK_ATTENTION_BY_KIND: Record<SessionWorkKind, Attention> =
+  {
+    finished: "none",
+  };
+
+/**
+ * Kind → badge classes for the work axis.
+ *
+ * Green — the calm family's "done" hue (style guide R3: *green = done*), the
+ * same literal {@link SESSION_STATUS_CLASS} already spells for `active`.
+ *
+ * **It MUST NOT be {@link INERT}, which is what `closed` wears.** `closed` and
+ * `finished` are the terminal words of two DIFFERENT axes and an operator has
+ * to be able to tell "this session stopped" from "this session's work is
+ * done" at a glance — a closed-but-unfinished session is exactly the row the
+ * resume half of this plan goes looking for. Painting them the same grey is
+ * the conflation the whole feature exists to prevent.
+ */
+export const SESSION_WORK_CLASS: Record<SessionWorkKind, string> = {
+  finished: "bg-green-500/15 text-green-200 border-green-500/30",
+};
+
+export const SESSION_WORK_PALETTE: StatusPalette<SessionWorkKind> = {
+  badgeClass: SESSION_WORK_CLASS,
+  // No red on this axis, so no `✕` — the set is empty rather than absent so
+  // the audit reads it as a measured "none", not as a forgotten field.
+  authorGlyphKinds: new Set<SessionWorkKind>(),
+  // `✓` — the colourblind-safe half of "done", so the marker survives at any
+  // contrast and does not rely on the green alone.
+  doneGlyphKinds: new Set<SessionWorkKind>(["finished"]),
+};
+
+/**
+ * The wire words that mean "the agent declared its work complete".
+ *
+ * `finished` is coord's canonical spelling. `done` is the pre-Phase-4 legacy
+ * alias: coord's `SessionStatus::parse` still ACCEPTS it (so old writers and
+ * old rows keep gating correctly) while `SessionStatus::as_str` NEVER emits
+ * it — verified against `qontinui-coord` `crates/coord/src/sessions.rs` on
+ * origin/main, 2026-09-03. It is accepted here anyway, deliberately: this
+ * field is a plain nullable `TEXT` column that coord re-serves verbatim, so a
+ * legacy row written before the rename can still carry the old word past a
+ * decoder that never normalised it. Accepting it costs one set member; missing
+ * it would silently un-finish a real row.
+ */
+export const SESSION_FINISHED_WORDS: ReadonlySet<string> = new Set([
+  "finished",
+  "done",
+]);
+
+/**
+ * Has this session declared its work complete?
+ *
+ * **`false` for an ABSENT or `null` `session_status`, and that is UNKNOWN
+ * being rendered safely — not a measured negative. Do not "optimise" this into
+ * treating unknown as a real answer.**
+ *
+ * coord serializes the column with `skip_serializing_if = "Option::is_none"`,
+ * so a missing key means *this session has never reported a work status* (or
+ * coord predates the migration). That is ignorance, and the fleet rule for
+ * ignorance is `verification-and-evidence` `silent-empty-is-unknown`: an
+ * absence is never a zero.
+ *
+ * The `false` this returns is therefore a statement about what the CALLER may
+ * do with the row, not a claim about the session: every caller here uses it to
+ * decide whether to HIDE the row or paint a "finished" marker on it, and the
+ * safe answer to "we do not know" is to show the row and paint nothing. A
+ * predicate that reported unknown as finished would silently hide sessions
+ * nobody has heard from — precisely the rows an operator most needs to see.
+ *
+ * If a caller ever needs to distinguish *unfinished* from *never reported*,
+ * read {@link ConsolidatedSessionRow.session_status} directly and branch on
+ * `== null`. Do not widen this predicate's return to `boolean | null`: its two
+ * consumers both need a total answer, and a `null` arm would be re-collapsed
+ * to `false` at each of them anyway, one copy at a time.
+ */
+export function isSessionFinished(row: ConsolidatedSessionRow): boolean {
+  const word = row.session_status;
+  // Absent OR null — the same claim (see the field's own doc), and neither is
+  // evidence of anything.
+  if (word == null) return false;
+  return SESSION_FINISHED_WORDS.has(word);
+}
+
+/**
+ * The work-axis badge for a row, or `null` when there is nothing to say.
+ *
+ * `null` rather than an "unfinished" badge on purpose: a row we have heard
+ * nothing from and a row actively working would both have to wear it, and the
+ * badge would be asserting the one thing {@link isSessionFinished} refuses to.
+ * The absence of a green marker is not a claim; a grey "unfinished" one would
+ * be.
+ */
+export function deriveSessionWorkStatus(
+  row: ConsolidatedSessionRow
+): RowStatus<SessionWorkKind> | null {
+  if (!isSessionFinished(row)) return null;
+  return {
+    kind: "finished",
+    label: "finished",
+    reason:
+      "the agent declared its work complete — the WORK axis, not liveness; this row may still be live",
+    attention: SESSION_WORK_ATTENTION_BY_KIND.finished,
   };
 }
 

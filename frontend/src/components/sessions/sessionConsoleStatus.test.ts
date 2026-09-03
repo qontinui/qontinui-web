@@ -13,7 +13,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   SESSION_ATTENTION_BY_KIND,
+  SESSION_WORK_ATTENTION_BY_KIND,
   agentSessionId,
+  deriveSessionWorkStatus,
+  isSessionFinished,
   compareSessionRows,
   deriveSessionStatus,
   deriveSessionsHealth,
@@ -205,6 +208,88 @@ describe("deriveSessionStatus", () => {
       now: NOW,
     });
     expect(s.kind).toBe("unknown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The WORK axis — `session_status`, terminal word `finished`
+//
+// Plan `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4.
+// ---------------------------------------------------------------------------
+
+describe("isSessionFinished", () => {
+  it("is true for coord's canonical terminal word", () => {
+    expect(isSessionFinished(linked({ session_status: "finished" }))).toBe(true);
+  });
+
+  it("accepts the legacy `done` alias coord still parses", () => {
+    // coord's `SessionStatus::parse` maps `"done"` → `Finished` and
+    // `as_str` never emits it, so this arm only ever fires on a legacy row
+    // that coord re-serves verbatim. Cheap to accept; a silent un-finish to
+    // miss.
+    expect(isSessionFinished(linked({ session_status: "done" }))).toBe(true);
+  });
+
+  it("is false for every NON-terminal work word", () => {
+    for (const word of ["working", "blocked", "stalled", "waiting_human"]) {
+      expect(isSessionFinished(linked({ session_status: word }))).toBe(false);
+    }
+  });
+
+  // THE case this predicate exists for.
+  it("an ABSENT session_status is not finished — and that is UNKNOWN rendered safely", () => {
+    const row = linked();
+    // The key is absent, not null — exactly what coord's
+    // `skip_serializing_if = "Option::is_none"` puts on the wire for a session
+    // that has never reported.
+    expect("session_status" in row).toBe(false);
+    expect(isSessionFinished(row)).toBe(false);
+    // And the consequence that matters: no marker is painted on a row we have
+    // heard nothing from, so nothing on screen claims it is unfinished either.
+    expect(deriveSessionWorkStatus(row)).toBeNull();
+  });
+
+  it("an explicit null reads IDENTICALLY to an absent key", () => {
+    expect(isSessionFinished(linked({ session_status: null }))).toBe(false);
+    expect(deriveSessionWorkStatus(linked({ session_status: null }))).toBeNull();
+  });
+
+  it("a work word this build has never seen is not finished", () => {
+    // Fail-open on the WORK axis specifically: an unrecognised word must not
+    // be promoted to the terminal one, or a vocabulary extension silently
+    // hides live rows.
+    expect(isSessionFinished(linked({ session_status: "teleporting" }))).toBe(
+      false
+    );
+  });
+
+  it("reads the work axis independently of liveness — both directions", () => {
+    // A LIVE session that declared itself finished...
+    const liveDone = linked({ state: "active", session_status: "finished" });
+    expect(isSessionFinished(liveDone)).toBe(true);
+    expect(deriveSessionStatus(liveDone, { now: NOW }).kind).toBe("active");
+    // ...and a CLOSED session that never did. Conflating the two is the
+    // mistake this plan exists to prevent.
+    const closedUnfinished = linked({ state: "closed" });
+    expect(isSessionFinished(closedUnfinished)).toBe(false);
+    expect(deriveSessionStatus(closedUnfinished, { now: NOW }).kind).toBe(
+      "closed"
+    );
+  });
+});
+
+describe("deriveSessionWorkStatus", () => {
+  it("paints a calm, terminal badge — never red, never amber", () => {
+    const work = deriveSessionWorkStatus(linked({ session_status: "finished" }));
+    expect(work?.kind).toBe("finished");
+    expect(work?.label).toBe("finished");
+    expect(work?.attention).toBe("none");
+    expect(SESSION_WORK_ATTENTION_BY_KIND.finished).toBe("none");
+  });
+
+  it("says in words that it is the work axis, not liveness", () => {
+    const work = deriveSessionWorkStatus(linked({ session_status: "finished" }));
+    expect(work?.reason).toMatch(/work axis/i);
   });
 });
 

@@ -330,6 +330,148 @@ describe("the facets", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The WORK axis facet — `coord.sessions.session_status`.
+//
+// Plan `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4. A
+// CLIENT facet, not a `?status=` tab: those filter `state` (liveness) and this
+// one filters work, and the two cross.
+// ---------------------------------------------------------------------------
+
+/** Declared its work complete, and still live. Both axes at once. */
+const FINISHED_LIVE: ConsolidatedSessionRow = {
+  ...LINKED,
+  id: "eeeeeeee-0000-0000-0000-000000000005",
+  intent: { purpose: "shipped the console" },
+  session_status: "finished",
+};
+
+/** Closed WITHOUT ever finishing — the row the resume half goes looking for. */
+const CLOSED_UNFINISHED: ConsolidatedSessionRow = {
+  ...LINKED,
+  id: "ffffffff-0000-0000-0000-000000000006",
+  intent: { purpose: "died mid-task" },
+  state: "closed",
+  session_status: "working",
+};
+
+describe("the work facet (session_status)", () => {
+  it("starts with an empty selection, which is NO filter", async () => {
+    mount(envelope([FINISHED_LIVE, CLOSED_UNFINISHED, LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    const work = screen.getByTestId("sessions-console-work");
+    expect(work).toHaveAttribute("data-selected", "");
+    expect(screen.getByTestId("sessions-console-work-all")).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(3);
+  });
+
+  it("counts both chips from the rows on the page — a measured 0, never a dash", async () => {
+    // Only `LINKED` here, and it has never reported a work status. R6: we
+    // LOOKED, so `0` is the honest number for `finished`.
+    mount(envelope([LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    expect(
+      screen.getByTestId("sessions-console-work-finished")
+    ).toHaveTextContent("0");
+    expect(
+      screen.getByTestId("sessions-console-work-unfinished")
+    ).toHaveTextContent("1");
+  });
+
+  it("selecting `unfinished` HIDES finished sessions, and deselecting widens back", async () => {
+    mount(envelope([FINISHED_LIVE, CLOSED_UNFINISHED, LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    const chip = screen.getByTestId("sessions-console-work-unfinished");
+    await userEvent.click(chip);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(2)
+    );
+    expect(screen.queryByText("shipped the console")).toBeNull();
+    await userEvent.click(chip);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(3)
+    );
+  });
+
+  it("selecting `finished` narrows to exactly the finished rows", async () => {
+    mount(envelope([FINISHED_LIVE, CLOSED_UNFINISHED, LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    await userEvent.click(screen.getByTestId("sessions-console-work-finished"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(1)
+    );
+    expect(screen.getByText("shipped the console")).toBeInTheDocument();
+  });
+
+  // The absent-key case, at the surface rather than only in the pure module.
+  it("a row that never reported a work status stays VISIBLE while finished are hidden", async () => {
+    mount(envelope([FINISHED_LIVE, LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    expect("session_status" in LINKED).toBe(false);
+    await userEvent.click(
+      screen.getByTestId("sessions-console-work-unfinished")
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("sessions-console-row")).toHaveLength(1)
+    );
+    // Unknown is SHOWN — hiding it would be treating an absence as a measured
+    // "finished", which is the one thing this facet must never do.
+    expect(await rowFor(LINKED.id)).toBeTruthy();
+  });
+
+  it("a list emptied by the work facet says a FILTER emptied it", async () => {
+    mount(envelope([LINKED]));
+    await screen.findAllByTestId("sessions-console-row");
+    await userEvent.click(screen.getByTestId("sessions-console-work-finished"));
+    const empty = await screen.findByTestId("sessions-console-empty");
+    expect(empty).toHaveTextContent(/No sessions match this filter/i);
+    expect(empty.textContent).not.toMatch(/No sessions on the fleet/i);
+  });
+});
+
+describe("the finished marker on a row", () => {
+  it("renders BESIDE the liveness badge, not instead of it", async () => {
+    mount(envelope([FINISHED_LIVE]));
+    const row = await rowFor(FINISHED_LIVE.id);
+    // Liveness still says `active` — the session has not exited.
+    expect(row.querySelector('[data-status-kind="active"]')).toBeTruthy();
+    // ...and the work axis says it is done, with the colourblind-safe glyph.
+    const work = within(row).getByTestId("sessions-console-row-work");
+    expect(work).toHaveTextContent("finished");
+    expect(work).toHaveTextContent("✓");
+  });
+
+  it("is VISUALLY DISTINCT from `closed` — orthogonal axes, different hues", async () => {
+    const finishedAndClosed: ConsolidatedSessionRow = {
+      ...FINISHED_LIVE,
+      id: "99999999-0000-0000-0000-000000000009",
+      state: "closed",
+    };
+    mount(envelope([finishedAndClosed]));
+    const row = await rowFor(finishedAndClosed.id);
+    const closed = row.querySelector('[data-status-kind="closed"]');
+    const finished = row.querySelector('[data-status-kind="finished"]');
+    expect(closed).toBeTruthy();
+    expect(finished).toBeTruthy();
+    // The whole point: an operator must be able to tell "this stopped" from
+    // "this is done". Same class on both would collapse the two axes.
+    expect(finished!.className).not.toBe(closed!.className);
+  });
+
+  it("paints NO marker on a row that never reported a work status", async () => {
+    mount(envelope([LINKED]));
+    const row = await rowFor(LINKED.id);
+    expect(
+      within(row).queryByTestId("sessions-console-row-work")
+    ).toBeNull();
+    // And nothing fabricates the opposite claim either.
+    expect(row.textContent).not.toMatch(/unfinished/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The wire params the redirected routes bring with them
 // ---------------------------------------------------------------------------
 

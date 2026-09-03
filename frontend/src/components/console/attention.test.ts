@@ -146,6 +146,9 @@ import {
   SESSION_ATTENTION_BY_KIND,
   SESSION_AUTHOR_GLYPH_KINDS,
   SESSION_STATUS_CLASS,
+  SESSION_WORK_ATTENTION_BY_KIND,
+  SESSION_WORK_CLASS,
+  SESSION_WORK_PALETTE,
 } from "@/components/sessions/sessionConsoleStatus";
 
 /**
@@ -320,6 +323,21 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: SESSION_STATUS_CLASS,
       authorGlyphKinds: SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // The SECOND axis the same surface paints — `coord.sessions.session_status`,
+  // the work axis, whose terminal word is `finished`. A separate row rather
+  // than extra members of the one above because liveness and work are
+  // orthogonal (a live session can be finished; a closed one can be
+  // unfinished) and one badge cannot answer both. Plan
+  // `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4.
+  {
+    surface: "sessions — work axis (/sessions)",
+    attentionByKind: SESSION_WORK_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SESSION_WORK_CLASS,
+      authorGlyphKinds:
+        SESSION_WORK_PALETTE.authorGlyphKinds as ReadonlySet<string>,
     },
   },
 ];

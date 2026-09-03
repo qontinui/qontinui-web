@@ -15,8 +15,27 @@ export type SessionKind =
   | "automation"
   | "debug";
 
-/** `coord.sessions.state` enum. snake_case wire form. */
-export type SessionState = "active" | "pending_resolution" | "stale" | "closed";
+/**
+ * `coord.sessions.state` enum — the LIVENESS axis. snake_case wire form.
+ *
+ * `expected` is a real member and was missing here until plan
+ * `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4: coord's
+ * `SessionState::parse` has accepted it since the `coord_sessions_expected_state`
+ * migration (a dispatched continuation's durable child row, created before the
+ * session starts), and the sibling `components/operations/types.ts` already
+ * documents `active | expected | …`.
+ *
+ * The drift failed SILENTLY, which is why it is called out rather than quietly
+ * fixed: {@link SessionRow.state} is typed `SessionState | string`, so an
+ * `"expected"` off the wire was never a type error — it flowed through
+ * untyped and lost every `===` the UI does against this union.
+ */
+export type SessionState =
+  | "active"
+  | "expected"
+  | "pending_resolution"
+  | "stale"
+  | "closed";
 
 /**
  * Typed session intent stored verbatim in `coord.sessions.intent` (JSONB).
@@ -103,6 +122,25 @@ export interface SessionRow extends SessionToolActivity {
    * or a coord that predates the field).
    */
   provider: string | null;
+  /**
+   * `coord.sessions.session_status` — the WORK axis, ORTHOGONAL to
+   * {@link SessionRow.state}. Vocabulary:
+   * `working | blocked | stalled | waiting_human | finished`, with `finished`
+   * terminal. A row can be `state=active, session_status=finished` (declared
+   * done, not yet exited) or `state=closed` with no work status at all (died
+   * mid-task).
+   *
+   * Optional AND nullable, and the two are the SAME claim — coord serializes
+   * it with `skip_serializing_if = "Option::is_none"`, so an absent key means
+   * *never reported* (or a coord deployed ahead of the migration), never "not
+   * finished". `components/sessions/sessionConsoleStatus.ts`'s
+   * `isSessionFinished` is the one place that reading is encoded.
+   *
+   * NOTE — the same key exists on `components/operations/types.ts`'s
+   * `StalledSession` carrying stall CLASSIFICATION. Different type, different
+   * meaning. Do not "unify" them.
+   */
+  session_status?: string | null;
 }
 
 /** Wire shape from `GET /api/v1/operations/sessions`. */
