@@ -23,7 +23,7 @@ import {
   ReadOnlyNotice,
 } from "@/components/admin/coord/CoordAdminOnly";
 import { cn } from "@/lib/utils";
-import { formatWhen } from "../_lib/format";
+import { formatWhen, plural } from "../_lib/format";
 import {
   AUTHOR_CLASS_LABEL,
   classifyWriteAuthor,
@@ -32,8 +32,9 @@ import {
 } from "../_lib/authorship";
 import {
   LOOSENING_BADGE_CLASS,
+  countLooseningVerdicts,
+  hasLooseningVerdict,
   isLoosening,
-  looseningClassificationPresent,
   notificationHref,
   sortWritesForFeed,
   writeKey,
@@ -146,6 +147,19 @@ interface LandedWriteFeedProps {
  * absence-as-fact failure this feature exists to prevent, arriving through the
  * only layer with permission to hide a row.
  *
+ * ## Every sentence here is scoped to the rows that carry a verdict
+ *
+ * Coord classifies writes as it rolls out, so a page routinely mixes rows with
+ * a verdict and rows without one. A count of the classified rows is therefore
+ * not a count of the rows — and a sentence about direction may only name the
+ * set it actually has a verdict for. Both statements this component makes ABOUT
+ * DIRECTION obey that: the on-screen line names its classified subset and
+ * counts the silent
+ * remainder, and the hidden-rows note counts hidden loosenings and hidden
+ * unclassified rows as two separate facts. The alternative is the failure this
+ * whole feature exists to prevent, in its quietest form — an unknown rendered
+ * as a reassurance.
+ *
  * ## Two OPTIONAL columns, and what absent means
  *
  * `loosening` and `notification_ref` are served by a coord change that lands
@@ -174,14 +188,33 @@ export function LandedWriteFeed({
     return sortWritesForFeed(filtered);
   }, [writes, authorFilter]);
 
-  // Both derived from `visible`, never one from each set: the "none flagged"
-  // line below talks about what is ON SCREEN, and computing its precondition
-  // over the unfiltered feed would let a hidden operator-authored loosening
-  // license a sentence about the rows the operator can actually see.
-  const classified = useMemo(
-    () => looseningClassificationPresent(visible),
+  // All four derived from `visible`, never one from each set: the "none
+  // flagged" line below talks about what is ON SCREEN, and computing any of its
+  // preconditions over the unfiltered feed would let a hidden
+  // operator-authored loosening license a sentence about the rows the operator
+  // can actually see. What the filter hides is stated by the hidden-rows note
+  // instead, which is computed over `writes` for exactly that reason.
+  /**
+   * How many rows on screen coord actually classified, and how many it did not.
+   *
+   * `classified` used to be the whole story — a single served verdict licensed
+   * the "none of the writes on this page…" line over every row, classified or
+   * not. That is the backend's own stated failure mode one layer up: a
+   * "corpus-wide reassurance drawn from a single classified row"
+   * (`_limited_caveat`). Being scoped to the page does not answer it, because
+   * the unclassified rows are ON the page — so the sentence has to name the set
+   * it is actually about, and count the rest.
+   *
+   * Mixed classification is not an edge case. It is what the day the classifier
+   * deploys looks like, and one document's history can span both states.
+   */
+  const verdictCount = useMemo(
+    () => countLooseningVerdicts(visible),
     [visible]
   );
+  const classified = verdictCount > 0;
+  /** Rows on screen carrying no verdict either way — never `false`, absent. */
+  const silentCount = visible.length - verdictCount;
   const flaggedCount = useMemo(
     () => visible.filter(isLoosening).length,
     [visible]
@@ -220,15 +253,46 @@ export function LandedWriteFeed({
    * that position — and it skips the scan.
    *
    * **Scope, exactly.** `isLoosening` is `=== true`, so this sees hidden rows
-   * coord POSITIVELY classified and no others. A hidden row carrying no verdict
-   * is counted by the author tally and by nothing here — correct, since absent
-   * is not `false`, but it means this term closes the false-claim hole and not
-   * the weaker unknown one. Plan follow-up 4c records that residual.
+   * coord POSITIVELY classified and no others — correct, since absent is not
+   * `false`. That leaves the weaker gap beside it, a hidden row whose direction
+   * is simply unknown, which `hiddenUnverdicted` below now counts. This term
+   * closes the false-claim hole; that one closes the unstated-unknown.
    */
   const hiddenFlagged = useMemo(
     () =>
       authorFilter === "agent"
         ? writes.filter((w) => !isAgentAuthored(w) && isLoosening(w)).length
+        : 0,
+    [writes, authorFilter]
+  );
+
+  /**
+   * Hidden rows coord classified in NEITHER direction — the residual
+   * `hiddenFlagged` deliberately cannot see.
+   *
+   * `hiddenFlagged` closes the FALSE-CLAIM hole: a positively classified
+   * loosening must never be hidden under a sentence denying one exists. This
+   * closes the weaker one beside it. A hidden row with no verdict is not a
+   * loosening and is not "not a loosening" — its direction is simply unknown,
+   * and until now the only thing on screen that acknowledged it was an author
+   * count, which by construction says nothing about direction.
+   *
+   * That is a smaller gap than the one `hiddenFlagged` closes and it is still
+   * the same shape: an unknown that nothing on the page renders as unknown.
+   * Stated as its own count rather than folded into the flagged one, because
+   * the two are different facts and merging them would make a
+   * positively-classified loosening indistinguishable from a row nobody has
+   * looked at.
+   *
+   * Disjoint from `hiddenFlagged` by construction — `isLoosening` requires an
+   * explicit `true`, `hasLooseningVerdict` requires `true` or `false` — so the
+   * two clauses below never describe the same write twice.
+   */
+  const hiddenUnverdicted = useMemo(
+    () =>
+      authorFilter === "agent"
+        ? writes.filter((w) => !isAgentAuthored(w) && !hasLooseningVerdict(w))
+            .length
         : 0,
     [writes, authorFilter]
   );
@@ -319,11 +383,31 @@ export function LandedWriteFeed({
             <>
               {" "}
               <strong className="font-medium">
-                That includes{" "}
-                {hiddenFlagged === 1 ? "1 write" : `${hiddenFlagged} writes`}{" "}
-                classified as widening what agents may do; turn the filter off
-                to read {hiddenFlagged === 1 ? "it" : "them"}.
+                That includes {plural(hiddenFlagged, "write")} classified as
+                widening what agents may do; turn the filter off to read{" "}
+                {hiddenFlagged === 1 ? "it" : "them"}.
               </strong>
+            </>
+          )}
+          {hiddenUnverdicted > 0 && (
+            // Not emphasised, because it is the weaker fact: an unstated
+            // unknown rather than a contradicted claim. Said all the same —
+            // the author counts above are the only other thing that mentions
+            // these rows, and an author count structurally cannot express
+            // direction, so without this clause their direction is disclosed
+            // by nothing at all.
+            //
+            // "It also includes" when the flagged clause printed, "That
+            // includes" when it did not: both take the hidden SET as their
+            // antecedent, which is the reading that stays grammatical at every
+            // pair of counts. Never "N of them" — the hidden set's size is
+            // `hiddenByFilter`, an independent number, and at N === that size
+            // the partitive reads as a proper subset of itself.
+            <>
+              {" "}
+              {hiddenFlagged > 0 ? "It also includes" : "That includes"}{" "}
+              {plural(hiddenUnverdicted, "write")} coord has not classified in
+              either direction.
             </>
           )}
         </p>
@@ -528,6 +612,13 @@ export function LandedWriteFeed({
           writes" are different facts, and the second must never be printed as
           the first.
 
+          And said only ABOUT the rows coord classified. One served verdict is
+          enough to license this line at all; it is not enough to license it
+          over rows that carry none, and during a partial rollout those sit on
+          the same page. `silentCount` picks the arm — the unqualified sentence
+          when the two sets coincide, the scoped one with the remainder counted
+          when they do not.
+
           And never while the author filter is hiding a flagged row. The three
           preconditions above are all computed over `visible`, which is correct
           for what they each assert — but together they say "no loosening is
@@ -543,8 +634,27 @@ export function LandedWriteFeed({
           className="text-xs text-muted-foreground"
           data-testid="landed-writes-none-flagged"
         >
-          None of the writes on this page were classified as widening what
-          agents may do.
+          {silentCount === 0 ? (
+            // Every row on screen carries a verdict, so the unqualified
+            // sentence is earned: the set it names and the set it has licence
+            // over are the same set.
+            <>
+              None of the writes on this page were classified as widening what
+              agents may do.
+            </>
+          ) : (
+            // The partially-classified page. Same two-arm shape as the
+            // backend's `_limited_caveat`, one scope in: it qualifies to the
+            // writes coord classified and counts the silent remainder rather
+            // than absorbing it. Without this the sentence above would draw a
+            // verdict on every row from as little as one served `false`.
+            <>
+              None of the {plural(verdictCount, "write")} on this page that
+              coord classified is a widening; the other{" "}
+              {plural(silentCount, "write")}{" "}
+              {silentCount === 1 ? "carries" : "carry"} no verdict either way.
+            </>
+          )}
         </p>
       )}
     </section>
