@@ -132,6 +132,7 @@ from app.api.deps import (
     get_audit_actor_principal,
     get_audit_actor_user,
 )
+from app.api.strict_query import StrictQueryRoute
 from app.api.v1.endpoints.operations import (
     _proxy_coord_get,
     capture_caller_bearer,
@@ -177,7 +178,16 @@ from app.services.permissions import resolve_personal_organization
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter()
+#: ``StrictQueryRoute`` (Phase 4 of plan
+#: ``2026-09-03-coord-agent-doors-honour-or-refuse-every-parameter``): a query
+#: key no handler on this router declares is a ``422 unknown_query_parameter``
+#: naming the accepted set, not a silently unfiltered ``200``. This router is
+#: the first adopter in ``backend/app`` — the plan library is read by agents
+#: whose conclusions are counts and pages, exactly the class that a discarded
+#: filter corrupts. The accepted set per route is derived from each handler's
+#: signature (``app/api/strict_query.py``), so adding a ``Query(...)`` below
+#: needs no registration here.
+router = APIRouter(route_class=StrictQueryRoute)
 
 #: How many coord reads ``/candidates`` runs at once. Coord is a shared
 #: service and a page of candidates can reference many distinct work units;
