@@ -8895,8 +8895,10 @@ def _has_verdict(write: dict[str, Any]) -> bool:
 
     The discriminator between "coord classified these and none was a loosening"
     and "coord never classified them" — two facts a single count would collapse.
-    Mirrors the client's ``looseningClassificationPresent`` exactly
-    (``=== true || === false``), and deliberately NOT ``"loosening" in write``:
+    Mirrors the client's ``hasLooseningVerdict`` exactly
+    (``=== true || === false``) — its per-write twin, and what that side's
+    ``looseningClassificationPresent`` and ``countLooseningVerdicts`` are both
+    built from. Deliberately NOT ``"loosening" in write``:
     membership is right for :func:`_write_annotations`, which forwards what coord
     sent, and wrong here, because a forwarded ``None`` is not a verdict.
     """
@@ -8984,9 +8986,20 @@ def _limited_caveat(
     not an edge case — it is what a partially-rolled-out classifier looks like,
     and one document's history can span both states. So the count in the
     sentence is the number of writes that carry a VERDICT, never ``len(writes)``,
-    unless the two coincide. The client's equivalent line says "on this page"
-    and is computed over what is on screen; this one reaches further, so it has
-    to qualify further rather than less.
+    unless the two coincide.
+
+    **This paragraph used to end by excusing the client from the same rule** —
+    "the client's equivalent line says 'on this page' and is computed over what
+    is on screen; this one reaches further, so it has to qualify further rather
+    than less." That is wrong, and it stood unchallenged from ``60c889a9``,
+    which wrote it, through ``f1674578``, which reviewed this exact line of
+    reasoning and read it as settled. "On this page" scopes the SET OF WRITES;
+    it does not scope the set of VERDICTS, and the unclassified rows are on that
+    page too. Reaching further is why this sentence needs bigger numbers, not
+    why it is the only one that needs qualifying. The client now picks between
+    the same two arms over its own visible rows
+    (``LandedWriteFeed``'s ``silentCount``), built on ``countLooseningVerdicts``
+    — this function's ``_has_verdict`` in the other language.
 
     **And "a verdict exists" is not "the key is present" — they come apart on
     ``None``.** :func:`_write_annotations` decides what to FORWARD and correctly

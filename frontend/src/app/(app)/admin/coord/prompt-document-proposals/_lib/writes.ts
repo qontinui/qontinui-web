@@ -35,6 +35,38 @@ export function isLoosening(
 }
 
 /**
+ * A verdict ARRIVED for this write — `true` or `false`, as opposed to absent.
+ *
+ * The counterpart to `isLoosening`, and a different question: that one asks
+ * which way coord classified a write, this one asks whether coord classified it
+ * at all. Mirrors the backend's `_has_verdict` (`operations.py`), which is
+ * likewise spelled `is True or is False` rather than as a membership test —
+ * a served `null` is forwarded verbatim by the proxy and is explicitly NOT a
+ * verdict.
+ */
+export function hasLooseningVerdict(
+  write: Pick<PromptDocumentWrite, "loosening">
+): boolean {
+  return write.loosening === true || write.loosening === false;
+}
+
+/**
+ * How many rows coord actually classified — the denominator of any sentence
+ * this page makes about direction.
+ *
+ * A page-scoped sentence still has to say WHICH writes it is scoped to. "None
+ * of the writes on this page is a widening" names every row; the licence to say
+ * it only covers the classified ones, and during a partial classifier rollout
+ * those are two different sets. See `_limited_caveat`, which draws its own
+ * corpus-scoped sentence from the same count.
+ */
+export function countLooseningVerdicts(
+  writes: ReadonlyArray<Pick<PromptDocumentWrite, "loosening">>
+): number {
+  return writes.reduce((n, w) => n + (hasLooseningVerdict(w) ? 1 : 0), 0);
+}
+
+/**
  * True when at least one row carries the field at all — the discriminator
  * between "coord classified these and none was a loosening" and "coord never
  * classified them".
@@ -42,13 +74,16 @@ export function isLoosening(
  * Deliberately not `writes.some(isLoosening)`: a feed of ordinary writes from a
  * classifier-aware coord and a feed from a coord that has never heard of the
  * flag look identical if you only ask "is anything flagged".
+ *
+ * Derived from `countLooseningVerdicts` rather than spelling the predicate a
+ * second time: the count and the boolean answer the same question, and a page
+ * that says "none of the N classified writes" off one predicate while deciding
+ * whether to speak at all off another can only disagree with itself.
  */
 export function looseningClassificationPresent(
   writes: ReadonlyArray<Pick<PromptDocumentWrite, "loosening">>
 ): boolean {
-  return writes.some(
-    (w) => w.loosening === true || w.loosening === false
-  );
+  return countLooseningVerdicts(writes) > 0;
 }
 
 /**
