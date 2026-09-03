@@ -100,7 +100,7 @@ from tests._alembic_harness import (
 # then `upgrade`, so too far a rewind REPLAYS every intervening revision and
 # the test dies on a `DuplicateTable` raised by an unrelated migration.
 _REVISION_ID = "coord_wu_authored_at_01"
-_PARENT_REVISION_ID = "atu_02_atu_provenance"
+_PARENT_REVISION_ID = "lasac_01"
 _REVISION_FILENAME = "coord_wu_authored_at_01_work_units_authored_at.py"
 
 _TENANT = uuid.uuid4()

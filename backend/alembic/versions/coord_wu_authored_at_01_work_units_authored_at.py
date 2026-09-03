@@ -1,7 +1,7 @@
 """coord.work_units.authored_at — the date a plan was WRITTEN, plus a slug-prefix backfill
 
 Revision ID: coord_wu_authored_at_01
-Revises: coord_pr_events_hydration_head_idx
+Revises: lasac_01
 Create Date: 2026-09-02
 
 Phase A of plan ``2026-09-02-coord-work-units-carry-no-authoring-date``.
@@ -147,7 +147,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_wu_authored_at_01"
-down_revision: str | Sequence[str] | None = "coord_pr_events_hydration_head_idx"
+down_revision: str | Sequence[str] | None = "lasac_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
