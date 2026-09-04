@@ -211,6 +211,27 @@ export type CoordLinkState = "linked" | "dangling" | "unavailable" | "unlinked";
 
 export type CoordPrState = "available" | "unavailable" | "unlinked";
 
+/**
+ * Whether a candidate has a plan DOCUMENT, and where.
+ *
+ * `/candidates` selects from the UNION of both corpus layers, so a row may
+ * exist only as a coord work unit. `present` is an `agent.work_artifacts` row
+ * (and the only state with an `id` to fetch a body with); `unsynced` is a plan
+ * FILE coord recorded a `source_path` for whose body was never synced;
+ * `absent` is a work unit with no document anywhere.
+ */
+export type DocumentState = "present" | "unsynced" | "absent";
+
+/**
+ * Whether the union's work-unit arm was read at all.
+ *
+ * `unavailable` means `total` counts the document layer only — UNKNOWN,
+ * never "coord has no work units". Distinct from `coord_available`, which
+ * reports the page-wide circuit: a 4xx on the population door is coord
+ * ANSWERING and leaves that flag true.
+ */
+export type WorkUnitPopulationState = "included" | "unavailable";
+
 export interface CandidateLinkedPr {
   repo: string | null;
   pr_number: number | null;
@@ -232,7 +253,8 @@ export interface CandidateCoordLink {
 }
 
 export interface PlanCandidate {
-  id: string;
+  /** `null` for a candidate that exists only as a coord work unit. */
+  id: string | null;
   kind: string;
   kind_locked: boolean;
   slug: string;
@@ -262,6 +284,7 @@ export interface PlanCandidate {
     depth: number;
   }>;
   coord: CandidateCoordLink;
+  document_state: DocumentState;
 }
 
 export interface PlanCandidateResponse {
@@ -271,6 +294,8 @@ export interface PlanCandidateResponse {
   limit: number;
   ordering: "oldest_vetted_first";
   coord_available: boolean;
+  work_unit_population_state: WorkUnitPopulationState;
+  work_unit_population_reason: string | null;
 }
 
 // ───────────────────────────── fleet policy ─────────────────────────────

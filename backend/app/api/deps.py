@@ -173,6 +173,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
     """Verify a coord-issued device JWT and resolve the owning user."""
     from sqlalchemy import select
 
+    from app.core.config import coord_device_setting_name
     from app.db.session import AsyncSessionLocal
     from app.services.coord_jwks import (
         CoordJWKSUnavailableError,
@@ -180,6 +181,7 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         CoordTokenInvalidError,
         coord_jwks_client,
         describe_token_rejection,
+        identity_mismatch_remedy_fields,
     )
 
     try:
@@ -188,12 +190,19 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
         # Same diagnosability rule as the WS handshake in devices_ws.py: the
         # 503 detail is deliberately vague, so this line must name the coord
         # URL dialled and the concrete transport exception class.
+        #
+        # It must also name the SETTING that produced that URL. Two settings
+        # can produce it and they are not interchangeable (see
+        # ``coord_device_setting_name``), so a reader handed only the URL is
+        # left guessing which knob to turn — the same "right about the fault,
+        # wrong about what to do next" gap the identity alarm below closed.
         logger.error(
             "device_token_jwks_unavailable",
             error=str(exc),
             failure=type(exc).__name__,
             cause=type(exc.__cause__).__name__ if exc.__cause__ else None,
             coord_url=coord_jwks_client.coord_url,
+            coord_url_setting=coord_device_setting_name(),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -218,9 +227,9 @@ async def _verify_device_jwt(token: str) -> tuple[dict, User]:
                 served_kids=exc.served_kids,
                 note=(
                     "caller presented a token minted by a different coord "
-                    "than COORD_URL points at; check which coord this "
-                    "backend verifies against"
+                    "than this backend verifies against"
                 ),
+                **identity_mismatch_remedy_fields(),
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

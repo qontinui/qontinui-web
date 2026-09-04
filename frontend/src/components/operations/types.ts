@@ -764,6 +764,26 @@ export type CoordHealthJoin =
        * #1149 lands.
        */
       state?: string;
+      /**
+       * Coord's OWN hostname for this device, carried verbatim.
+       *
+       * Added by plan
+       * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase
+       * 4b, and not a duplicate of `MachineGroup.hostname` even though the
+       * join is made on that string. The card renders
+       * `displayName ?? hostname` — an operator-settable ALIAS — and a drain
+       * is an action on a coord device that the operator must be able to
+       * identify before clicking. `spaceship` and `gh-runner-spaceship-wsl`
+       * are separate coord registrations of one physical box, so the coord
+       * identity is exactly the field that distinguishes what a control will
+       * act on from what the row is called.
+       *
+       * Absent when coord's device row carries no hostname (it falls back to
+       * keying the group on the device id). The device id is then the only
+       * identity there is, and the drain control says so rather than
+       * inventing one.
+       */
+      hostname?: string;
     }
   | { matched: false };
 

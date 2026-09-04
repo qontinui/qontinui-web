@@ -15,10 +15,10 @@ function message(err: unknown, fallback: string): string {
  * One kind's row, exactly as coord projects it.
  *
  * Coord answers one row per KIND rather than one per stored row, and the extra
- * fields are the reason: `floor` and `builtin_default_denies` are compile-time
- * facts that are not in the table at all, so a response listing only stored
- * rows would make this console infer them — and it would infer them wrong for
- * precisely the kinds where the answer matters.
+ * fields are the reason: `builtin_default_tier` is a compile-time fact that is
+ * not in the table at all, so a response listing only stored rows would make
+ * this console infer it — and it would infer it wrong for precisely the kinds
+ * where the answer matters.
  */
 export interface KindTierRow {
   kind: string;
@@ -36,21 +36,42 @@ export interface KindTierRow {
    * default, which is what an unset row falls through to.
    */
   unreadable: boolean;
-  /** Coord's compile-time default denies this kind, and a stored tier lifts it. */
-  builtin_default_denies: boolean;
-  /** An unliftable FLOOR: no stored tier at either level changes the answer. */
-  floor: boolean;
-  /** Whether a write to this kind would be accepted. */
-  settable: boolean;
+  /**
+   * The TIER coord's compile-time constant gives this kind, in the same
+   * vocabulary as `tier` and `effective_tier`. A stored tier at either level
+   * moves it, in EITHER direction.
+   *
+   * `"allow"` for a kind with no kind-wide entry at all.
+   *
+   * **Tier-valued, not boolean.** It was `builtin_default_denies: boolean`
+   * until coord gave the six intent kinds a compiled default of
+   * `"allow_with_notification"`, which a boolean cannot hold: it would have
+   * flipped to `false` for those kinds and this console's "coord's compile-time
+   * default denies this kind" copy would have become silently wrong in the
+   * permissive direction.
+   *
+   * Typed as `string`, not `AgentWriteTier`, for the same reason
+   * `effective_tier` is: this interface is a cast over `JSON.parse` output
+   * rather than a check. Optional because a coord that predates the field sends
+   * nothing — UNKNOWN, never open.
+   *
+   * **The `floor` and `settable` booleans that used to sit here are GONE.**
+   * Coord removed the unliftable kind-wide FLOOR level from its resolver, so
+   * both were permanently `false` / `true` — a dead guard with a `Lock` icon
+   * attached in this console, which is a promise about a control that no longer
+   * exists. Every kind is settable now, and there is nothing left for a
+   * `settable` field to assert.
+   */
+  builtin_default_tier?: string;
   /**
    * **What coord will actually enforce** for a document of this kind with no
    * per-document row of its own — derived SERVER-SIDE by coord's own resolver.
    *
-   * This is the field the badge renders. The booleans above are the WHY, not
-   * the answer: re-deriving the answer from them puts the never-overstate-
-   * access rule in this console, where the obvious join renders `allow` for a
-   * floored kind carrying a stored `allow` and for an unreadable tier on a kind
-   * with no kind-wide default — both of which coord DENIES.
+   * This is the field the badge renders. The fields above are the WHY, not the
+   * answer: re-deriving the answer from them puts the never-overstate-access
+   * rule in this console, where the obvious join
+   * (`tier ?? builtin_default_tier`) renders `allow` for an unreadable tier on
+   * a kind whose compiled default allows — which coord DENIES.
    *
    * Typed as `string`, not `AgentWriteTier`: this interface is a cast over
    * `JSON.parse` output rather than a check, so a tier this build predates
@@ -63,8 +84,11 @@ export interface KindTierRow {
   effective_tier?: string;
   /**
    * Which step of coord's resolution order produced `effective_tier`:
-   * `"floor"`, `"kind"` (this tenant's stored setting), or `"default"` (coord's
-   * compile-time answer, whether that is deny or allow).
+   * `"kind"` (this tenant's stored setting) or `"default"` (coord's
+   * compile-time answer, whatever tier that is).
+   *
+   * There was a `"floor"` arm until coord deleted the floor level; it is gone
+   * rather than kept as a value nothing can produce.
    *
    * Not derivable from the other fields, and it changes the REMEDY: an operator
    * reading "denied" needs to know whether their own setting or a coord
@@ -77,17 +101,17 @@ export interface KindTierRow {
    * ABOVE the per-kind table this control writes.
    *
    * Without it the control misreports in the permissive direction, which is the
-   * one that matters: `policy` arrives with `settable: true` and
-   * `floor: false`, so an operator setting it to `allow` would reasonably read
-   * that as opening every policy document — including
+   * one that matters: `policy` arrives with a live control and a
+   * `builtin_default_tier` of `"allow"`, so an operator setting it to `allow`
+   * would reasonably read that as opening every policy document — including
    * `policy/session-protocol`, `policy/security-and-autonomy` and
    * `policy/escalation-bar`, the three documents that ARE the authority
    * interpreting every other document. It does not, and coord's resolver is
    * what makes that true; this field is what makes it VISIBLE.
    *
    * Empty for most kinds, including all six intent kinds — their compiled-in
-   * answer is a liftable `KindDefault`, which is exactly what this lever exists
-   * to lift.
+   * answer is a liftable `KindDefaultTier`, which is exactly what this lever
+   * exists to move.
    *
    * Optional because a coord that predates the field sends nothing. Absent is
    * UNKNOWN, and the honest render for UNKNOWN here is nothing at all — an

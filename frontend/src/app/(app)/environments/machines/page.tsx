@@ -362,7 +362,7 @@ export default function MachinesPage() {
                           </span>
                           {machine.coord_device_id && (
                             <Link
-                              href={`/environments/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
+                              href={`/sessions?device=${encodeURIComponent(machine.coord_device_id)}`}
                               className="inline-flex items-center gap-1 text-primary hover:underline"
                             >
                               <Activity className="size-3" />

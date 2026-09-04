@@ -17,6 +17,7 @@ import { PromptDocumentHistoryDialog } from "./PromptDocumentHistoryDialog";
 import { ClauseManagerDialog } from "./ClauseManagerDialog";
 import { AgentWriteAccessControl } from "./AgentWriteAccessControl";
 import type {
+  AgentWriteTier,
   PromptDocument,
   PromptDocumentKind,
   PromptDocumentSummary,
@@ -287,12 +288,17 @@ export function PromptDocumentList() {
                             saving={saving}
                             onEdit={() => openEdit(doc)}
                             onHistory={() => openHistory(doc)}
-                            onSetAgentWritable={(next) =>
+                            onSetAgentWriteTier={(tier) =>
                               updateDocument(doc.kind, doc.name, {
-                                agent_writable: next,
-                                change_description: next
-                                  ? "Opened to agent writes by an operator"
-                                  : "Protected from agent writes by an operator",
+                                // The explicit TIER, never the legacy boolean.
+                                // `agent_writable: true` is read by coord as
+                                // "at least allow", which cannot PRODUCE
+                                // `allow_with_notification` — so an operator
+                                // choosing the notification tier got plain
+                                // `allow` and the agent writes it authorised
+                                // landed unannounced.
+                                agent_write_tier: tier,
+                                change_description: `Agent write tier set to \`${tier}\` by an operator`,
                               })
                             }
                             onClauses={
@@ -362,8 +368,13 @@ interface DocumentRowProps {
   saving: boolean;
   onEdit: () => void;
   onHistory: () => void;
-  /** Set this document's per-document agent write access. */
-  onSetAgentWritable: (next: boolean) => Promise<boolean>;
+  /**
+   * Set this document's per-document agent write TIER.
+   *
+   * A tier, not a boolean: the boolean is coord's legacy projection and cannot
+   * express `allow_with_notification`.
+   */
+  onSetAgentWriteTier: (tier: AgentWriteTier) => Promise<boolean>;
   /** Only set for `policy` documents — opens the structured clause manager. */
   onClauses?: () => void;
 }
@@ -373,7 +384,7 @@ function DocumentRow({
   saving,
   onEdit,
   onHistory,
-  onSetAgentWritable,
+  onSetAgentWriteTier,
   onClauses,
 }: DocumentRowProps) {
   // A document with a `default_source` has a shipped default the editor can
@@ -447,7 +458,7 @@ function DocumentRow({
       <AgentWriteAccessControl
         doc={doc}
         saving={saving}
-        onSet={onSetAgentWritable}
+        onSet={onSetAgentWriteTier}
       />
 
       {onClauses && (

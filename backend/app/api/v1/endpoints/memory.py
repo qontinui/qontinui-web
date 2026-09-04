@@ -127,6 +127,7 @@ from app.schemas.memory import (
     MemoryJobOut,
     MemoryKind,
     MemoryLinkOut,
+    MemoryQueryEcho,
     MemoryQueryHit,
     MemoryQueryRequest,
     MemoryQueryResponse,
@@ -750,6 +751,25 @@ async def query_records(
     ``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is
     OFF by default; ``anchored_arm`` always says which of ran /
     not_requested / skipped_disabled happened.
+
+    **A zero here is self-describing.** ``hits: []`` used to be the same
+    answer for an empty corpus, a mistyped filter, a wrong tenant and a
+    retrieval that landed in the anchored arm, so three more REQUIRED
+    fields ride on every response:
+
+    * ``live_row_count`` — the tenant's retrieval-live row total,
+      counted in this same request on the predicate ``/memory/stats``
+      uses. Zero hits against a non-zero count is "your query matched
+      none of N"; against zero it is "there is nothing to match".
+    * ``query_echo`` — the RESOLVED parameters the arms actually ran
+      with, so a defaulted ``scopes``, an ignored-because-absent
+      ``scope_ref`` or a ``limit`` the caller never set is visible in the
+      answer itself.
+    * ``anchored_hit_count`` — so a caller reading only ``hits`` cannot
+      read zero off a response that did retrieve records.
+
+    The request body is ``extra="forbid"``: an unrecognized key is a 422
+    naming the field rather than a silently wider query.
     """
     # Left as ``None`` when the caller names no instant, so validity is
     # evaluated against the row's OWN transaction-stamped timestamps
@@ -897,12 +917,43 @@ async def query_records(
         principal.tenant_id,
         [h.memory_id for h in hits] + [h.memory_id for h in anchored_hits],
     )
+
+    # The denominator, computed HERE rather than left to a second call
+    # against /memory/stats: one round trip, and no window in which the
+    # corpus moves between the count and the hits it is meant to
+    # explain. Same predicate as the facets aggregate — see
+    # ``store.live_row_count``.
+    live_rows = await store.live_row_count(db, principal.tenant_id)
+
     return MemoryQueryResponse(
         hits=hits,
         vector_arm=vector_arm,
         link_arm=link_arm,
         anchored_arm=anchored_arm,
         anchored_hits=anchored_hits,
+        anchored_hit_count=len(anchored_hits),
+        live_row_count=live_rows,
+        # The RESOLVED values. ``kinds``/``scopes``/``as_of`` are the
+        # local bindings the arms actually ran on (they are what went
+        # into ``filter_kwargs`` above), NOT ``payload.kinds`` /
+        # ``payload.scopes`` / ``payload.as_of`` — those are the raw
+        # body, and echoing them back would re-report what the caller
+        # already knows while hiding every default the server applied,
+        # which is the whole point of the field. The remainder are
+        # pydantic-defaulted on ``payload`` itself, so the payload
+        # attribute IS the resolved value there.
+        query_echo=MemoryQueryEcho(
+            query_text=payload.query_text,
+            kinds=kinds,
+            scopes=scopes,
+            scope_ref=payload.scope_ref,
+            limit=payload.limit,
+            link_expansion=payload.link_expansion,
+            min_importance=payload.min_importance,
+            since=payload.since,
+            as_of=as_of,
+            anchored_to_count=len(payload.anchored_to or []),
+        ),
     )
 
 

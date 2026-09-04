@@ -16,15 +16,20 @@
  *    describing a world that had changed. A control that misreports what the
  *    click does is worse than no control, in either direction.
  * 5. **A kind-wide `allow` does not reach coord's named denies, and the control
- *    says so.** `policy` arrives `settable: true` / `floor: false`, so without
+ *    says so.** `policy` arrives with a live control and a
+ *    `builtin_default_tier` of `allow`, so without
  *    `protected_documents` an operator would read an `allow` as opening
  *    `policy/session-protocol` and its two siblings — the documents that ARE
  *    the authority interpreting every other document.
  * 2. **An unreadable stored value is not rendered as "not set".** Both arrive
  *    as `tier: null` and they resolve in OPPOSITE directions — unset falls
  *    through to coord's built-in default, unreadable fail-closes to `deny`.
- * 3. **A FLOOR renders dead, not live.** No stored tier opens `claude_settings`,
- *    so a clickable control there would be a lie about what the click does.
+ * 3. **`claude_settings` renders denied-by-default with a LIVE control.** This
+ *    item used to read "a FLOOR renders dead, not live". Coord removed the
+ *    unliftable kind-wide floor, so the assertion that keeps the decision
+ *    reviewable is the INVERSE of the one it replaces, not its deletion — the
+ *    protection that survives is that opening the kind takes a deliberate,
+ *    attributed operator act rather than an omission.
  * 4. **Opening a kind is confirmed; closing it is not.** Opening grants
  *    authorship over every name under the kind, including names nobody has
  *    invented yet, which is exactly the reach that makes it worth pausing over.
@@ -88,9 +93,7 @@ function row(over: Partial<KindTierRow> = {}): KindTierRow {
     kind: "audience_profile",
     tier: null,
     unreadable: false,
-    builtin_default_denies: true,
-    floor: false,
-    settable: true,
+    builtin_default_tier: "deny",
     // The SERVER-DERIVED answer, which is what the badge renders. Present in
     // the fixture because a fixture that omitted it would exercise a shape
     // coord never sends — and every badge assertion below would then be
@@ -173,9 +176,9 @@ describe("KindAuthorshipTierControl", () => {
    *
    * Coord answers these at resolution step 2b, ABOVE the per-kind table this
    * control writes, and sends them precisely so the control stops reading as
-   * "allow opens every document of this kind". `policy` arrives
-   * `settable: true` and `floor: false`, so nothing else on the row corrects
-   * that reading.
+   * "allow opens every document of this kind". `policy` arrives with a live
+   * control and a `builtin_default_tier` of `allow`, so nothing else on the row
+   * corrects that reading.
    */
   it("names the documents a kind-wide allow will not reach", async () => {
     getMock.mockResolvedValue(
@@ -183,7 +186,7 @@ describe("KindAuthorshipTierControl", () => {
         row({
           kind: "policy",
           tier: null,
-          builtin_default_denies: false,
+          builtin_default_tier: "allow",
           effective_tier: "allow",
           effective_source: "default",
           protected_documents: [
@@ -259,29 +262,41 @@ describe("KindAuthorshipTierControl", () => {
     expect(bad).not.toHaveTextContent("not set");
   });
 
-  it("renders a floored kind's control as dead", async () => {
+  /**
+   * **INVERTED, deliberately.** This asserted that `claude_settings` rendered a
+   * DEAD control — "denied — floor", no tier buttons, "No setting can open this
+   * kind." Coord removed the unliftable kind-wide FLOOR level from its
+   * resolver, so `floor` and `settable` are gone from the wire and every kind
+   * is settable. Inverting the assertion rather than deleting the test is what
+   * makes the decision reviewable: this is the test that used to PROVE the
+   * property being removed.
+   *
+   * `claude_settings` is still `deny` by coord's compiled DEFAULT, so it still
+   * reads "denied by default". What changed is that the control is live, and
+   * an operator can open it — deliberately and with attribution.
+   */
+  it("renders claude_settings as denied by default, with a LIVE control", async () => {
     getMock.mockResolvedValue(
       response([
         row({
           kind: "claude_settings",
-          floor: true,
-          settable: false,
-          builtin_default_denies: false,
+          builtin_default_tier: "deny",
           effective_tier: "deny",
-          effective_source: "floor",
+          effective_source: "default",
         }),
       ])
     );
     render(<KindAuthorshipTierControl />);
 
-    const floored = await screen.findByTestId("kind-tier-row-claude_settings");
-    expect(floored).toHaveTextContent("denied — floor");
-    expect(floored).toHaveTextContent("No setting can open this kind.");
-    // No tier buttons at all — a live-looking control whose click changes
-    // nothing is the exact lie the `settable` flag exists to prevent.
+    const settings = await screen.findByTestId("kind-tier-row-claude_settings");
+    expect(settings).toHaveTextContent("not set — denied by default");
+    expect(settings).not.toHaveTextContent("floor");
+    expect(settings).not.toHaveTextContent("No setting can open this kind.");
+    // The tier buttons ARE there — this is the assertion the floor's removal is
+    // FOR, and the one that catches a console that kept the dead branch.
     expect(
-      screen.queryByRole("button", { name: /allow/i })
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /^allow$/i })
+    ).toBeInTheDocument();
   });
 
   it("confirms opening a kind, and does not write until confirmed", async () => {
@@ -451,27 +466,39 @@ describe("KindAuthorshipTierControl", () => {
   });
 
   /**
-   * `builtin_default_denies` is the only field that says which way "coord's
-   * built-in default applies again" falls. On the six intent kinds it falls to
-   * DENY, so clearing an opened kind CLOSES it — and the page's whole asymmetry
-   * (opening is confirmed, closing and clearing are not) is only defensible if
-   * the operator can see that before the click.
+   * `builtin_default_tier` is the only field that says which way "coord's
+   * built-in default applies again" falls, and it is a TIER rather than a
+   * boolean precisely so the third direction is sayable: the six intent kinds
+   * now default to `allow_with_notification`, so clearing an opened one leaves
+   * it open but re-imposes the announcement. A boolean would have flattened
+   * that to "does not deny" and dropped the precondition from the copy.
+   *
+   * The page's whole asymmetry (opening is confirmed, closing and clearing are
+   * not) is only defensible if the operator can see the direction before the
+   * click, so all three arms are asserted here.
    */
   it("names what clearing produces, in the direction the built-in default falls", async () => {
     getMock.mockResolvedValue(
       response([
         row({
-          kind: "audience_profile",
+          kind: "claude_settings",
           tier: "allow",
-          builtin_default_denies: true,
+          builtin_default_tier: "deny",
           effective_tier: "allow",
           effective_source: "kind",
         }),
         row({
           kind: "prompt_template",
           tier: "deny",
-          builtin_default_denies: false,
+          builtin_default_tier: "allow",
           effective_tier: "deny",
+          effective_source: "kind",
+        }),
+        row({
+          kind: "audience_profile",
+          tier: "allow",
+          builtin_default_tier: "allow_with_notification",
+          effective_tier: "allow",
           effective_source: "kind",
         }),
       ])
@@ -486,7 +513,13 @@ describe("KindAuthorshipTierControl", () => {
     );
     expect(clears[1]).toHaveAttribute(
       "title",
-      expect.stringContaining("ALLOWS agent authorship")
+      expect.stringContaining("ALLOWS agent authorship unannounced")
+    );
+    // The arm a boolean could not express: still open, but ANNOUNCED. Without
+    // this the tier-valued field buys nothing the boolean did not.
+    expect(clears[2]).toHaveAttribute(
+      "title",
+      expect.stringContaining("must then carry a notification_ref")
     );
   });
 });

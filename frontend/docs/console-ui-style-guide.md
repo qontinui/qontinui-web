@@ -1,8 +1,10 @@
 # Console UI Style Guide
 
-**Version:** 0.2.1 (Phase 1 — §3 filled in from the shipped primitives)
-**Last Updated:** 2026-08-24
-**Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`
+**Version:** 0.2.2 (Phase 1 — §3 filled in from the shipped primitives; §3.3
+records the patterns the first post-guide page had to add)
+**Last Updated:** 2026-08-25
+**Plan:** `2026-08-16-coord-console-ui-unification-pipeline-style.md`; §3.3 from
+`2026-08-20-fleet-served-agent-skills.md` Phase 3
 
 The style of `/admin/coord/pipeline` — the merge Pipeline tab — written down, so
 the other 29 console routes can be moved onto it and the next operator surface can
@@ -56,13 +58,19 @@ This guide governs **operator and monitoring surfaces in `qontinui-web`** — th
 pages whose job is to let one person watch a fleet of machines and act on what
 they see.
 
-**In scope today:** every route under `src/app/(app)/admin/coord/` — **30
+**In scope today:** every route under `src/app/(app)/admin/coord/` — **33
 top-level routes plus 5 dynamic detail routes** (`[agent_id]`, `[slug]`, `[id]`,
-`[name]`, `[version]`), i.e. 35 `page.tsx` files. "30 routes" below always means
+`[name]`, `[version]`), i.e. 38 `page.tsx` files (re-counted on disk 2026-08-25,
+when `agent-commands` and `agent-skills` joined the migration census; the count
+this replaced said 30/35 and was already one short of `agent-registry`, so
+re-count rather than trusting this number either). "33 routes" below always means
 the top-level set.
 
-**In scope next, by construction:** `/admin/agent-claims`, `/admin/agent-sessions`,
-and any operator surface added after them. The guide is named
+**In scope next, by construction:** `/admin/agent-claims`, `/sessions`,
+and any operator surface added after them. (`/admin/agent-sessions` was named
+here until `2026-08-26-sessions-console-consolidation` Phase 3 folded it, and
+`/environments/sessions`, into `/sessions` behind 308s — the scope claim moved
+with the surface, it did not shrink.) The guide is named
 `console-ui-style-guide.md` rather than `coord-console-style-guide.md` for exactly
 this reason: narrowing the claim later is a rename, widening it later means every
 citation already written points at the wrong scope.
@@ -708,9 +716,23 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > count stops being quotable, missing `migrationPending`, so it promised
 > *"Marks ALL 137 unread… cannot be undone"* under a strip rendering that same
 > 137 as `–`. The fix is not a fifth spelling but a field on the derived object
-> (`health.countsAreCurrent`), with the deriver *branching* on it so its arms
+> (`health.readIsCurrent`), with the deriver *branching* on it so its arms
 > cannot drift from what it publishes. **A deriver that already knows something
 > should return it.**
+>
+> **Name that field for the READ, not for what was counted** — it was
+> `countsAreCurrent` first, and the rename is part of the rule rather than a
+> tidy-up. The two questions are independent: a read can be perfectly current
+> and still carry a `null` scalar — the FIRST read to answer without one is
+> current, and `deriveNotificationsHealth` has an arm headlined *"The unread
+> count did not come back"* that returns `readIsCurrent: true` for it. Note
+> what that does NOT license: a read that used to carry the scalar and has
+> STOPPED is a fact about the read, and is uncurrent. Raising the same flag for
+> both makes the first arm unreachable and puts *"no longer"* in front of an
+> operator who never had a good read. A field named for the counts invites
+> `health.countsAreCurrent ? unreadCount! : …` at every consumer, and the type
+> will not stop it — so the published verdict answers one question, and a
+> consumer that wants a number asks BOTH: this flag, then the scalar itself.
 >
 > The same audit found the mirror-image error: a flag deliberately SPLIT for one
 > surface's sake (`pagingFailed`, kept out of `readFailed` so a failed page
@@ -729,6 +751,111 @@ absence is UNKNOWN, not zero. This is the same discipline as the fleet's
 > and the intent was the bug**: folding the two failures into one boolean was a
 > deliberate choice with a comment arguing for it, so no assertion about the
 > sentence that choice produces could ever have caught it.
+>
+> **And "count the consumers" means every surface that READS the scalar, not
+> every surface inside the route.** The same sweep counted four consumers of
+> `unread_count` on `/admin/coord/notifications` and fixed all four; the fifth
+> is `CoordNav`'s tab badge, which polls the same route at 60s, renders on
+> EVERY console page, and is named in the page's own module doc ("the nav badge
+> polls at 60s — it is a background hint"). It retained its count across a
+> failed poll — correct, and half the rule — while rendering it unqualified,
+> so the widest-reach number in the console was the one with no way to say it
+> had stopped moving, and its `title` was `undefined` where the sibling alerts
+> badge has carried one all along. Both nav badges now publish `stale` and the
+> shared renderer marks it — a visible `*`, the qualification appended to
+> `title`, and the same words in `sr-only` text.
+> **A route boundary is not a consumer boundary** — the poll is.
+>
+> **A FILE boundary is not one either — and that is where the sweep stopped
+> next.** Having established that the poll is the unit, the fix swept the two
+> badges its own hook file owned and shipped. `CoordNav` mounts a THIRD poller:
+> `useFleetAlarmBadge`, five fleet counts on the `Dev Ops ▾` trigger, rendered
+> on every console page from a sibling module. It retained its counts across a
+> failed poll — with a docstring arguing the retain half, exactly as the
+> notifications badge had — and rendered them in none of the four channels the
+> two badges beside it had just been given. The sweep unit is *every value the
+> component tree keeps across a failed read*, and each pass so far has drawn a
+> boundary one level out from the last: route → poll → module.
+>
+> **Where silence IS the all-clear, the retained zero matters more, not less.**
+> The `count > 0` gate above is a bug on a tab badge because a last-good `0`
+> goes dark. On the fleet trigger, *rendering nothing* is the deliberate design
+> — an all-clear fleet should look like an all-clear — so the same gate makes a
+> retained, unverifiable all-clear indistinguishable from a fresh one, in a
+> surface whose `unknown` count exists to stop precisely that class of
+> false-safe. A cluster of counts cannot answer this with five `0*` pills
+> without spending an alarm's worth of visual weight on the absence of alarms;
+> one muted marker for the whole retained all-clear is the form that keeps a
+> trigger scannable and still refuses to claim the all-clear is current.
+>
+> **And ask the delivery question of the ENVELOPE, not just of the transport.**
+> `stale` means *the latest read did not replace this value*, so a 2xx whose
+> body carried no list is a non-delivery exactly as a rejection is. Where the
+> derived count collapses to zero without that list — and where zero renders as
+> silence — reading the absence as data converts a degraded backend into a
+> confident all-clear. Distinguish an ABSENT list from an EMPTY one: `[]` is a
+> real answer and must replace what is on screen, which is why the predicate
+> tests `Array.isArray`, never truthiness.
+>
+> **When a second module needs the bookkeeping, MOVE it — do not re-spell it.**
+> `useRetainedValue` was private to `CoordNav`; the fleet hook is imported BY
+> `CoordNav`, so leaving it there offered only an import cycle or a second
+> spelling. It lives in `components/console` beside `readSequence`, which is
+> the same argument that module makes one layer down.
+>
+> Three things that pass for done and are not, all found reviewing the fix
+> above rather than the code it fixed:
+>
+> - **Do not signal a stale number by DIMMING it.** The first cut used
+>   `opacity-60`, which makes the state you most need to read the hardest one
+>   to read — 10px bold text at 60% — and is a lone non-text visual difference
+>   besides. A visible glyph survives at any contrast and composes with the
+>   `≥` this same badge already uses (`≥2*`).
+> - **A `title` is not an accessible name.** The badge is a non-focusable
+>   `<span>` with text content inside a link, so the link's name is computed
+>   from that content and the tooltip is never reached; there is no hover for a
+>   keyboard user either. Without an `sr-only` copy of the qualification, the
+>   whole fix is a sighted-mouse-user feature and everyone else is left with the
+>   unqualified claim. Test the accessible TEXT, not the attribute.
+> - **`count > 0` as a render gate makes the qualification unreachable for a
+>   retained ZERO** — the asymmetry this section names in its own words above
+>   (*"a retained count of 7 is kept and labelled old while a retained 0 would
+>   be thrown away"*). A last-good `0` then goes dark and renders nothing at
+>   all, on every console page, which states the absence in the loudest medium
+>   there is. Gate the exception on *"a read has delivered a count"*, not on the
+>   flag alone: a zero that was NEVER read has no retained fact to qualify and
+>   must stay silent. Watch what the new gate ADMITS, too: it let a retained
+>   `critical` accent render in a red pill around a `0`, because until then a
+>   zero could not render and the contradiction was unreachable.
+>
+> **Two independent reads want two independent verdicts.** Splitting them so one
+>   failure cannot stale the other is only the first half; reporting the
+>   currency of only ONE of them leaves the other making an unqualified claim,
+>   which is the same defect one axis over. `useAlertsBadge` reads a count and a
+>   severity flag; a severity read that failed — or has never landed — is not
+>   evidence that nothing is critical, and rendering it as a calm badge is an
+>   established negative built out of an unknown. Each axis carries its own
+>   `hasRead` / `stale`.
+>
+> **And derive staleness from SEQUENCES, not from a boolean set in a `catch`.**
+>   On any poller whose replies can overtake each other, a flag set on failure
+>   and cleared on success is wrong in both directions: a superseded rejection
+>   re-stales a number that was just refreshed, and the obvious guard for THAT
+>   (ignore anything but the newest request issued) discards a superseded but
+>   SUCCESSFUL read, rendering nothing where a real number arrived. Track the
+>   newest read that *finished* and the newest that *delivered a value*; stale
+>   is `delivered < completed`. Note this is NOT the page-level generation
+>   guard it looks like: there, a superseded reply answers a DIFFERENT question
+>   (the previous filter) and must be discarded; here both reads ask the same
+>   question, so discarding the older *answer* is pure information loss.
+>
+> And name the flag for what it CARRIES. *"The most recent poll failed"* was
+> false in two states this same file produces — a 2xx carrying no scalar (the
+> read landed and refreshed nothing) and, under `Promise.all`, a poll whose
+> second read failed beside a first that succeeded. **`stale` means the most
+> recent read did not REPLACE this number**, which is one fact the code
+> actually holds, and it is symmetric: the scalar-less answer must SET the flag,
+> not merely decline to clear it.
 >
 > The rule that would have: **when you split a flag, test that the two states
 > produce two DIFFERENT outputs** — assert the discrimination itself, not each
@@ -1055,7 +1182,7 @@ route, and **no shipped module under `console/` has any runtime dependency on
 do import values from `operations/` and `admin/coord/` — that is
 `attention.test.ts`, the cross-surface palette oracle described below, and it is
 supposed to. Test files ship nothing.) That is what lets `/admin/coord/*`,
-`/admin/agent-claims` and `/admin/agent-sessions` share them without sharing a
+`/admin/agent-claims` and `/sessions` share them without sharing a
 data model, and it is what makes R1's *"derived, never a second fetch"*
 structurally true rather than a thing reviewers have to remember to check.
 
@@ -1218,6 +1345,48 @@ Three authored testids moved from `MergePipeline.tsx` into the primitives that n
 own them — `pipeline-search` (`queryTestId`), `pipeline-filter-<id>`
 (`testIdPrefix`) and `row-reason` (`reasonTestId`'s default). They render
 identically; the oracle asserting all three unmodified is the evidence.
+
+### 3.3 Patterns the agent text-unit console added — recorded under §6.4
+
+`/admin/coord/agent-commands` and `/admin/coord/agent-skills` (plan
+`2026-08-20-fleet-served-agent-skills.md`, Phase 3) are the first console pages
+built after this guide. They compose the shapes §2 shows — health strip, one-line
+rows, filter tabs with `–`-not-`0` counts, `p-3 sm:p-6 space-y-4` body, an
+authored kind→attention table with an agreement test — by hand, out of
+`_agent-text-units/_lib/unitRows.ts`.
+
+> **They hand-roll shapes [§3.2](#32-the-console-primitives) now ships, and that
+> is migration debt, not a design choice.** They were authored while §3 was still
+> a stub, and Phase 1 (`51168755`) landed the primitives in parallel. Nothing here
+> imports `@/components/console` yet; the health strip, the row and the filter
+> strip should each become `<HealthStrip>`, `<RecordRow>`/`<RecordList>` and
+> `<FilterTabs>`, and `ATTENTION_BY_KIND` should go through `attentionOf` and join
+> `console/attention.test.ts`'s registry. Recorded rather than done in this PR —
+> it is a migration of a landed surface, and it belongs with the wave that moves
+> the rest of Family B.
+
+They also introduce **two patterns this guide did not cover**, recorded here as
+§6.4 requires rather than shipped silently. Neither has a primitive yet; both
+belong in `components/console/` when a second surface needs them.
+
+| Pattern | Where | What it is | Why it is not an existing rule |
+|---|---|---|---|
+| **Layer switch** | `_agent-text-units/_components/UnitEditor.tsx` (`LayerSwitch`) | A segmented two-state control naming the STORED LAYER a write goes to, each segment carrying whether that layer holds a row (`stored` / `none`) and a lock glyph when the viewer may read but not write it. | R6's filter tabs *narrow a view*; this *changes the write target*. Rendering a destructive-scope selector as a filter tab would be the worst possible confusion, so it is deliberately a different control. |
+| **File tab strip** | `_agent-text-units/_components/UnitFileTabs.tsx` | An editable path list over a `files` map: select, add, rename, delete, with the unit's entrypoint pinned (`validate_files` refuses a unit without it) and every path checked against the backend's own `validate_relative_path` while typing. | Nothing in the console edits a *set* of texts as one record. A command is the degenerate one-entry case of the same strip, so the two kinds stay one component. |
+
+Two notes for whoever extracts them:
+
+- **The layer switch's "stored / none" suffix is load-bearing, not decoration.** A
+  blank editor at a layer with no row means *nothing is stored here*, never *the
+  text is empty* — the runner's embedded copy is never uploaded, so qontinui-web
+  cannot pre-fill it and must not imply it could. Same `silent-empty-is-unknown`
+  discipline as R6's unfetched count.
+- **This surface's `ATTENTION_BY_KIND` has three `"none"` kinds and one
+  `"author"`,** and that asymmetry is the point: an account override and a fleet
+  default are normal states, while an override byte-identical to the fleet default
+  (`account-pinned`) silently stops fleet edits reaching that account and nothing
+  but a human clears it. An authoring surface that painted its normal states red
+  would re-create the exact bug [§4](#4-the-attention-palette) exists to prevent.
 
 ---
 

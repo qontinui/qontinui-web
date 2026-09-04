@@ -39,6 +39,7 @@ backend/scripts/*
 !backend/scripts/export_openapi.py
 !backend/scripts/export_test_coverage.py
 !backend/scripts/generate_secrets.py
+!backend/scripts/import_agent_text_units.py
 !backend/scripts/migrate_files_to_object_storage.py
 !backend/scripts/migrate_to_structlog.py
 !backend/scripts/migrate_users_to_uuid.py

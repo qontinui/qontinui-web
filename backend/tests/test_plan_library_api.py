@@ -19,6 +19,9 @@ checks the tables actually landed in ``agent`` rather than in ``public``.
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
@@ -27,10 +30,12 @@ import httpx
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI, HTTPException
+from fastapi.routing import APIRoute
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.strict_query import StrictQueryRoute, accepted_query_keys
 from app.crud import work_artifact as crud
 from app.models.work_artifact import WorkArtifact, WorkArtifactVersion
 
@@ -878,6 +883,197 @@ class TestHttpSurface:
 
         by_q = await client.get(API_PREFIX, params={"q": "transfer"})
         assert by_q.json()["total"] >= 1
+
+
+class TestWorkUnitSlugIsExact:
+    """``work_unit_slug=`` is exact equality, pinned over HTTP.
+
+    Phase 4 of ``2026-09-03-coord-agent-doors-honour-or-refuse-every-parameter``.
+    The dossier (``agent-door-filters-silently-ignored``) recorded an absurd
+    stem returning ONE row on 2026-08-28. That did not reproduce on the
+    deployed build (``total: 0`` on 2026-09-03), and ``crud/work_artifact.py``
+    filters ``WorkArtifact.work_unit_slug == work_unit_slug`` — but a live
+    zero on a frozen corpus is only *consistent with* exactness. This is the
+    proof: two artifacts whose stems share a prefix (``abc`` / ``abc-longer``),
+    and the shorter one must select exactly one row on every route that takes
+    the filter (the list and ``/export`` — ``/candidates`` does not implement
+    it, which the strict-query contract now says out loud with a 422 instead
+    of returning an unfiltered page; see ``tests/test_strict_query.py``).
+    """
+
+    @staticmethod
+    async def _two_prefixed_stems(db: AsyncSession) -> tuple[str, str]:
+        """Two plans on stems ``<abc>`` and ``<abc>-longer``.
+
+        Returns ``(short_stem, short_slug)`` — the stem a test filters on and
+        the artifact slug that filter must select alone. The longer stem's
+        artifact exists only to be the row a prefix or LIKE match would also
+        return.
+        """
+        short_stem = _slug("abc")
+        short_slug = _slug("exact-short")
+        await _upsert(
+            db,
+            org_id=None,
+            slug=short_slug,
+            body="# the short stem",
+            work_unit_slug=short_stem,
+        )
+        await _upsert(
+            db,
+            org_id=None,
+            slug=_slug("exact-long"),
+            body="# the longer stem",
+            work_unit_slug=f"{short_stem}-longer",
+        )
+        return short_stem, short_slug
+
+    async def test_list_selects_only_the_exact_stem(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        short_stem, short_slug = await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            API_PREFIX, params={"kind": "plan", "work_unit_slug": short_stem}
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["total"] == 1
+        assert [i["slug"] for i in body["items"]] == [short_slug]
+        assert body["items"][0]["work_unit_slug"] == short_stem
+
+    async def test_list_absurd_stem_is_zero_rows(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            API_PREFIX,
+            params={
+                "kind": "plan",
+                "work_unit_slug": f"absurd-stem-that-cannot-exist-{uuid4().hex}",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"items": [], "total": 0, "offset": 0, "limit": 50}
+
+    async def test_export_manifest_selects_only_the_exact_stem(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        short_stem, short_slug = await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            f"{API_PREFIX}/export",
+            params={"kind": "plan", "work_unit_slug": short_stem},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["x-export-artifact-count"] == "1"
+        manifest = json.loads(
+            zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
+        )
+        assert [a["slug"] for a in manifest["artifacts"]] == [short_slug]
+        assert manifest["truncated"] is False
+
+    async def test_export_absurd_stem_is_an_empty_manifest(
+        self, async_db_session: AsyncSession, client: httpx.AsyncClient
+    ) -> None:
+        await self._two_prefixed_stems(async_db_session)
+
+        resp = await client.get(
+            f"{API_PREFIX}/export",
+            params={
+                "kind": "plan",
+                "work_unit_slug": f"absurd-stem-that-cannot-exist-{uuid4().hex}",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.headers["x-export-artifact-count"] == "0"
+        manifest = json.loads(
+            zipfile.ZipFile(io.BytesIO(resp.content)).read("manifest.json")
+        )
+        assert manifest["artifacts"] == []
+        assert manifest["truncated"] is False
+
+
+class TestStrictQueryKeepsEveryDeclaredKey:
+    """The strict route class refuses UNKNOWN keys only — never a declared one.
+
+    The refusal half (422, body shape, alias handling) is DB-free and lives in
+    ``tests/test_strict_query.py``. This half needs the handlers to actually
+    run, so it is here with the real database: every GET route on the router
+    is called with EVERY query key its own dependant declares, and must not
+    422. The keys are read from the mounted route, not retyped, so declaring
+    a new ``Query(...)`` on a handler without exercising it here fails this
+    test rather than silently narrowing coverage.
+    """
+
+    @staticmethod
+    def _get_routes(app: FastAPI) -> dict[str, APIRoute]:
+        routes: dict[str, APIRoute] = {}
+        for route in app.routes:
+            if isinstance(route, APIRoute) and "GET" in route.methods:
+                assert isinstance(route, StrictQueryRoute), route.path
+                routes[route.path] = route
+        return routes
+
+    async def test_every_declared_key_is_still_accepted(
+        self, async_db_session: AsyncSession, api_user
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=api_user)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            await self._exercise_every_route(app, client)
+
+    async def _exercise_every_route(
+        self, app: FastAPI, client: httpx.AsyncClient
+    ) -> None:
+        created = await client.post(API_PREFIX, json=_payload(body="strict keys"))
+        assert created.status_code == 201, created.text
+        artifact_id = created.json()["artifact"]["id"]
+
+        # Real values for every declared key, per route. ``since`` is a
+        # datetime, the ints have bounds, ``include_coord`` is a bool — a
+        # single generic value would 422 on TYPE, not on the key.
+        since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        corpus_filter = {
+            "kind": "plan",
+            "status": "VETTED",
+            "repo": "qontinui-web",
+            "q": "strict",
+            "since": since,
+            "work_unit_slug": "any-stem",
+        }
+        sent: dict[str, dict[str, str]] = {
+            f"{API_PREFIX}": {**corpus_filter, "offset": "0", "limit": "5"},
+            f"{API_PREFIX}/divergent": {"kind": "plan"},
+            f"{API_PREFIX}/capture-health": {},
+            f"{API_PREFIX}/export": {**corpus_filter, "limit": "5"},
+            f"{API_PREFIX}/candidates": {
+                "offset": "0",
+                "limit": "5",
+                "include_coord": "false",
+            },
+            f"{API_PREFIX}/reconciliation": {
+                "offset": "0",
+                "limit": "5",
+                "include_coord": "false",
+            },
+            f"{API_PREFIX}/followups": {"offset": "0", "limit": "5"},
+            f"{API_PREFIX}/{{artifact_id}}": {"include_coord": "false"},
+            f"{API_PREFIX}/{{artifact_id}}/export": {"version_number": "1"},
+        }
+
+        routes = self._get_routes(app)
+        assert set(routes) == set(sent), "a GET route was added; exercise it here"
+        for path, route in routes.items():
+            params = sent[path]
+            declared = accepted_query_keys(route.dependant)
+            assert set(params) == set(declared), (path, declared)
+            resp = await client.get(
+                path.replace("{artifact_id}", artifact_id), params=params
+            )
+            assert resp.status_code == 200, (path, resp.status_code, resp.text)
 
 
 class TestOrgScopeFailsClosed:

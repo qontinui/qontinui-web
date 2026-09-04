@@ -25,6 +25,7 @@
  * | `statusRow` atoms | R2, R3, R4 — the badge, the accent, the timestamp |
  * | `attention` | R3 — the severity vocabulary and its palette invariant |
  * | `time` | supports R2 — `relativeTime` / `absoluteTime` |
+ * | `useRetainedValue` | R6 — a KEPT value publishes whether the last read replaced it |
  * | `diff` / `DiffTable` | supports R5 — the version diff a detail panel shows |
  *
  * These are **presentation only**. Nothing here fetches, polls, or knows a
@@ -34,7 +35,7 @@
  * TESTS do import values from `operations/` and `admin/coord/`: that is
  * `attention.test.ts`, the cross-surface palette oracle, and it is supposed
  * to. Test files ship nothing.) That is what lets `/admin/coord/*`,
- * `/admin/agent-claims` and `/admin/agent-sessions` share these without
+ * `/admin/agent-claims` and `/sessions` share these without
  * sharing a data model, and it is a property to CHECK when adding a
  * primitive, not one to assume: the one import that broke it
  * (`relativeTime`, out of the 730-line merge-train route catalogue) looked
@@ -102,6 +103,12 @@ export {
   readIsUnknown,
   staleDetail,
 } from "./readFailure";
+
+export { createReadSequence } from "./readSequence";
+export type { ReadSequence } from "./readSequence";
+
+export { useRetainedValue } from "./useRetainedValue";
+export type { RetainedValue } from "./useRetainedValue";
 
 export { diffLines } from "./diff";
 export type { DiffLine, DiffResult, DiffStats } from "./diff";

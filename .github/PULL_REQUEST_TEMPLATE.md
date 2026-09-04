@@ -20,6 +20,12 @@ Skip this section if the PR doesn't touch the database schema.
       clear revision ID and `down_revision` chain, and `alembic heads`
       prints exactly one head (the required `alembic-heads-pr` check will
       red this PR on a forked chain).
+- [ ] Dropping or renaming a `coord.*` column/table? The required
+      `coord-column-drop-guard` check fails while any deployed or `main`
+      coord still reads it — land the coord read-removal and wait for it to
+      deploy first (`GET https://coord.qontinui.io/health` `build_sha`);
+      composed SQL (an f-string or `.format()` template) must declare
+      `COORD_SCHEMA_DROPS = [("<table>", "<column>"), …]` at module level.
 - [ ] Every `op.create_table` / `op.add_column` / `op.alter_column` /
       `op.drop_column` / `op.drop_table` / `op.create_index` /
       `op.drop_index` / `op.create_foreign_key` / `op.drop_constraint`

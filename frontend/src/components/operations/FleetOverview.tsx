@@ -41,6 +41,8 @@ import {
 } from "./fleetVolumes";
 import type { FleetHealthDevice, UseFleetHealthResult } from "./useFleetHealth";
 import { resolveCiCapacity, type DevenvMachinesRead } from "./ciCapacity";
+import { resolveDeviceDrain, resolveDrainTarget } from "./fleetDrain";
+import type { UseFleetDrainResult } from "./useFleetDrain";
 import type {
   CiRunnerInfo,
   CiRunnersByHost,
@@ -214,6 +216,11 @@ function buildMachineGroups(
       matched: true as const,
       device_id: device.device_id,
       state: device.state,
+      // Coord's own hostname, carried through rather than re-derived from the
+      // group key: the group may be keyed on the device id (when coord serves
+      // no hostname), and the card's title is an operator alias. The drain
+      // control needs the identity coord will act on, not either of those.
+      hostname: device.hostname,
     };
     if (group) {
       group.coordHealth = join;
@@ -310,9 +317,29 @@ export interface FleetOverviewProps {
    * the join from nothing would be reporting on a read nobody made.
    */
   ciMachines: DevenvMachinesRead;
+  /**
+   * Which machines coord is currently holding out of the fleet, and a way to
+   * force a re-read after a write — plan
+   * `2026-09-01-device-drain-does-not-reach-agent-session-spawning` Phase 4b.
+   *
+   * Owned by the page (`useFleetDrain`) and passed down, exactly like `health`
+   * and `ciMachines`: one read for the whole list, never one per card, so
+   * every row on the page agrees about what is drained.
+   *
+   * Required, and deliberately not optional. An optional arm would let a mount
+   * render machine rows carrying no drain state at all, which at a glance is
+   * indistinguishable from a fleet with nothing drained — and "this machine is
+   * taking no new work" is exactly the fact a reader needs before concluding
+   * that an idle-looking row is a healthy one.
+   */
+  drain: UseFleetDrainResult;
 }
 
-export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
+export function FleetOverview({
+  health,
+  ciMachines,
+  drain,
+}: FleetOverviewProps) {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
   const [tasks, setTasks] = useState<AggregatedTaskRuns | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -641,6 +668,24 @@ export function FleetOverview({ health, ciMachines }: FleetOverviewProps) {
                     key={group.hostname}
                     machine={group}
                     onRenamed={fetchData}
+                    // The drain join, resolved here from the page's ONE read.
+                    // Two values rather than one because they answer different
+                    // questions and fail independently: `drainTarget` is
+                    // whether this row can name a coord device at all (a
+                    // property of the JOIN), `drainState` is what coord says
+                    // about that device (a property of the READ). Collapsing
+                    // them would make "no device to drain" and "the drain read
+                    // is down" render the same, and they call for different
+                    // next steps.
+                    drainTarget={resolveDrainTarget(group.coordHealth)}
+                    drainState={resolveDeviceDrain(
+                      drain.read,
+                      group.coordHealth?.matched
+                        ? group.coordHealth.device_id
+                        : undefined,
+                      Date.now()
+                    )}
+                    onDrainActed={drain.refresh}
                     // The join is resolved here, per row, from the page's one
                     // read — never fetched per card. A row coord's health read
                     // does not name has no `device_id` to match on, and says

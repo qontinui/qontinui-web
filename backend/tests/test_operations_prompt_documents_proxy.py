@@ -484,12 +484,10 @@ class TestPromptDocumentKindTiers:
                             "kind": "audience_profile",
                             "tier": "allow",
                             "unreadable": False,
-                            "builtin_default_denies": True,
-                            "floor": False,
-                            "settable": True,
+                            "builtin_default_tier": "allow_with_notification",
                             # The SERVER-DERIVED answer. Present in the fixture
                             # because the console renders THIS rather than
-                            # re-deriving from the booleans above, so a proxy
+                            # re-deriving from the fields above, so a proxy
                             # that dropped it would strip the field the badge
                             # depends on.
                             "effective_tier": "allow",
