@@ -233,6 +233,12 @@ export type PrMergeStatus =
   // repo cannot be cloned by coord (deleted/renamed or GitHub App access
   // revoked) — not fixable by a rebase or reevaluate.
   | "repo-unreachable"
+  // coord's own merge predicate is holding the PR for a reason with no more
+  // specific token. Deliberately the RESIDUE bucket: `main-red`,
+  // `has-blocking-label`, `dry-run-mode`, `has-cross-repo-dependency` and any
+  // future non-specific predicate block all land here, with the specific code
+  // named in `blocking_summary`.
+  | "predicate-blocked"
   | "unknown";
 
 /**
