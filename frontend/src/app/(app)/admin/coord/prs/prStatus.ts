@@ -72,6 +72,7 @@ import type { PrMergeStatus } from "@/services/admin-dev-service";
  * | `blast-radius-block` | `author` | `requirements` | Over the repo's line budget: coord parks it and waits for a human decision. No timer clears it. |
  * | `ready-but-unlanded` | `author` | `conflict-stranded` (same class) | coord says ready and it has not landed — a wedge. The promise that something else would land it is demonstrably false. |
  * | `repo-unreachable` | `author` | `not-mergeable` | coord cannot clone the repo (deleted/renamed, or App access revoked). Not fixable by a rebase or a re-evaluate; a human must restore access. |
+ * | `predicate-blocked` | `waiting` | (none — see why) | coord's merge predicate is holding the PR with no more specific token. A real block, so never calm. But it is a RESIDUE bucket spanning states with OPPOSITE readings: `main-red` and `has-cross-repo-dependency` clear themselves with no author action, while `has-blocking-label` needs a human and `dry-run-mode` is operator config. Red would assert "someone must act now", false for at least two members; plain `WAITING_AMBER` would promise "something else will clear this", false for at least two others. So it sits at the IGNORANCE FLOOR alongside `unknown` — we cannot say whose move it is. It differs from `unknown` in that coord DID diagnose it and names the specific code in `blocking_summary`, which `derivePrStatus` already surfaces as the badge's `reason`/`title`, so the operator can read the real cause off the row. No `prPipeline` counterpart genuinely fits: `blocked` (`waiting`) covers only the cross-repo-dependency member and carries the "lands after the other PR" promise this bucket cannot make, so naming it would be an invented alignment. |
  * | `unknown` | `waiting` | `unknown` | R3's IGNORANCE FLOOR. We cannot say whose move this is, and calm would assert nothing is wrong. |
  */
 export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
@@ -95,6 +96,9 @@ export const PR_ATTENTION_BY_MERGE_STATUS: Record<PrMergeStatus, Attention> = {
   "ready-but-unlanded": "author",
   "repo-unreachable": "author",
   // --- we do not know → the ignorance floor, amber's lighter sibling --------
+  // coord's residue token: a real block whose members disagree about whose
+  // move it is, so neither red nor the self-clearing promise is honest.
+  "predicate-blocked": "waiting",
   unknown: "waiting",
 };
 
@@ -114,6 +118,7 @@ export const PR_MERGE_STATUS_CLASS: Record<PrMergeStatus, string> = {
   "repo-unreachable": AUTHOR_RED,
   // The ignorance floor is still amber (never calm) but a step lighter than
   // the self-clearing promise — see `UNKNOWN_AMBER`'s own doc.
+  "predicate-blocked": UNKNOWN_AMBER,
   unknown: UNKNOWN_AMBER,
 };
 
