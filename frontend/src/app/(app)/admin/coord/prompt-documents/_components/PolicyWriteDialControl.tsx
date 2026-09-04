@@ -36,7 +36,7 @@ import {
  *
  * | Control | Asks | Granularity |
  * |---|---|---|
- * | `agent_writable` | may an agent write THIS document at all? | per document |
+ * | `agent_write_tier` | may an agent write THIS document, and on which tier? | per document |
  * | `policy_write` (here) | what happens to a write it is allowed to make? | per tenant |
  *
  * The two compose, and they compose in one direction only: **the dial is

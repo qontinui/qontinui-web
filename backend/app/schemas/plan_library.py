@@ -186,6 +186,51 @@ CoordLinkState = Literal["linked", "dangling", "unavailable", "unlinked"]
 #:   really does mean "no citations" — this one IS a real zero.
 CoordPrState = Literal["available", "unavailable", "unlinked"]
 
+#: Whether this candidate has a plan DOCUMENT, and where.
+#:
+#: The mirror of :data:`CoordLinkState` on the other side of the join. That one
+#: says whether the coord work unit could be read; this one says whether the
+#: plan's BODY is in the library — and the two are independent, because
+#: ``/candidates`` draws its population from the union of both layers (plan
+#: ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``).
+#:
+#: * ``present``  — an ``agent.work_artifacts`` row backs this candidate. The
+#:   row carries an ``id``, so the body is fetchable from
+#:   ``GET /plan-library/{id}`` and ``…/{id}/export``.
+#: * ``unsynced`` — no artifact row, but coord's work unit records a
+#:   ``source_path``, so a plan FILE exists and only the body sync is missing
+#:   (``QONTINUI_PLAN_LIBRARY_SYNC``, opt-in and off by default). Resolve such
+#:   a plan by PATH; there is no id to export from.
+#: * ``absent``   — no artifact row and no ``source_path``: coord knows of the
+#:   work, and no document for it has been seen anywhere. Deliberately
+#:   distinct from ``unsynced`` — a consumer must be able to tell "the body
+#:   was never captured" from "there is nothing to capture", which is the
+#:   subject of the neighbouring plan
+#:   ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans``.
+#:
+#: ``present`` is the DEFAULT so every row that existed before the union — all
+#: of which are artifact-backed by construction — keeps its shape unchanged.
+DocumentState = Literal["present", "unsynced", "absent"]
+
+#: Whether the coord half of the candidate POPULATION was read.
+#:
+#: Distinct from :data:`CoordLinkState`, which is per-row, and from
+#: ``coord_available``, which reports the page-wide circuit: this says whether
+#: the union's work-unit arm ran at all. The distinction is load-bearing —
+#: coord answering the population read with a 401/403 is *coord answering*, so
+#: it never trips the circuit, and ``coord_available`` would stay ``true``
+#: while the route silently degraded to the document layer's ~2% view of the
+#: corpus. That silent degrade IS the defect this union exists to close, so it
+#: gets its own flag rather than being inferred.
+#:
+#: * ``included``    — coord's work-unit list was read; the population is the
+#:   union of both layers.
+#: * ``unavailable`` — it was not (coord unreadable, or ``include_coord=false``).
+#:   The population fell back to the document layer alone, which is exactly
+#:   what this route returned before the union. **UNKNOWN, not "there are no
+#:   work units".**
+WorkUnitPopulationState = Literal["included", "unavailable"]
+
 
 class CandidateCoordLink(BaseModel):
     """Everything coord-owned about a candidate, with its own honesty flags.
@@ -449,10 +494,24 @@ class PlanCandidate(BaseModel):
     """One unshipped plan with its ranking INPUTS attached.
 
     No score. See the section comment above.
+
+    A candidate comes from EITHER layer of the corpus — an
+    ``agent.work_artifacts`` row, a non-terminal ``coord.work_units`` row, or
+    both — and ``document_state`` is what says which. Read it before reading
+    any of the document-layer fields below: on a row that has no artifact,
+    those fields are not observations.
     """
 
-    id: UUID
+    #: The backing artifact's id, or ``None`` for a candidate that exists only
+    #: as a coord work unit (``document_state`` ``unsynced``/``absent``). There
+    #: is nothing to give it an id from — inventing one would make a phantom
+    #: addressable — so the body routes (``GET /plan-library/{id}``,
+    #: ``…/{id}/export``) simply do not apply to those rows; resolve them by
+    #: ``source_path`` instead.
+    id: UUID | None = None
     kind: str
+    #: Always ``False`` on a work-unit-only row: ``kind_locked`` is a property
+    #: of an artifact row, and there is none.
     kind_locked: bool
     slug: str
     title: str
@@ -463,14 +522,29 @@ class PlanCandidate(BaseModel):
     work_unit_slug: str | None = None
     authored_at: IsoDatetime | None = None
     created_at: IsoDatetime
-    #: When the library last saw a change to this artifact.
+    #: When the library last saw a change to this artifact — or, on a
+    #: work-unit-only row, coord's ``updated_at`` for the unit.
     last_touched: IsoDatetime
     #: Days since ``authored_at`` (falling back to ``created_at``) — the same
     #: timestamp the default ordering uses, exposed so the agent can weigh it.
+    #: A work-unit-only row measures it from the same timestamp ITS half of the
+    #: ordering uses, ``coalesce(first_in_progress_at, created_at)``.
     age_days: float
+    #: Derived from the DOCUMENT layer's ``depends_on`` edges. Empty on a row
+    #: with ``document_state`` other than ``present`` — there are no edges to
+    #: walk, so that empty list is UNKNOWN, **not** "this plan is unblocked".
+    #: coord's own ``metadata.depends_on`` is deliberately not folded in here:
+    #: it names slugs, and "unmet" is a judgement about the target's status
+    #: that only the artifact rows can support.
     unmet_depends_on: list[CandidateDependency] = Field(default_factory=list)
+    #: Same reading as ``unmet_depends_on``: provenance edges are document-layer
+    #: data, so this is empty-because-unlooked-at on a work-unit-only row.
     prompt_chain: list[CandidatePromptLink] = Field(default_factory=list)
     coord: CandidateCoordLink
+    #: **Additive.** Which layer(s) this candidate came from — see
+    #: :data:`DocumentState`. Defaults to ``present`` so an artifact-backed row
+    #: (every row this route emitted before the union) is unchanged.
+    document_state: DocumentState = "present"
 
 
 # ─────────────── open follow-ups (Phase 7) ───────────────
@@ -532,6 +606,14 @@ class PlanCandidateResponse(BaseModel):
     #: ``False`` when ANY coord read degraded on this page. Per-row detail is
     #: in each item's ``coord`` block.
     coord_available: bool = True
+    #: **Additive.** Whether the union's work-unit arm ran — see
+    #: :data:`WorkUnitPopulationState`. ``unavailable`` means ``total`` counts
+    #: the DOCUMENT layer only, which on this fleet has been a ~2% view of the
+    #: addressable corpus; it is UNKNOWN, never "coord has no work units".
+    work_unit_population_state: WorkUnitPopulationState = "included"
+    #: Why the population arm degraded, when it did. Free-form, for the
+    #: operator; ``None`` whenever the arm ran.
+    work_unit_population_reason: str | None = None
     #: **Additive (Phase 7).** Work that has no plan yet — open
     #: ``spawned_followup`` edges, oldest first, bounded by the same ``limit``
     #: the candidate page uses. "What should I pick up next" is not answerable
@@ -543,3 +625,221 @@ class PlanCandidateResponse(BaseModel):
     #: Unpaged count of open follow-ups, so a truncated ``open_followups``
     #: never reads as the whole queue.
     open_followup_total: int = 0
+
+
+# ───────── three-way status reconciliation (Phase 4) ─────────
+#
+# Plan ``2026-09-03-plan-status-three-way-reconciler-surface``. Three writers
+# share one fact — "is this plan done?" — and none of them reads the others:
+#
+#   axis A — coord ``work_units.status``, the STORED column.
+#   axis B — the plan DOCUMENT's status stamp.
+#   axis C — coord's DERIVED ``delivery`` verdict, re-derived per read.
+#
+# The classification is the vendored, digest-pinned cascade in
+# ``app/services/plan_status`` — one spec shared with the qontinui-dev-notes
+# reconciler. These models only carry it; they never re-derive it, and in
+# particular ``evidence_complete`` is coord's own field, forwarded (D4).
+#
+# The ONE thing that differs between the two surfaces is where axis B came
+# from, and each declares it. Here it is the ARTIFACT STORE, which is
+# materially weaker than the git ref the dev-notes reconciler reads: it is
+# sparse and it can be silently FROZEN (``QONTINUI_PLAN_LIBRARY_SYNC`` /
+# the tenant ``plan_capture`` dial). A comparator whose document axis reads an
+# empty store manufactures fleet-wide FALSE AGREEMENT — the exact defect this
+# plan exists to close — so the source is stated on every response and a row
+# whose document axis is incomplete can never reach an AGREE class.
+
+#: Where axis B came from. A closed set with one member TODAY, spelled as a
+#: ``Literal`` rather than a bare ``str`` so a second source (a git ref, say)
+#: has to be added deliberately and shows up in the OpenAPI schema.
+DocumentAxisSource = Literal["artifact_store"]
+
+#: The three groups the twelve classes fall into.
+#:
+#: ``unknown`` is a FIRST-CLASS verdict, never a residual (D3): it means an
+#: axis could not be read, or a joined side is absent. It is deliberately not
+#: folded into ``disagree`` — "the record is wrong" and "we could not tell"
+#: demand opposite responses.
+ReconciliationVerdict = Literal["agree", "disagree", "unknown"]
+
+#: Which rows had axis C computed. Settled in Phase 0.1 of the plan, not here:
+#: coord's delivery door is per-unit (0.145 s median / 0.192 s p95 measured
+#: over 1421 units ≈ 4.5 min), and a web request cannot make that many
+#: sequential calls. So axis C is computed for the PAGE being returned, and
+#: every off-page row classifies ``UNKNOWN_AXIS_UNREADABLE`` rather than being
+#: silently omitted from the denominator.
+AxisCScope = Literal["page"]
+
+
+class ReconciliationAxisA(BaseModel):
+    """Axis A — coord's STORED ``work_units.status``.
+
+    ``present`` is "a coord work unit exists for this stem". ``status`` is as
+    OPAQUE here as everywhere else in this module: coord accepts an
+    off-vocabulary status deliberately (its Free transition tier), so a word in
+    no vocabulary reads as OPEN rather than as an error.
+    """
+
+    readable: bool
+    present: bool
+    status: str | None = None
+    unreadable_reason: str | None = None
+
+
+class ReconciliationAxisB(BaseModel):
+    """Axis B — the plan document's status stamp, **from the artifact store**.
+
+    ``source`` is stated on the axis as well as on the response because this
+    is the half that differs from the qontinui-dev-notes reconciler, which
+    reads the body off ``origin/main`` of the plans repo. Here there is no git
+    checkout, so the document layer is ``agent.work_artifacts``.
+
+    ``complete`` is ``document_state == "present"`` and nothing else. When it
+    is ``False`` there is no document to compare and the row is UNKNOWN — the
+    route refuses to emit any other verdict for such a row.
+    """
+
+    source: DocumentAxisSource = "artifact_store"
+    readable: bool
+    present: bool
+    #: The scanner's parsed status word, verbatim from the artifact row.
+    status: str | None = None
+    #: ``ok`` | ``off_vocabulary`` | ``no_status_block`` — the same three
+    #: values ``lint-plan-status.py --vocab=adapter --json`` emits, derived
+    #: here from the stored status because the artifact store holds the parsed
+    #: word rather than the linter's verdict.
+    classification: str | None = None
+    #: Does any line of the body satisfy the runner adapter's byte-exact
+    #: ``> **Status:`` test? Computed only for rows whose body this request
+    #: actually loaded — the PAGE — and ``None`` (UNKNOWN) elsewhere. ``None``
+    #: is neutral in the cascade; only an explicit ``False`` is a finding.
+    adapter_readable: bool | None = None
+    document_state: DocumentState
+    complete: bool
+    unreadable_reason: str | None = None
+    #: How many artifact rows share this stem. ``>1`` is a divergent copy
+    #: (``GET /plan-library/divergent`` is the surface for that); the newest is
+    #: the one compared, and the count is carried so the collapse is visible
+    #: rather than silent.
+    variant_count: int = 1
+
+
+class ReconciliationAxisC(BaseModel):
+    """Axis C — coord's DERIVED ``delivery`` verdict. Never re-derived here.
+
+    ``{shipped, evidence_complete, evidence_gaps}`` exactly as coord's by-slug
+    door emitted it (D4: ONE field name, ONE predicate, ONE place — web does
+    not recompute degradation from citations' ``merged`` flags).
+
+    **Read ``evidence_complete`` BEFORE ``shipped``.** When it is ``False``,
+    ``shipped: false`` means coord COULD NOT ESTABLISH delivery — UNKNOWN, not
+    "undelivered". The cascade encodes that mechanically: ``EVIDENCE_INCOMPLETE``
+    precedes every arm that reads ``shipped``.
+
+    ``evidence_gaps`` is carried VERBATIM and never collapsed to a count or a
+    boolean; it is the only place two of coord's three modelled gaps are
+    visible at all.
+    """
+
+    readable: bool
+    present: bool
+    shipped: bool | None = None
+    evidence_complete: bool | None = None
+    evidence_gaps: list[str] = Field(default_factory=list)
+    citation_count: int | None = None
+    unreadable_reason: str | None = None
+    #: Whether this request actually asked coord about this row. ``False`` on
+    #: every off-page row — see :data:`AxisCScope`.
+    computed: bool = False
+
+
+class ReconciliationRow(BaseModel):
+    """One plan stem, its three axis readings, and the resulting class."""
+
+    #: The plan stem — the identifier every other surface joins on
+    #: (``Depends-On:``, the ``Plan: <stem>`` PR marker, plan filenames).
+    slug: str
+    title: str | None = None
+    #: The backing artifact's id, or ``None`` when the document layer has
+    #: never captured this stem. There is nothing to give it an id from.
+    artifact_id: UUID | None = None
+    source_repo: str | None = None
+    source_path: str | None = None
+    document_state: DocumentState
+    #: ``document_state == "present"``. Hoisted onto the row because it is the
+    #: flag a consumer must read before trusting any comparison on it.
+    document_axis_complete: bool
+    axis_a: ReconciliationAxisA
+    axis_b: ReconciliationAxisB
+    axis_c: ReconciliationAxisC
+    #: One of the twelve members of the vendored ``CLASS_ORDER``.
+    classification: str
+    verdict: ReconciliationVerdict
+    #: A plain sentence naming the values that decided the class, so an
+    #: operator does not have to re-derive the verdict from the axes.
+    reason: str
+
+
+class ReconciliationFacets(BaseModel):
+    """The D3 honesty block: exhaustive facets, a denominator, a blind-spot flag.
+
+    Modelled on coord's ``coord_memory_overview`` contract:
+
+    * ``by_class`` carries **every** member of the cascade INCLUDING the zeros,
+      so "no rows of class X" is a stated fact rather than an absence;
+    * ``by_verdict`` likewise carries all three groups including zeros;
+    * ``denominator`` is explicit and ``sum(by_class) == sum(by_verdict) ==
+      denominator``;
+    * ``corpus_complete`` is ``False`` for a partial read, as an explicit blind
+      spot, and ``corpus_incomplete_reasons`` names each one.
+
+    The denominator is the WHOLE population, not the page: an off-page row is
+    classified ``UNKNOWN_AXIS_UNREADABLE`` and counted, never omitted.
+    """
+
+    denominator: int
+    by_class: dict[str, int]
+    by_verdict: dict[str, int]
+    corpus_complete: bool
+    #: Empty iff ``corpus_complete``. Each entry names one blind spot in plain
+    #: words — an unread axis, a truncated population, a frozen document layer.
+    corpus_incomplete_reasons: list[str] = Field(default_factory=list)
+
+
+class ReconciliationResponse(BaseModel):
+    """A page of reconciled plan stems plus the honesty flags for the read."""
+
+    items: list[ReconciliationRow]
+    #: The whole population's size — the facets' denominator, not ``len(items)``.
+    total: int
+    offset: int
+    limit: int
+    #: The stable default ordering, named so a consumer can assert it did not
+    #: silently become something else. Plan stems are date-prefixed, so slug
+    #: order is chronological order, and it is stable across requests in a way
+    #: a mutable timestamp is not.
+    ordering: Literal["slug_asc"] = "slug_asc"
+    #: **Stated on every response.** Axis B here is the artifact store, not a
+    #: git ref — see :class:`ReconciliationAxisB`.
+    document_axis_source: DocumentAxisSource = "artifact_store"
+    #: ``True`` only when EVERY row in the denominator has an artifact behind
+    #: it. ``False`` is the frozen/sparse document layer showing through, and
+    #: it is the flag that stops this surface from being read as agreement.
+    document_axis_complete: bool
+    #: How many rows in the denominator carry a document. With
+    #: ``document_missing`` it says how far the store is from complete.
+    document_present_count: int
+    document_missing_count: int
+    #: ``False`` when ANY coord read degraded on this page (the page-wide
+    #: circuit). Per-row detail is in each row's axes.
+    coord_available: bool = True
+    #: Whether coord's work-unit list — the population's axis-A arm — was read.
+    #: ``unavailable`` means axis A is UNKNOWN for every row, never "coord has
+    #: no work units".
+    work_unit_population_state: WorkUnitPopulationState = "included"
+    work_unit_population_reason: str | None = None
+    #: Which rows had axis C computed, and how many.
+    axis_c_scope: AxisCScope = "page"
+    axis_c_computed_count: int
+    facets: ReconciliationFacets

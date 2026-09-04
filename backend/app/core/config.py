@@ -209,7 +209,13 @@ class Settings(BaseSettings):
         description=(
             "Base URL of the coord that issues DEVICE identities, when that "
             "is not the same coord as COORD_URL. Unset (the default) means "
-            "'same as COORD_URL', so every existing deployment is unchanged."
+            "'same as COORD_URL', so every existing deployment is unchanged. "
+            "Splits the VERIFY side only: minting still goes through the "
+            "COORD_ADMIN_SECRET bridge at COORD_URL, so while a split is "
+            "active a device token minted THROUGH this backend is rejected "
+            "here as a foreign issuer. Pair devices directly with this coord. "
+            "The backend announces the split at boot "
+            "(`coord_device_url_split_active`)."
         ),
     )
     COORD_ADMIN_SECRET: str | None = Field(
@@ -682,3 +688,28 @@ def coord_device_base() -> str:
     deployment — prod, CI, single-coord dev — is byte-for-byte unchanged.
     """
     return (settings.COORD_DEVICE_URL or settings.COORD_URL).rstrip("/")
+
+
+def coord_device_setting_name() -> str:
+    """Which setting actually governs the URL :func:`coord_device_base` returns.
+
+    An operator reading a device-token rejection needs the knob to turn, and
+    on a split box the two knobs are not interchangeable: COORD_URL is bound
+    to the admin-secret bridge (see :func:`coord_device_base`), so telling a
+    split box's operator to "check COORD_URL" names the ONE setting that must
+    not be repointed. Derived rather than hand-written at each log site so the
+    advice cannot drift from the value in force.
+    """
+    return "COORD_DEVICE_URL" if settings.COORD_DEVICE_URL else "COORD_URL"
+
+
+def coord_device_split_active() -> bool:
+    """True when device identities and the admin/proxy bridge use DIFFERENT coords.
+
+    ``COORD_DEVICE_URL`` set to the same value as ``COORD_URL`` is not a split
+    — it is a redundant but harmless spelling of the default — so this compares
+    the resolved URLs rather than merely asking whether the override is set.
+    """
+    if not settings.COORD_DEVICE_URL:
+        return False
+    return settings.COORD_DEVICE_URL.rstrip("/") != settings.COORD_URL.rstrip("/")

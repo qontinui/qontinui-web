@@ -9,6 +9,7 @@ Routes
 ------
 ``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
+``GET   /plan-library/reconciliation`` three-way plan-status agreement (Phase 4)
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
 ``GET   /plan-library/candidates`` unshipped plans + ranking INPUTS (Phase 6)
 ``GET   /plan-library/followups``  identified-but-UNOWNED follow-ups (Phase 7)
@@ -38,6 +39,17 @@ Invariants this module is responsible for
    to the local signals with the coord-sourced fields explicitly flagged
    ``unavailable`` rather than failing the whole read — and never renders an
    unreachable coord as "this plan has no PRs".
+
+   Since ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``
+   this covers the POPULATION as well as the fields. ``/candidates`` selects
+   from the union of ``agent.work_artifacts`` and coord's non-terminal
+   work units, so an unreadable coord would otherwise silently shrink the
+   candidate set rather than flag it. It degrades to the artifact-only
+   population — the one this route had before the union, so it can never
+   return FEWER rows than it used to — and says so in
+   ``work_unit_population_state``. That flag is distinct from
+   ``coord_available`` because a 4xx on the population door is coord ANSWERING
+   and must not trip the page-wide circuit.
 6. **``/candidates`` emits no score.** Design decision D6: the read exposes
    the ranking inputs, the agent ranks. A hardcoded criticality score would be
    a guess frozen into SQL.
@@ -106,6 +118,7 @@ import json
 import re
 import zipfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import get_args
 from urllib.parse import quote
@@ -131,6 +144,7 @@ from app.api.deps import (
     get_audit_actor_principal,
     get_audit_actor_user,
 )
+from app.api.strict_query import StrictQueryRoute
 from app.api.v1.endpoints.operations import (
     _proxy_coord_get,
     capture_caller_bearer,
@@ -156,11 +170,19 @@ from app.schemas.plan_library import (
     DivergentGroup,
     DivergentResponse,
     DivergentVariant,
+    DocumentState,
     KindForkGroup,
     OpenFollowup,
     OpenFollowupResponse,
     PlanCandidate,
     PlanCandidateResponse,
+    ReconciliationAxisA,
+    ReconciliationAxisB,
+    ReconciliationAxisC,
+    ReconciliationFacets,
+    ReconciliationResponse,
+    ReconciliationRow,
+    ReconciliationVerdict,
     WorkArtifactDetail,
     WorkArtifactEdgeClaim,
     WorkArtifactEdgeCreate,
@@ -171,17 +193,47 @@ from app.schemas.plan_library import (
     WorkArtifactUpsert,
     WorkArtifactUpsertResponse,
     WorkArtifactVersionRead,
+    WorkUnitPopulationState,
 )
+from app.services import plan_status
 from app.services.permissions import resolve_personal_organization
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter()
+#: ``StrictQueryRoute`` (Phase 4 of plan
+#: ``2026-09-03-coord-agent-doors-honour-or-refuse-every-parameter``): a query
+#: key no handler on this router declares is a ``422 unknown_query_parameter``
+#: naming the accepted set, not a silently unfiltered ``200``. This router is
+#: the first adopter in ``backend/app`` — the plan library is read by agents
+#: whose conclusions are counts and pages, exactly the class that a discarded
+#: filter corrupts. The accepted set per route is derived from each handler's
+#: signature (``app/api/strict_query.py``), so adding a ``Query(...)`` below
+#: needs no registration here.
+router = APIRouter(route_class=StrictQueryRoute)
 
 #: How many coord reads ``/candidates`` runs at once. Coord is a shared
 #: service and a page of candidates can reference many distinct work units;
 #: this bounds the fan-out without serialising it.
 _COORD_FANOUT = 6
+
+#: Page size for the POPULATION read (:meth:`_CoordProbe.candidate_units`).
+#: coord clamps its work-unit list to ``[1, 500]`` server-side, so this asks
+#: for the largest page it will serve — the read is paged to exhaustion and a
+#: smaller page would only multiply round-trips.
+_COORD_UNIT_PAGE_LIMIT = 500
+
+#: Hard ceiling on pages of that read, so a coord whose paging never
+#: terminates cannot hold this request open indefinitely. At
+#: :data:`_COORD_UNIT_PAGE_LIMIT` it admits 10,000 work units, against 2,389
+#: rows (1,550 after the ``shepherd-*`` exclusion) on this fleet on
+#: 2026-09-03 — generous rather than binding.
+#:
+#: Reaching it is a TRUNCATED population, which is why it is logged rather
+#: than absorbed. It cannot make the read return fewer rows than it did before
+#: the union — the artifact arm is unaffected — but it can make ``total``
+#: short, and a count that quietly stopped counting is the defect class this
+#: whole plan is about.
+_COORD_UNIT_MAX_PAGES = 20
 
 #: Hard ceiling on artifacts in one bulk export (Phase 4 of plan
 #: ``2026-08-16-plan-corpus-authority-and-run-provenance``). The zip is built in
@@ -205,6 +257,73 @@ def _export_filename(slug: str) -> str:
     cleaned = _EXPORT_SAFE_CHARS.sub("-", slug).strip("-.") or "artifact"
     # Leave room for the extension inside common 255-byte filename limits.
     return f"{cleaned[:200]}.md"
+
+
+#: The custom response headers ``GET /{artifact_id}/export`` carries.
+#:
+#: Spelled ONCE for the same reason
+#: :data:`app.api.v1.endpoints.session_repository.EXPORT_PROVENANCE_HEADERS` is:
+#: :func:`_artifact_export_provenance` builds the response from this tuple and
+#: :data:`app.main.CORS_EXPOSE_HEADERS` publishes it in
+#: ``Access-Control-Expose-Headers``, and the two must not drift.
+#:
+#: Until this constant existed the set was published only in PART. ``#1177``
+#: added ``X-Content-Sha256`` to the CORS list because the session-repository
+#: export happens to send a header of the same name, so this route's digest
+#: became browser-readable as a side effect while the three headers that say
+#: WHICH artifact and WHICH VERSION the digest is over stayed invisible. A
+#: verifiable digest that cannot be attributed to a version is a worse answer
+#: than no digest, because it looks complete.
+ARTIFACT_EXPORT_HEADERS: tuple[str, ...] = (
+    "X-Content-Sha256",
+    "X-Artifact-Kind",
+    "X-Artifact-Slug",
+    "X-Artifact-Version",
+)
+
+#: The custom response headers the whole-corpus ZIP export carries.
+#:
+#: ``X-Export-Truncated`` is the reason this set must be CORS-published rather
+#: than merely sent. It is emitted on BOTH branches precisely so a reader
+#: cannot mistake its absence for "nothing went wrong" — and a cross-origin
+#: browser reads ``null`` for an unpublished header, which is exactly the
+#: absence that reasoning rules out. Unpublished, the deliberate design of the
+#: header is defeated by the transport and an INCOMPLETE archive reads as
+#: complete.
+CORPUS_EXPORT_HEADERS: tuple[str, ...] = (
+    "X-Export-Artifact-Count",
+    "X-Export-Truncated",
+)
+
+
+def _artifact_export_provenance(
+    row: WorkArtifact, *, digest: str, exported_version: int
+) -> dict[str, str]:
+    """The single-artifact export's headers, keyed by :data:`ARTIFACT_EXPORT_HEADERS`.
+
+    The route's sole producer of them, so the tuple CORS publishes and the
+    names actually sent have one spelling between them.
+    """
+    return {
+        "X-Content-Sha256": digest,
+        "X-Artifact-Kind": row.kind,
+        "X-Artifact-Slug": row.slug,
+        "X-Artifact-Version": str(exported_version),
+    }
+
+
+def _corpus_export_provenance(
+    *, artifact_count: int, truncated: bool
+) -> dict[str, str]:
+    """The ZIP export's headers, keyed by :data:`CORPUS_EXPORT_HEADERS`.
+
+    Explicit on BOTH branches. A header present only when something went wrong
+    trains readers to ignore its absence.
+    """
+    return {
+        "X-Export-Artifact-Count": str(artifact_count),
+        "X-Export-Truncated": "true" if truncated else "false",
+    }
 
 
 def _export_archive_name(row: WorkArtifact, used: set[str]) -> str:
@@ -328,6 +447,67 @@ def _open_followup(
         created_by=edge.created_by,
         created_at=edge.created_at,
         age_days=_age_days(edge.created_at, now),
+    )
+
+
+def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCandidate:
+    """Project a candidate that exists ONLY as a coord work unit.
+
+    The row the union added: a plan coord holds work for and the library never
+    captured a body of. Everything it carries came out of the SINGLE population
+    read (:meth:`_CoordProbe.candidate_units`), so rendering it costs no
+    further coord traffic.
+
+    Three fields are the honest part of this projection:
+
+    * ``id`` is ``None``. There is no artifact, so there is nothing to address
+      the body routes with, and inventing an id would make a phantom look
+      fetchable.
+    * ``document_state`` separates ``unsynced`` — coord recorded a
+      ``source_path``, so a plan FILE exists and only the body sync is missing
+      — from ``absent``, meaning no document has been seen anywhere. The second
+      is the subject of
+      ``2026-09-02-bodyless-work-units-are-listed-and-spawnable-as-plans``, not
+      of this route, and collapsing the two would hide that boundary.
+    * ``unmet_depends_on`` and ``prompt_chain`` are empty because they are
+      document-layer edges and there is no artifact to walk them from — UNKNOWN,
+      not "unblocked". ``document_state`` is what tells a consumer to read them
+      that way; coord's ``metadata.depends_on`` is deliberately not folded in,
+      because "unmet" is a judgement about a target's status that only the
+      artifact rows support.
+
+    The ``coord`` block is ``linked`` on the work-unit half — the unit is
+    exactly what this row came from — and ``unavailable`` on the PR half. The
+    population read carries no citations, and reporting an empty list there
+    would assert "this plan has no PRs" off a read that never asked.
+    """
+    return PlanCandidate(
+        id=None,
+        kind="plan",
+        kind_locked=False,
+        slug=unit.slug,
+        title=unit.title or unit.slug,
+        status=unit.status,
+        repos=list(unit.repos),
+        source_repo=unit.repos[0] if unit.repos else None,
+        source_path=unit.source_path,
+        work_unit_slug=unit.slug,
+        authored_at=None,
+        created_at=unit.created_at,
+        last_touched=unit.updated_at,
+        age_days=_age_days(unit.order_key, now),
+        coord=CandidateCoordLink(
+            work_unit_slug=unit.slug,
+            work_unit_state="linked",
+            work_unit_status=unit.status,
+            work_unit_title=unit.title,
+            linked_prs_state="unavailable",
+            unavailable_reason=(
+                "not fetched: this candidate came from coord's work-unit list, "
+                "which carries no PR citations"
+            ),
+        ),
+        document_state="unsynced" if unit.source_path else "absent",
     )
 
 
@@ -555,6 +735,18 @@ def _citation_error_text(raw: object) -> str:
     rather than dumped — names are schema, not data, and they are what says
     which of coord's error paths answered.
     """
+    return f"coord could not read citations: {_coord_error_identifiers(raw)}"
+
+
+def _coord_error_identifiers(raw: object) -> str:
+    """The whitelisted identifiers of one coord error object, capped.
+
+    The body of :func:`_citation_error_text`, lifted out so the sibling
+    ``delivery_error`` renderer (:func:`_delivery_error_text`) shares the SAME
+    whitelist rather than growing a second one. coord emits both fields through
+    the same two constructors, so two renderers that could disagree about what
+    may cross the boundary would be a defect, not a convenience.
+    """
     text: str
     if isinstance(raw, dict):
         parts = [
@@ -573,7 +765,24 @@ def _citation_error_text(raw: object) -> str:
             text = f"unrecognised coord error body (keys: {keys})"
     else:
         text = f"unrecognised coord error body ({type(raw).__name__})"
-    return f"coord could not read citations: {_cap_reason(text)}"
+    return _cap_reason(text)
+
+
+def _delivery_error_text(raw: object) -> str:
+    """Render coord's ``delivery_error`` object as one reason line.
+
+    coord's by-slug doors emit ``delivery_error`` on exactly the terms they
+    emit ``citations_error``: a **200** carrying the unit, with the value key
+    OMITTED and this field in its place. Its presence means the delivery
+    verdict was not derived — so it is UNKNOWN, never "coord declined to say
+    this shipped", and the reconciler classifies the row's axis C UNREADABLE
+    rather than reading anything into the missing verdict.
+
+    Same whitelist as the citation renderer (:func:`_coord_error_identifiers`)
+    and for the same reason: this string is returned to this API's caller, and
+    coord's free-text error fields carry another service's Postgres internals.
+    """
+    return f"coord could not derive delivery: {_coord_error_identifiers(raw)}"
 
 
 #: coord's error code for ``CitationListing::SurfaceUnavailable`` — *the unit
@@ -604,26 +813,12 @@ _CITATION_SURFACE_UNAVAILABLE = "citation_surface_unavailable"
 #: carve-out against BOTH shapes for that reason.
 _COORD_DB_ERROR = "db_error"
 
-#: The ``(status, coord error code)`` pairs that mean *coord answered about the
-#: citations sub-resource*, rather than *coord is unreachable*. Passed ONLY on
-#: the citations hop (:meth:`_CoordProbe.link_for`), so the presence hop keeps
-#: its unguarded reading — see :func:`_is_transport_failure` for why that
-#: asymmetry is what makes the carve-out safe.
-#:
-#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
-#: code with 503 and ``db_error`` with 500, and pinning each code to the status
-#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
-#: tripping behaviour rather than inheriting the carve-out.
-_CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
-    503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
-    500: frozenset({_COORD_DB_ERROR}),
-}
-
 #: The ``op`` tokens that mean *this 5xx is about the CITATIONS sub-resource*.
 #:
-#: The pairing above keys on ``error``, and coord's crate-wide sweep took away
-#: that field's ability to name a door. ``to_safe_body`` writes ``"error":
-#: "db_error"`` UNCONDITIONALLY — it is a literal in the constructor, identical
+#: The ``(status, error code)`` pairing that carries this set
+#: (:data:`_CITATION_ANSWERED`, below) keys on ``error``, and coord's crate-wide
+#: sweep took away that field's ability to name a door. ``to_safe_body`` writes
+#: ``"error": "db_error"`` UNCONDITIONALLY — a literal in the constructor, identical
 #: for every ``SafeOp`` — so ``(500, db_error)`` no longer says "the query THIS
 #: hop asked for failed"; it says "a query somewhere inside coord failed", and
 #: ``tenant_scope.resolve`` and ``work_unit.list`` say it in exactly the same
@@ -674,6 +869,60 @@ _CITATION_ANSWERED: Mapping[int, frozenset[str]] = {
 #: this set only ever subtracts from an exception that already exists.
 _CITATION_ANSWERING_OPS = frozenset(
     {"work_unit.citations.read", "work_unit.citations.delivery"}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _CoordAnswered:
+    """One hop's carve-out: which 5xx are *coord answering* about its subject.
+
+    ONE value rather than two keyword arguments, and that is the whole reason
+    the type exists. The carve-out has two halves — the ``(status, error code)``
+    pairs, and the ``op`` tokens that keep them — and they are not independent.
+    The codes ALONE are precisely what this module granted BEFORE the op test,
+    which is to say the over-granting the op test was written to remove: coord
+    writes ``db_error`` at every narrowed door, so a hop admitting the code and
+    not the token inherits every other door's 500 as an answer about its own
+    subject.
+
+    Handing those to a call site as two optional parameters makes that
+    regression an OMISSION rather than a decision, and a silent one — the
+    symptom is ``coord_available: true`` reported through a fleet-wide outage,
+    not an exception, and nothing in this module's own suite would go red. It
+    is the same failure shape ``actor_kind`` is REQUIRED for on
+    :class:`_CoordProbe` and :func:`_soft_tenant_id`: *a default would quietly
+    hand the next call site the arm it forgot to ask for*. A constructor that
+    demands both halves leaves only the carve-out AS A WHOLE forgettable, and
+    omitting that is the safe direction — an unguarded hop trips.
+    """
+
+    #: ``{status: {coord error code, …}}``. Pairs, not a flat set of codes, so
+    #: an unexpected pairing fails CLOSED — see :data:`_CITATION_ANSWERED`.
+    codes: Mapping[int, frozenset[str]]
+    #: The ``op`` tokens that keep the pairing. Used only to REFUSE it, never
+    #: to grant it — see :data:`_CITATION_ANSWERING_OPS`.
+    ops: frozenset[str]
+
+
+#: The ``(status, coord error code)`` pairs that mean *coord answered about the
+#: citations sub-resource*, rather than *coord is unreachable* — together with
+#: the ``op`` tokens that keep that reading (:data:`_CITATION_ANSWERING_OPS`),
+#: because the two halves are one decision and passing either without the
+#: other is the pre-op-test over-granting (:class:`_CoordAnswered`). Passed
+#: ONLY on the citations hop (:meth:`_CoordProbe.link_for`), so the presence
+#: hop keeps its unguarded reading — see :func:`_is_transport_failure` for why
+#: that asymmetry is what makes the carve-out safe.
+#:
+#: Pairs rather than a flat set of codes: coord answers the surface-unavailable
+#: code with 503 and ``db_error`` with 500, and pinning each code to the status
+#: coord actually uses fails CLOSED — an unexpected pairing keeps today's
+#: tripping behaviour rather than inheriting the carve-out.
+_CITATION_ANSWERED = _CoordAnswered(
+    codes={
+        503: frozenset({_CITATION_SURFACE_UNAVAILABLE}),
+        500: frozenset({_COORD_DB_ERROR}),
+    },
+    ops=_CITATION_ANSWERING_OPS,
 )
 
 
@@ -865,8 +1114,7 @@ def _is_transport_failure(
     *,
     body_error: str | None = None,
     body_op: str | None = None,
-    answered_codes: Mapping[int, frozenset[str]] | None = None,
-    answered_ops: frozenset[str] | None = None,
+    answered: _CoordAnswered | None = None,
 ) -> bool:
     """Is this status evidence that COORD ITSELF is unreachable/broken?
 
@@ -882,9 +1130,9 @@ def _is_transport_failure(
     next slug's read. Tripping a page-wide circuit on them is how
     ``coord_available`` ended up false on every request.
 
-    ``answered_codes`` — the ONE exception, and it is granted on the BODY, not
-    on the status. It maps a status to the coord error codes that, AT that
-    status, mean coord answered about the sub-resource being read:
+    ``answered`` — the ONE exception, and it is granted on the BODY, not on
+    the status. Its ``codes`` map a status to the coord error codes that, AT
+    that status, mean coord answered about the sub-resource being read:
 
     * ``503`` + ``citation_surface_unavailable`` — the unit is yours and the
       relation backing the citation join is absent (a pre-migration window).
@@ -895,14 +1143,19 @@ def _is_transport_failure(
       on the ``error`` code, which is ``db_error`` in BOTH — so the carve-out
       came through the narrowing untouched (see :data:`_COORD_DB_ERROR`).
 
-    ``answered_ops`` NARROWS that exception and can only ever refuse it, because
-    the ``error`` code above is no longer able to name a door: coord writes
-    ``db_error`` for every failed query it renders, and only ``op`` says which
-    read broke. A body naming an operation outside :data:`_CITATION_ANSWERING_OPS`
-    is coord answering about something that is not this sub-resource, so it keeps
-    its ordinary transport reading and trips; a body carrying NO ``op`` is
-    granted the carve-out exactly as before. That constant carries the full
-    reasoning and the deploy-direction argument for it.
+    ``answered.ops`` NARROWS that exception and can only ever refuse it,
+    because the ``error`` code above is no longer able to name a door: coord
+    writes ``db_error`` for every failed query it renders, and only ``op`` says
+    which read broke. A body naming an operation outside the set is coord
+    answering about something that is not this sub-resource, so it keeps its
+    ordinary transport reading and trips; a body carrying NO ``op`` is granted
+    the carve-out exactly as before. :data:`_CITATION_ANSWERING_OPS` carries the
+    full reasoning and the deploy-direction argument for it.
+
+    The two arrive as ONE value rather than two parameters, and that is a
+    property of the classifier and not a convenience: the codes without the ops
+    ARE the reading this narrowing removed, so :class:`_CoordAnswered` exists so
+    that a caller cannot ask for it by forgetting an argument.
 
     Both are the same class as the 401/403/405 above, one status band up: coord
     answering *about one sub-resource*. Each must land as a per-slug
@@ -934,7 +1187,7 @@ def _is_transport_failure(
        mapping raises a bare string at 502/504. None parse to an object with an
        ``error`` field, so none can match.
     2. *An unguarded presence PHASE runs first* — the WEAKER item, and it is a
-       phase, not a concurrent canary. ``answered_codes`` is passed only on the
+       phase, not a concurrent canary. ``answered`` is passed only on the
        citations hop, which is never reached until this slug's
        ``{base}/{slug}`` returned 200. The fan-out serialises the two harder
        than that: :meth:`_CoordProbe._get` acquires ``self._gate`` once per
@@ -968,7 +1221,7 @@ def _is_transport_failure(
     per-slug, that costs ``2N`` coord round-trips per request instead of
     ``N+1`` and a trip, and leaves ``coord_available`` true throughout.
 
-    ``answered_ops`` does NOT rescue those two, and it is worth being exact
+    ``answered.ops`` does NOT rescue those two, and it is worth being exact
     about which axis it narrows. Both of them ARE the citation read failing —
     coord's citation-500 handler renders them, so both arrive naming
     ``work_unit.citations.read`` — and both are fleet-wide anyway. The op test
@@ -1000,16 +1253,204 @@ def _is_transport_failure(
     environment, a local coord. The window it covers is exactly the one where
     this service is ahead of the coord in front of it.
     """
-    if answered_codes is not None and body_error is not None:
-        declared = answered_codes.get(http_status)
+    if answered is not None and body_error is not None:
+        declared = answered.codes.get(http_status)
         if declared is not None and body_error in declared:
             # ``op`` only ever REFUSES. Absent, the carve-out is granted as it
             # always was (a coord predating the sweep, and the hand-rolled 503
             # on every coord); present and foreign, coord is answering about
             # another operation and this falls through to the 5xx reading.
-            if body_op is None or answered_ops is None or body_op in answered_ops:
+            #
+            # There is no "codes but no ops" arm to write, and that is the
+            # point of :class:`_CoordAnswered`: a carve-out that granted every
+            # token would be the pre-op-test behaviour, so it is not a state a
+            # call site can reach by omission.
+            if body_op is None or body_op in answered.ops:
                 return False
     return http_status >= 500
+
+
+def _coord_datetime(raw: object) -> datetime | None:
+    """Parse one RFC 3339 timestamp out of coord's JSON, or ``None``.
+
+    coord serialises ``DateTime<Utc>``, so the ``Z`` suffix is the normal
+    shape and :meth:`datetime.fromisoformat` has accepted it since 3.11. A
+    value that does not parse is treated as ABSENT rather than raised on: this
+    is a projection of another service's payload, and one unreadable timestamp
+    must not 500 a read whose whole job is to survive coord's weather.
+
+    Anything returned is tz-aware, because the candidate ordering compares it
+    against ``timestamptz`` columns.
+    """
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _coord_candidate_unit(raw: object) -> crud.CandidateWorkUnit | None:
+    """Project ONE row of coord's work-unit list onto the candidate arm.
+
+    ``None`` means *this row is not a plan candidate*, and it is deliberately
+    the only rejection channel — there are four reasons, and none of them is
+    an error:
+
+    * the row is not an object, or carries no usable ``slug``;
+    * the slug is not plan-shaped (:func:`~app.crud.work_artifact.is_plan_shaped_slug`
+      — date-slugged, and not one of coord's own ``shepherd-*`` merge
+      escalations);
+    * it carries no ``created_at`` this read can parse, leaving nothing to
+      order it by;
+    * its status reads as terminal.
+
+    The terminal test is :func:`~app.crud.work_artifact.is_terminal_status` —
+    the SAME ``normalize_status`` / ``TERMINAL_STATUSES`` pair the artifact arm
+    uses, deliberately rather than a coord-specific vocabulary. coord's status
+    column is as opaque as the library's and considerably wilder: 59 distinct
+    strings on 2026-09-03, including ``d1``, ``fix``, ``all``, ``code``,
+    ``phases`` and a backtick-quoted ``needs_rework``, with 492 rows holding
+    the empty string. An unrecognised word counts as NOT-yet-terminal on both
+    sides, which is the artifact half's own stated rule: an unknown word must
+    not silently hide a plan.
+
+    ``metadata`` is probed rather than assumed — it is free-form JSON coord
+    writes from several producers — and only two keys are lifted:
+    ``source_path`` (the plan file the unit was scanned from, and the only
+    evidence this read has that a document exists at all) and ``repo``.
+    """
+    if not isinstance(raw, dict):
+        return None
+    slug = raw.get("slug")
+    if not isinstance(slug, str) or not crud.is_plan_shaped_slug(slug):
+        return None
+
+    status = raw.get("status")
+    status = status if isinstance(status, str) else ""
+    if crud.is_terminal_status(status):
+        return None
+
+    created_at = _coord_datetime(raw.get("created_at"))
+    if created_at is None:
+        # Every ordering this row could take is anchored on ``created_at``
+        # (``first_in_progress_at`` is explicitly absent-not-zero), so a row
+        # without one cannot be placed in a stable page at all.
+        return None
+
+    metadata = raw.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    source_path = metadata.get("source_path")
+    repo = metadata.get("repo")
+
+    title = raw.get("title")
+    return crud.CandidateWorkUnit(
+        slug=slug,
+        status=status,
+        title=title if isinstance(title, str) else None,
+        source_path=source_path if isinstance(source_path, str) else None,
+        repos=(repo,) if isinstance(repo, str) and repo else (),
+        created_at=created_at,
+        updated_at=_coord_datetime(raw.get("updated_at")) or created_at,
+        # coord derives ``first_in_progress_at`` from its status history and
+        # reports it ABSENT — not zero — when no transition was recorded, so
+        # the fallback is spelled here rather than left to the sort.
+        order_key=_coord_datetime(raw.get("first_in_progress_at")) or created_at,
+    )
+
+
+def _coord_unit_rows(payload: object) -> list[object] | None:
+    """The ``work_units`` list out of coord's list envelope.
+
+    ``None`` for a payload this read does not recognise — which must not be
+    read as an empty population. coord answers
+    ``{work_units, limit, offset}``; a body missing the key is a coord this
+    read cannot parse, and reporting that as "no work units" is precisely the
+    absence-is-zero mistake the module's invariant 5 forbids.
+    """
+    if not isinstance(payload, dict):
+        return None
+    rows = payload.get("work_units")
+    if not isinstance(rows, list):
+        return None
+    return list(rows)
+
+
+def _reconcile_work_unit(raw: object) -> crud.CandidateWorkUnit | None:
+    """Project ONE row of coord's work-unit list onto the RECONCILIATION arm.
+
+    :func:`_coord_candidate_unit`'s twin, and the difference between them is
+    one rejection: this one keeps a unit whose status reads TERMINAL.
+
+    That is not a relaxation, it is the point. ``/candidates`` answers "what
+    still needs work?", so dropping a shipped unit is correct there.
+    ``/reconciliation`` answers "does the record agree with reality?", and the
+    plan's headline row — coord stored ``shipped``, the document still stamped
+    ``draft``, the live delivery predicate reading ``shipped: false`` under an
+    incomplete evidence read — is a TERMINAL unit. Reusing the candidate
+    projection here would silently delete the finding from the denominator.
+
+    Every other rejection is kept verbatim, because each is "this row is not a
+    plan at all" rather than "this plan is done": a row that is not an object
+    or carries no usable ``slug``; a slug that is not plan-shaped
+    (:func:`~app.crud.work_artifact.is_plan_shaped_slug`); and a row with no
+    parsable ``created_at``, which cannot be placed in a stable page.
+    """
+    if not isinstance(raw, dict):
+        return None
+    slug = raw.get("slug")
+    if not isinstance(slug, str) or not crud.is_plan_shaped_slug(slug):
+        return None
+
+    created_at = _coord_datetime(raw.get("created_at"))
+    if created_at is None:
+        return None
+
+    status = raw.get("status")
+    metadata = raw.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    source_path = metadata.get("source_path")
+    repo = metadata.get("repo")
+    title = raw.get("title")
+    return crud.CandidateWorkUnit(
+        slug=slug,
+        # OPAQUE, and the empty string is a REAL value here rather than a
+        # missing one: coord accepted it silently (its Free transition tier)
+        # and 410 units held it on 2026-09-03. The cascade has a member for
+        # exactly that — ``UNKNOWN_UNIT_STATUS_EMPTY`` — so it must survive
+        # the projection rather than being folded into "absent".
+        status=status if isinstance(status, str) else "",
+        title=title if isinstance(title, str) else None,
+        source_path=source_path if isinstance(source_path, str) else None,
+        repos=(repo,) if isinstance(repo, str) and repo else (),
+        created_at=created_at,
+        updated_at=_coord_datetime(raw.get("updated_at")) or created_at,
+        order_key=_coord_datetime(raw.get("first_in_progress_at")) or created_at,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _ReconcileDelivery:
+    """Coord's answer about ONE stem, projected onto axis C.
+
+    Built ONLY by :meth:`_CoordProbe.delivery_for`. Every field is coord's own
+    — nothing here is derived on this side (D4).
+
+    ``readable`` is the honesty flag: ``False`` means this read could not
+    establish the verdict at all, and the row's axis C is then UNKNOWN with
+    ``unreadable_reason`` naming why. ``unit_present`` distinguishes "coord
+    answered 404 for this slug" (an observation) from "we could not ask".
+    """
+
+    unit_present: bool = False
+    unit_status: str | None = None
+    readable: bool = True
+    shipped: bool | None = None
+    evidence_complete: bool | None = None
+    evidence_gaps: tuple[str, ...] = ()
+    citation_count: int | None = None
+    unreadable_reason: str | None = None
 
 
 class _CoordProbe:
@@ -1095,7 +1536,7 @@ class _CoordProbe:
         #: serde_urlencoded, whose ``bool`` is ``FromStr`` and accepts ONLY
         #: ``true``/``false`` — under it ``?with_citations=1`` fails the whole
         #: ``Query`` extractor with a **400**, and a 400 on the PRESENCE hop
-        #: carries no ``answered_codes`` carve-out, so every row on the page
+        #: carries no ``answered`` carve-out, so every row on the page
         #: would read ``unavailable``: a blank page. ``true`` is truthy under
         #: BOTH, so this side stays correct whichever way coord's half is
         #: written. That matters because this service ships FIRST: the value
@@ -1117,8 +1558,7 @@ class _CoordProbe:
         path: str,
         *,
         params: dict[str, str] | None = None,
-        answered_codes: Mapping[int, frozenset[str]] | None = None,
-        answered_ops: frozenset[str] | None = None,
+        answered: _CoordAnswered | None = None,
     ) -> tuple[object | None, int | None, str | None]:
         """``(payload, http_status, error)`` — never raises.
 
@@ -1143,21 +1583,23 @@ class _CoordProbe:
         coord's inline citations (see ``_presence_params``); the citations hop
         takes none.
 
-        ``answered_codes`` forwards to :func:`_is_transport_failure` and
-        extends that same reading to the typed 5xx coord answers ON the
-        citations sub-resource — ``503 citation_surface_unavailable`` when the
-        relation is unreadable, ``500 db_error`` when that one slug's SELECT
-        failed — but only when coord's own declared error code is in the body,
-        so an untyped 5xx from a load balancer still trips. It is passed on the
-        citations hop ONLY: the presence hop stays unguarded on purpose, which
-        is what keeps a coord-wide failure tripping (see
-        :func:`_is_transport_failure`).
+        ``answered`` forwards to :func:`_is_transport_failure` and extends that
+        same reading to the typed 5xx coord answers ON the citations
+        sub-resource — ``503 citation_surface_unavailable`` when the relation is
+        unreadable, ``500 db_error`` when that one slug's SELECT failed — but
+        only when coord's own declared error code is in the body, so an untyped
+        5xx from a load balancer still trips. It is passed on the citations hop
+        ONLY: the presence hop stays unguarded on purpose, which is what keeps a
+        coord-wide failure tripping (see :func:`_is_transport_failure`).
 
-        ``answered_ops`` rides with it and can only narrow it. The ``op`` token
-        is lifted from the SAME parse (:func:`_coord_error_op`) that renders it
-        into the reason line, so what the operator is shown and what the
-        classifier acted on cannot disagree — one read of the body decides the
-        classification, the reason and, now, which door the 5xx was about.
+        Its ``ops`` half rides in the same value and can only narrow it, and
+        rides there rather than beside it because the ``codes`` half alone is
+        the over-granting the ``op`` test removed (:class:`_CoordAnswered`). The
+        ``op`` token is lifted from the SAME parse (:func:`_coord_error_op`)
+        that renders it into the reason line, so what the operator is shown and
+        what the classifier acted on cannot disagree — one read of the body
+        decides the classification, the reason and, now, which door the 5xx was
+        about.
 
         The ``degraded`` short-circuit is checked INSIDE the semaphore, not
         before it. Checked outside, tasks 7+ of a fan-out have already passed
@@ -1203,8 +1645,7 @@ class _CoordProbe:
                     exc.status_code,
                     body_error=_coord_error_field(parsed),
                     body_op=_coord_error_op(parsed),
-                    answered_codes=answered_codes,
-                    answered_ops=answered_ops,
+                    answered=answered,
                 ):
                     self._trip(detail)
                 return None, exc.status_code, detail
@@ -1213,6 +1654,237 @@ class _CoordProbe:
                 self._trip(detail)
                 return None, None, detail
         return payload, 200, None
+
+    async def candidate_units(
+        self,
+    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+        """coord's whole plan-shaped, non-terminal work-unit population.
+
+        The OTHER half of the candidate population, and the reason this plan
+        exists: ``agent.work_artifacts`` holds only the plans whose BODY was
+        synced (18 on 2026-09-03, against 635 non-terminal date-slugged work
+        units), and the body sync is opt-in and off by default. Selection asks
+        *which plan still needs work?*, which is answered by fields the
+        operational layer owns, so the population is read from there too.
+
+        Returns ``(units, reason)``. ``units is None`` means coord could not
+        be read and the caller must degrade to the artifact-only population —
+        **UNKNOWN, never an empty population**; ``reason`` then says what
+        happened, in the same whitelisted form the per-row
+        ``unavailable_reason`` carries.
+
+        ONE read per page, not one per row. It is paged to exhaustion against
+        coord's own cap (:data:`_COORD_UNIT_PAGE_LIMIT`), filtered
+        SERVER-side on ``exclude_slug_prefix`` — it has to be, because the
+        list is ``updated_at DESC`` under a page cap and coord's 839
+        ``shepherd-*`` rows share an ``updated_at``, so a client-side filter
+        over one page can see almost nothing else. Every field a work-unit-only
+        candidate needs arrives here, so those rows never round-trip to coord
+        again: widening the population must not multiply the per-slug fan-out,
+        which stays bounded by the PAGE (:data:`_COORD_FANOUT` over at most
+        ``limit`` artifact-backed slugs) exactly as it was before.
+
+        The read goes through :meth:`_get`, so a transport failure trips the
+        page-wide circuit here — before any per-slug read pays its own
+        timeout — and ``coord_available`` reports it. A 4xx does not trip
+        (coord answering is not coord being down), which is why the population
+        state is reported as its own flag rather than inferred from
+        ``coord_available``: a 403 on this door would otherwise degrade the
+        population silently.
+
+        A short page ends the paging: coord clamps ``limit`` itself and
+        returns what it has, so fewer rows than asked for is the last page.
+        """
+        rows, reason = await self._unit_rows()
+        if rows is None:
+            return None, reason
+        units = [
+            unit for raw in rows if (unit := _coord_candidate_unit(raw)) is not None
+        ]
+        return units, None
+
+    async def _unit_rows(self) -> tuple[list[object] | None, str | None]:
+        """Coord's whole work-unit list, paged to exhaustion and UNPROJECTED.
+
+        The paging half of :meth:`candidate_units`, lifted out because
+        :meth:`reconciliation_units` needs the SAME read with a DIFFERENT
+        projection — reconciliation must keep the terminal rows the candidate
+        projection drops, since a plan coord stored as ``shipped`` while its
+        document still says ``draft`` is that surface's headline finding.
+
+        Returns ``(rows, reason)``. ``rows is None`` means coord could not be
+        read — **UNKNOWN, never an empty population** — and ``reason`` says
+        what happened, in the same whitelisted form the per-row
+        ``unavailable_reason`` carries.
+
+        A short page ends the paging: coord clamps ``limit`` itself and returns
+        what it has, so fewer rows than asked for is the last page. Reaching
+        :data:`_COORD_UNIT_MAX_PAGES` is a TRUNCATED population, which is why
+        it is logged rather than absorbed.
+        """
+        rows_all: list[object] = []
+        offset = 0
+        for _ in range(_COORD_UNIT_MAX_PAGES):
+            payload, http_status, error = await self._get(
+                self._coord_base,
+                params={
+                    "limit": str(_COORD_UNIT_PAGE_LIMIT),
+                    "offset": str(offset),
+                    "exclude_slug_prefix": crud.COORD_SHEPHERD_SLUG_PREFIX,
+                },
+            )
+            if payload is None:
+                return None, error or f"coord returned {http_status} for work units"
+            rows = _coord_unit_rows(payload)
+            if rows is None:
+                return None, (
+                    "coord's work-unit list carried no `work_units` array; "
+                    "the candidate population could not be read"
+                )
+            rows_all.extend(rows)
+            if len(rows) < _COORD_UNIT_PAGE_LIMIT:
+                return rows_all, None
+            offset += len(rows)
+
+        logger.warning(
+            "plan_library.candidate_population_truncated",
+            pages=_COORD_UNIT_MAX_PAGES,
+            page_limit=_COORD_UNIT_PAGE_LIMIT,
+            kept=len(rows_all),
+            detail="coord's work-unit list did not terminate within the page cap; "
+            "`total` counts only what was read",
+        )
+        return rows_all, None
+
+    async def reconciliation_units(
+        self,
+    ) -> tuple[list[crud.CandidateWorkUnit] | None, str | None]:
+        """Axis A's population: coord's plan-shaped work units, ALL statuses.
+
+        The same list read :meth:`candidate_units` makes, projected through
+        :func:`_reconcile_work_unit` instead — which keeps the TERMINAL rows.
+        That difference is the whole reason this method exists: selection asks
+        "what still needs work?" and is right to drop a shipped unit;
+        reconciliation asks "does the record agree?", and a unit coord stored
+        as ``shipped`` beside a document still stamped ``draft`` is precisely
+        the row the surface exists to find.
+
+        ``None`` means coord could not be read, and axis A is then UNKNOWN for
+        every row — never "coord holds no work units".
+        """
+        rows, reason = await self._unit_rows()
+        if rows is None:
+            return None, reason
+        units = [
+            unit for raw in rows if (unit := _reconcile_work_unit(raw)) is not None
+        ]
+        return units, None
+
+    async def delivery_for(self, slug: str) -> _ReconcileDelivery:
+        """Axis C for ONE stem: coord's DERIVED delivery verdict, forwarded.
+
+        One hop — ``{base}/{slug}`` on the door tier the caller's credential
+        opens, carrying ``?with_citations=true`` on the operator tier — because
+        that is the body coord attaches ``delivery`` to
+        (``by_slug_response``: ``delivery`` is derived from the citation read
+        it already made, and the operator twin makes that read only when
+        asked). There is no bulk delivery door and no delivery sub-resource, so
+        this is the read, and it is why axis C is per-page (Phase 0.1).
+
+        **Nothing here re-derives the verdict.** ``shipped``,
+        ``evidence_complete`` and ``evidence_gaps`` are coord's own fields,
+        forwarded verbatim; web deliberately does not reduce the citation rows
+        itself (D4, and the ``ONE field name, ONE predicate, ONE place`` rule
+        at :func:`_merged_is_degraded`). The citations are read only for their
+        COUNT — the one input the cascade needs that the verdict does not
+        carry.
+
+        Every branch that cannot establish the verdict returns
+        ``readable=False`` with a named reason, so the cascade classifies the
+        row ``UNKNOWN_AXIS_UNREADABLE`` rather than reading a missing verdict
+        as a negative one. That includes a ``delivery`` whose ``shipped`` or
+        ``evidence_complete`` is not a bool: below an unread evidence flag,
+        ``shipped`` is not an observation, and a silent ``None`` there would
+        let the cascade fall through to an arm that reads it.
+        """
+        encoded = quote(slug, safe="")
+        payload, http_status, error = await self._get(
+            f"{self._coord_base}/{encoded}", params=self._presence_params
+        )
+
+        if http_status == 404:
+            # The soft link dangles — coord answered, and its answer is "no
+            # such work unit". There is nothing to derive a verdict from, and
+            # that is an observation rather than a failure.
+            return _ReconcileDelivery(unit_present=False, readable=True)
+        if not isinstance(payload, dict):
+            return _ReconcileDelivery(
+                readable=False,
+                unreadable_reason=(
+                    error
+                    or (
+                        f"coord returned {http_status} with a body this read "
+                        "does not recognise"
+                    )
+                ),
+            )
+
+        delivery_error = payload.get("delivery_error")
+        delivery = payload.get("delivery")
+        if delivery_error is not None:
+            return _ReconcileDelivery(
+                readable=False, unreadable_reason=_delivery_error_text(delivery_error)
+            )
+        if not isinstance(delivery, dict):
+            # A coord predating the inline-delivery arm, or an operator door
+            # that ignored ``?with_citations=true``. Absence is UNKNOWN: there
+            # is no second door to ask, so the row's axis C stays unread.
+            return _ReconcileDelivery(
+                readable=False,
+                unreadable_reason=(
+                    "coord's by-slug body carried no `delivery` verdict and no "
+                    "`delivery_error`; this coord does not serve the derived "
+                    "delivery predicate on this door"
+                ),
+            )
+
+        shipped = delivery.get("shipped")
+        evidence_complete = delivery.get("evidence_complete")
+        if not isinstance(shipped, bool) or not isinstance(evidence_complete, bool):
+            return _ReconcileDelivery(
+                readable=False,
+                unreadable_reason=(
+                    "coord's `delivery` verdict carried a non-boolean "
+                    f"`shipped` ({type(shipped).__name__}) or "
+                    f"`evidence_complete` ({type(evidence_complete).__name__}); "
+                    "neither may be guessed"
+                ),
+            )
+
+        raw_gaps = delivery.get("evidence_gaps")
+        gaps = tuple(str(gap) for gap in raw_gaps) if isinstance(raw_gaps, list) else ()
+
+        # The citation COUNT only. ``None`` where coord said the citation read
+        # did not happen (or answered a shape this read does not recognise),
+        # because a zero there would be indistinguishable from an observation
+        # of zero — and the cascade's ``NO_CITATIONS_CAPTURED`` arm turns
+        # exactly on that number.
+        inline = self._inline_citations(payload)
+        citation_count: int | None = None
+        if inline is not None and inline[1] is None:
+            citation_count = len(inline[0])
+
+        raw_unit = payload.get("work_unit")
+        raw_status = raw_unit.get("status") if isinstance(raw_unit, dict) else None
+        return _ReconcileDelivery(
+            unit_present=True,
+            unit_status=raw_status if isinstance(raw_status, str) else None,
+            readable=True,
+            shipped=shipped,
+            evidence_complete=evidence_complete,
+            evidence_gaps=gaps,
+            citation_count=citation_count,
+        )
 
     @staticmethod
     def _inline_citations(payload: object) -> tuple[list[object], str | None] | None:
@@ -1440,13 +2112,15 @@ class _CoordProbe:
             # answer about the citation relation — 503 when it is unreadable,
             # 500 when this slug's SELECT failed — not a verdict on coord's
             # reachability. An untyped 5xx is still an outage and still trips.
-            answered_codes=_CITATION_ANSWERED,
+            #
             # …and, on a coord that names WHICH read failed, only when the read
             # it names is one this hop asked for. `db_error` is coord's generic
             # code since the crate-wide sweep, so the code alone no longer
             # identifies the door; the `op` token does. Absent ⇒ granted, so a
-            # coord predating the sweep keeps today's behaviour exactly.
-            answered_ops=_CITATION_ANSWERING_OPS,
+            # coord predating the sweep keeps today's behaviour exactly. The
+            # two travel as ONE value so this call site cannot ask for the
+            # first half and silently get the pre-op-test reading.
+            answered=_CITATION_ANSWERED,
         )
         if cites is None:
             # Includes 401/403/404/405 and coord's typed 503/500 — absence of
@@ -1595,6 +2269,617 @@ async def list_divergent_artifacts(
             for f_slug, f_repo, variants in forks
         ],
         kind_fork_total=len(forks),
+    )
+
+
+# ═════════ three-way status reconciliation (Phase 4) ═════════
+#
+# Plan ``2026-09-03-plan-status-three-way-reconciler-surface``. The operator
+# half of a surface whose primary is a git-side CLI in qontinui-dev-notes: the
+# operator "directs the fleet but does not read its code", so a capability only
+# reachable from a shell is not reachable by the one audience whose acceptance
+# the plan's exit criterion names (D1).
+#
+# Both surfaces share ONE classifier and ONE set of test vectors, vendored and
+# digest-pinned (``app/services/plan_status``, D7). They differ in exactly one
+# place — where axis B came from — and each DECLARES it.
+
+#: The document-absence class of the vendored cascade.
+#:
+#: Named as a constant because this route rewrites its REASON (never its
+#: class): the cascade's own sentence says "on the plans repo's origin/main",
+#: which is true of the qontinui-dev-notes reconciler and false here. The class
+#: is the shared contract and must not drift; the prose is this surface's, and
+#: emitting another surface's provenance would be the exact confusion this
+#: route exists to remove. ``tests/test_plan_library_reconciliation.py`` pins
+#: the name against ``CLASS_ORDER``.
+_DOC_ABSENT_CLASS = "UNKNOWN_NO_BODY_ON_MAIN"
+
+#: Why axis C is unread on a row this request did not return.
+#:
+#: Settled in Phase 0.1 of the plan, NOT here: coord's delivery door is
+#: per-unit (0.145 s median / 0.192 s p95 over 1421 units ≈ 4.5 min end to
+#: end), and no HTTP request can make that many sequential calls. So axis C is
+#: computed for the page — and every off-page row is classified
+#: ``UNKNOWN_AXIS_UNREADABLE`` and COUNTED, rather than silently dropped out of
+#: the denominator.
+_AXIS_C_OFF_PAGE = (
+    "axis C (coord's derived delivery verdict) is computed only for the page "
+    "being returned — coord's delivery door is per-unit, so a corpus-wide read "
+    "cannot be made inside one request. Page to this row to have it derived."
+)
+
+#: The adapter's byte-exact status-block test, verbatim.
+#:
+#: ``qontinui-runner`` ``plan_workunit_adapter/parser.rs`` trims each line's
+#: leading whitespace and requires ``"> "`` then ``"**Status:"``, first match
+#: wins, and SILENTLY defaults to ``draft`` when no line matches. That silent
+#: default is a disagreement class of its own
+#: (``DOC_STAMP_UNREADABLE_BY_ADAPTER``), which is why this reads the body
+#: rather than trusting the stored status word.
+_ADAPTER_STATUS_PREFIX = "> **Status:"
+
+
+def _adapter_reads_status_block(body: str) -> bool:
+    """Would the runner adapter find a status block in this body?
+
+    The byte-exact test, applied line by line —
+    ``line.lstrip().startswith("> **Status:")`` — matching
+    ``check-plan-status-contract.py``'s ``ADAPTER_READS`` in qontinui-dev-notes
+    rather than the linter's materially looser regex. The GAP between the two
+    grammars is a finding, not a discrepancy to reconcile away: a human reads
+    one status off the body and the adapter reads another.
+    """
+    return any(
+        line.lstrip().startswith(_ADAPTER_STATUS_PREFIX) for line in body.splitlines()
+    )
+
+
+def _document_classification(status: str | None) -> str:
+    """``ok`` / ``off_vocabulary`` / ``no_status_block`` for a stored status.
+
+    The three values ``lint-plan-status.py --vocab=adapter --json`` emits,
+    derived here from the artifact store's parsed word because that is what
+    this side holds — the linter is a git-side tool and there is no checkout to
+    run it against.
+
+    The vocabulary is the Rust adapter's NINE phrases, not the linter's eleven
+    spellings, exactly as the classifier's own docstring requires: the linter
+    adds ``in_progress`` / ``not_started`` because they are the adapter's
+    OUTPUT forms, and a stamp the linter calls ``ok`` on an underscore form is
+    one the Rust tokenizer does not match. Collapsing the two here would erase
+    the disagreement class ``DOC_STAMP_UNREADABLE_BY_ADAPTER`` exists to
+    surface.
+
+    An empty status reads ``no_status_block``: the scanner stores the word it
+    parsed, so nothing parsed means nothing was there.
+    """
+    if status is None or not status.strip():
+        return "no_status_block"
+    return "ok" if plan_status.adapter_tokenizes(status) else "off_vocabulary"
+
+
+def _reconcile_verdict(classification: str) -> ReconciliationVerdict:
+    """Which of the three groups a class falls into.
+
+    ``unknown`` is read off the vendored :data:`UNKNOWN_CLASSES`, never
+    computed as "whatever is left" — D3: UNKNOWN is a first-class verdict, and
+    a residual bucket is how "we could not tell" gets rendered as "the record
+    is wrong".
+    """
+    if classification in plan_status.UNKNOWN_CLASSES:
+        return "unknown"
+    if classification in plan_status.AGREE_CLASSES:
+        return "agree"
+    return "disagree"
+
+
+def _reconcile_row(
+    *,
+    stem: str,
+    artifact: crud.ReconcileArtifact | None,
+    variant_count: int,
+    unit: crud.CandidateWorkUnit | None,
+    units_readable: bool,
+    population_reason: str | None,
+    delivery: _ReconcileDelivery | None,
+    body: str | None,
+    on_page: bool,
+) -> ReconciliationRow:
+    """Read all three axes for one stem and run the vendored cascade.
+
+    The axis values are assembled with the classifier's OWN builders
+    (:func:`plan_status.axis_a` and friends), which validate their keys
+    strictly — a typo is a loud error rather than a silently missing signal
+    that would default to "readable".
+
+    **The document axis can never reach agreement when it is incomplete.**
+    A stem with no artifact is ``present=False`` on axis B, and arm 2 of the
+    cascade sits above every AGREE arm, so the row classifies UNKNOWN
+    mechanically rather than by a rule this function has to remember. The route
+    additionally REFUSES a body in which any such row carried a non-``unknown``
+    verdict (:func:`_reconciliation_contract_violations`) — belt and braces,
+    because a comparator whose document axis reads an empty store manufactures
+    fleet-wide FALSE AGREEMENT, which is the defect this whole surface exists
+    to close.
+    """
+    if artifact is not None:
+        document_state: DocumentState = "present"
+    elif unit is not None and unit.source_path:
+        # coord recorded a ``source_path``: a plan FILE exists and only the
+        # body sync is missing (``QONTINUI_PLAN_LIBRARY_SYNC`` / the tenant
+        # ``plan_capture`` dial — either missing is a near-silent no-op).
+        document_state = "unsynced"
+    else:
+        document_state = "absent"
+    document_complete = document_state == "present"
+
+    # ── axis A — coord's STORED status column ──
+    if units_readable:
+        axis_a_value = plan_status.axis_a(
+            readable=True,
+            present=unit is not None,
+            status=unit.status if unit is not None else None,
+        )
+        axis_a_model = ReconciliationAxisA(
+            readable=True,
+            present=unit is not None,
+            status=unit.status if unit is not None else None,
+        )
+    else:
+        reason = population_reason or "coord's work-unit list could not be read"
+        axis_a_value = plan_status.axis_a(
+            readable=False, present=False, unreadable_reason=reason
+        )
+        axis_a_model = ReconciliationAxisA(
+            readable=False, present=False, unreadable_reason=reason
+        )
+
+    # ── axis B — the DOCUMENT, from the artifact store ──
+    if artifact is not None:
+        classification = _document_classification(artifact.status)
+        # ``None`` where this request did not load the body — UNKNOWN, and
+        # neutral in the cascade, which only acts on an explicit ``False``.
+        adapter_readable = None if body is None else _adapter_reads_status_block(body)
+        axis_b_value = plan_status.axis_b(
+            readable=True,
+            present=True,
+            status=artifact.status,
+            classification=classification,
+            adapter_readable=adapter_readable,
+        )
+        axis_b_model = ReconciliationAxisB(
+            readable=True,
+            present=True,
+            status=artifact.status,
+            classification=classification,
+            adapter_readable=adapter_readable,
+            document_state=document_state,
+            complete=document_complete,
+            variant_count=variant_count,
+        )
+    else:
+        axis_b_value = plan_status.axis_b(readable=True, present=False)
+        axis_b_model = ReconciliationAxisB(
+            readable=True,
+            present=False,
+            document_state=document_state,
+            complete=document_complete,
+            unreadable_reason=None,
+            variant_count=0,
+        )
+
+    # ── axis C — coord's DERIVED delivery verdict, forwarded ──
+    if not on_page:
+        axis_c_value = plan_status.axis_c(
+            readable=False, present=False, unreadable_reason=_AXIS_C_OFF_PAGE
+        )
+        axis_c_model = ReconciliationAxisC(
+            readable=False, present=False, unreadable_reason=_AXIS_C_OFF_PAGE
+        )
+    elif not units_readable:
+        reason = population_reason or "coord could not be read"
+        axis_c_value = plan_status.axis_c(
+            readable=False, present=False, unreadable_reason=reason
+        )
+        axis_c_model = ReconciliationAxisC(
+            readable=False, present=False, unreadable_reason=reason
+        )
+    elif unit is None:
+        # No work unit, so there is nothing for coord to derive a verdict
+        # from. An OBSERVATION of absence, not a failed read — and the cascade
+        # has already classified the row ``UNKNOWN_NO_UNIT`` by this point.
+        axis_c_value = plan_status.axis_c(readable=True, present=False)
+        axis_c_model = ReconciliationAxisC(readable=True, present=False, computed=False)
+    elif delivery is None or not delivery.readable:
+        reason = (
+            delivery.unreadable_reason
+            if delivery is not None and delivery.unreadable_reason
+            else "coord unavailable"
+        )
+        axis_c_value = plan_status.axis_c(
+            readable=False, present=False, unreadable_reason=reason
+        )
+        axis_c_model = ReconciliationAxisC(
+            readable=False,
+            present=False,
+            unreadable_reason=reason,
+            computed=delivery is not None,
+        )
+    elif not delivery.unit_present:
+        axis_c_value = plan_status.axis_c(readable=True, present=False)
+        axis_c_model = ReconciliationAxisC(readable=True, present=False, computed=True)
+    else:
+        axis_c_value = plan_status.axis_c(
+            readable=True,
+            present=True,
+            shipped=delivery.shipped,
+            evidence_complete=delivery.evidence_complete,
+            # VERBATIM. Never collapsed to a count or a boolean: two of coord's
+            # three modelled gaps are visible nowhere else.
+            evidence_gaps=delivery.evidence_gaps,
+            citation_count=delivery.citation_count,
+        )
+        axis_c_model = ReconciliationAxisC(
+            readable=True,
+            present=True,
+            shipped=delivery.shipped,
+            evidence_complete=delivery.evidence_complete,
+            evidence_gaps=list(delivery.evidence_gaps),
+            citation_count=delivery.citation_count,
+            computed=True,
+        )
+
+    classification_name, reason_text = plan_status.classify(
+        axis_a_value, axis_b_value, axis_c_value
+    )
+    if classification_name == _DOC_ABSENT_CLASS:
+        # Same CLASS, this surface's PROVENANCE. See ``_DOC_ABSENT_CLASS``.
+        reason_text = (
+            "the artifact store holds no plan body for this stem "
+            f"(document_state: {document_state}), so the document axis has no "
+            "value to compare. That is UNKNOWN, never agreement: the body sync "
+            "is opt-in and off by default, so an empty store is "
+            "indistinguishable from a corpus with nothing in it"
+        )
+
+    return ReconciliationRow(
+        slug=stem,
+        title=(
+            artifact.title
+            if artifact is not None
+            else (unit.title if unit is not None else None)
+        ),
+        artifact_id=artifact.id if artifact is not None else None,
+        source_repo=(
+            artifact.source_repo
+            if artifact is not None
+            else (unit.repos[0] if unit is not None and unit.repos else None)
+        ),
+        source_path=(
+            artifact.source_path
+            if artifact is not None
+            else (unit.source_path if unit is not None else None)
+        ),
+        document_state=document_state,
+        document_axis_complete=document_complete,
+        axis_a=axis_a_model,
+        axis_b=axis_b_model,
+        axis_c=axis_c_model,
+        classification=classification_name,
+        verdict=_reconcile_verdict(classification_name),
+        reason=reason_text,
+    )
+
+
+def _reconciliation_contract_violations(
+    rows: list[ReconciliationRow], facets: ReconciliationFacets, total: int
+) -> list[str]:
+    """The D3 contract, checked on the body about to be returned.
+
+    Modelled on coord's ``overview_contract_check`` (``mcp/tools.rs``), which
+    REFUSES a facet-less body rather than reporting it as a success. The same
+    reasoning applies here: a facet block that silently stopped being
+    exhaustive, or a denominator that no longer matches its facets, is a
+    surface reporting a number it did not measure — the defect class this whole
+    plan is about.
+
+    Five invariants, and the last is the plan's central claim on this side:
+
+    1. ``by_class`` names EVERY member of the cascade, including the zeros.
+    2. ``by_verdict`` names all three groups, including the zeros.
+    3. Both sum to ``denominator``.
+    4. ``denominator`` is the population, not the page.
+    5. **No row whose document axis is incomplete carries a non-UNKNOWN
+       verdict.** The cascade already guarantees it structurally (arm 2 sits
+       above every AGREE arm); this is the assertion that the guarantee held.
+
+    ``corpus_complete`` and its reasons are checked for mutual consistency
+    too — a ``True`` beside a named blind spot, or a ``False`` beside none, is
+    a flag that has stopped meaning anything.
+    """
+    violations: list[str] = []
+    expected_classes = set(plan_status.CLASS_ORDER)
+    if set(facets.by_class) != expected_classes:
+        missing = sorted(expected_classes - set(facets.by_class))
+        unknown = sorted(set(facets.by_class) - expected_classes)
+        violations.append(
+            f"by_class is not exhaustive (missing: {missing or 'none'}; "
+            f"unrecognised: {unknown or 'none'})"
+        )
+    if set(facets.by_verdict) != {"agree", "disagree", "unknown"}:
+        violations.append("by_verdict does not carry all three verdict groups")
+    if sum(facets.by_class.values()) != facets.denominator:
+        violations.append(
+            f"sum(by_class)={sum(facets.by_class.values())} != "
+            f"denominator={facets.denominator}"
+        )
+    if sum(facets.by_verdict.values()) != facets.denominator:
+        violations.append(
+            f"sum(by_verdict)={sum(facets.by_verdict.values())} != "
+            f"denominator={facets.denominator}"
+        )
+    if facets.denominator != total:
+        violations.append(
+            f"denominator={facets.denominator} is not the population total={total}"
+        )
+    if facets.corpus_complete and facets.corpus_incomplete_reasons:
+        violations.append("corpus_complete is true beside named blind spots")
+    if not facets.corpus_complete and not facets.corpus_incomplete_reasons:
+        violations.append("corpus_complete is false but no blind spot was named")
+    bad = [
+        row.slug
+        for row in rows
+        if not row.document_axis_complete and row.verdict != "unknown"
+    ]
+    if bad:
+        violations.append(
+            "rows with an incomplete document axis reported a verdict other "
+            f"than UNKNOWN: {sorted(bad)[:5]}"
+        )
+    return violations
+
+
+# NOTE: declared BEFORE ``/{artifact_id}`` so the literal path wins the match.
+@router.get(
+    "/reconciliation",
+    response_model=ReconciliationResponse,
+    summary="Does each plan's record agree with reality? (three-way reconciliation)",
+)
+async def reconcile_plan_status(
+    request: Request,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    include_coord: bool = Query(
+        True,
+        description="Read coord's work-unit list (axis A) and its derived "
+        "delivery verdict (axis C). Set false for a document-layer-only read, "
+        "in which BOTH coord axes report UNKNOWN — never agreement.",
+    ),
+    db: AsyncSession = Depends(get_async_db),
+    principal: ActorPrincipal = Depends(get_audit_actor_principal),
+) -> ReconciliationResponse:
+    """Three writers share one fact — "is this plan done?" — and none reads the others.
+
+    * **axis A** — coord ``work_units.status``, the STORED column.
+    * **axis B** — the plan document's status stamp. **Here that is the
+      ARTIFACT STORE**, and every response says so in ``document_axis_source``.
+    * **axis C** — coord's DERIVED ``delivery`` verdict
+      (``{shipped, evidence_complete, evidence_gaps}``), re-derived per read
+      and forwarded verbatim. Web never re-derives it (D4).
+
+    The classification is a first-match-wins cascade of twelve members whose
+    ORDER is part of the spec (D6), vendored from qontinui-dev-notes together
+    with its test vectors and pinned by digest (D7). Two properties the order
+    buys mechanically rather than by comment: ``EVIDENCE_INCOMPLETE`` precedes
+    every arm that reads ``shipped``, and the two AGREE members are LAST, so no
+    unreadable axis can fall through into agreement.
+
+    **Read ``evidence_complete`` before ``shipped``.** When it is false,
+    ``shipped: false`` means coord COULD NOT ESTABLISH delivery — UNKNOWN, not
+    "undelivered". The two demand opposite responses.
+
+    **What this surface's document axis cannot do.** ``agent.work_artifacts``
+    is sparse (18 plan bodies against ~1500 addressable stems on 2026-09-03)
+    and can be silently FROZEN: the runner's body sync is constructed only
+    under ``QONTINUI_PLAN_LIBRARY_SYNC=1`` and gated again on the tenant's
+    ``plan_capture`` dial, and a store frozen weeks ago looks identical to an
+    empty one. A comparator that read that as agreement would manufacture
+    fleet-wide FALSE AGREEMENT. So a stem with no artifact classifies UNKNOWN,
+    never AGREE, ``document_axis_complete`` reports it at both row and response
+    level, and the body is REFUSED if any such row carried another verdict. The
+    git-side reconciler in qontinui-dev-notes is the primary surface precisely
+    because its axis B is ``origin/main`` of the plans repo (D1).
+
+    **Axis C is per-page, and the off-page rows are counted, not dropped.**
+    Coord has no bulk delivery door; the per-unit read measured 0.145 s median
+    / 0.192 s p95 over 1421 units, so a corpus-wide axis C is ~4.5 minutes and
+    no request can pay it (Phase 0.1). Every row outside the returned page is
+    classified ``UNKNOWN_AXIS_UNREADABLE`` with the reason naming axis C, and
+    stays in the denominator. Page through the corpus to derive it row by row.
+
+    **The facet block is the answer, not the item list** (D3): exhaustive
+    facets INCLUDING the zeros, an explicit denominator that equals their sum,
+    and ``corpus_complete`` with every blind spot named. "No rows of class X"
+    is a stated fact here rather than an absence.
+
+    This route WRITES NOTHING. It has no status write, no worker and no
+    ``shipped`` write anywhere — ``shipped`` is derived, and a direct write is
+    a ``422 status_is_derived`` on coord's side. Where the reconciler finds
+    drift, the correction path is the existing ``plan-steward`` (D5).
+
+    Coord is reached over its HTTP API only; nothing here touches coord's
+    Postgres (module invariant 4, enforced by
+    ``tests/test_coord_schema_boundary_guard.py``).
+    """
+    current_user = principal.user
+    org_id = await _resolve_org_id(db, current_user)
+
+    # ── the document layer (axis B), whole ──
+    artifacts, artifacts_truncated = await crud.list_plan_artifacts_for_reconciliation(
+        db, org_id=org_id
+    )
+
+    # ── coord's work-unit list (axis A's population), whole ──
+    probe: _CoordProbe | None = None
+    units: list[crud.CandidateWorkUnit] | None = None
+    population_reason: str | None = "not fetched (include_coord=false)"
+    if include_coord:
+        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
+        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
+        units, population_reason = await probe.reconciliation_units()
+    population_state: WorkUnitPopulationState = (
+        "included" if units is not None else "unavailable"
+    )
+
+    # ── the join, on the STEM ──
+    #
+    # The scanner writes a plan's own stem into ``work_unit_slug`` for every
+    # row it captures (``body_push.rs``), so that column is the join key when
+    # it is set and the artifact's own slug is the fallback. Both are the same
+    # value for a scanned row; the fallback is what lets a hand-POSTed artifact
+    # still join.
+    by_stem: dict[str, list[crud.ReconcileArtifact]] = {}
+    for artifact in artifacts:
+        by_stem.setdefault(artifact.work_unit_slug or artifact.slug, []).append(
+            artifact
+        )
+    unit_by_stem = {unit.slug: unit for unit in (units or ())}
+
+    stems = sorted(set(by_stem) | set(unit_by_stem))
+    total = len(stems)
+    page = stems[offset : offset + limit]
+    page_set = set(page)
+
+    # Newest wins where a stem has divergent copies, ties broken on id so the
+    # pick is deterministic. The count rides on the row (``variant_count``) so
+    # the collapse is visible rather than silent; ``GET /plan-library/divergent``
+    # is the surface that adjudicates it.
+    chosen: dict[str, crud.ReconcileArtifact] = {
+        stem: max(rows, key=lambda row: (row.updated_at, row.id))
+        for stem, rows in by_stem.items()
+    }
+
+    # Bodies for the PAGE only — ``body`` is the one unbounded column on the
+    # table, and the byte-exact adapter test is the only thing that needs it.
+    bodies = await crud.load_artifact_bodies(
+        db, [chosen[stem].id for stem in page if stem in chosen]
+    )
+
+    # ── axis C, for the page ──
+    deliveries: dict[str, _ReconcileDelivery] = {}
+    coord_available = True
+    if probe is not None:
+        # Only rows that HAVE a work unit, and only on the page. A stem coord
+        # does not know about has nothing to derive a verdict from, so asking
+        # would spend a round-trip to be told what the population read already
+        # said.
+        wanted = [stem for stem in page if stem in unit_by_stem]
+        if units is not None and wanted:
+            # The probe's own fail-fast circuit means a coord outage costs ONE
+            # timeout for the whole page rather than one per row.
+            results = await asyncio.gather(
+                *(probe.delivery_for(stem) for stem in wanted)
+            )
+            deliveries = dict(zip(wanted, results, strict=True))
+        coord_available = not probe.degraded
+
+    rows = [
+        _reconcile_row(
+            stem=stem,
+            artifact=chosen.get(stem),
+            variant_count=len(by_stem.get(stem, ())),
+            unit=unit_by_stem.get(stem),
+            units_readable=units is not None,
+            population_reason=population_reason,
+            delivery=deliveries.get(stem),
+            body=(
+                bodies.get(chosen[stem].id)
+                if stem in page_set and stem in chosen
+                else None
+            ),
+            on_page=stem in page_set,
+        )
+        for stem in stems
+    ]
+
+    # ── the D3 facet block, over the WHOLE population ──
+    by_class = dict.fromkeys(plan_status.CLASS_ORDER, 0)
+    by_verdict: dict[str, int] = {"agree": 0, "disagree": 0, "unknown": 0}
+    for row in rows:
+        by_class[row.classification] += 1
+        by_verdict[row.verdict] += 1
+
+    document_present = sum(1 for row in rows if row.document_axis_complete)
+    document_missing = total - document_present
+    axis_c_computed = sum(1 for row in rows if row.axis_c.computed)
+
+    incomplete: list[str] = []
+    if artifacts_truncated:
+        incomplete.append(
+            f"the document-layer read stopped at its "
+            f"{crud.RECONCILE_MAX_ARTIFACTS}-artifact cap, so the population "
+            "is short by an unknown amount"
+        )
+    if units is None:
+        incomplete.append(
+            "coord's work-unit list could not be read, so axis A is UNKNOWN "
+            f"for every row ({population_reason})"
+        )
+    if axis_c_computed < total:
+        incomplete.append(
+            f"axis C was derived for {axis_c_computed} of {total} rows — the "
+            "page — and the rest classify UNKNOWN_AXIS_UNREADABLE"
+        )
+    if document_missing:
+        incomplete.append(
+            f"the artifact store holds no plan body for {document_missing} of "
+            f"{total} stems, so those rows could not be compared on the "
+            "document axis (the body sync is opt-in and off by default)"
+        )
+    if not coord_available:
+        incomplete.append("at least one coord read degraded on this page")
+
+    facets = ReconciliationFacets(
+        denominator=total,
+        by_class=by_class,
+        by_verdict=by_verdict,
+        corpus_complete=not incomplete,
+        corpus_incomplete_reasons=incomplete,
+    )
+
+    violations = _reconciliation_contract_violations(rows, facets, total)
+    if violations:  # pragma: no cover — asserted directly in the test suite
+        # REFUSE rather than report a facet block that stopped meaning what it
+        # says. coord's ``overview_contract_check`` does the same, for the same
+        # reason: a surface that quietly returns an unmeasured number is worse
+        # than one that fails loudly.
+        logger.error(
+            "plan_library.reconciliation_contract_violated", violations=violations
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "reconciliation_contract_violated",
+                "violations": violations,
+            },
+        )
+
+    return ReconciliationResponse(
+        items=rows[offset : offset + limit],
+        total=total,
+        offset=offset,
+        limit=limit,
+        document_axis_complete=document_missing == 0,
+        document_present_count=document_present,
+        document_missing_count=document_missing,
+        coord_available=coord_available,
+        work_unit_population_state=population_state,
+        # ``None`` whenever the arm ran — the reader pairs a reason with a
+        # failure and never with a result.
+        work_unit_population_reason=population_reason,
+        axis_c_computed_count=axis_c_computed,
+        facets=facets,
     )
 
 
@@ -1795,10 +3080,11 @@ async def export_corpus(
         media_type="application/zip",
         headers={
             "Content-Disposition": (f'attachment; filename="plan-library-{stamp}.zip"'),
-            "X-Export-Artifact-Count": str(len(rows)),
-            # Explicit on BOTH branches. A header present only when something
-            # went wrong trains readers to ignore its absence.
-            "X-Export-Truncated": "true" if truncated else "false",
+            # Built from CORPUS_EXPORT_HEADERS, which app.main publishes in
+            # Access-Control-Expose-Headers — without that a cross-origin
+            # browser reads None for X-Export-Truncated, the one answer the
+            # both-branches rule exists to make impossible.
+            **_corpus_export_provenance(artifact_count=len(rows), truncated=truncated),
         },
     )
 
@@ -1822,16 +3108,40 @@ async def list_plan_candidates(
 ) -> PlanCandidateResponse:
     """Candidate selection for agents — signals, never a verdict.
 
-    Returns unshipped ``kind='plan'`` artifacts, each carrying the inputs an
-    agent needs to decide what to pick up next: ``status``, ``repos``,
-    ``unmet_depends_on``, ``linked_prs`` with their merged state, ``age_days``,
-    ``last_touched``, and the ``prompt_chain`` that produced the plan.
+    Returns unshipped plans, each carrying the inputs an agent needs to decide
+    what to pick up next: ``status``, ``repos``, ``unmet_depends_on``,
+    ``linked_prs`` with their merged state, ``age_days``, ``last_touched``, and
+    the ``prompt_chain`` that produced the plan.
+
+    **The population is the UNION of both corpus layers** — non-terminal
+    ``kind='plan'`` artifacts, plus coord's non-terminal, date-slugged,
+    non-``shepherd-*`` work units that no artifact already claims. Plan
+    ``2026-09-03-vet-imp-sweep-selects-from-the-sparse-document-layer``: drawn
+    from the document layer alone this read saw 13 of 606 addressable plans,
+    because that layer holds plan BODIES and fills only under an opt-in body
+    sync, while the question this route answers is settled by fields the
+    OPERATIONAL layer owns. Each item's ``document_state`` says which layer it
+    came from, and a work-unit-only row carries a null ``id`` — there is no
+    artifact to give it one, so it is resolved by ``source_path`` instead.
+
+    The union can only ADD rows: coord's half is a best-effort read, and when
+    it fails the population degrades to exactly the artifact-only one this
+    route returned before, flagged by ``work_unit_population_state:
+    "unavailable"``. That flag is separate from ``coord_available`` on
+    purpose — a 403 on the population door is coord ANSWERING, so it never
+    trips the page-wide circuit, and without its own flag the route would
+    silently fall back to a 2% view of the corpus while reporting coord
+    healthy.
 
     **There is no criticality score** (design decision D6). A hardcoded score
     would be a guess frozen into SQL; the read exposes the evidence and the
     agent ranks. The only ordering is a stable default — oldest-vetted-first
-    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties) — with no
-    weighting of any kind.
+    (``coalesce(authored_at, created_at) ASC``, ``id`` breaking ties; work-unit
+    rows on ``coalesce(first_in_progress_at, created_at)``, and losing a tie to
+    an artifact so a page without them is unchanged) — with no weighting of any
+    kind. Work-unit rows are neither capped nor re-weighted toward ``vetted``:
+    411 of the 635 carried an empty status, which would make that a guess over
+    the least-known rows.
 
     Coord-owned fields (the work unit and its PR citations) come over coord's
     HTTP API, never from coord's Postgres schema. Two things the payload is
@@ -1859,20 +3169,44 @@ async def list_plan_candidates(
     """
     current_user = principal.user
     org_id = await _resolve_org_id(db, current_user)
-    rows, total = await crud.list_plan_candidates(
-        db, org_id=org_id, offset=offset, limit=limit
+
+    # The coord half of the POPULATION, read once, before the population query
+    # that consumes it. ``None`` degrades the union to the artifact-only
+    # population — never to an empty one.
+    probe: _CoordProbe | None = None
+    units: list[crud.CandidateWorkUnit] | None = None
+    population_reason: str | None = "not fetched (include_coord=false)"
+    if include_coord:
+        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
+        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
+        units, population_reason = await probe.candidate_units()
+    population_state: WorkUnitPopulationState = (
+        "included" if units is not None else "unavailable"
     )
 
-    ids = [row.id for row in rows]
+    rows, total = await crud.list_plan_candidates(
+        db, org_id=org_id, offset=offset, limit=limit, work_units=units
+    )
+
+    artifacts = [row.artifact for row in rows if row.artifact is not None]
+    ids = [artifact.id for artifact in artifacts]
     depends = await crud.load_depends_on(db, ids)
     chains = await crud.load_prompt_chains(db, ids)
 
     links: dict[str, CandidateCoordLink] = {}
     coord_available = True
-    if include_coord:
-        tenant_id = await _soft_tenant_id(request, actor_kind=principal.kind)
-        probe = _CoordProbe(tenant_id, actor_kind=principal.kind)
-        slugs = sorted({r.work_unit_slug for r in rows if r.work_unit_slug})
+    if probe is not None:
+        # Per-slug reads are for the ARTIFACT-backed rows only. A work-unit-only
+        # row was produced BY the population read and already carries every
+        # coord field this route renders for it, so asking coord about it again
+        # would multiply the fan-out by exactly the factor the widened
+        # population unlocks. The artifact-backed rows keep the two-hop read
+        # unchanged: their citations are not in the list payload, and a modern
+        # coord fuses presence and citations into one round-trip anyway
+        # (``?with_citations=true`` / the agent door's unconditional inline),
+        # so serving their presence half from the list would save nothing and
+        # would cost the inline-citation short-circuit.
+        slugs = sorted({a.work_unit_slug for a in artifacts if a.work_unit_slug})
         links = await _coord_links(slugs, probe)
         coord_available = not probe.degraded
 
@@ -1887,7 +3221,16 @@ async def list_plan_candidates(
 
     now = datetime.now(UTC)
     items: list[PlanCandidate] = []
-    for row in rows:
+    for candidate in rows:
+        row = candidate.artifact
+        if row is None:
+            # ``PlanCandidateRow`` sets exactly one side, so no artifact means
+            # the work-unit arm produced this row — a plan coord knows about
+            # and the library has never captured.
+            if candidate.work_unit is not None:
+                items.append(_work_unit_candidate(candidate.work_unit, now))
+            continue
+
         anchor = row.authored_at or row.created_at
         if anchor.tzinfo is None:  # pragma: no cover — the column is timestamptz
             anchor = anchor.replace(tzinfo=UTC)
@@ -1953,6 +3296,7 @@ async def list_plan_candidates(
                     for producer, relation, depth in chains.get(row.id, [])
                 ],
                 coord=coord_block,
+                document_state="present",
             )
         )
 
@@ -1962,6 +3306,10 @@ async def list_plan_candidates(
         offset=offset,
         limit=limit,
         coord_available=coord_available,
+        work_unit_population_state=population_state,
+        # ``None`` whenever the arm ran — ``candidate_units`` pairs a reason
+        # with a failure and never with a result.
+        work_unit_population_reason=population_reason,
         open_followups=[
             _open_followup(edge, origin, now) for edge, origin in followup_rows
         ],
@@ -2188,11 +3536,12 @@ async def export_work_artifact(
             ),
             # Provenance travels beside the bytes, never inside them — see the
             # verbatim rule. A consumer can verify the round trip from headers
-            # alone.
-            "X-Content-Sha256": digest,
-            "X-Artifact-Kind": row.kind,
-            "X-Artifact-Slug": row.slug,
-            "X-Artifact-Version": str(exported_version),
+            # alone, which requires all four to be READABLE: they are built
+            # from ARTIFACT_EXPORT_HEADERS and published by app.main in
+            # Access-Control-Expose-Headers.
+            **_artifact_export_provenance(
+                row, digest=digest, exported_version=exported_version
+            ),
         },
     )
 

@@ -360,12 +360,13 @@ export interface PromptDocumentSummary {
    * The operator's per-document setting as a TIER, unprojected — `null` (or
    * absent) for "this document carries no setting of its own".
    *
-   * Read for one thing only, and deliberately not more: whether PROTECTING this
-   * document would discard a notification tier that no control on this page can
-   * put back. `agent_writable` is the lossy projection of this field, and the
-   * two-state toggle writes through that projection, so coord resolves a legacy
-   * `true` as "at least allow" — a stored `allow_with_notification` survives a
-   * re-open only while it is still stored, and closing the document unstores it.
+   * This is the CONTROL's own value — what `AgentWriteAccessControl` reads to
+   * show which tier the operator set on this row (and `null` as "(default)",
+   * meaning no opinion of their own), and what it writes back through
+   * `PromptDocumentUpdate.agent_write_tier`. `agent_writable` is the lossy
+   * projection of this field, kept for clients that predate the tier; coord
+   * resolves a legacy `true` as "at least allow", which PRESERVES a stored
+   * `allow_with_notification` but can never produce one.
    *
    * Typed `string`, not `AgentWriteTier`: this interface is a cast over
    * `JSON.parse` output rather than a check, so a tier this build predates
@@ -411,16 +412,35 @@ export interface PromptDocumentSummary {
    */
   agent_write_source?: "operator" | "operator_kind" | "default";
   /**
-   * What coord's built-in rule says, IGNORING any operator override — `false`
-   * exactly for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list.
+   * The TIER coord's built-in rule gives this exact `(kind, name)`, IGNORING
+   * any operator override at either level — the same vocabulary as
+   * `agent_write_effective_tier`.
    *
-   * That list holds TWO families, protected for different reasons: the
+   * `"deny"` for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list that
+   * carries a deny. Those are protected for different reasons: the
    * meta-policies (`kind: "policy"`), which define how every other document is
-   * classified and applied; and the three canonical session briefings
+   * classified and applied; the three canonical session briefings
    * (`kind: "session_briefing"`, see `SESSION_BRIEFING_DOCUMENT_NAMES`), which
-   * are pushed into every session's system prompt. The distinction does not
-   * change this field's meaning, but it does change what the operator must be
-   * told when overriding it — see `AgentWriteAccessControl`.
+   * are pushed into every session's system prompt; and `claude_settings`, the
+   * harness permission baseline a machine COPIES into its own configuration.
+   * The distinction does not change this field's meaning, but it does change
+   * what the operator must be told when overriding it — see
+   * `AgentWriteAccessControl`.
+   *
+   * `"allow_with_notification"` for the six INTENT kinds. Coord moved their
+   * compiled-in default off `deny`: an agent MAY author them, and every such
+   * write must carry a `notification_ref`.
+   *
+   * **Tier-valued, not boolean.** It was `agent_write_builtin_default?: boolean`
+   * until that move, and a boolean cannot hold the notification tier — those
+   * six kinds would have read as plain `true`, indistinguishable from an
+   * ordinary unprotected document, when in fact their default imposes a
+   * precondition. No lossy boolean alias is served beside it, deliberately: a
+   * lossy projection is how the notification tier goes missing again.
+   *
+   * Typed as `string`, not `AgentWriteTier`: this is a cast over `JSON.parse`
+   * output rather than a check. Narrow it before rendering and treat anything
+   * else — including absent, from a coord that predates the field — as UNKNOWN.
    *
    * This is NOT derivable from `agent_write_source`. Once an operator touches a
    * document at all, `source` becomes `"operator"` permanently, so a
@@ -429,7 +449,7 @@ export interface PromptDocumentSummary {
    * re-opens it silently. Whether a document is one the code protects does not
    * change when the row is written, and only this field says so.
    */
-  agent_write_builtin_default?: boolean;
+  agent_write_builtin_default_tier?: string;
   updated_by: string | null;
   updated_at: string;
 }
@@ -517,13 +537,36 @@ export interface PromptDocumentUpdate {
    */
   attrs?: PromptDocumentAttrs;
   /**
-   * Set this document's per-document agent write access. `true` opens it,
-   * `false` protects it; omit to leave it alone.
+   * Set this document's per-document agent write access as an explicit TIER —
+   * the field `AgentWriteAccessControl` writes, and the only one of the two
+   * that can express `allow_with_notification`.
+   *
+   * Coord's `TierWrite` enum distinguishes `Set(AgentWriteTier)` from
+   * `Legacy(bool)` precisely so a three-state client does not have to round its
+   * intent through the boolean below. Typed as the union rather than `string`
+   * because this is a body this console CONSTRUCTS — unlike the read fields on
+   * `PromptDocumentSummary`, which are a cast over unvalidated wire data and so
+   * have to admit a tier this build predates.
    *
    * There is deliberately no way to clear it back to `null` (re-inherit the
-   * default) over the wire — coord has no encoding for it either. Unlike every
-   * other field here, setting this creates a VERSION: it is authority, and who
-   * changed it has to survive the next agent append.
+   * default) over the wire — coord has no encoding for it either. That is why
+   * the control offers exactly the three tiers and renders `null` as
+   * "(default)" without offering it: a settable "(default)" would be a control
+   * whose click coord cannot carry out. Unlike every other field here, setting
+   * this creates a VERSION: it is authority, and who changed it has to survive
+   * the next agent append.
+   */
+  agent_write_tier?: AgentWriteTier;
+  /**
+   * LEGACY two-state form of `agent_write_tier`. `true` opens the document,
+   * `false` protects it; omit to leave it alone.
+   *
+   * Lossy in the permissive direction and kept only for clients that predate
+   * the tier: coord reads a `true` as "at least allow", so a document carrying
+   * a stored `allow_with_notification` survives one — but a `true` can never
+   * PRODUCE that tier, which is how an operator asking for the notification
+   * tier got plain `allow`. Nothing in this console sends it any more; send
+   * `agent_write_tier` instead.
    */
   agent_writable?: boolean;
 }

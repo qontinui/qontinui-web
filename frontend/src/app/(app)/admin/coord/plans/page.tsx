@@ -26,9 +26,19 @@
  *   page. No second request: the counts come from the same list the rows do.
  * - **R2/R5** — one work unit is one `<PlanRow>` line; detail expands in place
  *   (`<RecordList>` keeps one open at a time).
- * - **R7** — the fetch-window caveats (truncation, missing creation dates)
+ * - **R7** — the fetch-window caveats (truncation, missing authoring dates)
  *   collapse into a `<CollapsiblePanel>` whose summary badge stays visible, so
  *   the warning cannot hide behind the click.
+ *
+ * ## Which date (plan `2026-09-02-coord-work-units-carry-no-authoring-date`)
+ *
+ * The default sort is `authored_desc` on coord's slug-derived `authored_at`,
+ * and the "undated" caveat counts rows WITHOUT one. It used to be
+ * `created_desc` on `created_at` — the INGEST time, a bulk-backfill date for
+ * most of the corpus — under the label "Newest created", so a plan written in
+ * May sorted as a June plan. With a coord that predates the column every row
+ * is undated: they all sink, the caveat says "N of N", and the row falls back
+ * to "Ingested <created_at>" — true, and labelled as what it is.
  *
  * **The status `<Select>` deliberately stays a Select, not `<FilterTabs>`.**
  * It is a SERVER-side filter — the value goes to coord as `?status=` and
@@ -59,7 +69,7 @@ import { PlanRow } from "@/components/admin/coord/PlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
 import { sortPlans, SORTS, type SortKey } from "./planSort";
-import { derivePlansHealth } from "./plansHealth";
+import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "./plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 10_000;
@@ -103,7 +113,7 @@ interface PlansListResponse {
 
 export default function CoordPlansListPage() {
   const [status, setStatus] = useState("any");
-  const [sort, setSort] = useState<SortKey>("created_desc");
+  const [sort, setSort] = useState<SortKey>("authored_desc");
   const [data, setData] = useState<PlansListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   // There is deliberately no `loading` flag. It used to gate the list's
@@ -175,6 +185,7 @@ export default function CoordPlansListPage() {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
       qs.set("limit", String(FETCH_LIMIT));
+      qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
@@ -253,9 +264,11 @@ export default function CoordPlansListPage() {
   const sorted = useMemo(() => sortPlans(plans, sort), [plans, sort]);
   // coord returned a full page, so there are almost certainly more work units
   // than we sorted. Say so: with the list capped at `updated_at DESC`, an
-  // "oldest created" answer drawn from this window can be wrong.
+  // "oldest authored" answer drawn from this window can be wrong.
   const truncated = plans.length >= FETCH_LIMIT;
-  const missingCreated = plans.filter((p) => !p.created_at).length;
+  // No `authored_at` — an undated slug, or a coord that predates the column.
+  // UNKNOWN either way: these rows sink in the sort and the caveat says so.
+  const missingAuthored = plans.filter((p) => !p.authored_at).length;
   const loaded = data !== null;
   // R6 — "not fetched" includes "fetched and FAILED". The shared deriver grew
   // this arm for `/spawn`; this route reads the same list from the same
@@ -328,7 +341,7 @@ export default function CoordPlansListPage() {
 
       {/* R7 — the window caveats are infrastructural, so they collapse; the
           summary badge keeps the signal visible while they are closed. */}
-      {(truncated || missingCreated > 0) && (
+      {(truncated || missingAuthored > 0) && (
         <CollapsiblePanel
           titleAs="h2"
           className="p-2.5"
@@ -340,7 +353,7 @@ export default function CoordPlansListPage() {
             <span className="text-xs text-amber-300/90 normal-case tracking-normal">
               {[
                 truncated ? `capped at ${FETCH_LIMIT}` : null,
-                missingCreated > 0 ? `${missingCreated} undated` : null,
+                missingAuthored > 0 ? `${missingAuthored} undated` : null,
               ]
                 .filter(Boolean)
                 .join(" · ")}
@@ -360,13 +373,13 @@ export default function CoordPlansListPage() {
               may not be the corpus-wide answer.
             </p>
           )}
-          {missingCreated > 0 && (
+          {missingAuthored > 0 && (
             <p
               className="text-xs text-muted-foreground"
-              data-testid="coord-plans-missing-created-notice"
+              data-testid="coord-plans-missing-authored-notice"
             >
-              {missingCreated} of {plans.length} have no creation date recorded;
-              they sort last rather than being treated as oldest.
+              {missingAuthored} of {plans.length} have no authoring date
+              recorded; they sort last rather than being treated as oldest.
             </p>
           )}
         </CollapsiblePanel>

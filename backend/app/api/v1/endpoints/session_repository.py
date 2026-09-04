@@ -9,7 +9,8 @@ something can answer.
 Routes
 ------
 ``GET  /session-repository``              list + filter (account/repo/state/
-                                          closeout_state/tenant_source/since/q)
+                                          closeout_state/tenant_source/since/q/
+                                          claude_session_id/coord_session_id)
 ``GET  /session-repository/unfinished``   the never-closed-out capability (§3.4)
 ``GET  /session-repository/{id}``         head row + turn index
 ``GET  /session-repository/{id}/turns``   paged decoded turns (``from``/``limit``)
@@ -215,7 +216,7 @@ _TURN_INDEX_DEFAULT_LIMIT = 200
 #: :data:`app.main.CORS_EXPOSE_HEADERS` publishes it in
 #: ``Access-Control-Expose-Headers``.
 #:
-#: The CORS half is not a formality. Only six response headers are
+#: The CORS half is not a formality. Exactly seven response headers are
 #: CORS-safelisted, and none of these is among them, so a browser on a
 #: different origin from the API — the shape ``ApiConfig.IS_REMOTE_BACKEND``
 #: exists for — gets ``null`` from ``response.headers.get(...)`` for every one
@@ -671,6 +672,24 @@ async def list_sessions(
         description="Soft link to a coord work unit. Never resolved; a slug "
         "with no matching work unit simply returns its sessions.",
     ),
+    claude_session_id: str | None = Query(
+        None,
+        description="Exact match on the Claude Code session uuid — the "
+        "archive's own identity column and the SAME id space as "
+        "coord's agent_sessions.id / sessions.claude_code_session_id. This "
+        "is the forward half of the session <-> archive round trip: the "
+        "reverse (archive row -> /sessions/{coord_session_id}) already ships. "
+        "NOT unique on its own — one Claude session archived under two account "
+        "homes is two rows — so this returns a list, and an empty list means "
+        "'this archive holds no row for that id', never 'that session had no "
+        "transcript'.",
+    ),
+    coord_session_id: UUID | None = Query(
+        None,
+        description="Exact match on the coord sessions id the archive row "
+        "recorded. A SOFT link coord garbage-collects underneath us, and "
+        "unindexed (a scan) — prefer claude_session_id, which is indexed.",
+    ),
     has_secret_findings: bool | None = Query(
         None,
         description="Audit filter over the Phase 1 detector's output. It "
@@ -719,6 +738,8 @@ async def list_sessions(
         body_source=body_source,
         machine_id=machine_id,
         work_unit_slug=work_unit_slug,
+        claude_session_id=claude_session_id,
+        coord_session_id=coord_session_id,
         has_secret_findings=has_secret_findings,
         secret_finding_kind=secret_finding_kind,
         detector_ran=detector_ran,

@@ -62,7 +62,7 @@ function message(err: unknown, fallback: string): string {
  * so — "nobody ruled" and "somebody ruled unreadably" are different facts.
  *
  * **The dial is subtractive.** It never grants authority — the per-document
- * `agent_writable` control decides whether an agent may write a document at all,
+ * `agent_write_tier` control decides whether an agent may write a document at all,
  * and this dial can only narrow what happens to a write that control already
  * allowed. That is why this hook lives beside `AgentWriteAccessControl` rather
  * than on a settings page: they are two halves of one question, and the answer

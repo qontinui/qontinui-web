@@ -138,6 +138,18 @@ import {
   MEMBER_AUTHOR_GLYPH_KINDS,
   MEMBER_KIND_CLASS,
 } from "@/app/(app)/admin/coord/members/memberStatus";
+// The consolidated sessions console — plan
+// `2026-08-26-sessions-console-consolidation` Phase 1. Not under
+// `admin/coord/`, and the guide's §1 scope clause is explicit that it covers
+// "any operator surface added after them" for exactly this case.
+import {
+  SESSION_ATTENTION_BY_KIND,
+  SESSION_AUTHOR_GLYPH_KINDS,
+  SESSION_STATUS_CLASS,
+  SESSION_WORK_ATTENTION_BY_KIND,
+  SESSION_WORK_CLASS,
+  SESSION_WORK_PALETTE,
+} from "@/components/sessions/sessionConsoleStatus";
 
 /**
  * Every kind→attention table in the console, paired with the palette that
@@ -304,6 +316,30 @@ const CONSOLE_PALETTES: ReadonlyArray<{
       authorGlyphKinds: MEMBER_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
+  // --- the consolidated sessions console ------------------------------------
+  {
+    surface: "sessions (/sessions)",
+    attentionByKind: SESSION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SESSION_STATUS_CLASS,
+      authorGlyphKinds: SESSION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  // The SECOND axis the same surface paints — `coord.sessions.session_status`,
+  // the work axis, whose terminal word is `finished`. A separate row rather
+  // than extra members of the one above because liveness and work are
+  // orthogonal (a live session can be finished; a closed one can be
+  // unfinished) and one badge cannot answer both. Plan
+  // `2026-09-01-session-finished-marker-and-unfinished-resume` Phase 4.
+  {
+    surface: "sessions — work axis (/sessions)",
+    attentionByKind: SESSION_WORK_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: SESSION_WORK_CLASS,
+      authorGlyphKinds:
+        SESSION_WORK_PALETTE.authorGlyphKinds as ReadonlySet<string>,
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -408,6 +444,11 @@ const DISCOVERED_MODULES: Record<string, Record<string, unknown>> = {
   ...import.meta.glob("../../app/**/*Status.ts", { eager: true }),
   // The one table that predates the `*Status.ts` convention.
   ...import.meta.glob("../operations/prPipeline.ts", { eager: true }),
+  // The sessions console files its table beside its own surface rather than
+  // under `admin/coord/`. Without this line the registry row above is
+  // REGISTERED but not DISCOVERED, which clause (2) below fails on — by
+  // design: a discovery that silently stops discovering is worse than none.
+  ...import.meta.glob("../sessions/*Status.ts", { eager: true }),
 };
 
 /**

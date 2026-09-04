@@ -30,6 +30,35 @@ export { indexMachinesByCoordDevice, resolveCiCapacity } from "./ciCapacity";
 export type { CiCapacityJoin, DevenvMachinesRead } from "./ciCapacity";
 export { useDevenvMachines } from "./useDevenvMachines";
 export { CiStatusPanel } from "./CiStatusPanel";
+export { DeviceDrainControl } from "./DeviceDrainControl";
+export type { DeviceDrainControlProps } from "./DeviceDrainControl";
+export {
+  DRAIN_PRESETS,
+  MAX_DRAIN_DAYS,
+  canActOnDrain,
+  describeDrainError,
+  formatDrainRemaining,
+  parseDrainEntry,
+  parseFleetDrain,
+  resolveDeviceDrain,
+  resolveDrainTarget,
+  toLocalInputValue,
+  validateDrainForm,
+} from "./fleetDrain";
+export type {
+  DeviceDrainState,
+  DrainEntry,
+  DrainTarget,
+  FleetDrainRead,
+} from "./fleetDrain";
+export {
+  FLEET_DRAIN_API,
+  FLEET_UNDRAIN_API,
+  postDrain,
+  postUndrain,
+  useFleetDrain,
+} from "./useFleetDrain";
+export type { UseFleetDrainResult } from "./useFleetDrain";
 export { FleetOverview } from "./FleetOverview";
 export type { FleetOverviewProps } from "./FleetOverview";
 export {

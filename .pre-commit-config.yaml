@@ -153,6 +153,25 @@ repos:
         # `down_revision` TOKEN instead of a 17-minute wait for a red check —
         # naming that token was the entire fix in 3 of 3 cases.
 
+      - id: coord-column-drop-guard
+        name: coord.* DROP/RENAME is not still read by a deployed or main coord
+        entry: python scripts/ci/check_coord_column_drops.py --files
+        language: system
+        files: ^backend/alembic/versions/.*\.py$
+        # SAME SCRIPT as .github/workflows/coord-column-drop-guard.yml's
+        # `coord-column-drop-guard` check and .qontinui/ci.toml's step of the
+        # same name (plan 2026-09-03-coord-column-drop-guard-on-web-migrations,
+        # Phase 2). pre-commit appends the changed revision files after
+        # `--files`, so only the revisions in this commit are scanned.
+        #
+        # Offline unless a coord.* DROP/RENAME is found; then it fetches
+        # coord's read-surface manifest and fails while a deployed or main
+        # coord still reads the surface. A composed DROP (an f-string or
+        # `.format()` template, the pdtier_01 shape) must declare
+        # `COORD_SCHEMA_DROPS` at module level or the hook fails before any
+        # network call. Shift-left: the CI check is the guard, this is the
+        # early answer.
+
       - id: gitignore-tracked-files
         name: no tracked file is gitignored
         # SAME SCRIPT as .github/workflows/gitignore-tracked-files.yml and

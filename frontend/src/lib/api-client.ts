@@ -1,4 +1,4 @@
-import { authService, tokenManager } from "@/services/service-factory";
+import { authService, httpClient } from "@/services/service-factory";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
 import type {
@@ -220,122 +220,30 @@ export interface ImageProcessingStatus {
 }
 
 /**
- * ApiClient - Single Responsibility: Handle HTTP requests with authentication
- * Manages API communication, retry logic, and token refresh
+ * ApiClient - Single Responsibility: the typed surface of the versioned REST
+ * API. All transport concerns (auth, CSRF, timeout, retry, token refresh) are
+ * delegated to the shared `HttpClient`; this class owns route shapes and
+ * response typing only.
  */
 class ApiClient {
-  private retryAttempts = 3;
-
   constructor() {
     new TokenValidator();
   }
 
+  /**
+   * Perform an authenticated call against the versioned API.
+   *
+   * Thin adapter over the shared `HttpClient`: it prefixes the API base and
+   * delegates everything else — auth headers, CSRF, request timeout, the
+   * 429/5xx retry policy and the staleness-gated, single-flight 401 refresh —
+   * to `httpClient.fetch`. There is deliberately no second copy of that
+   * plumbing here.
+   */
   private async fetchWithAuth(
     url: string,
-    options: RequestInit = {},
-    attempt = 1
+    options: RequestInit = {}
   ): Promise<Response> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string>),
-    };
-
-    // Token Refresh Strategy (Aligned with Backend):
-    // - Backend sliding window middleware handles proactive token refresh (5min threshold)
-    // - Frontend only refreshes reactively on 401 responses
-    // - This prevents race conditions where both frontend and backend try to refresh simultaneously
-    // - Backend sets new tokens via X-New-Access-Token and X-New-Refresh-Token headers
-    //
-    // Dual-mode auth:
-    // - Local (same-origin backend): HttpOnly cookies carry the session;
-    //   Authorization header is harmless extra info.
-    // - Remote (NEXT_PUBLIC_API_URL points off-localhost, e.g. AWS staging):
-    //   browser refuses to attach *.qontinui.io cookies to localhost:3001
-    //   requests, so the in-memory + sessionStorage Bearer token is the only
-    //   working auth path. Same shape as services/http-client.ts.
-    const accessToken = tokenManager.getAccessToken();
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    }
-
-    // Add CSRF token for state-changing requests
-    const csrfToken = csrfService.getToken();
-    if (
-      csrfToken &&
-      ["POST", "PUT", "DELETE", "PATCH"].includes(options.method || "GET")
-    ) {
-      headers["X-CSRF-Token"] = csrfToken;
-    }
-
-    // Add timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1${url}`, {
-        ...options,
-        headers,
-        credentials: "include",
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // Handle 401 Unauthorized
-      if (response.status === 401 && attempt === 1) {
-        // Try to refresh the token via authService
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          // Retry the original request with new token
-          return this.fetchWithAuth(url, options, attempt + 1);
-        }
-      }
-
-      // Handle rate limiting
-      if (response.status === 429) {
-        const retryAfter = response.headers.get("Retry-After");
-        const retryAfterSeconds = retryAfter ? parseInt(retryAfter) : 60;
-
-        if (attempt <= this.retryAttempts) {
-          console.warn(
-            `Rate limited. Retrying after ${retryAfterSeconds} seconds...`
-          );
-          await new Promise((resolve) =>
-            setTimeout(resolve, retryAfterSeconds * 1000)
-          );
-          return this.fetchWithAuth(url, options, attempt + 1);
-        }
-
-        throw new Error("Rate limit exceeded. Please try again later.");
-      }
-
-      // Handle server errors with retry
-      if (response.status >= 500 && attempt <= this.retryAttempts) {
-        const backoffTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-        console.warn(`Server error. Retrying in ${backoffTime}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, backoffTime));
-        return this.fetchWithAuth(url, options, attempt + 1);
-      }
-
-      return response;
-    } catch (error: unknown) {
-      clearTimeout(timeoutId);
-
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error("Request timeout");
-      }
-
-      // Check for network errors
-      if (!navigator.onLine) {
-        throw new Error("No internet connection. Please check your network.");
-      }
-
-      throw error;
-    }
-  }
-
-  async refreshAccessToken(): Promise<boolean> {
-    return authService.refreshAccessToken();
+    return httpClient.fetch(`${API_BASE_URL}/api/v1${url}`, options);
   }
 
   async logout() {
@@ -1082,33 +990,10 @@ class ApiClient {
   }
 
   async getWebSocketToken(): Promise<string | null> {
-    // Prefer the client-held Cognito bearer — hosted-UI sessions (the only
-    // prod login flow) never set the HttpOnly `access_token` cookie, so the
-    // cookie-reading route below 401s for them. The backend WS auth
-    // (`get_current_user_from_ws`) verifies the same bearer the HTTP
-    // `Authorization` header carries. Mirrors HttpClient.getWebSocketToken.
-    const bearer = tokenManager.getAccessToken();
-    if (bearer && !tokenManager.isAccessTokenExpired()) {
-      return bearer;
-    }
-
-    try {
-      const response = await fetch("/api/v1/ws-token", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        console.error(
-          "[ApiClient] Failed to get WebSocket token:",
-          response.status
-        );
-        return null;
-      }
-      const data = await response.json();
-      return data.token || null;
-    } catch (error) {
-      console.error("[ApiClient] Error getting WebSocket token:", error);
-      return null;
-    }
+    // Delegates to HttpClient, which owns the one copy of this logic (prefer
+    // the client-held Cognito bearer, else the same-origin `/api/v1/ws-token`
+    // route that echoes the HttpOnly cookie).
+    return httpClient.getWebSocketToken();
   }
 
   /**

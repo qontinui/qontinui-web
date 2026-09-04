@@ -75,7 +75,7 @@ import { SpawnModal } from "@/components/admin/coord/SpawnModal";
 import { SpawnPlanRow } from "@/components/admin/coord/SpawnPlanRow";
 import type { CoordPlanRow } from "@/components/admin/coord/planStatus";
 import { httpClient } from "@/services/service-factory";
-import { derivePlansHealth } from "../plans/plansHealth";
+import { derivePlansHealth, SHEPHERD_SLUG_PREFIX } from "../plans/plansHealth";
 
 const API = "/api/v1/operations";
 const POLL_INTERVAL_MS = 15_000;
@@ -126,6 +126,9 @@ export default function CoordSpawnPage() {
     try {
       const qs = new URLSearchParams();
       if (status && status !== "any") qs.set("status", status);
+      // Shepherd rows are coord's own merge-escalation bookkeeping, not a
+      // plan anyone can spawn a session against — see `SHEPHERD_SLUG_PREFIX`.
+      qs.set("exclude_slug_prefix", SHEPHERD_SLUG_PREFIX);
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       const body = await httpClient.get<PlansListResponse>(
         `${API}/plans${suffix}`
