@@ -42,7 +42,12 @@ import {
   type RepoTrainRow,
   type TrainSummary,
 } from "./trainActivity";
-import type { PrRow, ProposalDetail, TrainHealth } from "./mergeTypes";
+import type {
+  MergeEconomics,
+  PrRow,
+  ProposalDetail,
+  TrainHealth,
+} from "./mergeTypes";
 
 const NOW = Date.parse("2026-07-25T12:00:00.000Z");
 const ago = (secs: number) => new Date(NOW - secs * 1000).toISOString();
@@ -87,6 +92,7 @@ function renderTab(opts: {
   proposals?: ProposalDetail[];
   prs?: PrRow[];
   health?: TrainHealth | null;
+  economics?: Record<string, MergeEconomics>;
   loaded?: boolean;
   query?: string;
   onActed?: () => void;
@@ -95,12 +101,14 @@ function renderTab(opts: {
     opts.proposals ?? [],
     opts.prs ?? [],
     opts.health ?? null,
-    NOW
+    NOW,
+    opts.economics
   );
   const summary: TrainSummary = buildTrainSummary(
     opts.health ?? null,
     rows,
-    NOW
+    NOW,
+    opts.economics
   );
   return render(
     <MergeTrainActivity
@@ -409,5 +417,118 @@ describe("MergeTrainActivity emergency stop", () => {
     expect(result).toHaveTextContent("false");
     expect(result).toHaveTextContent("1 repo(s) affected");
     expect(onActed).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Candidate-CI churn (plan
+// 2026-07-27-coord-green-candidates-discarded-always-zero, F3): three per-repo
+// readings on the collapsed row, two fleet totals in the header. `—` is
+// UNKNOWN and carries coord's basis / coverage note as its title; it is never
+// a 0.
+// ---------------------------------------------------------------------------
+describe("MergeTrainActivity candidate-CI churn", () => {
+  const WEB = "qontinui/qontinui-web";
+  const CORE = "qontinui/qontinui-core";
+  const measured: MergeEconomics = {
+    green_candidates_discarded: 15,
+    base_mismatch_discards: 13,
+    candidate_ci_minutes_per_land: 47.4,
+    green_candidates_discarded_basis: "green candidates discarded in 24h",
+    base_mismatch_discards_basis: "base moved under the candidate",
+    coverage_note: "24h window",
+  };
+  const unknown: MergeEconomics = {
+    green_candidates_discarded: null,
+    base_mismatch_discards: null,
+    candidate_ci_minutes_per_land: null,
+    coverage_note: "no candidate CI observed in window",
+  };
+
+  it("measured: the three values sit on the collapsed row with coord's basis on hover", () => {
+    renderTab({ prs: [pr()], economics: { [WEB]: measured } });
+    const cluster = screen.getByTestId(`train-churn-${WEB}`);
+    const green = within(cluster).getByTestId("churn-green-discarded");
+    expect(green).toHaveTextContent(/^green discarded 15$/);
+    expect(green).toHaveAttribute("title", "green candidates discarded in 24h");
+    expect(green).not.toHaveAttribute("data-unknown");
+    const base = within(cluster).getByTestId("churn-base-move-discards");
+    expect(base).toHaveTextContent(/^base-move discards 13$/);
+    expect(base).toHaveAttribute("title", "base moved under the candidate");
+    const rate = within(cluster).getByTestId("churn-ci-minutes-per-land");
+    expect(rate).toHaveTextContent(/^CI min \/ land 47\.4$/);
+    expect(rate).toHaveAttribute("title", "24h window");
+    // No raw field names reach the surface (R8).
+    expect(cluster).not.toHaveTextContent("green_candidates_discarded");
+
+    expect(screen.getByTestId("train-green-discarded")).toHaveTextContent("15");
+    expect(screen.getByTestId("train-green-discarded")).toHaveAttribute(
+      "title",
+      "green candidates discarded in 24h"
+    );
+    expect(screen.getByTestId("train-base-move-discards")).toHaveTextContent(
+      "13"
+    );
+  });
+
+  it("partially unknown: the null repo reads — with its coverage note; the total names it", () => {
+    renderTab({
+      prs: [pr(), pr({ repo: CORE, pr_number: 2 })],
+      economics: { [WEB]: measured, [CORE]: unknown },
+    });
+    const core = screen.getByTestId(`train-churn-${CORE}`);
+    for (const id of [
+      "churn-green-discarded",
+      "churn-base-move-discards",
+      "churn-ci-minutes-per-land",
+    ]) {
+      const cell = within(core).getByTestId(id);
+      expect(cell).toHaveTextContent(/—$/);
+      expect(cell).not.toHaveTextContent("0");
+      expect(cell).toHaveAttribute("data-unknown", "true");
+      expect(cell).toHaveAttribute(
+        "title",
+        "no candidate CI observed in window"
+      );
+    }
+    expect(
+      within(screen.getByTestId(`train-churn-${WEB}`)).getByTestId(
+        "churn-green-discarded"
+      )
+    ).toHaveTextContent(/^green discarded 15$/);
+
+    expect(screen.getByTestId("train-green-discarded")).toHaveTextContent(
+      "15 (1 repo unknown)"
+    );
+    expect(screen.getByTestId("train-base-move-discards")).toHaveTextContent(
+      "13 (1 repo unknown)"
+    );
+  });
+
+  it("all unknown / no economics: every reading and both totals read —, never 0", () => {
+    renderTab({ prs: [pr()] });
+    const cluster = screen.getByTestId(`train-churn-${WEB}`);
+    for (const id of [
+      "churn-green-discarded",
+      "churn-base-move-discards",
+      "churn-ci-minutes-per-land",
+    ]) {
+      const cell = within(cluster).getByTestId(id);
+      expect(cell).toHaveTextContent(/—$/);
+      expect(cell).toHaveAttribute(
+        "title",
+        "coord served no merge economics for this repo"
+      );
+    }
+    expect(screen.getByTestId("train-green-discarded")).toHaveTextContent(
+      /^Green CI discarded—$/
+    );
+    expect(screen.getByTestId("train-green-discarded")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Unknown: coord did not measure it")
+    );
+    expect(screen.getByTestId("train-base-move-discards")).toHaveTextContent(
+      /^Base-move discards—$/
+    );
   });
 });
