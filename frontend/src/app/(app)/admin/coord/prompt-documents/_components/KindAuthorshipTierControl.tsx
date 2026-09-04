@@ -97,8 +97,8 @@ const CONFIRMED_TIERS: readonly AgentWriteTier[] = [
  *
  * ## It renders coord's `effective_tier`, and does not re-derive it
  *
- * The first version of this function rebuilt the answer from `floor` /
- * `unreadable` / `tier` / `builtin_default_denies`. That put the
+ * The first version of this function rebuilt the answer from `unreadable` /
+ * `tier` / the compile-time default. That put the
  * never-overstate-access rule in this file, where it was wrong twice: a stored
  * string outside the vocabulary fell through to a green `success` badge reading
  * "the operator has opened this kind", which is the exact input coord
@@ -147,16 +147,6 @@ function describe(
 
   const permissive = row.effective_tier !== "deny";
 
-  if (row.floor) {
-    return {
-      label: "denied — floor",
-      variant: "destructive",
-      title:
-        "Denied by a coord rule no stored tier lifts. Documents of this kind " +
-        "are copied into a machine's own harness configuration, so an agent " +
-        "authoring one would author the permission rules agents then run under.",
-    };
-  }
   if (row.unreadable) {
     return {
       label: "unreadable",
@@ -165,21 +155,6 @@ function describe(
         "A tenant setting EXISTS and coord cannot interpret its value. " +
         "Enforcement fail-closes to `deny` on it, so agent writes to this kind " +
         "are being refused. Set the tier again to correct the row.",
-    };
-  }
-  // `settable: false` on a row coord did NOT mark as a floor. The two are the
-  // same claim today, so this arm is unreachable — but they are separate wire
-  // fields, and a row asserting one without the other used to render "allowed
-  // by default" beside "No setting can open this kind." Say the honest thing
-  // instead of picking whichever field is read first.
-  if (!row.settable) {
-    return {
-      label: permissive ? `${row.effective_tier} — locked` : "denied — locked",
-      variant: permissive ? "secondary" : "destructive",
-      title:
-        "Coord reports this kind as not settable without reporting it as a " +
-        "floor. The tier in force is what coord resolved; no control here can " +
-        "change it.",
     };
   }
   if (row.effective_source === "default") {
@@ -275,22 +250,38 @@ function protectedDocuments(row: KindTierRow): string[] {
 /**
  * What CLEARING this kind produces, named rather than implied.
  *
- * `builtin_default_denies` is the one wire field on `KindTierRow` that says
- * which way coord's compile-time answer falls, and it is the only thing that
- * makes "coord's built-in default applies again" a statement rather than a
- * gesture. Without it, clearing an OPEN kind whose built-in default denies is a
- * closing action rendered as a neutral one — and the asymmetry this control is
- * built on (opening is confirmed, closing and clearing are not) only holds if
- * the operator can see which direction a click goes.
+ * `builtin_default_tier` is the one wire field on `KindTierRow` that says which
+ * way coord's compile-time answer falls, and it is the only thing that makes
+ * "coord's built-in default applies again" a statement rather than a gesture.
+ * Without it, clearing an OPEN kind whose built-in default denies is a closing
+ * action rendered as a neutral one — and the asymmetry this control is built on
+ * (opening is confirmed, closing and clearing are not) only holds if the
+ * operator can see which direction a click goes.
+ *
+ * It was a BOOLEAN (`builtin_default_denies`) until coord's compiled default
+ * for the six intent kinds became `allow_with_notification`. A boolean flattens
+ * that into "does not deny", which would have told an operator clearing one of
+ * those kinds that it "leaves it open" while dropping the precondition that
+ * makes the write ANNOUNCED — the one fact that separates that default from
+ * plain `allow`. Name the tier instead of classifying it.
+ *
+ * An absent or unrecognised value is UNKNOWN, and the copy says so rather than
+ * guessing a direction — the same posture `describe` takes for `effective_tier`.
  */
 function clearTitle(row: KindTierRow): string {
-  // No floor arm: the button only renders inside `row.settable`, and a floored
-  // kind is not settable. Writing one would add a branch nothing can reach.
   const base =
     "Remove the tenant setting so coord's built-in default applies again";
-  return row.builtin_default_denies
-    ? `${base} — for this kind that default DENIES agent authorship, so clearing CLOSES it.`
-    : `${base} — for this kind that default ALLOWS agent authorship, so clearing leaves it open and tracking coord's default.`;
+  if (!isAgentWriteTier(row.builtin_default_tier)) {
+    return `${base}. This coord does not report which tier that default is, so the direction of this click is UNKNOWN.`;
+  }
+  switch (row.builtin_default_tier) {
+    case "deny":
+      return `${base} — for this kind that default DENIES agent authorship, so clearing CLOSES it.`;
+    case "allow_with_notification":
+      return `${base} — for this kind that default is \`allow_with_notification\`, so clearing leaves it open but every agent write must then carry a notification_ref.`;
+    case "allow":
+      return `${base} — for this kind that default ALLOWS agent authorship unannounced, so clearing leaves it open and tracking coord's default.`;
+  }
 }
 
 export function KindAuthorshipTierControl() {
@@ -417,24 +408,34 @@ export function KindAuthorshipTierControl() {
                 data-testid={`kind-tier-row-${row.kind}`}
               >
                 <code className="text-sm font-medium">{row.kind}</code>
+                {/*
+                  No `Lock` on this badge, and no `settable` branch below it.
+                  Coord removed the unliftable kind-wide FLOOR level from its
+                  resolver, so both wire fields are gone and every kind is
+                  settable. A lock icon over a control that always works is a
+                  promise about a restriction that no longer exists. (The `Lock`
+                  further down, on `protected_documents`, is a DIFFERENT and
+                  still-live claim: those denies are per-DOCUMENT, answered at
+                  step 2b, and a per-kind `allow` genuinely does not reach them.)
+                */}
                 <Badge variant={badge.variant} title={badge.title}>
-                  {row.floor && <Lock className="mr-1 size-3" />}
                   {badge.label}
                 </Badge>
                 {/*
                   The names a kind-wide `allow` does NOT reach. Coord answers
                   these at resolution step 2b, ABOVE the per-kind table, and
                   sends them precisely so this control stops reading as "allow
-                  opens every document of this kind" — `policy` renders
-                  `settable: true` and `floor: false`, so without this an
-                  operator would reasonably read an `allow` as opening
+                  opens every document of this kind" — `policy` renders a live
+                  control with a `builtin_default_tier` of `allow`, so without
+                  this an operator would reasonably read an `allow` as opening
                   `policy/session-protocol`, `policy/security-and-autonomy` and
                   `policy/escalation-bar`, the three documents that ARE the
                   authority interpreting every other document. It does not.
 
                   Empty for most kinds, including all six intent kinds, whose
-                  compiled-in answer is the liftable `KindDefault` this lever
-                  exists to lift — so this renders nothing in the common case.
+                  compiled-in answer is the liftable `KindDefaultTier` this
+                  lever exists to move — so this renders nothing in the common
+                  case.
                 */}
                 {reserved.length > 0 && (
                   <span
@@ -453,46 +454,36 @@ export function KindAuthorshipTierControl() {
                   </span>
                 )}
                 <div className="ml-auto flex flex-wrap items-center gap-2">
-                  {row.settable ? (
-                    <>
-                      {offeredTiers.map((tier) => (
-                        <Button
-                          key={tier}
-                          size="sm"
-                          variant={row.tier === tier ? "default" : "outline"}
-                          disabled={saving || row.tier === tier}
-                          title={tierHelp(tier, {
-                            subject: "kind",
-                            notifyEnforced: enforced,
-                          })}
-                          onClick={() => {
-                            if (CONFIRMED_TIERS.includes(tier)) {
-                              setPending({ kind: row.kind, tier });
-                            } else {
-                              void setTier(row.kind, tier);
-                            }
-                          }}
-                        >
-                          {tierLabel(tier)}
-                        </Button>
-                      ))}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={
-                          saving || (row.tier === null && !row.unreadable)
+                  {offeredTiers.map((tier) => (
+                    <Button
+                      key={tier}
+                      size="sm"
+                      variant={row.tier === tier ? "default" : "outline"}
+                      disabled={saving || row.tier === tier}
+                      title={tierHelp(tier, {
+                        subject: "kind",
+                        notifyEnforced: enforced,
+                      })}
+                      onClick={() => {
+                        if (CONFIRMED_TIERS.includes(tier)) {
+                          setPending({ kind: row.kind, tier });
+                        } else {
+                          void setTier(row.kind, tier);
                         }
-                        title={clearTitle(row)}
-                        onClick={() => void clearTier(row.kind)}
-                      >
-                        clear
-                      </Button>
-                    </>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      No setting can open this kind.
-                    </span>
-                  )}
+                      }}
+                    >
+                      {tierLabel(tier)}
+                    </Button>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={saving || (row.tier === null && !row.unreadable)}
+                    title={clearTitle(row)}
+                    onClick={() => void clearTier(row.kind)}
+                  >
+                    clear
+                  </Button>
                 </div>
               </li>
             );

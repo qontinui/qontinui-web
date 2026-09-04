@@ -412,16 +412,35 @@ export interface PromptDocumentSummary {
    */
   agent_write_source?: "operator" | "operator_kind" | "default";
   /**
-   * What coord's built-in rule says, IGNORING any operator override — `false`
-   * exactly for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list.
+   * The TIER coord's built-in rule gives this exact `(kind, name)`, IGNORING
+   * any operator override at either level — the same vocabulary as
+   * `agent_write_effective_tier`.
    *
-   * That list holds TWO families, protected for different reasons: the
+   * `"deny"` for a document on coord's `AGENT_UNWRITABLE_DOCUMENTS` list that
+   * carries a deny. Those are protected for different reasons: the
    * meta-policies (`kind: "policy"`), which define how every other document is
-   * classified and applied; and the three canonical session briefings
+   * classified and applied; the three canonical session briefings
    * (`kind: "session_briefing"`, see `SESSION_BRIEFING_DOCUMENT_NAMES`), which
-   * are pushed into every session's system prompt. The distinction does not
-   * change this field's meaning, but it does change what the operator must be
-   * told when overriding it — see `AgentWriteAccessControl`.
+   * are pushed into every session's system prompt; and `claude_settings`, the
+   * harness permission baseline a machine COPIES into its own configuration.
+   * The distinction does not change this field's meaning, but it does change
+   * what the operator must be told when overriding it — see
+   * `AgentWriteAccessControl`.
+   *
+   * `"allow_with_notification"` for the six INTENT kinds. Coord moved their
+   * compiled-in default off `deny`: an agent MAY author them, and every such
+   * write must carry a `notification_ref`.
+   *
+   * **Tier-valued, not boolean.** It was `agent_write_builtin_default?: boolean`
+   * until that move, and a boolean cannot hold the notification tier — those
+   * six kinds would have read as plain `true`, indistinguishable from an
+   * ordinary unprotected document, when in fact their default imposes a
+   * precondition. No lossy boolean alias is served beside it, deliberately: a
+   * lossy projection is how the notification tier goes missing again.
+   *
+   * Typed as `string`, not `AgentWriteTier`: this is a cast over `JSON.parse`
+   * output rather than a check. Narrow it before rendering and treat anything
+   * else — including absent, from a coord that predates the field — as UNKNOWN.
    *
    * This is NOT derivable from `agent_write_source`. Once an operator touches a
    * document at all, `source` becomes `"operator"` permanently, so a
@@ -430,7 +449,7 @@ export interface PromptDocumentSummary {
    * re-opens it silently. Whether a document is one the code protects does not
    * change when the row is written, and only this field says so.
    */
-  agent_write_builtin_default?: boolean;
+  agent_write_builtin_default_tier?: string;
   updated_by: string | null;
   updated_at: string;
 }

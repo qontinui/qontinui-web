@@ -8297,9 +8297,15 @@ async def list_prompt_document_kind_tiers(
     """This tenant's per-kind agent authorship tiers. Any tenant member.
 
     One row per KIND, not one per stored row: "no row" is a meaningful state
-    (coord's compile-time default answers instead), and the two facts that
-    matter most — the unliftable ``floor`` and the liftable
-    ``builtin_default_denies`` — are not in coord's table at all.
+    (coord's compile-time default answers instead), and the fact that matters
+    most — ``builtin_default_tier``, the TIER that default lands on — is not in
+    coord's table at all.
+
+    It used to be two facts, ``floor`` and ``builtin_default_denies``. Coord
+    removed the unliftable kind-wide FLOOR level from its resolver, so ``floor``
+    and its ``settable`` twin are gone; and the surviving one became
+    tier-valued, because the six intent kinds now default to
+    ``allow_with_notification``, which a boolean cannot hold.
 
     Read-only for any tenant member, matching the sibling document reads; the
     PUT/DELETE below are tenant-admin-gated and coord re-checks.

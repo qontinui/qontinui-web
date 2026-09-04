@@ -71,7 +71,10 @@ function renderEditor(kind: PromptDocumentKind) {
 }
 
 /** Replace the body textarea's contents wholesale. */
-async function typeBody(user: ReturnType<typeof userEvent.setup>, text: string) {
+async function typeBody(
+  user: ReturnType<typeof userEvent.setup>,
+  text: string
+) {
   const field = screen.getByTestId("doc-body");
   await user.clear(field);
   await user.paste(text);
@@ -413,7 +416,7 @@ describe("AgentWriteAccessControl — the two protected families", () => {
       agent_writable: null,
       agent_write_effective: false,
       agent_write_source: "default",
-      agent_write_builtin_default: false,
+      agent_write_builtin_default_tier: "deny",
     };
   }
 
@@ -457,7 +460,9 @@ describe("AgentWriteAccessControl — the two protected families", () => {
 
   it("keys the badge's reason on the kind too", () => {
     const doc = protectedDoc("session_briefing");
-    render(<AgentWriteAccessControl doc={doc} saving={false} onSet={vi.fn()} />);
+    render(
+      <AgentWriteAccessControl doc={doc} saving={false} onSet={vi.fn()} />
+    );
     expect(
       screen.getByTestId(`doc-access-${doc.kind}-${doc.name}`)
     ).toHaveAttribute(
@@ -477,7 +482,7 @@ describe("AgentWriteAccessControl — the two protected families", () => {
     const onSet = vi.fn().mockResolvedValue(true);
     const doc = protectedDoc("session_briefing");
     doc.name = "my-own-briefing";
-    doc.agent_write_builtin_default = true;
+    doc.agent_write_builtin_default_tier = "allow";
     render(<AgentWriteAccessControl doc={doc} saving={false} onSet={onSet} />);
 
     await user.click(

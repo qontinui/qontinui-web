@@ -512,9 +512,9 @@ export function AgentWriteAccessControl({
   /**
    * Does choosing this tier override a COMPILE-TIME protection?
    *
-   * Keyed on `agent_write_builtin_default` — what the code says regardless of
-   * any override — NOT on `agent_write_source === "default"`. The latter looks
-   * equivalent and is not: `source` flips to "operator" the first time the
+   * Keyed on `agent_write_builtin_default_tier` — what the code says regardless
+   * of any override — NOT on `agent_write_source === "default"`. The latter
+   * looks equivalent and is not: `source` flips to "operator" the first time the
    * document is written and never flips back, so that version of this guard
    * would confirm the first time a meta-policy was opened and stay silent
    * forever after. Open it, protect it again, and the third click would re-open
@@ -528,10 +528,19 @@ export function AgentWriteAccessControl({
    * open meta-policy between `allow` and `allow_with_notification` is not
    * confirmed — that click does not widen access, and confirming a
    * non-widening change trains the operator to dismiss the dialog.
+   *
+   * The comparison is against `"deny"` SPECIFICALLY, not against "anything that
+   * is not allow". Coord's compiled default for the six INTENT kinds is
+   * `allow_with_notification` — a protection, but not a compile-time REFUSAL:
+   * a per-document `allow` there drops an announcement requirement rather than
+   * overriding a deny, which is not what this dialog's "you are overriding a
+   * built-in protection" copy describes. A value this build cannot read is
+   * UNKNOWN and takes no branch (`undefined !== "deny"`), so a coord that
+   * predates the field leaves the dialog silent rather than firing it blind.
    */
   const confirmsTier = (tier: AgentWriteTier) =>
     tier !== "deny" &&
-    doc.agent_write_builtin_default === false &&
+    doc.agent_write_builtin_default_tier === "deny" &&
     resolved.state === "known" &&
     resolved.tier === "deny";
 

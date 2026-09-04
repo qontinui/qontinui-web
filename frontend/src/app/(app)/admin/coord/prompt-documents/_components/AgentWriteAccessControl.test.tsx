@@ -73,7 +73,7 @@ function doc(over: Partial<PromptDocumentSummary> = {}): PromptDocumentSummary {
     agent_write_effective_tier: "allow",
     agent_write_effective: true,
     agent_write_source: "operator_kind",
-    agent_write_builtin_default: true,
+    agent_write_builtin_default_tier: "allow",
     ...over,
   };
 }
