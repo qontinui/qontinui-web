@@ -38,4 +38,4 @@ frontend/tests/e2e/pages/testing-project.spec.ts 1
 frontend/tests/e2e/style-gate/style-capture.spec.ts 1
 frontend/tests/e2e/ui-bridge-graph-editor.spec.ts 0
 frontend/tests/e2e/web-extraction-debug.spec.ts 0
-frontend/tests/e2e/web-extraction.spec.ts 4
+frontend/tests/e2e/web-extraction.spec.ts 0
