@@ -47,6 +47,12 @@ test.describe("Configure - Finding Rules", () => {
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
+
+    // DELIBERATE RED (Phase 2.5 gate, reverted in the next commit): proves the
+    // changed-specs PR lane can FAIL. This locator does not exist on the page.
+    await expect(
+      page.locator("[data-testid='phase-2-5-deliberate-red-no-such-element']"),
+    ).toBeVisible({ timeout: 3000 });
   });
 
   test("should display Finding Categories heading", async ({ page }) => {
