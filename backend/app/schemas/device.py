@@ -73,9 +73,11 @@ class PairConfirmRequest(BaseModel):
     """Request body for ``POST /api/v1/devices/pair-confirm``.
 
     Issued by the ``/connect-runner`` page after the user clicks
-    "Connect". The web backend forwards ``(state, user_id, device_id,
-    web_session_token)`` to coord's ``POST /coord/devices/pair-complete``,
-    which returns the device-token JWT.
+    "Connect". The web backend forwards ``(state, device_id)`` to coord's
+    ``POST /coord/devices/pair-complete`` under its service token plus
+    ``X-Qontinui-User-Id`` (the signed-in user), and coord returns the
+    device-token JWT once it has verified that user's membership in the
+    flow's tenant.
     """
 
     state: str = Field(
