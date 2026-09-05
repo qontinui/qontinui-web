@@ -10,9 +10,27 @@
  *
  * These pages all require a project to be selected (wrapped in RequireProject).
  * Tests verify both the no-project state and the with-project state.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a conditional the test already tolerated — never a
+ * `waitForTimeout(N)` followed by a non-waiting read, which asserts on
+ * wall-clock. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(2000)` after a page navigation. */
+const PAGE_SETTLE_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(500)` after the project switcher opens. */
+const MENU_OPEN_TIMEOUT = 5000;
+/** Replaces the old `waitForTimeout(1000)` after a project item is picked. */
+const PROJECT_SELECT_TIMEOUT = 5000;
+/** Replaces the old `waitForTimeout(500)` / `(1000)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 // Tests below navigate to "/build/workflows" instead of the more obvious
 // "/dashboard" because /dashboard is a redirect stub
@@ -68,29 +86,50 @@ test.describe("Automation Builder - Core Pages", () => {
       // Navigate to a post-redirect destination first to select a project
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
-      // Try to select a project via the project switcher
+      // Try to select a project via the project switcher. Bounded wait for
+      // it, tolerated if it never appears — the conditional below is the
+      // test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         const projectCount = await projectItems.count();
 
         if (projectCount > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
-      // Navigate to automation builder
+      // Navigate to automation builder. RequireProject settles on a prompt
+      // ("No project selected" / "No projects yet") or on the builder's own
+      // heading — either is the state the screenshot and content read want.
       await page.goto("/automation-builder");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await page
+        .locator("text=No project selected")
+        .or(page.locator("text=No projects yet"))
+        .or(page.locator("h1"))
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-main-with-project.png",
@@ -126,25 +165,44 @@ test.describe("Automation Builder - Core Pages", () => {
       // Select a project first
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/overview");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+
+      // Bounded wait for the overview heading, tolerated if absent (with no
+      // project selected the RequireProject prompt renders instead).
+      const heading = page.getByRole("heading", { name: /Project Overview/i });
+      await heading
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-overview-with-project.png",
@@ -155,7 +213,6 @@ test.describe("Automation Builder - Core Pages", () => {
       expect(pageContent).not.toContain("Internal Server Error");
 
       // Verify overview heading is visible
-      const heading = page.getByRole("heading", { name: /Project Overview/i });
       const headingVisible = await heading
         .isVisible({ timeout: 5000 })
         .catch(() => false);
@@ -170,56 +227,60 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/overview");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+
+      // Statistic card titles. Bounded wait for any of them, tolerated if
+      // none renders (no project selected).
+      const statesCard = page.getByText("States", { exact: false });
+      const transitionsCard = page.getByText("Transitions", { exact: false });
+      const workflowsCard = page.getByText("Workflows", { exact: false });
+      const imagesCard = page.getByText("Pattern Images", { exact: false });
+      await statesCard
+        .or(transitionsCard)
+        .or(workflowsCard)
+        .or(imagesCard)
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-overview-stats.png",
         fullPage: true,
       });
 
-      // Verify statistic card titles are visible
-      const statesCard = page.getByText("States", { exact: false });
-      const transitionsCard = page.getByText("Transitions", { exact: false });
-      const workflowsCard = page.getByText("Workflows", { exact: false });
-      const imagesCard = page.getByText("Pattern Images", { exact: false });
-
-      // At least some stat cards should be present if project is loaded
-      const _statsVisible =
-        (await statesCard
-          .first()
-          .isVisible()
-          .catch(() => false)) ||
-        (await transitionsCard
-          .first()
-          .isVisible()
-          .catch(() => false)) ||
-        (await workflowsCard
-          .first()
-          .isVisible()
-          .catch(() => false)) ||
-        (await imagesCard
-          .first()
-          .isVisible()
-          .catch(() => false));
-
+      // At least some stat cards should be present if project is loaded —
+      // the bounded wait above is that read; its old non-waiting copy
+      // (`_statsVisible`) was never consumed and is gone.
       // If project is loaded, stats should be visible
       // If no project, RequireProject message should be visible
       const pageContent = await page.content();
@@ -229,33 +290,51 @@ test.describe("Automation Builder - Core Pages", () => {
     test("displays quick navigation links", async ({ page }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/overview");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
 
-      // Verify quick navigation buttons
+      // Verify quick navigation buttons. Bounded wait for either, tolerated
+      // if neither renders (no project selected).
       const stateViewBtn = page.getByRole("button", {
         name: /Open State View/i,
       });
       const transitionsBtn = page.getByRole("button", {
         name: /Open Transitions/i,
       });
+      await stateViewBtn
+        .or(transitionsBtn)
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
 
       const stateViewVisible = await stateViewBtn
         .isVisible({ timeout: 3000 })
@@ -302,25 +381,51 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/images");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+
+      // Look for upload button or drag-and-drop area, or the search input
+      // (images manager has search). Bounded wait for either visible one,
+      // tolerated if neither renders (no project selected). The hidden file
+      // input is read by count below and never waited on for visibility.
+      const uploadButton = page.getByRole("button", { name: /upload/i });
+      const searchInput = page.locator(
+        'input[placeholder*="search" i], input[placeholder*="Search" i]'
+      );
+      await uploadButton
+        .or(searchInput)
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-images-library.png",
@@ -330,8 +435,6 @@ test.describe("Automation Builder - Core Pages", () => {
       const pageContent = await page.content();
       expect(pageContent).not.toContain("Internal Server Error");
 
-      // Look for upload button or drag-and-drop area
-      const uploadButton = page.getByRole("button", { name: /upload/i });
       const uploadVisible = await uploadButton
         .first()
         .isVisible({ timeout: 3000 })
@@ -341,10 +444,6 @@ test.describe("Automation Builder - Core Pages", () => {
       const fileInput = page.locator('input[type="file"]');
       const fileInputExists = (await fileInput.count()) > 0;
 
-      // Look for search input (images manager has search)
-      const searchInput = page.locator(
-        'input[placeholder*="search" i], input[placeholder*="Search" i]'
-      );
       const searchVisible = await searchInput
         .first()
         .isVisible({ timeout: 3000 })
@@ -381,25 +480,46 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/states");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+
+      // The three tabs. Bounded wait for the first, tolerated if absent (no
+      // project selected).
+      const definitionTab = page.getByRole("tab", { name: /Definition/i });
+      const stateViewTab = page.getByRole("tab", { name: /State View/i });
+      const transitionsTab = page.getByRole("tab", { name: /Transitions/i });
+      await definitionTab
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-states-tabs.png",
@@ -410,10 +530,6 @@ test.describe("Automation Builder - Core Pages", () => {
       expect(pageContent).not.toContain("Internal Server Error");
 
       // Verify the three tabs are present
-      const definitionTab = page.getByRole("tab", { name: /Definition/i });
-      const stateViewTab = page.getByRole("tab", { name: /State View/i });
-      const transitionsTab = page.getByRole("tab", { name: /Transitions/i });
-
       const definitionVisible = await definitionTab
         .isVisible({ timeout: 5000 })
         .catch(() => false);
@@ -430,25 +546,43 @@ test.describe("Automation Builder - Core Pages", () => {
     }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/states");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+
+      // Bounded wait for the tab, tolerated if absent (no project selected).
+      const definitionTab = page.getByRole("tab", { name: /Definition/i });
+      await definitionTab
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-states-definition.png",
@@ -456,7 +590,6 @@ test.describe("Automation Builder - Core Pages", () => {
       });
 
       // Definition tab should be selected by default
-      const definitionTab = page.getByRole("tab", { name: /Definition/i });
       const isActive = await definitionTab
         .isVisible({ timeout: 5000 })
         .catch(() => false);
@@ -470,27 +603,43 @@ test.describe("Automation Builder - Core Pages", () => {
     test("can switch between tabs", async ({ page }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/states");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
 
+      // Bounded wait for the tab, tolerated if absent (no project selected).
       const stateViewTab = page.getByRole("tab", { name: /State View/i });
+      await stateViewTab
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
       const tabVisible = await stateViewTab
         .isVisible({ timeout: 5000 })
         .catch(() => false);
@@ -498,7 +647,9 @@ test.describe("Automation Builder - Core Pages", () => {
       if (tabVisible) {
         // Click State View tab
         await stateViewTab.click();
-        await page.waitForTimeout(1000);
+        await expect(stateViewTab).toHaveAttribute("aria-selected", "true", {
+          timeout: TAB_SWITCH_TIMEOUT,
+        });
 
         await page.screenshot({
           path: "test-results/automation-builder-states-state-view.png",
@@ -514,7 +665,9 @@ test.describe("Automation Builder - Core Pages", () => {
           name: /Transitions/i,
         });
         await transitionsTab.click();
-        await page.waitForTimeout(1000);
+        await expect(transitionsTab).toHaveAttribute("aria-selected", "true", {
+          timeout: TAB_SWITCH_TIMEOUT,
+        });
 
         await page.screenshot({
           path: "test-results/automation-builder-states-transitions.png",
@@ -549,25 +702,45 @@ test.describe("Automation Builder - Core Pages", () => {
     test("displays Settings heading and tabs", async ({ page }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/settings");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+
+      // Bounded wait for the settings heading, tolerated if absent (no
+      // project selected).
+      const heading = page.getByRole("heading", { name: /Settings/i });
+      await heading
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-settings-tabs.png",
@@ -578,7 +751,6 @@ test.describe("Automation Builder - Core Pages", () => {
       expect(pageContent).not.toContain("Internal Server Error");
 
       // Verify the settings heading
-      const heading = page.getByRole("heading", { name: /Settings/i });
       const headingVisible = await heading
         .first()
         .isVisible({ timeout: 5000 })
@@ -607,36 +779,54 @@ test.describe("Automation Builder - Core Pages", () => {
     test("General tab shows auto-save toggle", async ({ page }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/settings");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+
+      // Look for auto-save toggle by its data-testid or label. Bounded wait
+      // for either, tolerated if neither renders (no project selected).
+      const autoSaveToggle = page.locator(
+        '[data-testid="automation-settings-auto-save-toggle"]'
+      );
+      const autoSaveByLabel = page.getByText("Auto-save", { exact: false });
+      await autoSaveToggle
+        .or(autoSaveByLabel)
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
 
       await page.screenshot({
         path: "test-results/automation-builder-settings-general.png",
         fullPage: true,
       });
-
-      // Look for auto-save toggle by its data-testid or label
-      const autoSaveToggle = page.locator(
-        '[data-testid="automation-settings-auto-save-toggle"]'
-      );
-      const autoSaveByLabel = page.getByText("Auto-save", { exact: false });
 
       const toggleVisible = await autoSaveToggle
         .isVisible({ timeout: 3000 })
@@ -655,27 +845,43 @@ test.describe("Automation Builder - Core Pages", () => {
     test("can switch between settings tabs", async ({ page }) => {
       await page.goto("/build/workflows");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the switcher, tolerated if it never appears — the
+      // conditional below is the test's original tolerance shape.
       const projectSwitcher = page.locator('[aria-label="Select project"]');
+      await projectSwitcher
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       if (
         await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)
       ) {
         await projectSwitcher.click();
-        await page.waitForTimeout(500);
 
+        // The click opens the menu; wait for its items, tolerated if none.
         const projectItems = page.locator('[role="menuitem"]');
+        await projectItems
+          .first()
+          .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+          .catch(() => null);
         if ((await projectItems.count()) > 0) {
           await projectItems.first().click();
-          await page.waitForTimeout(1000);
+          // Selecting an item closes the menu — the state the click produces.
+          await projectItems
+            .first()
+            .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+            .catch(() => null);
         }
       }
 
       await page.goto("/automation-builder/settings");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
 
+      // Bounded wait for the tab, tolerated if absent (no project selected).
       const editorTab = page.getByRole("tab", { name: /Editor/i });
+      await editorTab
+        .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+        .catch(() => null);
       const tabVisible = await editorTab
         .isVisible({ timeout: 5000 })
         .catch(() => false);
@@ -683,17 +889,21 @@ test.describe("Automation Builder - Core Pages", () => {
       if (tabVisible) {
         // Switch to Editor tab
         await editorTab.click();
-        await page.waitForTimeout(500);
+
+        // Editor tab content (Theme selector, font size, etc.). Bounded wait
+        // for it, tolerated if absent.
+        const themeSelect = page.locator(
+          '[data-testid="automation-settings-theme-select"]'
+        );
+        await themeSelect
+          .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+          .catch(() => null);
 
         await page.screenshot({
           path: "test-results/automation-builder-settings-editor.png",
           fullPage: true,
         });
 
-        // Verify Editor tab content (Theme selector, font size, etc.)
-        const themeSelect = page.locator(
-          '[data-testid="automation-settings-theme-select"]'
-        );
         const themeVisible = await themeSelect
           .isVisible({ timeout: 3000 })
           .catch(() => false);
@@ -705,7 +915,11 @@ test.describe("Automation Builder - Core Pages", () => {
         // Switch to Execution tab
         const executionTab = page.getByRole("tab", { name: /Execution/i });
         await executionTab.click();
-        await page.waitForTimeout(500);
+        // The click selects the tab — the state it produces; tolerated.
+        await page
+          .getByRole("tab", { name: /Execution/i, selected: true })
+          .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+          .catch(() => null);
 
         await page.screenshot({
           path: "test-results/automation-builder-settings-execution.png",
@@ -717,7 +931,11 @@ test.describe("Automation Builder - Core Pages", () => {
           name: /Notifications/i,
         });
         await notificationsTab.click();
-        await page.waitForTimeout(500);
+        // The click selects the tab — the state it produces; tolerated.
+        await page
+          .getByRole("tab", { name: /Notifications/i, selected: true })
+          .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+          .catch(() => null);
 
         await page.screenshot({
           path: "test-results/automation-builder-settings-notifications.png",
@@ -727,17 +945,21 @@ test.describe("Automation Builder - Core Pages", () => {
         // Switch to Advanced tab
         const advancedTab = page.getByRole("tab", { name: /Advanced/i });
         await advancedTab.click();
-        await page.waitForTimeout(500);
+
+        // Advanced tab should show Debug Mode toggle. Bounded wait for it,
+        // tolerated if absent.
+        const debugToggle = page.locator(
+          '[data-testid="automation-settings-enable-debug-mode-toggle"]'
+        );
+        await debugToggle
+          .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+          .catch(() => null);
 
         await page.screenshot({
           path: "test-results/automation-builder-settings-advanced.png",
           fullPage: true,
         });
 
-        // Advanced tab should show Debug Mode toggle
-        const debugToggle = page.locator(
-          '[data-testid="automation-settings-enable-debug-mode-toggle"]'
-        );
         const debugVisible = await debugToggle
           .isVisible({ timeout: 3000 })
           .catch(() => false);
