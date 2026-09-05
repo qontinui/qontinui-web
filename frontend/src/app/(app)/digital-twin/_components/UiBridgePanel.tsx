@@ -17,6 +17,8 @@ import {
   useRunnerSpecGraph,
   useRunnerSpecList,
 } from "../_hooks/useUiBridge";
+import { RelayFailure } from "./RelayFailure";
+import { sharesRelayCause } from "../_lib/relay-error-presentation";
 
 const DEFAULT_APP_ID = "qontinui-web";
 
@@ -25,7 +27,9 @@ const DEFAULT_APP_ID = "qontinui-web";
 // custom id still works for runners that manage other apps.
 const KNOWN_APP_IDS = ["qontinui-web", "runner", "qontinui-mobile"];
 
-function countStates(config?: { stateMachine?: { states?: unknown[] } }): number {
+function countStates(config?: {
+  stateMachine?: { states?: unknown[] };
+}): number {
   return config?.stateMachine?.states?.length ?? 0;
 }
 
@@ -55,8 +59,17 @@ export function UiBridgePanel() {
 
   const totalStates = useMemo(
     () => specs.reduce((acc, s) => acc + countStates(s.config), 0),
-    [specs],
+    [specs]
   );
+
+  // The list and the graph are two queries against the same relay to the same
+  // device, so the dominant failure — the runner is not connected — fails both
+  // identically. Show one box in that case rather than the same three lines
+  // twice; they stay separate whenever the diagnoses actually differ.
+  const bothFailedAlike =
+    specList.isError &&
+    specGraph.isError &&
+    sharesRelayCause(specList.error, specGraph.error);
 
   // UI Bridge: stable ids for the tab's controls (automation + spec-checks).
   const { ref: appIdRef } = useUIElement({
@@ -135,11 +148,36 @@ export function UiBridgePanel() {
               <Loader2 className="size-3.5 animate-spin" /> Loading specs…
             </p>
           )}
-          {specList.isError && (
-            <p className="text-sm text-muted-foreground">
-              Could not read specs for <code>{appId}</code> from the runner.
-            </p>
-          )}
+          {/*
+            The graph is a SECOND, independent query. Its failure used to be
+            rendered nowhere at all: `graphPages` fell back to `[]` and the
+            counter below simply showed "0 graph nodes", which is what a
+            genuinely empty graph looks like. A failed read and an empty result
+            are different facts and must not share a rendering.
+          */}
+          {bothFailedAlike ? (
+            <div className="mb-3">
+              <RelayFailure
+                errors={[specList.error, specGraph.error]}
+                subject={`spec pages or the state-machine graph for ${appId}`}
+              />
+            </div>
+          ) : specList.isError || specGraph.isError ? (
+            <div className="mb-3 space-y-2">
+              {specList.isError && (
+                <RelayFailure
+                  errors={[specList.error]}
+                  subject={`spec pages for ${appId}`}
+                />
+              )}
+              {specGraph.isError && (
+                <RelayFailure
+                  errors={[specGraph.error]}
+                  subject={`the state-machine graph for ${appId}`}
+                />
+              )}
+            </div>
+          ) : null}
           {!specList.isLoading && !specList.isError && (
             <>
               <div className="mb-3 flex gap-6 text-sm">
@@ -152,8 +190,16 @@ export function UiBridgePanel() {
                   <span className="text-muted-foreground">states</span>
                 </span>
                 <span>
+                  {/*
+                    "0" is a claim about the graph, so it is shown only once
+                    the graph read has actually answered. This is a SECOND
+                    query, independent of the spec list gating this block: it
+                    can still be in flight, or have failed, while the list
+                    beside it succeeded — and both of those look exactly like
+                    a genuinely empty graph if the count is rendered anyway.
+                  */}
                   <span className="text-lg font-semibold">
-                    {graphPages.length}
+                    {specGraph.data ? graphPages.length : "—"}
                   </span>{" "}
                   <span className="text-muted-foreground">graph nodes</span>
                 </span>
@@ -209,10 +255,7 @@ export function UiBridgePanel() {
           </Button>
 
           {snapshot.isError && snapshotRequested && (
-            <p className="text-sm text-muted-foreground">
-              Could not capture a snapshot — the app may not be connected to the
-              runner.
-            </p>
+            <RelayFailure errors={[snapshot.error]} subject="a live snapshot" />
           )}
           {snap && (
             <>
