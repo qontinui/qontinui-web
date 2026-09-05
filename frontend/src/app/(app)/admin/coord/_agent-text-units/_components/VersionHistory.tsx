@@ -241,9 +241,9 @@ export function VersionHistory({
 
             <p className="text-xs italic text-muted-foreground">
               Comparisons here are between stored versions of this layer only.
-              There is no &quot;diff against the embedded default&quot;: that
-              text lives inside the runner binary and is never uploaded, so
-              qontinui-web has no baseline to compare against.
+              The comparison against what the runner ships is in the
+              &quot;Published default&quot; panel below — and only when a
+              runner has published its embedded copy to this account.
             </p>
 
             <ul className="space-y-2" data-testid="unit-version-list">

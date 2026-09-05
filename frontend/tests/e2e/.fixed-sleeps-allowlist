@@ -1,0 +1,41 @@
+# Fixed-sleep ratchet for frontend/tests/e2e — read by
+# scripts/ci/check_fixed_sleeps_in_e2e.py (workflow
+# forbid-fixed-sleeps-in-e2e.yml). One row per file that still calls
+# `waitForTimeout(`: `<repo-relative path> <count>`. A file with no row is
+# allowed 0. Rows are matched EXACTLY: a PR may lower a count or remove a
+# row, never raise one — and a converted file must lower its row in the
+# same commit, or the gate fails with "lower the row". Regenerate with
+# `python scripts/ci/check_fixed_sleeps_in_e2e.py --write-allowlist`.
+# Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time
+frontend/tests/e2e/annotation-editor.spec.ts 6
+frontend/tests/e2e/auth.setup.ts 2
+frontend/tests/e2e/fixtures.ts 3
+frontend/tests/e2e/helpers/network-retry.ts 1
+frontend/tests/e2e/login.spec.ts 2
+frontend/tests/e2e/navigation-test-generator.spec.ts 1
+frontend/tests/e2e/pages/admin-coord-questions.spec.ts 3
+frontend/tests/e2e/pages/admin-coord-spawn.spec.ts 2
+frontend/tests/e2e/pages/admin.spec.ts 0
+frontend/tests/e2e/pages/ai-tasks-pages.spec.ts 8
+frontend/tests/e2e/pages/automation-builder-analytics.spec.ts 15
+frontend/tests/e2e/pages/automation-builder-core.spec.ts 0
+frontend/tests/e2e/pages/automation-builder-data.spec.ts 14
+frontend/tests/e2e/pages/captures-recordings.spec.ts 4
+frontend/tests/e2e/pages/configure.spec.ts 0
+frontend/tests/e2e/pages/dashboard.spec.ts 1
+frontend/tests/e2e/pages/demo.spec.ts 6
+frontend/tests/e2e/pages/dev-reset.spec.ts 6
+frontend/tests/e2e/pages/execution.spec.ts 0
+frontend/tests/e2e/pages/issues.spec.ts 8
+frontend/tests/e2e/pages/marketplace.spec.ts 8
+frontend/tests/e2e/pages/project-rag.spec.ts 2
+frontend/tests/e2e/pages/qa-dashboard.spec.ts 3
+frontend/tests/e2e/pages/run-detail.spec.ts 6
+frontend/tests/e2e/pages/runner-connection.spec.ts 1
+frontend/tests/e2e/pages/runs.spec.ts 9
+frontend/tests/e2e/pages/testing-global.spec.ts 3
+frontend/tests/e2e/pages/testing-project.spec.ts 1
+frontend/tests/e2e/style-gate/style-capture.spec.ts 1
+frontend/tests/e2e/ui-bridge-graph-editor.spec.ts 6
+frontend/tests/e2e/web-extraction-debug.spec.ts 6
+frontend/tests/e2e/web-extraction.spec.ts 4

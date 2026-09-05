@@ -10,9 +10,30 @@
  * The /admin (root) and /admin/mobile routes were removed; the dashboard
  * landing was folded into the sub-pages and there is no mobile-specific
  * variant anymore.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a conditional the test already tolerated (the superuser-gated
+ * pages redirect non-admins, and that branch stays tolerated) — never a
+ * `waitForTimeout(N)` followed by a non-waiting `count()` read, which asserts
+ * on wall-clock. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(2000)` before a heading read. */
+const HEADING_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(2500)` before a coord-shell read. */
+const COORD_SHELL_TIMEOUT = 7500;
+/** Replaces the old `waitForTimeout(3000)` before a page-data read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(1500)` on the coord page-load loop. */
+const COORD_PAGE_TIMEOUT = 5000;
+
+/** The `<h1>` every /admin/coord/* page renders for a superuser. */
+const coordHeading = (page: import("@playwright/test").Page) =>
+  page.getByRole("heading", { name: "Coord operator console", exact: true });
 
 test.describe("Admin - Architecture", () => {
   test("should load architecture page without errors", async ({ page }) => {
@@ -33,11 +54,14 @@ test.describe("Admin - Architecture", () => {
   }) => {
     await page.goto("/admin/architecture");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // The page renders <h1>Architecture</h1> (page.tsx:52); the older
     // "Qontinui Architecture" string lived on the deleted /admin (root)
-    // landing.
+    // landing. Bounded wait for it, tolerated if absent (non-admin redirect).
+    await page
+      .getByRole("heading", { name: "Architecture", exact: true })
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasArchitectureHeading =
       (await page
         .getByRole("heading", { name: "Architecture", exact: true })
@@ -52,8 +76,12 @@ test.describe("Admin - Architecture", () => {
   test("should have navigation back to admin", async ({ page }) => {
     await page.goto("/admin/architecture");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .getByRole("heading", { name: "Architecture", exact: true })
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasArchitectureHeading =
       (await page
         .getByRole("heading", { name: "Architecture", exact: true })
@@ -87,8 +115,15 @@ test.describe("Admin - Datasets", () => {
   test("should display datasets heading or access denied", async ({ page }) => {
     await page.goto("/admin/datasets");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading or the access-denied copy, tolerated if
+    // neither (non-admin redirect) — the reads below are the original shape.
+    await page
+      .locator("text=Training Datasets")
+      .or(page.locator("text=Admin Access Required"))
+      .first()
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasDatasetsHeading =
       (await page.locator("text=Training Datasets").count()) > 0;
     const hasAccessRequired =
@@ -104,19 +139,24 @@ test.describe("Admin - Datasets", () => {
   test("should have import button for admin users", async ({ page }) => {
     await page.goto("/admin/datasets");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .locator("text=Training Datasets")
+      .first()
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasDatasetsHeading =
       (await page.locator("text=Training Datasets").count()) > 0;
 
     if (hasDatasetsHeading) {
       // Import button should be visible (either in header or empty state)
-      const hasImportButton =
-        (await page.locator("text=Import Dataset").count()) > 0;
-      const hasImportFirstButton =
-        (await page.locator("text=Import Your First Dataset").count()) > 0;
-
-      expect(hasImportButton || hasImportFirstButton).toBeTruthy();
+      await expect(
+        page
+          .locator("text=Import Dataset")
+          .or(page.locator("text=Import Your First Dataset"))
+          .first()
+      ).toBeVisible({ timeout: HEADING_TIMEOUT });
     }
   });
 
@@ -125,23 +165,27 @@ test.describe("Admin - Datasets", () => {
   }) => {
     await page.goto("/admin/datasets");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .locator("text=Training Datasets")
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const hasDatasetsHeading =
       (await page.locator("text=Training Datasets").count()) > 0;
 
     if (hasDatasetsHeading) {
       // Either a grid of datasets with statistics (Images, Annotations, Reviewed)
-      // or the empty state message
-      const hasNoDatasets =
-        (await page.locator("text=No datasets yet").count()) > 0;
-      const hasDatasetGrid =
-        (await page.locator("text=Images").count()) > 0 ||
-        (await page.locator("text=Review Progress").count()) > 0;
-      const hasLoading =
-        (await page.locator("text=Loading datasets").count()) > 0;
-
-      expect(hasNoDatasets || hasDatasetGrid || hasLoading).toBeTruthy();
+      // or the empty state message. Tolerance preserved: any of the four.
+      await expect(
+        page
+          .locator("text=No datasets yet")
+          .or(page.locator("text=Images"))
+          .or(page.locator("text=Review Progress"))
+          .or(page.locator("text=Loading datasets"))
+          .first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     }
   });
 });
@@ -150,7 +194,16 @@ test.describe("Admin - Dataset Detail (non-existent)", () => {
   test("should handle non-existent dataset ID gracefully", async ({ page }) => {
     await page.goto("/admin/datasets/non-existent-id-12345");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
+
+    // Bounded wait for any of the rendered outcomes, tolerated if none (the
+    // redirect branch is a URL read below) — the reads keep their shape.
+    await page
+      .locator("text=Dataset Not Found")
+      .or(page.locator("text=Back to Datasets"))
+      .or(page.locator("text=Loading"))
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     await page.screenshot({
       path: "test-results/admin-dataset-detail-404.png",
@@ -198,8 +251,12 @@ test.describe("Admin - Agent Claims", () => {
   test("should render heading or redirect non-admin", async ({ page }) => {
     await page.goto("/admin/agent-claims");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .getByRole("heading", { name: "Agent claims", exact: true })
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasAgentClaimsHeading =
       (await page
         .getByRole("heading", { name: "Agent claims", exact: true })
@@ -216,8 +273,12 @@ test.describe("Admin - Agent Claims", () => {
   }) => {
     await page.goto("/admin/agent-claims");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2500);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .getByRole("heading", { name: "Agent claims", exact: true })
+      .waitFor({ state: "visible", timeout: COORD_SHELL_TIMEOUT })
+      .catch(() => null);
     const hasAgentClaimsHeading =
       (await page
         .getByRole("heading", { name: "Agent claims", exact: true })
@@ -250,8 +311,12 @@ test.describe("Admin - Agent Claims", () => {
   test("should have navigation back to admin", async ({ page }) => {
     await page.goto("/admin/agent-claims");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .getByRole("heading", { name: "Agent claims", exact: true })
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasAgentClaimsHeading =
       (await page
         .getByRole("heading", { name: "Agent claims", exact: true })
@@ -293,8 +358,11 @@ test.describe("Admin - Coord operator console", () => {
     // user (if superuser) can see the 5 primary tabs + cross-links.
     await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2500);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: COORD_SHELL_TIMEOUT })
+      .catch(() => null);
     const hasCoordHeading =
       (await page
         .getByRole("heading", { name: "Coord operator console", exact: true })
@@ -349,7 +417,12 @@ test.describe("Admin - Coord operator console", () => {
     test(`should load ${path} without errors`, async ({ page }) => {
       await page.goto(path);
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(1500);
+
+      // Bounded wait for the heading, tolerated if absent (non-admin
+      // redirect) — the branch below is the test's original shape.
+      await coordHeading(page)
+        .waitFor({ state: "visible", timeout: COORD_PAGE_TIMEOUT })
+        .catch(() => null);
 
       const pageContent = await page.content();
       expect(pageContent).not.toContain("Internal Server Error");
@@ -375,8 +448,11 @@ test.describe("Admin - Coord operator console", () => {
   test("nav link click navigates between coord pages", async ({ page }) => {
     await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasCoordHeading =
       (await page
         .getByRole("heading", { name: "Coord operator console", exact: true })
@@ -446,7 +522,11 @@ test.describe("Admin - Coord agents (logs)", () => {
 
     await page.goto("/admin/coord/agents");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2500);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: COORD_SHELL_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -522,7 +602,11 @@ test.describe("Admin - Coord agents (logs)", () => {
 
     await page.goto(`/admin/coord/agents/${agentId}`);
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2500);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: COORD_SHELL_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -631,7 +715,11 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
 
     await page.goto("/admin/coord/memory");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -654,7 +742,6 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
 
     // Name-prefix filter narrows to one row.
     await page.getByTestId("coord-memory-name-prefix").fill("proj_");
-    await page.waitForTimeout(300);
     await expect(page.getByTestId("coord-memory-card")).toHaveCount(1);
     await expect(
       page.getByTestId("coord-memory-card-name")
@@ -677,7 +764,11 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
 
     await page.goto("/admin/coord/memory/proj_alpha");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -752,7 +843,11 @@ test.describe("Admin - Coord memory browser (Wave 3c)", () => {
 
     await page.goto("/admin/coord/memory/proj_alpha/version/2");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
@@ -800,8 +895,13 @@ test.describe("Admin - Region Analysis", () => {
   }) => {
     await page.goto("/admin/region-analysis");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .locator("text=Region Analysis")
+      .first()
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasRegionHeading =
       (await page.locator("text=Region Analysis").count()) > 0;
     const wasRedirected =
@@ -815,30 +915,38 @@ test.describe("Admin - Region Analysis", () => {
   }) => {
     await page.goto("/admin/region-analysis");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await page
+      .locator("text=Region Analysis")
+      .first()
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
     const hasRegionHeading =
       (await page.locator("text=Region Analysis").count()) > 0;
 
     if (hasRegionHeading) {
       // The tabs are only visible when an annotation set is selected.
       // Check for either the tab interface or the annotation set selector.
-      const hasRunTab =
-        (await page.locator('button:has-text("Run Analysis")').count()) > 0;
-      const hasResultsTab =
-        (await page.locator('button:has-text("Results")').count()) > 0;
-      const hasHistoryTab =
-        (await page.locator('button:has-text("History")').count()) > 0;
-      const hasAnnotationSetSelector =
-        (await page.locator("text=Select Annotation Set").count()) > 0;
-      const hasNoSets =
-        (await page.locator("text=No annotation sets found").count()) > 0;
+      // Original shape: (Run && Results && History) || selector || noSets.
+      const noSetSelected = page
+        .locator("text=Select Annotation Set")
+        .or(page.locator("text=No annotation sets found"));
+      await expect(
+        page
+          .locator('button:has-text("Run Analysis")')
+          .or(noSetSelected)
+          .first()
+      ).toBeVisible({ timeout: HEADING_TIMEOUT });
 
-      expect(
-        (hasRunTab && hasResultsTab && hasHistoryTab) ||
-          hasAnnotationSetSelector ||
-          hasNoSets
-      ).toBeTruthy();
+      if ((await noSetSelected.count()) === 0) {
+        await expect(
+          page.locator('button:has-text("Results")').first()
+        ).toBeVisible({ timeout: HEADING_TIMEOUT });
+        await expect(
+          page.locator('button:has-text("History")').first()
+        ).toBeVisible({ timeout: HEADING_TIMEOUT });
+      }
     }
   });
 });

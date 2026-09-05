@@ -1,81 +1,124 @@
-name: Spec CI
+name: Playwright E2E stack (reusable)
 
-# Spec CI replaces Playwright E2E as the on-PR merge gate. The full Playwright
-# E2E suite (e2e-tests.yml, frontend-tests) runs on main/develop pushes and
-# nightly — not on PRs and not on coord's merge-candidate* candidate refs, both
-# of which are gated by Spec CI + the backend E2E job instead. (A PR that
-# changes a `tests/e2e/**/*.spec.ts` file also gets those files run on the
-# same stack — e2e-tests.yml `frontend-e2e-changed-specs`, advisory.)
+# THE ONE DEFINITION of the Playwright E2E stack: postgres service, sibling
+# clones, backend + frontend installs, the split apt/CDN browser install with
+# its font-.deb cache, migrations, the hermetic local id token + JWKS, the test
+# run, the artifact uploads and the infrastructure-timeout marker. Everything
+# that used to be the body of e2e-tests.yml's `frontend-tests` job, moved here
+# VERBATIM so it can be called from more than one place.
 #
-# HERMETIC since 2026-06-04: the entire stack — Postgres, Redis, the FastAPI
-# backend, a run-local token issuer — boots inside this job. The previous
-# posture crawled the LIVE prod API (api.qontinui.io), so any prod 502/timeout
-# blip red'd this required check (~1-in-3 during blips; see
-# plans/2026-06-03-unbypassable-autonomous-merge-gates.md Phase 2b: a required
-# check must depend only on inputs the PR author controls). `--include-write`
-# transitions also wrote to prod as ci-bot; hermetically they write to the
-# throwaway CI database. Real-Cognito + real-prod integration stays covered
-# post-deploy by verify-frontend-deploy.yml's public + authed smokes.
+# Two callers, both in .github/workflows/e2e-tests.yml:
 #
-# Pipeline:
-#   1. Boot Postgres (pgvector) + Redis services; install backend deps;
-#      `alembic upgrade heads` (real schema, byte-identical to prod's chain).
-#   2. Mint a run-local RS256 id token + JWKS (scripts/spec_ci_local_idp.py),
-#      serve the JWKS via `python -m http.server`, and point the backend's
-#      COGNITO_ISSUER at it — the backend verifies the token through its REAL
-#      verifier (signature/iss/aud/exp) and JIT-provisions the ci-bot user
-#      (app/services/cognito_provision.py). No auth code is stubbed.
-#   3. Boot the FastAPI backend (uvicorn) against the CI database.
-#   4. Install deps + build the frontend; `next start` with BACKEND_URL
-#      pointing at the local backend.
-#   5. Run the Playwright-driven Spec-CI executor against every IR spec under
-#      `frontend/specs/pages/`. The executor seeds the injected token as the
-#      auth cookie, then for each spec navigates to its route, injects the
-#      IR, drives transitions via ui-bridge-auto's in-browser executor, and
-#      records pass/fail. Specs are authored against an EMPTY account
-#      (structure + empty states), so the fresh CI database matches their
-#      authored baseline by construction.
-#   6. Gate: fail iff minMatchRate < 0.8 OR transitionPassRate < 1.0
-#      OR any spec errored.
+#   * `frontend-tests` — the full suite in 4 duration-balanced shards, on
+#     push to main/develop, the nightly schedule and workflow_dispatch. Calls
+#     this once per shard with `shard: N`. Byte-for-byte the job it replaced:
+#     same `--project=chromium --shard=N/4`, same PWTEST_SHARD_WEIGHTS, same
+#     artifact names (`playwright-report-shard-N`, ...), same budget.
+#   * `frontend-e2e-changed-specs` — Phase 2.5 of plan
+#     `2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time`: on a
+#     pull_request, ONLY the spec files the PR changed, so a converted spec
+#     can fail BEFORE it reaches main instead of red-maining every open PR
+#     from the post-land `push: main` run. Calls this with `spec_files`.
 #
-# Why not run the qontinui-runner in CI? Spec-CI's only dependency on the
-# runner in dev is the multi-tenant Spec API for file storage; in CI the
-# IR specs are in the repo and ui-bridge-auto runs natively in the
-# browser. Skipping the runner removes the Tauri+xvfb burden.
+# WHY A REUSABLE WORKFLOW AND NOT A COMPOSITE ACTION. A composite action's
+# steps cannot carry `timeout-minutes`, and the 10-minute bound on the apt
+# step below is what turns a degraded-mirror stall into a fast, correctly
+# labelled red (plan 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-
+# test-failure). A composite also cannot declare the `services:` block or the
+# job budget, and its inner step ids are invisible to the caller's marker step.
+# The job has to move whole, and `workflow_call` is the mechanism that moves a
+# whole job. The cost is cosmetic: GitHub renders a called job's check as
+# `<caller job name> / <this job name>`, so the shard checks now read
+# `Frontend E2E Tests (shard 1/4) / Playwright (chromium)`. Nothing keys on
+# the old spelling: coord's required set for this repo names `Test Summary`,
+# `Backend E2E Tests (3.12)` and `Spec CI` (qontinui-coord ci_baseline.rs),
+# and Test Summary reads `needs.frontend-tests.result`, which is the CALLER
+# job's id and is unchanged.
 #
-# No `concurrency:` block: the old serialization existed only because runs
-# shared the rate-limited (10/min) ci-bot auth endpoint. Hermetic runs share
-# nothing — they can overlap freely.
+# EXACTLY ONE MODE PER CALL. `shard` and `spec_files` are mutually exclusive
+# and one of them is required; the test step refuses any other combination
+# rather than silently running the whole suite unsharded.
+#
+# CONCURRENCY IS THE CALLER'S. This file declares no `concurrency:` of its
+# own; e2e-tests.yml's group (event-keyed, cancel-in-progress only on
+# pull_request) governs every job here. The marker's EXTERNAL_CANCEL_NOTE
+# below says so, and backend/tests/test_ci_timeout_marker.py resolves a
+# `workflow_call` workflow's concurrency through its callers to check it.
+#
+# `secrets.GITHUB_TOKEN` is the only secret used and GitHub passes it to a
+# called workflow automatically; no `secrets: inherit` is needed.
 
 on:
-  pull_request:
-    branches: [main, develop]
-  push:
-    # merge-candidate/** refs are pushed by coord's autonomous merge scheduler
-    # (plan 2026-06-06-coord-ci-runner-autonomous-green-merge, Phase 4). Spec CI
-    # is a required merge gate, so it must run on candidate refs or the proposal
-    # hangs in awaiting-ci. Validation-only (hermetic stack); no deploy.
-    branches:
-      - main
-      - develop
-      - 'merge-candidate/**'
-      - 'merge-candidate-spec/**'
-      - 'merge-candidate-batch/**'
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      shard:
+        description: >-
+          Shard index (1-based) of the full suite to run, as a string. Empty
+          means "not sharded". Mutually exclusive with `spec_files`.
+        type: string
+        default: ''
+      shard_count:
+        description: Total number of shards `shard` is one of.
+        type: string
+        default: '4'
+      shard_weights:
+        description: >-
+          PWTEST_SHARD_WEIGHTS for the sharded mode (colon-separated ints,
+          one per shard). Ignored when `shard` is empty.
+        type: string
+        default: '92:168:218:115'
+      spec_files:
+        description: >-
+          Whitespace-separated spec paths RELATIVE TO frontend/ (e.g.
+          `tests/e2e/pages/configure.spec.ts`) to run instead of the full
+          suite. Mutually exclusive with `shard`.
+        type: string
+        default: ''
+      artifact_suffix:
+        description: >-
+          Suffix for the three upload-artifact names, which must be unique
+          across every job of one run (`shard-1`, `changed-specs`, ...).
+        type: string
+        required: true
 
 jobs:
-  spec-ci:
-    name: Spec CI
+  playwright:
+    name: Playwright (chromium)
     runs-on: ubuntu-latest
-    # 25 → 35 on hermeticization: the job now also installs backend deps and
-    # boots PG/Redis/uvicorn (~5-8 min). No torch in requirements.txt — the
-    # heavy-ML disk concerns from backend-ci's poetry path don't apply here.
-    timeout-minutes: 35
+    # Job cap — see e2e-tests.yml's `backend-tests` for why this workflow
+    # needed one. Sized from 28 green shard runs on `main` (2026-08-18/19):
+    # p50 ~12m, p90 ~18m, max 41m39s (run 32264216432 shard 2/4, which went
+    # green after a 30m24s `Install Playwright browsers` — the apt stall
+    # partially self-resolving). 60 min = p90 + 42 min headroom and covers
+    # that worst observed GREEN run with ~44% to spare. The changed-specs
+    # caller runs a few files against the same stack, so it fits inside the
+    # same budget with room; one number keeps the marker's budget arm and
+    # the test that pins it to `JOB_TIMEOUT_MINUTES` simple.
+    #
+    # Scope note, because it is easy to read too much into that: THIS CAP
+    # cannot red a run that would otherwise have passed. The 10-minute step
+    # bound below deliberately CAN — run 32264216432 shard 2/4 is exactly the
+    # run it would now cut, and cutting it is the point: a 30m24s
+    # `Install Playwright browsers` IS the stall this plan exists to fail
+    # fast on, green outcome or not. So this is the backstop for everything
+    # else; the step bound is the part that trades a rare slow green for a
+    # fast, correctly-labelled red.
+    timeout-minutes: 60
 
     services:
       postgres:
-        # pgvector-bundled PG16 — same image backend-ci uses; alembic
-        # migrations materialize Vector columns and need the extension.
+        # pgvector/pgvector:pg16 matches production — AWS RDS `qontinui-staging`,
+        # engine 16.13, us-east-1 — and every sibling workflow that provisions a
+        # Postgres service (backend-ci, backend-coverage-producer,
+        # memory-recall-eval, migration-reversal, spec-ci, style-gate,
+        # cross-browser-survey). This job's `Run database migrations`
+        # step runs `alembic upgrade heads` against this service, so this pin
+        # decides which major the migration graph is exercised on; keeping it
+        # behind prod means CI clears migrations on a version prod never runs.
+        # pg16 is the proven target: migration-reversal.yml replays the WHOLE
+        # graph up->down->up on pg16. The pgvector-bundled image rather than
+        # stock postgres:16 is required because the squashed initial schema
+        # creates `vector` columns (see backend-ci.yml for the full rationale).
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: test_user
@@ -88,50 +131,7 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
 
-    env:
-      # Path A (same-origin): the browser uses RELATIVE API URLs (empty
-      # NEXT_PUBLIC_API_URL) so calls hit the Next.js /api proxy on
-      # localhost:3001 — keeping auth cookies same-origin. The proxy forwards
-      # to the run-local backend via the server-only BACKEND_URL.
-      NEXT_PUBLIC_API_URL: ""
-      BACKEND_URL: http://localhost:8000
-      QONTINUI_API_BASE_URL: http://localhost:8000
-      # Shared by the migrate/boot steps below. Plain-postgres scheme; the
-      # backend + alembic env handle async-driver conversion (same contract
-      # as e2e-tests.yml's frontend-tests job).
-      DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
-      SECRET_KEY: spec-ci-secret-key-for-ci-only-minimum-32-chars-long
-      ENVIRONMENT: development
-      STORAGE_BACKEND: local
-      REDIS_HOST: localhost
-      REDIS_PORT: 6379
-      REDIS_ENABLED: "true"
-      # Run-local token issuer (hermetic auth). The backend's Cognito
-      # verifier trusts whatever issuer is configured and fetches
-      # <issuer>/.well-known/jwks.json — both run on this VM. The
-      # spec_ci_local_idp.py step below mints QONTINUI_TEST_ID_TOKEN
-      # against this issuer; run-spec-ci.ts seeds it as the auth cookie.
-      COGNITO_USER_POOL_ID: spec-ci-local-pool
-      COGNITO_ISSUER: http://127.0.0.1:8770
-      COGNITO_ALLOWED_AUDIENCES: spec-ci-local
-      # Gates SpecCiInit's window-exposure to Spec-CI runs only. Production
-      # builds (no env var set) get nothing on window.__qontinuiSpecCi__.
-      NEXT_PUBLIC_ENABLE_SPEC_CI: "1"
-      # Build-time flag: mounts the in-browser CommandRelayListener in the
-      # prod `next start` bundle so /control/* actions dispatch in-process.
-      # Required for transition specs to execute element actions; no-op for
-      # the current structural (transition-free) specs.
-      NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS: "1"
 
     steps:
       # Stamp THIS JOB's start time. Must stay the FIRST step of the job.
@@ -156,15 +156,13 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "JOB_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
 
-      - name: Checkout qontinui-web
+      - name: Checkout code
         uses: actions/checkout@v5
 
-      # ── Backend stack (hermetic) ─────────────────────────────────────────
-
-      # backend/pyproject.toml has path deps on ../../qontinui-schemas and
-      # ../../qontinui; qontinui-cloud-control is installed editable. Same
-      # clone set as e2e-tests.yml's backend-tests job.
-      - name: Clone backend Python sibling deps
+      # Both backend pyproject.toml and frontend package.json have path
+      # deps on these five sibling repos. Without this clone, `pip
+      # install -e .` and `npm ci` fail with ENOENT.
+      - name: Clone sibling dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -172,157 +170,45 @@ jobs:
           for spec in \
             "qontinui/qontinui-schemas" \
             "qontinui/qontinui" \
+            "qontinui/ui-bridge" \
+            "qontinui/qontinui-workflow-ui" \
+            "qontinui/qontinui-workflow-utils" \
+            "qontinui/qontinui-navigation" \
             "qontinui/qontinui-cloud-control" \
           ; do
             repo_name="${spec#*/}"
+            target="../${repo_name}"
+            echo "::group::Cloning ${spec} → ${target}"
             git clone --depth 1 \
               "https://x-access-token:${GH_TOKEN}@github.com/${spec}.git" \
-              "../${repo_name}"
+              "${target}"
+            echo "::endgroup::"
           done
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
-      # Mirrors e2e-tests.yml's backend-tests install verbatim — including
-      # the no-cache-dir editable schemas install (pip's wheel cache
-      # otherwise DOWNGRADES schemas to a stale cached version) and
-      # `--no-deps` on the backend itself (prevents re-resolving the
-      # editable schemas we just installed).
+      # Node 20 was the sole entry of the old job's `node-version` matrix; it
+      # is pinned here rather than exposed as an input nobody varies.
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install backend dependencies
         working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install --no-cache-dir -e ../../qontinui-schemas
-          if [ -f pyproject.toml ]; then pip install -e . --no-deps; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
           pip install -e ../../qontinui-cloud-control
 
-      - name: Install postgresql-client
-        id: apt_psql
-        # ONLY the apt-get call lives in this step, and it is the entire reason
-        # for the bound: it reaches an external mirror at job time and is the
-        # same unbounded-stall exposure as the Playwright step (plan
-        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
-        # The psql/DDL that used to share this step now runs UNBOUNDED below.
-        # It HAD to move: under `bash -e` a psql failure set this step's
-        # `.outcome` to `failure` exactly like an apt timeout, so the
-        # infrastructure marker could not tell a mirror stall from the author's
-        # own schema breaking -- and told them their breakage was infrastructure.
-        # The `command -v psql` guard means apt normally never runs at all on
-        # `ubuntu-latest`, which ships psql. That is exactly why the DDL could
-        # not stay here: an arm keyed on this step's failure would have been
-        # describing a call that did not happen.
-        # Measured apt+psql across green runs of all 7 sites: p50 0-16s, p90
-        # <=91s, max 106s (migration-reversal). The bound now covers apt ALONE,
-        # so 5 min is p90 + ~3.5 min of headroom over a strictly smaller job.
-        timeout-minutes: 5
-        run: |
-          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
-
-      # Some alembic migrations reference the `runner` schema, created in dev
-      # by init-scripts/ which service containers don't run. Same carve-out
-      # as e2e-tests.yml.
-      - name: Create runner schema
-        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
-        # psql/DDL against this job's own postgres service, not the external
-        # mirror, so a failure here IS a verdict on the change -- it must never
-        # reach the infrastructure marker's APT_STEP_OUTCOMES.
-        env:
-          PGPASSWORD: test_password
-        run: |
-          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
-
-      # LOAD-BEARING BACKSTOP — do NOT add a `paths:` filter or a job-level `if:`
-      # that would stop this from running on every PR. migration-reversal.yml's
-      # head guard treats a non-zero `alembic heads` as skip-and-pass (a stacked
-      # PR whose down_revision lives on an unlanded parent is the chain-
-      # consolidation gate's problem, not a reversibility problem). That guard is
-      # deliberately NOT narrowed by matching alembic's error prose, because a
-      # wording change upstream would turn it into a false red on exactly the PRs
-      # it exists to let through. The classes it therefore does not catch —
-      # migration SyntaxError/ImportError, graph cycles, duplicate revision ids —
-      # are caught HERE instead. Filtering this step un-backstops that decision.
-      - name: Run database migrations
-        working-directory: ./backend
-        run: alembic upgrade heads
-
-      # Run-local token issuer: generate an ephemeral RSA keypair + JWKS,
-      # serve the JWKS at COGNITO_ISSUER, and mint the ci-bot id token the
-      # executor will seed as its auth cookie. The backend JIT-provisions
-      # the ci-bot auth.users row on the token's first authenticated request
-      # — no user seeding step needed.
-      - name: Mint local id token + serve JWKS
-        working-directory: ./backend
-        run: |
-          set -euo pipefail
-          TOKEN=$(python scripts/spec_ci_local_idp.py \
-            --issuer "$COGNITO_ISSUER" \
-            --audience spec-ci-local \
-            --email spec-ci-bot@no-reply.qontinui.io \
-            --out-dir /tmp/spec-ci-idp)
-          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
-          (cd /tmp/spec-ci-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
-          for i in $(seq 1 15); do
-            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
-              echo "local JWKS up after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
-
-      - name: Start backend (uvicorn)
-        working-directory: ./backend
-        run: |
-          set -euo pipefail
-          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
-          echo "BACKEND_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 60); do
-            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health | grep -q "^200$"; then
-              echo "backend up after ${i}s"
-              break
-            fi
-            sleep 1
-          done
-          curl -s -o /dev/null -w "backend status: %{http_code}\n" http://127.0.0.1:8000/health
-
-      # Mirror prod ci-bot's privileges: the admin-surface specs (/admin,
-      # /admin/region-analysis, /admin/coord/agents/…) are superuser-gated
-      # (admin/architecture/page.tsx + admin/region-analysis/page.tsx redirect
-      # non-superusers) and were authored against the superuser ci-bot. The
-      # curl JIT-provisions the auth.users row (+ personal org) through the
-      # real token path; the UPDATE then elevates it. Deliberately a DB-side
-      # step, NOT a token claim — a token must never be able to grant
-      # superuser (cognito_provision.py hardcodes is_superuser=False).
-      - name: Provision + elevate ci-bot (superuser parity with prod)
-        env:
-          PGPASSWORD: test_password
-        run: |
-          set -euo pipefail
-          curl -fsS -H "Authorization: Bearer $QONTINUI_TEST_ID_TOKEN" \
-            http://127.0.0.1:8000/api/v1/auth/users/me > /dev/null
-          psql -h localhost -U test_user -d test_db -c \
-            "UPDATE auth.users SET is_superuser = true WHERE email = 'spec-ci-bot@no-reply.qontinui.io';"
-
-      # ── Frontend ─────────────────────────────────────────────────────────
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      # @qontinui/* packages (shared-types, ui-bridge, ui-bridge-auto,
-      # design-tokens, navigation, workflow-utils, workflow-ui) are
-      # published to npm — frontend/package.json declares them with
-      # version ranges, not link: paths. No sibling clone needed; npm
-      # pulls published artifacts. The dev-link overlay
-      # (qontinui-claude-config/scripts/dev-link.ps1) is dev-only.
-      - name: Install frontend deps
+      - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
 
@@ -524,30 +410,29 @@ jobs:
             echo "No cached .deb archives - this run fetches them from the mirror. A MISS is slower, never broken."
           fi
 
-      - name: Install Playwright Chromium system deps (apt)
+      - name: Install Playwright browser system deps (apt)
         id: apt_playwright
         # Sized from a per-half measurement, not from the fused step: each green
         # run's log was cut at the boundary between apt's last output line and the
         # first `Downloading ` CDN banner, and the parsed halves were cross-checked
         # against the jobs API step times to +/-1s.
         #
-        # The apt half over 16 green Spec CI runs (2026-08-18 -> 08-20):
-        # p50 12.7s, p90 88.2s, max 205.4s (run 32250167820, whose log reads
-        # `Fetched 21.1 MB in 2min 47s (126 kB/s)` - a degraded mirror that
-        # happened to finish).
+        # The apt half over 40 green shard samples from 15 runs (2026-08-15 ->
+        # 08-20): p50 15.7s, p90 3m36s, max 30m13s. That max is run
+        # 32264216432 job 96104608719, whose log reads `Fetched 21.1 MB in
+        # 30min 1s (11.7 kB/s)` - and which SUCCEEDED.
         #
-        # 7, not the fused step's 5. That 5 was sized against an older 12-run
-        # sample whose max was 47s; this 16-run window says the max is 205s, so
-        # 5 min would have been only 1.5x the worst observed SUCCESS - inside
-        # the range where a bound becomes a new flake source (the plan's own
-        # Risk 3). 7 min is 2.0x that max and p90 + ~5.5 min, and it still
-        # converts the observed 33-minute stall into a 7-minute failure well
-        # inside this job's 35-minute budget.
+        # 10 min sits between p90 and that max ON PURPOSE: it would have cut
+        # that 30-minute success. That is the trade this plan chose. A step
+        # crawling 21.1 MB at 11.7 kB/s is the degraded mirror, and a fast,
+        # obvious failure plus a re-run costs the fleet far less than 30
+        # minutes of a 60-minute job budget spent fetching fonts. 10 min is
+        # p90 + ~6.4 min, covering every other sample in the window.
         #
         # These are PRE-cache numbers. With the font .debs restored, a healthy run
         # should collapse toward the `apt-get update`-only floor, so the bound is
         # conservative by construction - it is sized for the MISS.
-        timeout-minutes: 7
+        timeout-minutes: 10
         working-directory: ./frontend
         run: npx playwright install-deps chromium
 
@@ -637,123 +522,230 @@ jobs:
           path: ~/.cache/qontinui-apt-playwright
           key: ${{ steps.pw_cache_key.outputs.save_key }}
 
-      # Playwright's browser binaries aren't part of the npm install.
-      # Install Chromium only — the spec-ci executor doesn't need
-      # Firefox/WebKit.
-      - name: Install Playwright Chromium (CDN)
-        # The CDN half over the same 16 runs: p50 9.2s, p90 10.1s, max 10.5s.
-        # 2 min is ~11x the observed max. Across all 178 halves measured for
-        # this split the CDN maximum ANYWHERE was 38.7s, which is what
-        # exonerates cdn.playwright.dev as a stall site - the whole tail lives
-        # in the apt half.
+      - name: Install Playwright browsers (CDN)
+        # The CDN half over the same 40 samples: p50 10.9s, p90 12.0s, max
+        # 13.0s. 2 min is ~9x the observed max. The fused step's minutes-long
+        # tail does NOT come from here - not once in 40 samples.
         timeout-minutes: 2
         working-directory: ./frontend
         run: npx playwright install chromium
 
-      - name: Build frontend
-        working-directory: ./frontend
-        run: npm run build
-
-      # `next start` serves the production build — faster + more representative
-      # of the user-facing app than `next dev`. The background-task pattern
-      # mirrors what backend-tests.yml does for the FastAPI server.
-      - name: Start frontend (next start)
-        working-directory: ./frontend
+      - name: Install postgresql-client
+        id: apt_psql
+        # ONLY the apt-get call lives in this step, and it is the entire reason
+        # for the bound: it reaches an external mirror at job time and is the
+        # same unbounded-stall exposure as the Playwright step (plan
+        # 2026-08-19-ci-apt-hang-unbounded-steps-misreported-as-test-failure).
+        # The psql/DDL that used to share this step now runs UNBOUNDED below.
+        # It HAD to move: under `bash -e` a psql failure set this step's
+        # `.outcome` to `failure` exactly like an apt timeout, so the
+        # infrastructure marker could not tell a mirror stall from the author's
+        # own schema breaking -- and told them their breakage was infrastructure.
+        # Measured apt+psql across green runs of all 7 sites: p50 0-16s, p90
+        # <=91s, max 106s (migration-reversal). The bound now covers apt ALONE,
+        # so 5 min is p90 + ~3.5 min of headroom over a strictly smaller job.
+        # GUARDED, as spec-ci.yml has been all along. `ubuntu-latest` ships
+        # psql, so `command -v psql` short-circuits and apt is never reached --
+        # measured, not assumed: across 12 consecutive green Spec CI runs this
+        # step is 0-1s every time, while the six sites that were still calling
+        # apt unconditionally spent 3-29s per run on an `apt-get update` against
+        # the external mirror for a package apt then reports as already the
+        # newest version. That round-trip is pure exposure to the stall this
+        # plan exists to remove, and it buys nothing.
+        # (Those 3-29s figures are from `--status success` runs, so they are a
+        # LOWER bound by construction -- a run killed by the stall is excluded.)
+        # The bound below is NOT redundant: it covers the fallback arm, for the
+        # day an image stops shipping psql.
+        # Consequence for the marker: this step normally runs NO apt, so it
+        # normally concludes `success` and no arm names it -- which is correct,
+        # because there was no apt call to blame. spec-ci.yml makes the same
+        # observation at its own site (an arm keyed on this step's failure
+        # "would have been describing a call that did not happen"); the arm
+        # attribution below is this change's, not a restatement of that one.
+        # When the fallback DOES run and fails, the step still exits non-zero
+        # (`||` does not defeat `-e` for the group) and concludes `failure`, so
+        # arm 1 fires. The guard removes the exposure; it does not silence a
+        # real apt failure.
+        timeout-minutes: 5
         run: |
-          npx next start -p 3001 -H 0.0.0.0 > frontend.log 2>&1 &
-          echo "FRONTEND_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/login | grep -qE "^(200|307)$"; then
-              echo "frontend up after ${i}s"
+          command -v psql >/dev/null || { sudo apt-get update && sudo apt-get install -y postgresql-client; }
+
+      # Some alembic migrations (unify_runner_concepts onward) reference
+      # the `runner` schema, which is created by
+      # qontinui-web/init-scripts/01-create-runner-schema.sql in dev's
+      # docker-entrypoint-initdb.d. CI service containers don't run
+      # those init scripts, so create the schema explicitly.
+      - name: Create runner schema
+        # Deliberately UNBOUNDED and deliberately WITHOUT an `id:`. This is
+        # psql/DDL against this job's own postgres service, not the external
+        # mirror, so a failure here IS a verdict on the change -- it must never
+        # reach the infrastructure marker's APT_STEP_OUTCOMES.
+        env:
+          PGPASSWORD: test_password
+        run: |
+          psql -h localhost -U test_user -d test_db -c "CREATE SCHEMA IF NOT EXISTS runner;"
+
+      - name: Run database migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/test_db
+          TESTING: '1'
+          ENVIRONMENT: development
+          SECRET_KEY: test-secret-key-for-testing-only-minimum-32-chars-required
+          STORAGE_BACKEND: local
+          REDIS_ENABLED: 'false'
+        run: |
+          alembic upgrade heads
+
+      # Hermetic auth (mirrors spec-ci.yml + style-gate.yml — the ONE
+      # canonical CI auth contract): mint a run-local RS256 id token + JWKS,
+      # point the backend's Cognito verifier at the local issuer, and let
+      # auth.setup.ts lane 1 (QONTINUI_TEST_ID_TOKEN) seed it. The backend
+      # JIT-provisions the ci-bot user on the fixture's first authed probe —
+      # no DB seeding step. This replaces the deleted create_admin.py step:
+      # the local-password stack was retired in #342 (Cognito sole auth) and
+      # this workflow was never ported, which red-failed every main run from
+      # 2026-05-30 onward at "Create dev user for E2E auth setup".
+      - name: Mint local id token + serve JWKS
+        working-directory: ./backend
+        run: |
+          set -euo pipefail
+          # Mint as the canonical dev user (dev-credentials.json — single
+          # source of truth; the drift guard forbids hardcoding it). The
+          # global-setup seeder creates this user as a superuser shell row
+          # owning the seeded project/snapshots, and cognito_provision's
+          # link-by-verified-email arm stamps the token's sub onto that row
+          # on first authed probe. Minting any OTHER email (e.g. spec-ci's
+          # empty-account ci-bot) JIT-provisions a second, data-less,
+          # non-superuser user — every data-dependent spec then renders
+          # empty states ("No projects yet") and admin-gated suites 403.
+          EMAIL=$(python -c "import json; print(json.load(open('../dev-credentials.json'))['email'])")
+          TOKEN=$(python scripts/spec_ci_local_idp.py \
+            --issuer "http://127.0.0.1:8770" \
+            --audience spec-ci-local \
+            --email "$EMAIL" \
+            --out-dir /tmp/e2e-idp)
+          echo "QONTINUI_TEST_ID_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          (cd /tmp/e2e-idp && python -m http.server 8770 --bind 127.0.0.1 > /tmp/idp.log 2>&1 &)
+          for i in $(seq 1 15); do
+            if curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null; then
+              echo "local JWKS up after ${i}s"
               break
             fi
             sleep 1
           done
-          curl -s -o /dev/null -w "frontend status: %{http_code}\n" http://localhost:3001/login
+          curl -fsS http://127.0.0.1:8770/.well-known/jwks.json > /dev/null
 
-      - name: Run Spec CI
+      - name: Run frontend E2E tests
         working-directory: ./frontend
-        # GH_TOKEN lets the Phase 0 flake-diagnostics take a `gh run list
-        # --status in_progress` snapshot at run start (overlapping Spec CI runs
-        # — the H1/H2 concurrency signal). Best-effort: if gh/token is absent
-        # the snapshot degrades to available:false and the run is unaffected.
         env:
-          GH_TOKEN: ${{ github.token }}
+          CI: true
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # Duration-balanced shard weights (colon-separated ints; Playwright's
+          # filterForShard sizes each shard's test-count span proportionally —
+          # parse: cli/testActions.js resolveShardWeightsOption, semi-internal,
+          # re-verify on Playwright upgrades). Equal-count spans were badly
+          # duration-skewed (23.8m/6.7m/8.6m/17.6m of test time → max shard
+          # ~16m wall); these weights equalize measured span time (~14.2m
+          # each, ≈12m wall at workers:1 — span times were measured under the
+          # workers:2 trial run, so their absolute values are ~2× real; only
+          # the ratios matter for the weights). Derived from per-test
+          # durations in run 29937298955's results.json artifacts; recompute
+          # when the suite's shape shifts (see plan
+          # 2026-07-22-web-playwright-single-worker-stale-rationale).
+          # The weights are the `shard_weights` INPUT (default above) and are
+          # exported by the run block ONLY in the sharded mode: Playwright
+          # refuses PWTEST_SHARD_WEIGHTS whose count does not match the shard
+          # total, so setting them without `--shard` is a config error, not
+          # a no-op.
+          PW_SHARD: ${{ inputs.shard }}
+          PW_SHARD_COUNT: ${{ inputs.shard_count }}
+          PW_SHARD_WEIGHTS: ${{ inputs.shard_weights }}
+          PW_SPEC_FILES: ${{ inputs.spec_files }}
+          # Hermetic-auth backend config. global-setup.ts spawns uvicorn with
+          # `...process.env`, so these reach the backend's Cognito verifier:
+          # it trusts the run-local issuer above and fetches its JWKS from
+          # 127.0.0.1:8770. Values mirror spec-ci.yml.
+          COGNITO_USER_POOL_ID: spec-ci-local-pool
+          COGNITO_ISSUER: http://127.0.0.1:8770
+          COGNITO_ALLOWED_AUDIENCES: spec-ci-local
+          # Authenticate the backend's GitHub Releases fetch
+          # (backend/app/api/v1/endpoints/releases.py reads GITHUB_TOKEN and
+          # sends it as a Bearer). Shared Actions runner IPs exhaust the 60/hr
+          # anonymous api.github.com limit, silently degrading the release
+          # payload to an empty asset list and timing out download-page
+          # assertions (runs 29859706423 + 29696362417). The token lifts the
+          # limit to 5000/hr; read-only, public-repo metadata only.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Self-describing on purpose: the changed-specs lane is read off CI by
+        # a session that cannot run Playwright locally, so the log names the
+        # mode, the file list, the exact command and the exit code.
         run: |
-          npx tsx tests/spec-ci/run-spec-ci.ts \
-            --base-url http://localhost:3001 \
-            --api-base http://localhost:8000 \
-            --include-write \
-            --output spec-ci-report.json
-
-      - name: Tear down frontend + backend
-        if: always()
-        run: |
-          if [ -n "${FRONTEND_PID:-}" ]; then
-            kill "$FRONTEND_PID" 2>/dev/null || true
+          set -euo pipefail
+          args=(--project=chromium)
+          if [ -n "$PW_SHARD" ] && [ -n "$PW_SPEC_FILES" ]; then
+            echo "::error::e2e-playwright-stack: 'shard' and 'spec_files' are mutually exclusive; the caller set both."
+            exit 1
           fi
-          if [ -n "${BACKEND_PID:-}" ]; then
-            kill "$BACKEND_PID" 2>/dev/null || true
+          if [ -n "$PW_SHARD" ]; then
+            export PWTEST_SHARD_WEIGHTS="$PW_SHARD_WEIGHTS"
+            args+=("--shard=${PW_SHARD}/${PW_SHARD_COUNT}")
+            echo "Mode: full suite, shard ${PW_SHARD}/${PW_SHARD_COUNT} (PWTEST_SHARD_WEIGHTS=${PWTEST_SHARD_WEIGHTS})"
+          elif [ -n "$PW_SPEC_FILES" ]; then
+            # Whitespace-separated, frontend-relative. Spec paths carry no
+            # spaces; a path that did would need a different transport.
+            mapfile -t files < <(tr -s ' \t\n' '\n' <<< "$PW_SPEC_FILES" | sed '/^$/d')
+            echo "Mode: changed spec files only (${#files[@]} file(s)):"
+            missing=0
+            for f in "${files[@]}"; do
+              if [ -f "$f" ]; then
+                echo "  $f"
+              else
+                echo "::error::e2e-playwright-stack: listed spec file does not exist in this checkout: $f"
+                missing=1
+              fi
+            done
+            [ "$missing" -eq 0 ] || exit 1
+            args+=("${files[@]}")
+          else
+            echo "::error::e2e-playwright-stack: neither 'shard' nor 'spec_files' was given; refusing to run the whole suite unsharded by accident."
+            exit 1
           fi
+          echo "Command: npx playwright test ${args[*]}"
+          rc=0
+          npx playwright test "${args[@]}" || rc=$?
+          echo "Result: npx playwright test exited ${rc}"
+          exit "$rc"
 
-      - name: Upload Spec CI report
+      # Artifact names must be unique across every job of one run
+      # (actions/upload-artifact@v4 rejects collisions). The caller supplies
+      # the suffix: `shard-N` from the shard matrix -- the same names the
+      # shard job always produced -- and `changed-specs` from the PR lane.
+      - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: spec-ci-report
-          path: frontend/spec-ci-report.json
+          name: playwright-report-${{ inputs.artifact_suffix }}
+          path: frontend/playwright-report/
           retention-days: 30
 
-      - name: Upload frontend + backend logs on failure
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: frontend-test-results-${{ inputs.artifact_suffix }}
+          path: frontend/test-results/
+          retention-days: 30
+
+      - name: Upload test artifacts (screenshots, videos)
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: stack-logs
+          name: playwright-artifacts-${{ inputs.artifact_suffix }}
           path: |
-            frontend/frontend.log
-            backend/backend.log
-          retention-days: 7
-
-      # Summarize for the PR check page.
-      - name: Summarize
-        if: always()
-        run: |
-          if [ -f frontend/spec-ci-report.json ]; then
-            echo "## Spec CI Summary" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '
-              "- specs: \(.specCount)",
-              "- full_match: \(.summary.fullMatch)",
-              "- partial_match: \(.summary.partialMatch)",
-              "- no_match: \(.summary.noMatch)",
-              "- error: \(.summary.error)",
-              "- minMatchRate: \(.summary.minMatchRate)",
-              "- meanMatchRate: \(.summary.meanMatchRate)",
-              "- transitionPassRate: \(.summary.transitionPassRate)",
-              "- consoleErrors: \(.summary.consoleErrors.total)",
-              "- serverErrors: \(.summary.serverErrors.total)",
-              "- apiAssertionPassRate: \(.summary.apiAssertionPassRate)",
-              "- crawl: \(.crawl.visited) routes visited, \(.crawl.gatingFindings) gating findings (passRate \(.crawl.passRate))\(if .crawl.sessionLost then " — SESSION-LOST mid-crawl (\(.crawl.sessionLostRoutes) routes bounced to /login; environmental auth/rate-limit, re-run)" else "" end)",
-              "- diagnostics (Phase 0): \(.diagnostics.totalResponses) responses, \(.diagnostics.notableResponses | length) notable (5xx/4xx-not-401), auth{login=\(.diagnostics.auth.loginAttempts) refresh=\(.diagnostics.auth.refreshRotations) 429=\(.diagnostics.auth.authEndpoint429s)}, concurrency \(if .diagnostics.concurrencyAtStart.available then "\(.diagnostics.concurrencyAtStart.inProgressRuns | length) overlapping run(s)" else "unavailable (\(.diagnostics.concurrencyAtStart.reason))" end), runId \(.diagnostics.run.githubRunId) attempt \(.diagnostics.run.githubRunAttempt)"
-            ' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Notable responses (Phase 0 diagnostics — same-origin 5xx / 4xx-not-401):" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.diagnostics.notableResponses[]? | "- [\(.method) \(.status)] \(.url)\(if (.headers["x-amzn-trace-id"] // "") != "" then " trace=\(.headers["x-amzn-trace-id"])" else "" end)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Failing specs:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select(.matchOutcome != "full_match") | "- \(.specId) (\(.matchOutcome), matchRate=\(.matchRate))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with critical console errors:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.consoleErrors // []) | length > 0) | .specId as $s | .consoleErrors[] | "- \($s) [\(.level)] \(.text)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with same-origin HTTP-5xx:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.serverErrors // []) | length > 0) | .specId as $s | .serverErrors[] | "- \($s) [\(.method) \(.status)] \(.url)"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Specs with failing API assertions:" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.specs[] | select((.apiAssertions // []) | length > 0) | .specId as $s | .apiAssertions[] | select(.passed == false) | "- \($s) [\(.endpoint)] \(.error // (.assertionResults[] | select(.passed == false) | .reason))"' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Crawl routes with GATING findings (NEW, post-waiver):" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.crawl.routes[]? | select(((.unwaivedConsoleErrors // []) | length > 0) or ((.unwaivedServerErrors // []) | length > 0) or (.healthFail == true)) | .route as $r | ((.unwaivedConsoleErrors[]? | "- \($r) console [\(.level)] \(.text)"), (.unwaivedServerErrors[]? | "- \($r) server [\(.method) \(.status)] \(.url)"), (if .healthFail then "- \($r) health: navigation failed (\(.error))" else empty end))' frontend/spec-ci-report.json >> "$GITHUB_STEP_SUMMARY" || true
-          fi
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 30
 
       # ----------------------------------------------------------------------
       # CI-infrastructure timeout marker (plan
@@ -805,9 +797,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JOB_STATUS: ${{ job.status }}
           # declared at this job's `timeout-minutes`.
-          JOB_TIMEOUT_MINUTES: '35'
+          JOB_TIMEOUT_MINUTES: '60'
           EXTERNAL_CANCEL_NOTE: >-
-            this workflow declares NO `concurrency:` block, so GitHub never auto-supersedes it - an external cancel here came from a human or from coord's merge train reaping a merge-candidate/* ref
+            this reusable workflow carries no `concurrency:` of its own, so the `concurrency:` of the workflow that calls it (e2e-tests.yml) governs, and that one supersedes a running job only on pull_request events (it is an expression, `github.event_name == 'pull_request'`, so whether GitHub auto-supersedes is decided per run and cannot be stated as fixed here). On a pull_request run, a newer push to the same ref supersedes it; on a push or schedule run it does not, and a manual cancel is then the only external cause. A coord merge-train reap is NOT one of them: the shard caller's `if:` skips every refs/heads/merge-candidate ref and the changed-specs caller runs on pull_request only, so this job never runs on a candidate ref to be reaped
           # `<step name>|<outcome>|<conclusion>` per apt-dependent step in this
           # job. BOTH values are carried on purpose:
           #   * `.outcome` is the value BEFORE `continue-on-error` rewrites it,
@@ -824,7 +816,7 @@ jobs:
           # mirror: never the author's schema breaking, and never a Playwright
           # bundle that 404s on cdn.playwright.dev.
           APT_STEP_OUTCOMES: |
-            Install Playwright Chromium system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
+            Install Playwright browser system deps (apt)|${{ steps.apt_playwright.outcome }}|${{ steps.apt_playwright.conclusion }}
             Install postgresql-client|${{ steps.apt_psql.outcome }}|${{ steps.apt_psql.conclusion }}
         run: |
           set -uo pipefail
@@ -1095,3 +1087,4 @@ jobs:
           # non-cancelled path above has already returned. Kept so an unforeseen
           # state says what it knows instead of falling through silently.
           echo "::notice title=No infrastructure verdict::Job status '$JOB_STATUS', no apt-dependent step red the job, none mid-flight. This marker has nothing to add about the code under test. $ref"
+

@@ -53,6 +53,10 @@ on:
       # here is now a test failure rather than a silent hole.
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
+      # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
+      # and the marker's cancel note is checked against the CALLER's
+      # `concurrency:`, so both stay listed.
+      - '.github/workflows/e2e-playwright-stack.yml'
       - '.github/workflows/e2e-tests.yml'
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'
@@ -74,6 +78,10 @@ on:
       - 'scripts/ci/**'
       - '.github/workflows/backend-coverage-producer.yml'
       - '.github/workflows/cross-browser-survey.yml'
+      # e2e-playwright-stack.yml carries the marker; e2e-tests.yml calls it,
+      # and the marker's cancel note is checked against the CALLER's
+      # `concurrency:`, so both stay listed.
+      - '.github/workflows/e2e-playwright-stack.yml'
       - '.github/workflows/e2e-tests.yml'
       - '.github/workflows/migration-reversal.yml'
       - '.github/workflows/spec-ci.yml'

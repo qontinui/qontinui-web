@@ -55,7 +55,7 @@ export default defineConfig({
   // (admin.spec.ts, ai-tasks-pages.spec.ts): specs share one seeded user +
   // backend + DB and are not parallel-safe. Do not raise workers again
   // until specs get data isolation. Wall clock is instead balanced across
-  // shards via PWTEST_SHARD_WEIGHTS in e2e-tests.yml (see plan
+  // shards via PWTEST_SHARD_WEIGHTS in e2e-playwright-stack.yml (see plan
   // 2026-07-22-web-playwright-single-worker-stale-rationale).
   // retries stays 0: a retry would add its own timeout to wall clock and
   // give any flake two candidate causes.
