@@ -8,6 +8,13 @@
  * - /qa-dashboard/coverage (coverage trends and stats)
  * - /qa-dashboard/deficiencies (deficiency management)
  * - /qa-dashboard/compare (side-by-side run comparison)
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
@@ -26,6 +33,24 @@ const QA_RUN_DETAIL_URL = `/qa-dashboard/runs/non-existent-id-12345?project=${TE
 const QA_COVERAGE_URL = `/qa-dashboard/coverage?project=${TEST_PROJECT_ID}`;
 const QA_DEFICIENCIES_URL = `/qa-dashboard/deficiencies?project=${TEST_PROJECT_ID}`;
 const QA_COMPARE_URL = `/qa-dashboard/compare?project_id=${TEST_PROJECT_ID}`;
+
+/** Replaces the old `waitForTimeout(500)` after a view-selector click. */
+const VIEW_SWITCH_TIMEOUT = 5000;
+
+/**
+ * The view selector is a row of plain buttons; the selected one carries
+ * `bg-primary` (page.tsx). Bounded wait for that, tolerated — the test only
+ * asserts that switching does not error.
+ */
+async function waitForSelectedView(
+  page: import("@playwright/test").Page,
+  key: string
+): Promise<void> {
+  await page
+    .locator(`[data-testid="qa-dashboard-${key}-tab"].bg-primary`)
+    .waitFor({ state: "visible", timeout: VIEW_SWITCH_TIMEOUT })
+    .catch(() => null);
+}
 
 test.describe("QA Dashboard - Main Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
@@ -102,15 +127,15 @@ test.describe("QA Dashboard - Main Page", () => {
 
     // Click Live Execution tab
     await page.locator('[data-testid="qa-dashboard-live-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "live");
 
     // Click Coverage Trends tab — with project selected, the chart mounts.
     await page.locator('[data-testid="qa-dashboard-trends-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "trends");
 
     // Click Reliability tab
     await page.locator('[data-testid="qa-dashboard-reliability-tab"]').click();
-    await page.waitForTimeout(500);
+    await waitForSelectedView(page, "reliability");
   });
 });
 
