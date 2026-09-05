@@ -33,7 +33,7 @@ matching ``machines.owner_user_id`` (``models/devenv.py:124``) — deleting a
 user must not strand a policy row.
 
 ``down_revision`` is **whatever the single head of ``main`` is at the moment
-this branch is last pushed** — ``pmf_scope_cols_01`` as of 2026-09-02, and it
+this branch is last pushed** — ``require_review_cols_01`` as of 2026-09-05, and it
 has been re-pointed several times before that. Do not read the token as meaningful:
 while this PR stays open, every land on ``main`` that adds a revision makes this
 one a SIBLING off the old node, ``alembic heads`` reports two heads, and the
