@@ -22,6 +22,7 @@
  * preceded by a bounded `waitFor(...).catch(() => null)` so a tolerated
  * absence stays tolerated. Timeouts are the replaced sleep × 3, floor 5 s.
  * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
+ * First spec to run on the PR-lane `Frontend E2E Tests (changed specs)` (Phase 2.5).
  */
 
 import { test, expect } from "../fixtures";
