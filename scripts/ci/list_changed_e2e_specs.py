@@ -134,7 +134,6 @@ def frontend_relative(repo_path: str) -> str:
     return repo_path[len(FRONTEND_PREFIX) :]
 
 
-
 #: Largest number of spec files one stack job runs. A full-suite shard covers a
 #: quarter of the suite on its own `next dev`; the 23-file single-job lane on
 #: web#1265 (2026-09-05) showed that server degrading late in a long run —
