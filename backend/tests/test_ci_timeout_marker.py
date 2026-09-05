@@ -61,7 +61,11 @@ MARKER_WORKFLOWS = [
     "backend-ci.yml",
     "backend-coverage-producer.yml",
     "cross-browser-survey.yml",
-    "e2e-tests.yml",
+    # The Playwright stack that e2e-tests.yml's `frontend-tests` shards and its
+    # `frontend-e2e-changed-specs` PR lane both call. The marker moved here
+    # with the job (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-
+    # at-a-time, Phase 2.5); e2e-tests.yml itself now carries none.
+    "e2e-playwright-stack.yml",
     "migration-reversal.yml",
     "spec-ci.yml",
     "style-gate.yml",
@@ -189,17 +193,61 @@ def _assert_job_stamps_its_start_first(workflow: str, job_id: str, job: dict) ->
     )
 
 
+def _triggers(doc: dict) -> dict:
+    """The `on:` block. PyYAML (YAML 1.1) parses the bare key `on` as True."""
+    triggers = doc.get("on", doc.get(True))
+    return triggers if isinstance(triggers, dict) else {}
+
+
+def _callers(workflow: str) -> list[tuple[str, dict]]:
+    """Every (caller workflow, caller job) that `uses:` this local workflow.
+
+    A `workflow_call` workflow is a job body without a trigger of its own;
+    the concurrency (and the event) that govern it are the CALLER's. Same
+    `*.y*ml` glob as the carrier census, for the same reason.
+    """
+    target = f"./.github/workflows/{workflow}"
+    found = []
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        if path.name == workflow:
+            continue
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job in (doc.get("jobs") or {}).values():
+            if isinstance(job, dict) and str(job.get("uses", "")) == target:
+                found.append((path.name, job))
+    return found
+
+
 def _cancel_in_progress(workflow: str, job: dict):
     """Resolve the `cancel-in-progress` that actually governs this job.
 
     A job-level `concurrency:` block overrides the workflow-level one. Returns
     the bool, or None when no block applies -- and the string itself when it is
     an unevaluated `${{ }}` expression, which is neither.
+
+    A `workflow_call` workflow with no block of its own runs under its
+    CALLER's concurrency, so the value is resolved through the callers (the
+    caller job's block, else the caller workflow's). Callers that disagree
+    are reported as a synthetic expression: no static prose can be true of
+    every run then, exactly as for a `${{ }}` value, so the note must claim
+    neither. A called workflow that nobody calls resolves like any other
+    workflow with no block.
     """
     doc = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
     conc = job.get("concurrency")
     if conc is None:
         conc = doc.get("concurrency")
+    if conc is None and "workflow_call" in _triggers(doc):
+        seen = []
+        for caller_name, caller_job in _callers(workflow):
+            value = _cancel_in_progress(caller_name, caller_job)
+            if value not in seen:
+                seen.append(value)
+        if len(seen) == 1:
+            return seen[0]
+        if len(seen) > 1:
+            return f"<callers disagree: {seen!r}>"
+        return None
     if not isinstance(conc, dict):
         return None
     return conc.get("cancel-in-progress")
@@ -1167,9 +1215,19 @@ def test_backend_ci_triggers_on_every_workflow_this_module_reads():
     workflow = yaml.safe_load(BACKEND_CI.read_text(encoding="utf-8"))
     assert isinstance(workflow, dict), f"{BACKEND_CI} did not parse as a mapping."
 
+    # A `workflow_call` carrier's cancel note is checked against the
+    # concurrency of the workflows that CALL it (`_cancel_in_progress`), so
+    # an edit to a caller can drift the note just as an edit to the carrier
+    # can; the callers are read by this module and belong in the filter too.
+    read_by_this_module = list(MARKER_WORKFLOWS + TRIPWIRE_WORKFLOWS)
+    for name in MARKER_WORKFLOWS:
+        for caller_name, _ in _callers(name):
+            if caller_name not in read_by_this_module:
+                read_by_this_module.append(caller_name)
+
     for trigger in ("pull_request", "push"):
         filters = _backend_ci_paths(workflow, trigger)
-        for name in MARKER_WORKFLOWS + TRIPWIRE_WORKFLOWS:
+        for name in read_by_this_module:
             relative = f".github/workflows/{name}"
             assert relative in filters, (
                 f"`{relative}` is asserted on by this module but is not in "

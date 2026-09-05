@@ -138,6 +138,22 @@
 #    The fix, when `python` enters the registry (gap 1's problem, not this
 #    file's), is a provisioned interpreter rather than a spelling change here —
 #    `python3` would merely move the same gap to Windows.
+#
+# 7. e2e-tests.yml's `changed-specs` + `frontend-e2e-changed-specs` lane — THE
+#    PLAYWRIGHT STACK, ON A PR DIFF (plan
+#    2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time, Phase 2.5).
+#    Inexpressible for the same two reasons as gaps 1 and 4 combined: the run
+#    job (`.github/workflows/e2e-playwright-stack.yml`, also the body of the
+#    4-shard `frontend-tests` job) needs a Postgres service, uvicorn, a
+#    `next` server and a Chromium install this lane cannot provision; and the
+#    detect job diffs `github.event.pull_request.base.sha` against the PR's
+#    merge commit, a base/head pair a detached worktree does not have. The
+#    detection half IS a committed script (`scripts/ci/list_changed_e2e_specs.py`,
+#    stdlib + git) and could be invoked here against `origin/main`, but a step
+#    that lists files and runs nothing would be parity theatre — the list is
+#    only meaningful as the input to the stack. So the lane stays Actions-only,
+#    and the Actions lane remains the only place a changed spec is executed
+#    before it lands.
 # ===========================================================================
 
 version = 1
