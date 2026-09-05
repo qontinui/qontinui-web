@@ -14307,6 +14307,178 @@
         "title": "DeviceMachineCredentialMintResponse",
         "type": "object"
       },
+      "DeviceResponse": {
+        "additionalProperties": false,
+        "description": "Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.\n\nThe canonical ``Runner`` wire entity from ``qontinui_schemas`` (which\nforbids extra keys, so it cannot be extended in place) plus the web's own\nper-device tenant-binding presentation, sourced from coord's\n``GET /coord/devices/by-user``.\n\n``tenant_bindings`` is **tri-state** and every consumer must keep it so:\n\n* ``null`` \u2014 UNKNOWN. Coord did not hydrate bindings (its\n  ``coord.tenant_devices`` table is absent, or it predates the field).\n  Never render this as \"no tenants\".\n* ``[]`` \u2014 coord measured ZERO bindings for this device.\n* a non-empty list \u2014 the tenants the device is paired to.",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "description": "Free-form capability tags advertised by the runner\n(e.g., `[\"python\", \"playwright\", \"vision\"]`).",
+            "title": "Capabilities"
+          },
+          "createdAt": {
+            "description": "ISO 8601 timestamp when the runner was first registered.",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "derivedStatus": {
+            "$ref": "#/components/schemas/RunnerStatus",
+            "description": "Computed health state derived from `ws_connected` and\n`last_heartbeat`. Authoritative for UI display."
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported hostname of the machine the runner is running on.",
+            "title": "Hostname"
+          },
+          "id": {
+            "description": "Runner identifier (UUID as a string).",
+            "title": "Id",
+            "type": "string"
+          },
+          "ipAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported network address the runner is reachable on.",
+            "title": "Ipaddress"
+          },
+          "lastHeartbeat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 8601 timestamp of the most recent heartbeat received from the\nrunner, if any.",
+            "title": "Lastheartbeat"
+          },
+          "name": {
+            "description": "Human-readable runner name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operating system identifier (e.g., `\"windows\"`, `\"macos\"`, `\"linux\"`).",
+            "title": "Os"
+          },
+          "osVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operating system version string.",
+            "title": "Osversion"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported port the runner's HTTP API is listening on.",
+            "title": "Port"
+          },
+          "recentCrash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerCrash"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most recently captured crash dump metadata, if any."
+          },
+          "tenant_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DeviceTenantBinding"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenants this device is paired to. ``null`` means coord did not report bindings (UNKNOWN, never zero); ``[]`` means coord measured zero bindings.",
+            "title": "Tenant Bindings"
+          },
+          "uiError": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most recently reported structured UI error, if any."
+          },
+          "userId": {
+            "description": "Owning user identifier (UUID as a string).",
+            "title": "Userid",
+            "type": "string"
+          },
+          "wsConnected": {
+            "description": "Whether the server currently holds an open WebSocket from the runner.",
+            "title": "Wsconnected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "derivedStatus",
+          "id",
+          "name",
+          "userId",
+          "wsConnected"
+        ],
+        "title": "DeviceResponse",
+        "type": "object"
+      },
       "DeviceSessionSummary": {
         "description": "Simplified device session schema for user-facing API.\n\nHides sensitive information like device fingerprint.",
         "properties": {
@@ -14417,6 +14589,45 @@
           }
         },
         "title": "DeviceSessionUpdate",
+        "type": "object"
+      },
+      "DeviceTenantBinding": {
+        "description": "One tenant a device is paired to, as coord reports it.\n\nMirrors one element of the ``tenant_bindings`` array on coord's\n``GET /coord/devices/by-user`` rows (``coord.tenant_devices``).",
+        "properties": {
+          "last_active_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "RFC 3339 timestamp of the binding's last activity; ``null`` when coord holds none.",
+            "title": "Last Active At"
+          },
+          "tenant_id": {
+            "description": "Tenant identifier (UUID as a string).",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenant slug when coord resolved one; ``null`` otherwise.",
+            "title": "Tenant Slug"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "DeviceTenantBinding",
         "type": "object"
       },
       "DiffRegionResponse": {
@@ -36654,163 +36865,6 @@
         ],
         "title": "RunType",
         "type": "string"
-      },
-      "Runner": {
-        "additionalProperties": false,
-        "description": "Canonical runner entity. One row per registered runner; the same shape is\nserved to every consumer (mobile, web, runner UI).\n\nReplaces the prior split between `runners` (fleet/heartbeat),\n`runner_connections` (transient WS sessions), and per-consumer projection\ntypes like `RunnerConnection` / `ServerRunner` / `RegisteredRunner` /\n`WebIntegrationStatus`.",
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": [],
-            "description": "Free-form capability tags advertised by the runner\n(e.g., `[\"python\", \"playwright\", \"vision\"]`).",
-            "title": "Capabilities"
-          },
-          "createdAt": {
-            "description": "ISO 8601 timestamp when the runner was first registered.",
-            "title": "Createdat",
-            "type": "string"
-          },
-          "derivedStatus": {
-            "$ref": "#/components/schemas/RunnerStatus",
-            "description": "Computed health state derived from `ws_connected` and\n`last_heartbeat`. Authoritative for UI display."
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported hostname of the machine the runner is running on.",
-            "title": "Hostname"
-          },
-          "id": {
-            "description": "Runner identifier (UUID as a string).",
-            "title": "Id",
-            "type": "string"
-          },
-          "ipAddress": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported network address the runner is reachable on.",
-            "title": "Ipaddress"
-          },
-          "lastHeartbeat": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 timestamp of the most recent heartbeat received from the\nrunner, if any.",
-            "title": "Lastheartbeat"
-          },
-          "name": {
-            "description": "Human-readable runner name.",
-            "title": "Name",
-            "type": "string"
-          },
-          "os": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operating system identifier (e.g., `\"windows\"`, `\"macos\"`, `\"linux\"`).",
-            "title": "Os"
-          },
-          "osVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operating system version string.",
-            "title": "Osversion"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "maximum": 65535.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported port the runner's HTTP API is listening on.",
-            "title": "Port"
-          },
-          "recentCrash": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunnerCrash"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Most recently captured crash dump metadata, if any."
-          },
-          "uiError": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunnerUiError"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Most recently reported structured UI error, if any."
-          },
-          "userId": {
-            "description": "Owning user identifier (UUID as a string).",
-            "title": "Userid",
-            "type": "string"
-          },
-          "wsConnected": {
-            "description": "Whether the server currently holds an open WebSocket from the runner.",
-            "title": "Wsconnected",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "createdAt",
-          "derivedStatus",
-          "id",
-          "name",
-          "userId",
-          "wsConnected"
-        ],
-        "title": "Runner",
-        "type": "object"
       },
       "RunnerConnectionInfo": {
         "description": "Connection information for qontinui-runner desktop app",
@@ -69404,7 +69458,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/Runner"
+                    "$ref": "#/components/schemas/DeviceResponse"
                   },
                   "title": "Response List Devices Endpoint Api V1 Devices Get",
                   "type": "array"
@@ -69956,7 +70010,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Runner"
+                  "$ref": "#/components/schemas/DeviceResponse"
                 }
               }
             },

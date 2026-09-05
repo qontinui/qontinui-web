@@ -55,6 +55,8 @@ from app.schemas.device import (
     DeviceIdentityResponse,
     DeviceMachineCredentialExchangeResponse,
     DeviceMachineCredentialMintResponse,
+    DeviceResponse,
+    DeviceTenantBinding,
     DispatchDeviceRequest,
     DispatchDeviceResponse,
     PairCliRequest,
@@ -373,15 +375,47 @@ def _derive_status_from_row(row: dict[str, Any]) -> RunnerStatus:
     return RunnerStatus.offline
 
 
-def _device_row_to_wire(row: dict[str, Any]) -> RunnerWire:
+def _tenant_bindings_from(value: Any) -> list[DeviceTenantBinding] | None:
+    """Map coord's per-device ``tenant_bindings`` array, keeping it tri-state.
+
+    ``None`` (the key absent, or coord sending ``null``) is UNKNOWN and stays
+    ``None``; ``[]`` is a measured zero and stays ``[]``. Anything that is not
+    a list is a contract violation and is reported as UNKNOWN rather than as
+    an empty set. Elements that are not objects carrying a ``tenant_id`` are
+    dropped — they name no tenant.
+    """
+    if not isinstance(value, list):
+        return None
+    bindings: list[DeviceTenantBinding] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        tenant_id = item.get("tenant_id")
+        if not tenant_id:
+            continue
+        slug = item.get("tenant_slug")
+        last_active = item.get("last_active_at")
+        bindings.append(
+            DeviceTenantBinding(
+                tenant_id=str(tenant_id),
+                tenant_slug=str(slug) if slug else None,
+                last_active_at=str(last_active) if last_active else None,
+            )
+        )
+    return bindings
+
+
+def _device_row_to_wire(row: dict[str, Any]) -> DeviceResponse:
     """Convert a coord ``coord.devices`` JSON row to the canonical wire shape.
 
     Dict-consuming twin of :func:`_device_to_wire`. The row carries every
     ``coord.devices`` column via coord's ``to_jsonb`` (snake_case keys);
-    ``last_heartbeat`` / ``created_at`` are already ISO strings.
+    ``last_heartbeat`` / ``created_at`` are already ISO strings. The row's
+    ``tenant_bindings`` (coord's per-device tenant set) passes through with
+    its tri-state intact — see :class:`DeviceResponse`.
     """
     user_id = row.get("user_id")
-    return RunnerWire(
+    return DeviceResponse(
         id=str(row.get("device_id")),
         userId=str(user_id) if user_id else "",
         name=str(row.get("name") or ""),
@@ -397,6 +431,7 @@ def _device_row_to_wire(row: dict[str, Any]) -> RunnerWire:
         uiError=_ui_error_from(row.get("ui_error")),
         recentCrash=_recent_crash_from(row.get("recent_crash")),
         createdAt=str(row.get("created_at") or ""),
+        tenant_bindings=_tenant_bindings_from(row.get("tenant_bindings")),
     )
 
 
@@ -405,7 +440,7 @@ def _device_row_to_wire(row: dict[str, Any]) -> RunnerWire:
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=list[RunnerWire])
+@router.get("", response_model=list[DeviceResponse])
 async def list_devices_endpoint(
     *,
     request: Request,
@@ -770,7 +805,7 @@ async def pair_cli(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{device_id}", response_model=RunnerWire)
+@router.get("/{device_id}", response_model=DeviceResponse)
 async def get_device_endpoint(
     *,
     request: Request,
