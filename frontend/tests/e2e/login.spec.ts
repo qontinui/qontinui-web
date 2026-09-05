@@ -7,10 +7,20 @@
  * - Successful login redirects to dashboard/admin
  * - Failed login shows error message
  * - Logout clears session
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "@playwright/test";
 import { TEST_USER } from "./test-credentials";
+
+/** Replaces the old `waitForTimeout(2000)` after an invalid sign-in. */
+const ERROR_TIMEOUT = 6000;
 
 test.describe("Login Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -125,9 +135,15 @@ test.describe("Login Flow", () => {
     // Submit form
     await page.getByRole("button", { name: /sign in/i }).click();
 
-    // Wait for error message (toast notification)
-    // The error could appear as a toast or inline error
-    await page.waitForTimeout(2000); // Wait for API response
+    // Wait for error message (toast notification — sonner renders
+    // `[data-sonner-toast]`; an inline error would be a `role="alert"`).
+    // Bounded wait, tolerated — the read below is the URL, as before.
+    await page
+      .locator("[data-sonner-toast]")
+      .or(page.getByRole("alert"))
+      .first()
+      .waitFor({ state: "visible", timeout: ERROR_TIMEOUT })
+      .catch(() => null);
 
     // Take screenshot showing error state
     await page.screenshot({
@@ -167,8 +183,9 @@ test.describe("Login Flow", () => {
     // Try to submit empty form
     await page.getByRole("button", { name: /sign in/i }).click();
 
-    // Verify validation messages appear (Zod schema validation)
-    await page.waitForTimeout(500);
+    // Validation messages (Zod schema validation) are documented by the
+    // screenshot only — nothing is read after the click, so nothing is
+    // waited on.
 
     // Take screenshot showing validation
     await page.screenshot({

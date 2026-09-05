@@ -301,7 +301,15 @@ class MemoryRecordIn(BaseModel):
     anchor MERGES the anchor onto the existing live row (see
     ``memory_store.insert_record``'s ON CONFLICT clause), which is the
     only supported way to anchor an existing record.
+
+    **Unknown keys are REJECTED (422), not ignored** — the same rule
+    :class:`MemoryQueryRequest` carries. The measured occurrence was a
+    ``supersedes`` key written INSIDE a record (the real door is
+    ``POST /records/{id}/supersede``): pydantic's default dropped it and
+    the write "succeeded" while dropping the field that was its whole point.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(min_length=1)
@@ -342,7 +350,13 @@ class MemoryRecordIn(BaseModel):
 
 
 class WriteRecordsRequest(BaseModel):
-    """``POST /memory/records`` body — a batch of at most 100 records."""
+    """``POST /memory/records`` body — a batch of at most 100 records.
+
+    Unknown top-level keys are a 422 (``extra="forbid"``), like every
+    other request body on this router — see :class:`MemoryRecordIn`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     records: list[MemoryRecordIn] = Field(
         min_length=1, max_length=MAX_RECORDS_PER_REQUEST
@@ -653,7 +667,13 @@ class SupersedeRequest(BaseModel):
     successor starts at the column default ``none`` and is re-resolved on
     the next tick. Inheriting a verdict would assert a check that never
     ran against this row.
+
+    Unknown keys are a 422 (``extra="forbid"``): a misspelled field on a
+    supersede would otherwise be silently dropped and the successor would
+    INHERIT the value the caller meant to replace.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(min_length=1)
@@ -865,7 +885,14 @@ class MemoryStatsResponse(BaseModel):
 
 
 class MemoryGraphRequest(BaseModel):
-    """``POST /memory/graph`` body — bounded outbound traversal."""
+    """``POST /memory/graph`` body — bounded outbound traversal.
+
+    Unknown keys are a 422 (``extra="forbid"``): ``relation`` for
+    ``relation_filter`` would otherwise traverse UNFILTERED and answer
+    a wider graph than the caller asked for.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     root_memory_id: UUID
     depth: int = Field(default=DEFAULT_GRAPH_DEPTH, ge=1, le=MAX_GRAPH_DEPTH)
@@ -949,9 +976,18 @@ class MemoryRecordOut(BaseModel):
 
 
 class ListRecordsResponse(BaseModel):
-    """``GET /memory/records`` — one keyset page, newest-first-stable."""
+    """``GET /memory/records`` — one keyset page, newest-first-stable.
+
+    ``count`` is ``len(records)`` for THIS page — the one envelope key a
+    reader checks before trusting an empty ``records`` (plan
+    ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, D4). It is
+    required and un-defaulted, like ``live_row_count`` on the query
+    response: a build that forgets to set it fails to construct the
+    response rather than shipping a ``0`` that reads as "empty corpus".
+    """
 
     records: list[MemoryRecordOut]
+    count: int
     # Opaque keyset cursor for the next (older) page; None on the last page.
     next_cursor: str | None
 

@@ -9,6 +9,9 @@ import { test, expect } from "../fixtures";
 
 import { stubRunnerRelease } from "../helpers/runner-release-stub";
 
+/** Replaces the old `waitForTimeout(2000)` after the /runners navigation. */
+const DEVICES_SETTLE_TIMEOUT = 6000;
+
 test.describe("Connect Runner Page", () => {
   test("loads without errors and shows heading", async ({ page }) => {
     await page.goto("/connect-runner");
@@ -186,8 +189,16 @@ test.describe("Runners Management Page", () => {
     await page.goto("/runners");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for tab content to load
-    await page.waitForTimeout(2000);
+    // Wait for tab content to load: the devices list settles on a device
+    // card, "No Online Devices" or "No Registered Devices" — bounded wait for
+    // any, tolerated (the read below is the no-500 content check).
+    await page
+      .getByText("No Online Devices")
+      .or(page.getByText("No Registered Devices"))
+      .or(page.locator('[class*="grid"] h3'))
+      .first()
+      .waitFor({ state: "visible", timeout: DEVICES_SETTLE_TIMEOUT })
+      .catch(() => null);
 
     await page.screenshot({
       path: "test-results/pages-runners-active.png",
