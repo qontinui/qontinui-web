@@ -9,6 +9,10 @@ import type { Page } from "@playwright/test";
  *   `dashboard.spec.ts`; Mobile Chrome on `docs-runner.spec.ts:62`).
  * - `CONNECTION_RESET` — dev server briefly drops an established connection
  *   under memory/GC pressure (Mobile Chrome on `docs-runner.spec.ts`).
+ * - `EMPTY_RESPONSE` — the same drop, seen from the other side: the dev
+ *   server accepts and closes without a byte (chromium on
+ *   `testing-global.spec.ts:178` in the 23-file changed-specs lane run on
+ *   web#1265, 2026-09-05).
  *
  * Both share the same papering-over shape: catch only the matched error,
  * wait a beat, retry once, otherwise rethrow. The default `matchError`
@@ -19,9 +23,10 @@ import type { Page } from "@playwright/test";
 export async function gotoWithRetry(
   page: Page,
   path: string,
-  opts: { matchError?: RegExp; waitMs?: number } = {},
+  opts: { matchError?: RegExp; waitMs?: number } = {}
 ): Promise<void> {
-  const matchError = opts.matchError ?? /CONNECTION_(REFUSED|RESET)/i;
+  const matchError =
+    opts.matchError ?? /CONNECTION_(REFUSED|RESET)|EMPTY_RESPONSE/i;
   const waitMs = opts.waitMs ?? 1000;
   try {
     await page.goto(path);
