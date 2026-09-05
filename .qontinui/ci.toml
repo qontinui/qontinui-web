@@ -316,6 +316,17 @@ name = "ruff-version-parity"
 # manifest header states for the backend suite it CANNOT express.
 command = ["python", "scripts/ci/check_ruff_version_parity.py"]
 
+[[steps]]
+name = "forbid-fixed-sleeps-in-e2e"
+# forbid-fixed-sleeps-in-e2e.yml, step "Count fixed sleeps in frontend/tests/e2e
+# against the allowlist". Per-file ratchet on `waitForTimeout(` calls under
+# frontend/tests/e2e, matched EXACTLY against
+# frontend/tests/e2e/.fixed-sleeps-allowlist — a row may go down or away, never
+# up. A fixed sleep followed by a non-waiting `count()` read asserts on
+# wall-clock, which is how run 33950897170 red-mained main on a land that never
+# touched the page under test. Plain file scan, stdlib only, no git needed.
+command = ["python", "scripts/ci/check_fixed_sleeps_in_e2e.py"]
+
 # ---------------------------------------------------------------------------
 # FRONTEND — mirrors frontend-ci.yml's `lint-and-typecheck` job, step for step
 # and in its order. Cheapest gates first: lint and typecheck fail fast before

@@ -15,7 +15,10 @@
  * `unitRows.test.ts` asserts the two agree.
  */
 
-import type { AgentTextUnit } from "@/lib/api/agent-text-units";
+import type {
+  AgentTextUnit,
+  AgentTextUnitDefault,
+} from "@/lib/api/agent-text-units";
 import {
   entrypointFor,
   isCopySourceName,
@@ -130,7 +133,9 @@ export function statusOf(row: UnitRow): UnitStatus {
           : "This account stores its own text. No fleet default exists for this name, so the account layer is the only stored copy."
         : kind === "fleet-default"
           ? "Served from the fleet default — every account without an override of its own gets this text."
-          : "No stored text at either layer, so sessions get the copy embedded in the runner binary. qontinui-web holds no copy of that text.";
+          : row.embedded
+            ? `No stored text at either layer, so sessions get the copy embedded in the runner binary — ${baselineLabel(row.embedded.published_by_version)}, so it can be read here and an override started from it.`
+            : "No stored text at either layer, so sessions get the copy embedded in the runner binary. No runner has published that copy to this account, so qontinui-web holds no text for it.";
 
   return { kind, label: STATUS_LABEL[kind], reason, attention: ATTENTION_BY_KIND[kind] };
 }
@@ -154,14 +159,23 @@ export function rowAccentClass(status: Pick<UnitStatus, "attention">): string {
  * resolved view, which drops a fleet default the account has overridden. That
  * dropped row is the whole `shadowsFleet` / `pinsFleet` signal.
  *
- * `config.knownEmbedded` contributes rows for units the runner is known to
- * ship with no stored copy at either layer. It is a display seed only: a name
- * outside it behaves identically once stored.
+ * `publishedDefaults` is the account's baseline — the embedded roster a
+ * runner published (`GET /defaults`). Every name in it gets a row, so a unit
+ * that ships in the binary and is stored nowhere is listed from the roster
+ * rather than from guesswork, and each row carries its published copy as
+ * `embedded`. It never changes which layer a row RESOLVES from: the baseline
+ * is display, and the runner's own binary is what actually serves an
+ * embedded-only unit.
+ *
+ * `config.knownEmbedded` still contributes rows for units the runner is known
+ * to ship, for the account that has no baseline yet. It is a display seed
+ * only: a name outside it behaves identically once stored or published.
  */
 export function buildUnitRows(
   config: UnitKindConfig,
   accountUnits: AgentTextUnit[],
-  fleetUnits: AgentTextUnit[]
+  fleetUnits: AgentTextUnit[],
+  publishedDefaults: AgentTextUnitDefault[] = []
 ): UnitRow[] {
   const account = new Map<string, AgentTextUnit>();
   for (const unit of accountUnits) {
@@ -171,11 +185,16 @@ export function buildUnitRows(
   for (const unit of fleetUnits) {
     if (unit.kind === config.kind) fleet.set(unit.name, unit);
   }
+  const embedded = new Map<string, AgentTextUnitDefault>();
+  for (const unit of publishedDefaults) {
+    if (unit.kind === config.kind) embedded.set(unit.name, unit);
+  }
 
   const names = new Set<string>([
     ...config.knownEmbedded,
     ...account.keys(),
     ...fleet.keys(),
+    ...embedded.keys(),
   ]);
 
   return [...names]
@@ -205,6 +224,7 @@ export function buildUnitRows(
         account: accountUnit,
         fleet: fleetUnit,
         resolved,
+        embedded: embedded.get(name) ?? null,
         shadowsFleet: accountUnit !== null && fleetUnit !== null,
         pinsFleet,
         // An unstored unit inherits the name rule: a leading underscore marks a
@@ -214,6 +234,21 @@ export function buildUnitRows(
           : !isCopySourceName(name),
       } satisfies UnitRow;
     });
+}
+
+/**
+ * How a published baseline is NAMED, everywhere it is named.
+ *
+ * "published by runner vX.Y.Z" — never "the default". An org whose devices run
+ * different builds has no single default; the server's monotonic guard is a
+ * mitigation, not a fix (a genuine downgrade still wins, and equal versions
+ * tie-break last-writer); and a label that said "the default" would claim an
+ * authority the baseline does not have. One function so the diff view, the
+ * reset preview, the status reason and the editor cannot drift on the wording.
+ */
+export function baselineLabel(publishedByVersion: string): string {
+  const version = publishedByVersion.replace(/^v/i, "");
+  return `published by runner v${version}`;
 }
 
 /** The entrypoint path for a row — the server's value when stored, the kind's
@@ -344,7 +379,7 @@ export function matchesQuery(row: UnitRow, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   if (row.name.toLowerCase().includes(needle)) return true;
-  const files = row.resolved?.files ?? {};
+  const files = row.resolved?.files ?? row.embedded?.files ?? {};
   return Object.keys(files).some((path) => path.toLowerCase().includes(needle));
 }
 

@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   deleteAgentTextUnit,
+  getAgentTextUnitDefaults,
   listAgentTextUnitVersions,
   listAgentTextUnits,
   revertAgentTextUnit,
   upsertAgentTextUnit,
   type AgentTextUnit,
+  type AgentTextUnitDefaultsResponse,
   type AgentTextUnitVersion,
   type LayerRef,
   type UnitFiles,
@@ -55,8 +57,13 @@ export interface UseAgentTextUnitsOptions {
  *    overridden, which is exactly the row that tells you fleet edits are no
  *    longer reaching this account.
  * 2. **Never invents an embedded body.** A unit stored at neither layer has
- *    `resolved === null` and the editor starts blank — the runner's embedded
- *    text lives in its binary and is never uploaded here.
+ *    `resolved === null` and the editor starts blank. What it CAN show is the
+ *    copy a runner PUBLISHED to this account (`GET /defaults`, the third
+ *    fetch) — carried on each row as `embedded`, labelled by the build that
+ *    published it, and offered as a starting point. A failed defaults read is
+ *    UNKNOWN (`baseline === null`, `baselineError` set), never "no baseline";
+ *    and it never fails the page, because the two stored layers are still
+ *    editable without it.
  * 3. **Never optimistically patches local state after a write.** Every
  *    mutation re-fetches, so what the page shows is what the server recorded.
  */
@@ -68,6 +75,13 @@ export function useAgentTextUnits({
 
   const [accountUnits, setAccountUnits] = useState<AgentTextUnit[]>([]);
   const [fleetUnits, setFleetUnits] = useState<AgentTextUnit[]>([]);
+  /** The account's published baseline; `null` until read, or when the read
+   *  failed (see `baselineError`) — UNKNOWN, not empty. An account with no
+   *  baseline reads as `{ units: [], published_by_version: null }`. */
+  const [baseline, setBaseline] = useState<AgentTextUnitDefaultsResponse | null>(
+    null
+  );
+  const [baselineError, setBaselineError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -89,8 +103,8 @@ export function useAgentTextUnits({
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
 
   const rows = useMemo(
-    () => buildUnitRows(config, accountUnits, fleetUnits),
-    [config, accountUnits, fleetUnits]
+    () => buildUnitRows(config, accountUnits, fleetUnits, baseline?.units ?? []),
+    [config, accountUnits, fleetUnits, baseline]
   );
 
   const layerRef = useCallback(
@@ -103,16 +117,32 @@ export function useAgentTextUnits({
     account: AgentTextUnit[];
     fleet: AgentTextUnit[];
   }> => {
-    const [account, fleet] = await Promise.all([
+    const [account, fleet, defaults] = await Promise.all([
       listAgentTextUnits({
         kind,
         includeFleetDefaults: false,
         limit: PAGE_LIMIT,
       }),
       listAgentTextUnits({ kind, fleetDefault: true, limit: PAGE_LIMIT }),
+      // Isolated: a failed baseline read degrades the baseline to UNKNOWN and
+      // leaves the two stored layers editable, rather than failing the page.
+      getAgentTextUnitDefaults().then(
+        (value) => ({ ok: true as const, value }),
+        (err: unknown) => ({
+          ok: false as const,
+          error: errorMessage(err, "Failed to read the published defaults"),
+        })
+      ),
     ]);
     setAccountUnits(account.items ?? []);
     setFleetUnits(fleet.items ?? []);
+    if (defaults.ok) {
+      setBaseline(defaults.value);
+      setBaselineError(null);
+    } else {
+      setBaseline(null);
+      setBaselineError(defaults.error);
+    }
     setTruncated(
       Boolean(account.pagination?.has_more) || Boolean(fleet.pagination?.has_more)
     );
@@ -151,6 +181,7 @@ export function useAgentTextUnits({
       account: null,
       fleet: null,
       resolved: null,
+      embedded: null,
       shadowsFleet: false,
       pinsFleet: false,
       isInvocable: !isCopySourceName(selectedName),
@@ -335,6 +366,20 @@ export function useAgentTextUnits({
     );
   }, [selected, editLayer]);
 
+  /** Copy the PUBLISHED embedded default into the draft — the honest
+   *  starting point for an override when a runner has published one. */
+  const seedFromBaseline = useCallback(() => {
+    if (!selected?.embedded) return;
+    const source = selected.embedded;
+    setDraftFiles({ ...source.files });
+    const entry = entrypointFor(kind, selected.name);
+    setActivePath(
+      entry in source.files
+        ? entry
+        : (Object.keys(source.files).sort()[0] ?? null)
+    );
+  }, [selected, kind]);
+
   // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
@@ -493,6 +538,9 @@ export function useAgentTextUnits({
     truncated,
     retryLoad: load,
 
+    baseline,
+    baselineError,
+
     selected,
     selectUnit,
     clearSelection,
@@ -511,6 +559,7 @@ export function useAgentTextUnits({
     renameFile,
     deleteFile,
     seedFromOtherLayer,
+    seedFromBaseline,
 
     changeDescription,
     setChangeDescription,

@@ -1,0 +1,69 @@
+name: forbid fixed sleeps in e2e
+
+# Phase 1 deliverable of plan
+# `2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time`.
+#
+# WHAT IT FORBIDS: a NEW `waitForTimeout(` call under `frontend/tests/e2e/` —
+# any file whose count exceeds the row it carries in
+# `frontend/tests/e2e/.fixed-sleeps-allowlist` (no row = 0 allowed).
+#
+# WHY IT EXISTS: `page.waitForTimeout(N)` followed by `locator.count()` is an
+# assertion on wall-clock, not on state. `count()` does not auto-wait, so the
+# fixed N ms IS the whole wait, and a page that renders at N+100 ms fails a
+# test that passes at N-100 ms. On 2026-09-05 that red-mained `main` on run
+# 33950897170 (`configure.spec.ts:70`) for a land that touched nothing under
+# `/configure`. The suite carried 236 such calls in 32 files when this gate was
+# set; converting them is Phases 2-3 of the plan, one file per commit, and the
+# runner repo hit the identical class the day before
+# (`2026-09-04-a-fixed-sleep-red-mains-the-runner-repo`). The replacement is
+# Playwright's own auto-waiting assertions (`expect(locator).toBeVisible()` /
+# `toHaveCount()` / `toContainText()`), which poll until the state holds or the
+# timeout elapses.
+#
+# THE ALLOWLIST IS A RATCHET, matched EXACTLY (the posture of qontinui-runner's
+# forbid-untimed-subprocess.yml, whose shape this mirrors): a row may go down or
+# away, never up, and a converted file must lower its row in the same commit —
+# a stale row is a hole the count could silently climb back into. Phase 4
+# deletes the allowlist once every row is 0 and makes the gate unconditional.
+#
+# The logic lives in ONE place, `scripts/ci/check_fixed_sleeps_in_e2e.py`,
+# shared with `.qontinui/ci.toml` and `.pre-commit-config.yaml` (the
+# `_gate_lib` convention). Pure stdlib — no `pip install`, so this leg cannot go
+# red on a package-index outage.
+#
+# NOT PATH-FILTERED, deliberately: it creates a check-run on EVERY pull request,
+# so it is eligible to become a required context without the "Expected forever"
+# wedge a path-filtered required check produces (the 2026-06-26 fleet wedge).
+# It is NOT registered as required today — that is an operator ruleset decision,
+# not a side effect of adding a workflow. The push branch list matches the
+# repo's other guard workflows (forbid-public-schema.yml et al.), so coord's
+# merge-candidate refs get the same verdict as the PR did.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches:
+      - main
+      - develop
+      - 'merge-candidate/**'
+      - 'merge-candidate-spec/**'
+      - 'merge-candidate-batch/**'
+
+permissions:
+  contents: read
+
+jobs:
+  forbid-fixed-sleeps-in-e2e:
+    name: Forbid new fixed sleeps in the Playwright E2E suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Count fixed sleeps in frontend/tests/e2e against the allowlist
+        run: python scripts/ci/check_fixed_sleeps_in_e2e.py
