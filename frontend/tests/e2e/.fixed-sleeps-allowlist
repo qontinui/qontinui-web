@@ -15,7 +15,7 @@ frontend/tests/e2e/login.spec.ts 2
 frontend/tests/e2e/navigation-test-generator.spec.ts 1
 frontend/tests/e2e/pages/admin-coord-questions.spec.ts 3
 frontend/tests/e2e/pages/admin-coord-spawn.spec.ts 2
-frontend/tests/e2e/pages/admin.spec.ts 20
+frontend/tests/e2e/pages/admin.spec.ts 0
 frontend/tests/e2e/pages/ai-tasks-pages.spec.ts 8
 frontend/tests/e2e/pages/automation-builder-analytics.spec.ts 15
 frontend/tests/e2e/pages/automation-builder-core.spec.ts 0
