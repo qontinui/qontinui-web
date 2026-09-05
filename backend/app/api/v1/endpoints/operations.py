@@ -10270,12 +10270,8 @@ async def create_cognito_group(
     except CognitoGroupExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CognitoInvalidParameterError as exc:
-        # A malformed name is the CALLER's error and self-explaining — it must
-        # be caught BEFORE the generic ``CognitoAdminError`` arm below, which
-        # would otherwise collapse it into a 502 that claims AWS is broken.
-        # 502 stays reserved for a genuinely broken upstream, which is the
-        # only thing that makes it a useful signal.
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Ordering is load-bearing — see `_invalid_parameter_http`.
+        raise _invalid_parameter_http(exc) from exc
     except CognitoAdminError as exc:
         raise _cognito_http_error(
             exc,

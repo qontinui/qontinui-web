@@ -26,6 +26,11 @@
  *    clicking through.
  * 5. **A valid name still submits.** Without this the whole feature could be
  *    "achieved" by disabling the button permanently.
+ * 6. **The reason is ASSOCIATED with the field, not only announced.**
+ *    `role="alert"` fires once, for whoever was listening; `aria-invalid` says
+ *    "wrong" without saying why. A screen-reader user who reaches the field
+ *    afterwards needs `aria-describedby` — and needs it GONE once the hint
+ *    unmounts, or the field is described by an id that names nothing.
  *
  * The panels are `defaultOpen={false}` `CollapsiblePanel`s and Radix unmounts
  * closed content, so every test opens its panel first — the same starting
@@ -191,6 +196,32 @@ describe("Cognito Groups — create-group name validation", () => {
     expect(screen.getByTestId("cognito-create-submit")).toBeDisabled();
   });
 
+  it("points the field's description AT the reason, and only while it exists", async () => {
+    // `role="alert"` announces the message once, to whoever was listening as
+    // it appeared. `aria-invalid` then says the field is wrong without saying
+    // why. Neither reaches a screen-reader user who arrives at the field
+    // afterwards — that needs the association, which is what this pins. And it
+    // must be dropped when the hint unmounts: `aria-describedby` naming an
+    // absent id describes the field with nothing.
+    const user_ = userEvent.setup();
+    render(<MembersPage />);
+    await openPanel(user_, /cognito groups/i);
+
+    const input = await screen.findByTestId("cognito-new-name");
+    expect(input).not.toHaveAttribute("aria-describedby");
+
+    await user_.type(input, "test admins");
+    const hint = await screen.findByTestId("cognito-new-name-problem");
+    expect(input).toHaveAttribute("aria-describedby", hint.id);
+    expect(hint.id).toBeTruthy();
+
+    await user_.click(await screen.findByTestId("cognito-new-name-problem-fix"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("cognito-new-name-problem")).toBeNull()
+    );
+    expect(input).not.toHaveAttribute("aria-describedby");
+  });
+
   it("never reaches the network for a name Cognito could not hold", async () => {
     const user_ = userEvent.setup();
     render(<MembersPage />);
@@ -296,6 +327,7 @@ describe("Group → tenant → role mappings — Group ID validation", () => {
     expect(hint).toHaveTextContent(/can't contain spaces/i);
     expect(hint.textContent).not.toContain(RAW_CONSTRAINT);
     expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", hint.id);
     expect(screen.getByTestId("map-submit")).toBeDisabled();
   });
 
