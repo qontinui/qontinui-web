@@ -64,7 +64,7 @@ from tests._alembic_harness import (
 # because a stale pin rewinds too far and replays unrelated non-idempotent
 # revisions, surfacing as someone else's `DuplicateTable`.
 _REVISION_ID = "prcheckruns_base_sha_01"
-_PARENT_REVISION_ID = "coord_agent_questions_audience_backfill"
+_PARENT_REVISION_ID = "reqchk_walk_01"
 _REVISION_FILENAME = "prcheckruns_base_sha_01_base_sha_column.py"
 
 # The revision whose view text this one re-executes. Its constant is the ONE
