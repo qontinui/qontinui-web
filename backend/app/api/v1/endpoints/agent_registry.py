@@ -363,6 +363,24 @@ _ADMIN_DESCRIPTIVE: _DescriptiveSpec = {
     "fanout_bound": (int, None),
 }
 
+#: Descriptive fields that arrive as a LIST OF STRINGS, read through
+#: :func:`_string_list`. Fallback is always a fresh ``[]``, so this is a tuple
+#: of names rather than a third ``{field: (accepted, fallback)}`` map — a
+#: shared ``[]`` in a spec would have every row aliasing one list.
+#:
+#: A separate map from :data:`_DescriptiveSpec` because a list needs its
+#: ELEMENTS checked, which is a different predicate, not a different type
+#: argument. It exists at all because ``allowed_dispositions`` was the one
+#: descriptive field on either route that "one rule, two field maps" did not
+#: reach: it was hand-read at the call site, so it was the only one whose drift
+#: logged NOTHING. Measured against the route before this commit — a string, an
+#: object and ``null`` each rendered as ``[]``, and ``["block", 42]`` silently
+#: became ``["block"]``, all four in total silence. Every render was right and
+#: said so to no one, which is how a field goes empty for everyone without
+#: anyone noticing — the same reason :func:`_degraded_descriptive_fields`
+#: exists for the scalars beside it.
+_ADMIN_STRING_LISTS: tuple[str, ...] = ("allowed_dispositions",)
+
 
 def _descriptive_is_usable(value: Any, accepted: type | tuple[type, ...]) -> bool:
     """Whether a descriptive value may be read as its declared type.
@@ -429,6 +447,44 @@ def _degraded_descriptive_fields(
         if not _descriptive_is_usable(value, accepted):
             degraded.append(f"{field} (got {type(value).__name__})")
     return degraded
+
+
+def _string_list(row: dict[str, Any], field: str) -> tuple[list[str], str | None]:
+    """Read a list-of-strings descriptive field, degrading and SAYING SO.
+
+    Returns the usable strings plus, when anything was refused, a note in the
+    same shape :func:`_degraded_descriptive_fields` produces — so both kinds of
+    descriptive drift on one row land on ONE log line. Two lines about the same
+    row is how a log comes to disagree with itself, which is the defect
+    :func:`_descriptive_is_usable` was made a single predicate to avoid.
+
+    A whole non-list degrades to ``[]``; a list keeps its strings and drops the
+    rest. Dropping is the right RENDER — ``allowed_dispositions`` names the
+    options an admin is offered to CHOOSE from, so a repr'd non-string
+    (``"{'x': 1}"``) would be a pickable disposition coord never declared,
+    which coord's own ``invalid_disposition`` then refuses on save with the
+    page having invited it. But a silent drop is not, for exactly the reason a
+    silent scalar degrade was not: an emptied option list is indistinguishable
+    from an agent for which coord declares no dispositions at all.
+
+    Absent or ``null`` is not reported, matching
+    :func:`_degraded_descriptive_fields` — that is the permissiveness working
+    as designed rather than drift.
+    """
+    value = row.get(field)
+    if value is None:
+        return [], None
+    if not isinstance(value, list):
+        return [], f"{field} (expected list, got {type(value).__name__})"
+    usable = [item for item in value if isinstance(item, str)]
+    dropped = len(value) - len(usable)
+    if not dropped:
+        return usable, None
+    kinds = sorted({type(i).__name__ for i in value if not isinstance(i, str)})
+    return usable, (
+        f"{field} (dropped {dropped} of {len(value)} entries, "
+        f"non-string: {', '.join(kinds)})"
+    )
 
 
 def _unusable_authz_fields(
@@ -983,12 +1039,50 @@ def _render_admin_rows(
     still immune to a change of it, which is precisely the question the admin
     is asking. ``pref_differs_from_default_count`` is the narrower reading,
     reported beside it rather than instead of it.
+
+    Because those two numbers ARE the page's claim, a pref row that cannot be
+    attributed to an agent is a 502 rather than a skip — see below.
     """
     by_agent: dict[str, list[dict[str, Any]]] = {}
-    for pref in prefs:
+    for index, pref in enumerate(prefs):
         name = pref.get("agent_name")
-        if isinstance(name, str) and name:
-            by_agent.setdefault(name, []).append(pref)
+        if not isinstance(name, str) or not name:
+            # Read under the SAME identity rule the registry rows below get,
+            # which this loop was the one place on the route not to apply:
+            # `if isinstance(name, str) and name:` skipped the row instead.
+            #
+            # `_admin_registry_rows` already 502s on a non-object pref row, so
+            # the guard here was half-present — shape checked, identity not —
+            # and the missing half is the consequential one. An unattributable
+            # pref row does not merely vanish: it decrements `pref_count`, the
+            # number this page states as "changing the default does not reach
+            # N members", and which also drives the amber attention rail, the
+            # "Overridden" filter count and the health strip. Measured against
+            # the route before this commit, one good row beside three
+            # unattributable ones reported `pref_count=1` — telling an admin
+            # that a change reaches everyone but one member when it in fact
+            # misses four.
+            #
+            # It cannot be repaired by counting the row anyway, either: without
+            # a name there is no agent to count it against, so the honest
+            # reading is that EVERY count on the page is now unverifiable, not
+            # one of them. That is the "refusing to render a registry with rows
+            # silently dropped from it" case, one table over.
+            logger.error(
+                "agent_registry_admin_pref_row_missing_agent_name",
+                index=index,
+                agent_name_type=type(name).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=(
+                    "coord returned a preference row with no usable "
+                    f"`agent_name` at index {index}; it cannot be attributed "
+                    "to an agent, so refusing rather than under-reporting how "
+                    "many members a change to a default would miss"
+                ),
+            )
+        by_agent.setdefault(name, []).append(pref)
 
     entries: list[AdminAgentRegistryRow] = []
     for index, row in enumerate(agents):
@@ -1034,13 +1128,39 @@ def _render_admin_rows(
         # value back in if that guard were ever weakened.
         default_enabled = row["default_enabled"]
         rows_for_agent = by_agent.get(name, [])
-        dispositions = row.get("allowed_dispositions")
         degraded = _degraded_descriptive_fields(row, _ADMIN_DESCRIPTIVE)
+        # The list-valued descriptive fields go through the same reporting rule
+        # as the scalars, and their notes join THAT log line rather than
+        # opening a second one about the same row. Read from the map rather
+        # than by name, so a second such field costs one entry in
+        # `_ADMIN_STRING_LISTS` and one argument below — the same "adding a
+        # name here is the whole cost" shape the other two maps have.
+        string_lists: dict[str, list[str]] = {}
+        for list_field in _ADMIN_STRING_LISTS:
+            string_lists[list_field], note = _string_list(row, list_field)
+            if note:
+                degraded.append(note)
         if degraded:
             logger.warning(
                 "agent_registry_admin_row_degraded_descriptive_fields",
                 agent_name=name,
                 degraded=degraded,
+            )
+        # An `enabled` this route cannot read is why the count below is the
+        # conservative one, and until now that was decided in silence. The
+        # render is unchanged and still right — an unknown pref is not a
+        # fabricated disagreement — but "N of M contradict the default" is
+        # weaker evidence when some of the M could not be read at all, and
+        # nothing said so to whoever is debugging why a number looks low.
+        unreadable_enabled = sum(
+            1 for p in rows_for_agent if not isinstance(p.get("enabled"), bool)
+        )
+        if unreadable_enabled:
+            logger.warning(
+                "agent_registry_admin_pref_rows_with_unreadable_enabled",
+                agent_name=name,
+                unreadable=unreadable_enabled,
+                pref_count=len(rows_for_agent),
             )
         entries.append(
             AdminAgentRegistryRow(
@@ -1063,12 +1183,10 @@ def _render_admin_rows(
                 # page offers an admin to CHOOSE from, so a repr'd non-string
                 # (`"{'x': 1}"`) becomes a pickable disposition coord never
                 # declared — the write would then be refused by coord's own
-                # `invalid_disposition`, with the page having invited it.
-                allowed_dispositions=(
-                    [d for d in dispositions if isinstance(d, str)]
-                    if isinstance(dispositions, list)
-                    else []
-                ),
+                # `invalid_disposition`, with the page having invited it. The
+                # filtering that enforces that is now `_string_list`, which
+                # REPORTS what it dropped instead of dropping it in silence.
+                allowed_dispositions=string_lists["allowed_dispositions"],
                 fanout_bound=_descriptive(row, "fanout_bound", _ADMIN_DESCRIPTIVE),
                 pref_count=len(rows_for_agent),
                 pref_differs_from_default_count=sum(
