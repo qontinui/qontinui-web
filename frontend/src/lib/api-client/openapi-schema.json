@@ -6726,6 +6726,17 @@
             "title": "Doors",
             "type": "array"
           },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -10794,6 +10805,40 @@
           }
         },
         "title": "CoreSettingsSchema",
+        "type": "object"
+      },
+      "CorpusHealth": {
+        "description": "What the corpus this page was drawn from actually holds.\n\n``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read\npath that cannot report its own health is not a read path. Without this\nblock a ``200`` with ``items: []`` was two indistinguishable sentences \u2014\n\"no such plan\" and \"the corpus holds no plans at all\" (the body sync\nis opt-in and its off-state is unlogged, so the second was the live\nstate on the operator box for weeks). With it, ``plan_count: 0`` beside\nan empty page says which, and ``newest_updated_at`` says how long ago the\ncorpus last moved.\n\nEvery figure is org-scoped like the page, and UNFILTERED by the page's\nown query: the caller's filter is what they asked about, this is what\nthey asked it of. ``capture`` is the ``/capture-health`` census from the\nSAME query, so the two never disagree.",
+        "properties": {
+          "artifact_count": {
+            "title": "Artifact Count",
+            "type": "integer"
+          },
+          "capture": {
+            "$ref": "#/components/schemas/CaptureHealthResponse"
+          },
+          "newest_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newest Updated At"
+          },
+          "plan_count": {
+            "title": "Plan Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_count",
+          "plan_count",
+          "capture"
+        ],
+        "title": "CorpusHealth",
         "type": "object"
       },
       "CostTrendDataPoint": {
@@ -53467,8 +53512,11 @@
         "type": "object"
       },
       "WorkArtifactListResponse": {
-        "description": "A page of list rows.",
+        "description": "A page of list rows, plus the health of the corpus it was drawn from.\n\n``corpus_health`` is reported on EVERY page, filtered or not, so an\nempty ``items`` can always be read against ``plan_count`` \u2014 a zero on a\nfrozen corpus and a zero on a real absence are different findings.",
         "properties": {
+          "corpus_health": {
+            "$ref": "#/components/schemas/CorpusHealth"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/WorkArtifactSummary"
@@ -53493,7 +53541,8 @@
           "items",
           "total",
           "offset",
-          "limit"
+          "limit",
+          "corpus_health"
         ],
         "title": "WorkArtifactListResponse",
         "type": "object"
@@ -92456,6 +92505,7 @@
     },
     "/api/v1/plan-library": {
       "get": {
+        "description": "A filtered page, with the health of the corpus it came from.\n\n``corpus_health`` (design decision D1 of\n``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that\n``items: []`` is never the whole answer: ``plan_count: 0`` beside it says\n\"the corpus holds no plans\", which is a different sentence from \"no such\nplan\". Its ``capture`` block is ``/capture-health``'s census from the\nsame query, so the two reads cannot disagree. One extra aggregate query\nper list call; the list is paged and small.\n\n``slug`` is a QUERY key, not a path segment: this adds no route, so the\nliteral-before-pattern ordering below (``/divergent``, ``/capture-health``\n\u2026 declared before ``/{artifact_id}``) is untouched.",
         "operationId": "api_v1_plan_library_get",
         "parameters": [
           {
@@ -92550,7 +92600,7 @@
             }
           },
           {
-            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+            "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
             "in": "query",
             "name": "work_unit_slug",
             "required": false,
@@ -92563,8 +92613,26 @@
                   "type": "null"
                 }
               ],
-              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts.",
+              "description": "Soft link to a coord work unit. Not resolved; a slug with no matching work unit simply returns its artifacts. The scanner writes it for kind=plan only and a hand-POSTed row may carry none \u2014 for a by-stem lookup that must find the row whoever wrote it, use `slug`.",
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's OWN slug \u2014 part of its identity, never null, written by every door (the scanner writes the file stem). Distinct from `work_unit_slug`, the nullable soft link; `q` does not search identifiers.",
+              "title": "Slug"
             }
           },
           {
@@ -93004,6 +93072,24 @@
                 }
               ],
               "title": "Work Unit Slug"
+            }
+          },
+          {
+            "description": "Exact match on the artifact's own slug (see the list route).",
+            "in": "query",
+            "name": "slug",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact match on the artifact's own slug (see the list route).",
+              "title": "Slug"
             }
           },
           {

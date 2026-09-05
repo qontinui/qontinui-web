@@ -334,15 +334,6 @@ class WorkArtifactDetail(WorkArtifactSummary):
     coord: CandidateCoordLink = Field(default_factory=CandidateCoordLink)
 
 
-class WorkArtifactListResponse(BaseModel):
-    """A page of list rows."""
-
-    items: list[WorkArtifactSummary]
-    total: int
-    offset: int
-    limit: int
-
-
 class WorkArtifactUpsertResponse(BaseModel):
     """Upsert outcome.
 
@@ -457,6 +448,55 @@ class CaptureHealthResponse(BaseModel):
 
     total: int
     doors: list[CaptureDoorHealth]
+    #: ``max(updated_at)`` across every door — the corpus's freshness in one
+    #: figure, beside the census. ``null`` on an empty corpus.
+    newest_updated_at: IsoDatetime | None = None
+
+
+# ───────────────────── list page + corpus health ─────────────────────
+
+
+class CorpusHealth(BaseModel):
+    """What the corpus this page was drawn from actually holds.
+
+    ``2026-08-27-plan-corpus-read-path-is-dark`` design decision D1: a read
+    path that cannot report its own health is not a read path. Without this
+    block a ``200`` with ``items: []`` was two indistinguishable sentences —
+    "no such plan" and "the corpus holds no plans at all" (the body sync
+    is opt-in and its off-state is unlogged, so the second was the live
+    state on the operator box for weeks). With it, ``plan_count: 0`` beside
+    an empty page says which, and ``newest_updated_at`` says how long ago the
+    corpus last moved.
+
+    Every figure is org-scoped like the page, and UNFILTERED by the page's
+    own query: the caller's filter is what they asked about, this is what
+    they asked it of. ``capture`` is the ``/capture-health`` census from the
+    SAME query, so the two never disagree.
+    """
+
+    #: Every artifact in scope, all kinds.
+    artifact_count: int
+    #: ``kind == "plan"`` only — the number the by-stem probes care about.
+    plan_count: int
+    #: ``max(updated_at)`` in scope; ``null`` on an EMPTY corpus, never an
+    #: epoch. Last TOUCHED, not last captured (see ``CaptureDoorHealth``).
+    newest_updated_at: IsoDatetime | None = None
+    capture: CaptureHealthResponse
+
+
+class WorkArtifactListResponse(BaseModel):
+    """A page of list rows, plus the health of the corpus it was drawn from.
+
+    ``corpus_health`` is reported on EVERY page, filtered or not, so an
+    empty ``items`` can always be read against ``plan_count`` — a zero on a
+    frozen corpus and a zero on a real absence are different findings.
+    """
+
+    items: list[WorkArtifactSummary]
+    total: int
+    offset: int
+    limit: int
+    corpus_health: CorpusHealth
 
 
 # ─────────────────── candidate selection (Phase 6) ───────────────────

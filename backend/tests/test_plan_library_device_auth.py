@@ -261,6 +261,11 @@ class TestDeviceBearerCanWrite:
         listed = await device_client.get(API_PREFIX)
         assert listed.status_code == 200, listed.text
         assert listed.json()["total"] >= 1
+        # The corpus-health block rides on the device path too — it is the
+        # runner door's caller (an agent with no credential of its own) who
+        # most needs a zero to say whether the corpus is frozen.
+        assert listed.json()["corpus_health"]["plan_count"] >= 1
+        assert listed.json()["corpus_health"]["newest_updated_at"] is not None
 
         candidates = await device_client.get(
             f"{API_PREFIX}/candidates", params={"include_coord": "false"}

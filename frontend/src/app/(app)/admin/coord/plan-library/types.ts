@@ -130,11 +130,27 @@ export interface WorkArtifactDetail extends WorkArtifactSummary {
   coord: CandidateCoordLink;
 }
 
+/**
+ * What the corpus a page was drawn from actually holds — UNFILTERED by the
+ * page's own query, org-scoped like it. `plan_count: 0` beside an empty page
+ * reads "the corpus holds no plans", which is a different sentence from "no
+ * such plan" (2026-08-27-plan-corpus-read-path-is-dark, D1).
+ */
+export interface CorpusHealth {
+  artifact_count: number;
+  plan_count: number;
+  /** `max(updated_at)` in scope; `null` on an EMPTY corpus, never an epoch. */
+  newest_updated_at: string | null;
+  /** The `/capture-health` census from the same query — the two never disagree. */
+  capture: CaptureHealthResponse;
+}
+
 export interface WorkArtifactListResponse {
   items: WorkArtifactSummary[];
   total: number;
   offset: number;
   limit: number;
+  corpus_health: CorpusHealth;
 }
 
 // ───────────────────────────── divergence ─────────────────────────────
@@ -203,6 +219,8 @@ export interface CaptureDoorHealth {
 export interface CaptureHealthResponse {
   total: number;
   doors: CaptureDoorHealth[];
+  /** `max(updated_at)` across every door; `null` on an empty corpus. */
+  newest_updated_at: string | null;
 }
 
 // ──────────────────── coord link (candidates read) ────────────────────
