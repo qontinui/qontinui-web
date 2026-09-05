@@ -961,10 +961,21 @@ async def set_pr_draft_state(
 
 
 # Coord path for the CI-duration-aware severity economics read
-# (``coord_query_merge_economics``). Isolated as a one-line constant because
-# the read is being added on the coord side in parallel — if coord lands it
-# under a different path (e.g. ``/pr-merge/economics``), fix it here only.
-_COORD_MERGE_ECONOMICS_PATH = "/pr-merge/merge-economics"
+# (``coord_query_merge_economics``): ``GET /pr-merge/economics``, registered in
+# qontinui-coord ``crates/coord/src/routes.rs:4287`` (handler
+# ``pr_merge/economics.rs``).
+#
+# This constant was born as ``/pr-merge/merge-economics`` — a path coord has
+# NEVER served. coord answered it 401/404, the graceful fallback in the handler
+# below turned that into ``{}``, and the Pipeline page's ``economicsByRepo``
+# was an empty map for the whole life of the feature while every test stayed
+# green (plan 2026-07-27-coord-green-candidates-discarded-always-zero, F3).
+# ``test_operations_merge_economics_proxy.py`` now pins the PATH, because the
+# fallback is precisely what let the wrong one pass. The WEB route below keeps
+# its ``/pr-merge/merge-economics`` spelling: that is the public shape the
+# frontend and the OpenAPI snapshot bind, and only this coord-side path was
+# wrong.
+_COORD_MERGE_ECONOMICS_PATH = "/pr-merge/economics"
 
 
 @router.get("/pr-merge/merge-economics")
@@ -974,20 +985,30 @@ async def get_pr_merge_merge_economics(
     """Per-repo merge economics for the fleet page's CI-duration-aware PR
     severity model (plan 2026-07-17-fleet-ci-duration-aware-severity).
 
-    Proxies coord's NEW ``coord_query_merge_economics`` read
-    (``_COORD_MERGE_ECONOMICS_PATH``): per-repo candidate-CI p90, land rate,
-    a suggested stuck-threshold, queue depth, and per-open-PR already-landed
-    flags. The fleet page uses candidate-CI duration + queue proximity to
-    decide whether a merge conflict is "act now" (RED) or "resolve
-    just-before-merge" (AMBER).
+    Proxies coord's ``coord_query_merge_economics`` read — ``GET
+    /pr-merge/economics`` (``_COORD_MERGE_ECONOMICS_PATH``): per-repo
+    candidate-CI p90, land rate, a suggested stuck-threshold, queue depth,
+    per-open-PR already-landed flags, and the candidate-CI churn counters
+    (``green_candidates_discarded``, ``in_progress_candidates_discarded``,
+    ``base_mismatch_discards``, ``lands_in_window``,
+    ``candidate_ci_minutes_per_land``) with their ``*_basis`` /
+    ``coverage_note`` strings. The fleet page uses candidate-CI duration +
+    queue proximity to decide whether a merge conflict is "act now" (RED) or
+    "resolve just-before-merge" (AMBER), and renders the churn counters on
+    the health strip and the Train tab.
 
-    GRACEFUL FALLBACK (required): this coord read may not be deployed yet, so a
-    404 — or a transient coord outage (502/503/504) — degrades to an empty
-    ``{}`` rather than erroring. The frontend then falls back to its hardcoded
-    thresholds + repo-name hint, so the page works today and simply gets more
-    precise once the read is live. Fleet-wide; ``tenant_id`` is resolved only
-    to forward the operator bearer (same posture as ``/merge/queue`` and
-    ``/pr-merge/prs``).
+    Without ``?repo=`` coord returns the per-repo ARRAY of ``{repo, ...}``;
+    the frontend normalizes object / ``{repos}`` / array shapes. The counters
+    are ``Option<u64>`` on coord and arrive as JSON ``null`` when coord could
+    not measure them — passed through verbatim, because null is UNKNOWN and
+    the page must never render it as 0.
+
+    GRACEFUL FALLBACK (required): a 404 — or a transient coord outage
+    (502/503/504) — degrades to an empty ``{}`` rather than erroring. The
+    frontend then falls back to its hardcoded thresholds + repo-name hint and
+    renders the churn counters as unknown. Fleet-wide; ``tenant_id`` is
+    resolved only to forward the operator bearer (same posture as
+    ``/merge/queue`` and ``/pr-merge/prs``).
     """
     try:
         return await _proxy_coord_get(_COORD_MERGE_ECONOMICS_PATH, tenant_id=tenant_id)
@@ -1025,9 +1046,10 @@ async def get_pr_merge_health(
     at the PR's CURRENT head. That per-repo backlog is the direct answer to
     "why has nothing merged for the last hour".
 
-    GRACEFUL FALLBACK (required): mirrors ``/pr-merge/merge-economics`` — a 404
-    (coord deploy predating the route) or a transient coord outage
-    (502/503/504) degrades to ``{}`` rather than erroring, so the Train tab
+    GRACEFUL FALLBACK (required): mirrors the economics proxy above (coord's
+    ``/pr-merge/economics``) — a 404 (coord deploy predating the route) or a
+    transient coord outage (502/503/504) degrades to ``{}`` rather than
+    erroring, so the Train tab
     still renders whatever it can derive from ``/merge/queue`` +
     ``/pr-merge/prs`` and simply omits the fleet-level banner.
 

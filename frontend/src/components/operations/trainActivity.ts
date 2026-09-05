@@ -35,6 +35,7 @@
 // every import of it.
 
 import type {
+  MergeEconomics,
   MergeStatusToken,
   PrRow,
   ProposalDetail,
@@ -45,6 +46,11 @@ import type {
   TrainHealth,
 } from "./mergeTypes";
 import { redactSecrets } from "./mergeTypes";
+import {
+  deriveCandidateChurn,
+  economicsFor,
+  type CandidateChurn,
+} from "./prPipeline";
 import { formatStallAge } from "./utils";
 
 // ----------------------------------------------------------------------------
@@ -321,6 +327,35 @@ export interface RepoTrainRow {
   headline: string;
   /** Worst severity across `reasons` — drives the row's colour. */
   severity: PauseSeverity;
+  /** Candidate-CI churn coord measured for this repo. Nulls are UNKNOWN. */
+  churn: RepoCandidateChurn;
+}
+
+/**
+ * One churn value as coord served it. `value: null` is UNKNOWN — coord could
+ * not measure it — and renders as `—`, never as 0; `note` is coord's own
+ * statement of what it counted (its `*_basis`, else `coverage_note`), the
+ * hover text either way.
+ */
+export interface ChurnReading {
+  value: number | null;
+  note: string | null;
+}
+
+/**
+ * Per-repo candidate-CI churn (plan
+ * 2026-07-27-coord-green-candidates-discarded-always-zero), from coord's
+ * `/pr-merge/economics` row for the repo. A repo coord served no row for
+ * reads all-null.
+ */
+export interface RepoCandidateChurn {
+  /** `green_candidates_discarded` — candidates whose CI went green and were
+   *  then thrown away. */
+  greenDiscarded: ChurnReading;
+  /** `base_mismatch_discards` — candidates discarded because main moved. */
+  baseMoveDiscards: ChurnReading;
+  /** `candidate_ci_minutes_per_land` — CI minutes burnt per land. */
+  ciMinutesPerLand: ChurnReading;
 }
 
 export interface TrainBanner {
@@ -361,6 +396,13 @@ export interface TrainSummary {
   banners: TrainBanner[];
   /** True when health was unavailable (proxy degraded to `{}`). */
   healthMissing: boolean;
+  /**
+   * Fleet-wide candidate-CI churn: measured sums plus the count of repos that
+   * served null. The SAME reading the health strip's badge renders, so the
+   * two surfaces cannot disagree. `greenDiscarded === null` means no repo
+   * measured it — unknown, never 0.
+   */
+  churn: CandidateChurn;
 }
 
 // ----------------------------------------------------------------------------
@@ -690,9 +732,14 @@ export function effectiveMergeStatus(
 export function buildTrainSummary(
   health: TrainHealth | null,
   rows: RepoTrainRow[],
-  now: number = Date.now()
+  now: number = Date.now(),
+  economicsByRepo: Record<string, MergeEconomics> | undefined = undefined
 ): TrainSummary {
   const healthMissing = health === null || Object.keys(health).length === 0;
+  // Derived from the economics map itself rather than from `rows`: a repo
+  // coord measured churn for may have no train row (nothing in flight, no
+  // open PR), and dropping its discards would under-report the waste.
+  const churn = deriveCandidateChurn(economicsByRepo);
 
   const lastMergedAt = health?.last_merged_at ?? null;
   const sinceLastMergeSecs = secsSince(lastMergedAt, now);
@@ -1022,6 +1069,7 @@ export function buildTrainSummary(
     slots,
     banners,
     healthMissing,
+    churn,
   };
 }
 
@@ -1048,7 +1096,8 @@ export function buildRepoTrainRows(
   proposals: ProposalDetail[],
   prs: PrRow[],
   health: TrainHealth | null,
-  now: number = Date.now()
+  now: number = Date.now(),
+  economicsByRepo: Record<string, MergeEconomics> | undefined = undefined
 ): RepoTrainRow[] {
   const inFlightLegs = new Map<string, Leg[]>();
   const parkedLegs = new Map<string, Leg[]>();
@@ -1186,10 +1235,66 @@ export function buildRepoTrainRows(
       frozenDryRun,
       headline: headlineFor(activity, reasons, repoPrs.length),
       severity,
+      // `economicsFor`, not a direct index: coord keys by `owner/name` while
+      // some row sources carry the short name, and the severity model already
+      // resolves that — one normalizer, not two.
+      churn: deriveRepoChurn(economicsFor(repo, economicsByRepo)),
     });
   }
 
   return rows.sort(compareRepoRows);
+}
+
+/** A finite number as coord served it; anything else is UNKNOWN. */
+function measured(v: number | null | undefined): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/** A non-blank note, or null. */
+function note(v: string | null | undefined): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+/**
+ * The three per-repo churn readings from one economics row. An absent row
+ * (coord served nothing for the repo, or the read failed) is all-unknown with
+ * a note saying so — a `—` with no explanation is a dead end on hover.
+ */
+export function deriveRepoChurn(
+  econ: MergeEconomics | undefined
+): RepoCandidateChurn {
+  if (!econ) {
+    const absent = "coord served no merge economics for this repo";
+    return {
+      greenDiscarded: { value: null, note: absent },
+      baseMoveDiscards: { value: null, note: absent },
+      ciMinutesPerLand: { value: null, note: absent },
+    };
+  }
+  const coverage = note(econ.coverage_note);
+  return {
+    greenDiscarded: {
+      value: measured(econ.green_candidates_discarded),
+      note: note(econ.green_candidates_discarded_basis) ?? coverage,
+    },
+    baseMoveDiscards: {
+      value: measured(econ.base_mismatch_discards),
+      note: note(econ.base_mismatch_discards_basis) ?? coverage,
+    },
+    ciMinutesPerLand: {
+      value: measured(econ.candidate_ci_minutes_per_land),
+      note: coverage,
+    },
+  };
+}
+
+/**
+ * Render one churn reading: the number, or `—` for UNKNOWN. A ratio keeps one
+ * decimal (`47.4` CI min / land); a count prints whole.
+ */
+export function formatChurnValue(value: number | null): string {
+  if (value === null) return "—";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function push<K, V>(m: Map<K, V[]>, k: K, v: V): void {
