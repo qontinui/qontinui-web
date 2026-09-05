@@ -36,7 +36,8 @@ OUTPUT: one classified line per changed file, then the frontend-relative list
 (``tests/e2e/pages/x.spec.ts`` -- the ``working-directory`` of the test step is
 ``frontend/``) that will run, or "no spec files changed". With
 ``--github-output <path>`` it also appends ``files=<space-separated list>`` and
-``any=true|false`` for the workflow's job outputs.
+``any=true|false`` for the workflow's job outputs, plus ``groups=<json>`` — the
+matrix of ≤6-file groups the lane fans out over (one stack per group).
 
 EXIT CODES: 0 whether or not any spec changed -- an empty list is a RESULT of a
 real diff, not a vacuous scan (``_gate_lib``'s distinction); 2 when the diff
@@ -47,6 +48,7 @@ lane reds as "could not determine" instead of skipping as if nothing changed.
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -132,6 +134,29 @@ def frontend_relative(repo_path: str) -> str:
     return repo_path[len(FRONTEND_PREFIX) :]
 
 
+
+#: Largest number of spec files one stack job runs. A full-suite shard covers a
+#: quarter of the suite on its own `next dev`; the 23-file single-job lane on
+#: web#1265 (2026-09-05) showed that server degrading late in a long run —
+#: four runs, four different tests' FIRST `page.goto` past 60 s or dropped —
+#: so a big change set is split into groups that each get their own stack.
+MAX_FILES_PER_GROUP = 6
+
+
+def group_files(files: list[str]) -> list[dict[str, object]]:
+    """Chunk ``files`` into the matrix the lane fans out over.
+
+    Each entry is ``{"index": n, "files": "<space-separated list>"}`` so the
+    workflow can pass ``files`` straight to the stack's ``spec_files`` input
+    and use ``index`` in the artifact suffix. An empty ``files`` yields an
+    empty matrix (the lane is skipped upstream on ``any=false`` anyway).
+    """
+    return [
+        {"index": i + 1, "files": " ".join(files[start : start + MAX_FILES_PER_GROUP])}
+        for i, start in enumerate(range(0, len(files), MAX_FILES_PER_GROUP))
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base", required=True, help="base revision (the PR base)")
@@ -171,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.github_output, "a", encoding="utf-8") as fh:
             fh.write(f"files={' '.join(files)}\n")
             fh.write(f"any={'true' if files else 'false'}\n")
+            fh.write(f"groups={json.dumps(group_files(files))}\n")
     return 0
 
 
