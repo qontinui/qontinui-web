@@ -15,15 +15,28 @@ server-side embed.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_async_db
-from app.api.v1.endpoints.memory import MemoryPrincipal, get_memory_tenant, router
+from app.api.strict_query import (
+    UNKNOWN_QUERY_PARAMETER,
+    StrictQueryRoute,
+    accepted_query_keys,
+)
+from app.api.v1.endpoints.memory import (
+    MemoryPrincipal,
+    _encode_cursor,
+    get_memory_tenant,
+    router,
+)
 from app.schemas.memory import ACCEPTED_EMBEDDING_MODEL_TAGS
 from app.services import memory_store
 from app.services.memory_vectors import (
@@ -336,3 +349,182 @@ def test_job_result_with_both_result_and_failure_is_422() -> None:
         },
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Plan ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero`` Phase 4:
+# an unknown query NAME or body KEY is a 422 naming the key, and every list
+# page says how long it is.
+# ---------------------------------------------------------------------------
+
+
+def _detail(resp) -> Any:
+    return resp.json()["detail"]
+
+
+def _extra_forbidden_locs(resp) -> list[tuple[object, ...]]:
+    """The ``loc`` of every ``extra_forbidden`` error in a pydantic 422."""
+    return [
+        tuple(err["loc"]) for err in _detail(resp) if err["type"] == "extra_forbidden"
+    ]
+
+
+def test_every_memory_route_is_strict() -> None:
+    """The route class is installed on the ROUTER, so every route — not
+    only ``GET /records`` — refuses an unknown query name."""
+    routes = [r for r in router.routes if isinstance(r, APIRoute)]
+    assert routes
+    for route in routes:
+        assert isinstance(route, StrictQueryRoute), route.path
+
+
+def test_list_with_kind_instead_of_kinds_is_422_naming_kinds() -> None:
+    """The dossier's exact call: ``?kind=feedback`` on a door whose filter
+    is ``kinds``. FastAPI's default ignored the key and answered EVERY
+    kind, which was read as "no feedback records". Now the answer is the
+    accepted set, with ``kinds`` in it."""
+    client = _build_client()
+    resp = client.get("/api/v1/memory/records", params={"kind": "feedback"})
+    assert resp.status_code == 422, resp.text
+    detail = _detail(resp)
+    assert detail["error"] == UNKNOWN_QUERY_PARAMETER
+    assert detail["unknown"] == ["kind"]
+    assert "kinds" in detail["accepted"]
+    assert "kind" not in detail["accepted"]
+    assert detail["route"] == "/api/v1/memory/records"
+
+
+def test_stats_with_a_stray_key_is_422() -> None:
+    """A route with NO query parameters refuses every key: ``accepted`` is
+    empty, which is the honest answer rather than a silent 200."""
+    client = _build_client()
+    resp = client.get("/api/v1/memory/stats", params={"kinds": "fact"})
+    assert resp.status_code == 422, resp.text
+    detail = _detail(resp)
+    assert detail["unknown"] == ["kinds"]
+    assert detail["accepted"] == []
+
+
+def _list_row(seq: int, created_at: datetime) -> dict:
+    return {
+        "memory_id": uuid4(),
+        "title": f"row {seq}",
+        "content": f"content {seq}",
+        "kind": "fact",
+        "scope": "tenant",
+        "scope_ref": None,
+        "importance": 0.5,
+        "content_hash": "0" * 64,
+        "created_at": created_at,
+        "updated_at": created_at,
+        "source": {},
+        "anchors": [],
+        "anchor_state": "none",
+        "seq": seq,
+    }
+
+
+def _stub_list(monkeypatch: pytest.MonkeyPatch, rows: list[dict]) -> AsyncMock:
+    page = AsyncMock(return_value=rows)
+    monkeypatch.setattr(memory_store, "list_records_page", page)
+    monkeypatch.setattr(
+        memory_store, "fetch_outbound_links", AsyncMock(return_value={})
+    )
+    return page
+
+
+def test_list_with_every_declared_key_is_still_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The strict class refuses UNKNOWN names only. Every key the handler
+    declares — read from the mounted route, not retyped — still reaches
+    the store with its parsed value."""
+    now = datetime.now(UTC)
+    page = _stub_list(monkeypatch, [_list_row(1, now)])
+    client = _build_client()
+    route = next(
+        r
+        for r in router.routes
+        if isinstance(r, APIRoute) and r.path == "/records" and "GET" in r.methods
+    )
+    declared = accepted_query_keys(route.dependant)
+    sent = {
+        "kinds": "fact,feedback",
+        "since": (now - timedelta(days=1)).isoformat(),
+        "cursor": _encode_cursor(now, 7),
+        "limit": "1",
+    }
+    assert set(sent) == set(declared), declared
+    resp = client.get("/api/v1/memory/records", params=sent)
+    assert resp.status_code == 200, resp.text
+    kwargs = page.call_args.kwargs
+    assert kwargs["kinds"] == ["fact", "feedback"]
+    assert kwargs["limit"] == 1
+    assert kwargs["cursor"] == (now, 7)
+    assert kwargs["since"] is not None
+
+
+@pytest.mark.parametrize("n", [0, 1, 3])
+def test_list_page_carries_count_equal_to_its_length(
+    monkeypatch: pytest.MonkeyPatch, n: int
+) -> None:
+    """``count`` is the page length, including ``0`` on an empty page —
+    the envelope key a reader checks before trusting ``records: []``."""
+    now = datetime.now(UTC)
+    _stub_list(monkeypatch, [_list_row(i, now) for i in range(n)])
+    client = _build_client()
+    resp = client.get("/api/v1/memory/records", params={"limit": "10"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["count"] == len(body["records"]) == n
+
+
+def test_write_with_supersedes_inside_a_record_is_422_naming_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The dossier's occurrence: ``supersedes`` inside a record (the real
+    door is ``POST /records/{id}/supersede``). Pydantic's default dropped
+    the key and the write "succeeded" without the field that was its
+    whole point. Now it is a 422 that names the key, and NO insert runs."""
+    insert, insert_batch = _stub_store(monkeypatch)
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/memory/records",
+        json={"records": [{**_record(), "supersedes": str(uuid4())}]},
+    )
+    assert resp.status_code == 422, resp.text
+    assert _extra_forbidden_locs(resp) == [("body", "records", 0, "supersedes")]
+    insert.assert_not_awaited()
+    insert_batch.assert_not_awaited()
+
+
+def test_write_with_an_unknown_top_level_key_is_422() -> None:
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/memory/records",
+        json={"records": [_record()], "record": _record()},
+    )
+    assert resp.status_code == 422, resp.text
+    assert _extra_forbidden_locs(resp) == [("body", "record")]
+
+
+def test_supersede_with_an_unknown_key_is_422_naming_it() -> None:
+    """A misspelled field on a supersede would otherwise be dropped and
+    the successor would INHERIT the value the caller meant to replace."""
+    client = _build_client()
+    resp = client.post(
+        f"/api/v1/memory/records/{uuid4()}/supersede",
+        json={"title": "t", "content": "c", "kinds": ["fact"]},
+    )
+    assert resp.status_code == 422, resp.text
+    assert _extra_forbidden_locs(resp) == [("body", "kinds")]
+
+
+def test_graph_with_relation_instead_of_relation_filter_is_422() -> None:
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/memory/graph",
+        json={"root_memory_id": str(uuid4()), "relation": ["supports"]},
+    )
+    assert resp.status_code == 422, resp.text
+    assert _extra_forbidden_locs(resp) == [("body", "relation")]
