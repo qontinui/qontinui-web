@@ -9,11 +9,21 @@
  * "no runners connected" fallback (Connect Runner link / project
  * parameter preservation) — those branches still need the page to
  * render past the gate.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "./fixtures";
 import { requireRunner } from "./runner-detection";
 import { TEST_PROJECT_ID as PROJECT_ID } from "./test-project";
+
+/** Replaces the old `waitForTimeout(1000)` after the loading spinner hides. */
+const RUNNERS_SETTLE_TIMEOUT = 5000;
 
 test.beforeAll(async () => {
   await requireRunner();
@@ -33,7 +43,6 @@ test.describe("Web Extraction Page", () => {
 
     // Scroll down to see the Runner section
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
 
     // Wait for loading to complete - either "No runners connected" or runner select appears
     // First wait for loading spinner to disappear
@@ -46,8 +55,14 @@ test.describe("Web Extraction Page", () => {
         // Loading might have completed before we started waiting
       });
 
-    // Wait a moment for the UI to stabilize
-    await page.waitForTimeout(1000);
+    // The runner section settles on "No runners connected" or the runner
+    // select — bounded wait for either, tolerated (the reads below decide).
+    await page
+      .locator("text=No runners connected")
+      .or(page.locator('[role="combobox"]'))
+      .first()
+      .waitFor({ state: "visible", timeout: RUNNERS_SETTLE_TIMEOUT })
+      .catch(() => null);
 
     // Scroll the Runner card into view
     const runnerCardTitle = page.locator(
@@ -99,7 +114,6 @@ test.describe("Web Extraction Page", () => {
 
     // Scroll down to see the Runner section
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
 
     // Wait for loading to complete
     await page
@@ -111,8 +125,14 @@ test.describe("Web Extraction Page", () => {
         // Loading might have completed before we started waiting
       });
 
-    // Wait a moment for the UI to stabilize
-    await page.waitForTimeout(1000);
+    // The runner section settles on "No runners connected" or the runner
+    // select — bounded wait for either, tolerated (the reads below decide).
+    await page
+      .locator("text=No runners connected")
+      .or(page.locator('[role="combobox"]'))
+      .first()
+      .waitFor({ state: "visible", timeout: RUNNERS_SETTLE_TIMEOUT })
+      .catch(() => null);
 
     // Scroll the Runner card into view
     const runnerCardTitle = page.locator(
