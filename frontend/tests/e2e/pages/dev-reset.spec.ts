@@ -6,6 +6,11 @@
  *   and shows debug info about what was cleared
  *
  * This page is only available in development mode.
+ *
+ * No fixed sleeps. Every read here is an auto-waiting `toBeVisible` with its
+ * own bound, so the `waitForTimeout(3000)` that used to precede each added
+ * wall-clock and nothing else — removed.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "@playwright/test";
@@ -36,10 +41,7 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for clearing to complete
-    await page.waitForTimeout(3000);
-
-    // After clearing, should show success message
+    // After clearing, should show success message (auto-waits)
     const successText = page.getByText(
       /all browser state cleared successfully/i
     );
@@ -49,7 +51,6 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
   test("shows Go to Login button after clearing", async ({ page }) => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     const loginButton = page.getByRole("button", { name: /go to login/i });
     await expect(loginButton).toBeVisible({ timeout: 10000 });
@@ -58,7 +59,6 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
   test("shows Go to Dashboard button after clearing", async ({ page }) => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     const dashboardButton = page.getByRole("button", {
       name: /go to dashboard/i,
@@ -71,7 +71,6 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
   }) => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     await expect(page.getByText("Actions Taken:")).toBeVisible({
       timeout: 10000,
@@ -83,7 +82,6 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
   test("displays debug info sections for storage", async ({ page }) => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Should show localStorage section (with item count)
     await expect(page.getByText(/localStorage \(was \d+ items\)/)).toBeVisible({
@@ -104,7 +102,6 @@ test.describe("Dev Reset Page (/dev/reset)", () => {
   test("shows timestamp of when state was cleared", async ({ page }) => {
     await page.goto("/dev/reset");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Should display "Cleared at:" with a timestamp
     await expect(page.getByText(/Cleared at:/)).toBeVisible({

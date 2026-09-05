@@ -3,9 +3,20 @@
  *
  * Page tested:
  * - /issues - Detected issues with stats cards, severity/status filtering, issue list
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks — never a `waitForTimeout(N)` followed by a
+ * non-waiting `count()` read, which asserts on wall-clock. Timeouts are the
+ * replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(2000)` after a page navigation. */
+const PAGE_SETTLE_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
 
 test.describe("Issues Page", () => {
   test("should load issues page without errors", async ({ page }) => {
@@ -33,112 +44,101 @@ test.describe("Issues Page", () => {
   test("should display stats cards", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Stats cards: Total Issues, Unresolved, Critical, Resolved Today
-    const hasTotalIssues =
-      (await page.locator("text=Total Issues").count()) > 0;
-    const hasUnresolved = (await page.locator("text=Unresolved").count()) > 0;
-    const hasCritical = (await page.locator("text=Critical").count()) > 0;
-    const hasResolvedToday =
-      (await page.locator("text=Resolved Today").count()) > 0;
-
-    // Stats cards should be present (might be loading skeleton initially)
-    expect(
-      hasTotalIssues || hasUnresolved || hasCritical || hasResolvedToday
-    ).toBeTruthy();
+    // Stats cards: Total Issues, Unresolved, Critical, Resolved Today.
+    // Stats cards should be present (might be loading skeleton initially).
+    // Tolerance preserved: any of the four.
+    await expect(
+      page
+        .locator("text=Total Issues")
+        .or(page.locator("text=Unresolved"))
+        .or(page.locator("text=Critical"))
+        .or(page.locator("text=Resolved Today"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should have severity filter dropdown", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Should have severity filter with options: All Severity, Critical, High, Medium, Low
-    const hasSeverityFilter =
-      (await page.locator("text=All Severity").count()) > 0;
-
-    expect(hasSeverityFilter).toBeTruthy();
+    await expect(page.locator("text=All Severity").first()).toBeVisible({
+      timeout: PAGE_SETTLE_TIMEOUT,
+    });
   });
 
   test("should have status filter dropdown", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Should have status filter with options: All Status, Detected, In Progress, Resolved, Skipped
-    const hasStatusFilter = (await page.locator("text=All Status").count()) > 0;
-
-    expect(hasStatusFilter).toBeTruthy();
+    await expect(page.locator("text=All Status").first()).toBeVisible({
+      timeout: PAGE_SETTLE_TIMEOUT,
+    });
   });
 
   test("should have Filters label", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
-    const hasFiltersLabel = (await page.locator("text=Filters:").count()) > 0;
-
-    expect(hasFiltersLabel).toBeTruthy();
+    await expect(page.locator("text=Filters:").first()).toBeVisible({
+      timeout: PAGE_SETTLE_TIMEOUT,
+    });
   });
 
   test("should display issue list or empty state", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
+
+    // Either there are issue cards or the "No Issues Found" empty state (or
+    // the loading skeleton). Tolerance preserved: any of the three.
+    await expect(
+      page
+        .locator("text=No Issues Found")
+        .or(page.locator('[class*="bg-surface-raised"]'))
+        .or(page.locator('[class*="animate-pulse"]'))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
     await page.screenshot({
       path: "test-results/issues-list.png",
       fullPage: true,
     });
-
-    // Either there are issue cards or the "No Issues Found" empty state
-    const hasNoIssues =
-      (await page.locator("text=No Issues Found").count()) > 0;
-    const hasIssueCards =
-      (await page.locator('[class*="bg-surface-raised"]').count()) > 0;
-    const hasLoading =
-      (await page.locator('[class*="animate-pulse"]').count()) > 0;
-
-    expect(hasNoIssues || hasIssueCards || hasLoading).toBeTruthy();
   });
 
   test("should have refresh button", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
-    const hasRefreshButton =
-      (await page.locator('button:has-text("Refresh")').count()) > 0;
-
-    expect(hasRefreshButton).toBeTruthy();
+    await expect(
+      page.locator('button:has-text("Refresh")').first()
+    ).toBeVisible({ timeout: PAGE_SETTLE_TIMEOUT });
   });
 
   test("should have project filter dropdown", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Should have project filter with "All Projects" option
-    const hasProjectFilter =
-      (await page.locator("text=All Projects").count()) > 0;
-
-    expect(hasProjectFilter).toBeTruthy();
+    await expect(page.locator("text=All Projects").first()).toBeVisible({
+      timeout: PAGE_SETTLE_TIMEOUT,
+    });
   });
 
   test("should show issue count when issues exist", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // If issues exist, there should be a "Showing X of Y issues" text
-    // or if no issues, the empty state
-    const hasShowingText = (await page.locator("text=Showing").count()) > 0;
-    const hasNoIssues =
-      (await page.locator("text=No Issues Found").count()) > 0;
-    const hasLoading =
-      (await page.locator('[class*="animate-pulse"]').count()) > 0;
-
-    expect(hasShowingText || hasNoIssues || hasLoading).toBeTruthy();
+    // or if no issues, the empty state (or the loading skeleton).
+    // Tolerance preserved: any of the three.
+    await expect(
+      page
+        .locator("text=Showing")
+        .or(page.locator("text=No Issues Found"))
+        .or(page.locator('[class*="animate-pulse"]'))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
