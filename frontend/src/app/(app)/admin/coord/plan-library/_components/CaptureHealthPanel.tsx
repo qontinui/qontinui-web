@@ -10,7 +10,9 @@ import {
 } from "../types";
 
 function doorLabel(door: CaptureDoorHealth): string {
-  return CAPTURE_DOOR_LABELS[door.captured_by as CaptureDoor] ?? door.captured_by;
+  return (
+    CAPTURE_DOOR_LABELS[door.captured_by as CaptureDoor] ?? door.captured_by
+  );
 }
 
 function relativeDays(iso: string | null): string | null {
@@ -51,9 +53,9 @@ export function CaptureHealthPanel() {
         <div>
           <h2 className="text-sm font-semibold">Capture health</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Where the corpus is coming from. The scan is the backbone; the
-            agent door is what captures prompts a scan cannot see and the
-            provenance edges only the agent that ran the chain knows.
+            Where the corpus is coming from. The scan is the backbone; the agent
+            door is what captures prompts a scan cannot see and the provenance
+            edges only the agent that ran the chain knows.
           </p>
         </div>
       </div>
@@ -116,8 +118,17 @@ export function CaptureHealthPanel() {
       ) : null}
 
       {data && data.total > 0 && (
-        <p className="mt-3 text-[11px] text-muted-foreground">
+        <p
+          className="mt-3 text-[11px] text-muted-foreground"
+          data-testid="capture-health-total"
+        >
           {data.total} artifact{data.total === 1 ? "" : "s"} in the corpus.
+          {/* Freshness beside the census: a corpus nothing has touched in
+              weeks is the body-sync-off shape, and the counts alone cannot
+              show it. */}{" "}
+          {relativeDays(data.newest_updated_at)
+            ? `Newest touched ${relativeDays(data.newest_updated_at)}.`
+            : "Newest touched date unknown."}
         </p>
       )}
     </section>

@@ -7,7 +7,7 @@ instead of living only as markdown in a dozen checkouts.
 
 Routes
 ------
-``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
+``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit/slug) + corpus_health
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
 ``GET   /plan-library/reconciliation`` three-way plan-status agreement (Phase 4)
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
@@ -117,7 +117,7 @@ import io
 import json
 import re
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import get_args
@@ -167,6 +167,7 @@ from app.schemas.plan_library import (
     CapturedBy,
     CaptureDoorHealth,
     CaptureHealthResponse,
+    CorpusHealth,
     DivergentGroup,
     DivergentResponse,
     DivergentVariant,
@@ -2188,13 +2189,37 @@ async def list_work_artifacts(
     work_unit_slug: str | None = Query(
         None,
         description="Soft link to a coord work unit. Not resolved; a slug "
-        "with no matching work unit simply returns its artifacts.",
+        "with no matching work unit simply returns its artifacts. The "
+        "scanner writes it for kind=plan only and a hand-POSTed row may "
+        "carry none — for a by-stem lookup that must find the row whoever "
+        "wrote it, use `slug`.",
+    ),
+    slug: str | None = Query(
+        None,
+        description="Exact match on the artifact's OWN slug — part of its "
+        "identity, never null, written by every door (the scanner writes "
+        "the file stem). Distinct from `work_unit_slug`, the nullable soft "
+        "link; `q` does not search identifiers.",
     ),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_audit_actor_user),
 ) -> WorkArtifactListResponse:
+    """A filtered page, with the health of the corpus it came from.
+
+    ``corpus_health`` (design decision D1 of
+    ``2026-08-27-plan-corpus-read-path-is-dark``) rides on every page so that
+    ``items: []`` is never the whole answer: ``plan_count: 0`` beside it says
+    "the corpus holds no plans", which is a different sentence from "no such
+    plan". Its ``capture`` block is ``/capture-health``'s census from the
+    same query, so the two reads cannot disagree. One extra aggregate query
+    per list call; the list is paged and small.
+
+    ``slug`` is a QUERY key, not a path segment: this adds no route, so the
+    literal-before-pattern ordering below (``/divergent``, ``/capture-health``
+    … declared before ``/{artifact_id}``) is untouched.
+    """
     org_id = await _resolve_org_id(db, current_user)
     rows, total = await crud.list_artifacts(
         db,
@@ -2205,14 +2230,72 @@ async def list_work_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
         offset=offset,
         limit=limit,
     )
+    census = await crud.capture_health(db, org_id=org_id)
     return WorkArtifactListResponse(
         items=[_summary(r) for r in rows],
         total=total,
         offset=offset,
         limit=limit,
+        corpus_health=_corpus_health(census),
+    )
+
+
+def _capture_health_response(
+    census: Sequence[crud.CaptureDoorCensus],
+) -> CaptureHealthResponse:
+    """Fold the crud census onto the schema vocabulary — zeros included.
+
+    Every door in :data:`CapturedBy` appears, an unused one as an explicit
+    ``0``; a door the CHECK constraint allows but this build does not
+    recognise is appended with ``known: false`` rather than swallowed.
+    Shared by ``/capture-health`` and the list page's ``corpus_health`` so
+    the two renderings of one census are one function.
+    """
+    known_doors: tuple[str, ...] = get_args(CapturedBy)
+    observed = {row.captured_by: row for row in census}
+
+    doors = []
+    for door in known_doors:
+        row = observed.get(door)
+        doors.append(
+            CaptureDoorHealth(
+                captured_by=door,
+                count=row.count if row else 0,
+                known=True,
+                first_at=row.first_at if row else None,
+                last_touched_at=row.last_touched_at if row else None,
+            )
+        )
+    doors.extend(
+        CaptureDoorHealth(
+            captured_by=row.captured_by,
+            count=row.count,
+            known=False,
+            first_at=row.first_at,
+            last_touched_at=row.last_touched_at,
+        )
+        for row in census
+        if row.captured_by not in known_doors
+    )
+    _, _, newest = crud.corpus_totals(census)
+    return CaptureHealthResponse(
+        total=sum(d.count for d in doors),
+        doors=doors,
+        newest_updated_at=newest,
+    )
+
+
+def _corpus_health(census: Sequence[crud.CaptureDoorCensus]) -> CorpusHealth:
+    artifact_count, plan_count, newest = crud.corpus_totals(census)
+    return CorpusHealth(
+        artifact_count=artifact_count,
+        plan_count=plan_count,
+        newest_updated_at=newest,
+        capture=_capture_health_response(census),
     )
 
 
@@ -2907,37 +2990,7 @@ async def get_capture_health(
     does not recognise; it is surfaced rather than swallowed.
     """
     org_id = await _resolve_org_id(db, current_user)
-    rows = await crud.capture_health(db, org_id=org_id)
-    known_doors: tuple[str, ...] = get_args(CapturedBy)
-    observed = {door: (count, first, touched) for door, count, first, touched in rows}
-
-    doors = []
-    for door in known_doors:
-        count, first, touched = observed.get(door, (0, None, None))
-        doors.append(
-            CaptureDoorHealth(
-                captured_by=door,
-                count=count,
-                known=True,
-                first_at=first,
-                last_touched_at=touched,
-            )
-        )
-    doors.extend(
-        CaptureDoorHealth(
-            captured_by=door,
-            count=count,
-            known=False,
-            first_at=first,
-            last_touched_at=touched,
-        )
-        for door, count, first, touched in rows
-        if door not in known_doors
-    )
-    return CaptureHealthResponse(
-        total=sum(d.count for d in doors),
-        doors=doors,
-    )
+    return _capture_health_response(await crud.capture_health(db, org_id=org_id))
 
 
 @router.get(
@@ -2958,6 +3011,9 @@ async def export_corpus(
     q: str | None = Query(None),
     since: datetime | None = Query(None),
     work_unit_slug: str | None = Query(None),
+    slug: str | None = Query(
+        None, description="Exact match on the artifact's own slug (see the list route)."
+    ),
     limit: int = Query(
         _EXPORT_MAX_ARTIFACTS,
         ge=1,
@@ -3013,6 +3069,7 @@ async def export_corpus(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
         limit=limit,
     )
 

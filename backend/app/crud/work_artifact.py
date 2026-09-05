@@ -241,8 +241,28 @@ def _apply_filters(
     q: str | None,
     since: datetime | None,
     work_unit_slug: str | None,
+    slug: str | None = None,
 ) -> Select:
-    """Apply the shared list/count filters to a statement."""
+    """Apply the shared list/count filters to a statement.
+
+    ``slug`` and ``work_unit_slug`` are DIFFERENT columns with different
+    write rules, and a consumer has to know which to ask for
+    (``2026-08-27-plan-corpus-read-path-is-dark`` D4 / Phase 3):
+
+    * ``slug`` is the artifact's OWN identifier — part of the unique key,
+      never null, written by every door. The scanner writes the file stem
+      into it and a hand-``POST`` writes whatever it sends.
+    * ``work_unit_slug`` is a SOFT LINK to a coord work unit — nullable, no
+      FK. The scanner writes the plan's stem into it for ``kind == plan``
+      only (``body_push.rs``); a hand-``POST``ed row carries it only when the
+      caller thought to send it, and is null otherwise.
+
+    So ``?slug=<stem>`` is the exact by-stem door that finds a plan whoever
+    wrote it, and ``?work_unit_slug=<stem>`` finds the rows that DECLARE a
+    link to that unit. Both are exact equality; neither is a prefix or a
+    full-text match (``q`` is the only full-text filter, and it does not
+    search identifiers).
+    """
     stmt = stmt.where(_org_scope(org_id))
     if kind is not None:
         stmt = stmt.where(WorkArtifact.kind == kind)
@@ -272,6 +292,8 @@ def _apply_filters(
         stmt = stmt.where(WorkArtifact.updated_at >= since)
     if work_unit_slug is not None:
         stmt = stmt.where(WorkArtifact.work_unit_slug == work_unit_slug)
+    if slug is not None:
+        stmt = stmt.where(WorkArtifact.slug == slug)
     return stmt
 
 
@@ -285,6 +307,7 @@ async def list_artifacts(
     q: str | None = None,
     since: datetime | None = None,
     work_unit_slug: str | None = None,
+    slug: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
@@ -298,6 +321,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
     )
 
     count_stmt = _apply_filters(
@@ -309,6 +333,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -452,6 +477,7 @@ async def list_for_export(
     q: str | None = None,
     since: datetime | None = None,
     work_unit_slug: str | None = None,
+    slug: str | None = None,
     limit: int,
 ) -> tuple[list[WorkArtifact], bool]:
     """Rows for a bulk export, plus whether ``limit`` truncated the result.
@@ -477,6 +503,7 @@ async def list_for_export(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        slug=slug,
     )
     # Fetch one MORE than asked for: the presence of row limit+1 is what proves
     # truncation. A separate COUNT would race the SELECT on a live corpus.
@@ -1101,10 +1128,46 @@ async def claim_followup(
     return edge
 
 
+@dataclass(frozen=True)
+class CaptureDoorCensus:
+    """One ``captured_by`` door's slice of the corpus census.
+
+    ``plan_count`` is the ``kind == 'plan'`` subset of ``count``; summed over
+    the doors it is the corpus-wide plan count the list read reports beside
+    every page (``2026-08-27-plan-corpus-read-path-is-dark`` D1 / Phase 2),
+    derived from the SAME query as ``/capture-health`` so the two cannot
+    disagree.
+    """
+
+    captured_by: str
+    count: int
+    plan_count: int
+    first_at: datetime | None
+    last_touched_at: datetime | None
+
+
+def corpus_totals(
+    rows: Sequence[CaptureDoorCensus],
+) -> tuple[int, int, datetime | None]:
+    """``(artifact_count, plan_count, newest_updated_at)`` folded from the census.
+
+    ``newest_updated_at`` is ``max(updated_at)`` over the whole scope — the
+    same LAST-TOUCHED reading as each door's ``last_touched_at`` — and
+    ``None`` on an empty corpus: there is no newest row to date, and a
+    fabricated epoch would read as "frozen since 1970" rather than "empty".
+    """
+    touched = [row.last_touched_at for row in rows if row.last_touched_at is not None]
+    return (
+        sum(row.count for row in rows),
+        sum(row.plan_count for row in rows),
+        max(touched) if touched else None,
+    )
+
+
 async def capture_health(
     db: AsyncSession, *, org_id: UUID | None
-) -> list[tuple[str, int, datetime | None, datetime | None]]:
-    """Per-``captured_by`` corpus census: ``(door, count, first, last_touched)``.
+) -> list[CaptureDoorCensus]:
+    """Per-``captured_by`` corpus census.
 
     The question this answers is "is the AGENT door being used, or is the
     scanner the only thing feeding the store?" — so the count alone is not
@@ -1129,6 +1192,7 @@ async def capture_health(
             # NOT labelled ``count``: ``Row`` is a tuple, so ``row.count`` would
             # resolve to ``tuple.count`` (the method) rather than the column.
             func.count().label("artifact_count"),
+            func.count().filter(WorkArtifact.kind == "plan").label("plan_count"),
             func.min(WorkArtifact.created_at).label("first_at"),
             func.max(WorkArtifact.updated_at).label("last_touched_at"),
         )
@@ -1137,7 +1201,13 @@ async def capture_health(
         .order_by(WorkArtifact.captured_by)
     )
     return [
-        (row.captured_by, int(row.artifact_count), row.first_at, row.last_touched_at)
+        CaptureDoorCensus(
+            captured_by=row.captured_by,
+            count=int(row.artifact_count),
+            plan_count=int(row.plan_count),
+            first_at=row.first_at,
+            last_touched_at=row.last_touched_at,
+        )
         for row in (await db.execute(stmt)).all()
     ]
 
