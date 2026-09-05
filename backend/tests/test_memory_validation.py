@@ -93,6 +93,19 @@ def test_query_limit_over_cap_is_422() -> None:
     assert resp.status_code == 422
 
 
+@pytest.mark.parametrize("title_prefix", ["", "x" * 201])
+def test_query_title_prefix_empty_or_over_cap_is_422(title_prefix: str) -> None:
+    # An empty prefix would silently mean "no filter"; it is rejected so
+    # a caller who meant to resolve a head cannot fall through to the
+    # unfiltered result.
+    client = _build_client()
+    resp = client.post(
+        "/api/v1/memory/query",
+        json={"query_text": "anything", "title_prefix": title_prefix},
+    )
+    assert resp.status_code == 422
+
+
 def test_ensure_embedding_dims_accepts_384() -> None:
     ensure_embedding_dims([[0.0] * EMBEDDING_DIM])
 
