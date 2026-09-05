@@ -153,11 +153,43 @@ class TestUpsertContract:
         assert versions[0].body == "# hello"
         assert versions[0].content_sha256 == row.content_sha256
 
-    async def test_unchanged_sha_is_a_noop(
+    async def test_identical_repost_is_a_noop(
         self, async_db_session: AsyncSession
     ) -> None:
         """The 304-equivalent: no version bump, no appended snapshot."""
         slug = _slug("noop")
+        first, _, _ = await _upsert(
+            async_db_session, org_id=None, slug=slug, body="stable body"
+        )
+        assert first.current_version == 1
+        touched = first.updated_at
+
+        second, created, changed = await _upsert(
+            async_db_session, org_id=None, slug=slug, body="stable body"
+        )
+
+        assert created is False
+        assert changed is False
+        assert second.id == first.id
+        assert second.current_version == 1
+        assert second.updated_at == touched, "a no-op must not touch the row"
+
+        versions = await crud.list_versions(async_db_session, first.id)
+        assert len(versions) == 1, "a no-op must not append a version row"
+
+    async def test_unchanged_sha_still_stores_the_metadata(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """Same body, corrected metadata: stored, reported, NOT versioned.
+
+        Phase 5 of ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``.
+        The version log is the BODY's history, so ``current_version`` stays
+        put and no snapshot is appended — but a ``status`` correction POSTed
+        against an already-stored body used to be dropped on the floor while
+        the response said ``changed=false``, which was true of the body and
+        false of the request (finding 43479836).
+        """
+        slug = _slug("meta")
         first, _, _ = await _upsert(
             async_db_session, org_id=None, slug=slug, body="stable body"
         )
@@ -168,18 +200,17 @@ class TestUpsertContract:
             org_id=None,
             slug=slug,
             body="stable body",
-            # Metadata differs — the digest does not, so nothing moves.
+            # Metadata differs — the digest does not.
             title="A DIFFERENT title",
-            status="SHIPPED",
+            status="SHIPPED 2026-09-05",
         )
 
         assert created is False
-        assert changed is False
+        assert changed is True, "the request moved the row; say so"
         assert second.id == first.id
-        assert second.current_version == 1
-
-        versions = await crud.list_versions(async_db_session, first.id)
-        assert len(versions) == 1, "a no-op must not append a version row"
+        assert second.title == "A DIFFERENT title"
+        assert second.status == "SHIPPED 2026-09-05"
+        assert second.current_version == 1, "metadata is not a version"
 
         count = (
             (
@@ -192,7 +223,7 @@ class TestUpsertContract:
             .scalars()
             .all()
         )
-        assert len(count) == 1
+        assert len(count) == 1, "metadata must not append a version row"
 
     async def test_changed_sha_bumps_version_and_appends(
         self, async_db_session: AsyncSession

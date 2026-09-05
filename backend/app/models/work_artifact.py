@@ -121,12 +121,17 @@ SEARCH_TSVECTOR_SQL = (
 
 _IDENTITY_ORG_EXPR = f"coalesce(organization_id, '{NIL_ORGANIZATION_ID}'::uuid)"
 
-#: Statuses that mean "this artifact is done" — normalized (uppercased, every
-#: run of non-alphanumerics collapsed to ``_``, edges trimmed). ``status`` is
-#: OPAQUE free-form text by design, so this is a *reading* of it, not a
-#: vocabulary: nothing rejects an unlisted status, it simply counts as
-#: not-yet-shipped. Used by the candidate read (which lists UNSHIPPED plans)
-#: and by ``unmet_depends_on`` (a dependency in one of these states is met).
+#: Statuses that mean "this artifact is done" — compared against the FIRST
+#: token of the normalized status (uppercased, every run of non-alphanumerics
+#: collapsed to ``_``, edges trimmed, then the leading ``_``-separated word:
+#: ``crud.work_artifact.terminal_token``). The fleet stamps plans
+#: ``SHIPPED 2026-09-02`` and the scanner stores that opaquely, so the
+#: leading word is the state and the rest is provenance. ``status`` is OPAQUE
+#: free-form text by design, so this is a *reading* of it, not a vocabulary:
+#: nothing rejects an unlisted status, it simply counts as not-yet-shipped
+#: (``IN PROGRESS`` → ``IN``, ``NOT STARTED`` → ``NOT``, neither listed).
+#: Used by the candidate read (which lists UNSHIPPED plans) and by
+#: ``unmet_depends_on`` (a dependency in one of these states is met).
 TERMINAL_STATUSES: frozenset[str] = frozenset(
     {
         "SHIPPED",
