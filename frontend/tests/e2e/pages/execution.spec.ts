@@ -7,10 +7,24 @@
  * - /workflow-viz (Workflow Visualization)
  * - /monitor (Automation Runner monitor)
  * - /discoveries (GUI element discovery approval)
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks (`expect(locator).toBeVisible({ timeout })`), never a
+ * `waitForTimeout(N)` followed by a non-waiting `count()` read — that shape
+ * asserts on wall-clock. Tolerance is preserved: an `A || B` check becomes
+ * `locA.or(locB).first()`, and a conditional `if count > 0` is preceded by a
+ * bounded `waitFor(...).catch(() => null)` so a tolerated absence stays
+ * tolerated. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
 import { requireRunner } from "../runner-detection";
+
+/** Replaces the old `waitForTimeout(3000)` before a presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(1000)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 test.beforeAll(async () => {
   await requireRunner();
@@ -40,10 +54,17 @@ test.describe("Execute - /execute", () => {
   test("should display workflow list with search input", async ({ page }) => {
     await page.goto("/execute");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for search input in the workflow selection card
+    // Check for search input in the workflow selection card. Bounded wait
+    // for it or the offline state, tolerated if neither — the conditional
+    // below is the test's original tolerance shape.
     const searchInput = page.getByPlaceholder(/search workflows/i);
+    await searchInput
+      .or(page.locator("text=Runner Offline"))
+      .or(page.locator("text=Runner is offline"))
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const hasRunnerOffline =
       (await page.locator("text=Runner Offline").count()) > 0 ||
       (await page.locator("text=Runner is offline").count()) > 0;
@@ -59,20 +80,17 @@ test.describe("Execute - /execute", () => {
   test("should display executor status indicator", async ({ page }) => {
     await page.goto("/execute");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // If runner is connected, either "Runner Connected" badge or "Executor Status" should show
-    const hasRunnerConnected =
-      (await page.locator("text=Runner Connected").count()) > 0;
-    const hasExecutorStatus =
-      (await page.locator("text=Executor Status").count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-
-    expect(
-      hasRunnerConnected || hasExecutorStatus || hasRunnerOffline
-    ).toBeTruthy();
+    // Tolerance preserved: any of the four states satisfies the test.
+    await expect(
+      page
+        .locator("text=Runner Connected")
+        .or(page.locator("text=Executor Status"))
+        .or(page.locator("text=Runner Offline"))
+        .or(page.locator("text=Runner is offline"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should display workflow selection card with run button area", async ({
@@ -80,9 +98,17 @@ test.describe("Execute - /execute", () => {
   }) => {
     await page.goto("/execute");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for "Select Workflow" card heading
+    // Check for "Select Workflow" card heading. Bounded wait for it or the
+    // offline state, tolerated if neither — the conditional below is the
+    // test's original tolerance shape.
+    await page
+      .locator("text=Select Workflow")
+      .or(page.locator("text=Runner Offline"))
+      .or(page.locator("text=Runner is offline"))
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const hasSelectWorkflow =
       (await page.locator("text=Select Workflow").count()) > 0;
     const hasRunnerOffline =
@@ -136,34 +162,37 @@ test.describe("Execution History - /execution-history", () => {
   test("should display tree event visualization area", async ({ page }) => {
     await page.goto("/execution-history");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // The page should show "Execution Tree Events" info card or the tree view
-    const hasTreeEvents =
-      (await page.locator("text=Execution Tree Events").count()) > 0;
-    const hasSelectRunCard =
-      (await page.locator("text=Select Execution Run").count()) > 0;
-    const hasNoProject =
-      (await page.locator("text=requires a project").count()) > 0 ||
-      (await page.locator("text=select a project").count()) > 0;
-
-    expect(hasTreeEvents || hasSelectRunCard || hasNoProject).toBeTruthy();
+    // Tolerance preserved: any of the four states satisfies the test.
+    await expect(
+      page
+        .locator("text=Execution Tree Events")
+        .or(page.locator("text=Select Execution Run"))
+        .or(page.locator("text=requires a project"))
+        .or(page.locator("text=select a project"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should display workflow and run selectors", async ({ page }) => {
     await page.goto("/execution-history");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for "Workflow" and "Execution Run" selector labels
-    const hasWorkflowLabel =
-      (await page.locator("text=Workflow").first().count()) > 0;
-    const hasRunLabel = (await page.locator("text=Execution Run").count()) > 0;
-    const hasNoProject =
-      (await page.locator("text=requires a project").count()) > 0 ||
-      (await page.locator("text=select a project").count()) > 0;
+    // Check for "Workflow" and "Execution Run" selector labels. Original
+    // shape: (Workflow && Execution Run) || noProject.
+    const noProject = page
+      .locator("text=requires a project")
+      .or(page.locator("text=select a project"));
+    await expect(
+      page.locator("text=Workflow").or(noProject).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
-    expect((hasWorkflowLabel && hasRunLabel) || hasNoProject).toBeTruthy();
+    if ((await noProject.count()) === 0) {
+      await expect(page.locator("text=Execution Run").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 });
 
@@ -191,22 +220,24 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
   test("should display dual-panel design or empty state", async ({ page }) => {
     await page.goto("/workflow-viz");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for workflow structure panel and active states canvas, or empty state
-    const hasWorkflowPanel = (await page.locator("text=Workflow").count()) > 0;
-    const hasActiveStates =
-      (await page.locator("text=Active States").count()) > 0;
-    const hasSelectWorkflow =
-      (await page.locator("text=Select a workflow to visualize").count()) > 0 ||
-      (await page.locator("text=Loading workflows").count()) > 0;
-    const hasNoProject =
-      (await page.locator("text=requires a project").count()) > 0 ||
-      (await page.locator("text=select a project").count()) > 0;
+    // Check for workflow structure panel and active states canvas, or empty
+    // state. Original shape: (Workflow && Active States) || selectWorkflow ||
+    // noProject.
+    const emptyState = page
+      .locator("text=Select a workflow to visualize")
+      .or(page.locator("text=Loading workflows"))
+      .or(page.locator("text=requires a project"))
+      .or(page.locator("text=select a project"));
+    await expect(
+      page.locator("text=Workflow").or(emptyState).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
-    expect(
-      (hasWorkflowPanel && hasActiveStates) || hasSelectWorkflow || hasNoProject
-    ).toBeTruthy();
+    if ((await emptyState.count()) === 0) {
+      await expect(page.locator("text=Active States").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 
   test("should display playback controls when a workflow is selected", async ({
@@ -214,33 +245,35 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
   }) => {
     await page.goto("/workflow-viz");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Playback controls include Play/Pause, Step Forward, Step Back, Reset buttons
     // These are only visible when a workflow is selected
-    const hasPlayButton =
-      (await page
-        .locator('button[title="Play"], button[title="Pause"]')
-        .count()) > 0;
-    const hasStepForward =
-      (await page.locator('button[title="Step Forward"]').count()) > 0;
-    const hasStepBack =
-      (await page.locator('button[title="Step Back"]').count()) > 0;
-    const hasReset =
-      (await page.locator('button[title="Reset to Start"]').count()) > 0;
-    const hasSelectWorkflow =
-      (await page.locator("text=Select a workflow to visualize").count()) > 0 ||
-      (await page.locator("text=Loading workflows").count()) > 0;
-    const hasNoProject =
-      (await page.locator("text=requires a project").count()) > 0 ||
-      (await page.locator("text=select a project").count()) > 0;
-
     // Either playback controls exist (workflow selected) or we see empty/loading state
-    expect(
-      (hasPlayButton && hasStepForward && hasStepBack && hasReset) ||
-        hasSelectWorkflow ||
-        hasNoProject
-    ).toBeTruthy();
+    // Original shape: (Play && StepForward && StepBack && Reset) ||
+    // selectWorkflow || noProject.
+    const emptyState = page
+      .locator("text=Select a workflow to visualize")
+      .or(page.locator("text=Loading workflows"))
+      .or(page.locator("text=requires a project"))
+      .or(page.locator("text=select a project"));
+    await expect(
+      page
+        .locator('button[title="Play"], button[title="Pause"]')
+        .or(emptyState)
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+
+    if ((await emptyState.count()) === 0) {
+      await expect(
+        page.locator('button[title="Step Forward"]').first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+      await expect(
+        page.locator('button[title="Step Back"]').first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+      await expect(
+        page.locator('button[title="Reset to Start"]').first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    }
   });
 
   test("should display mode selector (Playback/Live/Historical)", async ({
@@ -248,33 +281,23 @@ test.describe("Workflow Visualization - /workflow-viz", () => {
   }) => {
     await page.goto("/workflow-viz");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // The mode selector shows "Playback" or "Live" label, and canvas mode "Perception"/"Config"
-    const hasPlaybackLabel = (await page.locator("text=Playback").count()) > 0;
-    const hasLiveLabel = (await page.locator("text=Live").count()) > 0;
-    const hasPerceptionLabel =
-      (await page.locator("text=Perception").count()) > 0;
-    const hasConfigLabel = (await page.locator("text=Config").count()) > 0;
-    const hasHistoricalPlayback =
-      (await page.locator("text=Historical Playback").count()) > 0;
-    const hasSelectWorkflow =
-      (await page.locator("text=Select a workflow to visualize").count()) > 0 ||
-      (await page.locator("text=Loading workflows").count()) > 0;
-    const hasNoProject =
-      (await page.locator("text=requires a project").count()) > 0 ||
-      (await page.locator("text=select a project").count()) > 0;
-
     // Mode labels appear when a workflow is selected
-    expect(
-      hasPlaybackLabel ||
-        hasLiveLabel ||
-        hasPerceptionLabel ||
-        hasConfigLabel ||
-        hasHistoricalPlayback ||
-        hasSelectWorkflow ||
-        hasNoProject
-    ).toBeTruthy();
+    // Tolerance preserved: any of the nine states satisfies the test.
+    await expect(
+      page
+        .locator("text=Playback")
+        .or(page.locator("text=Live"))
+        .or(page.locator("text=Perception"))
+        .or(page.locator("text=Config"))
+        .or(page.locator("text=Historical Playback"))
+        .or(page.locator("text=Select a workflow to visualize"))
+        .or(page.locator("text=Loading workflows"))
+        .or(page.locator("text=requires a project"))
+        .or(page.locator("text=select a project"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });
 
@@ -304,9 +327,9 @@ test.describe("Monitor - /monitor", () => {
   }) => {
     await page.goto("/monitor");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Verify both tabs are visible
+    // Verify both tabs are visible (auto-waiting; the sleep that preceded
+    // this added nothing the assertion's own bound does not).
     const liveMonitorTab = page.getByRole("tab", { name: /live monitor/i });
     const sessionHistoryTab = page.getByRole("tab", {
       name: /session history/i,
@@ -319,9 +342,8 @@ test.describe("Monitor - /monitor", () => {
   test("should display navigation to dashboard", async ({ page }) => {
     await page.goto("/monitor");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Verify Dashboard navigation button exists
+    // Verify Dashboard navigation button exists (auto-waiting).
     const dashboardButton = page.getByRole("button", { name: /dashboard/i });
     await expect(dashboardButton).toBeVisible({ timeout: 10000 });
   });
@@ -331,16 +353,17 @@ test.describe("Monitor - /monitor", () => {
   }) => {
     await page.goto("/monitor");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Click on Session History tab
     const sessionHistoryTab = page.getByRole("tab", {
       name: /session history/i,
     });
+    await expect(sessionHistoryTab).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     await sessionHistoryTab.click();
-    await page.waitForTimeout(1000);
 
-    await expect(sessionHistoryTab).toHaveAttribute("data-state", "active");
+    await expect(sessionHistoryTab).toHaveAttribute("data-state", "active", {
+      timeout: TAB_SWITCH_TIMEOUT,
+    });
 
     await page.screenshot({
       path: "test-results/pages-monitor-session-history.png",
@@ -350,9 +373,10 @@ test.describe("Monitor - /monitor", () => {
     // Click back to Live Monitor tab
     const liveMonitorTab = page.getByRole("tab", { name: /live monitor/i });
     await liveMonitorTab.click();
-    await page.waitForTimeout(1000);
 
-    await expect(liveMonitorTab).toHaveAttribute("data-state", "active");
+    await expect(liveMonitorTab).toHaveAttribute("data-state", "active", {
+      timeout: TAB_SWITCH_TIMEOUT,
+    });
   });
 });
 
@@ -382,9 +406,8 @@ test.describe("Discoveries - /discoveries", () => {
   }) => {
     await page.goto("/discoveries");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Verify all three tabs are present
+    // Verify all three tabs are present (auto-waiting).
     const pendingTab = page.getByRole("tab", { name: /pending/i });
     const acceptedTab = page.getByRole("tab", { name: /accepted/i });
     const rejectedTab = page.getByRole("tab", { name: /rejected/i });
@@ -399,7 +422,6 @@ test.describe("Discoveries - /discoveries", () => {
   }) => {
     await page.goto("/discoveries");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Verify the "Review Discoveries" section heading
     await expect(
@@ -407,9 +429,9 @@ test.describe("Discoveries - /discoveries", () => {
     ).toBeVisible({ timeout: 10000 });
 
     // Verify description text
-    const hasDescription =
-      (await page.locator("text=Review and approve discoveries").count()) > 0;
-    expect(hasDescription).toBeTruthy();
+    await expect(
+      page.locator("text=Review and approve discoveries").first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should display Pending Discoveries content by default", async ({
@@ -417,13 +439,11 @@ test.describe("Discoveries - /discoveries", () => {
   }) => {
     await page.goto("/discoveries");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Pending tab should be active by default, showing "Pending Discoveries" heading
-    const hasPendingDiscoveries =
-      (await page.locator("text=Pending Discoveries").count()) > 0;
-
-    expect(hasPendingDiscoveries).toBeTruthy();
+    await expect(page.locator("text=Pending Discoveries").first()).toBeVisible({
+      timeout: PAGE_DATA_TIMEOUT,
+    });
   });
 
   test("should switch between Pending, Accepted, and Rejected tabs", async ({
@@ -431,16 +451,15 @@ test.describe("Discoveries - /discoveries", () => {
   }) => {
     await page.goto("/discoveries");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Click on Accepted tab
     const acceptedTab = page.getByRole("tab", { name: /accepted/i });
+    await expect(acceptedTab).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     await acceptedTab.click();
-    await page.waitForTimeout(1000);
 
-    const hasAcceptedDiscoveries =
-      (await page.locator("text=Accepted Discoveries").count()) > 0;
-    expect(hasAcceptedDiscoveries).toBeTruthy();
+    await expect(page.locator("text=Accepted Discoveries").first()).toBeVisible(
+      { timeout: TAB_SWITCH_TIMEOUT }
+    );
 
     await page.screenshot({
       path: "test-results/pages-discoveries-accepted.png",
@@ -450,11 +469,10 @@ test.describe("Discoveries - /discoveries", () => {
     // Click on Rejected tab
     const rejectedTab = page.getByRole("tab", { name: /rejected/i });
     await rejectedTab.click();
-    await page.waitForTimeout(1000);
 
-    const hasRejectedDiscoveries =
-      (await page.locator("text=Rejected Discoveries").count()) > 0;
-    expect(hasRejectedDiscoveries).toBeTruthy();
+    await expect(page.locator("text=Rejected Discoveries").first()).toBeVisible(
+      { timeout: TAB_SWITCH_TIMEOUT }
+    );
 
     await page.screenshot({
       path: "test-results/pages-discoveries-rejected.png",
@@ -465,13 +483,13 @@ test.describe("Discoveries - /discoveries", () => {
   test("should display project filter dropdown", async ({ page }) => {
     await page.goto("/discoveries");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // Check for project filter section
-    const hasProjectLabel = (await page.locator("text=Project:").count()) > 0;
-    const hasAllProjects =
-      (await page.locator("text=All Projects").count()) > 0;
-
-    expect(hasProjectLabel || hasAllProjects).toBeTruthy();
+    // Check for project filter section. Tolerance preserved (A || B).
+    await expect(
+      page
+        .locator("text=Project:")
+        .or(page.locator("text=All Projects"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 });

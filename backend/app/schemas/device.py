@@ -14,8 +14,57 @@ payload).
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from qontinui_schemas.generated.per_type.runner import Runner as RunnerWire
 
 from app.schemas.base import IsoDatetime
+
+
+class DeviceTenantBinding(BaseModel):
+    """One tenant a device is paired to, as coord reports it.
+
+    Mirrors one element of the ``tenant_bindings`` array on coord's
+    ``GET /coord/devices/by-user`` rows (``coord.tenant_devices``).
+    """
+
+    tenant_id: str = Field(..., description="Tenant identifier (UUID as a string).")
+    tenant_slug: str | None = Field(
+        default=None,
+        description="Tenant slug when coord resolved one; ``null`` otherwise.",
+    )
+    last_active_at: str | None = Field(
+        default=None,
+        description=(
+            "RFC 3339 timestamp of the binding's last activity; ``null`` when "
+            "coord holds none."
+        ),
+    )
+
+
+class DeviceResponse(RunnerWire):
+    """Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.
+
+    The canonical ``Runner`` wire entity from ``qontinui_schemas`` (which
+    forbids extra keys, so it cannot be extended in place) plus the web's own
+    per-device tenant-binding presentation, sourced from coord's
+    ``GET /coord/devices/by-user``.
+
+    ``tenant_bindings`` is **tri-state** and every consumer must keep it so:
+
+    * ``null`` — UNKNOWN. Coord did not hydrate bindings (its
+      ``coord.tenant_devices`` table is absent, or it predates the field).
+      Never render this as "no tenants".
+    * ``[]`` — coord measured ZERO bindings for this device.
+    * a non-empty list — the tenants the device is paired to.
+    """
+
+    tenant_bindings: list[DeviceTenantBinding] | None = Field(
+        default=None,
+        description=(
+            "Tenants this device is paired to. ``null`` means coord did not "
+            "report bindings (UNKNOWN, never zero); ``[]`` means coord measured "
+            "zero bindings."
+        ),
+    )
 
 
 class DispatchDeviceRequest(BaseModel):
@@ -73,9 +122,11 @@ class PairConfirmRequest(BaseModel):
     """Request body for ``POST /api/v1/devices/pair-confirm``.
 
     Issued by the ``/connect-runner`` page after the user clicks
-    "Connect". The web backend forwards ``(state, user_id, device_id,
-    web_session_token)`` to coord's ``POST /coord/devices/pair-complete``,
-    which returns the device-token JWT.
+    "Connect". The web backend forwards ``(state, device_id)`` to coord's
+    ``POST /coord/devices/pair-complete`` under its service token plus
+    ``X-Qontinui-User-Id`` (the signed-in user), and coord returns the
+    device-token JWT once it has verified that user's membership in the
+    flow's tenant.
     """
 
     state: str = Field(

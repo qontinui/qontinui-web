@@ -14461,6 +14461,178 @@
         "title": "DeviceMachineCredentialMintResponse",
         "type": "object"
       },
+      "DeviceResponse": {
+        "additionalProperties": false,
+        "description": "Response shape for ``GET /api/v1/devices`` and ``GET /api/v1/devices/{id}``.\n\nThe canonical ``Runner`` wire entity from ``qontinui_schemas`` (which\nforbids extra keys, so it cannot be extended in place) plus the web's own\nper-device tenant-binding presentation, sourced from coord's\n``GET /coord/devices/by-user``.\n\n``tenant_bindings`` is **tri-state** and every consumer must keep it so:\n\n* ``null`` \u2014 UNKNOWN. Coord did not hydrate bindings (its\n  ``coord.tenant_devices`` table is absent, or it predates the field).\n  Never render this as \"no tenants\".\n* ``[]`` \u2014 coord measured ZERO bindings for this device.\n* a non-empty list \u2014 the tenants the device is paired to.",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "description": "Free-form capability tags advertised by the runner\n(e.g., `[\"python\", \"playwright\", \"vision\"]`).",
+            "title": "Capabilities"
+          },
+          "createdAt": {
+            "description": "ISO 8601 timestamp when the runner was first registered.",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "derivedStatus": {
+            "$ref": "#/components/schemas/RunnerStatus",
+            "description": "Computed health state derived from `ws_connected` and\n`last_heartbeat`. Authoritative for UI display."
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported hostname of the machine the runner is running on.",
+            "title": "Hostname"
+          },
+          "id": {
+            "description": "Runner identifier (UUID as a string).",
+            "title": "Id",
+            "type": "string"
+          },
+          "ipAddress": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported network address the runner is reachable on.",
+            "title": "Ipaddress"
+          },
+          "lastHeartbeat": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ISO 8601 timestamp of the most recent heartbeat received from the\nrunner, if any.",
+            "title": "Lastheartbeat"
+          },
+          "name": {
+            "description": "Human-readable runner name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "os": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operating system identifier (e.g., `\"windows\"`, `\"macos\"`, `\"linux\"`).",
+            "title": "Os"
+          },
+          "osVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Operating system version string.",
+            "title": "Osversion"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported port the runner's HTTP API is listening on.",
+            "title": "Port"
+          },
+          "recentCrash": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerCrash"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most recently captured crash dump metadata, if any."
+          },
+          "tenant_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DeviceTenantBinding"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenants this device is paired to. ``null`` means coord did not report bindings (UNKNOWN, never zero); ``[]`` means coord measured zero bindings.",
+            "title": "Tenant Bindings"
+          },
+          "uiError": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerUiError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most recently reported structured UI error, if any."
+          },
+          "userId": {
+            "description": "Owning user identifier (UUID as a string).",
+            "title": "Userid",
+            "type": "string"
+          },
+          "wsConnected": {
+            "description": "Whether the server currently holds an open WebSocket from the runner.",
+            "title": "Wsconnected",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "createdAt",
+          "derivedStatus",
+          "id",
+          "name",
+          "userId",
+          "wsConnected"
+        ],
+        "title": "DeviceResponse",
+        "type": "object"
+      },
       "DeviceSessionSummary": {
         "description": "Simplified device session schema for user-facing API.\n\nHides sensitive information like device fingerprint.",
         "properties": {
@@ -14571,6 +14743,45 @@
           }
         },
         "title": "DeviceSessionUpdate",
+        "type": "object"
+      },
+      "DeviceTenantBinding": {
+        "description": "One tenant a device is paired to, as coord reports it.\n\nMirrors one element of the ``tenant_bindings`` array on coord's\n``GET /coord/devices/by-user`` rows (``coord.tenant_devices``).",
+        "properties": {
+          "last_active_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "RFC 3339 timestamp of the binding's last activity; ``null`` when coord holds none.",
+            "title": "Last Active At"
+          },
+          "tenant_id": {
+            "description": "Tenant identifier (UUID as a string).",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenant slug when coord resolved one; ``null`` otherwise.",
+            "title": "Tenant Slug"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "DeviceTenantBinding",
         "type": "object"
       },
       "DiffRegionResponse": {
@@ -31138,7 +31349,7 @@
         "type": "object"
       },
       "PairConfirmRequest": {
-        "description": "Request body for ``POST /api/v1/devices/pair-confirm``.\n\nIssued by the ``/connect-runner`` page after the user clicks\n\"Connect\". The web backend forwards ``(state, user_id, device_id,\nweb_session_token)`` to coord's ``POST /coord/devices/pair-complete``,\nwhich returns the device-token JWT.",
+        "description": "Request body for ``POST /api/v1/devices/pair-confirm``.\n\nIssued by the ``/connect-runner`` page after the user clicks\n\"Connect\". The web backend forwards ``(state, device_id)`` to coord's\n``POST /coord/devices/pair-complete`` under its service token plus\n``X-Qontinui-User-Id`` (the signed-in user), and coord returns the\ndevice-token JWT once it has verified that user's membership in the\nflow's tenant.",
         "properties": {
           "device_id": {
             "description": "Device UUID from machine.json, forwarded by the runner via the redirect URL.",
@@ -36808,163 +37019,6 @@
         ],
         "title": "RunType",
         "type": "string"
-      },
-      "Runner": {
-        "additionalProperties": false,
-        "description": "Canonical runner entity. One row per registered runner; the same shape is\nserved to every consumer (mobile, web, runner UI).\n\nReplaces the prior split between `runners` (fleet/heartbeat),\n`runner_connections` (transient WS sessions), and per-consumer projection\ntypes like `RunnerConnection` / `ServerRunner` / `RegisteredRunner` /\n`WebIntegrationStatus`.",
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": [],
-            "description": "Free-form capability tags advertised by the runner\n(e.g., `[\"python\", \"playwright\", \"vision\"]`).",
-            "title": "Capabilities"
-          },
-          "createdAt": {
-            "description": "ISO 8601 timestamp when the runner was first registered.",
-            "title": "Createdat",
-            "type": "string"
-          },
-          "derivedStatus": {
-            "$ref": "#/components/schemas/RunnerStatus",
-            "description": "Computed health state derived from `ws_connected` and\n`last_heartbeat`. Authoritative for UI display."
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported hostname of the machine the runner is running on.",
-            "title": "Hostname"
-          },
-          "id": {
-            "description": "Runner identifier (UUID as a string).",
-            "title": "Id",
-            "type": "string"
-          },
-          "ipAddress": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported network address the runner is reachable on.",
-            "title": "Ipaddress"
-          },
-          "lastHeartbeat": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ISO 8601 timestamp of the most recent heartbeat received from the\nrunner, if any.",
-            "title": "Lastheartbeat"
-          },
-          "name": {
-            "description": "Human-readable runner name.",
-            "title": "Name",
-            "type": "string"
-          },
-          "os": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operating system identifier (e.g., `\"windows\"`, `\"macos\"`, `\"linux\"`).",
-            "title": "Os"
-          },
-          "osVersion": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Operating system version string.",
-            "title": "Osversion"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "maximum": 65535.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Reported port the runner's HTTP API is listening on.",
-            "title": "Port"
-          },
-          "recentCrash": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunnerCrash"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Most recently captured crash dump metadata, if any."
-          },
-          "uiError": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RunnerUiError"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Most recently reported structured UI error, if any."
-          },
-          "userId": {
-            "description": "Owning user identifier (UUID as a string).",
-            "title": "Userid",
-            "type": "string"
-          },
-          "wsConnected": {
-            "description": "Whether the server currently holds an open WebSocket from the runner.",
-            "title": "Wsconnected",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "createdAt",
-          "derivedStatus",
-          "id",
-          "name",
-          "userId",
-          "wsConnected"
-        ],
-        "title": "Runner",
-        "type": "object"
       },
       "RunnerConnectionInfo": {
         "description": "Connection information for qontinui-runner desktop app",
@@ -69798,7 +69852,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/Runner"
+                    "$ref": "#/components/schemas/DeviceResponse"
                   },
                   "title": "Response List Devices Endpoint Api V1 Devices Get",
                   "type": "array"
@@ -69941,7 +69995,7 @@
     },
     "/api/v1/devices/pair-cli": {
       "post": {
-        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer and DERIVES ``tenant_id`` itself when the body omits\nit \u2014 so web no longer resolves or sends a ``tenant_id``. The\n``X-Qontinui-User-Id`` header is still sent for user attribution.\n\nSee follow-up #1 of plan\n``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.\nCoord already accepts the optional ``tenant_id`` + derives it from the\noperator bearer (``routes_phase3.rs::post_pair_cli``); this change just\nforwards the right credential.",
+        "description": "Headless analogue of :func:`pair_confirm`.\n\nThe runner POSTs here with its existing user access-token in\n``Authorization: Bearer \u2026`` (the same token it just exchanged via\n``/api/v1/auth/jwt/login``) and the ``(device_id, hostname, name)``\ntriple it already knows.\n\nThe backend forwards the caller's **Cognito operator bearer** (cookie\n``access_token`` or ``Authorization: Bearer``) straight through to\ncoord's ``POST /coord/devices/pair-cli``. Coord's mounted\n``resolve_operator_optional`` middleware builds an ``OperatorContext``\nfrom that bearer and DERIVES ``tenant_id`` itself when the body omits\nit \u2014 so web no longer resolves or sends a ``tenant_id``. The\n``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it\nagainst the operator's OWN ``auth.users`` row (matched by Cognito\nsubject) and refuses ``user_mismatch`` if it names anyone else \u2014 it is\nan assertion coord verifies, not an identity coord trusts.\n\nSee follow-up #1 of plan\n``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.\nCoord already accepts the optional ``tenant_id`` + derives it from the\noperator bearer (``routes_phase3.rs::post_pair_cli``); this change just\nforwards the right credential.",
         "operationId": "api_v1_devices_pair_cli_post",
         "requestBody": {
           "content": {
@@ -70035,7 +70089,7 @@
     },
     "/api/v1/devices/pair-codes/{code}/redeem": {
       "post": {
-        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails.\n* **503** + ``Retry-After`` if coord is temporarily unavailable\n  (e.g. mid-deploy) after the proxy's connect-failure retries.\n* **504** if coord did not respond in time (no retry \u2014 the request\n  may have been processed).",
+        "description": "Redeem a single-use pair code for a device JWT.\n\n**UNAUTHENTICATED ON PURPOSE.** This endpoint deliberately requires\nNO operator JWT \u2014 the pair code IS the credential. The runner has\nno operator JWT yet (that's why it needs to pair), so any\nauth-gated alternative would defeat the entire flow.\n\nThe resulting device JWT is tenant-scoped to the **code's**\nmint-time tenant, NOT to anything the runner asserts in the request\nbody. The runner's ``device_id`` is recorded but used only as the\nnew device's stable identity \u2014 the runner cannot escalate to a\ndifferent tenant by claiming a different ``device_id``.\n\nThe call to coord's ``pair-cli`` rides the web service token +\n``X-Qontinui-User-Id = issued_by_user_id`` (coord's pairing arm B).\nCoord verifies that credential and then REFUSES the redeem (403\n``tenant_membership_required`` \u2192 502 here) when the code's issuer no\nlonger belongs to the code's tenant, matched by Cognito subject \u2014 a\ncode outlives its issuer's membership only as a row, never as a\ncredential.\n\nReturns:\n\n* **200** + :class:`PairCodeRedeemOut` on success.\n* **404** if the code doesn't exist (or never did).\n* **409** if the code has already been redeemed (single-use).\n* **410** if the code has expired.\n* **502** if the downstream coord ``pair-cli`` call fails \u2014 including\n  coord's own refusal when the issuer is no longer a member of the\n  code's tenant.\n* **503** + ``Retry-After`` if coord is temporarily unavailable\n  (e.g. mid-deploy) after the proxy's connect-failure retries.\n* **504** if coord did not respond in time (no retry \u2014 the request\n  may have been processed).",
         "operationId": "api_v1_devices_pair_codes_code_redeem_post",
         "parameters": [
           {
@@ -70088,7 +70142,7 @@
     },
     "/api/v1/devices/pair-confirm": {
       "post": {
-        "description": "Complete an OAuth-loopback pairing flow.\n\nForwards ``(state, user_id)`` to coord's ``POST\n/coord/devices/pair-complete``; returns the issued device-token JWT\nand ``device_id`` so the browser can redirect the runner's localhost\ncallback handler.\n\nCoord resolves the tenant from the pair-start flow it stored, so web\ndoes not compute or forward a tenant_id here. We still gate the route\non a linked operator by calling coord's ``/admin/coord/me`` (it 403s\nan unlinked caller \u2014 the same fail-closed posture the old resolver\ngate provided, now sourced over the HTTP boundary).",
+        "description": "Complete an OAuth-loopback pairing flow.\n\nForwards ``(state, device_id)`` to coord's ``POST\n/coord/devices/pair-complete``; returns the issued device-token JWT\nand ``device_id`` so the browser can redirect the runner's localhost\ncallback handler.\n\nThe user is NOT in the body. Coord reads it from ``X-Qontinui-User-Id``\nand trusts that header only because it arrives under the web service\ntoken (``sub = service:qontinui-web-strategy``, ``strategy_admin``) \u2014\ncoord's pairing arm B (``qontinui-coord`` ``pairing_auth``). Coord then\nresolves the tenant from the pair-start flow it stored and REFUSES the\npairing (403 ``tenant_membership_required``) unless this user's\ncoord operator \u2014 matched by Cognito subject, never by email \u2014 holds\nmembership in that tenant. So web does not compute or forward a\ntenant_id here. We still gate the route on a linked operator by\ncalling coord's ``/admin/coord/me`` (it 403s an unlinked caller \u2014\nthe same fail-closed posture the old resolver gate provided, now\nsourced over the HTTP boundary) so an unlinked caller is refused\nbefore any outbound call.",
         "operationId": "api_v1_devices_pair_confirm_post",
         "requestBody": {
           "content": {
@@ -70350,7 +70404,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Runner"
+                  "$ref": "#/components/schemas/DeviceResponse"
                 }
               }
             },
@@ -82587,7 +82641,7 @@
     },
     "/api/v1/operations/coord/devices/pair-start": {
       "post": {
-        "description": "Proxy POST /coord/devices/pair-start with server-injected tenant_id.\n\nCoord's pair-start is a public route whose PairStartRequest requires\ntenant_id in the body (routes_phase3.rs:1035). The web proxy is the\nenforcement point: it resolves the operator's home tenant via\nget_tenant_id and injects it into the body before forwarding, so the\nfrontend never has to know or pass the tenant_id.",
+        "description": "Proxy POST /coord/devices/pair-start with server-injected tenant_id.\n\nCoord's pair-start is a public route whose PairStartRequest requires\ntenant_id in the body (``routes_phase3.rs::PairStartRequest``). This\nproxy resolves the operator's home tenant via get_tenant_id and\ninjects it into the body before forwarding, so the frontend never has\nto know or pass the tenant_id. Coord treats it as a request and proves\nthe completing user's membership at pair-complete.",
         "operationId": "api_v1_operations_coord_devices_pair_start_post",
         "requestBody": {
           "content": {
@@ -88926,7 +88980,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/accounts": {
       "get": {
-        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"merge_enabled\", \"profile_source\"}]}]}``\n\n(``repos`` may be ``[]`` for a freshly-connected org; ``merge_enabled`` /\n``profile_source`` may be null. ``merge_enabled`` is the RAW per-repo pin \u2014\n``true``/``false`` = pinned, ``null`` = inheriting \u2014 not the resolved\nverdict.) Reuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
+        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"state\", \"merge_enabled\", \"merge_enabled_resolved\",\n\"merge_posture\", \"profile_source\", \"unenrolled_at\", \"unenrolled_by\",\n\"unenroll_reason\"}]}]}``\n\n``repos`` may be ``[]`` for a freshly-connected org. Per repo row (plan\n``2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility``\nP2/P3):\n\n  * ``state`` \u2014 ``\"enrolled\"`` (a live ``tenant_repos`` row) or\n    ``\"unenrolled\"`` (only a ``tenant_repo_unenrollments`` tombstone\n    remains; the enroll path skips it until it is restored).\n  * ``merge_enabled`` \u2014 the RAW per-repo pin: ``true``/``false`` = pinned,\n    ``null`` = inheriting. NOT the resolved verdict.\n  * ``merge_enabled_resolved`` \u2014 the resolved verdict coord's own\n    ``resolve_merge_enabled`` computes (tenant pause, then the pin, then the\n    default) AND-ed with the tenant's ``auto_merge_enabled``; ``null`` on an\n    unenrolled row.\n  * ``merge_posture`` \u2014 the tier that decided it: ``\"default\"`` /\n    ``\"pinned_on\"`` / ``\"pinned_off\"`` / ``\"tenant_paused\"`` /\n    ``\"auto_merge_off\"``; ``null`` on an unenrolled row or an older coord.\n  * ``unenrolled_at`` / ``unenrolled_by`` / ``unenroll_reason`` \u2014 the\n    tombstone's who/when/why; all ``null`` on an enrolled row.\n\nReuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
         "operationId": "api_v1_operations_pr_merge_onboarding_accounts_get",
         "responses": {
           "200": {
@@ -89224,6 +89278,72 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/pending-installation": {
+      "get": {
+        "description": "Look up ONE pending (installed-but-unbound) GitHub App installation.\n\nProxies coord's ``GET /coord/onboarding/pending-installations`` keyed by\nEXACTLY ONE of ``installation_id`` / ``account_login`` (the query param is\nforwarded under the same name). Zero or both keys is a\n``400 {\"error\": \"exactly_one_key_required\"}`` \u2014 answered here, with coord's\nown error shape, so the round-trip is not spent on a request coord would\nrefuse identically. A blank ``account_login`` counts as absent.\n\nResponse envelope (coord-owned)::\n\n    {\"pending\": bool | null, \"installation_id\": int | null,\n     \"account_login\": str | null, \"account_type\": str | null,\n     \"repo_count\": int | null, \"received_at\": rfc3339 | null,\n     \"claimed_at\": rfc3339 | null, \"reason\"?: str}\n\nThree readings, and the frontend keeps them apart:\n\n  * ``pending: true`` \u2014 coord saw the install and no tenant has claimed it.\n  * ``pending: false`` \u2014 either a row whose ``claimed_at`` is set (already\n    connected) or no row at all (every other field ``null``: coord has not\n    seen an install for that key).\n  * ``pending: null`` \u2014 UNKNOWN: the ``pending_installations`` table is\n    absent on this coord (``reason: \"pending_installations_table_absent\"``).\n    Never rendered as \"not installed\".\n\nSame auth as the accounts read: ``get_tenant_id`` captures the caller's\nbearer, ``_tenant_headers`` forwards it, ``_proxy_coord_get`` passes coord's\nstatus through (a coord 4xx/5xx re-raises with the same status).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_pending_installation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "installation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Installation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_login",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Login"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Pending Installation Api V1 Operations Pr Merge Onboarding Pending Installation Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pr Merge Onboarding Pending Installation",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
         "description": "Return ``{paired, claude_code_available, ready, paired_elsewhere}``\nfor the calling tenant. Drives the onboarding wizard's polling loop on\nstep 2 (the \"Sign into Claude Code on your device\" verification step).\n\n``X-Qontinui-User-Id`` is forwarded (same attribution header as the\npair paths in ``devices.py``) so coord can compute\n``paired_elsewhere`` \u2014 devices the CALLING USER has paired to a\nDIFFERENT tenant, which a re-pair here would silently steal. Older\ncoord ignores the header and omits the field; the wizard treats a\nmissing ``paired_elsewhere`` as ``[]`` (plan\n2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).",
@@ -89246,6 +89366,52 @@
           }
         ],
         "summary": "Get Pr Merge Onboarding Precondition",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
+      "post": {
+        "description": "Clear a repo's un-enrollment tombstone and re-enroll it.\n\nProxies coord's ``POST /coord/onboarding/repos/{owner/name}/restore``\n(body-less), substituting the ``owner/name`` path param verbatim \u2014 it is a\n``{repo:path}`` here because it carries a slash. Backs the \"Re-enroll\"\naction on an un-enrolled row of the Connected Organizations card.\n\nAuthz \u2014 ``require_coord_tenant_admin``, exactly like the enroll proxy: a\nrestore re-opens enrollment (profile writes, a possible bootstrap PR), a\nconsequential write.\n\nContract \u2014 coord clears the tombstone synchronously, spawns the enroll, and\nanswers immediately (default ``_COORD_TIMEOUT``):\n  * ``202 {\"restored\": bool, \"enrolled\": \"spawned\", \"installation_id\", \"repo\"}``\n    \u2014 the UI re-polls ``GET /pr-merge/onboarding/accounts`` until the row\n    flips from ``state: \"unenrolled\"`` to ``\"enrolled\"``.\n  * ``404 {\"error\": \"no_installation_for_owner\", \"owner\", \"restored\": bool}``\n    \u2014 no App installation is bound to the repo's owner (``restored`` says\n    whether the tombstone was cleared anyway).\n  * ``400 {\"error\": \"invalid_repo\"}`` \u2014 answered HERE for a path that is\n    not ``owner/name``; nothing reaches coord.\n\nCoord's status code AND JSON body pass through VERBATIM (not via\n``_proxy_coord_post``, which would stringify a \u2265400 body and rewrite the\n``202`` to ``200``). Transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repos_repo_restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Onboarding Restore Repo",
         "tags": [
           "operations"
         ]

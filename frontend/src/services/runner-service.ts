@@ -4,8 +4,28 @@ import type {
   RunnerSessionsResponse,
   DispatchPayload,
   DispatchResult,
+  RegisteredDevice,
 } from "@/types/runner";
 import { HttpClient } from "./http-client";
+
+/**
+ * A device row as it arrives off the wire. `tenant_bindings` may be absent
+ * (a web backend that predates the field) as well as `null` or an array.
+ */
+type DeviceRow = Runner & Partial<Pick<RegisteredDevice, "tenant_bindings">>;
+
+/**
+ * Normalize a wire row into a {@link RegisteredDevice}: an absent or
+ * non-array `tenant_bindings` is UNKNOWN (`null`), never an empty set.
+ */
+function toRegisteredDevice(row: DeviceRow): RegisteredDevice {
+  return {
+    ...row,
+    tenant_bindings: Array.isArray(row.tenant_bindings)
+      ? row.tenant_bindings
+      : null,
+  };
+}
 
 /**
  * RunnerService — wraps the unified `/api/v1/devices` endpoint surface.
@@ -26,7 +46,7 @@ export class RunnerService {
    * List runners. Optionally filter by derived status (comma-separated
    * list, e.g. `"healthy,degraded,starting"`).
    */
-  async getRunners(status?: string): Promise<Runner[]> {
+  async getRunners(status?: string): Promise<RegisteredDevice[]> {
     const url = status
       ? `${this.baseUrl}/devices?status=${encodeURIComponent(status)}`
       : `${this.baseUrl}/devices`;
@@ -36,17 +56,19 @@ export class RunnerService {
       throw new Error("Failed to fetch runners");
     }
 
-    return response.json();
+    const rows: DeviceRow[] = await response.json();
+    return rows.map(toRegisteredDevice);
   }
 
-  async getRunner(runnerId: string): Promise<Runner> {
+  async getRunner(runnerId: string): Promise<RegisteredDevice> {
     const response = await this.httpClient.fetch(
       `${this.baseUrl}/devices/${runnerId}`
     );
     if (!response.ok) {
       throw new Error("Failed to fetch runner");
     }
-    return response.json();
+    const row: DeviceRow = await response.json();
+    return toRegisteredDevice(row);
   }
 
   async deleteRunner(runnerId: string): Promise<void> {

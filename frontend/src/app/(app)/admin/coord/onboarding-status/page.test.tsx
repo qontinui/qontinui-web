@@ -542,3 +542,192 @@ describe("recovery card re-mint", () => {
     await waitFor(() => expect(mintBody()).toEqual({ flow: "connect" }));
   });
 });
+
+/**
+ * P4 of plan `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`:
+ * the stateless arrival's `installation_id` is looked up through the keyed
+ * pending-installation proxy instead of discarded. The claim is still NOT
+ * made (that is the fail-closed contract above); only the recover card's copy
+ * and link change, and only on the two arms where coord actually knows.
+ */
+describe("recover card looks up the stateless arrival's installation", () => {
+  const RECEIVED = "2026-09-05T10:11:12Z";
+
+  function pendingCalls() {
+    return fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("/onboarding/pending-installation")
+    );
+  }
+
+  function stubPending(body: unknown, status = 200) {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).includes("/onboarding/pending-installation")
+          ? jsonResponse(body, status)
+          : jsonResponse({ connect_state: TOKEN })
+      )
+    );
+  }
+
+  it("asks coord by installation_id and, on pending, names the org and hands it to ?connect=", async () => {
+    stubPending({
+      pending: true,
+      installation_id: 9999,
+      account_login: "portofino-pizzeria",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: null,
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-recover");
+    const msg = screen.getByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /GitHub installed the App on portofino-pizzeria \(3 repos\) at .*, but the connect didn't start from Qontinui, so it isn't connected to a tenant yet\. Start the connect again below\./
+      )
+    );
+    const url = new URL(String(pendingCalls()[0][0]), "https://x.test");
+    expect(url.searchParams.get("installation_id")).toBe("9999");
+    expect(url.searchParams.has("account_login")).toBe(false);
+
+    const link = screen.getByTestId("onboarding-claim-recover-link");
+    expect(link).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding?connect=portofino-pizzeria"
+    );
+    expect(link).toHaveTextContent("authorize portofino-pizzeria here instead");
+    // Still fails closed: no claim, and the install CTA is still there.
+    expect(
+      fetchMock.mock.calls.filter((c) =>
+        String(c[0]).includes("/onboarding/claim")
+      )
+    ).toHaveLength(0);
+    expect(
+      screen.getByTestId("onboarding-claim-recover-install")
+    ).toBeInTheDocument();
+  });
+
+  it("says the org is already connected on a claimed row, linking to the bare status page", async () => {
+    stubPending({
+      pending: false,
+      installation_id: 9999,
+      account_login: "portofino-pizzeria",
+      account_type: "Organization",
+      repo_count: 3,
+      received_at: RECEIVED,
+      claimed_at: "2026-09-05T12:00:00Z",
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(
+        /portofino-pizzeria was already connected on .* — nothing more to do here\./
+      )
+    );
+    expect(screen.getByTestId("onboarding-claim-recover-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding-status"
+    );
+  });
+
+  it("keeps today's copy when coord has no row, saying so", async () => {
+    stubPending({
+      pending: false,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(/coord has not seen this installation yet\./)
+    );
+    expect(msg).toHaveTextContent(/This connect didn't start from Qontinui/);
+    expect(screen.getByTestId("onboarding-claim-recover-link")).toHaveAttribute(
+      "href",
+      "/admin/coord/onboarding"
+    );
+  });
+
+  it("keeps today's copy on pending: null — and never claims the installation does not exist", async () => {
+    stubPending({
+      pending: null,
+      installation_id: null,
+      account_login: null,
+      account_type: null,
+      repo_count: null,
+      received_at: null,
+      claimed_at: null,
+      reason: "pending_installations_table_absent",
+    });
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(/couldn't check this installation with coord/)
+    );
+    expect(msg).not.toHaveTextContent(/has not seen|does not exist/);
+  });
+
+  it("folds a failed proxy call into the couldn't-check arm", async () => {
+    stubPending({ detail: "coord is not reachable" }, 502);
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "9999",
+    });
+
+    render(<OnboardingStatusPage />);
+
+    const msg = await screen.findByTestId("onboarding-claim-recover-message");
+    await waitFor(() =>
+      expect(msg).toHaveTextContent(/couldn't check this installation with coord/)
+    );
+  });
+
+  it("does not look anything up on the nonce-mismatch recover (no id to trust)", async () => {
+    // The nonce arm is a crafted-or-cleared-session signal; its recover card
+    // is unchanged and makes no pending call.
+    stubPending({ pending: true });
+    sessionStorage.setItem(
+      "qontinui.onboarding_connect_nonce",
+      "a-different-one"
+    );
+    mockSearchParams = new URLSearchParams({
+      code: "gho_code",
+      installation_id: "4242",
+      state: `connect~~${NONCE}~${TOKEN}`,
+    });
+
+    render(<OnboardingStatusPage />);
+
+    await screen.findByTestId("onboarding-claim-recover");
+    expect(pendingCalls()).toHaveLength(0);
+  });
+});
