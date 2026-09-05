@@ -40,6 +40,13 @@ import type { Locator } from "@playwright/test";
 import { test, expect } from "../fixtures";
 
 /**
+ * Replaces the old `waitForTimeout(3000)` before a page-data presence read
+ * (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time): the
+ * four non-polling tests below now use auto-waiting `.or()` assertions.
+ */
+const PAGE_DATA_TIMEOUT = 9000;
+
+/**
  * Upper bound for "the app shell finished authenticating and rendered".
  *
  * Sized against the surrounding budget rather than picked by feel: the observed
@@ -138,7 +145,17 @@ test.describe("Captures - Viewer (non-existent session)", () => {
   }) => {
     await page.goto("/captures/non-existent-session-12345");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
+
+    // Should show "Session not found" or "Back to Captures" or loading.
+    // Tolerance preserved: any of the four.
+    await expect(
+      page
+        .locator("text=Session not found")
+        .or(page.locator("text=Back to Captures"))
+        .or(page.locator("text=Loading"))
+        .or(page.locator('[class*="animate-spin"]'))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
     await page.screenshot({
       path: "test-results/capture-viewer-404.png",
@@ -147,17 +164,6 @@ test.describe("Captures - Viewer (non-existent session)", () => {
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
-
-    // Should show "Session not found" or "Back to Captures" or loading
-    const hasNotFound =
-      (await page.locator("text=Session not found").count()) > 0;
-    const hasBackButton =
-      (await page.locator("text=Back to Captures").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Loading").count()) > 0 ||
-      (await page.locator('[class*="animate-spin"]').count()) > 0;
-
-    expect(hasNotFound || hasBackButton || hasLoading).toBeTruthy();
   });
 
   test("should show video player area when session loads", async ({ page }) => {
@@ -262,7 +268,16 @@ test.describe("Recordings - Detail (non-existent)", () => {
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
+
+    // Should show loading or error state. The page waits for data.
+    // Tolerance preserved: any of the three.
+    await expect(
+      page
+        .locator("text=Back to Recordings")
+        .or(page.locator('[class*="animate-spin"]'))
+        .or(page.locator("text=Failed to load"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
     await page.screenshot({
       path: "test-results/recording-detail-404.png",
@@ -271,15 +286,6 @@ test.describe("Recordings - Detail (non-existent)", () => {
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
-
-    // Should show loading or error state. The page waits for data.
-    const hasBackButton =
-      (await page.locator("text=Back to Recordings").count()) > 0;
-    const hasLoading =
-      (await page.locator('[class*="animate-spin"]').count()) > 0;
-    const hasError = (await page.locator("text=Failed to load").count()) > 0;
-
-    expect(hasBackButton || hasLoading || hasError).toBeTruthy();
   });
 
   test("should have three tabs (Overview, Processing, Review) when recording loads", async ({
@@ -287,20 +293,21 @@ test.describe("Recordings - Detail (non-existent)", () => {
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // If a recording loads, it should have the three tabs
-    const hasOverviewTab =
-      (await page.locator('button:has-text("Overview")').count()) > 0;
-    const hasProcessingTab =
-      (await page.locator('button:has-text("Processing")').count()) > 0;
-    const _hasReviewTab =
-      (await page.locator('button:has-text("Review Structure")').count()) > 0;
-    const hasLoading =
-      (await page.locator('[class*="animate-spin"]').count()) > 0;
-
-    // For non-existent recording, might still be loading or showing error
-    expect((hasOverviewTab && hasProcessingTab) || hasLoading).toBeTruthy();
+    // If a recording loads, it should have the three tabs; for a
+    // non-existent recording it might still be loading or showing error.
+    // Tolerance preserved: the Overview tab or the spinner, and the
+    // Processing tab is required only once Overview rendered (the original
+    // AND arm). The never-read `_hasReviewTab` copy is dropped.
+    const overviewTab = page.locator('button:has-text("Overview")');
+    await expect(
+      overviewTab.or(page.locator('[class*="animate-spin"]')).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    if (await overviewTab.first().isVisible()) {
+      await expect(
+        page.locator('button:has-text("Processing")').first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+    }
   });
 
   test("should show processing status information when available", async ({
@@ -308,21 +315,28 @@ test.describe("Recordings - Detail (non-existent)", () => {
   }) => {
     await page.goto("/recordings/non-existent-recording-12345");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
-    // If recording loaded, check for overview stats
+    // If recording loaded, check for overview stats. Bounded wait for the
+    // Overview tab, tolerated if absent — the conditional is the test's
+    // original shape.
+    await page
+      .locator('button:has-text("Overview")')
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const hasOverviewTab =
       (await page.locator('button:has-text("Overview")').count()) > 0;
 
     if (hasOverviewTab) {
-      // Overview tab should have stats: Total Frames, Interactions, Duration, Frame Rate
-      const hasTotalFrames =
-        (await page.locator("text=Total Frames").count()) > 0;
-      const hasInteractions =
-        (await page.locator("text=Interactions").count()) > 0;
-      const hasDuration = (await page.locator("text=Duration").count()) > 0;
-
-      expect(hasTotalFrames || hasInteractions || hasDuration).toBeTruthy();
+      // Overview tab should have stats: Total Frames, Interactions, Duration,
+      // Frame Rate. Tolerance preserved: any of the three.
+      await expect(
+        page
+          .locator("text=Total Frames")
+          .or(page.locator("text=Interactions"))
+          .or(page.locator("text=Duration"))
+          .first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     }
   });
 });
