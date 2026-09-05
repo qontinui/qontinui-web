@@ -547,17 +547,25 @@ export function redactSecrets(
 // ============================================================================
 // Merge economics — CI-duration-aware severity inputs.
 //
-// Mirrors coord's NEW `coord_query_merge_economics` read (proxied by the web
-// backend at `/api/v1/operations/pr-merge/merge-economics`). Per-repo merge
-// timing/throughput the fleet page uses to decide whether a merge conflict is
-// "act now" (RED) or "resolve just-before-merge" (AMBER): long candidate-CI
-// DAMPENS conflict urgency, a shallow (near-front) queue AMPLIFIES it.
+// Mirrors coord's `coord_query_merge_economics` read — `GET
+// /pr-merge/economics` on coord (`crates/coord/src/routes.rs:4287`), proxied
+// by the web backend at `/api/v1/operations/pr-merge/merge-economics`.
+// Per-repo merge timing/throughput the fleet page uses to decide whether a
+// merge conflict is "act now" (RED) or "resolve just-before-merge" (AMBER):
+// long candidate-CI DAMPENS conflict urgency, a shallow (near-front) queue
+// AMPLIFIES it. Plus the candidate-CI CHURN counters (plan
+// 2026-07-27-coord-green-candidates-discarded-always-zero): how many merge
+// candidates reached green and were then thrown away, which the health strip
+// and the Train tab render as waste.
 //
-// EVERY field is optional. Coord may not have this read deployed yet, and even
-// once it does older deploys can omit individual fields — every consumer MUST
-// treat an absent field as "unknown" and fall back to the hardcoded thresholds
-// / repo-name hint in prPipeline.ts. The page must render identically (just
-// less precisely) with an empty `{}` economics map.
+// EVERY field is optional. Older coord deploys can omit individual fields, and
+// the counters are `Option<u64>` on coord — JSON `null` when coord could not
+// measure them. Every consumer MUST treat an absent or null field as UNKNOWN:
+// the severity inputs fall back to the hardcoded thresholds / repo-name hint
+// in prPipeline.ts, and a null counter renders as unknown (`—` / "unknown"),
+// NEVER as 0. An absent number on a page about waste reading as "no waste" is
+// the exact failure mode the plan above documented. The page must render
+// identically (just less precisely) with an empty `{}` economics map.
 // ============================================================================
 
 export interface MergeEconomics {
@@ -588,14 +596,51 @@ export interface MergeEconomics {
    * PR is still open). Optional; absent ⇒ unknown.
    */
   already_landed?: Record<string, boolean> | null;
+
+  // --- Candidate-CI churn (coord `pr_merge/economics.rs`). ------------------
+  // Counts are `Option<u64>` on coord. `null`/absent = coord could not measure
+  // it in its window — UNKNOWN, never 0. Consumers sum only the repos that
+  // MEASURED a value and report the rest as unknown by count.
+
+  /**
+   * Merge candidates whose CI reached GREEN and were then discarded without
+   * landing — the waste this plan exists to surface. Null ⇒ unknown.
+   */
+  green_candidates_discarded?: number | null;
+  /** Candidates discarded while their CI was still running. Null ⇒ unknown. */
+  in_progress_candidates_discarded?: number | null;
+  /**
+   * Candidates discarded because the base branch moved underneath them (the
+   * candidate was cut against a base that is no longer main's tip). Null ⇒
+   * unknown.
+   */
+  base_mismatch_discards?: number | null;
+  /** Lands coord counted in the same window the discards were counted in. */
+  lands_in_window?: number | null;
+  /**
+   * Candidate-CI minutes spent per land in the window — the cost of the
+   * churn in CI time. A ratio, not a count: never summed across repos. Null ⇒
+   * unknown (no lands, or no CI observed).
+   */
+  candidate_ci_minutes_per_land?: number | null;
+  /** coord's own statement of what `green_candidates_discarded` counted. */
+  green_candidates_discarded_basis?: string | null;
+  /** coord's own statement of what `base_mismatch_discards` counted. */
+  base_mismatch_discards_basis?: string | null;
+  /**
+   * Window / coverage caveat for the churn counters — the hover explanation
+   * for a null value when no per-field basis was served.
+   */
+  coverage_note?: string | null;
 }
 
 /**
- * Coord's `/pr-merge/merge-economics` response. The exact wire shape is coord's
- * to finalize; the frontend fetch tolerates all of: an object keyed by
- * `owner/name`, a `{ repos: {...} }` wrapper, or an array of
- * `{ repo, ...MergeEconomics }`. This declared type is the wrapper form; the
- * fetch normalizes every shape into a `Record<repo, MergeEconomics>`.
+ * Coord's `/pr-merge/economics` response (served to the page as
+ * `/pr-merge/merge-economics`). Without `?repo=` coord returns the per-repo
+ * ARRAY of `{ repo, ...MergeEconomics }`; the frontend fetch tolerates all
+ * of: an object keyed by `owner/name`, a `{ repos: {...} }` wrapper, or that
+ * array. This declared type is the wrapper form; the fetch normalizes every
+ * shape into a `Record<repo, MergeEconomics>`.
  */
 export interface MergeEconomicsResponse {
   repos?: Record<string, MergeEconomics>;
