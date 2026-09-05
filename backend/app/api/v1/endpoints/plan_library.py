@@ -2208,8 +2208,10 @@ async def list_work_artifacts(
         offset=offset,
         limit=limit,
     )
+    items = [_summary(r) for r in rows]
     return WorkArtifactListResponse(
-        items=[_summary(r) for r in rows],
+        items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,
@@ -3302,6 +3304,7 @@ async def list_plan_candidates(
 
     return PlanCandidateResponse(
         items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,
@@ -3354,8 +3357,10 @@ async def list_open_followups(
         db, org_id=org_id, offset=offset, limit=limit
     )
     now = datetime.now(UTC)
+    items = [_open_followup(edge, origin, now) for edge, origin in rows]
     return OpenFollowupResponse(
-        items=[_open_followup(edge, origin, now) for edge, origin in rows],
+        items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,

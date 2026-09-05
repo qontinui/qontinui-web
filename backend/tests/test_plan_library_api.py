@@ -721,14 +721,26 @@ class TestHttpSurface:
         detail2 = await client.get(f"{API_PREFIX}/{artifact_id}")
         assert len(detail2.json()["versions"]) == 2
 
-    async def test_organization_id_in_the_body_is_ignored(
+    async def test_organization_id_in_the_body_is_refused(
         self, client: httpx.AsyncClient
     ) -> None:
-        """A caller-supplied org must never reach the row (scope escalation)."""
+        """A caller-supplied org must never reach the row (scope escalation).
+
+        Until plan ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``
+        Phase 4 the key was silently DROPPED and the write returned 201 under
+        the caller's real organization; now ``extra="forbid"`` refuses it by
+        name, so a caller that thought it was writing into another
+        organization learns that it was not, instead of reading a 201.
+        """
         forged = str(uuid4())
         resp = await client.post(API_PREFIX, json=_payload(organization_id=forged))
-        assert resp.status_code == 201, resp.text
-        assert resp.json()["artifact"]["organization_id"] != forged
+        assert resp.status_code == 422, resp.text
+        locs = [
+            tuple(err["loc"])
+            for err in resp.json()["detail"]
+            if err["type"] == "extra_forbidden"
+        ]
+        assert locs == [("body", "organization_id")]
 
     async def test_unknown_status_is_stored_not_rejected(
         self, client: httpx.AsyncClient
@@ -771,6 +783,82 @@ class TestHttpSurface:
         listed = await client.get(API_PREFIX, params={"work_unit_slug": dangling})
         assert listed.status_code == 200
         assert listed.json()["total"] == 1
+        assert listed.json()["count"] == len(listed.json()["items"]) == 1
+
+    async def test_list_page_count_is_the_page_length_not_the_total(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """``count`` is ``len(items)`` for THIS page (plan
+        ``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero`` D4);
+        ``total`` stays the unpaged total. A bounded page must say how long
+        it is, and an empty page must say ``0``."""
+        stem = _slug("count")
+        for n in range(3):
+            resp = await client.post(
+                API_PREFIX, json=_payload(slug=f"{stem}-{n}", work_unit_slug=stem)
+            )
+            assert resp.status_code == 201, resp.text
+
+        page = await client.get(
+            API_PREFIX, params={"work_unit_slug": stem, "limit": "2"}
+        )
+        assert page.status_code == 200, page.text
+        body = page.json()
+        assert body["count"] == len(body["items"]) == 2
+        assert body["total"] == 3
+
+        rest = await client.get(
+            API_PREFIX, params={"work_unit_slug": stem, "limit": "2", "offset": "2"}
+        )
+        assert rest.json()["count"] == len(rest.json()["items"]) == 1
+        assert rest.json()["total"] == 3
+
+        empty = await client.get(
+            API_PREFIX, params={"work_unit_slug": f"{stem}-absent"}
+        )
+        assert empty.status_code == 200, empty.text
+        assert empty.json()["count"] == 0
+        assert empty.json()["items"] == []
+
+    @pytest.mark.parametrize(
+        ("method", "path", "body", "extra"),
+        [
+            ("POST", "", _payload(), "organisation_id"),
+            ("POST", "", _payload(), "work_unit_slig"),
+            ("PATCH", "/{id}/kind", {"kind": "plan"}, "kind_locked"),
+            (
+                "POST",
+                "/{id}/edges",
+                {"to_id": str(uuid4()), "relation": "feeds"},
+                "notes",
+            ),
+            ("PATCH", "/edges/{id}", {"to_id": str(uuid4())}, "from_id"),
+        ],
+    )
+    async def test_every_write_body_refuses_an_unknown_key(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        path: str,
+        body: dict,
+        extra: str,
+    ) -> None:
+        """Every request model carries ``extra="forbid"``: an unknown body
+        key is a 422 whose ``loc`` names the key, never a field that is
+        silently dropped on the way into the row. ``{id}`` is a random UUID
+        because the refusal must happen BEFORE any lookup."""
+        resp = await client.request(
+            method,
+            f"{API_PREFIX}{path.replace('{id}', str(uuid4()))}",
+            json={**body, extra: "anything"},
+        )
+        assert resp.status_code == 422, resp.text
+        locs = [
+            tuple(err["loc"])
+            for err in resp.json()["detail"]
+            if err["type"] == "extra_forbidden"
+        ]
+        assert locs == [("body", extra)]
 
     async def test_edges_both_directions_over_http(
         self, client: httpx.AsyncClient
@@ -986,7 +1074,13 @@ class TestWorkUnitSlugIsExact:
             },
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json() == {"items": [], "total": 0, "offset": 0, "limit": 50}
+        assert resp.json() == {
+            "items": [],
+            "count": 0,
+            "total": 0,
+            "offset": 0,
+            "limit": 50,
+        }
 
     async def test_export_manifest_selects_only_the_exact_stem(
         self, async_db_session: AsyncSession, client: httpx.AsyncClient
