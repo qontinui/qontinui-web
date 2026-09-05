@@ -112,12 +112,31 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "pdtier_03"
-# The single head at authoring time (2026-08-31). `session_repo_01_session_artifacts`
-# was the head when this plan was drafted on 2026-08-29 and stopped being one on
-# 2026-08-30; the head moved twice in two days across 518 revisions. Re-point this
-# immediately before merge - `web-protect-main`'s single-head check is what fails a
-# stale pin (`fleet_res_tel_04_saturation_columns.py:232-240` explains the trap).
-down_revision: str | Sequence[str] | None = "coordtouch_01"
+# `fleet_res_tel_05_socket_census` is an UNLANDED sibling (qontinui-web #1216),
+# NOT a chain head - the one thing about this line a later reader must not
+# mistake for the usual "the single head at authoring time".
+#
+# It used to be exactly that. `coordtouch_01` was the head measured on
+# 2026-08-31, and by 2026-09-05 it was four revisions stale. On 2026-09-05 at
+# 16:05Z `main` landed `coord_agent_questions_audience_backfill`, forking SIX
+# open PRs that carried a revision. Alembic's single-head invariant is a TOTAL
+# ORDER, so re-pointing all six at the live head does not fix it - they re-fork
+# the instant the first lands. They were chained in a stated landing order:
+#
+#   #1210 -> #1218 -> #989 -> #1269 -> #1216 -> #1180 (this PR)
+#
+# This PR is LAST because it is a DRAFT and cannot land, so nothing may wait on
+# it. Until the five ahead of it land, `alembic-heads-pr` here is RED BY
+# CONSTRUCTION - the parent named exists in no tree yet - and it goes green on
+# its own, with no further edit, as they land. That red is the safety property:
+# it is what stops an out-of-order land leaving `main` with a dangling
+# `down_revision`. Do NOT "fix" it by re-pointing at the live head; that
+# dissolves the chain and restores the six-way fork.
+#
+# A re-point here is THREE edits, not one: this assignment, this comment, and
+# `_PARENT_REVISION_ID` in `backend/tests/test_pdtier_03_drop_agent_writable_migration.py`,
+# whose first test asserts the two agree.
+down_revision: str | Sequence[str] | None = "fleet_res_tel_05_socket_census"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

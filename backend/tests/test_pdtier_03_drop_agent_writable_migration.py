@@ -64,8 +64,14 @@ from tests._alembic_harness import (
 # revision's own `down_revision` — the first test enforces it, because a stale
 # pin rewinds too far and replays unrelated non-idempotent revisions, surfacing
 # as someone else's `DuplicateTable`.
+#
+# It is `fleet_res_tel_05_socket_census` — qontinui-web #1216, an UNLANDED
+# sibling rather than a chain head. A 2026-09-05 land forked six open PRs off
+# one parent and they were CHAINED to resolve it rather than all re-pointed at
+# the head; the block above `down_revision` in the revision itself carries the
+# order and the reasoning. It was `coordtouch_01` until then.
 _REVISION_ID = "pdtier_03"
-_PARENT_REVISION_ID = "coordtouch_01"
+_PARENT_REVISION_ID = "fleet_res_tel_05_socket_census"
 _REVISION_FILENAME = "pdtier_03_drop_agent_writable.py"
 
 _PARENT_TABLE = "prompt_documents"
