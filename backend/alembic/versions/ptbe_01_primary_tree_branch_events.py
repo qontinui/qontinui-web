@@ -160,7 +160,7 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "atu_02_atu_provenance"``, the local single head measured with
+``down_revision = "require_review_cols_01"``, the local single head measured with
 ``scripts/ci/count_alembic_heads.py`` before authoring (``HEAD_COUNT=1``).
 Nothing is reserved: coord re-points ``down_revision`` at land time, and
 ``alembic-graph-pr.yml`` gates any fork that results.
