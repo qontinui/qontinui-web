@@ -155,9 +155,19 @@ def no_mappings() -> Any:
     here is the AWS-error classification that runs after them, and a real
     coord read would fail for reasons that have nothing to do with it.
     """
+    from app.api.v1.endpoints.operations import _BlastRadius
+
+    all_zero = _BlastRadius(
+        mapped_total=0,
+        mapped_own_tenant_slugs=(),
+        mapped_other_tenant_rows=0,
+        mapped_unmaterialized_rows=0,
+        strands_own_tenant=(),
+        strands_other_tenant_count=0,
+    )
     with patch(
-        "app.api.v1.endpoints.operations._coord_group_tenant_role_rows",
-        new=AsyncMock(return_value=[]),
+        "app.api.v1.endpoints.operations._coord_group_blast_radius",
+        new=AsyncMock(return_value=all_zero),
     ) as stub:
         yield stub
 
