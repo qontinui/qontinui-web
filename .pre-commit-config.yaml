@@ -192,6 +192,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: forbid-fixed-sleeps-in-e2e
+        name: forbid fixed sleeps in e2e
+        # SAME SCRIPT as .github/workflows/forbid-fixed-sleeps-in-e2e.yml and
+        # .qontinui/ci.toml's `forbid-fixed-sleeps-in-e2e` step. Per-file
+        # ratchet on `waitForTimeout(` under frontend/tests/e2e against
+        # frontend/tests/e2e/.fixed-sleeps-allowlist, matched exactly. The
+        # gate is a property of the (tree, allowlist) PAIR, so it takes no
+        # filenames; `files:` only scopes WHEN it runs — a commit touching
+        # nothing under the E2E root cannot change the verdict.
+        entry: python scripts/ci/check_fixed_sleeps_in_e2e.py
+        language: system
+        pass_filenames: false
+        files: ^frontend/tests/e2e/
+
       - id: web-boundary-lint
         name: web/backend ↔ qontinui boundary lint
         entry: python scripts/ci/check_web_boundary.py --files
