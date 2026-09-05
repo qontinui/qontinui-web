@@ -59,9 +59,11 @@ import { httpClient } from "@/services/service-factory";
 import { OPERATIONS_API, relativeTime } from "./utils";
 import type { MergeEnabledResponse } from "./mergeTypes";
 import {
+  formatChurnValue,
   formatDuration,
   perRepoCapHint,
   slotScopeNote,
+  type ChurnReading,
   type PauseReason,
   type PauseSeverity,
   type RepoTrainRow,
@@ -326,6 +328,41 @@ function TrainHeader({
           }
           hint="engine liveness — advancing while nothing lands means the train is suppressed"
         />
+        {/* Candidate-CI waste, fleet-wide. "—" when NO repo measured it —
+            coord's counter is Option<u64> and null is unknown, never 0. The
+            unknown-repo count is stated inline so a partial sum is never
+            mistaken for the whole fleet. Same reading as the health strip's
+            badge. */}
+        <Stat
+          label="Green CI discarded"
+          value={churnTotal(
+            summary.churn.greenDiscarded,
+            summary.churn.greenDiscardedUnknownRepos
+          )}
+          tone={
+            (summary.churn.greenDiscarded ?? 0) > 0
+              ? "text-amber-200"
+              : undefined
+          }
+          hint={
+            summary.churn.basis ??
+            "Merge candidates whose CI reached green and were then discarded " +
+              "without landing. Unknown: coord did not measure it for any repo."
+          }
+          data-testid="train-green-discarded"
+        />
+        <Stat
+          label="Base-move discards"
+          value={churnTotal(
+            summary.churn.baseMoveDiscards,
+            summary.churn.baseMoveDiscardsUnknownRepos
+          )}
+          hint={
+            "Merge candidates discarded because main moved underneath them. " +
+            "Unknown: coord did not measure it for any repo."
+          }
+          data-testid="train-base-move-discards"
+        />
       </div>
 
       {summary.healthMissing && !healthLoaded ? (
@@ -359,19 +396,31 @@ function TrainHeader({
   );
 }
 
+/**
+ * A fleet total with its unknown-repo count: `15`, `15 (2 repos unknown)`,
+ * or `—` when no repo measured it at all.
+ */
+function churnTotal(total: number | null, unknownRepos: number): string {
+  if (total === null) return "—";
+  if (unknownRepos === 0) return String(total);
+  return `${total} (${unknownRepos} repo${unknownRepos === 1 ? "" : "s"} unknown)`;
+}
+
 function Stat({
   label,
   value,
   hint,
   tone,
+  "data-testid": testId,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: string;
+  "data-testid"?: string;
 }) {
   return (
-    <div title={hint}>
+    <div title={hint} data-testid={testId}>
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
@@ -764,6 +813,42 @@ function Field({
   );
 }
 
+function ChurnCell({
+  label,
+  reading,
+  testId,
+}: {
+  label: string;
+  reading: ChurnReading;
+  testId: string;
+}) {
+  const unknown = reading.value === null;
+  return (
+    <span
+      className="whitespace-nowrap"
+      title={
+        reading.note ??
+        (unknown ? "coord did not measure this for the repo" : undefined)
+      }
+      data-testid={testId}
+      data-unknown={unknown ? "true" : undefined}
+    >
+      {label}{" "}
+      <span
+        className={
+          unknown
+            ? "opacity-70"
+            : (reading.value ?? 0) > 0
+              ? "text-foreground"
+              : undefined
+        }
+      >
+        {formatChurnValue(reading.value)}
+      </span>
+    </span>
+  );
+}
+
 function RepoRow({
   row,
   expanded,
@@ -861,6 +946,32 @@ function RepoRow({
 
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {row.activity.kind !== "idle" ? row.activity.detail : row.headline}
+        </span>
+
+        {/* Candidate-CI churn for THIS repo, from coord's economics row. Three
+            mono readings on the line (R2 — still one line; dropped below `lg`
+            like the reason slot, the hover note survives on each). `—` is
+            UNKNOWN, never 0, and carries coord's basis / coverage note as its
+            title so the dash explains itself. */}
+        <span
+          className="hidden lg:flex shrink-0 items-center gap-2 font-mono text-[11px] text-muted-foreground"
+          data-testid={`train-churn-${row.repo}`}
+        >
+          <ChurnCell
+            label="green discarded"
+            reading={row.churn.greenDiscarded}
+            testId="churn-green-discarded"
+          />
+          <ChurnCell
+            label="base-move discards"
+            reading={row.churn.baseMoveDiscards}
+            testId="churn-base-move-discards"
+          />
+          <ChurnCell
+            label="CI min / land"
+            reading={row.churn.ciMinutesPerLand}
+            testId="churn-ci-minutes-per-land"
+          />
         </span>
 
         <span className="flex shrink-0 flex-wrap items-center gap-1">
