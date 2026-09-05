@@ -78,6 +78,38 @@ async function performManualLogin(page: Page): Promise<void> {
  */
 export const test = base.extend<IntegrationTestFixtures>({
   /**
+   * `page`, with `goto` retried ONCE on the dev server's connection-drop
+   * family (`CONNECTION_REFUSED`, `CONNECTION_RESET`, `EMPTY_RESPONSE`).
+   *
+   * The E2E stack runs against `next dev`, which under a long single-worker
+   * run accepts-and-closes or resets a connection now and then — three runs
+   * of the 23-file changed-specs lane on web#1265 (2026-09-05) each failed a
+   * DIFFERENT test's first `page.goto` this way, before any assertion ran.
+   * `helpers/network-retry.ts` already papers over exactly this for the three
+   * specs that call it; this puts the same narrow retry under every spec that
+   * takes `test` from this fixture, so the swallow stays narrow (only the
+   * matched error, only once) and a real failure still surfaces at once.
+   * The one-second pause is a retry BACKOFF, not a wait for state — the one
+   * legitimate fixed delay (plan 2026-09-05-web-e2e-fixed-sleeps-…, §3).
+   */
+  page: async ({ page }, use) => {
+    const rawGoto = page.goto.bind(page);
+    const retryable = /CONNECTION_(REFUSED|RESET)|EMPTY_RESPONSE/i;
+    page.goto = (async (url: string, options?: Parameters<Page["goto"]>[1]) => {
+      try {
+        return await rawGoto(url, options);
+      } catch (e) {
+        if (e instanceof Error && retryable.test(e.message)) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return await rawGoto(url, options);
+        }
+        throw e;
+      }
+    }) as Page["goto"];
+    await use(page);
+  },
+
+  /**
    * Authenticated page fixture
    *
    * With storageState:
