@@ -27,7 +27,7 @@ frontend/tests/e2e/pages/demo.spec.ts 6
 frontend/tests/e2e/pages/dev-reset.spec.ts 6
 frontend/tests/e2e/pages/execution.spec.ts 0
 frontend/tests/e2e/pages/issues.spec.ts 8
-frontend/tests/e2e/pages/marketplace.spec.ts 8
+frontend/tests/e2e/pages/marketplace.spec.ts 0
 frontend/tests/e2e/pages/project-rag.spec.ts 2
 frontend/tests/e2e/pages/qa-dashboard.spec.ts 3
 frontend/tests/e2e/pages/run-detail.spec.ts 6
