@@ -17,6 +17,12 @@
 import { test as base, Page, expect as baseExpect } from "@playwright/test";
 import { TEST_USER } from "./test-credentials";
 
+/**
+ * Replaces the old `waitForTimeout(2000)` "wait for auth state to settle"
+ * (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time).
+ */
+const AUTH_SETTLE_TIMEOUT = 6000;
+
 // Define custom fixture types
 type IntegrationTestFixtures = {
   authenticatedPage: Page;
@@ -72,6 +78,38 @@ async function performManualLogin(page: Page): Promise<void> {
  */
 export const test = base.extend<IntegrationTestFixtures>({
   /**
+   * `page`, with `goto` retried ONCE on the dev server's connection-drop
+   * family (`CONNECTION_REFUSED`, `CONNECTION_RESET`, `EMPTY_RESPONSE`).
+   *
+   * The E2E stack runs against `next dev`, which under a long single-worker
+   * run accepts-and-closes or resets a connection now and then — three runs
+   * of the 23-file changed-specs lane on web#1265 (2026-09-05) each failed a
+   * DIFFERENT test's first `page.goto` this way, before any assertion ran.
+   * `helpers/network-retry.ts` already papers over exactly this for the three
+   * specs that call it; this puts the same narrow retry under every spec that
+   * takes `test` from this fixture, so the swallow stays narrow (only the
+   * matched error, only once) and a real failure still surfaces at once.
+   * The one-second pause is a retry BACKOFF, not a wait for state — the one
+   * legitimate fixed delay (plan 2026-09-05-web-e2e-fixed-sleeps-…, §3).
+   */
+  page: async ({ page }, use) => {
+    const rawGoto = page.goto.bind(page);
+    const retryable = /CONNECTION_(REFUSED|RESET)|EMPTY_RESPONSE/i;
+    page.goto = (async (url: string, options?: Parameters<Page["goto"]>[1]) => {
+      try {
+        return await rawGoto(url, options);
+      } catch (e) {
+        if (e instanceof Error && retryable.test(e.message)) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          return await rawGoto(url, options);
+        }
+        throw e;
+      }
+    }) as Page["goto"];
+    await use(page);
+  },
+
+  /**
    * Authenticated page fixture
    *
    * With storageState:
@@ -106,10 +144,9 @@ export const test = base.extend<IntegrationTestFixtures>({
           "[Playwright] Not authenticated (no storageState), performing manual login"
         );
         await performManualLogin(page);
-      } else {
-        // Wait a bit for auth state to settle
-        await page.waitForTimeout(2000);
       }
+      // Otherwise the auth state is still settling — the assertion below
+      // auto-waits for it.
     }
 
     // Verify we're logged in
@@ -160,8 +197,15 @@ export async function loginUser(page: Page): Promise<void> {
   if (signInVisible) {
     await performManualLogin(page);
   } else {
-    // Wait a bit for auth state to settle, then check again
-    await page.waitForTimeout(2000);
+    // The auth state is still settling: it lands on the signed-in user or
+    // on the Sign In button. Bounded wait for either, tolerated, then the
+    // same check as before.
+    await page
+      .getByText(TEST_USER.email)
+      .or(page.getByRole("button", { name: /sign in/i }))
+      .first()
+      .waitFor({ state: "visible", timeout: AUTH_SETTLE_TIMEOUT })
+      .catch(() => null);
     const stillNeedsLogin = await page
       .getByRole("button", { name: /sign in/i })
       .isVisible()
@@ -188,18 +232,11 @@ export async function waitForAutoLogin(
   console.warn(
     "[Playwright] waitForAutoLogin is deprecated - storageState handles authentication now"
   );
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < timeout) {
-    const userEmailVisible = await page
-      .getByText(TEST_USER.email)
-      .isVisible()
-      .catch(() => false);
-    if (userEmailVisible) {
-      return true;
-    }
-    await page.waitForTimeout(200);
-  }
-
-  return false;
+  // Same contract as the old 200 ms poll loop — true once the user's email
+  // is visible within `timeout`, false otherwise — as one bounded wait.
+  return page
+    .getByText(TEST_USER.email)
+    .waitFor({ state: "visible", timeout })
+    .then(() => true)
+    .catch(() => false);
 }

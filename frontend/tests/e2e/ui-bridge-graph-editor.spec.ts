@@ -13,9 +13,23 @@
  * Note: The page requires a project to be selected in the global automation store.
  * When no project is selected, the page shows "Select a project to manage state machines."
  * Tests gracefully skip in that case.
+ *
+ * No fixed sleeps. Every wait here is a bounded `waitFor(...).catch(() =>
+ * null)` on the state the test then reads (the page header, the project
+ * prompt or the tab list after navigation; a tab's content, or the tab
+ * itself selected, after a tab click), tolerated so the tests' own
+ * `isVisible` conditionals and skips keep their shape — never a
+ * `waitForTimeout(N)` followed by a non-waiting read, which asserts on
+ * wall-clock. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "./fixtures";
+
+/** Replaces the old `waitForTimeout(3000)` after the page navigation. */
+const PAGE_SETTLE_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(500)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 // Run tests serially to avoid parallel timeout issues
 test.describe.configure({ mode: "serial" });
@@ -28,8 +42,15 @@ async function navigateToUIBridge(page: import("@playwright/test").Page) {
   // Use domcontentloaded instead of networkidle — Next.js dev mode keeps
   // WebSocket/HMR connections alive which prevents networkidle from resolving
   await page.waitForLoadState("domcontentloaded");
-  // Wait for React to hydrate and render
-  await page.waitForTimeout(3000);
+  // Wait for React to hydrate and render: the header, the project prompt or
+  // the tab list — tolerated if none, the callers' conditionals decide.
+  await page
+    .getByRole("heading", { name: /state machine/i })
+    .or(page.getByText("Select a project to manage state machines."))
+    .or(page.locator('[role="tablist"]'))
+    .first()
+    .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+    .catch(() => null);
 }
 
 /**
@@ -180,9 +201,9 @@ test.describe("UI Bridge Graph Editor - Graph Tab", () => {
 
     const graphTab = page.getByRole("tab", { name: /graph editor/i });
     await graphTab.click();
-    await page.waitForTimeout(500);
 
-    // Should show one of: config prompt, empty states, or graph with nodes
+    // Should show one of: config prompt, empty states, or graph with nodes.
+    // Bounded wait for any of them, tolerated — the reads keep their shape.
     const configPrompt = page.getByText(
       "Select a configuration to view the state graph."
     );
@@ -190,6 +211,12 @@ test.describe("UI Bridge Graph Editor - Graph Tab", () => {
     const addTransitionBtn = page.getByRole("button", {
       name: /add transition/i,
     });
+    await configPrompt
+      .or(noStates)
+      .or(addTransitionBtn)
+      .first()
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     const hasConfigPrompt = await configPrompt.isVisible().catch(() => false);
     const hasNoStates = await noStates.isVisible().catch(() => false);
@@ -215,13 +242,18 @@ test.describe("UI Bridge Graph Editor - State View Tab", () => {
 
     const stateViewTab = page.getByRole("tab", { name: /state view/i });
     await stateViewTab.click();
-    await page.waitForTimeout(500);
 
-    // Should show config prompt or the State View panel
+    // Should show config prompt or the State View panel. Bounded wait for
+    // either, tolerated — the reads keep their shape.
     const configPrompt = page.getByText(
       "Select a configuration to view states."
     );
     const statesHeader = page.getByText("States");
+    await configPrompt
+      .or(statesHeader)
+      .first()
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     const hasPrompt = await configPrompt.isVisible().catch(() => false);
     const hasStates = await statesHeader.isVisible().catch(() => false);
@@ -246,13 +278,18 @@ test.describe("UI Bridge Graph Editor - Transitions Tab", () => {
 
     const transitionsTab = page.getByRole("tab", { name: /transitions/i });
     await transitionsTab.click();
-    await page.waitForTimeout(500);
 
-    // Should show config prompt or transitions panel
+    // Should show config prompt or transitions panel. Bounded wait for
+    // either, tolerated — the reads keep their shape.
     const configPrompt = page.getByText(
       "Select a configuration to view transitions."
     );
     const transitionsHeader = page.getByText("Transitions");
+    await configPrompt
+      .or(transitionsHeader)
+      .first()
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     const hasPrompt = await configPrompt.isVisible().catch(() => false);
     const hasTransitions = await transitionsHeader
@@ -279,7 +316,11 @@ test.describe("UI Bridge Graph Editor - Other Tabs", () => {
 
     const pathfindingTab = page.getByRole("tab", { name: /pathfinding/i });
     await pathfindingTab.click();
-    await page.waitForTimeout(500);
+    // The click selects the tab — the state it produces, tolerated.
+    await page
+      .getByRole("tab", { name: /pathfinding/i, selected: true })
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     const content = await page.content();
     expect(content).not.toContain("Internal Server Error");
@@ -300,7 +341,11 @@ test.describe("UI Bridge Graph Editor - Other Tabs", () => {
 
     const exportTab = page.getByRole("tab", { name: /export/i });
     await exportTab.click();
-    await page.waitForTimeout(500);
+    // The click selects the tab — the state it produces, tolerated.
+    await page
+      .getByRole("tab", { name: /export/i, selected: true })
+      .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+      .catch(() => null);
 
     const content = await page.content();
     expect(content).not.toContain("Internal Server Error");

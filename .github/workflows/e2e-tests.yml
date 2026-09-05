@@ -287,6 +287,7 @@ jobs:
     outputs:
       files: ${{ steps.detect.outputs.files }}
       any: ${{ steps.detect.outputs.any }}
+      groups: ${{ steps.detect.outputs.groups }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -332,23 +333,23 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
   frontend-e2e-changed-specs:
-    name: Frontend E2E Tests (changed specs)
+    name: Frontend E2E Tests (changed specs, group ${{ matrix.group.index }})
     needs: changed-specs
-    # Skipped -- not run-and-green -- when nothing under tests/e2e changed,
-    # so a docs-only PR never stands the stack up. `changed-specs` itself is
-    # the green check on such a PR, and its log says "no spec files changed".
+    # Runs ONLY when the PR changed at least one spec file, and fans out over
+    # groups of at most six files, each on its own Playwright stack — the same
+    # per-server load a full-suite shard carries. A single job running every
+    # changed spec (23 files on web#1265, 2026-09-05) degraded the `next dev`
+    # server late in the run: four runs, four different tests' FIRST
+    # `page.goto` timing out or dropped, before any assertion ran.
     if: needs.changed-specs.outputs.any == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJson(needs.changed-specs.outputs.groups) }}
     uses: ./.github/workflows/e2e-playwright-stack.yml
     with:
-      spec_files: ${{ needs.changed-specs.outputs.files }}
-      artifact_suffix: changed-specs
-
-  # The cross-browser-survey job lives in its own workflow file
-  # (.github/workflows/cross-browser-survey.yml) so it isn't subject
-  # to this workflow's `cancel-in-progress:` expression above — the
-  # slowest matrix entry (Mobile Chrome) takes ~30min and was being
-  # cancelled mid-run by every push to main. See that file for
-  # details.
+      spec_files: ${{ matrix.group.files }}
+      artifact_suffix: changed-specs-${{ matrix.group.index }}
 
   test-summary:
     name: Test Summary

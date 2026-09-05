@@ -6,9 +6,23 @@
  * Tests:
  * - Non-existent run ID handling (error/not found)
  * - Tabs structure verification (Overview, Verification, Knowledge, Tests, Output, Actions, AI Data)
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a conditional the test already tolerated — never a
+ * `waitForTimeout(N)` followed by a non-waiting `count()` read, which
+ * asserts on wall-clock. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(5000)` before the not-found read. */
+const NOT_FOUND_TIMEOUT = 15000;
+/** Replaces the old `waitForTimeout(1000)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 test.describe("Run Detail - /runs/[id]", () => {
   test("should handle non-existent run ID gracefully", async ({ page }) => {
@@ -24,77 +38,82 @@ test.describe("Run Detail - /runs/[id]", () => {
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
 
-    // Wait for loading to complete
-    await page.waitForTimeout(5000);
-
-    // Should display "Run not found" error or "Back to Runs" navigation
-    const hasRunNotFound =
-      (await page.locator("text=Run not found").count()) > 0;
-    const hasBackToRuns = (await page.locator("text=Back to Runs").count()) > 0;
-    const hasNotExist =
-      (await page
-        .locator("text=The run you are looking for does not exist")
-        .count()) > 0;
-    const hasRunnerOffline =
-      (await page.locator("text=Runner Offline").count()) > 0 ||
-      (await page.locator("text=Runner is offline").count()) > 0;
-    const hasLoading =
-      (await page.locator("text=Loading run details").count()) > 0;
-
-    expect(
-      hasRunNotFound ||
-        hasBackToRuns ||
-        hasNotExist ||
-        hasRunnerOffline ||
-        hasLoading
-    ).toBeTruthy();
+    // Should display "Run not found" error or "Back to Runs" navigation (or
+    // the offline / loading copy). Tolerance preserved: any of the six.
+    await expect(
+      page
+        .locator("text=Run not found")
+        .or(page.locator("text=Back to Runs"))
+        .or(page.locator("text=The run you are looking for does not exist"))
+        .or(page.locator("text=Runner Offline"))
+        .or(page.locator("text=Runner is offline"))
+        .or(page.locator("text=Loading run details"))
+        .first()
+    ).toBeVisible({ timeout: NOT_FOUND_TIMEOUT });
   });
 
   test("should display overview content when a run exists", async ({
     page,
   }) => {
-    // Navigate to runs list first
+    // Navigate to runs list first. Bounded wait for a run row, tolerated if
+    // none — the conditional below is the test's original shape.
     await page.goto("/runs");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     const runRows = page.locator("tbody tr");
+    await runRows
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const rowCount = await runRows.count();
 
     if (rowCount > 0) {
       // Click first run to navigate to detail
       await runRows.first().click();
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
 
-      // Overview tab should be active and show run details
-      const hasStatus = (await page.locator("text=Status").count()) > 0;
-      const hasDuration = (await page.locator("text=Duration").count()) > 0;
-      const hasIterations = (await page.locator("text=Iterations").count()) > 0;
-      const hasDetails = (await page.locator("text=Details").count()) > 0;
-      const hasTaskName = (await page.locator("text=Task Name").count()) > 0;
-
-      expect(hasStatus || hasDuration || hasIterations).toBeTruthy();
-      expect(hasDetails || hasTaskName).toBeTruthy();
+      // Overview tab should be active and show run details. Tolerance
+      // preserved: the same two OR-groups.
+      await expect(
+        page
+          .locator("text=Status")
+          .or(page.locator("text=Duration"))
+          .or(page.locator("text=Iterations"))
+          .first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
+      await expect(
+        page.locator("text=Details").or(page.locator("text=Task Name")).first()
+      ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
     } else {
       console.log("No runs available to test overview content - skipping");
     }
   });
 
   test("should navigate between tabs when a run exists", async ({ page }) => {
-    // Navigate to runs list first
+    // Navigate to runs list first. Bounded wait for a run row, tolerated if
+    // none — the conditional below is the test's original shape.
     await page.goto("/runs");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     const runRows = page.locator("tbody tr");
+    await runRows
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const rowCount = await runRows.count();
 
     if (rowCount > 0) {
       // Click first run to navigate to detail
       await runRows.first().click();
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+
+      // Bounded wait for the tab strip, tolerated if absent — each tab is
+      // read through the same `isVisible` conditional as before.
+      await page
+        .getByRole("tab")
+        .first()
+        .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+        .catch(() => null);
 
       // Click on each tab and verify it becomes active
       const tabsToTest = [
@@ -110,10 +129,11 @@ test.describe("Run Detail - /runs/[id]", () => {
         const tab = page.getByRole("tab", { name: tabName });
         if (await tab.isVisible()) {
           await tab.click();
-          await page.waitForTimeout(1000);
 
-          // Tab should now be active
-          await expect(tab).toHaveAttribute("data-state", "active");
+          // Tab should now be active (auto-waits)
+          await expect(tab).toHaveAttribute("data-state", "active", {
+            timeout: TAB_SWITCH_TIMEOUT,
+          });
 
           await page.screenshot({
             path: `test-results/pages-run-detail-tab-${tabName.toLowerCase().replace(/\s+/g, "-")}.png`,
