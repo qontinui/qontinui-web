@@ -11,7 +11,10 @@ Phase 5 of plan ``D:/qontinui-root/plans/2026-05-18-unified-devices-registry.md`
   canonical Postgres is shared between web + coord).
 * **New:** ``POST /api/v1/devices/pair-confirm`` is the web-backend
   proxy for the OAuth-loopback pairing flow — forwards ``(state,
-  user_id)`` to coord's ``POST /coord/devices/pair-complete`` and
+  device_id)`` to coord's ``POST /coord/devices/pair-complete`` under the
+  web service token + ``X-Qontinui-User-Id`` (coord's arm B: it verifies
+  the token's subject and scope and reads the user from the header, then
+  proves that user's membership in the flow's tenant BY SSO SUBJECT) and
   returns the resulting device-token JWT + device_id to the browser.
 * **Renamed:** ``/runners/sessions`` → ``/devices/connections``,
   ``/runners/{id}/dispatch`` → ``/devices/{id}/dispatch``.
@@ -543,16 +546,24 @@ async def pair_confirm(
 ) -> Any:
     """Complete an OAuth-loopback pairing flow.
 
-    Forwards ``(state, user_id)`` to coord's ``POST
+    Forwards ``(state, device_id)`` to coord's ``POST
     /coord/devices/pair-complete``; returns the issued device-token JWT
     and ``device_id`` so the browser can redirect the runner's localhost
     callback handler.
 
-    Coord resolves the tenant from the pair-start flow it stored, so web
-    does not compute or forward a tenant_id here. We still gate the route
-    on a linked operator by calling coord's ``/admin/coord/me`` (it 403s
-    an unlinked caller — the same fail-closed posture the old resolver
-    gate provided, now sourced over the HTTP boundary).
+    The user is NOT in the body. Coord reads it from ``X-Qontinui-User-Id``
+    and trusts that header only because it arrives under the web service
+    token (``sub = service:qontinui-web-strategy``, ``strategy_admin``) —
+    coord's pairing arm B (``qontinui-coord`` ``pairing_auth``). Coord then
+    resolves the tenant from the pair-start flow it stored and REFUSES the
+    pairing (403 ``tenant_membership_required``) unless this user's
+    coord operator — matched by Cognito subject, never by email — holds
+    membership in that tenant. So web does not compute or forward a
+    tenant_id here. We still gate the route on a linked operator by
+    calling coord's ``/admin/coord/me`` (it 403s an unlinked caller —
+    the same fail-closed posture the old resolver gate provided, now
+    sourced over the HTTP boundary) so an unlinked caller is refused
+    before any outbound call.
     """
     if not strategy_client.enabled:
         # Reuse the StrategyClient's service-token plumbing for the
@@ -575,17 +586,14 @@ async def pair_confirm(
     # is kept purely as the linked-operator gate.
     await get_coord_identity(request)
 
+    # The credential coord verifies is in the HEADERS: the web service
+    # token + `X-Qontinui-User-Id` (arm B). The body carries no identity —
+    # coord's PairCompleteRequest is exactly `{state, device_id}`; the
+    # former `web_session_token` sentinel and `user_id` were never
+    # verified by anything and are gone.
     headers = await strategy_client._headers(str(current_user.id))  # noqa: SLF001
-    # coord's PairCompleteRequest requires exactly:
-    #   state: String, web_session_token: String (non-empty),
-    #   user_id: Uuid, device_id: Uuid
-    # `web_session_token` proves to coord the user is authenticated;
-    # the web backend has already validated the session so we forward a
-    # sentinel value identifying the browser-flow proxy path.
     body: dict[str, Any] = {
         "state": payload.state,
-        "web_session_token": "browser-flow-session",
-        "user_id": str(current_user.id),
         "device_id": payload.device_id,
     }
 
@@ -673,7 +681,10 @@ async def pair_cli(
     ``resolve_operator_optional`` middleware builds an ``OperatorContext``
     from that bearer and DERIVES ``tenant_id`` itself when the body omits
     it — so web no longer resolves or sends a ``tenant_id``. The
-    ``X-Qontinui-User-Id`` header is still sent for user attribution.
+    ``X-Qontinui-User-Id`` header is still sent; coord now cross-checks it
+    against the operator's OWN ``auth.users`` row (matched by Cognito
+    subject) and refuses ``user_mismatch`` if it names anyone else — it is
+    an assertion coord verifies, not an identity coord trusts.
 
     See follow-up #1 of plan
     ``D:/qontinui-root/plans/2026-05-30-coord-operator-resolver-removal.md``.
