@@ -1,7 +1,7 @@
 """coord.primary_tree_branch_events — branch provenance for SHARED checkouts
 
 Revision ID: ptbe_01_primary_tree_branch_events
-Revises: pmf_scope_cols_01
+Revises: require_review_cols_01
 Create Date: 2026-09-02
 
 Phase 2 (web migration) of plan
@@ -172,7 +172,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ptbe_01_primary_tree_branch_events"
-down_revision: str = "atu_02_atu_provenance"
+down_revision: str = "require_review_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
