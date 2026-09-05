@@ -24,7 +24,7 @@ frontend/tests/e2e/pages/captures-recordings.spec.ts 4
 frontend/tests/e2e/pages/configure.spec.ts 0
 frontend/tests/e2e/pages/dashboard.spec.ts 1
 frontend/tests/e2e/pages/demo.spec.ts 6
-frontend/tests/e2e/pages/dev-reset.spec.ts 6
+frontend/tests/e2e/pages/dev-reset.spec.ts 0
 frontend/tests/e2e/pages/execution.spec.ts 0
 frontend/tests/e2e/pages/issues.spec.ts 0
 frontend/tests/e2e/pages/marketplace.spec.ts 0
