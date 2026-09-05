@@ -12,10 +12,25 @@
  *
  * `requireRunner()` caches the probe result per worker, so calling it from
  * multiple per-describe `beforeAll` hooks is safe and cheap.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks (`expect(locator).toBeVisible({ timeout })`), never a
+ * `waitForTimeout(N)` followed by a non-waiting `count()` read — that shape
+ * asserts on wall-clock and red-mained `main` on run 33950897170 for a land
+ * that never touched these pages. Tolerance is preserved: an `A || B` check
+ * becomes `locA.or(locB).first()`, and a conditional `if count > 0` is
+ * preceded by a bounded `waitFor(...).catch(() => null)` so a tolerated
+ * absence stays tolerated. Timeouts are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
 import { requireRunner } from "../runner-detection";
+
+/** Replaces the old `waitForTimeout(2000)` before a presence read. */
+const PAGE_DATA_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(500)` after a click that opens a form. */
+const FORM_OPEN_TIMEOUT = 5000;
 
 test.describe("Configure - Finding Rules", () => {
   // Finding Rules is standalone — no runner required.
@@ -54,17 +69,16 @@ test.describe("Configure - Finding Rules", () => {
   test("should display categories list or empty state", async ({ page }) => {
     await page.goto("/configure/finding-rules");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // The list card title is just "Categories" (CategoryList component).
     // Empty-state message is "No categories configured." Failures show a
     // generic error banner (no canonical "Failed to load" string).
-    const hasCategoriesCard =
-      (await page.locator("text=Categories").count()) > 0;
-    const hasNoCategories =
-      (await page.locator("text=No categories configured").count()) > 0;
-
-    expect(hasCategoriesCard || hasNoCategories).toBeTruthy();
+    // Tolerance preserved: either state satisfies the test.
+    const categoriesCard = page.locator("text=Categories");
+    const noCategories = page.locator("text=No categories configured");
+    await expect(categoriesCard.or(noCategories).first()).toBeVisible({
+      timeout: PAGE_DATA_TIMEOUT,
+    });
   });
 
   test("should show category rows with action-type badges when categories exist", async ({
@@ -72,15 +86,13 @@ test.describe("Configure - Finding Rules", () => {
   }) => {
     await page.goto("/configure/finding-rules");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Each category row shows a badge for its default action type
     // (Auto / Suggest / Manual — see getActionTypeBadge in finding-rules-utils).
     // The Categories card itself should always render.
-    const hasCategoriesCard =
-      (await page.locator("text=Categories").count()) > 0;
-
-    expect(hasCategoriesCard).toBeTruthy();
+    await expect(page.locator("text=Categories").first()).toBeVisible({
+      timeout: PAGE_DATA_TIMEOUT,
+    });
   });
 
   test("should show create form when Add Category is clicked", async ({
@@ -88,35 +100,43 @@ test.describe("Configure - Finding Rules", () => {
   }) => {
     await page.goto("/configure/finding-rules");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Category")');
+    // Bounded wait for the button, tolerated if it never appears — the
+    // conditional below is the test's original tolerance shape.
+    await addButton
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     if ((await addButton.count()) > 0 && (await addButton.isEnabled())) {
       await addButton.click();
-      await page.waitForTimeout(500);
+
+      // Form fields are: Name, Description, Icon, Color, Default Action,
+      // Enable category. Submit button is "Create Category".
+      await expect(
+        page.locator("text=New Finding Category").first()
+      ).toBeVisible({ timeout: FORM_OPEN_TIMEOUT });
 
       await page.screenshot({
         path: "test-results/configure-finding-rules-form.png",
         fullPage: true,
       });
 
-      // Form fields are: Name, Description, Icon, Color, Default Action,
-      // Enable category. Submit button is "Create Category".
-      const hasNewFindingCategory =
-        (await page.locator("text=New Finding Category").count()) > 0;
-      const hasNameField = (await page.locator("text=Name").count()) > 0;
-      const hasDescriptionField =
-        (await page.locator("text=Description").count()) > 0;
-      const hasDefaultActionField =
-        (await page.locator("text=Default Action").count()) > 0;
-      const hasCreateButton =
-        (await page.locator('button:has-text("Create Category")').count()) > 0;
+      const nameField = page.locator("text=Name");
+      const descriptionField = page.locator("text=Description");
+      const defaultActionField = page.locator("text=Default Action");
+      const createButton = page.locator('button:has-text("Create Category")');
 
-      expect(hasNewFindingCategory).toBeTruthy();
-      expect(hasNameField || hasDescriptionField).toBeTruthy();
-      expect(hasDefaultActionField || hasCreateButton).toBeTruthy();
-      expect(hasCreateButton).toBeTruthy();
+      await expect(nameField.or(descriptionField).first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
+      await expect(defaultActionField.or(createButton).first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
+      await expect(createButton.first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
     }
   });
 });
@@ -168,67 +188,72 @@ test.describe("Configure - Hooks", () => {
   }) => {
     await page.goto("/configure/hooks");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
-    const hasConfiguredHooks =
-      (await page.locator("text=Configured Hooks").count()) > 0;
-    const hasNoHooks =
-      (await page.locator("text=No lifecycle hooks configured").count()) > 0;
-    const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
-    const hasLoadError =
-      (await page.locator("text=Failed to load hooks").count()) > 0;
+    // Tolerance preserved: any of the four states satisfies the test.
+    const configuredHooks = page.locator("text=Configured Hooks");
+    const noHooks = page.locator("text=No lifecycle hooks configured");
+    const offlineState = page.locator("text=Start the Qontinui Runner");
+    const loadError = page.locator("text=Failed to load hooks");
 
-    expect(
-      hasConfiguredHooks || hasNoHooks || hasOfflineState || hasLoadError
-    ).toBeTruthy();
+    await expect(
+      configuredHooks.or(noHooks).or(offlineState).or(loadError).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should show action type information cards", async ({ page }) => {
     await page.goto("/configure/hooks");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // When online, there should be info cards for Webhook, Script, Notification.
-    const hasWebhook = (await page.locator("text=Webhook").count()) > 0;
-    const hasScript = (await page.locator("text=Script").count()) > 0;
-    const hasNotification =
-      (await page.locator("text=Notification").count()) > 0;
-    const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
+    // Offline, RunnerOfflineState renders instead. Original shape:
+    // (Webhook && Script && Notification) || offline.
+    const offlineState = page.locator("text=Start the Qontinui Runner");
+    await expect(
+      page.locator("text=Webhook").or(offlineState).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
-    expect(
-      (hasWebhook && hasScript && hasNotification) || hasOfflineState
-    ).toBeTruthy();
+    if ((await offlineState.count()) === 0) {
+      await expect(page.locator("text=Script").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+      await expect(page.locator("text=Notification").first()).toBeVisible({
+        timeout: PAGE_DATA_TIMEOUT,
+      });
+    }
   });
 
   test("should show create form when New Hook is clicked", async ({ page }) => {
     await page.goto("/configure/hooks");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("New Hook")');
+    // Bounded wait, tolerated if absent (offline state has no button).
+    await addButton
+      .first()
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     if ((await addButton.count()) > 0 && (await addButton.isEnabled())) {
       await addButton.click();
-      await page.waitForTimeout(500);
+
+      // HookEditor exposes fields for Hook Name, Event Trigger, Action Type.
+      const hookName = page.locator("text=Hook Name");
+      const eventTrigger = page.locator("text=Event Trigger");
+      const actionType = page.locator("text=Action Type");
+      const saveButton = page.locator('button:has-text("Save")');
+
+      await expect(hookName.or(eventTrigger).first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
 
       await page.screenshot({
         path: "test-results/configure-hooks-form.png",
         fullPage: true,
       });
 
-      // HookEditor exposes fields for Hook Name, Event Trigger, Action Type.
-      const hasHookName = (await page.locator("text=Hook Name").count()) > 0;
-      const hasEventTrigger =
-        (await page.locator("text=Event Trigger").count()) > 0;
-      const hasActionType =
-        (await page.locator("text=Action Type").count()) > 0;
-      const hasSaveButton =
-        (await page.locator('button:has-text("Save")').count()) > 0;
-
-      expect(hasHookName || hasEventTrigger).toBeTruthy();
-      expect(hasActionType || hasSaveButton).toBeTruthy();
+      await expect(actionType.or(saveButton).first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
     }
   });
 });
@@ -278,39 +303,32 @@ test.describe("Configure - Log Sources", () => {
   }) => {
     await page.goto("/configure/log-sources");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Online: shows a "Log Sources (N)" section header. Empty: copy is
     // "No log sources configured. Add sources or import from existing projects."
-    const hasSourcesSection =
-      (await page.locator("text=/Log Sources \\(\\d+\\)/").count()) > 0;
-    const hasNoSources =
-      (await page.locator("text=No log sources configured").count()) > 0;
-    const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
-    const hasLoadError =
-      (await page
-        .locator("text=Failed to load log source settings")
-        .count()) > 0;
+    // Tolerance preserved: any of the four states satisfies the test.
+    const sourcesSection = page.locator("text=/Log Sources \\(\\d+\\)/");
+    const noSources = page.locator("text=No log sources configured");
+    const offlineState = page.locator("text=Start the Qontinui Runner");
+    const loadError = page.locator("text=Failed to load log source settings");
 
-    expect(
-      hasSourcesSection || hasNoSources || hasOfflineState || hasLoadError
-    ).toBeTruthy();
+    await expect(
+      sourcesSection.or(noSources).or(offlineState).or(loadError).first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
   });
 
   test("should show profiles section or offline state", async ({ page }) => {
     await page.goto("/configure/log-sources");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     // Online: shows a "Profiles (N)" section. Each profile shows source counts
     // and a "Default" badge for the default profile.
-    const hasProfilesSection =
-      (await page.locator("text=/Profiles \\(\\d+\\)/").count()) > 0;
-    const hasOfflineState =
-      (await page.locator("text=Start the Qontinui Runner").count()) > 0;
+    const profilesSection = page.locator("text=/Profiles \\(\\d+\\)/");
+    const offlineState = page.locator("text=Start the Qontinui Runner");
 
-    expect(hasProfilesSection || hasOfflineState).toBeTruthy();
+    await expect(profilesSection.or(offlineState).first()).toBeVisible({
+      timeout: PAGE_DATA_TIMEOUT,
+    });
   });
 
   test("should show create form when Add Source is clicked", async ({
@@ -318,49 +336,54 @@ test.describe("Configure - Log Sources", () => {
   }) => {
     await page.goto("/configure/log-sources");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Source")').first();
+    // Bounded wait, tolerated if absent (offline state has no button).
+    await addButton
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     if ((await addButton.count()) > 0 && (await addButton.isEnabled())) {
       await addButton.click();
-      await page.waitForTimeout(500);
+
+      // SourceEditor modal title is "Add Source" (or "Edit Source"); fields
+      // are Name, Description, Category, Type, Path.
+      const nameField = page.locator("text=Name");
+      const categoryField = page.locator("text=Category");
+      const pathField = page.locator("text=Path");
+
+      await expect(nameField.first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
 
       await page.screenshot({
         path: "test-results/configure-log-sources-form.png",
         fullPage: true,
       });
 
-      // SourceEditor modal title is "Add Source" (or "Edit Source"); fields
-      // are Name, Description, Category, Type, Path.
-      const hasNameField = (await page.locator("text=Name").count()) > 0;
-      const hasCategoryField =
-        (await page.locator("text=Category").count()) > 0;
-      const hasPathField = (await page.locator("text=Path").count()) > 0;
-
-      expect(hasNameField).toBeTruthy();
-      expect(hasCategoryField || hasPathField).toBeTruthy();
+      await expect(categoryField.or(pathField).first()).toBeVisible({
+        timeout: FORM_OPEN_TIMEOUT,
+      });
     }
   });
 
   test("should show path input in Add Source modal", async ({ page }) => {
     await page.goto("/configure/log-sources");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
 
     const addButton = page.locator('button:has-text("Add Source")').first();
+    // Bounded wait, tolerated if absent (offline state has no button).
+    await addButton
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     if ((await addButton.count()) > 0 && (await addButton.isEnabled())) {
       await addButton.click();
-      await page.waitForTimeout(500);
 
       // Path input has placeholder "/path/to/logs/app.log".
-      const hasPathInput =
-        (await page
-          .locator('input[placeholder="/path/to/logs/app.log"]')
-          .count()) > 0;
-
-      expect(hasPathInput).toBeTruthy();
+      await expect(
+        page.locator('input[placeholder="/path/to/logs/app.log"]').first()
+      ).toBeVisible({ timeout: FORM_OPEN_TIMEOUT });
     }
   });
 });
