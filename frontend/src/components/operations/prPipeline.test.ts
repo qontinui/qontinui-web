@@ -14,7 +14,11 @@ import type {
 import {
   ATTENTION_BY_KIND,
   buildPipelineRows,
+  candidateChurnBadgeLabel,
+  candidateChurnBadgeTitle,
+  deriveCandidateChurn,
   derivePipelineHealth,
+  economicsFor,
   escalateStaleWaiting,
   formatDurationShort,
   isMergedPr,
@@ -2080,5 +2084,162 @@ describe("derivePipelineHealth — GitHub-derived conflicts reach the headline",
     const h = derivePipelineHealth(rows, NOW, econ);
     expect(h.detail).not.toContain("conflict");
     expect(h.level).toBe("green");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Candidate-CI churn — the fleet-wide "green CI discarded" reading (plan
+// 2026-07-27-coord-green-candidates-discarded-always-zero, F3). coord's
+// counters are Option<u64>: null is UNKNOWN and must never render as 0. The
+// badge text is asserted EXACTLY, because the wording is the contract with
+// the operator: a measured number, a measured number with the unknown repos
+// named, or "unknown" — shown, never omitted.
+// ---------------------------------------------------------------------------
+describe("deriveCandidateChurn — null is unknown, never 0", () => {
+  const COORD = "qontinui/qontinui-coord";
+  const WEB = "qontinui/qontinui-web";
+  const RUNNER = "qontinui/qontinui-runner";
+
+  // The live 24h sample coord served on 2026-09-04.
+  const measuredCoord: MergeEconomics = {
+    green_candidates_discarded: 15,
+    in_progress_candidates_discarded: 0,
+    base_mismatch_discards: 13,
+    candidate_ci_minutes_per_land: 47.4,
+    lands_in_window: 31,
+    green_candidates_discarded_basis:
+      "green candidates discarded in the 24h window",
+    base_mismatch_discards_basis: "base moved under the candidate",
+    coverage_note: "24h window",
+  };
+  const measuredWeb: MergeEconomics = {
+    green_candidates_discarded: 3,
+    base_mismatch_discards: 1,
+    candidate_ci_minutes_per_land: 12,
+    green_candidates_discarded_basis:
+      "green candidates discarded in the 24h window",
+  };
+  const unknownRunner: MergeEconomics = {
+    green_candidates_discarded: null,
+    base_mismatch_discards: null,
+    candidate_ci_minutes_per_land: null,
+    coverage_note: "no candidate CI observed in window",
+  };
+
+  it("measured everywhere: sums the repos, names no unknowns", () => {
+    const churn = deriveCandidateChurn({
+      [COORD]: measuredCoord,
+      [WEB]: measuredWeb,
+    });
+    expect(churn.greenDiscarded).toBe(18);
+    expect(churn.greenDiscardedUnknownRepos).toBe(0);
+    expect(churn.baseMoveDiscards).toBe(14);
+    expect(churn.baseMoveDiscardsUnknownRepos).toBe(0);
+    expect(churn.measuredRepos).toBe(2);
+    expect(candidateChurnBadgeLabel(churn)).toBe("green CI discarded 18");
+    // Distinct bases only — the two repos share one, so it appears once.
+    expect(churn.basis).toBe("green candidates discarded in the 24h window");
+    expect(candidateChurnBadgeTitle(churn)).toBe(churn.basis);
+  });
+
+  it("partially unknown: sums ONLY the measured repos and counts the rest", () => {
+    const churn = deriveCandidateChurn({
+      [COORD]: measuredCoord,
+      [RUNNER]: unknownRunner,
+    });
+    // 15, not 15 + 0: the null repo contributes nothing, not a zero.
+    expect(churn.greenDiscarded).toBe(15);
+    expect(churn.greenDiscardedUnknownRepos).toBe(1);
+    expect(churn.measuredRepos).toBe(1);
+    expect(candidateChurnBadgeLabel(churn)).toBe(
+      "green CI discarded 15 (1 repo unknown)"
+    );
+    // The unknown repo's coverage note rides along in the basis, so the
+    // hover explains BOTH the number and the gap.
+    expect(churn.basis).toBe(
+      "green candidates discarded in the 24h window; no candidate CI observed in window"
+    );
+  });
+
+  it("pluralises the unknown-repo count", () => {
+    const churn = deriveCandidateChurn({
+      [COORD]: measuredCoord,
+      [RUNNER]: unknownRunner,
+      [WEB]: { green_candidates_discarded: undefined },
+    });
+    expect(candidateChurnBadgeLabel(churn)).toBe(
+      "green CI discarded 15 (2 repos unknown)"
+    );
+  });
+
+  it("all unknown: the reading is null and the badge says so — not 0", () => {
+    const churn = deriveCandidateChurn({
+      [RUNNER]: unknownRunner,
+      [WEB]: {},
+    });
+    expect(churn.greenDiscarded).toBeNull();
+    expect(churn.greenDiscarded).not.toBe(0);
+    expect(churn.greenDiscardedUnknownRepos).toBe(2);
+    expect(churn.baseMoveDiscards).toBeNull();
+    expect(churn.measuredRepos).toBe(0);
+    expect(candidateChurnBadgeLabel(churn)).toBe("green CI discarded unknown");
+    // The only basis served is a coverage note; it is still the honest title.
+    expect(candidateChurnBadgeTitle(churn)).toBe(
+      "no candidate CI observed in window"
+    );
+  });
+
+  it("empty economics (coord read failed entirely) is the unknown form, not zero", () => {
+    for (const econ of [{}, undefined]) {
+      const churn = deriveCandidateChurn(econ);
+      expect(churn.greenDiscarded).toBeNull();
+      expect(churn.greenDiscardedUnknownRepos).toBe(0);
+      expect(candidateChurnBadgeLabel(churn)).toBe(
+        "green CI discarded unknown"
+      );
+      expect(candidateChurnBadgeTitle(churn)).toContain("Unknown, not zero");
+    }
+  });
+
+  it("a measured 0 IS zero — the badge prints it", () => {
+    // The rule is null-is-not-0, not 0-is-suspicious: a repo coord measured
+    // and found clean reads 0, and the fleet sum of clean repos reads 0.
+    const churn = deriveCandidateChurn({
+      [WEB]: { green_candidates_discarded: 0, base_mismatch_discards: 0 },
+    });
+    expect(churn.greenDiscarded).toBe(0);
+    expect(candidateChurnBadgeLabel(churn)).toBe("green CI discarded 0");
+    expect(candidateChurnBadgeTitle(churn)).toContain("1 repo that measured");
+  });
+
+  it("does not sum the per-land ratio", () => {
+    // `candidate_ci_minutes_per_land` is a rate; the fleet reading carries
+    // only the two counts.
+    const churn = deriveCandidateChurn({
+      [COORD]: measuredCoord,
+      [WEB]: measuredWeb,
+    });
+    expect(churn).not.toHaveProperty("ciMinutesPerLand");
+  });
+});
+
+describe("economicsFor — coord keys by owner/name, rows may use the short name", () => {
+  const econ: Record<string, MergeEconomics> = {
+    "qontinui/qontinui-coord": { green_candidates_discarded: 15 },
+    "qontinui-web": { green_candidates_discarded: 3 },
+  };
+
+  it("resolves a full key directly and a short key through the fallback", () => {
+    expect(
+      economicsFor("qontinui/qontinui-coord", econ)?.green_candidates_discarded
+    ).toBe(15);
+    expect(
+      economicsFor("qontinui/qontinui-web", econ)?.green_candidates_discarded
+    ).toBe(3);
+  });
+
+  it("is undefined, not a zeroed row, for a repo coord did not report", () => {
+    expect(economicsFor("qontinui/qontinui-runner", econ)).toBeUndefined();
+    expect(economicsFor("qontinui/qontinui-runner", undefined)).toBeUndefined();
   });
 });
