@@ -7,7 +7,7 @@
 # same commit, or the gate fails with "lower the row". Regenerate with
 # `python scripts/ci/check_fixed_sleeps_in_e2e.py --write-allowlist`.
 # Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time
-frontend/tests/e2e/annotation-editor.spec.ts 6
+frontend/tests/e2e/annotation-editor.spec.ts 0
 frontend/tests/e2e/auth.setup.ts 2
 frontend/tests/e2e/fixtures.ts 3
 frontend/tests/e2e/helpers/network-retry.ts 1
