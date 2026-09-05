@@ -74,6 +74,9 @@ import { redactSecrets } from "./mergeTypes";
 import type { MergeEconomics } from "./mergeTypes";
 import {
   buildPipelineRows,
+  candidateChurnBadgeLabel,
+  candidateChurnBadgeTitle,
+  deriveCandidateChurn,
   derivePipelineHealth,
   matchesFilter,
   matchesQuery,
@@ -184,6 +187,10 @@ function PipelineHealthStrip({
     () => derivePipelineHealth(rows, Date.now(), economicsByRepo),
     [rows, economicsByRepo]
   );
+  const churn = useMemo(
+    () => deriveCandidateChurn(economicsByRepo),
+    [economicsByRepo]
+  );
   const badges: HealthBadge[] = [
     { key: "queue", label: `queue ${health.queueDepth}` },
     { key: "in-flight", label: `in flight ${health.inFlight}` },
@@ -196,6 +203,24 @@ function PipelineHealthStrip({
       onClick: onShowAttention,
     });
   }
+  // Candidate-CI waste (plan
+  // 2026-07-27-coord-green-candidates-discarded-always-zero): merge candidates
+  // whose CI went green and were then discarded. ALWAYS rendered — when no
+  // repo measured it (or the economics read failed) the badge reads
+  // "unknown" rather than disappearing, because an absent number on a page
+  // about waste reads as "no waste", which is the failure mode the plan
+  // documented. `attention` only when there IS measured waste; unknown is not
+  // an alarm, it is an admission.
+  badges.push({
+    key: "green-discarded",
+    label: candidateChurnBadgeLabel(churn),
+    tone:
+      churn.greenDiscarded !== null && churn.greenDiscarded > 0
+        ? "attention"
+        : "muted",
+    title: candidateChurnBadgeTitle(churn),
+    "data-testid": "pipeline-green-discarded",
+  });
   badges.push({
     key: "last-merged",
     label: `last merged ${relativeTime(health.lastMergedAt)}`,
@@ -738,13 +763,24 @@ export function MergePipeline() {
   // Row-per-repo train state. Derived from the SAME queue + PR data the other
   // tabs use (plus health), so opening the tab costs one extra read, not a
   // second copy of the pipeline.
+  // `economicsByRepo` rides along for the per-repo churn readings — the same
+  // map the health strip and the severity model already read, not a second
+  // fetch.
   const trainRows = useMemo(
-    () => buildRepoTrainRows(proposals ?? [], prs ?? [], trainHealth),
-    [proposals, prs, trainHealth]
+    () =>
+      buildRepoTrainRows(
+        proposals ?? [],
+        prs ?? [],
+        trainHealth,
+        Date.now(),
+        economicsByRepo
+      ),
+    [proposals, prs, trainHealth, economicsByRepo]
   );
   const trainSummary = useMemo(
-    () => buildTrainSummary(trainHealth, trainRows),
-    [trainHealth, trainRows]
+    () =>
+      buildTrainSummary(trainHealth, trainRows, Date.now(), economicsByRepo),
+    [trainHealth, trainRows, economicsByRepo]
   );
 
   const counts = useMemo(
