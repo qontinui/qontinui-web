@@ -1858,6 +1858,35 @@ def _client(app: FastAPI) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
+# The credential a caller presents. The browser sends it as the ``access_token``
+# COOKIE and never as an ``Authorization`` header, so a route that reads only
+# the header forwards coord nothing at all — see ``TestCallerTokenForwarding``.
+_CALLER_TOKEN = "caller-session-token"
+
+
+def _cookie_client(app: FastAPI, token: str = _CALLER_TOKEN) -> httpx.AsyncClient:
+    """A client carrying the session as the ``access_token`` cookie ONLY.
+
+    This is the real browser shape: no ``Authorization`` header anywhere.
+    """
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={"access_token": token},
+    )
+
+
+def _bearer_client(app: FastAPI, token: str = _CALLER_TOKEN) -> httpx.AsyncClient:
+    """A client carrying the session as an ``Authorization: Bearer`` header ONLY."""
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
 def _config_body(sections: dict, *, unknown_keys: dict | None = None) -> dict:
     """A ConfigEnvelope request body (agent push).
 
@@ -2404,11 +2433,13 @@ class TestDispatchEnroll:
         async def _fake_post(path, *, headers, json_body, log_event, **kw):
             captured["path"] = path
             captured["body"] = json_body
+            captured["headers"] = headers
             return httpx.Response(200, json={"dispatched": True})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         device_id = str(uuid4())
-        async with _client(app) as client:
+        # Cookie-only, the browser shape — the credential must still reach coord.
+        async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
                 json={"name": "dispatch-me", "target_device_id": device_id},
@@ -2426,6 +2457,9 @@ class TestDispatchEnroll:
         assert captured["body"]["target_device_id"] == device_id
         assert captured["body"]["enrollment_code"] == machine["enrollment_code"]
         assert captured["body"]["machine_id"] == machine["id"]
+        # ...with the caller's credential, or coord answers 401 and this route
+        # reports that refusal inside a 200 body nobody reads.
+        assert captured["headers"] == {"Authorization": f"Bearer {_CALLER_TOKEN}"}
 
     @pytest.mark.asyncio
     async def test_dispatch_rejection_still_creates_machine(
@@ -2464,11 +2498,13 @@ class TestDispatchReposApply:
         async def _fake_post(path, *, headers, json_body, log_event, **kw):
             captured["path"] = path
             captured["body"] = json_body
+            captured["headers"] = headers
             return httpx.Response(200, json={"dispatched": True})
 
         monkeypatch.setattr("app.api.v1.endpoints.devenv.post_to_coord", _fake_post)
         device_id = str(uuid4())
-        async with _client(app) as client:
+        # Cookie-only, the browser shape — the credential must still reach coord.
+        async with _cookie_client(app) as client:
             r = await client.post(
                 f"{API_PREFIX}/machines/dispatch-enroll",
                 json={"name": "repos-box", "target_device_id": device_id},
@@ -2487,6 +2523,7 @@ class TestDispatchReposApply:
             "target_device_id": device_id,
             "confirm": True,
         }
+        assert captured["headers"] == {"Authorization": f"Bearer {_CALLER_TOKEN}"}
 
     @pytest.mark.asyncio
     async def test_an_omitted_confirm_dispatches_a_dry_run(
@@ -2589,6 +2626,212 @@ class TestDispatchReposApply:
             )
         assert r.status_code == 404, r.text
         assert r.json()["detail"]["code"] == "machine_not_found"
+
+
+def _capturing_post(captured: dict):
+    """A ``post_to_coord`` double that records what was sent, keyed by path."""
+
+    async def _fake_post(path, *, headers, json_body, log_event, **kw):
+        captured[path] = {"headers": headers, "body": json_body}
+        return httpx.Response(200, json={"dispatched": True})
+
+    return _fake_post
+
+
+def _stub_ci_node_reachability(monkeypatch) -> None:
+    """Keep ``_ci_node_reachability`` off the network.
+
+    It asks coord whether the device could receive a directive at all; without
+    this the CI-node tests would pay a real coord round-trip (and its timeout)
+    for a value they do not assert on.
+    """
+
+    async def _no_routing(*a, **kw):
+        return None
+
+    monkeypatch.setattr("app.services.coord_device.get_device_routing", _no_routing)
+
+
+class TestCallerTokenForwarding:
+    """The coord-dispatching devenv routes must forward the caller's credential
+    from EITHER source the backend's own ``CookieOrBearerScheme`` accepts —
+    the ``access_token`` cookie first, then ``Authorization: Bearer``.
+
+    Why this needs dedicated tests: the browser sends the session as the
+    COOKIE and never as a header, and all three routes swallow coord's refusal
+    into an HTTP **200** — ``dispatched: false`` with a soft detail string for
+    the two dispatch routes, ``dispatch_status: 401`` inside the body for the
+    CI-node PUT. So a header-only extraction forwards ``{}``, coord refuses for
+    want of a credential, and the user is told "we couldn't send it, try again"
+    forever. Nothing about that is visible in a status code, so every assertion
+    below is on the ``headers`` handed to ``post_to_coord``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-box", "target_device_id": str(uuid4())},
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The header arm must keep working — the fix adds a source, not swaps one."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-box", "target_device_id": str(uuid4())},
+            )
+        assert r.status_code == 201, r.text
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enroll_with_no_credential_forwards_no_header(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """No cookie and no header → an empty dict, never a forged ``Bearer None``."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        async with _client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "anon-box", "target_device_id": str(uuid4())},
+            )
+        assert r.status_code == 201, r.text
+        assert captured["/devenv/enroll-dispatch"]["headers"] == {}
+
+    @pytest.mark.asyncio
+    async def test_repos_apply_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-repos-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/repos-apply-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_repos_apply_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-repos-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.post(
+                f"{API_PREFIX}/machines/{machine_id}/repos-apply-dispatch",
+                json={"confirm": True},
+            )
+        assert r.status_code == 200, r.text
+        assert captured["/devenv/repos-apply-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_ci_node_put_forwards_a_cookie_only_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        """The CI-node PUT is the worst of the three: its refusal rides the body
+        as ``dispatch_status: 401`` on a 200, so a missing credential reads as
+        "saved but not sent" rather than as an auth failure."""
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        async with _cookie_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "cookie-ci-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={
+                    "enabled": True,
+                    "max_concurrent_builds": 2,
+                    "repo_allowlist": ["qontinui/qontinui-web"],
+                    "min_free_disk_gb": 20,
+                },
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["dispatched"] is True
+        assert captured["/devenv/ci-node-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
+
+    @pytest.mark.asyncio
+    async def test_ci_node_put_forwards_a_bearer_header_caller(
+        self, async_db_session: AsyncSession, test_user, monkeypatch
+    ) -> None:
+        app = _build_app(db_session=async_db_session, user=test_user)
+        captured: dict = {}
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.devenv.post_to_coord", _capturing_post(captured)
+        )
+        _stub_ci_node_reachability(monkeypatch)
+        async with _bearer_client(app) as client:
+            r = await client.post(
+                f"{API_PREFIX}/machines/dispatch-enroll",
+                json={"name": "header-ci-box", "target_device_id": str(uuid4())},
+            )
+            machine_id = r.json()["machine"]["id"]
+            r = await client.put(
+                f"{API_PREFIX}/machines/{machine_id}/ci-node",
+                json={"enabled": False},
+            )
+        assert r.status_code == 200, r.text
+        assert captured["/devenv/ci-node-dispatch"]["headers"] == {
+            "Authorization": f"Bearer {_CALLER_TOKEN}"
+        }
 
 
 async def _new_user(db: AsyncSession, label: str):
