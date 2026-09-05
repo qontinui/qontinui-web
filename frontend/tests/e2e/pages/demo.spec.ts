@@ -6,9 +6,19 @@
  * - Demo detail (/demo/[id]) - shows project detail or 404 for invalid IDs
  *
  * These pages are public and do not require authentication.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated; a sleep in front of an
+ * assertion that already auto-waits is removed. Timeouts are the replaced
+ * sleep × 3.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "@playwright/test";
+
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
 
 test.describe("Demo List Page (/demo)", () => {
   test("loads without 500 error", async ({ page }) => {
@@ -79,25 +89,16 @@ test.describe("Demo List Page (/demo)", () => {
     await page.goto("/demo");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for loading to complete
-    await page.waitForTimeout(3000);
-
-    // After loading, either projects are shown or the empty state
-    const hasProjects = await page
-      .getByText("Public Projects (")
-      .isVisible()
-      .catch(() => false);
-    const hasEmptyState = await page
-      .getByText("No Public Projects Yet")
-      .isVisible()
-      .catch(() => false);
-    const hasError = await page
-      .locator(".text-red-600, .text-red-400")
-      .isVisible()
-      .catch(() => false);
-
-    // One of these states should be visible (projects, empty, or API error)
-    expect(hasProjects || hasEmptyState || hasError).toBe(true);
+    // After loading, either projects are shown or the empty state. One of
+    // these states should be visible (projects, empty, or API error).
+    // Tolerance preserved: any of the three.
+    await expect(
+      page
+        .getByText("Public Projects (")
+        .or(page.getByText("No Public Projects Yet"))
+        .or(page.locator(".text-red-600, .text-red-400"))
+        .first()
+    ).toBeVisible({ timeout: PAGE_DATA_TIMEOUT });
 
     await page.screenshot({
       path: "test-results/demo-list-loaded.png",
@@ -140,9 +141,7 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
     await page.goto("/demo/nonexistent-project-id-12345");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for the API call to complete
-    await page.waitForTimeout(3000);
-
+    // The not-found heading auto-waits for the API call to complete.
     const notFoundHeading = page.getByRole("heading", {
       name: /project not found/i,
     });
@@ -157,7 +156,6 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
   test("shows error message for invalid ID", async ({ page }) => {
     await page.goto("/demo/invalid-uuid-format");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     // Should show an error message explaining the project doesn't exist or isn't public
     const errorText = page
@@ -169,7 +167,6 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
   test("has Back to Demo Projects button for invalid ID", async ({ page }) => {
     await page.goto("/demo/nonexistent-id");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
     const backButton = page.getByRole("button", {
       name: /back to demo projects/i,
@@ -205,8 +202,12 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
       page.waitForLoadState("domcontentloaded"),
     ]);
 
-    // After loading, it should show not-found since this is a fake ID
-    await page.waitForTimeout(3000);
+    // After loading, it should show not-found since this is a fake ID —
+    // bounded wait for that heading, tolerated (the read below is no-500).
+    await page
+      .getByRole("heading", { name: /project not found/i })
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
   });
@@ -214,11 +215,15 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
   test("Back to Demo Projects button navigates correctly", async ({ page }) => {
     await page.goto("/demo/nonexistent-id");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(3000);
 
+    // Bounded wait for the button, tolerated if absent — the conditional
+    // below is the test's original shape.
     const backButton = page.getByRole("button", {
       name: /back to demo projects/i,
     });
+    await backButton
+      .waitFor({ state: "visible", timeout: PAGE_DATA_TIMEOUT })
+      .catch(() => null);
 
     if (await backButton.isVisible().catch(() => false)) {
       await backButton.click();
