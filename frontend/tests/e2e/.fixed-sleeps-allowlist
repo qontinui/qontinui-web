@@ -12,7 +12,7 @@ frontend/tests/e2e/auth.setup.ts 2
 frontend/tests/e2e/fixtures.ts 3
 frontend/tests/e2e/helpers/network-retry.ts 1
 frontend/tests/e2e/login.spec.ts 0
-frontend/tests/e2e/navigation-test-generator.spec.ts 1
+frontend/tests/e2e/navigation-test-generator.spec.ts 0
 frontend/tests/e2e/pages/admin-coord-questions.spec.ts 0
 frontend/tests/e2e/pages/admin-coord-spawn.spec.ts 0
 frontend/tests/e2e/pages/admin.spec.ts 0
