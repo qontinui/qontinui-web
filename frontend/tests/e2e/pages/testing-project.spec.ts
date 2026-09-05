@@ -318,9 +318,8 @@ test.describe("Project Testing - Live Page", () => {
 
     // Click Test History tab
     await page.getByRole("tab", { name: /Test History/i }).click();
-    await page.waitForTimeout(500);
 
-    // Verify filters section appears
+    // Verify filters section appears (auto-waits)
     await expect(page.getByText("Test History").first()).toBeVisible();
     await expect(page.getByText("Filters").first()).toBeVisible();
     await expect(page.getByPlaceholder("Search test runs...")).toBeVisible();
