@@ -102,10 +102,8 @@ test.describe("Analytics Page", () => {
     await page.goto("/analytics");
     await page.waitForLoadState("domcontentloaded");
 
-    // Wait for loading to finish
-    await page.waitForTimeout(3000);
-
-    // Verify metric card titles are present
+    // Verify metric card titles are present (the first read auto-waits for
+    // loading to finish)
     await expect(page.getByText("API Calls Today").first()).toBeVisible({
       timeout: 15000,
     });
