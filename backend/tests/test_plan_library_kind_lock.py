@@ -225,10 +225,17 @@ class TestCorrectionSurvivesRescan:
     ) -> None:
         """Re-posting identical content still records the assertion.
 
-        The digest is unchanged, so this is a content no-op (``changed`` stays
-        False, ``current_version`` does not move) — but the lock is an
-        assertion about IDENTITY, not content, and dropping it here would let
-        the very next scan un-stick the correction.
+        The digest is unchanged, so ``current_version`` does not move — but
+        the lock is an assertion about IDENTITY, not content, and dropping it
+        here would let the very next scan un-stick the correction.
+
+        ``changed`` reads True here for a reason that is NOT the lock: the
+        explicit write arrives through the ``agent`` door and the row was
+        captured by ``runner_scan``, and since Phase 5 of
+        ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``
+        a metadata move on an unchanged body is stored and reported. The
+        lock alone never flips ``changed`` — pinned below in
+        :class:`TestMetadataOnUnchangedDigest`.
         """
         org = uuid4()
         slug = _slug("late-lock")
@@ -243,13 +250,170 @@ class TestCorrectionSurvivesRescan:
             kind_is_heuristic=True,
         )
         assert scanned.kind_locked is False
+        assert scanned.captured_by == "runner_scan"
 
         again, created, changed = await _upsert(
             async_db_session, org_id=org, kind="plan", slug=slug, body=body
         )
-        assert (created, changed) == (False, False)
+        assert created is False
+        assert changed is True, "captured_by moved runner_scan -> agent"
+        assert again.captured_by == "agent"
         assert again.current_version == 1
         assert again.kind_locked is True
+
+
+# ===========================================================================
+# Metadata on an unchanged digest (Phase 5 of
+# 2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default)
+# ===========================================================================
+
+
+class TestMetadataOnUnchangedDigest:
+    """An accepted POST stores its metadata even when the body is already there.
+
+    The version log is the BODY's history: an unchanged digest never bumps
+    ``current_version`` or appends a snapshot. But ``title``, ``status``,
+    ``repos``, ``work_unit_slug``, ``authored_at``, ``source_path`` and
+    ``captured_by`` are the payload's description of the artifact, and a
+    corrected one used to be silently dropped while the response claimed
+    ``changed=false`` (finding 43479836). Both arms of the upsert — before and
+    after the row lock — now write the same fields through one helper.
+    """
+
+    async def test_metadata_is_stored_and_reported_without_a_version(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("meta")
+        first, _, _ = await crud.upsert_artifact(
+            async_db_session,
+            org_id=org,
+            user_id=None,
+            kind="plan",
+            slug=slug,
+            title="first title",
+            status="VETTED 2026-09-03",
+            body="# body",
+            source_path="plans/old.md",
+            source_repo="qontinui-dev-notes/plans",
+            work_unit_slug=None,
+            repos=[],
+            authored_at=None,
+            captured_by="runner_scan",
+            change_description=None,
+            created_by="test",
+            kind_is_heuristic=True,
+        )
+        touched_before = first.updated_at
+
+        again, created, changed = await crud.upsert_artifact(
+            async_db_session,
+            org_id=org,
+            user_id=None,
+            kind="plan",
+            slug=slug,
+            title="corrected title",
+            status="SHIPPED 2026-09-05",
+            body="# body",
+            source_path="plans/new.md",
+            source_repo="qontinui-dev-notes/plans",
+            work_unit_slug=slug,
+            repos=["qontinui-web"],
+            authored_at=None,
+            captured_by="agent",
+            change_description=None,
+            created_by="test",
+        )
+
+        assert (created, changed) == (False, True)
+        assert again.id == first.id
+        assert again.current_version == 1, "metadata is not a version"
+        assert len(await crud.list_versions(async_db_session, first.id)) == 1
+        assert again.title == "corrected title"
+        assert again.status == "SHIPPED 2026-09-05"
+        assert again.source_path == "plans/new.md"
+        assert again.work_unit_slug == slug
+        assert again.repos == ["qontinui-web"]
+        assert again.captured_by == "agent"
+        assert again.updated_at > touched_before, "a metadata write is a touch"
+        assert await _row_count(async_db_session, org, slug) == 1
+
+    async def test_lock_alone_does_not_read_as_changed(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """The kind lock is identity, not content or metadata."""
+        org = uuid4()
+        slug = _slug("lock-only")
+        scanned, _, _ = await _upsert(
+            async_db_session,
+            org_id=org,
+            kind="plan",
+            slug=slug,
+            body="same",
+            kind_is_heuristic=True,
+        )
+        assert scanned.kind_locked is False
+
+        # Identical metadata to what the scan wrote, explicit kind.
+        again, created, changed = await crud.upsert_artifact(
+            async_db_session,
+            org_id=org,
+            user_id=None,
+            kind="plan",
+            slug=slug,
+            title="t",
+            status="VETTED",
+            body="same",
+            source_path=None,
+            source_repo=None,
+            work_unit_slug=None,
+            repos=[],
+            authored_at=None,
+            captured_by="runner_scan",
+            change_description=None,
+            created_by="test",
+        )
+        assert (created, changed) == (False, False)
+        assert again.kind_locked is True
+
+    async def test_identical_repost_moves_nothing(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        org = uuid4()
+        slug = _slug("identical")
+        first, _, _ = await _upsert(
+            async_db_session, org_id=org, kind="plan", slug=slug, body="same"
+        )
+        again, created, changed = await _upsert(
+            async_db_session, org_id=org, kind="plan", slug=slug, body="same"
+        )
+        assert (created, changed) == (False, False)
+        assert again.updated_at == first.updated_at
+
+    async def test_http_changed_flag_and_unchanged_header_follow_the_metadata(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """``X-Artifact-Unchanged`` is set from ``not changed`` — so it now
+        means "this request moved nothing", not "the body was already here"."""
+        payload = _payload(status="VETTED 2026-09-03")
+        created = await client.post(API_PREFIX, json=payload)
+        assert created.status_code == 201, created.text
+
+        corrected = await client.post(
+            API_PREFIX, json={**payload, "status": "SHIPPED 2026-09-05"}
+        )
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["changed"] is True
+        assert corrected.json()["artifact"]["status"] == "SHIPPED 2026-09-05"
+        assert corrected.json()["artifact"]["current_version"] == 1
+        assert "x-artifact-unchanged" not in corrected.headers
+
+        identical = await client.post(
+            API_PREFIX, json={**payload, "status": "SHIPPED 2026-09-05"}
+        )
+        assert identical.status_code == 200, identical.text
+        assert identical.json()["changed"] is False
+        assert identical.headers["x-artifact-unchanged"] == "true"
 
 
 # ===========================================================================
