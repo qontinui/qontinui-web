@@ -33,12 +33,18 @@ test if called; subprocess tests always pass ``--manifest-json``.
 
 from __future__ import annotations
 
+import ast
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from tests.gate_lane_roster import (
+    assert_docstring_names_every_lane,
+    assert_lane_roster,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
@@ -869,3 +875,65 @@ def test_the_fixtures_are_the_recorded_revisions() -> None:
     pdtier_03 = PDTIER_03.read_text(encoding="utf-8")
     assert 'revision: str = "pdtier_03"' in pdtier_03
     assert "_RECONCILE_AND_DROP.format(" in pdtier_03
+
+
+# ---------------------------------------------------------------------------
+# THE LANE ROSTER — who actually invokes this gate.
+#
+# Everything above tests what the gate COMPUTES. These two test how many places
+# run it. That property is the one `a208240e2` falsified invisibly on a sibling
+# gate: a fourth invocation of the ruff-parity gate was added while three
+# separate places in the tree went on saying there were three, and nothing
+# failed for 90 commits.
+#
+# Three lanes invoke this script, and the gate's own docstring says so:
+#
+#   * .github/workflows/coord-column-drop-guard.yml, step "Check coord.* drops
+#     against coord's read contract (PR)" — the PR gate.
+#   * .qontinui/ci.toml, step `coord-column-drop-guard` — the
+#     runner-as-CI-node lane, invoking this same script rather than mirroring a
+#     command string, so the two cannot drift. It relies on a runner checkout
+#     already having `origin/main`, so the argv stays bare.
+#   * .pre-commit-config.yaml — the shift-left lane, handed the changed
+#     revision files as `--files`.
+#
+# Asserted BY POSITION (a YAML `run:`/`entry:` value, a TOML `command = [...]`
+# element) rather than by "a tracked non-comment line naming the script", which
+# does not generalise across this class — four such lines name
+# `count_alembic_heads.py` and invoke none of it. The position rule needs no
+# exclusion list, including for this file, which names the script throughout.
+# ---------------------------------------------------------------------------
+
+_SCRIPT_REF = "scripts/ci/check_coord_column_drops.py"
+
+_DECLARED_LANES = frozenset(
+    {
+        ".github/workflows/coord-column-drop-guard.yml",
+        ".pre-commit-config.yaml",
+        ".qontinui/ci.toml",
+    }
+)
+
+
+def _gate_docstring() -> str | None:
+    """The gate's module docstring, read WITHOUT importing the gate.
+
+    These gates are argv-only programs; `ast` never executes a line of one, and
+    the sibling roster modules all read the same way.
+    """
+    source = (REPO_ROOT / _SCRIPT_REF).read_text(encoding="utf-8")
+    return ast.get_docstring(ast.parse(source))
+
+
+def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
+    assert_lane_roster(_SCRIPT_REF, _DECLARED_LANES)
+
+
+def test_the_scripts_docstring_names_every_lane() -> None:
+    """The roster in prose must be the roster in the tree.
+
+    The gate opens by naming its three lanes and what each is for. That prose is
+    what a reader trusts instead of grepping, so a lane added without touching
+    it leaves the script describing a shape the repo no longer has.
+    """
+    assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)
