@@ -87,21 +87,25 @@ from tests._alembic_harness import (
 # because a stale pin rewinds too far and replays unrelated non-idempotent
 # revisions, surfacing as someone else's `DuplicateTable`.
 #
-# It is `require_review_cols_01`, the chain head measured with the repo's own gate
-# (`scripts/ci/count_alembic_heads.py`). The family prefix says nothing about
-# the chain edge — `fleet_res_tel_04` is the sibling that added the saturation
-# columns to this same table and is NOT this revision's parent — so read
-# `down_revision` rather than inferring it from the name.
+# It is `policy_rules_tombstone_01` — qontinui-web #1269, an UNLANDED sibling
+# rather than a chain head, because a 2026-09-05 land forked six open PRs off
+# one parent and they were CHAINED to resolve it rather than all re-pointed at
+# the head (see the block above `down_revision` in the revision itself). The
+# family prefix says nothing about the chain edge either — `fleet_res_tel_04`
+# is the sibling that added the saturation columns to this same table and is
+# NOT this revision's parent — so read `down_revision` rather than inferring it
+# from the name.
 #
-# This pin has already moved twice: the revision was authored against
-# `pmf_scope_cols_01`, re-pointed onto `vetev_01` when #1212 landed on top, and
-# onto `require_review_cols_01` when this branch was rebased onto current main.
+# This pin has now moved three times: the revision was authored against
+# `pmf_scope_cols_01`, re-pointed onto `vetev_01` when #1212 landed on top, onto
+# `require_review_cols_01` when this branch was rebased onto current main, and
+# onto `policy_rules_tombstone_01` when the six-way fork was chained.
 # That re-point edited the revision alone and left this constant behind, so the
 # guard below failed the PR — which is the guard doing its job. **A future
 # re-point must edit BOTH files in the same commit**, exactly as that test's
 # failure message instructs.
 _REVISION_ID = "fleet_res_tel_05_socket_census"
-_PARENT_REVISION_ID = "require_review_cols_01"
+_PARENT_REVISION_ID = "policy_rules_tombstone_01"
 _REVISION_FILENAME = "fleet_res_tel_05_socket_census.py"
 
 _TABLE = "device_resource_samples"

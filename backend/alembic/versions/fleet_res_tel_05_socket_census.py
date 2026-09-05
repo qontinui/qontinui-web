@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the socket-census lane (per-listener TCP states)
 
 Revision ID: fleet_res_tel_05_socket_census
-Revises: require_review_cols_01
+Revises: policy_rules_tombstone_01
 Create Date: 2026-09-01
 
 Phase 2a of plan
@@ -281,7 +281,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fleet_res_tel_05_socket_census"
-down_revision: str | Sequence[str] | None = "require_review_cols_01"
+down_revision: str | Sequence[str] | None = "policy_rules_tombstone_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -291,11 +291,25 @@ depends_on: str | Sequence[str] | None = None
 # at it would fork the graph — which `alembic-graph-pr.yml`'s `alembic-heads-pr`
 # job (a required check on `web-protect-main`) fails the PR for.
 #
-# down_revision is therefore the LIVE head, computed with the repo's own gate:
-# `python scripts/ci/count_alembic_heads.py`. It was `pmf_scope_cols_01` at
-# authoring time (origin/main `e9f7496a`), then `vetev_01` when #1212 landed on
-# top of it, and is now `require_review_cols_01` — see the re-point note at the
-# end of this block.
+# down_revision is NO LONGER the live head, and that is deliberate. It was:
+# `pmf_scope_cols_01` at authoring time (origin/main `e9f7496a`), then
+# `vetev_01` when #1212 landed on top, then `require_review_cols_01`.
+#
+# On 2026-09-05 at 16:05Z `main` landed `coord_agent_questions_audience_backfill`
+# off `require_review_cols_01`, forking SIX open PRs at once — five of them off
+# that identical token. Alembic's single-head invariant is a TOTAL ORDER, so
+# re-pointing all six at the live head does not fix it; they re-fork the instant
+# the first lands. They were chained in a stated landing order instead:
+#
+#   #1210 -> #1218 -> #989 -> #1269 -> #1216 (this PR) -> #1180
+#
+# So `down_revision` is `policy_rules_tombstone_01` — an UNLANDED sibling
+# (qontinui-web #1269), not a head. Until the four PRs ahead of this one land,
+# `alembic-heads-pr` here is RED BY CONSTRUCTION, because the parent named
+# exists in no tree yet; it goes green on its own with no further edit as they
+# land. That red is the safety property — it is what stops an out-of-order land
+# leaving `main` with a dangling `down_revision`. Do NOT "fix" it by re-pointing
+# at the live head; that dissolves the chain and restores the six-way fork.
 #
 # It is NOT `coordtouch_01`, which this revision was originally briefed to
 # revise. `coordtouch_01` is not a head and has not been one for some time —
@@ -303,9 +317,12 @@ depends_on: str | Sequence[str] | None = None
 # here would have produced an immediate two-head fork. Read `down_revision` off
 # a live head computation, never off a name or a brief.
 #
-# That head can MOVE between authoring and the first CI run; `fleet_res_tel_04`
+# A head can MOVE between authoring and the first CI run; `fleet_res_tel_04`
 # was re-pointed twice for exactly that reason, and this revision has now been
-# re-pointed twice (`pmf_scope_cols_01` -> `vetev_01` -> `require_review_cols_01`).
+# re-pointed three times (`pmf_scope_cols_01` -> `vetev_01` ->
+# `require_review_cols_01` -> `policy_rules_tombstone_01`). The chain above is
+# what stops a fourth: an unrelated migration landing on `main` now costs ONE
+# re-point — the chain root, #1210 — instead of one per sibling.
 # A stale local head is
 # expected on a busy repo, which is why the fork check is a REQUIRED status
 # check and not a lint — rebase onto the new head when it fires.
