@@ -227,12 +227,17 @@ test.describe("Demo Detail Page (/demo/[id])", () => {
 
     if (await backButton.isVisible().catch(() => false)) {
       await backButton.click();
-      await page.waitForLoadState("domcontentloaded");
 
-      // Should navigate back to demo list
+      // The click starts a client-side navigation; `waitForLoadState` on the
+      // already-loaded page resolves immediately, so assert on the URL with
+      // auto-wait instead of reading it once. (With the old 3 s sleep the
+      // button was never visible in time, so this branch never ran and the
+      // race stayed hidden — the lane surfaced it on the first real run.)
+      // Should navigate back to the demo list, and not carry the invalid ID.
+      await expect(page).not.toHaveURL(/nonexistent-id/, {
+        timeout: PAGE_DATA_TIMEOUT,
+      });
       expect(page.url()).toContain("/demo");
-      // And not contain the invalid ID in the URL
-      expect(page.url()).not.toContain("nonexistent-id");
     }
   });
 });
