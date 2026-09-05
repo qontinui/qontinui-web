@@ -31,7 +31,7 @@ frontend/tests/e2e/pages/marketplace.spec.ts 0
 frontend/tests/e2e/pages/project-rag.spec.ts 0
 frontend/tests/e2e/pages/qa-dashboard.spec.ts 0
 frontend/tests/e2e/pages/run-detail.spec.ts 0
-frontend/tests/e2e/pages/runner-connection.spec.ts 1
+frontend/tests/e2e/pages/runner-connection.spec.ts 0
 frontend/tests/e2e/pages/runs.spec.ts 0
 frontend/tests/e2e/pages/testing-global.spec.ts 0
 frontend/tests/e2e/pages/testing-project.spec.ts 0
