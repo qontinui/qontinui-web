@@ -342,6 +342,14 @@ function suggestGroupName(name: string): string | null {
  * `role="alert"` because the message appears as the operator types — a
  * screen-reader user who has already moved past the field would otherwise
  * never learn the submit button went away.
+ *
+ * That announcement fires ONCE, though, and only for whoever was listening at
+ * the time. So the message also carries `id={testId}` for the input's
+ * `aria-describedby`: a screen-reader user who tabs back to the field — or who
+ * reaches it for the first time after the value was pasted or filled — hears
+ * the reason along with the `aria-invalid` state, instead of "invalid entry"
+ * and nothing else. Announcement and association answer different questions
+ * and neither substitutes for the other.
  */
 function GroupNameHint({
   problem,
@@ -357,6 +365,7 @@ function GroupNameHint({
   if (!problem) return null;
   return (
     <p
+      id={testId}
       className="text-xs text-destructive flex flex-wrap items-center gap-1.5"
       role="alert"
       data-testid={testId}
@@ -1426,6 +1435,11 @@ function GroupTenantRolesSection({ isSuperuser }: { isSuperuser: boolean }) {
                 onChange={(e) => setGroupId(e.target.value)}
                 placeholder="e.g. qontinui-admins"
                 aria-invalid={groupIdProblem !== null}
+                // Only while the hint is rendered — `aria-describedby` naming
+                // an absent id describes the field with nothing.
+                aria-describedby={
+                  groupIdProblem !== null ? "map-group-id-problem" : undefined
+                }
                 data-testid="map-group-id"
               />
               <GroupNameHint
@@ -1545,7 +1559,13 @@ function CognitoGroupMembers({
           groupName
         )}/users`
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // This route answers 400 naming the reason for a `group_name` Cognito
+      // could never hold, so a bare `HTTP ${res.status}` throws that sentence
+      // away and renders the section error as literally "HTTP 400" — the
+      // status the backend stopped relying on precisely because it says
+      // nothing. `backendErrorMessage` is what the mutations on this page
+      // already use.
+      if (!res.ok) throw new Error(await backendErrorMessage(res));
       const json = (await res.json()) as CognitoGroupUsersResponse;
       // "No users in this group yet." is an assertion about a group an operator
       // is deciding whether to empty or delete. It must come from a read that
@@ -1573,9 +1593,15 @@ function CognitoGroupMembers({
           )}/users`,
           { method: "DELETE", body: JSON.stringify({ email }) }
         );
+        // ONE prefix, not two — the `catch` below adds "Remove failed:". This
+        // route already answered 404 (no such user) and 409 (ambiguous email)
+        // with a real sentence, and now answers 400 for an email or group name
+        // Cognito rejects as malformed; nesting `HTTP 404 {"detail":…}` in
+        // between made the reason the least readable part of the toast. The
+        // add-member handler on the sibling component reads its errors this
+        // way already — this was the last Cognito membership call that did not.
         if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`.trim());
+          throw new Error(await backendErrorMessage(res));
         }
         toast.success(`Removed ${email} from ${groupName}`);
         await load();
@@ -1670,6 +1696,12 @@ const HOME_GROUP_SUFFIX = "-home";
  * every other route on this page answers with a plain-string detail. Rendering
  * `[object Object]` at the one place an operator most needs to read the reason
  * is exactly the failure this helper exists to prevent.
+ *
+ * Three sources, in order: a string `detail`, a structured `detail.message`,
+ * then the status. A JSON body carrying neither falls back to the STATUS, not
+ * to its own source text — `{}` printed as `{}` is the same non-message as
+ * `[object Object]`. A body that is not JSON at all is different: a plain-text
+ * gateway or proxy error IS the sentence, so that one is returned as-is.
  */
 async function backendErrorMessage(res: Response): Promise<string> {
   const text = await res.text();
@@ -1681,8 +1713,15 @@ async function backendErrorMessage(res: Response): Promise<string> {
       const message = (detail as { message?: unknown }).message;
       if (typeof message === "string" && message) return message;
     }
+    // Parsed as JSON and carries no sentence — `{}`, or a `detail` in a shape
+    // this does not know. The raw JSON is NOT a message: printing it puts `{}`
+    // or a brace-blob where the operator expects a reason, which is the same
+    // defect as `[object Object]` one shape along. The status is at least true,
+    // and it is what these call sites showed before they were routed here.
+    return `HTTP ${res.status}`;
   } catch {
-    // Not JSON — fall through to the raw body.
+    // Not JSON — a plain-text gateway or proxy body IS the message, so fall
+    // through to the raw body rather than discarding it for the status.
   }
   return text.trim() || `HTTP ${res.status}`;
 }
@@ -2466,6 +2505,13 @@ function CognitoGroupsSection({ isSuperuser }: { isSuperuser: boolean }) {
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="e.g. qontinui-admins"
                     aria-invalid={newNameProblem !== null}
+                    // Only while the hint is rendered — see the mapping form's
+                    // Group ID input above.
+                    aria-describedby={
+                      newNameProblem !== null
+                        ? "cognito-new-name-problem"
+                        : undefined
+                    }
                     data-testid="cognito-new-name"
                   />
                   <GroupNameHint

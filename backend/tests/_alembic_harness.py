@@ -279,8 +279,10 @@ def load_revision_module(path: Path, module_name: str) -> ModuleType:
 _SQL_LITERAL = re.compile(r"'((?:[^']|'')*)'")
 
 
-def comment_body_from_source(source: str, qualified_column: str) -> str:
-    """The ``COMMENT ON COLUMN`` body a revision's SOURCE emits for a column.
+def comment_body_from_source(
+    source: str, qualified_column: str, *, object_kind: str = "COLUMN"
+) -> str:
+    """The ``COMMENT ON <object_kind>`` body a revision's SOURCE emits.
 
     PostgreSQL concatenates adjacent string literals separated by a newline, and
     the revisions here write each comment as one such run inside a triple-quoted
@@ -290,15 +292,36 @@ def comment_body_from_source(source: str, qualified_column: str) -> str:
     Exists so a test can compare against the ONE author of a body rather than
     holding a copy of it: two revisions restore ``pdaw_01``'s two comments, and a
     third copy in a test is the divergence such a test exists to catch.
+
+    ``object_kind`` is ``COLUMN`` by default and ``TABLE`` for a
+    ``COMMENT ON TABLE`` (``pdpub_01`` ships one, and its body carries the D1
+    tenant-agnosticism contract, so it is worth reading back).
+
+    The marker is matched whitespace-TOLERANTLY. A revision is free to wrap a
+    long ``COMMENT ON COLUMN coord.<table>.<column> IS`` across two source lines
+    — ``pdpub_02`` does, for the two ``prompt_document_versions`` columns — and a
+    literal ``str.find`` on the one-line spelling reports that as "the source no
+    longer contains this comment", which reads like a deleted comment rather
+    than like a wrapped line.
     """
-    marker = f"COMMENT ON COLUMN {qualified_column} IS"
-    start = source.find(marker)
-    assert start >= 0, f"source no longer contains {marker!r}"
-    assert source.find(marker, start + 1) < 0, (
-        f"{marker!r} appears more than once; this reader would silently pick "
-        "the first, which is not necessarily the one the caller meant"
+    marker_re = re.compile(
+        r"COMMENT\s+ON\s+"
+        + object_kind
+        + r"\s+"
+        + re.escape(qualified_column)
+        + r"\s+IS"
     )
-    start += len(marker)
+    matches = list(marker_re.finditer(source))
+    assert matches, (
+        f"source no longer contains a COMMENT ON {object_kind} for {qualified_column!r}"
+    )
+    assert len(matches) == 1, (
+        f"COMMENT ON {object_kind} {qualified_column} appears {len(matches)} "
+        "times; this reader would silently pick the first, which is not "
+        "necessarily the one the caller meant"
+    )
+    marker = matches[0].group(0)
+    start = matches[0].end()
     end = source.find('"""', start)
     assert end > start, f"unterminated COMMENT block for {qualified_column}"
 

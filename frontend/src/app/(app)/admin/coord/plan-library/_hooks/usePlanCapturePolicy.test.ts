@@ -37,10 +37,15 @@ vi.mock("sonner", () => ({
 
 import { usePlanCapturePolicy } from "./usePlanCapturePolicy";
 
-const OFF_NO_ROW = {
+// What coord actually produces for a tenant with NO row: the per-domain
+// default (`record`, master on) resolved from no scope band at all. It used
+// to be `off` — the poller's fail-safe — and the fixture said so; amendment
+// A2 of 2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default
+// records the flip.
+const RECORD_NO_ROW = {
   domain: "plan_capture",
-  effective_level: "off",
-  master_enabled: false,
+  effective_level: "record",
+  master_enabled: true,
   resolved_scope: "none",
   can_edit: true,
   keys_not_shown: ["controls", "drain"],
@@ -63,14 +68,15 @@ beforeEach(() => {
 
 describe("usePlanCapturePolicy — reads the resolved value", () => {
   it("loads the effective level and the scope band it resolved from", async () => {
-    getMock.mockResolvedValue(OFF_NO_ROW);
+    getMock.mockResolvedValue(RECORD_NO_ROW);
 
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(result.current.policy?.effective_level).toBe("off");
-    // "off because no row exists" must stay distinguishable from "off because
-    // someone chose off" — the scope band is the only thing that says which.
+    expect(result.current.policy?.effective_level).toBe("record");
+    // "record because no row exists" must stay distinguishable from "record
+    // because someone chose it" — the scope band is the only thing that says
+    // which.
     expect(result.current.policy?.resolved_scope).toBe("none");
     expect(getMock).toHaveBeenCalledWith(
       expect.stringContaining("domain=plan_capture")
@@ -95,7 +101,7 @@ describe("usePlanCapturePolicy — reads the resolved value", () => {
 
 describe("usePlanCapturePolicy — writes", () => {
   it("sends the closed body coord accepts and no more", async () => {
-    getMock.mockResolvedValue(OFF_NO_ROW);
+    getMock.mockResolvedValue(RECORD_NO_ROW);
     putMock.mockResolvedValue({
       ok: true,
       domain: "plan_capture",
@@ -111,6 +117,9 @@ describe("usePlanCapturePolicy — writes", () => {
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
+    // Same level as the no-row default: the write turns an implicit default
+    // into an explicit tenant row, which is what the panel's no-row copy
+    // invites. The resolved band moving none -> tenant is the evidence.
     await act(async () => {
       await result.current.setLevel("record");
     });
@@ -131,11 +140,12 @@ describe("usePlanCapturePolicy — writes", () => {
     // A two-state toggle must not have two spellings of "off".
     expect(body.master_enabled).toBe(true);
     expect(result.current.policy?.effective_level).toBe("record");
+    expect(result.current.policy?.resolved_scope).toBe("tenant");
     expect(toastSuccess).toHaveBeenCalled();
   });
 
   it("reports the RESOLVED value when it disagrees with what was written", async () => {
-    getMock.mockResolvedValue(OFF_NO_ROW);
+    getMock.mockResolvedValue(RECORD_NO_ROW);
     putMock.mockResolvedValue({
       ok: true,
       domain: "plan_capture",
@@ -146,9 +156,12 @@ describe("usePlanCapturePolicy — writes", () => {
       updated_by: "operator@example.com",
       // A REPO-band row wins over the tenant row we just wrote — coord
       // resolves most-specific-first (repo > tenant > system), so this is the
-      // band that can actually override a tenant write.
+      // band that can actually override a tenant write. It is an explicit
+      // `off` someone wrote, not the no-row default.
       effective: {
-        ...OFF_NO_ROW,
+        ...RECORD_NO_ROW,
+        effective_level: "off",
+        master_enabled: false,
         resolved_scope: "repo",
         keys_not_shown: [],
         keys_not_shown_source: null,
@@ -173,11 +186,11 @@ describe("usePlanCapturePolicy — writes", () => {
   });
 
   it("treats a failed read-back as UNKNOWN, not as the written value", async () => {
-    getMock.mockResolvedValue(OFF_NO_ROW);
+    getMock.mockResolvedValue(RECORD_NO_ROW);
     putMock.mockResolvedValue({
       ok: true,
       domain: "plan_capture",
-      written_level: "record",
+      written_level: "off",
       written_master_enabled: true,
       versioned: null,
       version: null,
@@ -189,23 +202,25 @@ describe("usePlanCapturePolicy — writes", () => {
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
+    // Write the OTHER level, so "kept the confirmed value" and "painted the
+    // written one" are distinguishable outcomes.
     await act(async () => {
-      await result.current.setLevel("record");
+      await result.current.setLevel("off");
     });
 
     // The write landed. What devices resolve is NOT known, so the displayed
     // value must stay the last one we could confirm.
-    expect(result.current.policy?.effective_level).toBe("off");
+    expect(result.current.policy?.effective_level).toBe("record");
     expect(result.current.readbackError).toContain("502");
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
   it("retires the read-back warning once a read confirms the value", async () => {
-    getMock.mockResolvedValue(OFF_NO_ROW);
+    getMock.mockResolvedValue(RECORD_NO_ROW);
     putMock.mockResolvedValue({
       ok: true,
       domain: "plan_capture",
-      written_level: "record",
+      written_level: "off",
       written_master_enabled: true,
       versioned: null,
       version: null,
@@ -217,7 +232,7 @@ describe("usePlanCapturePolicy — writes", () => {
     const { result } = renderHook(() => usePlanCapturePolicy());
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
-      await result.current.setLevel("record");
+      await result.current.setLevel("off");
     });
     expect(result.current.readbackError).toBeTruthy();
 

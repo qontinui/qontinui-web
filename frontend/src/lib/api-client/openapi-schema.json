@@ -53825,7 +53825,7 @@
         "type": "object"
       },
       "WorkArtifactUpsertResponse": {
-        "description": "Upsert outcome.\n\nThe \"304-equivalent\" the plan asks for: an unchanged ``content_sha256``\nreturns ``changed=False`` (and the response carries the\n``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).\nA literal HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
+        "description": "Upsert outcome.\n\n``changed`` says whether THIS request moved anything on the head row \u2014\nthe body (a version bump and a snapshot) or only its metadata (``title``,\n``status``, ``repos``, ``work_unit_slug``, ``authored_at``,\n``source_path``, ``captured_by``; no version bump). A byte-identical\nre-post is the \"304-equivalent\" the plan asks for: ``changed=False``, the\n``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A\nliteral HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
         "properties": {
           "artifact": {
             "$ref": "#/components/schemas/WorkArtifactSummary"
@@ -92871,7 +92871,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content is a no-op: the response carries ``changed=false``,\n``X-Artifact-Unchanged: true`` and an ``ETag`` of the digest, and neither\n``current_version`` nor the version log moves. That is the plan's\n\"304-equivalent\" \u2014 a literal 304 cannot carry the body the caller needs\nto assert the version did not move.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``work_unit_slug``,\n``authored_at``, ``source_path``, ``captured_by``) is still stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {

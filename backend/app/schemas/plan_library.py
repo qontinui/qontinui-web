@@ -369,10 +369,13 @@ class WorkArtifactListResponse(BaseModel):
 class WorkArtifactUpsertResponse(BaseModel):
     """Upsert outcome.
 
-    The "304-equivalent" the plan asks for: an unchanged ``content_sha256``
-    returns ``changed=False`` (and the response carries the
-    ``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).
-    A literal HTTP 304 is not used because 304 must carry no body and the
+    ``changed`` says whether THIS request moved anything on the head row —
+    the body (a version bump and a snapshot) or only its metadata (``title``,
+    ``status``, ``repos``, ``work_unit_slug``, ``authored_at``,
+    ``source_path``, ``captured_by``; no version bump). A byte-identical
+    re-post is the "304-equivalent" the plan asks for: ``changed=False``, the
+    ``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A
+    literal HTTP 304 is not used because 304 must carry no body and the
     caller still wants the current row back — notably ``current_version``,
     which it can then assert did NOT move.
     """
