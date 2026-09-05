@@ -15,12 +15,26 @@
  * redirect to /build/workflows or /dashboard, so the tests tolerate
  * both shapes (admin + redirected) per the existing admin.spec
  * convention.
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
 
 const PENDING_PATH = "/admin/coord/questions";
 const DETAIL_PATH = "/admin/coord/questions/00000000-0000-0000-0000-deadbeef0001";
+
+/** Replaces the old `waitForTimeout(2000)` before the coord-heading read. */
+const HEADING_TIMEOUT = 6000;
+
+/** The `<h1>` every /admin/coord/* page renders for a superuser. */
+const coordHeading = (page: import("@playwright/test").Page) =>
+  page.getByRole("heading", { name: "Coord operator console", exact: true });
 
 function wasRedirected(url: string): boolean {
   return (
@@ -35,7 +49,11 @@ test.describe("Admin - Coord questions inbox", () => {
   }) => {
     await page.goto(PENDING_PATH);
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -78,7 +96,11 @@ test.describe("Admin - Coord questions inbox", () => {
   }) => {
     await page.goto(DETAIL_PATH);
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const pageContent = await page.content();
     expect(pageContent).not.toContain("Internal Server Error");
@@ -112,7 +134,11 @@ test.describe("Admin - Coord questions inbox", () => {
   test("nav-link click routes from pipeline to questions", async ({ page }) => {
     await page.goto("/admin/coord/pipeline");
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(2000);
+
+    // Bounded wait for the heading, tolerated if absent (non-admin redirect).
+    await coordHeading(page)
+      .waitFor({ state: "visible", timeout: HEADING_TIMEOUT })
+      .catch(() => null);
 
     const hasCoordHeading =
       (await page
