@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the socket-census lane (per-listener TCP states)
 
 Revision ID: fleet_res_tel_05_socket_census
-Revises: vetev_01
+Revises: require_review_cols_01
 Create Date: 2026-09-01
 
 Phase 2a of plan
@@ -281,7 +281,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fleet_res_tel_05_socket_census"
-down_revision: str | Sequence[str] | None = "vetev_01"
+down_revision: str | Sequence[str] | None = "require_review_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -293,8 +293,9 @@ depends_on: str | Sequence[str] | None = None
 #
 # down_revision is therefore the LIVE head, computed with the repo's own gate:
 # `python scripts/ci/count_alembic_heads.py`. It was `pmf_scope_cols_01` at
-# authoring time (origin/main `e9f7496a`) and is now `vetev_01`, which #1212
-# landed on top of it — see the re-point note at the end of this block.
+# authoring time (origin/main `e9f7496a`), then `vetev_01` when #1212 landed on
+# top of it, and is now `require_review_cols_01` — see the re-point note at the
+# end of this block.
 #
 # It is NOT `coordtouch_01`, which this revision was originally briefed to
 # revise. `coordtouch_01` is not a head and has not been one for some time —
@@ -304,7 +305,8 @@ depends_on: str | Sequence[str] | None = None
 #
 # That head can MOVE between authoring and the first CI run; `fleet_res_tel_04`
 # was re-pointed twice for exactly that reason, and this revision has now been
-# re-pointed once (`pmf_scope_cols_01` -> `vetev_01`). A stale local head is
+# re-pointed twice (`pmf_scope_cols_01` -> `vetev_01` -> `require_review_cols_01`).
+# A stale local head is
 # expected on a busy repo, which is why the fork check is a REQUIRED status
 # check and not a lint — rebase onto the new head when it fires.
 #
