@@ -64,6 +64,7 @@
 
 import { NotebookText } from "lucide-react";
 import { KindAuthorshipTierControl } from "./_components/KindAuthorshipTierControl";
+import { PolicyUpstreamDialControl } from "./_components/PolicyUpstreamDialControl";
 import { PolicyWriteDialControl } from "./_components/PolicyWriteDialControl";
 import { PromptDocumentList } from "./_components/PromptDocumentList";
 import { SessionComplianceSection } from "./_components/SessionComplianceSection";
@@ -123,6 +124,18 @@ export default function PromptDocumentsPage() {
 
       <div className="border-t border-border pt-8">
         <PolicyWriteDialControl />
+      </div>
+
+      {/*
+        The upstream dial sits immediately after the policy-write dial because
+        the two are one question asked from opposite ends: what may an agent
+        INSIDE this tenant do to these documents, and what may the fleet
+        OUTSIDE it do to them. Both govern the documents listed above, and an
+        operator deciding how much autonomy to allow needs to see both answers
+        without leaving the page.
+      */}
+      <div className="border-t border-border pt-8">
+        <PolicyUpstreamDialControl />
       </div>
 
       {/*

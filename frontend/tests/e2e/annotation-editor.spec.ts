@@ -8,6 +8,13 @@
  * - Copy/paste operations
  * - Undo/redo
  * - Export functionality
+ *
+ * No fixed sleeps. The 100 ms `waitForTimeout` that used to follow each
+ * keyboard shortcut waited for nothing the test reads (the screenshot after
+ * them is never asserted on, and on an empty editor the shortcuts produce no
+ * identifiable state) — removed; `keyboard.press` resolves once the key
+ * events are dispatched.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import type { Page } from "@playwright/test";
@@ -211,15 +218,12 @@ test.describe("Annotation Editor", () => {
 
       // Undo shortcut (Ctrl/Cmd+Z)
       await page.keyboard.press("Control+z");
-      await page.waitForTimeout(100);
 
       // Redo shortcut (Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z)
       await page.keyboard.press("Control+y");
-      await page.waitForTimeout(100);
 
       // Select all (Ctrl/Cmd+A) - only if canvas is focused
       await page.keyboard.press("Control+a");
-      await page.waitForTimeout(100);
 
       // Take screenshot after keyboard operations
       await page.screenshot({
@@ -422,15 +426,12 @@ test.describe("Annotation Editor", () => {
       // Test copy/paste shortcuts exist
       // Ctrl/Cmd+C - Copy
       await page.keyboard.press("Control+c");
-      await page.waitForTimeout(100);
 
       // Ctrl/Cmd+V - Paste
       await page.keyboard.press("Control+v");
-      await page.waitForTimeout(100);
 
       // Ctrl/Cmd+X - Cut
       await page.keyboard.press("Control+x");
-      await page.waitForTimeout(100);
 
       await page.screenshot({
         path: "test-results/annotation-copy-paste.png",

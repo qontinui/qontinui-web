@@ -6,12 +6,22 @@
  * The RAG dashboard provides:
  * - Visual indexing interface with stats header
  * - Tabbed content: Indexed Elements, Processing History, Semantic Search
+ *
+ * No fixed sleeps. Every wait here is an auto-waiting assertion on the state
+ * the test then checks, or a bounded `waitFor(...).catch(() => null)` in
+ * front of a read the test already tolerated — never a `waitForTimeout(N)`
+ * followed by a non-waiting read, which asserts on wall-clock. Timeouts are
+ * the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
 
 // Use a placeholder project ID for page-load tests
 const TEST_PROJECT_ID = "test-project-placeholder-id";
+
+/** Replaces the old `waitForTimeout(500)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
 
 test.describe("Project RAG Dashboard", () => {
   test("should load without errors and display heading", async ({ page }) => {
@@ -70,7 +80,6 @@ test.describe("Project RAG Dashboard", () => {
 
     // Click Processing History tab
     await page.getByRole("tab", { name: /Processing History/i }).click();
-    await page.waitForTimeout(500);
 
     await page.screenshot({
       path: "test-results/pages-project-rag-processing.png",
@@ -79,7 +88,9 @@ test.describe("Project RAG Dashboard", () => {
 
     // Verify the Processing History tab is active
     const historyTab = page.getByRole("tab", { name: /Processing History/i });
-    await expect(historyTab).toHaveAttribute("data-state", "active");
+    await expect(historyTab).toHaveAttribute("data-state", "active", {
+      timeout: TAB_SWITCH_TIMEOUT,
+    });
   });
 
   test("should switch to Semantic Search tab", async ({ page }) => {
@@ -88,7 +99,6 @@ test.describe("Project RAG Dashboard", () => {
 
     // Click Semantic Search tab
     await page.getByRole("tab", { name: /Semantic Search/i }).click();
-    await page.waitForTimeout(500);
 
     await page.screenshot({
       path: "test-results/pages-project-rag-search.png",
@@ -97,7 +107,9 @@ test.describe("Project RAG Dashboard", () => {
 
     // Verify the Semantic Search tab is active
     const searchTab = page.getByRole("tab", { name: /Semantic Search/i });
-    await expect(searchTab).toHaveAttribute("data-state", "active");
+    await expect(searchTab).toHaveAttribute("data-state", "active", {
+      timeout: TAB_SWITCH_TIMEOUT,
+    });
   });
 
   test("should display RAG dashboard stats header area", async ({ page }) => {
