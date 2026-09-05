@@ -81698,7 +81698,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/approve": {
       "post": {
-        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is taken from the client; ``decided_by`` is stamped\nfrom the authenticated session. Coord's 4xx (already decided, stale\n``base_version``, unknown id) passes through verbatim \u2014 including the 404 you\nget before coord's Phase 5 deploy, which must stay visible rather than\nsilently no-op.",
+        "description": "Approve a pending proposal \u2014 coord applies the edit and returns the new\ndocument version. Tenant-admin only.\n\nOnly ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts\nTHAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``\nitself from the operator context the request already carries \u2014 so sending it\nfrom here is not a redundant belt-and-braces, it is a hard ``400``:\n``invalid body: unknown field `decided_by`, expected `decision_note```.\nThat is what this endpoint did until 2026-09-04, which made **every** approve\nand reject click fail. Do not reintroduce it: identity is coord's to derive,\nexactly as it is on the agent-notifications door.\n\nCoord's 4xx (already decided, stale ``base_version``, unknown id) passes\nthrough verbatim \u2014 including the 404 you get before coord's Phase 5 deploy,\nwhich must stay visible rather than silently no-op.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_approve_post",
         "parameters": [
           {
@@ -81764,7 +81764,7 @@
     },
     "/api/v1/operations/coord/prompt-document-proposals/{proposal_id}/reject": {
       "post": {
-        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction and server-side ``decided_by`` stamp as\n:func:`approve_prompt_document_proposal`.",
+        "description": "Reject a pending proposal \u2014 the edit is never applied. Tenant-admin only.\n\nSame body reduction as :func:`approve_prompt_document_proposal`, and the\nsame reason for it: ``decision_note`` is the only field coord's\n``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the\noperator context. Sending it is a ``400``, not a courtesy.",
         "operationId": "api_v1_operations_coord_prompt_document_proposals_proposal_id_reject_post",
         "parameters": [
           {
