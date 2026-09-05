@@ -9,9 +9,45 @@
  *
  * These pages all require a project to be selected (wrapped in RequireProject).
  * Tests verify both the no-project state and the with-project state.
+ *
+ * No fixed sleeps. Every wait here is a bounded `waitFor(...).catch(() =>
+ * null)` on the state the test then screenshots and reads (the
+ * RequireProject prompt or the page's own heading; the project switcher and
+ * its menu), tolerated so a page that renders neither still reaches the
+ * test's own conditionals — never a `waitForTimeout(N)` followed by a
+ * non-waiting read, which asserts on wall-clock. Timeouts are the replaced
+ * sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
+
+/** Replaces the old `waitForTimeout(2000)` after a page navigation. */
+const PAGE_SETTLE_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(500)` after the project switcher opens. */
+const MENU_OPEN_TIMEOUT = 5000;
+/** Replaces the old `waitForTimeout(1000)` after a project item is picked. */
+const PROJECT_SELECT_TIMEOUT = 5000;
+
+/**
+ * Bounded wait for the state a RequireProject-wrapped page settles on: the
+ * prompt ("No project selected" / "No projects yet") or the page's own
+ * heading. Tolerated if neither renders — the reads below keep their shape.
+ */
+async function waitForPageSettled(
+  page: import("@playwright/test").Page,
+  timeout: number
+): Promise<void> {
+  await page
+    .locator("text=No project selected")
+    .or(page.locator("text=No projects yet"))
+    .or(page.locator("h1"))
+    .first()
+    .waitFor({ state: "visible", timeout })
+    .catch(() => null);
+}
 
 /**
  * Helper to select a project from the post-login landing page before
@@ -30,19 +66,32 @@ async function selectProjectIfAvailable(
 ): Promise<boolean> {
   await page.goto("/build/workflows");
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(2000);
 
+  // Bounded wait for the switcher, tolerated if it never appears — the
+  // conditional below is the helper's original tolerance shape.
   const projectSwitcher = page.locator('[aria-label="Select project"]');
+  await projectSwitcher
+    .first()
+    .waitFor({ state: "visible", timeout: PAGE_SETTLE_TIMEOUT })
+    .catch(() => null);
   if (await projectSwitcher.isVisible({ timeout: 5000 }).catch(() => false)) {
     await projectSwitcher.click();
-    await page.waitForTimeout(500);
 
+    // The click opens the menu; wait for its items, tolerated if none.
     const projectItems = page.locator('[role="menuitem"]');
+    await projectItems
+      .first()
+      .waitFor({ state: "visible", timeout: MENU_OPEN_TIMEOUT })
+      .catch(() => null);
     const projectCount = await projectItems.count();
 
     if (projectCount > 0) {
       await projectItems.first().click();
-      await page.waitForTimeout(1000);
+      // Selecting an item closes the menu — the state the click produces.
+      await projectItems
+        .first()
+        .waitFor({ state: "hidden", timeout: PROJECT_SELECT_TIMEOUT })
+        .catch(() => null);
       return true;
     }
   }
@@ -109,7 +158,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/contexts");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-contexts-content.png",
@@ -169,7 +218,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/variables");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-variables-heading.png",
@@ -210,7 +259,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/variables");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-variables-search.png",
@@ -239,7 +288,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/variables");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-variables-type-filters.png",
@@ -293,7 +342,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/dependencies");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-dependencies-heading.png",
@@ -322,7 +371,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/dependencies");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-dependencies-graph.png",
@@ -355,7 +404,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/dependencies");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-dependencies-tabs.png",
@@ -404,7 +453,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/documentation");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-documentation-heading.png",
@@ -437,7 +486,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/documentation");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-documentation-layout.png",
@@ -480,7 +529,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/documentation");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-documentation-coverage.png",
@@ -525,7 +574,7 @@ test.describe("Automation Builder - Data Pages", () => {
 
       await page.goto("/automation-builder/documentation");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-documentation-actions.png",
