@@ -301,7 +301,40 @@ describe("cloud route shims", () => {
         ...SHIMS.map((s) => s.module),
         ...Object.keys(UNMOUNTED),
       ].sort();
-      expect(shipped).toEqual(expected);
+
+      // Say WHICH REPO owns the drift, and which way to fix it.
+      //
+      // Two sorted string arrays diffed by vitest tell a reader nothing about
+      // that, and this assertion is read in two places with opposite answers:
+      // in cloud-control's `composed-typecheck` (the PR that added the route)
+      // and in qontinui-web's `composed-cloud-build`, where it can still fire
+      // on `main` because that job reads cloud-control's default branch and a
+      // route can land there while a web PR is in flight. Somebody looking at
+      // a red `main` here is looking at a diff that cannot contain the cause,
+      // and the correct move is a shim in THIS repo, never a revert in the
+      // other one.
+      const unshimmed = shipped.filter((m) => !expected.includes(m));
+      const orphaned = expected.filter((m) => !shipped.includes(m));
+      const drift = [
+        unshimmed.length > 0 &&
+          `cloud-control ships ${unshimmed.join(", ")} with no host shim in ` +
+            `qontinui-web. FIX HERE, not there: add src/app/(app)/<path>/page.tsx, ` +
+            `src/cloud-absent/routes/<path>/page.tsx, and the SHIMS + STUB_IMPORTS ` +
+            `rows in this file — or an UNMOUNTED entry with a reason. Do NOT ` +
+            `revert the cloud-control route.`,
+        orphaned.length > 0 &&
+          `qontinui-web still lists ${orphaned.join(", ")}, which cloud-control ` +
+            `no longer ships. FIX HERE: drop the shim, the cloud-absent stub and ` +
+            `the SHIMS/STUB_IMPORTS (or UNMOUNTED) rows.`,
+      ]
+        .filter((line): line is string => typeof line === "string")
+        .join("\n");
+
+      expect(
+        shipped,
+        `cloud route inventory drift — the inventory came from cloud-control's ` +
+          `frontend/src/routes/ tree at ${OVERLAY}.\n${drift}`
+      ).toEqual(expected);
     }
   );
 
