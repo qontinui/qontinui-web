@@ -81828,6 +81828,133 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-document-publications": {
+      "get": {
+        "description": "The publication channel, optionally filtered by ``kind`` and ``name``.\n\nReadable by ANY authenticated tenant member, not just an admin: this is the\ndistribution channel itself (plan ``2026-09-04-cross-tenant-policy-publishing``\nD1), and a tenant must be able to see what it is being offered. The rows are\ntenant-agnostic by construction \u2014 ``source_tenant_id`` is audit-only and is\nnever a read key \u2014 so serving them across tenants is the design, not a leak.",
+        "operationId": "api_v1_operations_coord_prompt_document_publications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Publications Api V1 Operations Coord Prompt Document Publications Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Prompt Document Publications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-publications/{kind}/{name}/{version}": {
+      "get": {
+        "description": "One immutable publication, with body \u2014 the upstream side of the console's\nthree-way upstream diff. Any authenticated tenant member, for the same\nreason the list route above is.",
+        "operationId": "api_v1_operations_coord_prompt_document_publications_kind_name_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Publication Api V1 Operations Coord Prompt Document Publications  Kind   Name   Version  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Prompt Document Publication",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-document-writes": {
       "get": {
         "description": "Recently landed prompt-document writes across the tenant, newest first \u2014\nexcept that classified loosenings are never cut by the page slice.\n\n**Ordering, precisely.** Writes are sorted newest-first, then every write\ncoord classified as widening what agents may do is lifted above the rest as\na stable partition, and the ``limit`` slice is taken from THAT. So the page\nis \"every loosening, then the most recent of the remainder\" rather than\n\"the most recent N\". Recency order survives inside each group, and the\nclient re-derives the identical partition (``_lib/writes.ts``\n``sortWritesForFeed``), so this changes what is IN the page, not how it is\nlaid out. Below the limit it is a pure reorder with no visible effect.\n\nThe reason is not tidiness. The client promotes flagged rows to the top of\nwhat it received and the page tells the operator they are \"marked and sorted\nto the top\"; the page requests a fixed ``?limit=40`` and offers no paging.\nA loosening older than the newest forty writes would therefore be dropped\nhere, promoted by nobody, and unreachable \u2014 invisible on the one surface\nbuilt to show it. ``limited`` reports the direction of what the slice did\ndrop, not only how many.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
@@ -82497,6 +82624,81 @@
           }
         ],
         "summary": "Update Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/publish": {
+      "post": {
+        "description": "Publish this document into the fleet-wide distribution channel.\n\nPlan ``2026-09-04-cross-tenant-policy-publishing`` D1/D2. Only the SYSTEM\ntenant may publish; coord is the authority on that and answers\n``not_system_tenant`` otherwise, which passes through \u2014 the console cannot\npre-gate it, because nothing on the prompt-documents wire says whether the\ncaller is the system tenant.\n\nA publication is IMMUTABLE and is distributed on save: there is deliberately\nno withdraw route, because a downstream tenant may already have adopted it.\nA mistake is corrected by publishing again.\n\nBody: ``{release_note?, expected_version}``. ``expected_version`` is the\noptimistic-lock guard \u2014 coord answers ``version_conflict`` with the actual\nversion if the document moved under the operator, which is why it is\nforwarded rather than re-derived here. ``published_by`` is NOT forwarded and\nis never taken from the browser: coord derives the publisher from its own\nauthenticated ``OperatorContext``, for the same reason the version-restore\nproxy above declines to stamp ``updated_by``.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Publish Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Publish Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish Prompt Document",
         "tags": [
           "operations"
         ]
