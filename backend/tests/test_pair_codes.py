@@ -371,6 +371,92 @@ class TestRedeemEndpoint:
         assert captured["json"]["device_id"] == str(_FIXTURE_DEVICE_ID)
 
     @pytest.mark.asyncio
+    async def test_redeem_forwards_service_token_and_user_header(
+        self,
+        async_db_session: AsyncSession,
+        test_user,
+    ) -> None:
+        """The redeem's call to coord is coord's pairing **arm B**: the web
+        service token in ``Authorization`` plus ``X-Qontinui-User-Id`` naming
+        the code's ISSUER, alongside the code's burned-in ``tenant_id``. Coord
+        verifies that credential and proves the issuer's membership in the
+        tenant by Cognito subject — so the identity coord acts on is the
+        issuer's, taken from the header web sends, never from the runner.
+        """
+        row = await pair_code_crud.mint_pair_code(
+            async_db_session,
+            tenant_id=_FIXTURE_TENANT_ID,
+            issued_by_user_id=test_user.id,
+        )
+        coord_response = {
+            "token": "device-jwt-abc",
+            "device_id": str(_FIXTURE_DEVICE_ID),
+            "user_id": str(test_user.id),
+            "exp": 1234567890,
+        }
+        app = _build_test_app(db_session=async_db_session, user_id=test_user.id)
+        transport = httpx.ASGITransport(app=app)
+        captured: dict = {}
+
+        class _FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def post(self, url, *, headers=None, json=None):
+                captured["url"] = url
+                captured["json"] = json
+                captured["headers"] = headers
+                return _mock_resp(status_code=201, json_data=coord_response)
+
+        from app.services import coord_proxy as proxy_mod
+
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient = _FakeClient
+        fake_httpx.HTTPError = httpx.HTTPError
+        fake_httpx.ConnectError = httpx.ConnectError
+        fake_httpx.ConnectTimeout = httpx.ConnectTimeout
+        fake_httpx.TimeoutException = httpx.TimeoutException
+
+        service_headers = {
+            "Authorization": "Bearer coord-service-jwt-for-qontinui-web-strategy",
+            "X-Qontinui-User-Id": str(test_user.id),
+        }
+        with patch("app.api.v1.endpoints.pair_codes.strategy_client") as mock_strategy:
+            mock_strategy.enabled = True
+            mock_strategy._headers = AsyncMock(return_value=service_headers)
+            original_httpx = proxy_mod.httpx
+            proxy_mod.httpx = fake_httpx
+            try:
+                async with httpx.AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    resp = await client.post(
+                        f"/api/v1/devices/pair-codes/{row.code}/redeem",
+                        json={
+                            "device_id": str(_FIXTURE_DEVICE_ID),
+                            "hostname": "spaceship",
+                        },
+                    )
+            finally:
+                proxy_mod.httpx = original_httpx
+
+        assert resp.status_code == 200, resp.text
+        # The service headers are minted FOR the issuer, and forwarded verbatim.
+        mock_strategy._headers.assert_awaited_once_with(str(test_user.id))
+        assert captured["url"].endswith("/coord/devices/pair-cli")
+        assert captured["headers"]["Authorization"] == service_headers["Authorization"]
+        assert captured["headers"]["X-Qontinui-User-Id"] == str(test_user.id)
+        # The requested tenant is the code's, which coord then proves the
+        # issuer is a member of.
+        assert captured["json"]["tenant_id"] == str(_FIXTURE_TENANT_ID)
+
+    @pytest.mark.asyncio
     async def test_redeem_unknown_code_returns_404(
         self, async_http_client: httpx.AsyncClient
     ) -> None:
