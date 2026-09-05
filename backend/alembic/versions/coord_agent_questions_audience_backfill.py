@@ -1,7 +1,7 @@
 """coord.agent_questions — backfill audience from the question's decision domain
 
 Revision ID: coord_agent_questions_audience_backfill
-Revises: vetev_01
+Revises: require_review_cols_01
 Create Date: 2026-08-29
 
 Phase D4b of plan ``2026-08-27-escalation-audience-agent-vs-operator``.
@@ -141,7 +141,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "coord_agent_questions_audience_backfill"
-down_revision: str | Sequence[str] | None = "vetev_01"
+down_revision: str | Sequence[str] | None = "require_review_cols_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
