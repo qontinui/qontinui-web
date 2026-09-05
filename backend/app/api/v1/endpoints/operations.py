@@ -8480,6 +8480,84 @@ async def restore_prompt_document_version(
 # clause proxies keep.
 
 
+@router.post("/coord/prompt-documents/{kind}/{name}/publish")
+async def publish_prompt_document(
+    kind: str,
+    name: str,
+    body: dict[str, Any] | None = None,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> Any:
+    """Publish this document into the fleet-wide distribution channel.
+
+    Plan ``2026-09-04-cross-tenant-policy-publishing`` D1/D2. Only the SYSTEM
+    tenant may publish; coord is the authority on that and answers
+    ``not_system_tenant`` otherwise, which passes through — the console cannot
+    pre-gate it, because nothing on the prompt-documents wire says whether the
+    caller is the system tenant.
+
+    A publication is IMMUTABLE and is distributed on save: there is deliberately
+    no withdraw route, because a downstream tenant may already have adopted it.
+    A mistake is corrected by publishing again.
+
+    Body: ``{release_note?, expected_version}``. ``expected_version`` is the
+    optimistic-lock guard — coord answers ``version_conflict`` with the actual
+    version if the document moved under the operator, which is why it is
+    forwarded rather than re-derived here. ``published_by`` is NOT forwarded and
+    is never taken from the browser: coord derives the publisher from its own
+    authenticated ``OperatorContext``, for the same reason the version-restore
+    proxy above declines to stamp ``updated_by``.
+    """
+    payload: dict[str, Any] = {}
+    for field in ("release_note", "expected_version"):
+        value = (body or {}).get(field)
+        if value is not None:
+            payload[field] = value
+    return await _proxy_coord_post(
+        f"/coord/prompt-documents/{quote(kind, safe='')}/{quote(name, safe='')}/publish",
+        payload,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-document-publications")
+async def list_prompt_document_publications(
+    kind: str | None = None,
+    name: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """The publication channel, optionally filtered by ``kind`` and ``name``.
+
+    Readable by ANY authenticated tenant member, not just an admin: this is the
+    distribution channel itself (plan ``2026-09-04-cross-tenant-policy-publishing``
+    D1), and a tenant must be able to see what it is being offered. The rows are
+    tenant-agnostic by construction — ``source_tenant_id`` is audit-only and is
+    never a read key — so serving them across tenants is the design, not a leak.
+    """
+    params = {k: v for k, v in (("kind", kind), ("name", name)) if v is not None}
+    return await _proxy_coord_get(
+        "/coord/prompt-document-publications",
+        params=params or None,
+        tenant_id=tenant_id,
+    )
+
+
+@router.get("/coord/prompt-document-publications/{kind}/{name}/{version}")
+async def get_prompt_document_publication(
+    kind: str,
+    name: str,
+    version: int,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """One immutable publication, with body — the upstream side of the console's
+    three-way upstream diff. Any authenticated tenant member, for the same
+    reason the list route above is."""
+    return await _proxy_coord_get(
+        f"/coord/prompt-document-publications/{quote(kind, safe='')}"
+        f"/{quote(name, safe='')}/{version}",
+        tenant_id=tenant_id,
+    )
+
+
 @router.get("/coord/prompt-document-kind-tiers")
 async def list_prompt_document_kind_tiers(
     tenant_id: UUID = Depends(get_tenant_id),

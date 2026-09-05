@@ -5,9 +5,24 @@
  * Same gating as web-extraction.spec.ts — the page's h1 only
  * renders past the runner-spec-API check, so this debug spec
  * auto-skips when no runner is reachable on :9876.
+ *
+ * No fixed sleeps. Every wait here is a bounded `waitFor(...).catch(() =>
+ * null)` on the state the step produces (the runner combobox, its options,
+ * the enabled Start button, the EXTRACTING... label and its return to
+ * Start Extraction), tolerated so the diagnostic branches keep their shape
+ * — never a `waitForTimeout(N)` followed by a non-waiting read. Timeouts
+ * are the replaced sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
-import { test } from "./fixtures";
+import { test, expect } from "./fixtures";
+
+/** Replaces the old `waitForTimeout(1000)` after the loading spinner hides. */
+const RUNNERS_SETTLE_TIMEOUT = 5000;
+/** Replaces the old `waitForTimeout(500)` after a select / fill step. */
+const STEP_TIMEOUT = 5000;
+/** Replaces the old `waitForTimeout(5000)` observation window after Start. */
+const EXTRACTION_TIMEOUT = 15000;
 import { requireRunner } from "./runner-detection";
 import { TEST_PROJECT_ID as PROJECT_ID } from "./test-project";
 
@@ -50,9 +65,8 @@ test.describe("Web Extraction Debug", () => {
       )
       .forEach((l) => console.log(l));
 
-    // Scroll down to see the Runner section
+    // Scroll down to see the Runner section (synchronous; nothing to wait on)
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(1000);
 
     // Wait for loading to complete
     await page
@@ -61,10 +75,14 @@ test.describe("Web Extraction Debug", () => {
         timeout: 15000,
       })
       .catch(() => {});
-    await page.waitForTimeout(1000);
 
-    // Check what runner options we have
+    // Check what runner options we have: bounded wait for the runner select,
+    // tolerated — the conditional below is the original diagnostic branch.
     const runnerSelect = page.locator('[role="combobox"]');
+    await runnerSelect
+      .first()
+      .waitFor({ state: "visible", timeout: RUNNERS_SETTLE_TIMEOUT })
+      .catch(() => null);
     const hasRunnerSelect = await runnerSelect
       .isVisible({ timeout: 3000 })
       .catch(() => false);
@@ -85,13 +103,18 @@ test.describe("Web Extraction Debug", () => {
 
     // Click on runner select to open dropdown
     await runnerSelect.click();
-    await page.waitForTimeout(500);
+
+    // The click opens the dropdown; wait for an option, tolerated if none.
+    const runnerOptions = page.locator('[role="option"]');
+    await runnerOptions
+      .first()
+      .waitFor({ state: "visible", timeout: STEP_TIMEOUT })
+      .catch(() => null);
 
     // Take screenshot of dropdown
     await page.screenshot({ path: "/tmp/runner-dropdown.png", fullPage: true });
 
     // Check for available runners
-    const runnerOptions = page.locator('[role="option"]');
     const count = await runnerOptions.count();
     console.log(`\n=== Found ${count} runner options ===`);
 
@@ -102,20 +125,29 @@ test.describe("Web Extraction Debug", () => {
 
     // Select first runner
     await runnerOptions.first().click();
-    await page.waitForTimeout(500);
+    // Selecting an option closes the dropdown — the state the click produces.
+    await runnerOptions
+      .first()
+      .waitFor({ state: "hidden", timeout: STEP_TIMEOUT })
+      .catch(() => null);
 
     // Add a test URL
     const urlInput = page.locator('input[placeholder="https://example.com"]');
     await urlInput.fill("https://example.com");
     await page.keyboard.press("Enter");
-    await page.waitForTimeout(500);
+
+    // Click Start Extraction button
+    const startButton = page.locator('button:has-text("Start Extraction")');
+
+    // Adding the URL is what enables the button — bounded wait for that,
+    // tolerated (a still-disabled button is the diagnostic branch below).
+    await expect(startButton)
+      .toBeEnabled({ timeout: STEP_TIMEOUT })
+      .catch(() => null);
 
     // Clear logs before clicking Start Extraction
     logs.length = 0;
     console.log("\n=== Clicking Start Extraction ===");
-
-    // Click Start Extraction button
-    const startButton = page.locator('button:has-text("Start Extraction")');
 
     // Check if button is enabled
     const isDisabled = await startButton.isDisabled();
@@ -124,8 +156,18 @@ test.describe("Web Extraction Debug", () => {
     if (!isDisabled) {
       await startButton.click();
 
-      // Wait a bit to capture WebSocket activity
-      await page.waitForTimeout(5000);
+      // Capture WebSocket activity across the extraction's lifecycle: the
+      // button reads EXTRACTING... while it runs, then Start Extraction again
+      // once it completes or the socket drops. Both tolerated.
+      const extracting = page.locator('button:has-text("EXTRACTING")');
+      await extracting
+        .first()
+        .waitFor({ state: "visible", timeout: STEP_TIMEOUT })
+        .catch(() => null);
+      await extracting
+        .first()
+        .waitFor({ state: "hidden", timeout: EXTRACTION_TIMEOUT })
+        .catch(() => null);
 
       // Print logs related to WebSocket
       console.log("\n=== WebSocket logs after Start Extraction ===");
