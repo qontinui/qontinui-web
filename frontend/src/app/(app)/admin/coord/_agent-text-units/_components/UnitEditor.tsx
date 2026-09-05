@@ -14,8 +14,10 @@
  *    a non-superuser sees the fleet layer read-only, with the reason stated
  *    rather than a button that 403s.
  * 3. **A blank editor means "nothing stored at this layer"**, never "the text
- *    is empty". qontinui-web never receives the runner's embedded copy, so it
- *    cannot pre-fill it, and it says so instead of implying it knows.
+ *    is empty". The runner's embedded copy is not pre-filled: when a runner
+ *    has published it to this account it is offered as a starting point and
+ *    labelled by the build that published it; when none has, the editor says
+ *    it holds no copy instead of implying it knows.
  *
  * Rule references — `frontend/docs/console-ui-style-guide.md`: **R9** (page
  * chrome stays with the shell; this is a body, not a titled card), **R3** (the
@@ -23,7 +25,15 @@
  * in this JSX).
  */
 
-import { ArrowLeft, ArrowLeftRight, Info, Loader2, Lock, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowLeftRight,
+  Info,
+  Loader2,
+  Lock,
+  PackageOpen,
+  Save,
+} from "lucide-react";
 import { MonacoField } from "@/components/builders/editors/MonacoField";
 import type { AgentTextUnit, UnitFiles } from "@/lib/api/agent-text-units";
 import {
@@ -31,11 +41,12 @@ import {
   ImportedFromBadge,
   ProvenanceBadge,
 } from "./ProvenanceBadge";
-import { ResetToDefaultDialog } from "./ResetToDefaultDialog";
+import { ResetToDefaultDialog, type RestorePreview } from "./ResetToDefaultDialog";
 import { UnitFileTabs } from "./UnitFileTabs";
-import { statusOf, totalBytes } from "../_lib/unitRows";
+import { baselineLabel, statusOf, totalBytes } from "../_lib/unitRows";
 import {
   LAYER_LABEL,
+  entrypointFor,
   type UnitKindConfig,
   type UnitRow,
   type WritableLayer,
@@ -136,6 +147,9 @@ interface UnitEditorProps {
   onRenameFile: (from: string, to: string) => string | null;
   onDeleteFile: (path: string) => string | null;
   onSeedFromOtherLayer: () => void;
+  /** Copy the published embedded default into the draft. `null` when there is
+   *  none to copy, or the layer is read-only. */
+  onSeedFromBaseline: (() => void) | null;
   changeDescription: string;
   onChangeDescriptionChange: (value: string) => void;
   isDirty: boolean;
@@ -163,6 +177,7 @@ export function UnitEditor({
   onRenameFile,
   onDeleteFile,
   onSeedFromOtherLayer,
+  onSeedFromBaseline,
   changeDescription,
   onChangeDescriptionChange,
   isDirty,
@@ -181,12 +196,29 @@ export function UnitEditor({
   const otherLayer: WritableLayer = editLayer === "account" ? "fleet" : "account";
   const otherStored = otherLayer === "fleet" ? row.fleet : row.account;
   const bytes = totalBytes(files);
+  const embeddedNoun = row.embedded
+    ? `the copy embedded in the runner binary (${baselineLabel(row.embedded.published_by_version)})`
+    : "the copy embedded in the runner binary";
   const fallsBackTo =
-    editLayer === "account"
-      ? row.fleet
-        ? "the fleet default"
-        : "the copy embedded in the runner binary"
-      : "the copy embedded in the runner binary";
+    editLayer === "account" && row.fleet ? "the fleet default" : embeddedNoun;
+  // What the reset dialog PREVIEWS: the next layer down, as text. The fleet
+  // default when the account override is going and one exists; otherwise the
+  // published embedded copy; otherwise nothing — and `null` is rendered as
+  // "cannot be previewed", never as an empty body.
+  const restores: RestorePreview | null =
+    editLayer === "account" && row.fleet
+      ? {
+          label: `the fleet default (v${row.fleet.current_version})`,
+          files: row.fleet.files,
+          entrypoint: row.fleet.entrypoint,
+        }
+      : row.embedded
+        ? {
+            label: baselineLabel(row.embedded.published_by_version),
+            files: row.embedded.files,
+            entrypoint: entrypointFor(config.kind, row.name),
+          }
+        : null;
 
   return (
     <div className="space-y-4" data-testid="unit-editor">
@@ -223,6 +255,7 @@ export function UnitEditor({
               unitName={row.name}
               layer={editLayer}
               fallsBackTo={fallsBackTo}
+              restores={restores}
               currentFiles={editing.files}
               versionCount={versionCount}
               busy={deleting}
@@ -265,6 +298,18 @@ export function UnitEditor({
           >
             <ArrowLeftRight className="size-3.5" />
             Start from the {LAYER_LABEL[otherLayer].toLowerCase()}
+          </button>
+        )}
+        {row.embedded && onSeedFromBaseline && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={onSeedFromBaseline}
+            title={`Replace the draft with the copy ${baselineLabel(row.embedded.published_by_version)}. Nothing is saved until you save.`}
+            data-testid="unit-seed-from-baseline"
+          >
+            <PackageOpen className="size-3.5" />
+            Start from the copy {baselineLabel(row.embedded.published_by_version)}
           </button>
         )}
         <span className="font-mono text-[11px] text-muted-foreground">
@@ -314,9 +359,22 @@ export function UnitEditor({
           )}
           {!editing && !readOnly && (
             <p>
-              Nothing is stored at this layer yet, so the editor starts blank —
-              the runner&apos;s embedded copy lives inside its binary and is
-              never uploaded here. Whatever you save{" "}
+              Nothing is stored at this layer yet, so the editor starts blank.{" "}
+              {row.embedded ? (
+                <>
+                  The runner&apos;s embedded copy —{" "}
+                  {baselineLabel(row.embedded.published_by_version)} — is shown
+                  in the &quot;Published default&quot; panel below, and
+                  &quot;Start from&quot; above copies it into the draft.
+                </>
+              ) : (
+                <>
+                  The runner&apos;s embedded copy lives inside its binary, and
+                  no runner has published it to this account, so it cannot be
+                  shown here.
+                </>
+              )}{" "}
+              Whatever you save{" "}
               <span className="font-medium text-foreground">replaces</span> the
               layer below it wholesale; it is not a patch on top of it.
             </p>

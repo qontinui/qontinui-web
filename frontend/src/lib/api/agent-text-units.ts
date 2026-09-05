@@ -19,9 +19,14 @@
  *   `fleet_default=true`. Reads are open; **writes require a superuser**,
  *   because one write there changes the whole fleet.
  * * the runner's **embedded** copy — compiled into the binary via
- *   `include_str!` and never uploaded, so it has no row anywhere in this API.
- *   A `DELETE` therefore removes a stored layer and lets the next one down
- *   apply; it never deletes a default.
+ *   `include_str!`. It is not editable here, but since plan
+ *   `2026-08-31-runner-publishes-embedded-command-defaults` a runner
+ *   PUBLISHES its whole embedded roster to the account it is signed in to
+ *   (`GET /defaults`, below), so the console has a baseline to diff an
+ *   override against and a body to preview before a reset. That baseline is
+ *   a DISPLAY copy: the list routes never fold it in, and a `DELETE` still
+ *   removes a stored layer and lets the next one down apply — it never
+ *   deletes a default.
  *
  * Response shapes are typed locally against the backend's
  * `app/api/v1/endpoints/agent_text_units.py` +
@@ -149,6 +154,82 @@ export interface AgentTextUnitUpdate {
 }
 
 // =============================================================================
+// The embedded layer's wire — mirror of the GENERATED binding
+// =============================================================================
+
+/**
+ * One embedded default as the runner binary ships it, published to this
+ * account so there is a baseline to diff an override against.
+ *
+ * **This is a field-for-field mirror of the generated
+ * `qontinui-schemas/ts/src/generated/AgentTextUnitDefault.d.ts`, and it is a
+ * mirror rather than an import for one measured reason:** this app cannot
+ * resolve that binding today. `@qontinui/shared-types` resolves to the
+ * npm-published `0.5.0` (see `package-lock.json`), which predates the whole
+ * `AgentTextUnit*` family — zero hits in its `dist/` — and the `@qontinui/schemas`
+ * webpack alias in `next.config.mjs` points at a directory that does not exist
+ * and is not in `tsconfig` `paths`, so `tsc` would never see it either. Every
+ * other type in this file is a local mirror for the same reason. What keeps
+ * this one honest is mechanical, not prose: `AGENT_TEXT_UNIT_DEFAULT_KEYS`
+ * below is the runtime key set, and `agent-text-units.binding.test.ts` reads
+ * the generated `.d.ts` from the sibling checkout and asserts the two agree.
+ * When the published package catches up, replace this with
+ * `import type { AgentTextUnitDefault } from "@qontinui/shared-types"` and
+ * delete the gate.
+ *
+ * Two things the shape says about itself, both load-bearing for the UI:
+ *
+ * * `checksum` is the canonical **files-map** digest — the same one an
+ *   `AgentTextUnit` carries — so equal checksums mean "identical to what
+ *   ships". It is NOT the legacy single-body digest.
+ * * `published_by_version` is what the label is built from: a baseline is
+ *   "published by runner vX.Y.Z", never "the default". An org whose devices
+ *   run different builds has no single default, the server's monotonic guard
+ *   is a mitigation rather than a fix (a downgrade still wins; equal versions
+ *   tie-break last-writer), and the label must not claim otherwise.
+ */
+export interface AgentTextUnitDefault {
+  /** Canonical files-map digest, recomputed and checked by the server. */
+  checksum: string;
+  /** Relative path → text. A command carries one entry; a skill several. */
+  files: UnitFiles;
+  /** The corpus is kind-discriminated, so the baseline is too. */
+  kind: string;
+  /** The unit slug — the same rules as an override's name. */
+  name: string;
+  /** RFC 3339 publish timestamp, as the runner reported it. */
+  published_at: string;
+  /** The runner build that published this body, e.g. `"0.4.12"`. */
+  published_by_version: string;
+}
+
+/** The generated binding's own field set — the runtime half of the drift gate
+ *  described on `AgentTextUnitDefault`. Keep sorted. */
+export const AGENT_TEXT_UNIT_DEFAULT_KEYS = [
+  "checksum",
+  "files",
+  "kind",
+  "name",
+  "published_at",
+  "published_by_version",
+] as const satisfies ReadonlyArray<keyof AgentTextUnitDefault>;
+
+/**
+ * `GET /api/v1/agent-text-units/defaults` — this account's baseline.
+ *
+ * `units: []` with `published_by_version: null` means **no baseline exists**:
+ * a web-only account, an org whose devices never ran a publishing build, or a
+ * runner that held no token. That is a real state the console renders as
+ * "unavailable" — it is never an empty default to diff against.
+ */
+export interface AgentTextUnitDefaultsResponse {
+  units: AgentTextUnitDefault[];
+  /** The newest build among the published rows, or `null` for no baseline. */
+  published_by_version: string | null;
+  published_at: string | null;
+}
+
+// =============================================================================
 // Layer addressing
 // =============================================================================
 
@@ -229,6 +310,22 @@ export async function listAgentTextUnits(
   layerParams(options, params);
   return httpClient.get<AgentTextUnitListResponse>(
     url(AGENT_TEXT_UNITS_API, params)
+  );
+}
+
+/**
+ * `GET /api/v1/agent-text-units/defaults` — the embedded defaults the
+ * account's runner(s) published. Always an account's: the embedded layer is
+ * org-scoped by construction and has no fleet arm, so `LayerRef.fleetDefault`
+ * is not accepted here.
+ */
+export async function getAgentTextUnitDefaults(
+  layer?: Pick<LayerRef, "organizationId">
+): Promise<AgentTextUnitDefaultsResponse> {
+  const params = new URLSearchParams();
+  layerParams(layer, params);
+  return httpClient.get<AgentTextUnitDefaultsResponse>(
+    url(`${AGENT_TEXT_UNITS_API}/defaults`, params)
   );
 }
 
