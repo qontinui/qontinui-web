@@ -1,7 +1,7 @@
 """coord policy_rules — deleted_at tombstone, so "turned off" and "deleted" stop being one write
 
 Revision ID: policy_rules_tombstone_01
-Revises: require_review_cols_01
+Revises: devenv_10_unique_active_coord_device
 Create Date: 2026-09-05
 
 Plan 2026-08-28-coord-policy-rules-has-no-tombstone-so-disable-and-delete-are-one-write
@@ -113,7 +113,25 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "policy_rules_tombstone_01"
-down_revision: str = "require_review_cols_01"
+# `devenv_10_unique_active_coord_device` is an UNLANDED sibling (qontinui-web
+# **#989**), not `main`'s head -- the one thing about this line a later reader
+# must not mistake for the usual "whatever the head was when I authored".
+#
+# The original parent was `require_review_cols_01`. On 2026-09-05 at 16:05Z
+# `main` landed `coord_agent_questions_audience_backfill` off that same node,
+# forking SIX open PRs at once, five of them off the identical token. Alembic's
+# single-head invariant is a total order, so re-pointing all six at `main`'s
+# head only re-forks them the moment the first lands. They were chained in a
+# stated landing order instead:
+#
+#   #1210 -> #1218 -> #989 -> #1269 (this PR) -> #1216 -> #1180
+#
+# Until #989 lands, `alembic-heads-pr` on this PR is RED BY CONSTRUCTION -- the
+# parent named here exists in no tree yet. It goes green on its own, with no
+# further edit, once the three ahead of it land. That red is the safety
+# property: it is what stops this PR landing out of order and leaving `main`
+# with a dangling `down_revision`.
+down_revision: str = "devenv_10_unique_active_coord_device"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
