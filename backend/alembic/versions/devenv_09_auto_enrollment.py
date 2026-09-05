@@ -1,7 +1,7 @@
 """devenv_09: auto-enrollment provenance + per-owner policy
 
 Revision ID: devenv_09_auto_enrollment
-Revises: require_review_cols_01
+Revises: ptbe_01_primary_tree_branch_events
 Create Date: 2026-08-15
 
 Phase 3 of plan ``2026-08-05-devenv-auto-enrollment-on-connection``.
@@ -32,14 +32,34 @@ machines<->environments cycle that ``Base.metadata.sorted_tables`` cannot sort.
 matching ``machines.owner_user_id`` (``models/devenv.py:124``) — deleting a
 user must not strand a policy row.
 
-``down_revision`` is **whatever the single head of ``main`` is at the moment
-this branch is last pushed** — ``require_review_cols_01`` as of 2026-09-05, and it
-has been re-pointed several times before that. Do not read the token as meaningful:
-while this PR stays open, every land on ``main`` that adds a revision makes this
-one a SIBLING off the old node, ``alembic heads`` reports two heads, and the
-required ``alembic-heads-pr`` gate goes red until it is re-pointed again. That
-is a property of the gate on a ``strict: true`` repo, not a defect in this
-revision.
+``down_revision`` is ``ptbe_01_primary_tree_branch_events`` — an UNLANDED
+sibling (qontinui-web **#1218**), which is the one thing about this line a
+later reader must not mistake for the usual "whatever main's head was when I
+last pushed".
+
+It used to be exactly that. ``require_review_cols_01`` was ``main``'s single
+head, and on 2026-09-05 at 16:05Z ``main`` landed
+``coord_agent_questions_audience_backfill`` off that same node — forking not
+only this PR but **#1210** and **#1218**, which had declared the identical
+token. Re-pointing all three at ``main``'s new head does not fix that: alembic's
+single-head invariant is a total order, so three unlanded siblings of one parent
+re-fork the instant the first of them lands. They were chained in a stated
+landing order instead — **#1210 -> #1218 -> #989** — and this revision is LAST,
+so its parent is #1218's ``ptbe_01_primary_tree_branch_events``.
+
+Consequence, stated so it is not read as a regression: ``alembic-heads-pr`` on
+this PR is RED BY CONSTRUCTION until #1210 and #1218 have both landed, because
+the parent named here exists in no tree yet. It goes green on its own, with no
+further edit, once they do — and that red is the safety property, since it is
+what stops this PR landing out of order and leaving ``main`` with a dangling
+``down_revision``.
+
+The general rule still holds and is why this file keeps saying it: while this
+PR stays open, any land on ``main`` that adds a revision OUTSIDE this chain
+forks it again, ``alembic heads`` reports two heads, and the required
+``alembic-heads-pr`` gate goes red until the CHAIN ROOT (#1210) is re-pointed —
+one edit for all three, not three. That is a property of the gate on a
+``strict: true`` repo, not a defect in this revision.
 
 **Re-point; never add a merge revision.** A merge revision is the correct tool
 only when both heads have ALREADY LANDED, since landed history cannot be
@@ -76,7 +96,7 @@ from alembic import op
 
 # revision identifiers
 revision: str = "devenv_09_auto_enrollment"
-down_revision: str | Sequence[str] | None = "require_review_cols_01"
+down_revision: str | Sequence[str] | None = "ptbe_01_primary_tree_branch_events"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
