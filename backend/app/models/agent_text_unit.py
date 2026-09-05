@@ -20,25 +20,45 @@ map. That is why there is one table rather than two — the version machinery, t
 override semantics and the editor are identical, and only the provisioning
 target differs.
 
-Two layers, one table
----------------------
+Three layers, one table
+-----------------------
 
 ``organization_id IS NULL`` is the **fleet default**; a non-NULL
-``organization_id`` is that **account's override**. The runner's resolution
-order is therefore::
+``organization_id`` with ``published_by_version IS NULL`` is that **account's
+override**. The runner's resolution order is therefore::
 
     account override  →  fleet default  →  embedded default (runner binary)
 
-There is still no row for the *embedded* default, so deleting an account
-override simply lets the fleet default — or, absent that, the binary's copy —
-apply again.
+The third layer — the **embedded default** — is the copy compiled into the
+runner binary, and since plan
+``2026-08-31-runner-publishes-embedded-command-defaults`` it has a row too: a
+runner publishes its whole embedded roster to the account it is signed in to,
+and the row is marked by a non-NULL ``published_by_version``. Two properties of
+that layer are load-bearing and both are enforced below rather than assumed:
+
+* **It is org-scoped, never fleet-wide.** The runner publishes with the
+  operator's own user bearer, so the server assigns the org from that
+  credential; an ``organization_id IS NULL`` embedded row would let any
+  signed-in user rewrite every tenant's baseline. The service only ever writes
+  the layer under an organization.
+* **It is a DISPLAY baseline, not a provisioning input.** The runner keeps
+  resolving ``fresh fetch → disk cache → embedded default`` from its own
+  binary, and the list projections the runner reads never fold this layer in
+  (see ``agent_text_unit_service._resolved_query``). What it is for: a
+  diff-against-what-ships, a preview of what a reset restores, and a stale-
+  baseline signal. Deleting an account override still lets the fleet default —
+  or, absent that, the binary's copy — apply again; the embedded row records
+  what that copy IS, it does not serve it.
 
 Postgres does not collide two NULLs in a plain ``UNIQUE``, so a three-column
 ``UNIQUE (organization_id, kind, name)`` would leave the fleet-default layer
 **completely unconstrained** — N rows with ``organization_id IS NULL`` sharing
 one ``(kind, name)`` would all be legal, and "the fleet default" would not be a
-well-defined row. The key is therefore a **partial unique index pair**, one per
-layer; see ``__table_args__``.
+well-defined row. The key is therefore a **partial unique index per layer** —
+three of them now; see ``__table_args__``. The account-override index and the
+embedded-default index are disjoint on ``published_by_version``, which is what
+lets an account hold BOTH an override of ``vet-plan`` and the published default
+it is diffed against.
 
 Version chain
 -------------
@@ -103,19 +123,27 @@ class AgentTextUnit(Base):
 
     __tablename__ = "agent_text_units"
     __table_args__ = (
-        # THE PARTIAL UNIQUE INDEX PAIR. A plain three-column UNIQUE does not
-        # constrain the NULL-org rows at all (Postgres treats every NULL as
+        # THE PARTIAL UNIQUE INDEX PER LAYER. A plain three-column UNIQUE does
+        # not constrain the NULL-org rows at all (Postgres treats every NULL as
         # distinct), which would make the fleet-default layer a bag rather than
-        # a layer. Two partial indexes, one per layer, is what actually says
-        # "at most one fleet default per (kind, name)" AND "at most one
-        # override per (organization_id, kind, name)".
+        # a layer. One partial index per layer is what actually says "at most
+        # one fleet default per (kind, name)", "at most one override per
+        # (organization_id, kind, name)" AND "at most one published default per
+        # (organization_id, kind, name)".
+        #
+        # The override and embedded indexes are disjoint on
+        # `published_by_version`, and that disjointness is the point: an account
+        # must be able to hold its override of `vet-plan` AND the runner's
+        # published default of `vet-plan`, or there is nothing to diff.
         Index(
             "uq_agent_text_unit_org_kind_name",
             "organization_id",
             "kind",
             "name",
             unique=True,
-            postgresql_where=text("organization_id IS NOT NULL"),
+            postgresql_where=text(
+                "organization_id IS NOT NULL AND published_by_version IS NULL"
+            ),
         ),
         Index(
             "uq_agent_text_unit_fleet_kind_name",
@@ -123,6 +151,14 @@ class AgentTextUnit(Base):
             "name",
             unique=True,
             postgresql_where=text("organization_id IS NULL"),
+        ),
+        Index(
+            "uq_agent_text_unit_embedded_kind_name",
+            "organization_id",
+            "kind",
+            "name",
+            unique=True,
+            postgresql_where=text("published_by_version IS NOT NULL"),
         ),
         Index(
             "ix_project_agent_text_units_kind",
@@ -146,6 +182,13 @@ class AgentTextUnit(Base):
         CheckConstraint(
             "source_commit IS NULL OR source_commit ~ '^[0-9a-f]{40}$'",
             name="ck_agent_text_unit_source_commit_sha",
+        ),
+        # The two embedded-layer stamps travel together: a row is published by
+        # a version AT a time, or it is not published at all. Half a stamp is a
+        # row no layer predicate can classify.
+        CheckConstraint(
+            "(published_by_version IS NULL) = (published_at IS NULL)",
+            name="ck_agent_text_unit_embedded_stamp_pair",
         ),
         {"schema": "project"},
     )
@@ -251,6 +294,32 @@ class AgentTextUnit(Base):
     #: above is what keeps it a commit rather than a branch name or a sentinel.
     source_commit: Mapped[str | None] = mapped_column(
         String(40),
+        nullable=True,
+        default=None,
+    )
+
+    # --- the embedded layer -----------------------------------------------
+    #
+    # Non-NULL marks a row as a RUNNER-PUBLISHED embedded default (the third
+    # layer in the module docstring); NULL is an override or a fleet default.
+    # This is the layer discriminator, and every layer-addressed query in the
+    # service carries a predicate on it — an override lookup that forgot it
+    # would find the published default of the same name and edit THAT.
+
+    #: The runner version that published this row, e.g. ``"0.4.12"``. Compared
+    #: as a `packaging.version.Version`, never as a string — ``"0.10.0"`` sorts
+    #: before ``"0.9.0"`` lexicographically, which would invert the monotonic
+    #: guard exactly when it matters.
+    published_by_version: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        default=None,
+    )
+
+    #: When that runner published it, as it reported. Paired with the version
+    #: by ``ck_agent_text_unit_embedded_stamp_pair``.
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
         default=None,
     )
