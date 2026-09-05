@@ -1,7 +1,7 @@
 """coord.primary_tree_branch_events — branch provenance for SHARED checkouts
 
 Revision ID: ptbe_01_primary_tree_branch_events
-Revises: require_review_cols_01
+Revises: reqchk_walk_01
 Create Date: 2026-09-02
 
 Phase 2 (web migration) of plan
@@ -160,10 +160,31 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "require_review_cols_01"``, the local single head measured with
-``scripts/ci/count_alembic_heads.py`` before authoring (``HEAD_COUNT=1``).
-Nothing is reserved: coord re-points ``down_revision`` at land time, and
-``alembic-graph-pr.yml`` gates any fork that results.
+``down_revision = "reqchk_walk_01"`` -- an UNLANDED sibling, deliberately, and
+the one thing about this file a later reader must not mistake for the usual
+"whatever main's head was when I authored".
+
+The original parent was ``require_review_cols_01``, the single head at
+authoring time. On 2026-09-05 at 16:05Z ``main`` landed
+``coord_agent_questions_audience_backfill`` off that same parent, which forked
+this chain -- and forked qontinui-web #1210 and #989 with it, since all three
+had declared the identical token. Three unlanded siblings of one parent cannot
+all be re-pointed at ``main``'s head: alembic's single-head invariant is a
+total order, so re-pointing them all at the same landed revision only re-forks
+the moment the first of them lands.
+
+So the three were chained in a stated landing order instead --
+**#1210 -> #1218 -> #989** -- and this revision takes the middle position.
+``reqchk_walk_01`` is qontinui-web **#1210**, which must land FIRST. Until it
+does, ``alembic-heads-pr`` on this PR is RED BY CONSTRUCTION (the parent named
+here does not exist in any tree yet, so ``ptbe_01`` and ``main``'s head both
+read as heads); it turns green on its own, with no further edit, once #1210
+lands. That red is also the safety property: it is what stops this PR landing
+out of order and leaving ``main`` with a dangling ``down_revision``.
+
+Nothing is reserved. ``alembic-graph-pr.yml`` gates any fork that results, and
+``scripts/ci/notify_forked_open_prs.py`` comments the exact token to adopt if a
+future land forks this chain again.
 """
 
 from collections.abc import Sequence
@@ -172,7 +193,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ptbe_01_primary_tree_branch_events"
-down_revision: str = "require_review_cols_01"
+down_revision: str = "reqchk_walk_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
