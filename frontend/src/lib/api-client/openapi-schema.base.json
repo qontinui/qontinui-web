@@ -1753,6 +1753,155 @@
         "title": "AgentTextUnitCreate",
         "type": "object"
       },
+      "AgentTextUnitDefault": {
+        "description": "One embedded default as the **runner binary** ships it, on its way to the\naccount so there is a baseline to diff an override against.\n\n## Why this exists as a third layer\n\n[`AgentTextUnit`]'s resolution chain is\n`account override \u2192 fleet default \u2192 embedded default (runner binary)`, and\nthe store holds rows for the first two only \u2014 the binary's copy has never\nhad a row anywhere. That is the gap this type closes. A user who overrode\n`/implement-plan` can diff their versions against each other but not\nagainst what actually ships, and `ResetToDefaultDialog` cannot preview the\ntext it is about to restore, because there is no baseline to put on the\nleft-hand side.\n\nPlan `2026-08-31-runner-publishes-embedded-command-defaults`; the deferral\nit discharges is recorded in the code at qontinui-web's\n`settings/agent-commands/_components/VersionDiff.tsx`.\n\n## What it is NOT\n\n* **Not an [`AgentTextUnit`].** There is no `id`, no version chain, and no\n  `is_shared` \u2014 a published default is content plus provenance, not a\n  corpus row with an edit history. It is the *input* to a row.\n* **Not fleet-scoped.** `organization_id` is deliberately absent from the\n  wire: the runner publishes with the operator's own user bearer, so the\n  server assigns the org from that credential. A client-supplied org \u2014 or\n  the fleet layer's `organization_id IS NULL` \u2014 would let any signed-in\n  user rewrite another tenant's baseline, or silently clobber an\n  operator's deliberate fleet default.\n* **Not authoritative for provisioning.** The runner keeps resolving\n  `fresh fetch \u2192 disk cache \u2192 embedded default`; this is a *display*\n  baseline. Publishing it must never put the network on the\n  out-of-the-box path.\n\n## The checksum is the files-map digest, not the single-body one\n\n[`checksum`](Self::checksum) is [`agent_text_unit_files_checksum`] \u2014 the\nsame digest [`AgentTextUnit::checksum`] and [`AgentTextUnitVersion`] carry,\nso a published default and the override it is diffed against are\ncomparable. It is **not**\n[`crate::agent_commands::agent_command_checksum`], which digests a single\nbody and is what the legacy `/agent-commands` wire still carries. Those two\ndeliberately disagree even for a one-entry map, so a default digested with\nthe wrong one would never compare equal to its override \u2014 an always-drifted\nbaseline, which is strictly worse than the honest \"baseline unavailable\"\nstate it would replace.",
+        "properties": {
+          "checksum": {
+            "description": "Canonical digest over [`files`](Self::files), from\n[`agent_text_unit_files_checksum`].\n\nRequired, unlike [`AgentTextUnit::checksum`] \u2014 that one is optional only\nto describe rows written before a checksum was computed, whereas a\npublish is always freshly computed. The receiving store **recomputes it\nand rejects a mismatch**: a client-asserted digest is not evidence.\n[`checksum_matches`](Self::checksum_matches) is that check.",
+            "title": "Checksum",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The embedded content: **relative path \u2192 text**. A command carries one\nentry; a skill carries `SKILL.md` plus siblings. Same arity-agnostic\nshape as [`AgentTextUnit::files`].",
+            "title": "Files",
+            "type": "object"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AgentTextUnitKind",
+            "description": "What sort of unit this default is. The corpus is `kind`-discriminated,\nso the default layer must be too \u2014 otherwise a command and a skill of\nthe same name collapse into one baseline."
+          },
+          "name": {
+            "description": "The unit slug, e.g. `vet-plan`. Must satisfy the same\n[`validate_agent_text_unit_name`] rules as an override: a default that\ncould not be named as an override could never be paired with one for a\ndiff, which is the only thing it is for.",
+            "title": "Name",
+            "type": "string"
+          },
+          "published_at": {
+            "description": "ISO 8601 (RFC 3339) publish timestamp, matching this module's wire\nconvention for [`AgentTextUnit::updated_at`] and\n[`AgentTextUnitVersion::created_at`].",
+            "title": "Published At",
+            "type": "string"
+          },
+          "published_by_version": {
+            "description": "The runner version that published this body, e.g. `\"0.4.12\"`.\n\nCarried so the UI can label the baseline **\"published by runner\nvX.Y.Z\"** rather than \"the default\" \u2014 an org whose devices run\ndifferent builds has no single default, and the label must not claim\notherwise. It is also the monotonic guard's input: the store rejects a\npublish older than the version it already holds.\n\nThat guard is a **mitigation, not a fix** \u2014 a genuine downgrade still\nwins and equal versions tie-break last-writer \u2014 so neither this field\nnor the UI built on it may describe the baseline as authoritative.",
+            "title": "Published By Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checksum",
+          "files",
+          "kind",
+          "name",
+          "published_at",
+          "published_by_version"
+        ],
+        "title": "AgentTextUnitDefault",
+        "type": "object"
+      },
+      "AgentTextUnitDefaultsPublishRequest": {
+        "description": "``PUT /defaults`` \u2014 the COMPLETE embedded roster of one runner build.\n\nComplete, because the publish is a full-set replace (Design decision 3): a\nname absent from ``units`` is deleted from the account's embedded layer. A\npartial roster is therefore not an incremental update, it is a deletion.",
+        "properties": {
+          "runner_version": {
+            "title": "Runner Version",
+            "type": "string"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/AgentTextUnitDefault"
+            },
+            "title": "Units",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runner_version",
+          "units"
+        ],
+        "title": "AgentTextUnitDefaultsPublishRequest",
+        "type": "object"
+      },
+      "AgentTextUnitDefaultsPublishResponse": {
+        "description": "What ``PUT /defaults`` decided.\n\n``accepted: false`` with ``rejected_reason=\"older_than_stored\"`` is a normal\n``200``: an org whose devices run different builds sends older publishes\nall the time, and an old device is not a fault. ``stored_version`` then\nnames the build whose roster stands. Malformed publishes are ``422``s with a\ntyped reason (``AgentTextUnitDefaultsRejected``), not this shape.",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "rejected_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejected Reason"
+          },
+          "stored_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stored Version"
+          }
+        },
+        "required": [
+          "accepted",
+          "count"
+        ],
+        "title": "AgentTextUnitDefaultsPublishResponse",
+        "type": "object"
+      },
+      "AgentTextUnitDefaultsResponse": {
+        "description": "``GET /defaults`` \u2014 the account's baseline.\n\nEmpty ``units`` with ``published_by_version: null`` means NO baseline: a\nweb-only account, an org whose devices never ran a publishing build, or a\nrunner that held no token. The frontend renders that as its honest\n\"unavailable\" state (Design decision 7) \u2014 it must never be turned into an\nempty or fabricated default side.",
+        "properties": {
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "published_by_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By Version"
+          },
+          "units": {
+            "items": {
+              "$ref": "#/components/schemas/AgentTextUnitDefault"
+            },
+            "title": "Units",
+            "type": "array"
+          }
+        },
+        "required": [
+          "units"
+        ],
+        "title": "AgentTextUnitDefaultsResponse",
+        "type": "object"
+      },
       "AgentTextUnitIndexResponse": {
         "description": "The same listing as ``AgentTextUnitListResponse``, minus every body.",
         "properties": {
@@ -1773,6 +1922,11 @@
         ],
         "title": "AgentTextUnitIndexResponse",
         "type": "object"
+      },
+      "AgentTextUnitKind": {
+        "description": "The unit's kind \u2014 an **open** discriminator, serialized as a bare string.\n\nKnown values are exposed as associated constants rather than enum variants\nso that an unrecognized value round-trips instead of failing to parse (see\nthe module docs for why that matters). Use [`is_known`](Self::is_known) to\nask whether *this* build understands a value, and\n[`provisioning_target`](Self::provisioning_target) to ask where a unit of\nthat kind is written on disk \u2014 a kind with no target is storable and\neditable but is never provisioned into a session.\n\n| Constant | Value | Provisioning target | Entrypoint | Status |\n|---|---|---|---|---|\n| [`COMMAND`](Self::COMMAND) | `command` | `commands/<name>.md` | `<name>.md` | ships now |\n| [`SKILL`](Self::SKILL) | `skill` | `skills/<name>/\u2026` | `SKILL.md` | ships now |\n| [`AGENT`](Self::AGENT) | `agent` | `agents/<name>.md` | `<name>.md` | modelled; provisioned today by `provision_agent_definitions_from_root` |\n| [`AGENTS_SKILL`](Self::AGENTS_SKILL) | `agents_skill` | none | `<name>.md` | modelled only \u2014 its consumers (pi, Codex) have no runner spawn hook |\n\nThe `agents_skill` value spells its separator with an underscore, not a\nhyphen, because [`validate_agent_text_unit_kind`] admits `[a-z][a-z0-9_]*`\nand nothing else \u2014 a hyphenated kind would be refused at the store boundary.",
+        "title": "AgentTextUnitKind",
+        "type": "string"
       },
       "AgentTextUnitListResponse": {
         "properties": {
@@ -55805,6 +55959,126 @@
         ]
       }
     },
+    "/api/v1/agent-commands/defaults": {
+      "get": {
+        "description": "Empty `units` with `published_by_version: null` means NO baseline has\nbeen published for this account \u2014 render that as unavailable, never as an\nempty default.",
+        "operationId": "api_v1_agent_commands_defaults_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitDefaultsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "This account's baseline \u2014 the embedded defaults its runner published",
+        "tags": [
+          "agent-commands"
+        ]
+      },
+      "put": {
+        "description": "Full-set replace of the account's embedded layer.\n\n`units` is the COMPLETE roster of one runner build (its `runner_version`);\nnames absent from it are deleted. Every checksum is recomputed server-side\nand a mismatch is a `422` with `detail.reason == \"checksum_mismatch\"`; so is\nany unit whose `published_by_version` is not `runner_version`, or that fails\nthe rules an override must satisfy. A publish OLDER than the stored version\nis a normal `200 {accepted: false, rejected_reason: \"older_than_stored\"}` \u2014\nan old device is not a fault. Equal versions: last writer wins.",
+        "operationId": "api_v1_agent_commands_defaults_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTextUnitDefaultsPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitDefaultsPublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish a runner build's whole embedded roster to this account",
+        "tags": [
+          "agent-commands"
+        ]
+      }
+    },
     "/api/v1/agent-commands/{name}": {
       "delete": {
         "description": "Removes the account's customization only \u2014 the fleet default survives.",
@@ -56549,6 +56823,126 @@
           }
         ],
         "summary": "Create or replace an agent text unit",
+        "tags": [
+          "agent-text-units"
+        ]
+      }
+    },
+    "/api/v1/agent-text-units/defaults": {
+      "get": {
+        "description": "Empty `units` with `published_by_version: null` means NO baseline has\nbeen published for this account \u2014 render that as unavailable, never as an\nempty default.",
+        "operationId": "api_v1_agent_text_units_defaults_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitDefaultsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "This account's baseline \u2014 the embedded defaults its runner published",
+        "tags": [
+          "agent-text-units"
+        ]
+      },
+      "put": {
+        "description": "Full-set replace of the account's embedded layer.\n\n`units` is the COMPLETE roster of one runner build (its `runner_version`);\nnames absent from it are deleted. Every checksum is recomputed server-side\nand a mismatch is a `422` with `detail.reason == \"checksum_mismatch\"`; so is\nany unit whose `published_by_version` is not `runner_version`, or that fails\nthe rules an override must satisfy. A publish OLDER than the stored version\nis a normal `200 {accepted: false, rejected_reason: \"older_than_stored\"}` \u2014\nan old device is not a fault. Equal versions: last writer wins.",
+        "operationId": "api_v1_agent_text_units_defaults_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organization_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Organization Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTextUnitDefaultsPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTextUnitDefaultsPublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish a runner build's whole embedded roster to this account",
         "tags": [
           "agent-text-units"
         ]
@@ -86368,7 +86762,7 @@
     },
     "/api/v1/operations/pr-merge/onboarding/accounts": {
       "get": {
-        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"merge_enabled\", \"profile_source\"}]}]}``\n\n(``repos`` may be ``[]`` for a freshly-connected org; ``merge_enabled`` /\n``profile_source`` may be null. ``merge_enabled`` is the RAW per-repo pin \u2014\n``true``/``false`` = pinned, ``null`` = inheriting \u2014 not the resolved\nverdict.) Reuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
+        "description": "List the GitHub accounts connected to the caller's tenant (+ enrolled repos).\n\nProxies coord's ``GET /coord/onboarding/github-accounts`` (TenantId-gated).\nResponse envelope (coord-owned):\n\n``{\"accounts\": [{\"account_login\", \"account_type\", \"installation_id\",\n\"repos\": [{\"repo\", \"state\", \"merge_enabled\", \"merge_enabled_resolved\",\n\"merge_posture\", \"profile_source\", \"unenrolled_at\", \"unenrolled_by\",\n\"unenroll_reason\"}]}]}``\n\n``repos`` may be ``[]`` for a freshly-connected org. Per repo row (plan\n``2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility``\nP2/P3):\n\n  * ``state`` \u2014 ``\"enrolled\"`` (a live ``tenant_repos`` row) or\n    ``\"unenrolled\"`` (only a ``tenant_repo_unenrollments`` tombstone\n    remains; the enroll path skips it until it is restored).\n  * ``merge_enabled`` \u2014 the RAW per-repo pin: ``true``/``false`` = pinned,\n    ``null`` = inheriting. NOT the resolved verdict.\n  * ``merge_enabled_resolved`` \u2014 the resolved verdict coord's own\n    ``resolve_merge_enabled`` computes (tenant pause, then the pin, then the\n    default) AND-ed with the tenant's ``auto_merge_enabled``; ``null`` on an\n    unenrolled row.\n  * ``merge_posture`` \u2014 the tier that decided it: ``\"default\"`` /\n    ``\"pinned_on\"`` / ``\"pinned_off\"`` / ``\"tenant_paused\"`` /\n    ``\"auto_merge_off\"``; ``null`` on an unenrolled row or an older coord.\n  * ``unenrolled_at`` / ``unenrolled_by`` / ``unenroll_reason`` \u2014 the\n    tombstone's who/when/why; all ``null`` on an enrolled row.\n\nReuses the onboarding-doctor proxy's auth\nexactly: ``get_tenant_id`` resolves the operator and captures the caller's\nbearer, which ``_tenant_headers`` forwards so coord scopes the read to the\noperator's own tenant. ``_proxy_coord_get`` passes coord's status code\nthrough (a coord 4xx/5xx re-raises as an ``HTTPException`` with the same\nstatus).",
         "operationId": "api_v1_operations_pr_merge_onboarding_accounts_get",
         "responses": {
           "200": {
@@ -86666,6 +87060,72 @@
         ]
       }
     },
+    "/api/v1/operations/pr-merge/onboarding/pending-installation": {
+      "get": {
+        "description": "Look up ONE pending (installed-but-unbound) GitHub App installation.\n\nProxies coord's ``GET /coord/onboarding/pending-installations`` keyed by\nEXACTLY ONE of ``installation_id`` / ``account_login`` (the query param is\nforwarded under the same name). Zero or both keys is a\n``400 {\"error\": \"exactly_one_key_required\"}`` \u2014 answered here, with coord's\nown error shape, so the round-trip is not spent on a request coord would\nrefuse identically. A blank ``account_login`` counts as absent.\n\nResponse envelope (coord-owned)::\n\n    {\"pending\": bool | null, \"installation_id\": int | null,\n     \"account_login\": str | null, \"account_type\": str | null,\n     \"repo_count\": int | null, \"received_at\": rfc3339 | null,\n     \"claimed_at\": rfc3339 | null, \"reason\"?: str}\n\nThree readings, and the frontend keeps them apart:\n\n  * ``pending: true`` \u2014 coord saw the install and no tenant has claimed it.\n  * ``pending: false`` \u2014 either a row whose ``claimed_at`` is set (already\n    connected) or no row at all (every other field ``null``: coord has not\n    seen an install for that key).\n  * ``pending: null`` \u2014 UNKNOWN: the ``pending_installations`` table is\n    absent on this coord (``reason: \"pending_installations_table_absent\"``).\n    Never rendered as \"not installed\".\n\nSame auth as the accounts read: ``get_tenant_id`` captures the caller's\nbearer, ``_tenant_headers`` forwards it, ``_proxy_coord_get`` passes coord's\nstatus through (a coord 4xx/5xx re-raises with the same status).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_pending_installation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "installation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Installation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_login",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Login"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Pr Merge Onboarding Pending Installation Api V1 Operations Pr Merge Onboarding Pending Installation Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Pr Merge Onboarding Pending Installation",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/pr-merge/onboarding/precondition-status": {
       "get": {
         "description": "Return ``{paired, claude_code_available, ready, paired_elsewhere}``\nfor the calling tenant. Drives the onboarding wizard's polling loop on\nstep 2 (the \"Sign into Claude Code on your device\" verification step).\n\n``X-Qontinui-User-Id`` is forwarded (same attribution header as the\npair paths in ``devices.py``) so coord can compute\n``paired_elsewhere`` \u2014 devices the CALLING USER has paired to a\nDIFFERENT tenant, which a re-pair here would silently steal. Older\ncoord ignores the header and omits the field; the wizard treats a\nmissing ``paired_elsewhere`` as ``[]`` (plan\n2026-07-02-multi-tenant-device-pairing-reconsideration Phase 1b).",
@@ -86688,6 +87148,52 @@
           }
         ],
         "summary": "Get Pr Merge Onboarding Precondition",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/pr-merge/onboarding/repos/{repo}/restore": {
+      "post": {
+        "description": "Clear a repo's un-enrollment tombstone and re-enroll it.\n\nProxies coord's ``POST /coord/onboarding/repos/{owner/name}/restore``\n(body-less), substituting the ``owner/name`` path param verbatim \u2014 it is a\n``{repo:path}`` here because it carries a slash. Backs the \"Re-enroll\"\naction on an un-enrolled row of the Connected Organizations card.\n\nAuthz \u2014 ``require_coord_tenant_admin``, exactly like the enroll proxy: a\nrestore re-opens enrollment (profile writes, a possible bootstrap PR), a\nconsequential write.\n\nContract \u2014 coord clears the tombstone synchronously, spawns the enroll, and\nanswers immediately (default ``_COORD_TIMEOUT``):\n  * ``202 {\"restored\": bool, \"enrolled\": \"spawned\", \"installation_id\", \"repo\"}``\n    \u2014 the UI re-polls ``GET /pr-merge/onboarding/accounts`` until the row\n    flips from ``state: \"unenrolled\"`` to ``\"enrolled\"``.\n  * ``404 {\"error\": \"no_installation_for_owner\", \"owner\", \"restored\": bool}``\n    \u2014 no App installation is bound to the repo's owner (``restored`` says\n    whether the tombstone was cleared anyway).\n  * ``400 {\"error\": \"invalid_repo\"}`` \u2014 answered HERE for a path that is\n    not ``owner/name``; nothing reaches coord.\n\nCoord's status code AND JSON body pass through VERBATIM (not via\n``_proxy_coord_post``, which would stringify a \u2265400 body and rewrite the\n``202`` to ``200``). Transport errors mirror the shared helpers\n(ConnectError \u2192 502, TimeoutException \u2192 504).",
+        "operationId": "api_v1_operations_pr_merge_onboarding_repos_repo_restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Post Pr Merge Onboarding Restore Repo",
         "tags": [
           "operations"
         ]
