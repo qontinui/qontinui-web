@@ -20,7 +20,7 @@ frontend/tests/e2e/pages/ai-tasks-pages.spec.ts 0
 frontend/tests/e2e/pages/automation-builder-analytics.spec.ts 0
 frontend/tests/e2e/pages/automation-builder-core.spec.ts 0
 frontend/tests/e2e/pages/automation-builder-data.spec.ts 0
-frontend/tests/e2e/pages/captures-recordings.spec.ts 4
+frontend/tests/e2e/pages/captures-recordings.spec.ts 0
 frontend/tests/e2e/pages/configure.spec.ts 0
 frontend/tests/e2e/pages/dashboard.spec.ts 1
 frontend/tests/e2e/pages/demo.spec.ts 0
