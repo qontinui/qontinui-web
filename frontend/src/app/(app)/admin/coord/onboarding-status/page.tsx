@@ -33,6 +33,15 @@
  * arrival (an install started from GitHub's Marketplace rather than from one of
  * our links) is rendered as a restartable "start the connect again" card.
  *
+ * Since plan `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility`
+ * (P4) that card no longer DISCARDS the `installation_id` GitHub just named:
+ * it asks coord's keyed pending-installation read (P1) what it knows, and on
+ * `pending: true` says which org GitHub installed the App on and hands the
+ * org to `/admin/coord/onboarding?connect=<org>` so the connect card is
+ * prefilled. On `pending: false` with `claimed_at` it says the org is already
+ * connected. "No row" and UNKNOWN keep today's copy, each saying which — an
+ * UNKNOWN is never rendered as "this installation does not exist".
+ *
  * ## Console style (Phase 3 Wave 3)
  *
  * This is one of the plan's **form/dialog routes**: no record list, so it takes
@@ -79,6 +88,13 @@ import {
   deriveClaimStatus,
 } from "@/components/admin/coord/onboardingClaimStatus";
 import { httpClient } from "@/services/service-factory";
+import {
+  classifyPendingInstallation,
+  fetchPendingInstallation,
+  formatRepoCount,
+  type PendingInstallationResponse,
+} from "@/lib/onboarding-pending";
+import { absoluteTime } from "@/components/console/time";
 
 /**
  * Coord's claim success envelope (frozen contract, coord PR #901).
@@ -145,6 +161,15 @@ function ClaimBanner({
     </div>
   );
 }
+
+/**
+ * The recover card's copy for a stateless arrival, before (and, when coord
+ * cannot say more, after) the P4 installation lookup.
+ */
+const STATELESS_RECOVER_MESSAGE =
+  "This connect didn't start from Qontinui, so we can't safely finish it " +
+  "here. Start the connect again below — it takes one click and GitHub " +
+  "will bring you straight back.";
 
 /** coord's connect-state rejection codes (plan §2 / coord `ClaimError`). */
 const RECOVERABLE_CLAIM_CODES = [
@@ -292,6 +317,66 @@ function stripClaimParamsFromUrl(): void {
   window.history.replaceState(window.history.state, "", url.toString());
 }
 
+/** What the recover card says and where it points, once coord has answered. */
+interface RecoverLookupResult {
+  message: string;
+  /** Override for the "authorize it here instead" link, when coord named the org. */
+  href: string | null;
+  /** The link's label; null keeps the default. */
+  linkLabel: string | null;
+}
+
+/**
+ * Compose the recover card's copy from the keyed pending-installation read
+ * (P4). Pure — every arm is a sentence the operator can act on, and the two
+ * arms that are NOT "coord saw it" say precisely which they are, so a
+ * `pending: null` (table absent) is never mistaken for "not installed".
+ */
+export function describeRecoverLookup(
+  resp: PendingInstallationResponse | null,
+  baseMessage: string
+): RecoverLookupResult {
+  const kind = resp === null ? "failed" : classifyPendingInstallation(resp);
+  switch (kind) {
+    case "pending": {
+      const org = resp?.account_login ?? "that organization";
+      return {
+        message:
+          `GitHub installed the App on ${org} (${formatRepoCount(resp?.repo_count)}) ` +
+          `at ${absoluteTime(resp?.received_at)}, but the connect didn't start from ` +
+          "Qontinui, so it isn't connected to a tenant yet. Start the connect again below.",
+        href: resp?.account_login
+          ? `/admin/coord/onboarding?connect=${encodeURIComponent(resp.account_login)}`
+          : null,
+        linkLabel: resp?.account_login
+          ? `authorize ${resp.account_login} here instead →`
+          : null,
+      };
+    }
+    case "claimed": {
+      const org = resp?.account_login ?? "That organization";
+      return {
+        message: `${org} was already connected on ${absoluteTime(resp?.claimed_at)} — nothing more to do here.`,
+        href: "/admin/coord/onboarding-status",
+        linkLabel: "see the connected organizations →",
+      };
+    }
+    case "unseen":
+      return {
+        message: `${baseMessage} coord has not seen this installation yet.`,
+        href: null,
+        linkLabel: null,
+      };
+    case "unknown":
+    case "failed":
+      return {
+        message: `${baseMessage} (couldn't check this installation with coord.)`,
+        href: null,
+        linkLabel: null,
+      };
+  }
+}
+
 export default function OnboardingStatusPage() {
   const searchParams = useSearchParams();
   const code = searchParams?.get("code") ?? null;
@@ -330,6 +415,13 @@ export default function OnboardingStatusPage() {
   const [claim, setClaim] = useState<ClaimResponse | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [recoverMessage, setRecoverMessage] = useState<string | null>(null);
+  // The stateless arrival's installation id, once the recover branch has
+  // decided to look it up (P4). Set exactly once; drives the lookup effect.
+  const [recoverLookupId, setRecoverLookupId] = useState<number | null>(null);
+  const [recoverLink, setRecoverLink] = useState<{
+    href: string;
+    label: string;
+  } | null>(null);
   // Fire the claim POST exactly once per mount (belt to the URL-strip braces).
   const firedRef = useRef(false);
 
@@ -362,12 +454,14 @@ export default function OnboardingStatusPage() {
     // legitimate case that lands here is an out-of-band install (GitHub
     // Marketplace / the App's own page), so it gets a restart, not a dead end.
     if (!stateToken) {
-      setRecoverMessage(
-        "This connect didn't start from Qontinui, so we can't safely finish it " +
-          "here. Start the connect again below — it takes one click and GitHub " +
-          "will bring you straight back."
-      );
+      setRecoverMessage(STATELESS_RECOVER_MESSAGE);
       setPhase("recover");
+      // P4: the id GitHub named is the one thing this arrival DOES carry.
+      // Look it up rather than discard it; the effect below rewrites the copy
+      // and the link once coord answers. A non-integer id is simply not
+      // looked up — the card stays as it is.
+      const installationId = installationIdRaw ? Number(installationIdRaw) : NaN;
+      if (Number.isInteger(installationId)) setRecoverLookupId(installationId);
       return;
     }
 
@@ -457,6 +551,35 @@ export default function OnboardingStatusPage() {
     stateToken,
     connectState,
   ]);
+
+  // P4: ask coord's keyed pending-installation read about the stateless
+  // arrival's installation. Its own effect so the claim effect above stays a
+  // synchronous fail-closed branch; `cancelled` guards the unmount race.
+  useEffect(() => {
+    if (recoverLookupId === null) return;
+    let cancelled = false;
+    (async () => {
+      let resp: PendingInstallationResponse | null = null;
+      try {
+        resp = await fetchPendingInstallation({
+          installation_id: recoverLookupId,
+        });
+      } catch {
+        // resp stays null → the "couldn't check" arm.
+      }
+      if (cancelled) return;
+      const result = describeRecoverLookup(resp, STATELESS_RECOVER_MESSAGE);
+      setRecoverMessage(result.message);
+      setRecoverLink(
+        result.href && result.linkLabel
+          ? { href: result.href, label: result.linkLabel }
+          : null
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recoverLookupId]);
 
   return (
     <div
@@ -562,13 +685,16 @@ export default function OnboardingStatusPage() {
             send you back through the install flow —{" "}
             <Link
               href={
-                isRunnerClone
-                  ? "/connect-runner-github"
-                  : "/admin/coord/onboarding"
+                recoverLink
+                  ? recoverLink.href
+                  : isRunnerClone
+                    ? "/connect-runner-github"
+                    : "/admin/coord/onboarding"
               }
               className="underline underline-offset-4 hover:text-foreground"
+              data-testid="onboarding-claim-recover-link"
             >
-              authorize it here instead →
+              {recoverLink ? recoverLink.label : "authorize it here instead →"}
             </Link>
           </p>
         </ClaimBanner>

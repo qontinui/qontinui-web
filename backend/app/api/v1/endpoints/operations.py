@@ -1839,12 +1839,30 @@ async def get_pr_merge_onboarding_accounts(
     Response envelope (coord-owned):
 
     ``{"accounts": [{"account_login", "account_type", "installation_id",
-    "repos": [{"repo", "merge_enabled", "profile_source"}]}]}``
+    "repos": [{"repo", "state", "merge_enabled", "merge_enabled_resolved",
+    "merge_posture", "profile_source", "unenrolled_at", "unenrolled_by",
+    "unenroll_reason"}]}]}``
 
-    (``repos`` may be ``[]`` for a freshly-connected org; ``merge_enabled`` /
-    ``profile_source`` may be null. ``merge_enabled`` is the RAW per-repo pin —
-    ``true``/``false`` = pinned, ``null`` = inheriting — not the resolved
-    verdict.) Reuses the onboarding-doctor proxy's auth
+    ``repos`` may be ``[]`` for a freshly-connected org. Per repo row (plan
+    ``2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility``
+    P2/P3):
+
+      * ``state`` — ``"enrolled"`` (a live ``tenant_repos`` row) or
+        ``"unenrolled"`` (only a ``tenant_repo_unenrollments`` tombstone
+        remains; the enroll path skips it until it is restored).
+      * ``merge_enabled`` — the RAW per-repo pin: ``true``/``false`` = pinned,
+        ``null`` = inheriting. NOT the resolved verdict.
+      * ``merge_enabled_resolved`` — the resolved verdict coord's own
+        ``resolve_merge_enabled`` computes (tenant pause, then the pin, then the
+        default) AND-ed with the tenant's ``auto_merge_enabled``; ``null`` on an
+        unenrolled row.
+      * ``merge_posture`` — the tier that decided it: ``"default"`` /
+        ``"pinned_on"`` / ``"pinned_off"`` / ``"tenant_paused"`` /
+        ``"auto_merge_off"``; ``null`` on an unenrolled row or an older coord.
+      * ``unenrolled_at`` / ``unenrolled_by`` / ``unenroll_reason`` — the
+        tombstone's who/when/why; all ``null`` on an enrolled row.
+
+    Reuses the onboarding-doctor proxy's auth
     exactly: ``get_tenant_id`` resolves the operator and captures the caller's
     bearer, which ``_tenant_headers`` forwards so coord scopes the read to the
     operator's own tenant. ``_proxy_coord_get`` passes coord's status code
@@ -1852,6 +1870,73 @@ async def get_pr_merge_onboarding_accounts(
     status).
     """
     return await _proxy_coord_get(COORD_ONBOARDING_ACCOUNTS_PATH, tenant_id=tenant_id)
+
+
+# ---- Pending (installed-but-unbound) GitHub App installation lookup --------
+#
+# `coord.pending_installations` is written when the App is installed on an
+# account no tenant owns yet (`github_accounts.rs` module doc: "record a
+# pending_installations row and STOP"). The table has NO tenant column — a row
+# is pending precisely because nobody owns it — so coord serves a KEYED read
+# rather than a tenant-wide list: the caller names the installation id GitHub
+# put in its Setup-URL redirect, or the org login it typed. `repo_count`, not
+# the repo list, so a guessed key learns only "this org installed the App and
+# when", which GitHub already shows any org member. Plan
+# `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility` P1.
+COORD_ONBOARDING_PENDING_PATH = "/coord/onboarding/pending-installations"
+
+
+@router.get("/pr-merge/onboarding/pending-installation")
+async def get_pr_merge_onboarding_pending_installation(
+    installation_id: int | None = None,
+    account_login: str | None = None,
+    tenant_id: UUID = Depends(get_tenant_id),
+) -> Any:
+    """Look up ONE pending (installed-but-unbound) GitHub App installation.
+
+    Proxies coord's ``GET /coord/onboarding/pending-installations`` keyed by
+    EXACTLY ONE of ``installation_id`` / ``account_login`` (the query param is
+    forwarded under the same name). Zero or both keys is a
+    ``400 {"error": "exactly_one_key_required"}`` — answered here, with coord's
+    own error shape, so the round-trip is not spent on a request coord would
+    refuse identically. A blank ``account_login`` counts as absent.
+
+    Response envelope (coord-owned)::
+
+        {"pending": bool | null, "installation_id": int | null,
+         "account_login": str | null, "account_type": str | null,
+         "repo_count": int | null, "received_at": rfc3339 | null,
+         "claimed_at": rfc3339 | null, "reason"?: str}
+
+    Three readings, and the frontend keeps them apart:
+
+      * ``pending: true`` — coord saw the install and no tenant has claimed it.
+      * ``pending: false`` — either a row whose ``claimed_at`` is set (already
+        connected) or no row at all (every other field ``null``: coord has not
+        seen an install for that key).
+      * ``pending: null`` — UNKNOWN: the ``pending_installations`` table is
+        absent on this coord (``reason: "pending_installations_table_absent"``).
+        Never rendered as "not installed".
+
+    Same auth as the accounts read: ``get_tenant_id`` captures the caller's
+    bearer, ``_tenant_headers`` forwards it, ``_proxy_coord_get`` passes coord's
+    status through (a coord 4xx/5xx re-raises with the same status).
+    """
+    login = account_login.strip() if account_login is not None else None
+    if not login:
+        login = None
+    if (installation_id is None) == (login is None):
+        return JSONResponse(
+            content={"error": "exactly_one_key_required"}, status_code=400
+        )
+    params: dict[str, Any] = (
+        {"installation_id": installation_id}
+        if installation_id is not None
+        else {"account_login": login}
+    )
+    return await _proxy_coord_get(
+        COORD_ONBOARDING_PENDING_PATH, params=params, tenant_id=tenant_id
+    )
 
 
 # ---- GitHub App public identity (for the user-authorization URL) ----------
@@ -2274,22 +2359,104 @@ async def post_pr_merge_onboarding_enroll(
     return JSONResponse(content=content, status_code=resp.status_code)
 
 
+# ---- Re-enroll (restore) a deliberately un-enrolled repo --------------------
+#
+# Un-enrolling a repo deletes its `tenant_repos` row and leaves a
+# `coord.tenant_repo_unenrollments` tombstone; while the tombstone stands the
+# installation enroll path SKIPS the repo (logged coord-side, omitted from the
+# result — the enroll route's `202` cannot report it). Coord's
+# `POST /coord/onboarding/repos/{owner/name}/restore` clears the tombstone and
+# re-runs the installation enroll for that repo — the two steps MCP
+# `coord_onboard_unenroll_repo {restore: true}` + `coord_onboard_enroll_installation`
+# perform. Plan
+# `2026-09-05-tenant-onboarding-friction-and-multi-tenant-device-visibility` P3.
+COORD_RESTORE_REPO_PATH = "/coord/onboarding/repos/{repo}/restore"
+
+# `owner/name` — one slash, both halves non-empty, GitHub's own character set.
+# Anything else is refused here rather than forwarded into coord's path.
+_RESTORE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+@router.post("/pr-merge/onboarding/repos/{repo:path}/restore")
+async def post_pr_merge_onboarding_restore_repo(
+    repo: str,
+    tenant_id: UUID = Depends(require_coord_tenant_admin),
+) -> JSONResponse:
+    """Clear a repo's un-enrollment tombstone and re-enroll it.
+
+    Proxies coord's ``POST /coord/onboarding/repos/{owner/name}/restore``
+    (body-less), substituting the ``owner/name`` path param verbatim — it is a
+    ``{repo:path}`` here because it carries a slash. Backs the "Re-enroll"
+    action on an un-enrolled row of the Connected Organizations card.
+
+    Authz — ``require_coord_tenant_admin``, exactly like the enroll proxy: a
+    restore re-opens enrollment (profile writes, a possible bootstrap PR), a
+    consequential write.
+
+    Contract — coord clears the tombstone synchronously, spawns the enroll, and
+    answers immediately (default ``_COORD_TIMEOUT``):
+      * ``202 {"restored": bool, "enrolled": "spawned", "installation_id", "repo"}``
+        — the UI re-polls ``GET /pr-merge/onboarding/accounts`` until the row
+        flips from ``state: "unenrolled"`` to ``"enrolled"``.
+      * ``404 {"error": "no_installation_for_owner", "owner", "restored": bool}``
+        — no App installation is bound to the repo's owner (``restored`` says
+        whether the tombstone was cleared anyway).
+      * ``400 {"error": "invalid_repo"}`` — answered HERE for a path that is
+        not ``owner/name``; nothing reaches coord.
+
+    Coord's status code AND JSON body pass through VERBATIM (not via
+    ``_proxy_coord_post``, which would stringify a ≥400 body and rewrite the
+    ``202`` to ``200``). Transport errors mirror the shared helpers
+    (ConnectError → 502, TimeoutException → 504).
+    """
+    if not _RESTORE_REPO_RE.match(repo):
+        return JSONResponse(content={"error": "invalid_repo"}, status_code=400)
+    url = f"{settings.COORD_URL}{COORD_RESTORE_REPO_PATH.format(repo=repo)}"
+    headers = _tenant_headers(tenant_id)
+    async with httpx.AsyncClient(timeout=_COORD_TIMEOUT) as client:
+        try:
+            resp = await client.post(url, headers=headers)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=502,
+                detail="coord is not reachable",
+            )
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=504,
+                detail="timeout waiting for coord",
+            )
+    try:
+        content = resp.json()
+    except ValueError:
+        content = {"detail": resp.text}
+    return JSONResponse(content=content, status_code=resp.status_code)
+
+
 # ---- Coord device pairing — Step 1 of the onboarding wizard -------------
 #
 # The wizard's Pair Device step (``MergeOrchestrationOnboarding.tsx``,
 # ``startPairing``) fires this route. Coord's ``POST /coord/devices/pair-start``
-# (``qontinui-coord/src/routes_phase3.rs::post_pair_start``) is a PUBLIC
-# route whose ``PairStartRequest`` struct (line 1013) requires ``tenant_id``
-# in the BODY at deserialization time. Per coord's own doc comment at line
-# 1031, the web-backend proxy is the enforcement point: it must resolve the
-# operator's home tenant from the authenticated bearer chain and inject it
-# into the body BEFORE forwarding, so the frontend never has to know or
-# pass the tenant_id. This is the only existing operations proxy that
-# mutates the body instead of forwarding it verbatim.
+# (``qontinui-coord/crates/coord/src/routes_phase3.rs::post_pair_start``) is
+# a PUBLIC route whose ``PairStartRequest`` struct requires ``tenant_id`` in
+# the BODY at deserialization time. This proxy resolves the operator's home
+# tenant from the authenticated bearer chain and injects it into the body
+# BEFORE forwarding, so the frontend never has to know or pass the
+# tenant_id. This is the only existing operations proxy that mutates the
+# body instead of forwarding it verbatim.
 #
-# Note: there is intentionally NO ``pair-complete`` proxy. The device-side
-# ``qontinui_profile device pair`` CLI calls coord's ``pair-complete``
-# directly over coord's public HTTP boundary; the wizard never invokes it.
+# That injected tenant is a REQUEST, not the enforcement point: pair-start
+# is anonymous on coord (the runner bootstrap), so coord proves membership
+# at ``pair-complete`` against the caller it verified there
+# (``pairing_auth`` — plan
+# ``2026-09-04-pair-complete-mints-a-device-jwt-for-any-caller``).
+#
+# Note: there is intentionally NO ``pair-complete`` proxy HERE. The browser
+# flow completes through ``devices.py::pair_confirm`` (the ``/connect-runner``
+# page posts there), which sends coord the web service token +
+# ``X-Qontinui-User-Id``. The runner never calls ``pair-complete`` itself
+# (``qontinui-runner/src-tauri/src/pair.rs::pair_via_browser`` reads the JWT
+# off the callback redirect); the wizard never invokes it either.
 
 
 @router.post("/coord/devices/pair-start")
@@ -2300,10 +2467,11 @@ async def post_coord_devices_pair_start(
     """Proxy POST /coord/devices/pair-start with server-injected tenant_id.
 
     Coord's pair-start is a public route whose PairStartRequest requires
-    tenant_id in the body (routes_phase3.rs:1035). The web proxy is the
-    enforcement point: it resolves the operator's home tenant via
-    get_tenant_id and injects it into the body before forwarding, so the
-    frontend never has to know or pass the tenant_id.
+    tenant_id in the body (``routes_phase3.rs::PairStartRequest``). This
+    proxy resolves the operator's home tenant via get_tenant_id and
+    injects it into the body before forwarding, so the frontend never has
+    to know or pass the tenant_id. Coord treats it as a request and proves
+    the completing user's membership at pair-complete.
     """
     body["tenant_id"] = str(tenant_id)
     return await _proxy_coord_post(
