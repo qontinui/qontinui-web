@@ -255,32 +255,6 @@ _INODE_AND_SHMEM_COLUMNS: tuple[tuple[str, str], ...] = (
     ("swap_shmem_bytes", "BIGINT"),
 )
 
-# `coord-column-drop-guard` reads DROP/RENAME sites STATICALLY, and
-# `_drop_columns` builds its SQL from an f-string — so `ALTER TABLE` and
-# `DROP COLUMN` never share a string literal and the gate cannot resolve which
-# table is being altered. It then fails closed rather than guessing, which is the
-# correct behaviour for a guard whose whole job is to catch a drop of a column a
-# deployed coord still reads. The declaration below is the answer it asks for.
-#
-# Nothing here is load-bearing for any deployed reader: these are the same three
-# columns this revision ADDS, so they exist on no deployed schema and the
-# downgrade only ever removes what this upgrade created.
-COORD_SCHEMA_DROPS: list[tuple[str, str]] = [
-    ("coord.device_resource_samples", "disk_inodes_total"),
-    ("coord.device_resource_samples", "disk_inodes_free"),
-    ("coord.device_resource_samples", "swap_shmem_bytes"),
-]
-
-# Spelled as literals because the gate is a static reader — but pinned to the one
-# list above, so the declaration cannot drift from the columns actually dropped.
-# That is the same single-source rule the ADD/DROP generation already follows; a
-# hand-maintained second copy is exactly what this file's design refuses.
-if COORD_SCHEMA_DROPS != [(_TABLE, name) for name, _ in _INODE_AND_SHMEM_COLUMNS]:
-    raise RuntimeError(
-        "COORD_SCHEMA_DROPS drifted from _INODE_AND_SHMEM_COLUMNS: the drop "
-        "declaration and the column list must name the same set"
-    )
-
 
 def _add_columns(table: str) -> str:
     """One ALTER carrying every column, so the table can never get a subset."""
@@ -289,14 +263,6 @@ def _add_columns(table: str) -> str:
         for name, sql_type in _INODE_AND_SHMEM_COLUMNS
     )
     return f"ALTER TABLE {table}\n            {adds}"
-
-
-def _drop_columns(table: str) -> str:
-    """The exact inverse of [`_add_columns`], over the same one list."""
-    drops = ",\n            ".join(
-        f"DROP COLUMN IF EXISTS {name}" for name, _ in _INODE_AND_SHMEM_COLUMNS
-    )
-    return f"ALTER TABLE {table}\n            {drops}"
 
 
 def upgrade() -> None:
@@ -377,5 +343,20 @@ def downgrade() -> None:
 
     The COMMENTs go with the columns — a column comment has no independent
     existence to drop.
+
+    The DROP is built HERE rather than from a module-level template, for the
+    reason `pdpub_02_prompt_document_upstream_tracking` gives in its own
+    docstring: `scripts/ci/check_coord_column_drops.py` scans the whole module
+    *minus this function body* (`scan_source`: `stmt.name == "downgrade":
+    continue` — "the one body that is NOT the upgrade path"). A shared template
+    reads as an UPGRADE-path drop and demands a `COORD_SCHEMA_DROPS`
+    declaration for a drop the upgrade never makes — which then puts the
+    revision in front of the guard's manifest phase for nothing.
+
+    `_INODE_AND_SHMEM_COLUMNS` remains the single source, so the ADD and the
+    DROP still cannot drift into different sets; only the SQL string moved.
     """
-    op.execute(_drop_columns(_TABLE))
+    drops = ",\n            ".join(
+        f"DROP COLUMN IF EXISTS {name}" for name, _ in _INODE_AND_SHMEM_COLUMNS
+    )
+    op.execute(f"ALTER TABLE {_TABLE}\n            {drops}")
