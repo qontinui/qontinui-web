@@ -9502,23 +9502,30 @@ async def approve_prompt_document_proposal(
     proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    # Retained deliberately though its value is now unused: the dependency is
+    # what enforces an authenticated ACTIVE user on this route. Removing it as
+    # "dead" would weaken auth, not tidy the signature.
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Approve a pending proposal — coord applies the edit and returns the new
     document version. Tenant-admin only.
 
-    Only ``decision_note`` is taken from the client; ``decided_by`` is stamped
-    from the authenticated session. Coord's 4xx (already decided, stale
-    ``base_version``, unknown id) passes through verbatim — including the 404 you
-    get before coord's Phase 5 deploy, which must stay visible rather than
-    silently no-op.
+    Only ``decision_note`` is forwarded. Coord's ``DecisionRequest`` accepts
+    THAT FIELD ALONE and denies unknown fields, and coord stamps ``decided_by``
+    itself from the operator context the request already carries — so sending it
+    from here is not a redundant belt-and-braces, it is a hard ``400``:
+    ``invalid body: unknown field `decided_by`, expected `decision_note```.
+    That is what this endpoint did until 2026-09-04, which made **every** approve
+    and reject click fail. Do not reintroduce it: identity is coord's to derive,
+    exactly as it is on the agent-notifications door.
+
+    Coord's 4xx (already decided, stale ``base_version``, unknown id) passes
+    through verbatim — including the 404 you get before coord's Phase 5 deploy,
+    which must stay visible rather than silently no-op.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
@@ -9528,19 +9535,20 @@ async def reject_prompt_document_proposal(
     proposal_id: str,
     body: dict[str, Any] | None = None,
     tenant_id: UUID = Depends(require_coord_tenant_admin),
+    # Retained for the same reason as on approve: this dependency is the
+    # active-user auth check, not a value the handler reads.
     current_user: UserModel = Depends(get_current_active_user_async),
 ) -> Any:
     """Reject a pending proposal — the edit is never applied. Tenant-admin only.
 
-    Same body reduction and server-side ``decided_by`` stamp as
-    :func:`approve_prompt_document_proposal`.
+    Same body reduction as :func:`approve_prompt_document_proposal`, and the
+    same reason for it: ``decision_note`` is the only field coord's
+    ``DecisionRequest`` accepts, and ``decided_by`` is coord's to stamp from the
+    operator context. Sending it is a ``400``, not a courtesy.
     """
     return await _proxy_coord_post(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
-        {
-            "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
-        },
+        {"decision_note": (body or {}).get("decision_note")},
         tenant_id=tenant_id,
     )
 
