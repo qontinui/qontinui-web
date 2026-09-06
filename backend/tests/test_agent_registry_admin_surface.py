@@ -930,13 +930,22 @@ class TestNoPrefRowIsSilentlyUncounted:
         preference for an agent that appears nowhere on a page whose whole job
         is the tenant-wide consent picture.
 
-        Reachable because nothing enforces the join: ``coord.agent_user_prefs``
-        carries no foreign key to ``coord.agent_registry`` (its PK is
-        ``(tenant_id, user_id, agent_name)``, ``agent_registry_01``) and
-        coord's ``list_prefs`` selects every pref row for the tenant unjoined.
-        Coord validates the agent on the WRITE path (``unknown_agent``, 404),
-        so no shipped route produces one today -- a registry row removed or
-        renamed afterwards, by any means, produces one immediately.
+        Representable because nothing enforces the join:
+        ``coord.agent_user_prefs`` carries no foreign key to
+        ``coord.agent_registry`` (its PK is ``(tenant_id, user_id,
+        agent_name)``, ``agent_registry_01``) and coord's ``list_prefs``
+        selects every pref row for the tenant unjoined. Coord validates the
+        agent on the WRITE path (``unknown_agent``, 404), so the pref-write
+        door does not create one.
+
+        How REACHABLE it is beyond that is deliberately not claimed. A route
+        census over both hosts enumerated ten ``agent-registry`` routes with no
+        DELETE among them, but returned ``routes=UNKNOWN`` — a source it could
+        not read completely — and an UNKNOWN census settles nothing. This
+        assertion does not rest on it: the guard is defensive against a row set
+        the route cannot reconcile, which is the standing every other guard in
+        this module has, and none of those argues its shape is reachable today
+        either.
         """
         payload = {
             "agents": [_registry_row(default_enabled=False)],
