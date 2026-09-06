@@ -26,7 +26,7 @@ function tabsOk(tabs: unknown[]) {
     ok: true,
     json: async () => ({
       success: true,
-      data: { tabs, staleHeartbeatMs: 30000 },
+      data: { tabs, tabActiveWindowMs: 30000 },
     }),
   };
 }

@@ -25,6 +25,7 @@ single head, exit 1 on a fork, exit 2 on a scan that proved nothing.
 
 from __future__ import annotations
 
+import ast
 import io
 import subprocess
 import sys
@@ -33,6 +34,11 @@ import urllib.error
 from pathlib import Path
 
 import pytest
+
+from tests.gate_lane_roster import (
+    assert_docstring_names_every_lane,
+    assert_lane_roster,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_CI = REPO_ROOT / "scripts" / "ci"
@@ -784,3 +790,81 @@ def test_a_human_quoting_the_notice_is_not_counted_as_a_marker() -> None:
     failures: list[str] = []
     notifier._report_duplicates(1, found, failures)
     assert failures == []
+
+
+# ---------------------------------------------------------------------------
+# THE LANE ROSTER — who actually invokes this gate.
+#
+# Everything above tests what the gate COMPUTES. These two test how many places
+# run it, which is the property that made `a208240e2` invisible: a fourth
+# invocation of the sibling ruff gate was added while three separate places in
+# the tree went on saying there were three, and nothing failed for 90 commits.
+#
+# `count_alembic_heads.py` genuinely has four lanes, and each exists for its own
+# reason:
+#
+#   * .github/workflows/alembic-graph-pr.yml, step "Count alembic heads" — the
+#     PR gate; a forked chain FAILS the check.
+#   * .qontinui/ci.toml, step `alembic-single-head` — the runner-as-CI-node
+#     lane, invoking this same script rather than mirroring a command string,
+#     so the two cannot drift.
+#   * .pre-commit-config.yaml, hook `alembic-single-head` — the shift-left
+#     lane. Convenience, not the guard: all three forks on record (#1048, #989,
+#     `066c2e6c`) were post-authoring races that a pre-commit count exits 0 on.
+#     What it buys is that its message names the exact `down_revision` token to
+#     adopt, which was the entire fix in 3 of 3 cases.
+#   * .github/workflows/alembic-graph-check.yml, step "Count heads" — the
+#     post-merge companion, informational by construction. It passes
+#     `--report-only` so a forked chain does not abort the step before the
+#     comment is posted, which is why the roster below has four entries and the
+#     script's exit codes have a downgrade arm.
+#
+# The roster is asserted BY POSITION (a YAML `run:`/`entry:` value, a TOML
+# `command = [...]` element) rather than by #1208's "a tracked non-comment line
+# naming the script" rule — and THIS gate is precisely why that rule could not
+# be reused. Four tracked, non-comment lines name `count_alembic_heads.py` and
+# invoke nothing: the docstring sentence in
+# backend/alembic/versions/grantorig_01_operator_roles_grant_origin.py, and the
+# three remediation string literals in scripts/ci/notify_forked_open_prs.py.
+# All four are .py lines with no leading `#`. The position rule rejects them
+# with no exclusion list — including this very file, which names the script
+# throughout.
+# ---------------------------------------------------------------------------
+
+_SCRIPT_REF = "scripts/ci/count_alembic_heads.py"
+
+_DECLARED_LANES = frozenset(
+    {
+        ".github/workflows/alembic-graph-check.yml",
+        ".github/workflows/alembic-graph-pr.yml",
+        ".pre-commit-config.yaml",
+        ".qontinui/ci.toml",
+    }
+)
+
+
+def _gate_docstring() -> str | None:
+    """The gate's module docstring, read WITHOUT importing the gate.
+
+    This file already imports `render_remediation` from the gate, so an
+    `__doc__` read would cost nothing here — but the sibling roster modules
+    import nothing at all, and the roster tests should read the same way in all
+    four. Parsing is also the read that cannot run anything: these gates are
+    argv-only programs, and `ast` never executes a line of one.
+    """
+    return ast.get_docstring(ast.parse(COUNTER.read_text(encoding="utf-8")))
+
+
+def test_the_lane_roster_is_exactly_the_declared_lanes() -> None:
+    assert_lane_roster(_SCRIPT_REF, _DECLARED_LANES)
+
+
+def test_the_scripts_docstring_names_every_lane() -> None:
+    """The roster in prose must be the roster in the tree.
+
+    The gate opens by naming its four lanes and what each one is for — the
+    `--report-only` distinction above all. That prose is what a reader trusts
+    instead of grepping, so a lane added without touching it leaves the script
+    describing a shape the repo no longer has.
+    """
+    assert_docstring_names_every_lane(_gate_docstring(), _SCRIPT_REF, _DECLARED_LANES)

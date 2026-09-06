@@ -450,6 +450,47 @@ export interface PromptDocumentSummary {
    * change when the row is written, and only this field says so.
    */
   agent_write_builtin_default_tier?: string;
+  /**
+   * The publication this body was last derived from — coord's
+   * `coord.prompt_documents.upstream_publication_version` (plan
+   * `2026-09-04-cross-tenant-policy-publishing` D3).
+   *
+   * **`null` means NO UPSTREAM, which is UNKNOWN — never "up to date".** The
+   * row was hand-authored, or seeded from a compiled constant before any
+   * publication for its `(kind, name)` existed. Such a row is offered its FIRST
+   * adoption the moment a publication appears, and coord reads it as locally
+   * modified unless the bodies match byte for byte.
+   *
+   * Optional because a coord that predates the publishing channel omits it
+   * entirely — absent is UNKNOWN, exactly as `agent_write_effective` is.
+   */
+  upstream_publication_version?: number | null;
+  /**
+   * The highest `publication_version` coord can see for this `(kind, name)`,
+   * or `null` when the document has never been published to the channel.
+   */
+  latest_publication_version?: number | null;
+  /**
+   * Whether this tenant's body differs from the publication it tracks.
+   *
+   * WARNING — **served, never re-derived here, and its degrade polarity is the
+   * reason.** Coord resolves an unreadable digest (an absent publication row, a
+   * degraded read, a column this database does not carry) to `true`, so the
+   * fan-out NOTIFIES instead of overwriting. That is the opposite sign to the
+   * `unedited_seed` helper it resembles, and a console that recomputed it from
+   * bodies it happens to hold would silently lose the polarity and could show a
+   * tenant's own edits as safe to overwrite. Read the boolean.
+   *
+   * Absent (a coord predating the channel) is UNKNOWN, and the badge helper
+   * treats it as such rather than as "clean".
+   */
+  local_modified?: boolean;
+  /**
+   * Whether a publication newer than the tracked one exists. Served for the
+   * same no-client-derivation reason as `local_modified`; coord degrades it to
+   * `false`, because it must not offer an update it cannot prove exists.
+   */
+  update_available?: boolean;
   updated_by: string | null;
   updated_at: string;
 }
@@ -487,6 +528,66 @@ export function isAgentWriteTier(value: unknown): value is AgentWriteTier {
   );
 }
 
+/**
+ * The observer's three-valued verdict on one probed claim (plan
+ * `2026-09-06-domain-spec-divergences-decay-with-no-re-probe`, D3). A WIRE
+ * contract with coord's `prompt_document_claim_states.state` CHECK — lowercase
+ * on the wire and in the DB, uppercase only in prose.
+ *
+ * `unknown` is the observer's "resolution failure is NEVER gone" arm: a fetch
+ * error, an unknown anchor type, a malformed block, a budget cutoff, a claim
+ * never observed, or a document whose newest observation is older than the
+ * staleness budget. **It must never render like `confirmed`.**
+ */
+export type PromptDocumentClaimState = "confirmed" | "contradicted" | "unknown";
+
+/** Every state, in the order the console lists them. Literal strings on
+ *  purpose — they mirror a DB CHECK, so a rename here would not be a rename. */
+export const PROMPT_DOCUMENT_CLAIM_STATES: readonly PromptDocumentClaimState[] =
+  ["confirmed", "contradicted", "unknown"] as const;
+
+/** Narrow an arbitrary coord string to a claim state this console knows. */
+export function isPromptDocumentClaimState(
+  value: unknown
+): value is PromptDocumentClaimState {
+  return (
+    typeof value === "string" &&
+    (PROMPT_DOCUMENT_CLAIM_STATES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * One entry per fenced ```probe``` block in the document BODY, parsed by coord
+ * at read time and joined to the persisted `coord.prompt_document_claim_states`
+ * row when one exists.
+ */
+export interface PromptDocumentClaim {
+  /** The block's `claim:` id — kebab-case, unique within the document. */
+  claim_id: string;
+  state: PromptDocumentClaimState;
+  /** When the observer last resolved this claim; `null` when it never has. */
+  observed_at: string | null;
+  /** The block's own `verified_at:` line — what the AUTHOR verified, not the observer. */
+  verified_at: string | null;
+  /** The block's `verified_against:` line, `<repo>@<sha-prefix>`. */
+  verified_against: string | null;
+  /** The anchor's `type` (`flag_state`, `content`, `blob`, …); `null` when the anchor was unparseable. */
+  anchor_type: string | null;
+  /** The observer's finding: `reason`, `stale`, the resolved value. Shape is the observer's, not ours. */
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Where coord got the per-claim states from. `table` is the ordinary case;
+ * the other two are the missing-relation and read-error degrades, under which
+ * coord serves EVERY claim as `unknown` — never an empty `claims` array when
+ * the body carries probe blocks.
+ */
+export type PromptDocumentClaimStateSource =
+  | "table"
+  | "table_absent"
+  | "read_failed";
+
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
 export interface PromptDocument extends PromptDocumentSummary {
   tenant_id: string;
@@ -498,6 +599,25 @@ export interface PromptDocument extends PromptDocumentSummary {
    * `PromptDocumentSummary`.
    */
   attrs: PromptDocumentAttrs | null;
+  /**
+   * The per-claim probe envelope coord serves BESIDE the document (plan
+   * `2026-09-06-domain-spec-divergences-decay-with-no-re-probe`, D2).
+   *
+   * All five are OPTIONAL because a coord predating the probe grammar serves
+   * none of them, and **absent is UNKNOWN, never zero**: a missing
+   * `claims_probed` must render as "not served by this coord build", not as
+   * "no probe blocks in this document". The two say opposite things about
+   * whether the sweep is alive, and the whole point of the count is to tell
+   * a stopped sweep apart from a corpus with nothing to contradict.
+   */
+  claims?: PromptDocumentClaim[];
+  /** Probe blocks parsed from the body — including malformed-but-identified ones. */
+  claims_probed?: number;
+  /** Probe blocks skipped outright because they carried no `claim:` id. */
+  claims_malformed?: number;
+  /** The newest persisted `observed_at` across this document's claims, or `null`. */
+  claims_observed_at?: string | null;
+  claims_state_source?: PromptDocumentClaimStateSource;
 }
 
 /**
@@ -831,4 +951,195 @@ export const POLICY_WRITE_LEVEL_HELP: Record<PolicyWriteLevel, string> = {
   tightening_only:
     "Agents may land a provable tightening or no-op; anything else becomes a pending proposal. This is coord's built-in default.",
   full: "Agents may also land a classified loosening directly, with a notification afterwards instead of a proposal to approve. The only level at which a policy change reaches the fleet without your review.",
+};
+
+// ---------------- cross-tenant publishing (the channel) ----------------
+
+/**
+ * The kinds that may be promoted into a publication — mirrors coord's
+ * `prompt_document_publications::PUBLISHABLE_KINDS` (plan
+ * `2026-09-04-cross-tenant-policy-publishing` D2).
+ *
+ * The seven **Behavior** kinds only. The six Intent kinds and `domain_spec`
+ * describe the tenant's OWN product, so coord refuses them with a typed
+ * `kind_not_publishable` — this list exists so the console does not offer a
+ * control whose only outcome is that refusal.
+ *
+ * A copy of a coord constant, and therefore a thing that can drift. It is safe
+ * to be wrong in one direction only: an over-broad list here produces coord's
+ * own 400, which the dialog shows. An under-broad one hides a control that
+ * works, and nothing would report it.
+ */
+export const PUBLISHABLE_KINDS: readonly PromptDocumentKind[] = [
+  "policy",
+  "response_prompt",
+  "continuation_rules",
+  "agent_playbook",
+  "prompt_template",
+  "session_briefing",
+  "claude_settings",
+];
+
+/** Whether coord will accept a publish of this kind. */
+export function isPublishableKind(kind: PromptDocumentKind): boolean {
+  return PUBLISHABLE_KINDS.includes(kind);
+}
+
+/**
+ * One fleet-specific token coord's publish-time lint found — mirrors
+ * `prompt_document_publications::LintHit`.
+ *
+ * **Advisory, and the console must render it that way.** D2: the lint "never
+ * blocks: the operator may have a good reason, and a blocking lint on a
+ * judgement call becomes a lint people learn to route around". By the time
+ * these arrive the publication has already been written — they describe what
+ * shipped, not a veto on shipping it.
+ */
+export interface PublicationLintHit {
+  /** Closed vocabulary — see `PUBLICATION_LINT_CATEGORY_LABEL`. */
+  category: string;
+  /** The matched text, verbatim. */
+  token: string;
+  /** 1-based line of the FIRST occurrence. */
+  line: number;
+  /** Why it is worth a second look, in one sentence — coord's own prose. */
+  reason: string;
+}
+
+/**
+ * Display labels for coord's lint categories (`LINT_REPO_NAME` and friends).
+ *
+ * A lookup with a fallback, not a `Record<PublicationLintCategory, string>`:
+ * coord may add a category in a release this console predates, and an unknown
+ * category must render as itself rather than as blank.
+ */
+export const PUBLICATION_LINT_CATEGORY_LABEL: Record<string, string> = {
+  repo_name: "Repository name",
+  workspace_path: "Workspace path",
+  schema_identifier: "Schema identifier",
+  system_tenant_slug: "System tenant slug",
+  port_literal: "Port literal",
+};
+
+/** One `coord.prompt_document_publications` row WITHOUT its body (list shape). */
+export interface PublicationSummary {
+  publication_id: string;
+  kind: PromptDocumentKind;
+  name: string;
+  publication_version: number;
+  format: string;
+  description: string | null;
+  release_note: string | null;
+  content_sha256: string;
+  /** The publishing document's `current_version` at publish time. */
+  source_version: number;
+  published_by: string;
+  published_at: string;
+}
+
+/**
+ * One publication WITH its body — the get-one shape, and the "theirs" side of
+ * the three-way upstream view.
+ *
+ * `source_tenant_id` is deliberately absent: coord does not serialize it. The
+ * channel carries no tenant on its read path by design (D1).
+ */
+export interface Publication extends PublicationSummary {
+  body: string;
+}
+
+/** `GET /coord/prompt-document-publications[?kind=&name=]` response. */
+export interface ListPublicationsResponse {
+  publications: PublicationSummary[];
+  count: number;
+  total: number;
+}
+
+/** `POST /coord/prompt-documents/:kind/:name/publish` body. */
+export interface PublishRequest {
+  /** Why this publication exists. The only prose a receiving tenant gets. */
+  release_note?: string | null;
+  /**
+   * The `current_version` the operator was looking at. Optimistic concurrency —
+   * coord 409s rather than publishing a body you have not seen.
+   */
+  expected_version: number;
+}
+
+/** `POST .../publish` 200 body. */
+export interface PublishResponse {
+  published: boolean;
+  publication: Publication;
+  lint: PublicationLintHit[];
+  lint_is_advisory: boolean;
+  /** Coord's own sentence about immutability, carried verbatim. */
+  immutable: string;
+}
+
+// --------------- the upstream-adoption dial (`policy_upstream`) ---------------
+
+/**
+ * The `fleet_runtime_policy` domain governing what happens to this tenant when
+ * a publication appears (plan `2026-09-04-cross-tenant-policy-publishing` D6).
+ * Mirrors coord's `POLICY_UPSTREAM_DOMAIN`.
+ */
+export const POLICY_UPSTREAM_DOMAIN = "policy_upstream";
+
+/** The levels, most restrictive first. Mirrors coord's `PolicyUpstreamLevel::ALL`. */
+export const POLICY_UPSTREAM_LEVELS = ["off", "notify", "auto"] as const;
+export type PolicyUpstreamLevel = (typeof POLICY_UPSTREAM_LEVELS)[number];
+
+/**
+ * What coord applies when NO row matches — `auto`, deliberately NOT the
+ * resolver's bare `"off"`.
+ *
+ * `resolve_effective` answers `off` both for "nobody wrote a row" and for "an
+ * operator turned it off", and D6 warns at length that reading the first
+ * literally ships the whole feature dark: publications would land and nothing
+ * would ever fan out, with no error anywhere. Mirrors coord's
+ * `POLICY_UPSTREAM_DEFAULT`.
+ */
+export const POLICY_UPSTREAM_DEFAULT_LEVEL: PolicyUpstreamLevel = "auto";
+
+/**
+ * The most restrictive reading of an UNPARSEABLE row.
+ *
+ * Same asymmetry as `POLICY_WRITE_FAIL_CLOSED_LEVEL`, and for a sharper reason:
+ * what this dial authorises is coord writing a body into this tenant from
+ * another tenant's publication. An authority setting coord cannot read is not
+ * permission to do that.
+ */
+export const POLICY_UPSTREAM_FAIL_CLOSED_LEVEL: PolicyUpstreamLevel = "off";
+
+/** Whether a string coord returned is a level this console can interpret. */
+export function isPolicyUpstreamLevel(
+  value: string
+): value is PolicyUpstreamLevel {
+  return (POLICY_UPSTREAM_LEVELS as readonly string[]).includes(value);
+}
+
+/** Levels an operator may select — all of them. */
+export const POLICY_UPSTREAM_SELECTABLE_LEVELS: readonly PolicyUpstreamLevel[] =
+  ["off", "notify", "auto"];
+
+/**
+ * Levels whose selection is confirmed before it is written.
+ *
+ * `auto` is the only level at which a body in this tenant changes without
+ * anyone here clicking, so it gets the confirmation this page already gives
+ * `full` on the policy-write dial. It is a much smaller step than that one —
+ * only a body coord can PROVE is byte-identical to the publication it already
+ * tracks is ever replaced, and the replacement is an ordinary version the
+ * existing one-click restore undoes — but "changes without a click" is the
+ * property this page confirms, so it is confirmed.
+ */
+export const POLICY_UPSTREAM_CONFIRMED_LEVELS: readonly PolicyUpstreamLevel[] =
+  ["auto"];
+
+/** One-line description per level, for the control's help text. */
+export const POLICY_UPSTREAM_LEVEL_HELP: Record<PolicyUpstreamLevel, string> = {
+  off: "Publications are ignored: nothing is applied and nothing is announced. An available update is still visible on the list, so turning this back on loses nothing.",
+  notify:
+    "Nothing is ever applied for you. Every publication shows as an update available, including for a document you have never edited.",
+  auto: "A document you have never edited takes the new publication automatically, as an ordinary version you can restore away from. A document you HAVE edited is never overwritten at any level - it is badged for you to decide.",
 };

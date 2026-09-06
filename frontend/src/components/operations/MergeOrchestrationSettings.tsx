@@ -557,12 +557,13 @@ function TenantDefaultsCard({
             </Label>
             <p className="text-xs text-muted-foreground">
               When a repo&apos;s main goes red (a tenant-wide merge outage —
-              every green PR is frozen until it&apos;s fixed), coord opens a
-              visible terminal session on your device that diagnoses the failing
-              check and authors a fix; the fix lands via coord&apos;s audited
-              recovery lane. Off by default — turn this on only if you want
-              coord to act on its own. Reversible any time; every recovery land
-              is audited.
+              every green PR is frozen until it&apos;s fixed), coord consults
+              its red-main-fix policy and, where that policy is graduated and
+              the fleet flag is armed, opens a visible terminal session on your
+              device that diagnoses the failing check and authors a fix; the fix
+              lands via coord&apos;s audited recovery lane. On by default — turn
+              this off to opt this repo out. Reversible any time; every recovery
+              land is audited.
             </p>
           </div>
           <Switch

@@ -25814,8 +25814,12 @@
         "type": "object"
       },
       "ListRecordsResponse": {
-        "description": "``GET /memory/records`` \u2014 one keyset page, newest-first-stable.",
+        "description": "``GET /memory/records`` \u2014 one keyset page, newest-first-stable.\n\n``count`` is ``len(records)`` for THIS page \u2014 the one envelope key a\nreader checks before trusting an empty ``records`` (plan\n``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, D4). It is\nrequired and un-defaulted, like ``live_row_count`` on the query\nresponse: a build that forgets to set it fails to construct the\nresponse rather than shipping a ``0`` that reads as \"empty corpus\".",
         "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
           "next_cursor": {
             "anyOf": [
               {
@@ -25837,6 +25841,7 @@
         },
         "required": [
           "records",
+          "count",
           "next_cursor"
         ],
         "title": "ListRecordsResponse",
@@ -27102,7 +27107,8 @@
         "type": "object"
       },
       "MemoryGraphRequest": {
-        "description": "``POST /memory/graph`` body \u2014 bounded outbound traversal.",
+        "additionalProperties": false,
+        "description": "``POST /memory/graph`` body \u2014 bounded outbound traversal.\n\nUnknown keys are a 422 (``extra=\"forbid\"``): ``relation`` for\n``relation_filter`` would otherwise traverse UNFILTERED and answer\na wider graph than the caller asked for.",
         "properties": {
           "depth": {
             "default": 3,
@@ -27688,6 +27694,20 @@
               }
             ],
             "title": "Since"
+          },
+          "title_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact case-sensitive prefix match on `title`, ANDed with the FTS/vector/link arms. For resolving a dossier HEAD (`DOSSIER <slug> \u2014`); contributions and deltas must not share the prefix. `%` and `_` are literal, not wildcards.",
+            "title": "Title Prefix"
           }
         },
         "required": [
@@ -27765,7 +27785,8 @@
         "type": "object"
       },
       "MemoryRecordIn": {
-        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.\n\n``anchors`` names the ground truth this record asserts something\nabout. A record with a non-empty array is decay-EXEMPT: its\nvisibility is governed by the watcher's ``anchor_state`` rather than\nby the Ebbinghaus curve. Re-writing an identical record with a new\nanchor MERGES the anchor onto the existing live row (see\n``memory_store.insert_record``'s ON CONFLICT clause), which is the\nonly supported way to anchor an existing record.",
+        "additionalProperties": false,
+        "description": "One record in a batch write.\n\n``embedding`` is computed by the CALLER. Omit it (with\n``embedding_model``) to store the row unvectorized \u2014 it is still\nretrievable via FTS and is picked up by the reindex sweep.\n\n``anchors`` names the ground truth this record asserts something\nabout. A record with a non-empty array is decay-EXEMPT: its\nvisibility is governed by the watcher's ``anchor_state`` rather than\nby the Ebbinghaus curve. Re-writing an identical record with a new\nanchor MERGES the anchor onto the existing live row (see\n``memory_store.insert_record``'s ON CONFLICT clause), which is the\nonly supported way to anchor an existing record.\n\n**Unknown keys are REJECTED (422), not ignored** \u2014 the same rule\n:class:`MemoryQueryRequest` carries. The measured occurrence was a\n``supersedes`` key written INSIDE a record (the real door is\n``POST /records/{id}/supersede``): pydantic's default dropped it and\nthe write \"succeeded\" while dropping the field that was its whole point.",
         "properties": {
           "anchors": {
             "items": {
@@ -29429,8 +29450,12 @@
         "type": "object"
       },
       "OpenFollowupResponse": {
-        "description": "A page of open (unclaimed) follow-ups.",
+        "description": "A page of open (unclaimed) follow-ups. ``count`` is this page's length;\n``total`` is the unpaged total.",
         "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/OpenFollowup"
@@ -29459,6 +29484,7 @@
         },
         "required": [
           "items",
+          "count",
           "total",
           "offset",
           "limit"
@@ -31342,6 +31368,13 @@
             ],
             "title": "Id"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -31436,12 +31469,16 @@
         "type": "object"
       },
       "PlanCandidateResponse": {
-        "description": "A page of candidates plus the honesty flags for the whole read.",
+        "description": "A page of candidates plus the honesty flags for the whole read.\n``count`` is this page's length; ``total`` is the unpaged total.",
         "properties": {
           "coord_available": {
             "default": true,
             "title": "Coord Available",
             "type": "boolean"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
           },
           "items": {
             "items": {
@@ -31503,6 +31540,7 @@
         },
         "required": [
           "items",
+          "count",
           "total",
           "offset",
           "limit"
@@ -43253,7 +43291,8 @@
         "type": "object"
       },
       "SupersedeRequest": {
-        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.\n\n``anchors`` follows the INHERIT rule, not the embedding rule, and is\nthree-valued on purpose (see the call site in\n``endpoints/memory.py:supersede_record`` for the full argument):\n\n* **omitted / ``null``** \u2014 the successor INHERITS the superseded\n  record's anchors. Superseding is how a record is corrected, and a\n  correction is almost always about the same artifact; dropping the\n  binding would silently demote an anchored record back onto the\n  time-decay curve whose terminus is a hard delete.\n* **``[]``** \u2014 deliberately un-anchor. This is the escape hatch that\n  makes inheritance safe: a rewrite that genuinely no longer asserts\n  anything about the old artifact can say so explicitly.\n* **non-empty** \u2014 replaces the inherited set wholesale. Supersede is\n  the explicit, human-initiated path, so \"this is what the record is\n  about now\" is authoritative rather than additive.\n\n``anchor_state`` is NOT inherited under any of the three: it is the\nwatcher's derived verdict about the OLD row's anchors, so the\nsuccessor starts at the column default ``none`` and is re-resolved on\nthe next tick. Inheriting a verdict would assert a check that never\nran against this row.",
+        "additionalProperties": false,
+        "description": "``POST /memory/records/{id}/supersede`` body.\n\n``title``/``content`` are the replacement; every omitted field is\ninherited from the record being superseded. ``embedding`` is NOT\ninherited \u2014 it belongs to the OLD content and would be a lie about\nthe new one; omit it and the successor lands unvectorized (NULL) for\nthe reindex sweep to pick up.\n\n``anchors`` follows the INHERIT rule, not the embedding rule, and is\nthree-valued on purpose (see the call site in\n``endpoints/memory.py:supersede_record`` for the full argument):\n\n* **omitted / ``null``** \u2014 the successor INHERITS the superseded\n  record's anchors. Superseding is how a record is corrected, and a\n  correction is almost always about the same artifact; dropping the\n  binding would silently demote an anchored record back onto the\n  time-decay curve whose terminus is a hard delete.\n* **``[]``** \u2014 deliberately un-anchor. This is the escape hatch that\n  makes inheritance safe: a rewrite that genuinely no longer asserts\n  anything about the old artifact can say so explicitly.\n* **non-empty** \u2014 replaces the inherited set wholesale. Supersede is\n  the explicit, human-initiated path, so \"this is what the record is\n  about now\" is authoritative rather than additive.\n\n``anchor_state`` is NOT inherited under any of the three: it is the\nwatcher's derived verdict about the OLD row's anchors, so the\nsuccessor starts at the column default ``none`` and is re-resolved on\nthe next tick. Inheriting a verdict would assert a check that never\nran against this row.\n\nUnknown keys are a 422 (``extra=\"forbid\"``): a misspelled field on a\nsupersede would otherwise be silently dropped and the successor would\nINHERIT the value the caller meant to replace.",
         "properties": {
           "anchors": {
             "anyOf": [
@@ -51960,6 +51999,13 @@
             "title": "Id",
             "type": "string"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -52058,6 +52104,7 @@
           "source_repo",
           "work_unit_slug",
           "repos",
+          "intent_refs",
           "authored_at",
           "captured_by",
           "current_version",
@@ -52071,6 +52118,7 @@
         "type": "object"
       },
       "WorkArtifactEdgeClaim": {
+        "additionalProperties": false,
         "description": "Claim an open ``spawned_followup`` by naming the artifact that owns it.\n\n``PATCH /plan-library/edges/{edge_id}``. The edge stops being an open\nfollow-up and becomes an ordinary two-ended provenance link, so it drops\nout of ``GET /plan-library/followups`` while staying traceable from the\noriginating artifact's edge list.",
         "properties": {
           "to_id": {
@@ -52086,7 +52134,8 @@
         "type": "object"
       },
       "WorkArtifactEdgeCreate": {
-        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the four two-ended relations, supply EXACTLY ONE of ``to_id``\n(outgoing) or ``from_id`` (incoming) \u2014 plus ``supersedes``, five in all.\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
+        "additionalProperties": false,
+        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the six two-ended relations (``produced_report``, ``feeds``,\n``authored_plan``, ``supersedes``, ``depends_on``, ``refutes``), supply\nEXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
         "properties": {
           "from_id": {
             "anyOf": [
@@ -52118,7 +52167,8 @@
               "authored_plan",
               "supersedes",
               "depends_on",
-              "spawned_followup"
+              "spawned_followup",
+              "refutes"
             ],
             "title": "Relation",
             "type": "string"
@@ -52253,6 +52303,7 @@
         "type": "object"
       },
       "WorkArtifactKindPatch": {
+        "additionalProperties": false,
         "description": "Correct one artifact's ``kind`` and lock it against future scans.\n\nThe door Phase 5's inline kind correction needs. Sets ``kind_locked``\nunconditionally \u2014 even when the kind is unchanged \u2014 because the lock\nrecords that a human/agent asserted it.",
         "properties": {
           "kind": {
@@ -52262,7 +52313,8 @@
               "implementation_prompt",
               "investigation_report",
               "handoff",
-              "plan"
+              "plan",
+              "diagnostic"
             ],
             "title": "Kind",
             "type": "string"
@@ -52275,8 +52327,12 @@
         "type": "object"
       },
       "WorkArtifactListResponse": {
-        "description": "A page of list rows.",
+        "description": "A page of list rows. ``count`` is this page's length; ``total`` is the\nunpaged total.",
         "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/WorkArtifactSummary"
@@ -52299,6 +52355,7 @@
         },
         "required": [
           "items",
+          "count",
           "total",
           "offset",
           "limit"
@@ -52352,6 +52409,13 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
           },
           "kind": {
             "title": "Kind",
@@ -52444,6 +52508,7 @@
           "source_repo",
           "work_unit_slug",
           "repos",
+          "intent_refs",
           "authored_at",
           "captured_by",
           "current_version",
@@ -52454,6 +52519,7 @@
         "type": "object"
       },
       "WorkArtifactUpsert": {
+        "additionalProperties": false,
         "description": "Upsert payload. Identity is ``(kind, slug, source_repo)`` + the\nserver-derived organization \u2014 those three fields are the natural key,\neverything else is content or metadata that the upsert overwrites.\n\nNOTE the absence of ``organization_id``. See the module docstring.",
         "properties": {
           "authored_at": {
@@ -52506,6 +52572,13 @@
             ],
             "title": "Content Sha256"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "enum": [
               "investigation_prompt",
@@ -52513,7 +52586,8 @@
               "implementation_prompt",
               "investigation_report",
               "handoff",
-              "plan"
+              "plan",
+              "diagnostic"
             ],
             "title": "Kind",
             "type": "string"
@@ -52592,7 +52666,7 @@
         "type": "object"
       },
       "WorkArtifactUpsertResponse": {
-        "description": "Upsert outcome.\n\nThe \"304-equivalent\" the plan asks for: an unchanged ``content_sha256``\nreturns ``changed=False`` (and the response carries the\n``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).\nA literal HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
+        "description": "Upsert outcome.\n\n``changed`` says whether THIS request moved anything on the head row \u2014\nthe body (a version bump and a snapshot) or only its metadata (``title``,\n``status``, ``repos``, ``intent_refs``, ``work_unit_slug``,\n``authored_at``, ``source_path``, ``captured_by``; no version bump). A byte-identical\nre-post is the \"304-equivalent\" the plan asks for: ``changed=False``, the\n``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A\nliteral HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
         "properties": {
           "artifact": {
             "$ref": "#/components/schemas/WorkArtifactSummary"
@@ -53529,7 +53603,8 @@
         "type": "object"
       },
       "WriteRecordsRequest": {
-        "description": "``POST /memory/records`` body \u2014 a batch of at most 100 records.",
+        "additionalProperties": false,
+        "description": "``POST /memory/records`` body \u2014 a batch of at most 100 records.\n\nUnknown top-level keys are a 422 (``extra=\"forbid\"``), like every\nother request body on this router \u2014 see :class:`MemoryRecordIn`.",
         "properties": {
           "records": {
             "items": {
@@ -77957,7 +78032,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\n``title_prefix`` is an exact, case-sensitive prefix filter on\n``title``, ANDed with every arm above. It is the HEAD-RESOLUTION\ndoor: a dossier head is titled ``DOSSIER <slug> \u2014 <issue>`` while its\ncontributions and deltas must not share that prefix, so\n``title_prefix=\"DOSSIER <slug> \u2014\"`` returns the head alone where the\nbare key ranks it behind its own contributions. ``%`` and ``_`` in\nthe value are literal.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -81828,6 +81903,133 @@
         ]
       }
     },
+    "/api/v1/operations/coord/prompt-document-publications": {
+      "get": {
+        "description": "The publication channel, optionally filtered by ``kind`` and ``name``.\n\nReadable by ANY authenticated tenant member, not just an admin: this is the\ndistribution channel itself (plan ``2026-09-04-cross-tenant-policy-publishing``\nD1), and a tenant must be able to see what it is being offered. The rows are\ntenant-agnostic by construction \u2014 ``source_tenant_id`` is audit-only and is\nnever a read key \u2014 so serving them across tenants is the design, not a leak.",
+        "operationId": "api_v1_operations_coord_prompt_document_publications_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Prompt Document Publications Api V1 Operations Coord Prompt Document Publications Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Prompt Document Publications",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-document-publications/{kind}/{name}/{version}": {
+      "get": {
+        "description": "One immutable publication, with body \u2014 the upstream side of the console's\nthree-way upstream diff. Any authenticated tenant member, for the same\nreason the list route above is.",
+        "operationId": "api_v1_operations_coord_prompt_document_publications_kind_name_version_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Prompt Document Publication Api V1 Operations Coord Prompt Document Publications  Kind   Name   Version  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Prompt Document Publication",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/operations/coord/prompt-document-writes": {
       "get": {
         "description": "Recently landed prompt-document writes across the tenant, newest first \u2014\nexcept that classified loosenings are never cut by the page slice.\n\n**Ordering, precisely.** Writes are sorted newest-first, then every write\ncoord classified as widening what agents may do is lifted above the rest as\na stable partition, and the ``limit`` slice is taken from THAT. So the page\nis \"every loosening, then the most recent of the remainder\" rather than\n\"the most recent N\". Recency order survives inside each group, and the\nclient re-derives the identical partition (``_lib/writes.ts``\n``sortWritesForFeed``), so this changes what is IN the page, not how it is\nlaid out. Below the limit it is a pure reorder with no visible effect.\n\nThe reason is not tidiness. The client promotes flagged rows to the top of\nwhat it received and the page tells the operator they are \"marked and sorted\nto the top\"; the page requests a fixed ``?limit=40`` and offers no paging.\nA loosening older than the newest forty writes would therefore be dropped\nhere, promoted by nobody, and unreachable \u2014 invisible on the one surface\nbuilt to show it. ``limited`` reports the direction of what the slice did\ndrop, not only how many.\n\nAn AGGREGATION over routes that already exist \u2014 the document list plus one\n``/versions`` read per document \u2014 rather than a new coord surface, so it\nworks against today's deployed coord and needs nothing from coord's Phase 5\nhalf. Each item carries ``current_version`` so the page can offer one-click\nrevert (a PATCH of the older version's body through\n:func:`update_prompt_document`, which coord records as a NEW version \u2014\nhistory is never rewritten).\n\nWrites are returned unfiltered, with ``edited_by`` verbatim, and that is\nstill deliberate \u2014 but **not for the reason this docstring used to give.** It\nsaid the provenance tag coord stamps \"is not fixed until its Phase 5 half\nlands\", so filtering on a guessed prefix would silently hide writes. The\nspellings are no longer a guess: ``frontend/\u2026/prompt-document-proposals/_lib/\nauthorship.ts`` (qontinui-web#1101) pins them as a positive ALLOWLIST over\n``session:`` / ``agent:`` / ``device:``, matching coord's own\n``notifications::human_identity``, and classifies everything else as\n``operator`` / ``system`` / ``unknown`` rather than folding it into either\nside. The reason the filter is absent HERE is now about where it belongs, not\nabout what it would have to guess: it runs on the client over rows already on\nscreen, it is off by default, and when it is on the feed states how many rows\nit hides and in which class \u2014 so a hidden write stays a counted write. A\nserver-side filter can offer none of that, and its drops would be invisible.\n\nTwo OPTIONAL per-write annotations are carried through from coord's version\nrows: ``loosening`` (the direction verdict for a write that LANDED) and\n``notification_ref`` (the finding id that carries the author's reasoning).\nPlan ``2026-08-27-tenant-level-agent-authorable-stores.md``, Phases 2-4.\n**A key coord did not send is OMITTED here, never sent as ``null`` and never\nas ``false``** \u2014 see :func:`_write_annotations`.\n\nHonest partial results: a per-document versions read that fails is skipped and\nreported in ``partial`` rather than failing the whole feed, so one bad\ndocument cannot blank the page \u2014 and every skip is logged, so \"3 of 20\ndocuments did not return their history\" is greppable rather than a dead end.\nAn absent annotation is NOT such a failure: it is the ordinary shape of a\ncoord build that predates the classification, and must never push a document\ninto ``failed``.",
@@ -82497,6 +82699,81 @@
           }
         ],
         "summary": "Update Prompt Document Clause",
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/coord/prompt-documents/{kind}/{name}/publish": {
+      "post": {
+        "description": "Publish this document into the fleet-wide distribution channel.\n\nPlan ``2026-09-04-cross-tenant-policy-publishing`` D1/D2. Only the SYSTEM\ntenant may publish; coord is the authority on that and answers\n``not_system_tenant`` otherwise, which passes through \u2014 the console cannot\npre-gate it, because nothing on the prompt-documents wire says whether the\ncaller is the system tenant.\n\nA publication is IMMUTABLE and is distributed on save: there is deliberately\nno withdraw route, because a downstream tenant may already have adopted it.\nA mistake is corrected by publishing again.\n\nBody: ``{release_note?, expected_version}``. ``expected_version`` is the\noptimistic-lock guard \u2014 coord answers ``version_conflict`` with the actual\nversion if the document moved under the operator, which is why it is\nforwarded rather than re-derived here. ``published_by`` is NOT forwarded and\nis never taken from the browser: coord derives the publisher from its own\nauthenticated ``OperatorContext``, for the same reason the version-restore\nproxy above declines to stamp ``updated_by``.",
+        "operationId": "api_v1_operations_coord_prompt_documents_kind_name_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Publish Prompt Document Api V1 Operations Coord Prompt Documents  Kind   Name  Publish Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "CookieOrBearerScheme": []
+          }
+        ],
+        "summary": "Publish Prompt Document",
         "tags": [
           "operations"
         ]
@@ -90279,6 +90556,24 @@
             }
           },
           {
+            "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
+            "in": "query",
+            "name": "intent_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
+              "title": "Intent Ref"
+            }
+          },
+          {
             "in": "query",
             "name": "offset",
             "required": false,
@@ -90338,7 +90633,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content is a no-op: the response carries ``changed=false``,\n``X-Artifact-Unchanged: true`` and an ``ETag`` of the digest, and neither\n``current_version`` nor the version log moves. That is the plan's\n\"304-equivalent\" \u2014 a literal 304 cannot carry the body the caller needs\nto assert the version did not move.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {
