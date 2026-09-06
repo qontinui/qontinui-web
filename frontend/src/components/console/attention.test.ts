@@ -92,6 +92,15 @@ import {
   CLEARANCE_AUTHOR_GLYPH_KINDS,
   CLEARANCE_RULE_CLASS,
 } from "@/app/(app)/admin/coord/gate-clearance/clearanceRuleStatus";
+// Plan `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a —
+// the v2 decision-domain editor. Same shape as gate-clearance: a `*Status.ts`
+// beside its own route, so the recursive `src/app/**` discovery arm reaches it
+// with no pattern added here.
+import {
+  DECISION_POLICY_ATTENTION_BY_KIND,
+  DECISION_POLICY_AUTHOR_GLYPH_KINDS,
+  DECISION_POLICY_CLASS,
+} from "@/app/(app)/admin/coord/decision-policies/decisionPolicyStatus";
 import {
   PROPOSAL_ATTENTION_BY_KIND,
   PROPOSAL_AUTHOR_GLYPH_KINDS,
@@ -265,6 +274,14 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: CLEARANCE_RULE_CLASS,
       authorGlyphKinds: CLEARANCE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    surface: "decision policies (/admin/coord/decision-policies)",
+    attentionByKind: DECISION_POLICY_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: DECISION_POLICY_CLASS,
+      authorGlyphKinds: DECISION_POLICY_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   // --- Phase 3 Wave 4 — Family C, the tables --------------------------------
