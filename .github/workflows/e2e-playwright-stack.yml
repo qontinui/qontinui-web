@@ -268,14 +268,51 @@ jobs:
       # localhost defaults, and the built app points at the same run-local
       # stack the test step starts.
       #
-      # NEXT_PUBLIC_DEV_RESET is the one dev-only dependency the suite has
-      # (plan Phase 1): `src/app/dev/reset/page.tsx` renders nothing and
-      # redirects to `/` unless NODE_ENV=development, and
+      # NEXT_PUBLIC_DEV_RESET is the one dev-only dependency the suite
+      # ASSERTS on (plan Phase 1): `src/app/dev/reset/page.tsx` renders
+      # nothing and redirects to `/` unless NODE_ENV=development, and
       # tests/e2e/pages/dev-reset.spec.ts visits it. This build-time opt-in
       # enables that one route on the production build — per route, as the
-      # plan requires, never a global fallback to `dev`. Every other
-      # NODE_ENV=development branch the suite could reach was checked and is
-      # not asserted on (the plan's Phase 1 list).
+      # plan requires, never a global fallback to `dev`.
+      #
+      # THE REST OF THE PHASE 1 LIST — every `NODE_ENV === "development"`
+      # branch in frontend/src the suite can REACH, each checked against
+      # what the specs actually assert, and each left alone:
+      #
+      #   * `/build/tests` — the `qontinui_vision` test type is `devOnly`
+      #     and disappears on a production build. build-workflows.spec.ts
+      #     visits the page but asserts only "Playwright Tests" / "New Test"
+      #     / "Runner Not Connected"; it never names that type.
+      #   * `/build/templates` — same `devOnly` filter over the step
+      #     builders; no spec visits the route at all.
+      #   * The sidebar's `hiddenInProd` nav items (event-history,
+      #     generator-eval, autoresearch, meta-optimizer, online-learning,
+      #     skills, image-quality-tests) vanish on a production build. No
+      #     spec names any of them; the nav items specs DO lean on
+      #     (Captures, Recordings, Admin) are not `hiddenInProd`, and every
+      #     spec reaches its route by `page.goto`, not by clicking the nav.
+      #   * UI Bridge remote commands auto-attach on `isDev ||
+      #     NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1"`, so no tab
+      #     attaches to the relay on a production build. ui-bridge-search
+      #     .spec.ts already refuses to assert an attached tab either way
+      #     (its own comment says why) and checks `typeof responsive ===
+      #     "boolean"`, which holds on both arms.
+      #   * `/control/page/evaluate` is hard-rejected 403 on a production
+      #     build (`web-forbidden-routes.ts`). No spec calls it; the only
+      #     UI Bridge route a spec hits is `/api/ui-bridge/health`, which is
+      #     not in the forbidden set.
+      #   * `isAllowedOrigin` drops localhost/127.0.0.1 on a production
+      #     build — but only inside `isAuthGateEnabled()`, i.e. under
+      #     `UI_BRIDGE_REQUIRE_AUTH=1`, which nothing here sets.
+      #   * `/api/dev-debug/browser-events` + `/perf-events` 404 outside
+      #     dev, `usePageSpecs` no-ops, `AiGeneratePanel`'s spec-source
+      #     section and `RegionSelector`'s debug block disappear, and the
+      #     error boundaries stop rendering stack detail. No spec touches
+      #     any of them.
+      #
+      # Two OTHER workflows drive playwright.config.ts's webServer and run
+      # no build — style-gate.yml and cross-browser-survey.yml — so both
+      # now pin PLAYWRIGHT_WEB_SERVER=dev. Phase 2 moves this lane only.
       - name: Build frontend (production)
         working-directory: ./frontend
         env:
