@@ -7,7 +7,7 @@ instead of living only as markdown in a dozen checkouts.
 
 Routes
 ------
-``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit)
+``GET   /plan-library``            list + filter (kind/status/repo/q/since/work_unit/intent_ref)
 ``GET   /plan-library/divergent``  same (kind, slug) differing digests + kind forks
 ``GET   /plan-library/reconciliation`` three-way plan-status agreement (Phase 4)
 ``GET   /plan-library/capture-health`` corpus census by capture door (Phase 5)
@@ -489,6 +489,9 @@ def _work_unit_candidate(unit: crud.CandidateWorkUnit, now: datetime) -> PlanCan
         title=unit.title or unit.slug,
         status=unit.status,
         repos=list(unit.repos),
+        # No artifact row, so no citation to carry — an empty list here is
+        # "there is no row to read it from", the same way ``kind_locked`` is.
+        intent_refs=[],
         source_repo=unit.repos[0] if unit.repos else None,
         source_path=unit.source_path,
         work_unit_slug=unit.slug,
@@ -539,6 +542,7 @@ def _detail(
         source_repo=row.source_repo,
         work_unit_slug=row.work_unit_slug,
         repos=list(row.repos or []),
+        intent_refs=list(row.intent_refs or []),
         authored_at=row.authored_at,
         captured_by=row.captured_by,
         current_version=row.current_version,
@@ -2190,6 +2194,12 @@ async def list_work_artifacts(
         description="Soft link to a coord work unit. Not resolved; a slug "
         "with no matching work unit simply returns its artifacts.",
     ),
+    intent_ref: str | None = Query(
+        None,
+        description="Exact member of intent_refs[] — a served coord Intent "
+        "citation such as success_metric/<name>. Not resolved; a citation "
+        "no artifact carries simply returns an empty page.",
+    ),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_async_db),
@@ -2205,6 +2215,7 @@ async def list_work_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
         offset=offset,
         limit=limit,
     )
@@ -3268,6 +3279,7 @@ async def list_plan_candidates(
                 title=row.title,
                 status=row.status,
                 repos=list(row.repos or []),
+                intent_refs=list(row.intent_refs or []),
                 source_repo=row.source_repo,
                 source_path=row.source_path,
                 work_unit_slug=row.work_unit_slug,
@@ -3571,8 +3583,9 @@ async def upsert_work_artifact(
     a snapshot moves, and the response carries an ``ETag`` of the digest.
     That is the plan's "304-equivalent" — a literal 304 cannot carry the body
     the caller needs to assert the version did not move. The head row's
-    METADATA (``title``, ``status``, ``repos``, ``work_unit_slug``,
-    ``authored_at``, ``source_path``, ``captured_by``) is still stored when
+    METADATA (``title``, ``status``, ``repos``, ``intent_refs``,
+    ``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is
+    still stored when
     it differs, so ``changed`` reports whether THIS request moved anything:
     a byte-identical re-post answers ``changed=false`` with
     ``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored
@@ -3606,6 +3619,7 @@ async def upsert_work_artifact(
             source_repo=payload.source_repo,
             work_unit_slug=payload.work_unit_slug,
             repos=payload.repos,
+            intent_refs=payload.intent_refs,
             authored_at=payload.authored_at,
             captured_by=payload.captured_by,
             change_description=payload.change_description,

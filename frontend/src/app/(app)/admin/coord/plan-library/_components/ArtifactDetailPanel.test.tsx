@@ -78,6 +78,7 @@ function detail(
     source_repo: "qontinui-web",
     work_unit_slug: null,
     repos: [],
+    intent_refs: [],
     authored_at: null,
     captured_by: "runner_scan",
     current_version: 1,

@@ -61,6 +61,7 @@ async def _upsert(
     source_repo: str | None = None,
     work_unit_slug: str | None = None,
     repos: list[str] | None = None,
+    intent_refs: list[str] | None = None,
     change_description: str | None = None,
 ) -> tuple[WorkArtifact, bool, bool]:
     return await crud.upsert_artifact(
@@ -76,6 +77,7 @@ async def _upsert(
         source_repo=source_repo,
         work_unit_slug=work_unit_slug,
         repos=repos or [],
+        intent_refs=intent_refs or [],
         authored_at=None,
         captured_by="agent",
         change_description=change_description,
@@ -454,6 +456,69 @@ class TestFilters:
         assert total_web == 1
         assert total_runner == 1
         assert total_none == 0
+
+    async def test_intent_ref_filter_is_exact_containment(
+        self, async_db_session: AsyncSession
+    ) -> None:
+        """``?intent_ref=`` returns exactly the rows whose ``intent_refs``
+        contain it — zero, one and many, enumerated.
+
+        Plan ``2026-09-06-work-artifacts-kinds-and-edges-cannot-express-a-refutation``:
+        the query the GIN index exists to serve. Containment, not prefix —
+        ``success_metric/dev`` must NOT match ``success_metric/development-speed``.
+        """
+        org = uuid4()
+        shared = "success_metric/development-speed"
+        only_on_one = "domain_spec/merge-train"
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            kind="diagnostic",
+            slug=_slug("diag-a"),
+            body="pr_fix is inert",
+            intent_refs=[shared, only_on_one],
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            kind="diagnostic",
+            slug=_slug("diag-b"),
+            body="red_main_fix is inert",
+            intent_refs=[shared],
+        )
+        await _upsert(
+            async_db_session,
+            org_id=org,
+            slug=_slug("plain-plan"),
+            body="cites nothing",
+        )
+
+        rows_many, total_many = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref=shared
+        )
+        assert total_many == 2
+        assert all(shared in r.intent_refs for r in rows_many)
+
+        rows_one, total_one = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref=only_on_one
+        )
+        assert total_one == 1
+        assert rows_one[0].intent_refs == [shared, only_on_one]
+
+        _, total_zero = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref="success_metric/nothing-cites-me"
+        )
+        assert total_zero == 0
+
+        # Exact member, not a prefix.
+        _, total_prefix = await crud.list_artifacts(
+            async_db_session, org_id=org, intent_ref="success_metric/dev"
+        )
+        assert total_prefix == 0
+
+        # Unfiltered, all three are there — the filter is what narrowed it.
+        _, total_all = await crud.list_artifacts(async_db_session, org_id=org)
+        assert total_all == 3
 
     async def test_since_filter(self, async_db_session: AsyncSession) -> None:
         org = uuid4()
@@ -982,6 +1047,93 @@ class TestHttpSurface:
         resp = await client.get(f"{API_PREFIX}/{uuid4()}")
         assert resp.status_code == 404
 
+    async def test_diagnostic_kind_and_intent_refs_round_trip(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A ``diagnostic`` upsert is a 201 and ``intent_refs`` echoes back.
+
+        Plan ``2026-09-06-work-artifacts-kinds-and-edges-cannot-express-a-refutation``.
+        Before ``plan_library_04_diagnostic_refutes`` the kind was a 422 at the
+        ``Literal`` and a CHECK violation beneath it, and there was no column
+        to put the citation in.
+        """
+        ref = "success_metric/development-speed"
+        created = await client.post(
+            API_PREFIX,
+            json=_payload(
+                kind="diagnostic",
+                title="pr_fix / red_main_fix are inert",
+                body="25,253 consults, 0 dispatched",
+                intent_refs=[ref, "domain_spec/merge-train"],
+            ),
+        )
+        assert created.status_code == 201, created.text
+        artifact = created.json()["artifact"]
+        assert artifact["kind"] == "diagnostic"
+        assert artifact["intent_refs"] == [ref, "domain_spec/merge-train"]
+        # An explicit (non-heuristic) write locks the kind, as for every kind.
+        assert artifact["kind_locked"] is True
+
+        detail = await client.get(f"{API_PREFIX}/{artifact['id']}")
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["kind"] == "diagnostic"
+        assert detail.json()["intent_refs"] == [ref, "domain_spec/merge-train"]
+
+        listed = await client.get(API_PREFIX, params={"intent_ref": ref})
+        assert listed.status_code == 200, listed.text
+        assert [i["id"] for i in listed.json()["items"]] == [artifact["id"]]
+        assert listed.json()["items"][0]["intent_refs"] == [
+            ref,
+            "domain_spec/merge-train",
+        ]
+
+        none = await client.get(
+            API_PREFIX, params={"intent_ref": "success_metric/uncited"}
+        )
+        assert none.status_code == 200, none.text
+        assert none.json()["total"] == 0
+
+    async def test_intent_refs_are_metadata_and_move_without_a_version(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """Correcting the citation on an unchanged body is stored, not versioned.
+
+        ``intent_refs`` rides in the same metadata tuple as ``repos``: a
+        re-post with the same body and a different citation answers
+        ``changed=true`` with ``current_version`` untouched, and a byte-identical
+        re-post (same citation) is the full no-op.
+        """
+        payload = _payload(
+            kind="diagnostic", body="stable body", intent_refs=["success_metric/a"]
+        )
+        first = await client.post(API_PREFIX, json=payload)
+        assert first.status_code == 201, first.text
+        artifact_id = first.json()["artifact"]["id"]
+
+        corrected = await client.post(
+            API_PREFIX, json={**payload, "intent_refs": ["success_metric/b"]}
+        )
+        # 200, not 201: the row already existed and was updated in place.
+        assert corrected.status_code == 200, corrected.text
+        assert corrected.json()["changed"] is True
+        assert corrected.json()["artifact"]["id"] == artifact_id
+        assert corrected.json()["artifact"]["intent_refs"] == ["success_metric/b"]
+        assert corrected.json()["artifact"]["current_version"] == 1
+
+        same = await client.post(
+            API_PREFIX, json={**payload, "intent_refs": ["success_metric/b"]}
+        )
+        assert same.status_code == 200, same.text
+        assert same.json()["changed"] is False
+        assert same.headers.get("x-artifact-unchanged") == "true"
+
+        moved_to_b = await client.get(
+            API_PREFIX, params={"intent_ref": "success_metric/b"}
+        )
+        assert [i["id"] for i in moved_to_b.json()["items"]] == [artifact_id]
+        left_a = await client.get(API_PREFIX, params={"intent_ref": "success_metric/a"})
+        assert left_a.json()["total"] == 0
+
     async def test_list_filters_over_http(self, client: httpx.AsyncClient) -> None:
         await client.post(
             API_PREFIX,
@@ -1170,7 +1322,12 @@ class TestStrictQueryKeepsEveryDeclaredKey:
             "work_unit_slug": "any-stem",
         }
         sent: dict[str, dict[str, str]] = {
-            f"{API_PREFIX}": {**corpus_filter, "offset": "0", "limit": "5"},
+            f"{API_PREFIX}": {
+                **corpus_filter,
+                "intent_ref": "success_metric/development-speed",
+                "offset": "0",
+                "limit": "5",
+            },
             f"{API_PREFIX}/divergent": {"kind": "plan"},
             f"{API_PREFIX}/capture-health": {},
             f"{API_PREFIX}/export": {**corpus_filter, "limit": "5"},
