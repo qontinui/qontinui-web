@@ -25,6 +25,7 @@ import {
   sessionBriefingByteLength,
   validateBodyForKind,
 } from "../_lib/sessionBriefingBody";
+import { PromptDocumentClaims } from "./PromptDocumentClaims";
 
 interface PromptDocumentEditorDialogProps {
   open: boolean;
@@ -336,6 +337,14 @@ export function PromptDocumentEditorDialog({
                   History
                 </Button>
               </div>
+
+              {/*
+                The per-claim probe state coord serves beside the document.
+                Read-only and SERVED: it reflects the body coord last read, not
+                the textarea above — an unsaved edit that adds a probe block
+                shows up here only after the save and the next observer tick.
+              */}
+              <PromptDocumentClaims document={document} />
             </div>
 
             <DialogFooter className="sm:justify-between">
