@@ -1240,9 +1240,17 @@ def _render_admin_rows(
     # `list_prefs` selects every pref row for the tenant with no join at all --
     # so the two lists are only ever as consistent as whatever last wrote them.
     # Coord validates the agent exists on the WRITE path (`unknown_agent`,
-    # 404), which is why no shipped route produces one today; a registry row
-    # removed or renamed after the fact, by any means, produces one at once,
-    # and this route would have said nothing.
+    # 404), so the pref-write door does not create one. How REACHABLE an orphan
+    # is beyond that is deliberately NOT claimed here: a route census over both
+    # hosts enumerated ten `agent-registry` routes and no DELETE among them, but
+    # returned `routes=UNKNOWN` because a source could not be read completely,
+    # and an UNKNOWN census settles nothing.
+    #
+    # It does not need to. This guard is defensive against coord serving a row
+    # set this route cannot reconcile — the same standing every other guard in
+    # this module has, none of which argues that its shape is reachable today.
+    # A registry row removed or renamed after the fact produces an orphan at
+    # once, and this route would have said nothing.
     orphaned = sorted(set(by_agent) - {entry.agent_name for entry in entries})
     if orphaned:
         # The name list is CAPPED, and says so. `agent_name` is an arbitrary
