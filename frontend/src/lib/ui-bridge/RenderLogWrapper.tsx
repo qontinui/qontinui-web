@@ -26,8 +26,7 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("RenderLogWrapper");
 
-export interface RenderLogWrapperProps {
-  children: ReactNode;
+export interface RenderLogTrackerProps {
   /** Enable capture on mount (default: true) */
   enableOnMount?: boolean;
   /** Enable mutation observer for DOM changes (default: true) */
@@ -36,18 +35,19 @@ export interface RenderLogWrapperProps {
   mutationDebounceMs?: number;
 }
 
+export interface RenderLogWrapperProps extends RenderLogTrackerProps {
+  children: ReactNode;
+}
+
 /**
- * Wrapper component that enables automatic render log capturing.
- *
- * Place this at the root of your app (inside UIBridgeProvider) for
- * comprehensive DOM snapshot coverage.
+ * Headless render-log tracker. Renders nothing; all of its work is in
+ * effects. Mounted by `RenderLogWrapper` below.
  */
-function RenderLogWrapperContent({
-  children,
+function RenderLogTracker({
   enableOnMount = true,
   enableMutationObserver = false, // Disabled by default - DOM snapshot capture is expensive (several MB per snapshot)
   mutationDebounceMs = 500,
-}: RenderLogWrapperProps) {
+}: RenderLogTrackerProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const bridge = useUIBridgeOptional();
@@ -246,13 +246,45 @@ function RenderLogWrapperContent({
     captureSnapshot,
   ]);
 
-  return <>{children}</>;
+  // Renders nothing: this component exists only for its effects. Keeping the
+  // app tree OUT of it is the point — see RenderLogWrapper below.
+  return null;
 }
 
-export function RenderLogWrapper(props: RenderLogWrapperProps) {
+/**
+ * `useSearchParams()` (in the tracker above) must sit under a Suspense
+ * boundary. It used to be the app tree that sat there: the boundary wrapped
+ * `{children}`, i.e. EVERY page, so React's streaming SSR was free to defer
+ * the whole document body out-of-order behind a `null` fallback. The served
+ * HTML then carried an empty `<main>` plus the real page parked in a
+ * `<div hidden id="S:n">` staging container, revealed only once React ran
+ * `$RC`/`$RV` on the client (a rAF- and ~300 ms-throttled callback).
+ *
+ * Two things were wrong with that. For users and crawlers, the initial HTML
+ * of every public page — marketing and docs included — had no content in
+ * `<main>`. For the Playwright suite it meant that, for the length of the
+ * reveal window, the page existed TWICE in the DOM: React's client-rendered
+ * copy plus the still-hidden staged copy. `getByText()` matches hidden
+ * elements, so any assertion whose first poll landed inside that window died
+ * with `strict mode violation: resolved to 2 elements` (20 such failures on
+ * shard 3 of run 34039419789; the same window is reproducible under
+ * `next dev`, so this was never a production-only defect — the production
+ * build only made the window reachable).
+ *
+ * The boundary belongs around the thing that actually suspends. The tracker
+ * renders `null`, so nothing is deferred and `{children}` streams in the
+ * shell where it belongs.
+ */
+export function RenderLogWrapper({
+  children,
+  ...trackerProps
+}: RenderLogWrapperProps) {
   return (
-    <Suspense fallback={null}>
-      <RenderLogWrapperContent {...props} />
-    </Suspense>
+    <>
+      <Suspense fallback={null}>
+        <RenderLogTracker {...trackerProps} />
+      </Suspense>
+      {children}
+    </>
   );
 }
