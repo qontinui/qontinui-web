@@ -33,7 +33,7 @@ classifier rather than a hand-made stand-in of it.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -84,15 +84,45 @@ def _fresh_rate_limit_bucket():
     user_limiter.reset()
 
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.api.v1.endpoints.operations import _BlastRadius
+
+
+def _radius(
+    *,
+    own: tuple[str, ...] = (),
+    other: int = 0,
+    unmaterialized: int = 0,
+) -> _BlastRadius:
+    """Coord's blast-radius verdict, as ``_coord_group_blast_radius`` returns it.
+
+    Defaults to the all-zero verdict — "deleting this group breaks nothing" —
+    which is what the delete route needs to see before it may touch AWS.
+    ``mapped_total`` is the SUM of the three buckets, the invariant the reader
+    itself re-checks, so a caller cannot construct an incoherent verdict by
+    accident.
+    """
+    from app.api.v1.endpoints.operations import _BlastRadius
+
+    return _BlastRadius(
+        mapped_total=len(own) + other + unmaterialized,
+        mapped_own_tenant_slugs=own,
+        mapped_other_tenant_rows=other,
+        mapped_unmaterialized_rows=unmaterialized,
+        strands_own_tenant=(),
+        strands_other_tenant_count=0,
+    )
+
+
 @pytest.fixture(autouse=True)
 def _no_coord_mappings():
-    """The delete route reads coord's ``group_tenant_roles`` before it may
-    touch AWS. Every test here is about what happens AT AWS, so the mapping
-    read is stubbed empty — the guards themselves are pinned in
+    """The delete route reads coord's POOL-WIDE blast radius before it may
+    touch AWS. Every test here is about what happens AT AWS, so that read is
+    stubbed with the all-zero verdict — the guards themselves are pinned in
     ``test_operations_cognito_group_delete_guards.py``."""
     with patch(
-        "app.api.v1.endpoints.operations._coord_group_tenant_role_rows",
-        AsyncMock(return_value=[]),
+        "app.api.v1.endpoints.operations._coord_group_blast_radius",
+        AsyncMock(return_value=_radius()),
     ):
         yield
 
@@ -196,7 +226,7 @@ class TestMalformedPathGroupNameIs400:
         and a 502 ``mapping_check_unavailable`` would be a confusing answer
         to a typo."""
         with patch(
-            "app.api.v1.endpoints.operations._coord_group_tenant_role_rows",
+            "app.api.v1.endpoints.operations._coord_group_blast_radius",
             AsyncMock(side_effect=AssertionError("coord must not be read")),
         ):
             resp = client.delete(f"{_GROUPS_URL}/{_BAD_NAME}", headers=_AUTH)
