@@ -63,8 +63,8 @@ import {
   rowClassExplanation,
   type ConsolidatedSessionRow,
 } from "./sessionConsoleStatus";
-import { TranscriptStoresPanel } from "./TranscriptStores";
-import type { TranscriptStoresState } from "./TranscriptStores";
+import { TranscriptStoresPanel } from "./TranscriptStoresPanel";
+import type { TranscriptStoresState } from "./TranscriptStoresPanel";
 import type { AgentStatus, LineageAction, SessionClaim } from "./types";
 
 /** The three coordination reads, each with its own answer/non-answer split. */

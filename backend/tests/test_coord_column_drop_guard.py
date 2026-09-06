@@ -37,6 +37,7 @@ import ast
 import json
 import subprocess
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -913,6 +914,270 @@ _DECLARED_LANES = frozenset(
         ".qontinui/ci.toml",
     }
 )
+
+
+# ---------------------------------------------------------------------------
+# The downgrade-only helper: an ADDITIVE revision is not a drop
+#
+# Plan 2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest.
+# web#1273 (fleet_res_tel_05) adds three columns and removes exactly those three
+# in downgrade(), generating both from one column list. The DROP fragment lives
+# in a helper `downgrade()` alone calls, so the scan saw an unresolved site,
+# demanded a COORD_SCHEMA_DROPS declaration, and the declaration ACTIVATED the
+# manifest phase against columns no deployed coord could be reading. Two arms
+# below: the shape now passes, and a genuine drop still fails.
+# ---------------------------------------------------------------------------
+
+# `_drop_columns` is reached ONLY from downgrade(); `_add_columns` only from
+# upgrade(). Neither ALTER TABLE nor DROP COLUMN shares a string literal, which
+# is what makes the site unresolvable and drove the original declaration.
+_ADDITIVE = (
+    HEADER
+    + '_TABLE = "coord.device_resource_samples"\n'
+    + '_COLUMNS = (("disk_inodes_total", "BIGINT"), ("swap_shmem_bytes", "BIGINT"))\n'
+    + "def _add_columns(table: str) -> str:\n"
+    + '    adds = ", ".join(f"ADD COLUMN IF NOT EXISTS {n} {t}" for n, t in _COLUMNS)\n'
+    + '    return f"ALTER TABLE {table} {adds}"\n'
+    + "def _drop_columns(table: str) -> str:\n"
+    + '    drops = ", ".join(f"DROP COLUMN IF EXISTS {n}" for n, _ in _COLUMNS)\n'
+    + '    return f"ALTER TABLE {table} {drops}"\n'
+    + "def upgrade() -> None:\n    op.execute(_add_columns(_TABLE))\n"
+    + "def downgrade() -> None:\n    op.execute(_drop_columns(_TABLE))\n"
+)
+
+
+def test_a_helper_reached_only_from_downgrade_is_not_the_upgrade_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ARM 1 — web#1273's shape passes, offline, with no declaration.
+
+    `_forbid_fetch` is the assertion that matters as much as the exit code: an
+    additive revision must never reach the manifest at all.
+    """
+    fixture = _write(tmp_path, "r.py", _ADDITIVE)
+    assert guard.main(["--files", str(fixture)], fetch=_forbid_fetch) == 0
+    out = capsys.readouterr().out
+    assert "0 resolved coord.* DROP/RENAME site(s) and 0 unresolved" in out
+    assert "nothing to check against coord" in out
+
+
+def test_the_zero_drop_pass_says_what_it_does_not_prove(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A green here is 'this revision drops nothing', never 'a drop was checked'."""
+    fixture = _write(tmp_path, "r.py", _ADDITIVE)
+    assert guard.main(["--files", str(fixture)], fetch=_forbid_fetch) == 0
+    assert "NOT evidence that a drop was checked" in capsys.readouterr().out
+
+
+def test_a_genuine_upgrade_path_drop_still_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ARM 2 — the teeth. A real drop of a column coord reads is still exit 1.
+
+    Paired with ARM 1 deliberately: a guard that stopped refusing everything by
+    refusing nothing would be worse than the defect it replaced.
+    """
+    source = (
+        HEADER
+        + "def upgrade() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def downgrade() -> None:\n    pass\n"
+    )
+    fixture = _write(tmp_path, "r.py", source)
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(READS_AGENT_WRITABLE))
+    assert code == guard.EXIT_VIOLATION
+    assert "which coord still reads" in capsys.readouterr().err
+
+
+def test_a_helper_reached_from_BOTH_paths_stays_on_the_upgrade_path(
+    tmp_path: Path,
+) -> None:
+    """The exclusion is reachability, not name-matching.
+
+    One extra call from upgrade() and the same helper must be scanned again —
+    otherwise the fix would be a hole rather than a correction.
+    """
+    source = (
+        HEADER
+        + "def _tidy() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def upgrade() -> None:\n    _tidy()\n"
+        + "def downgrade() -> None:\n    _tidy()\n"
+    )
+    scan = _scan(source)
+    assert _pairs(scan) == {("prompt_documents", "agent_writable")}
+
+
+def test_a_transitive_downgrade_only_chain_is_excluded() -> None:
+    """downgrade() -> _outer() -> _inner(): the whole chain is downgrade code."""
+    source = (
+        HEADER
+        + "def _inner(table: str) -> str:\n"
+        + '    return f"DROP COLUMN IF EXISTS {table}"\n'
+        + "def _outer(table: str) -> str:\n    return _inner(table)\n"
+        + "def upgrade() -> None:\n    pass\n"
+        + 'def downgrade() -> None:\n    op.execute(_outer("x"))\n'
+    )
+    scan = _scan(source)
+    assert not scan.drops and not scan.unresolved
+
+
+def test_a_chain_whose_TAIL_is_shared_with_upgrade_stays_scanned() -> None:
+    """If upgrade() reaches the inner helper too, the inner helper counts."""
+    source = (
+        HEADER
+        + "def _inner() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def _outer() -> None:\n    _inner()\n"
+        + "def upgrade() -> None:\n    _inner()\n"
+        + "def downgrade() -> None:\n    _outer()\n"
+    )
+    assert _pairs(_scan(source)) == {("prompt_documents", "agent_writable")}
+
+
+def test_a_downgrade_only_helper_named_anywhere_else_stays_scanned() -> None:
+    """Conservatism: a mention in a module-level constant is enough to keep it.
+
+    A helper reached by getattr / globals() / a dispatch table is never in the
+    closure at all, so it is scanned; this pins the nearest observable case.
+    """
+    source = (
+        HEADER
+        + "def _tidy() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "_DISPATCH = (_tidy,)\n"
+        + "def upgrade() -> None:\n    pass\n"
+        + "def downgrade() -> None:\n    _tidy()\n"
+    )
+    assert _pairs(_scan(source)) == {("prompt_documents", "agent_writable")}
+
+
+def test_a_revision_with_no_downgrade_is_unaffected() -> None:
+    source = (
+        HEADER
+        + "def _tidy() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def upgrade() -> None:\n    pass\n"
+    )
+    assert _pairs(_scan(source)) == {("prompt_documents", "agent_writable")}
+
+
+# ---------------------------------------------------------------------------
+# An unserved manifest route is a gate defect, not a revision defect
+# ---------------------------------------------------------------------------
+
+
+def _http_error(status: int):
+    """A fetch that fails the way `fetch_manifest` fails on an HTTP error.
+
+    `fetch_manifest` is what converts the `HTTPError` into a
+    `ManifestUnavailableError` carrying the status; injecting a fetch that
+    raised the raw `HTTPError` would test a seam `main()` never sees. The
+    conversion itself is pinned by
+    `test_fetch_manifest_records_the_http_status` below.
+    """
+
+    def fetch(url: str) -> bytes:
+        raise guard.ManifestUnavailableError(
+            f"{url}: HTTP Error {status}: nope", http_status=status
+        )
+
+    return fetch
+
+
+def test_fetch_manifest_records_the_http_status(monkeypatch) -> None:
+    """The status must survive the fetch, or `main()` cannot tell 401 from 503."""
+
+    def boom(url, timeout):  # noqa: ANN001, ARG001
+        raise urllib.error.HTTPError(url, 404, "nope", None, None)
+
+    monkeypatch.setattr(guard.urllib.request, "urlopen", boom)
+    with pytest.raises(guard.ManifestUnavailableError) as excinfo:
+        guard.fetch_manifest("https://coord.example/schema/read-surfaces")
+    assert excinfo.value.http_status == 404
+
+
+def test_fetch_manifest_records_no_status_for_a_transport_failure(
+    monkeypatch,
+) -> None:
+    """A timeout is not an HTTP status, and must not be reported as one."""
+
+    def boom(url, timeout):  # noqa: ANN001, ARG001
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(guard.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(guard.time, "sleep", lambda _: None)
+    with pytest.raises(guard.ManifestUnavailableError) as excinfo:
+        guard.fetch_manifest("https://coord.example/schema/read-surfaces")
+    assert excinfo.value.http_status is None
+
+
+@pytest.mark.parametrize("status", [401, 404])
+def test_an_unserved_manifest_route_names_the_gate_not_the_revision(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status: int
+) -> None:
+    """coord answers an UNROUTED path 401 and an existing one 403.
+
+    Measured against controls on 2026-09-06. So a 401 here means the coord half
+    never shipped — and the guard must say so instead of advising a declaration,
+    which is what ACTIVATES the phase that cannot pass.
+    """
+    source = (
+        HEADER
+        + "def upgrade() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def downgrade() -> None:\n    pass\n"
+    )
+    fixture = _write(tmp_path, "r.py", source)
+    code = guard.main(["--files", str(fixture)], fetch=_http_error(status))
+    assert code == guard.EXIT_VACUOUS
+    errs = capsys.readouterr().err
+    assert "does not SERVE" in errs
+    assert "NO EDIT INSIDE THIS PR CAN FIX IT" in errs
+    assert guard.DECLARATION_NAME in errs  # named, to be refused
+    assert "2026-09-06-devops-coord-column-drop-guard" in errs
+
+
+def test_a_transient_manifest_failure_keeps_the_original_advice(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 503 is coord being down, NOT the route being absent — different advice."""
+    source = (
+        HEADER
+        + "def upgrade() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def downgrade() -> None:\n    pass\n"
+    )
+    fixture = _write(tmp_path, "r.py", source)
+    code = guard.main(["--files", str(fixture)], fetch=_http_error(503))
+    assert code == guard.EXIT_VACUOUS
+    errs = capsys.readouterr().err
+    assert "does not SERVE" not in errs
+    assert "UNKNOWN is not green" in errs
+
+
+def test_the_unresolved_advice_warns_that_declaring_activates_the_manifest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The remedy must stop being a trap.
+
+    An unresolved site reached from upgrade() still demands a declaration — but
+    the advice now says what a declaration COSTS while the route is unserved.
+    """
+    source = (
+        HEADER
+        + "def upgrade() -> None:\n"
+        + '    op.execute(f"ALTER TABLE coord.{TBL} DROP COLUMN agent_writable")\n'
+        + "def downgrade() -> None:\n    pass\n"
+    ).replace("from alembic import op\n", 'TBL = "x"\nfrom alembic import op\n')
+    fixture = _write(tmp_path, "r.py", source)
+    assert guard.main(["--files", str(fixture)], fetch=_forbid_fetch) == (
+        guard.EXIT_VIOLATION
+    )
+    errs = capsys.readouterr().err
+    assert "ACTIVATES the manifest check" in errs
+    assert "reached only from downgrade()" in errs
 
 
 def _gate_docstring() -> str | None:

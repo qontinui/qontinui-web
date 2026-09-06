@@ -12,6 +12,30 @@ const STYLE_GATE_VIEWPORT = { width: 1280, height: 800 } as const;
 const STYLE_GATE_TEST_MATCH = /style-gate\/style-capture\.spec\.ts/;
 
 /**
+ * Which frontend the suite runs against — `PLAYWRIGHT_WEB_SERVER`.
+ *
+ *   `prod` (the DEFAULT, and what CI runs): a PRODUCTION BUILD. `next start`
+ *     serves the output of a prior `npm run build`, every route precompiled,
+ *     so a route's first hit costs the same ~2 s as every later hit and the
+ *     thing under test is the bundle users get.
+ *   `dev`: the explicit opt-in for local iteration. `next dev` compiles each
+ *     route on its FIRST hit (7-25 s measured), and under a long
+ *     single-worker run that compile competes with each test's own timeout:
+ *     four consecutive changed-specs lane runs on #1265 each failed a
+ *     DIFFERENT test's first `page.goto` before any assertion ran, while the
+ *     4-shard runs — a quarter of the routes per server — passed. Plan
+ *     2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure.
+ *
+ * Any other value is a config error, never a silent fallback to either mode.
+ */
+const WEB_SERVER_MODE = process.env.PLAYWRIGHT_WEB_SERVER ?? "prod";
+if (WEB_SERVER_MODE !== "prod" && WEB_SERVER_MODE !== "dev") {
+  throw new Error(
+    `PLAYWRIGHT_WEB_SERVER must be "prod" (default) or "dev"; got ${JSON.stringify(WEB_SERVER_MODE)}`
+  );
+}
+
+/**
  * Playwright configuration for E2E integration testing
  * See https://playwright.dev/docs/test-configuration
  *
@@ -37,8 +61,9 @@ export default defineConfig({
   // per-project, so auth setup is unaffected.
   testMatch: "**/*.spec.ts",
 
-  // Maximum time one test can run for
-  // Increased for development mode where Next.js compiles pages on-demand
+  // Maximum time one test can run for. 60 s was sized for `next dev`'s
+  // on-demand compile; under the default production build nothing compiles
+  // at request time, so re-sizing it is Phase 3 of the plan named above.
   timeout: 60 * 1000,
 
   // Test execution settings
@@ -87,7 +112,9 @@ export default defineConfig({
     // Maximum time each action can take
     actionTimeout: 10 * 1000,
 
-    // Navigation timeout - increased for Next.js dev mode compilation (~23s for dashboard)
+    // Navigation timeout. 60 s was sized for `next dev`'s first-hit compile
+    // (~23 s for the dashboard); a production-build navigation that still
+    // exceeds it is a page defect, not compile latency (plan §5).
     navigationTimeout: 60 * 1000,
   },
 
@@ -217,16 +244,41 @@ export default defineConfig({
     },
   ],
 
-  // Run your local dev server before starting the tests
-  // Set SKIP_WEB_SERVER=1 to skip when servers are already running
+  // Start the frontend before the tests — a production build by default,
+  // `next dev` under PLAYWRIGHT_WEB_SERVER=dev (see WEB_SERVER_MODE above).
+  // Set SKIP_WEB_SERVER=1 to skip when servers are already running.
   webServer: process.env.SKIP_WEB_SERVER
     ? undefined
-    : {
-        command: "npm run dev",
-        url: "http://localhost:3001",
-        reuseExistingServer: !process.env.CI,
-        timeout: 120 * 1000,
-      },
+    : WEB_SERVER_MODE === "dev"
+      ? {
+          command: "npm run dev",
+          url: "http://localhost:3001",
+          reuseExistingServer: !process.env.CI,
+          // Sized for `next dev`'s startup plus its first compile.
+          timeout: 120 * 1000,
+        }
+      : {
+          // Same port and bind address as `npm run dev`. `next start` needs
+          // a prior `npm run build`; without one it exits with "Could not
+          // find a production build in the '.next' directory", which
+          // Playwright surfaces verbatim — no separate guard needed.
+          //
+          // `next.config.mjs` sets `output: 'standalone'`, so `next start`
+          // logs `"next start" does not work with "output: standalone"
+          // configuration`. That line is a WARNING, not an error: Next
+          // only warns and then serves the ordinary `.next` build anyway
+          // (next/dist/server/next.js — the `output: 'export'` arm beside
+          // it is the one that throws). spec-ci.yml has served this same
+          // build with `next start` since it was written. Do not "fix" the
+          // warning by switching to `.next/standalone/server.js`: that
+          // tree needs `public/` and `.next/static` copied in by hand.
+          command: "npm run start -- --port 3001 --hostname 0.0.0.0",
+          url: "http://localhost:3001",
+          reuseExistingServer: !process.env.CI,
+          // A production server is up in ~2 s (measured; nothing compiles).
+          // 60 s is a loaded-runner ceiling, not an expectation.
+          timeout: 60 * 1000,
+        },
 
   // Global setup/teardown - skip when running against existing servers
   globalSetup: process.env.SKIP_WEB_SERVER

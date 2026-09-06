@@ -110,7 +110,7 @@ import {
   type CoordinationReaders,
 } from "./SessionRowExpansion";
 import type { SessionRevalidationOptions } from "./liveRevalidation";
-import { useTranscriptStores } from "./TranscriptStores";
+import { useTranscriptStores } from "./TranscriptStoresPanel";
 import {
   liveTranscriptIndicator,
   type ArtifactLister,

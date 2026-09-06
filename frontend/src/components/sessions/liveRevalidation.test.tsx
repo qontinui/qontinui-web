@@ -37,7 +37,7 @@ import {
 import { foldRevalidation } from "./sessionKeyResolution";
 import type { SessionEventRow } from "./types";
 import type { ConsolidatedSessionRow } from "./sessionConsoleStatus";
-import type { TranscriptStoresState } from "./TranscriptStores";
+import type { TranscriptStoresState } from "./TranscriptStoresPanel";
 
 const SESSION_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 
