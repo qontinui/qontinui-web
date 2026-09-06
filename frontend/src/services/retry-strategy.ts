@@ -1,7 +1,20 @@
 /**
  * RetryStrategy - Handles HTTP request retry logic with backoff
  *
- * Implements exponential backoff for server errors and rate limit handling
+ * Implements exponential backoff for server errors and rate limit handling.
+ *
+ * WHAT it retries is decided outside this class. `shouldRetry` knows only the
+ * status (429, or any 5xx) and the attempt count; it knows nothing about the
+ * request's method, whether the caller declared it idempotent, or which
+ * statuses the caller opted out of. `HttpClient` owns that decision
+ * (`isRetryableStatus`) and hands it in as the optional `isRetryable`
+ * predicate on `executeWithRetry`, which is consulted on EVERY response in the
+ * chain — not just the one that entered it — so a chain entered on a 429
+ * cannot slide into retrying a 5xx the caller's policy forbids. Without a
+ * predicate the class keeps its original status-only behaviour.
+ *
+ * Thrown errors (network failure, the client-side timeout) are never retried
+ * here: the chain branches on `response.status` only.
  */
 
 export interface RetryConfig {
@@ -30,17 +43,40 @@ export class RetryStrategy {
   }
 
   /**
+   * A strategy with the same backoff configuration but a different retry
+   * budget. Used for a per-request `maxRetries` override so the override
+   * never has to mutate a strategy that other callers share.
+   */
+  withMaxRetries(maxRetries: number): RetryStrategy {
+    if (maxRetries === this.config.maxRetries) return this;
+    return new RetryStrategy({ ...this.config, maxRetries });
+  }
+
+  /**
    * Execute a request function with automatic retry logic
    *
    * @param requestFn Function that returns a Promise<Response>
    * @param attempt Current attempt number (starts at 1)
+   * @param isRetryable Optional caller policy consulted on every response in
+   *   the chain BEFORE the status/attempt check. When it returns false the
+   *   response is returned as-is, whatever its status. Threaded through the
+   *   recursion so it gates the second, third, … response too.
    * @returns The successful response
    */
   async executeWithRetry(
     requestFn: () => Promise<Response>,
-    attempt: number = 1
+    attempt: number = 1,
+    isRetryable?: (response: Response) => boolean
   ): Promise<Response> {
     const response = await requestFn();
+
+    // The caller's policy wins over the status check: a response it declares
+    // non-retryable leaves the chain here, so a chain entered on a 429 cannot
+    // retry a later 5xx the caller forbade (non-idempotent method, or an
+    // opted-out status).
+    if (isRetryable && !isRetryable(response)) {
+      return response;
+    }
 
     // Check if we should retry based on response status
     const retryDecision = this.shouldRetry(response, attempt);
@@ -50,7 +86,7 @@ export class RetryStrategy {
         `[RetryStrategy] ${retryDecision.reason}. Retrying in ${retryDecision.waitMs}ms (attempt ${attempt}/${this.config.maxRetries})`
       );
       await this.wait(retryDecision.waitMs);
-      return this.executeWithRetry(requestFn, attempt + 1);
+      return this.executeWithRetry(requestFn, attempt + 1, isRetryable);
     }
 
     return response;

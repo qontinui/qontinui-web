@@ -12,7 +12,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { HttpClient } from "./http-client";
+import { HttpClient, isRetryableStatus, type HttpOptions } from "./http-client";
+import { csrfService } from "./csrf-service";
 import type { TokenManager } from "./auth/token-manager";
 import {
   TokenRefreshService,
@@ -111,8 +112,9 @@ describe("HttpClient noRetryStatuses", () => {
     // `executeRequestWithRetry` makes the first request itself and THEN hands
     // a fresh `requestFn` to `executeWithRetry`, which runs it once more
     // before its own attempt counter applies — so `maxRetries: 3` costs FIVE
-    // requests, with 1s + 2s + 4s + 8s of backoff between them (~15s), not
-    // the four/~7s a reading of the config alone suggests.
+    // requests, not the four a reading of the config alone suggests. The
+    // backoff between them is 1s + 2s + 4s (7s): the chain stops once the
+    // attempt counter passes `maxRetries`, so a fourth wait never happens.
     const counter = countedFetch(503);
     const client = new HttpClient(
       makeTokenManager() as unknown as TokenManager
@@ -179,6 +181,362 @@ describe("HttpClient noRetryStatuses", () => {
     await pending;
 
     expect(counter.calls()).toBe(6); // 1 opted-out + 5 for the normal call
+  });
+});
+
+/**
+ * Method-aware retry (plan `2026-09-01-httpclient-retries-post-by-default`).
+ *
+ * Idempotent methods keep the original policy (429 + every 5xx retry).
+ * POST/PATCH retry a 429 only, unless the request declares `idempotent:
+ * true`; `noRetryStatuses` always narrows. The same predicate is applied
+ * INSIDE the retry chain, so a 429 cannot be a side door into retrying a 5xx.
+ *
+ * Fake-clock sizing: a 5xx chain needs 7s (1s + 2s + 4s); a 429 chain waits
+ * the `Retry-After` value per retry, so every 429 here sends `Retry-After: 1`
+ * — without it the default is 60s per retry and the test times out instead of
+ * failing on a count.
+ */
+describe("HttpClient method-aware retry", () => {
+  const FIVE_XX_CHAIN_MS = 30_000;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  interface ScriptedResponse {
+    status: number;
+    headers?: Record<string, string>;
+  }
+
+  /**
+   * Answer each call from `script` in order; the last entry repeats forever.
+   * Records the `RequestInit` of every call so headers can be asserted.
+   */
+  function scriptedFetch(script: ScriptedResponse[]): {
+    calls: () => number;
+    inits: RequestInit[];
+  } {
+    const inits: RequestInit[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const step = script[Math.min(inits.length, script.length - 1)]!;
+        inits.push(init ?? {});
+        return new Response(JSON.stringify({}), {
+          status: step.status,
+          headers: { "Content-Type": "application/json", ...step.headers },
+        });
+      })
+    );
+    return { calls: () => inits.length, inits };
+  }
+
+  function makeClient(): HttpClient {
+    return new HttpClient(makeTokenManager() as unknown as TokenManager);
+  }
+
+  /** Run one request under fake timers, advancing far past any 5xx chain. */
+  async function run(
+    client: HttpClient,
+    url: string,
+    options: HttpOptions
+  ): Promise<Response> {
+    vi.useFakeTimers();
+    const pending = client.fetch(url, options);
+    await vi.advanceTimersByTimeAsync(FIVE_XX_CHAIN_MS);
+    return pending;
+  }
+
+  function methodRuleWarns(): number {
+    return (console.warn as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (args: unknown[]) =>
+        typeof args[0] === "string" &&
+        args[0].includes("not retried because the method is non-idempotent")
+    ).length;
+  }
+
+  it("V1: POST -> 500 makes exactly one request, and warns once", async () => {
+    const counter = scriptedFetch([{ status: 500 }]);
+    const res = await run(makeClient(), "https://api.test/things", {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(1);
+    expect(methodRuleWarns()).toBe(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("[HttpClient] POST https://api.test/things answered 500")
+    );
+  });
+
+  it("V2: GET, PUT and DELETE -> 500 still retry (5 requests each)", async () => {
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+      const counter = scriptedFetch([{ status: 500 }]);
+      const res = await run(makeClient(), "https://api.test/things", {
+        method,
+      });
+
+      expect(res.status, method).toBe(500);
+      expect(counter.calls(), method).toBe(5);
+    }
+    expect(methodRuleWarns()).toBe(0);
+  });
+
+  it("V3: POST + idempotent: true -> 500 retries", async () => {
+    const counter = scriptedFetch([{ status: 500 }]);
+    const res = await run(makeClient(), "https://api.test/search", {
+      method: "POST",
+      body: "{}",
+      idempotent: true,
+    });
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(5);
+    expect(methodRuleWarns()).toBe(0);
+  });
+
+  it("V4: POST -> 429 retries for a non-idempotent method", async () => {
+    const counter = scriptedFetch([
+      { status: 429, headers: { "Retry-After": "1" } },
+    ]);
+    const res = await run(makeClient(), "https://api.test/things", {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(429);
+    expect(counter.calls()).toBe(5);
+  });
+
+  it("V5: POST -> 429 -> 500 does NOT retry the 500 inside the chain", async () => {
+    // The in-chain predicate: the 429 legitimately enters the chain, and the
+    // next response is a 500. Without the predicate inside `executeWithRetry`
+    // that 500 is judged by status alone and retried three more times.
+    const counter = scriptedFetch([
+      { status: 429, headers: { "Retry-After": "1" } },
+      { status: 500 },
+    ]);
+    const res = await run(makeClient(), "https://api.test/things", {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(2);
+    expect(methodRuleWarns()).toBe(1);
+  });
+
+  it("V6: PATCH -> 500 makes one request", async () => {
+    const counter = scriptedFetch([{ status: 500 }]);
+    const res = await run(makeClient(), "https://api.test/things/1", {
+      method: "PATCH",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(1);
+  });
+
+  it("V6/V10: a lowercase `patch` is treated as PATCH (one request)", async () => {
+    const counter = scriptedFetch([{ status: 500 }]);
+    const res = await run(makeClient(), "https://api.test/things/1", {
+      method: "patch",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(500);
+    expect(counter.calls()).toBe(1);
+  });
+
+  it("V10: a lowercase `patch` still gets the X-CSRF-Token header", async () => {
+    // The CSRF check is a case-sensitive membership test on the method; it
+    // inherits the normalization `fetch()` does once at the top.
+    vi.spyOn(csrfService, "getToken").mockReturnValue("csrf-tok");
+    const counter = scriptedFetch([{ status: 200 }]);
+
+    await run(makeClient(), "https://api.test/things/1", {
+      method: "patch",
+      body: "{}",
+    });
+
+    expect(counter.calls()).toBe(1);
+    const headers = counter.inits[0]!.headers as Record<string, string>;
+    expect(headers["X-CSRF-Token"]).toBe("csrf-tok");
+    expect(counter.inits[0]!.method).toBe("PATCH");
+  });
+
+  it("V8: idempotent: true + noRetryStatuses narrows — 503 once, 502 retries", async () => {
+    const client = makeClient();
+
+    const opted = scriptedFetch([{ status: 503 }]);
+    const res503 = await run(client, "https://api.test/search", {
+      method: "POST",
+      body: "{}",
+      idempotent: true,
+      noRetryStatuses: [503],
+    });
+    expect(res503.status).toBe(503);
+    expect(opted.calls()).toBe(1);
+    // A `noRetryStatuses` suppression is the caller's choice: no warn.
+    expect(methodRuleWarns()).toBe(0);
+
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    const other = scriptedFetch([{ status: 502 }]);
+    const res502 = await run(client, "https://api.test/search", {
+      method: "POST",
+      body: "{}",
+      idempotent: true,
+      noRetryStatuses: [503],
+    });
+    expect(res502.status).toBe(502);
+    expect(other.calls()).toBe(5);
+  });
+});
+
+describe("HttpClient maxRetries is per-request", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("V7: maxRetries: 0 on one call does not zero retries for the next default call", async () => {
+    // Four production callers pass `maxRetries: 0`; before this fix the
+    // option REPLACED the client's shared strategy, so every later request on
+    // the singleton — GETs included — silently ran with zero retries.
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        return new Response(JSON.stringify({}), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      })
+    );
+    const client = new HttpClient(
+      makeTokenManager() as unknown as TokenManager
+    );
+
+    const first = await client.fetch("https://api.test/a", { maxRetries: 0 });
+    expect(first.status).toBe(503);
+    expect(calls).toBe(1);
+
+    vi.useFakeTimers();
+    const pending = client.fetch("https://api.test/b");
+    await vi.advanceTimersByTimeAsync(30_000);
+    const second = await pending;
+
+    expect(second.status).toBe(503);
+    expect(calls).toBe(6); // 1 unretried + 5 for the default call
+  });
+});
+
+describe("isRetryableStatus", () => {
+  const IDEMPOTENT = ["GET", "HEAD", "PUT", "DELETE", "OPTIONS"];
+  const NON_IDEMPOTENT = ["POST", "PATCH"];
+
+  it("retries 429 for every method", () => {
+    for (const method of [...IDEMPOTENT, ...NON_IDEMPOTENT]) {
+      expect(isRetryableStatus({ status: 429, method }), method).toBe(true);
+    }
+  });
+
+  it("retries every 5xx on idempotent methods", () => {
+    for (const method of IDEMPOTENT) {
+      for (const status of [500, 502, 503, 504, 507, 520]) {
+        expect(
+          isRetryableStatus({ status, method }),
+          `${method} ${status}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("does not retry a 5xx on POST/PATCH without idempotent: true", () => {
+    for (const method of NON_IDEMPOTENT) {
+      for (const status of [500, 502, 503, 504, 507, 520]) {
+        expect(
+          isRetryableStatus({ status, method }),
+          `${method} ${status}`
+        ).toBe(false);
+        expect(
+          isRetryableStatus({ status, method, idempotent: false }),
+          `${method} ${status} idempotent:false`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("idempotent: true widens the 5xx arm for POST/PATCH", () => {
+    for (const method of NON_IDEMPOTENT) {
+      for (const status of [500, 502, 503, 504, 507, 520]) {
+        expect(
+          isRetryableStatus({ status, method, idempotent: true }),
+          `${method} ${status}`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("noRetryStatuses always narrows, winning over both idempotent and the method", () => {
+    expect(
+      isRetryableStatus({
+        status: 503,
+        method: "POST",
+        idempotent: true,
+        noRetryStatuses: [503],
+      })
+    ).toBe(false);
+    expect(
+      isRetryableStatus({
+        status: 502,
+        method: "POST",
+        idempotent: true,
+        noRetryStatuses: [503],
+      })
+    ).toBe(true);
+    expect(
+      isRetryableStatus({ status: 503, method: "GET", noRetryStatuses: [503] })
+    ).toBe(false);
+    expect(
+      isRetryableStatus({ status: 429, method: "GET", noRetryStatuses: [429] })
+    ).toBe(false);
+    expect(
+      isRetryableStatus({ status: 429, method: "POST", noRetryStatuses: [429] })
+    ).toBe(false);
+  });
+
+  it("never retries a non-429 status below 500", () => {
+    for (const method of [...IDEMPOTENT, ...NON_IDEMPOTENT]) {
+      for (const status of [200, 204, 400, 401, 403, 404, 409, 422]) {
+        expect(
+          isRetryableStatus({ status, method, idempotent: true }),
+          `${method} ${status}`
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("compares the method case-insensitively and defaults an empty method to GET", () => {
+    expect(isRetryableStatus({ status: 500, method: "get" })).toBe(true);
+    expect(isRetryableStatus({ status: 500, method: "post" })).toBe(false);
+    expect(isRetryableStatus({ status: 500, method: "patch" })).toBe(false);
+    expect(isRetryableStatus({ status: 500, method: "" })).toBe(true);
   });
 });
 
