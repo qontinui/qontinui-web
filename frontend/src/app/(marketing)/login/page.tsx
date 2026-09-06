@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthForm } from "@/components/auth-form";
 import { useAuth } from "@/contexts/auth-context";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  * navigable, deep-linkable, and the canonical destination for middleware
  * redirects on protected routes.
  */
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
@@ -63,5 +63,20 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * `useSearchParams()` above needs a Suspense boundary of its own. It used to
+ * inherit one from `(marketing)/layout.tsx`, which wrapped every page's
+ * children — a boundary that also let React defer the whole document body
+ * out-of-order into a hidden staging container. That boundary is gone; this
+ * one sits where the hook actually is.
+ */
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
