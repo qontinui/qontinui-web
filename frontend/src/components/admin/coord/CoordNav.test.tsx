@@ -127,7 +127,7 @@ describe("CoordNav", () => {
   // authors rows about is who may clear a GATE (resolved Q2).
   // --------------------------------------------------------------------------
 
-  it("shows the Intent group to a plain member with exactly its three entries", async () => {
+  it("shows the Intent group to a plain member with exactly its four entries", async () => {
     const user = userEvent.setup();
     render(<CoordNav />);
 
@@ -150,10 +150,19 @@ describe("CoordNav", () => {
     expect(
       screen.getByTestId("coord-nav-prompt-document-proposals")
     ).toHaveAttribute("href", "/admin/coord/prompt-document-proposals");
+    // The v2 decision-domain editor (plan
+    // `2026-09-06-decision-policy-rows-are-operator-only-to-create` Phase 3a).
+    // Filed here beside Policies — which is the READ-ONLY half of the same
+    // store — not in `Merge ▾`, and not operator-gated: every mutating control
+    // on the page is `CoordAdminOnly`, and the coord proxy enforces
+    // tenant-admin server-side, so a member may READ which frame coord serves.
+    expect(
+      screen.getByTestId("coord-nav-decision-policies")
+    ).toHaveAttribute("href", "/admin/coord/decision-policies");
 
-    // Exactly three — nothing else drifted in, and none of them is
+    // Exactly four — nothing else drifted in, and none of them is
     // operator-gated, so the member sees the whole group.
-    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(4);
   });
 
   it("sits Intent between Merge and Dev Ops", () => {
@@ -211,6 +220,11 @@ describe("CoordNav", () => {
         "/admin/coord/prompt-document-proposals",
         "coord-nav-prompt-document-proposals",
         "Policy Edit Review",
+      ],
+      [
+        "/admin/coord/decision-policies",
+        "coord-nav-decision-policies",
+        "Decision Policies",
       ],
     ] as const) {
       pathname = path;
