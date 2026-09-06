@@ -49,6 +49,11 @@ TWO_ENDED_RELATIONS = (
     "depends_on",
 )
 
+#: Every two-ended relation, including ``refutes`` — added by
+#: ``plan_library_04_diagnostic_refutes`` AFTER the one-ended relaxation, so it
+#: must be shown to have inherited the fence rather than assumed to.
+ALL_TWO_ENDED_RELATIONS = (*TWO_ENDED_RELATIONS, "refutes")
+
 
 def _slug(stem: str) -> str:
     return f"{stem}-{uuid4().hex[:10]}"
@@ -271,7 +276,7 @@ class TestNullTargetIsRejectedForEveryOtherRelation:
     for the same reason it is worth checking a fence along its whole length.
     """
 
-    @pytest.mark.parametrize("relation", TWO_ENDED_RELATIONS)
+    @pytest.mark.parametrize("relation", ALL_TWO_ENDED_RELATIONS)
     async def test_null_target_is_a_422(
         self, client: httpx.AsyncClient, relation: str
     ) -> None:
@@ -289,7 +294,7 @@ class TestNullTargetIsRejectedForEveryOtherRelation:
         assert relation in resp.text
         assert "spawned_followup" in resp.text
 
-    @pytest.mark.parametrize("relation", TWO_ENDED_RELATIONS)
+    @pytest.mark.parametrize("relation", ALL_TWO_ENDED_RELATIONS)
     async def test_the_two_ended_form_still_works(
         self, client: httpx.AsyncClient, relation: str
     ) -> None:
@@ -303,6 +308,83 @@ class TestNullTargetIsRejectedForEveryOtherRelation:
         )
         assert resp.status_code == 201, resp.text
         assert resp.json()["to_id"] == peer
+
+
+class TestRefutesEdge:
+    """``refutes`` — a measurement that FALSIFIES a standing claim.
+
+    Plan ``2026-09-06-work-artifacts-kinds-and-edges-cannot-express-a-refutation``.
+    Two-ended: the refuted artifact must exist. ``supersedes`` was the near
+    miss and means "a newer version of the same thing", which is why this is a
+    new member of the vocabulary rather than a re-use.
+    """
+
+    async def test_a_diagnostic_can_refute_a_plan(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        diagnostic = await _make_artifact(client, stem="measured", kind="diagnostic")
+        claim = await _make_artifact(client, stem="claim")
+
+        resp = await client.post(
+            f"{API_PREFIX}/{diagnostic}/edges",
+            json={
+                "relation": "refutes",
+                "to_id": claim,
+                "note": "25,253 consults, 0 dispatched — arming the flag is inert",
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["relation"] == "refutes"
+        assert body["from_id"] == diagnostic
+        assert body["to_id"] == claim
+        assert body["direction"] == "outgoing"
+        assert body["peer_kind"] == "plan"
+
+        # Visible from BOTH ends — the refuted claim can see what refuted it.
+        seen_from_claim = await client.get(f"{API_PREFIX}/{claim}")
+        assert seen_from_claim.status_code == 200, seen_from_claim.text
+        incoming = [
+            e for e in seen_from_claim.json()["edges"] if e["relation"] == "refutes"
+        ]
+        assert len(incoming) == 1
+        assert incoming[0]["direction"] == "incoming"
+        assert incoming[0]["peer_kind"] == "diagnostic"
+
+    async def test_refutes_is_two_ended(self, client: httpx.AsyncClient) -> None:
+        """A refutation with nothing to refute is a 422 from the endpoint.
+
+        Covered by the parametrised fence above as well; stated on its own
+        because it is the one property the plan asks a reviewer to verify.
+        """
+        diagnostic = await _make_artifact(client, stem="dangling", kind="diagnostic")
+        resp = await client.post(
+            f"{API_PREFIX}/{diagnostic}/edges",
+            json={"relation": "refutes", "to_id": None, "note": "refutes nothing"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "refutes" in resp.text
+
+        # Nothing was written; the open-follow-ups queue is untouched.
+        detail = await client.get(f"{API_PREFIX}/{diagnostic}")
+        assert detail.json()["edges"] == []
+
+    async def test_refutes_never_lists_as_an_open_followup(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        diagnostic = await _make_artifact(
+            client, stem="not-a-followup", kind="diagnostic"
+        )
+        claim = await _make_artifact(client, stem="not-a-followup-claim")
+        resp = await client.post(
+            f"{API_PREFIX}/{diagnostic}/edges",
+            json={"relation": "refutes", "to_id": claim},
+        )
+        assert resp.status_code == 201, resp.text
+
+        listing = await client.get(f"{API_PREFIX}/followups")
+        assert listing.status_code == 200, listing.text
+        assert listing.json()["total"] == 0
 
 
 # ===========================================================================

@@ -17,7 +17,8 @@ Upsert contract
 matches the stored digest the BODY is a no-op: ``current_version`` does not
 move and no version row is appended — the version log is the body's history
 and nothing else. The head row's metadata (``title``, ``status``, ``repos``,
-``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is
+``intent_refs``, ``work_unit_slug``, ``authored_at``, ``source_path``,
+``captured_by``) is
 still written when any of it differs, and ``changed`` reports that honestly
 (Phase 5 of ``2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default``:
 an accepted POST used to drop a corrected ``status`` on the floor whenever the
@@ -241,6 +242,7 @@ def _apply_filters(
     q: str | None,
     since: datetime | None,
     work_unit_slug: str | None,
+    intent_ref: str | None = None,
 ) -> Select:
     """Apply the shared list/count filters to a statement."""
     stmt = stmt.where(_org_scope(org_id))
@@ -272,6 +274,13 @@ def _apply_filters(
         stmt = stmt.where(WorkArtifact.updated_at >= since)
     if work_unit_slug is not None:
         stmt = stmt.where(WorkArtifact.work_unit_slug == work_unit_slug)
+    if intent_ref is not None:
+        # "Which artifacts bear on this Intent?" — the query the column exists
+        # to serve. Containment (``@>``) so ix_work_artifacts_intent_refs (GIN)
+        # answers it, exactly as the ``repo`` filter above is spelled.
+        stmt = stmt.where(
+            WorkArtifact.intent_refs.op("@>")(cast([intent_ref], ARRAY(Text)))
+        )
     return stmt
 
 
@@ -285,6 +294,7 @@ async def list_artifacts(
     q: str | None = None,
     since: datetime | None = None,
     work_unit_slug: str | None = None,
+    intent_ref: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> tuple[list[WorkArtifact], int]:
@@ -298,6 +308,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
     )
 
     count_stmt = _apply_filters(
@@ -309,6 +320,7 @@ async def list_artifacts(
         q=q,
         since=since,
         work_unit_slug=work_unit_slug,
+        intent_ref=intent_ref,
     )
     total = int((await db.execute(count_stmt)).scalar_one())
 
@@ -570,6 +582,7 @@ class _HeadMetadata:
     source_path: str | None
     work_unit_slug: str | None
     repos: list[str]
+    intent_refs: list[str]
     authored_at: datetime | None
     captured_by: str
 
@@ -590,6 +603,7 @@ def _assign_head_metadata(existing: WorkArtifact, metadata: _HeadMetadata) -> bo
         ("source_path", metadata.source_path),
         ("work_unit_slug", metadata.work_unit_slug),
         ("repos", metadata.repos),
+        ("intent_refs", metadata.intent_refs),
         ("authored_at", metadata.authored_at),
         ("captured_by", metadata.captured_by),
     ):
@@ -655,6 +669,7 @@ async def upsert_artifact(
     change_description: str | None,
     created_by: str | None = None,
     kind_is_heuristic: bool = False,
+    intent_refs: list[str] | None = None,
 ) -> tuple[WorkArtifact, bool, bool]:
     """Insert-or-update by the functional unique key.
 
@@ -723,6 +738,7 @@ async def upsert_artifact(
             source_repo=source_repo,
             work_unit_slug=work_unit_slug,
             repos=list(repos),
+            intent_refs=list(intent_refs or []),
             authored_at=authored_at,
             captured_by=captured_by,
             current_version=1,
@@ -772,6 +788,7 @@ async def upsert_artifact(
         source_path=source_path,
         work_unit_slug=work_unit_slug,
         repos=list(repos),
+        intent_refs=list(intent_refs or []),
         authored_at=authored_at,
         captured_by=captured_by,
     )

@@ -44,6 +44,10 @@ WorkArtifactKind = Literal[
     "investigation_report",
     "handoff",
     "plan",
+    #: An operator question answered by live MEASUREMENT. Kept apart from
+    #: ``investigation_report`` so the two families remain separable on the
+    #: ``kind`` filter. See ``plan_library_04_diagnostic_refutes``.
+    "diagnostic",
 ]
 
 CapturedBy = Literal["runner_scan", "agent", "operator"]
@@ -59,6 +63,12 @@ WorkArtifactRelation = Literal[
     #: yet, which is precisely what makes it worth recording. See
     #: ``plan_library_03_spawned_followup``.
     "spawned_followup",
+    #: A measurement that FALSIFIES the target claim; two-ended (the refuted
+    #: artifact must exist, so ``to_id`` is required — a null target is a 422
+    #: exactly as for the other two-ended relations). Not ``supersedes``,
+    #: which means "a newer version of the same thing". See
+    #: ``plan_library_04_diagnostic_refutes``.
+    "refutes",
 ]
 
 
@@ -92,6 +102,11 @@ class WorkArtifactUpsert(BaseModel):
     #: never 404s.
     work_unit_slug: str | None = Field(None, max_length=255)
     repos: list[str] = Field(default_factory=list)
+    #: Citations to the served coord Intent this artifact bears on
+    #: (``success_metric/<name>``, ``domain_spec/<name>``). Soft links like
+    #: ``work_unit_slug`` — never resolved, never 404. Filter with
+    #: ``GET /plan-library?intent_ref=``.
+    intent_refs: list[str] = Field(default_factory=list)
     authored_at: IsoDatetime | None = None
     captured_by: CapturedBy = "agent"
     #: Change note recorded on the appended version row (ignored on a no-op).
@@ -123,8 +138,9 @@ class WorkArtifactKindPatch(BaseModel):
 class WorkArtifactEdgeCreate(BaseModel):
     """Create one provenance edge out of (or into) the path artifact.
 
-    For the four two-ended relations, supply EXACTLY ONE of ``to_id``
-    (outgoing) or ``from_id`` (incoming) — plus ``supersedes``, five in all.
+    For the six two-ended relations (``produced_report``, ``feeds``,
+    ``authored_plan``, ``supersedes``, ``depends_on``, ``refutes``), supply
+    EXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).
 
     For ``spawned_followup`` both may be omitted: that is the one-ended form,
     ``{"relation": "spawned_followup", "note": "<text>", "to_id": null}``, and
@@ -293,6 +309,7 @@ class WorkArtifactSummary(BaseORMSchema):
     source_repo: str | None
     work_unit_slug: str | None
     repos: list[str]
+    intent_refs: list[str]
     authored_at: IsoDatetime | None
     captured_by: str
     current_version: int
@@ -371,8 +388,8 @@ class WorkArtifactUpsertResponse(BaseModel):
 
     ``changed`` says whether THIS request moved anything on the head row —
     the body (a version bump and a snapshot) or only its metadata (``title``,
-    ``status``, ``repos``, ``work_unit_slug``, ``authored_at``,
-    ``source_path``, ``captured_by``; no version bump). A byte-identical
+    ``status``, ``repos``, ``intent_refs``, ``work_unit_slug``,
+    ``authored_at``, ``source_path``, ``captured_by``; no version bump). A byte-identical
     re-post is the "304-equivalent" the plan asks for: ``changed=False``, the
     ``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A
     literal HTTP 304 is not used because 304 must carry no body and the
@@ -543,6 +560,9 @@ class PlanCandidate(BaseModel):
     title: str
     status: str
     repos: list[str] = Field(default_factory=list)
+    #: Empty on a work-unit-only row — the citation is a property of the
+    #: artifact row, and there is none.
+    intent_refs: list[str] = Field(default_factory=list)
     source_repo: str | None = None
     source_path: str | None = None
     work_unit_slug: str | None = None
