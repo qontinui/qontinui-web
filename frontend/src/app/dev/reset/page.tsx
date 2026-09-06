@@ -2,7 +2,8 @@
 
 /**
  * Dev Reset Page - Clears all browser state and shows auth debug info
- * Only available in development mode
+ * Only available in development mode, or on a production build made with
+ * NEXT_PUBLIC_DEV_RESET=true (see ENABLED below)
  *
  * Visit /dev/reset to:
  * - Clear localStorage
@@ -19,6 +20,20 @@ import { httpClient } from "@/services/service-factory";
 import { ApiConfig } from "@/services/api-config";
 
 const log = createLogger("DevReset");
+
+/**
+ * Build-time gate. `next dev` enables the page as before; a production
+ * build enables it only when `NEXT_PUBLIC_DEV_RESET=true` was set at build
+ * time — the same explicit opt-in shape `dev/grounding` uses
+ * (`NEXT_PUBLIC_GROUNDING_GALLERY`). The E2E stack builds with it so
+ * `tests/e2e/pages/dev-reset.spec.ts` can run against the production
+ * build it tests everything else on; a deploy that does not set it keeps
+ * the page hidden exactly as it was. What the page does is safe on either
+ * arm: it clears the VISITOR's own browser storage and nothing else.
+ */
+const ENABLED =
+  process.env.NODE_ENV === "development" ||
+  process.env.NEXT_PUBLIC_DEV_RESET === "true";
 
 interface DebugInfo {
   timestamp: string;
@@ -119,8 +134,8 @@ export default function DevResetPage() {
   const isClearing = clearStatus === "idle" || clearStatus === "pending";
 
   useEffect(() => {
-    // Only run in development
-    if (process.env.NODE_ENV !== "development") {
+    // Only run where the page is enabled (see ENABLED)
+    if (!ENABLED) {
       router.push("/");
       return;
     }
@@ -141,7 +156,7 @@ export default function DevResetPage() {
     return undefined;
   }, [isClearing, redirectCountdown, router]);
 
-  if (process.env.NODE_ENV !== "development") {
+  if (!ENABLED) {
     return null;
   }
 
