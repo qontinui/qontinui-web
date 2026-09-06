@@ -1,7 +1,7 @@
 """coord policy_rule_proposals — agent-proposed policy-row graduation queue
 
 Revision ID: policy_rule_proposals_01
-Revises: plan_library_04_diagnostic_refutes
+Revises: coord_pdclaims_01
 Create Date: 2026-09-06
 
 Phase 2a of plan
@@ -202,7 +202,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "policy_rule_proposals_01"
-down_revision: str = "plan_library_04_diagnostic_refutes"
+down_revision: str = "coord_pdclaims_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
