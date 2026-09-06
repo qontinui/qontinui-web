@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the INODE axis, and the shmem split of swap
 
 Revision ID: fleet_res_tel_05
-Revises: reqchk_walk_01
+Revises: policy_rule_proposals_01
 Create Date: 2026-09-05
 
 Phase 1 of plan
@@ -228,7 +228,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fleet_res_tel_05"
-down_revision: str | Sequence[str] | None = "reqchk_walk_01"
+down_revision: str | Sequence[str] | None = "policy_rule_proposals_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -254,6 +254,32 @@ _INODE_AND_SHMEM_COLUMNS: tuple[tuple[str, str], ...] = (
     ("disk_inodes_free", "BIGINT"),
     ("swap_shmem_bytes", "BIGINT"),
 )
+
+# `coord-column-drop-guard` reads DROP/RENAME sites STATICALLY, and
+# `_drop_columns` builds its SQL from an f-string — so `ALTER TABLE` and
+# `DROP COLUMN` never share a string literal and the gate cannot resolve which
+# table is being altered. It then fails closed rather than guessing, which is the
+# correct behaviour for a guard whose whole job is to catch a drop of a column a
+# deployed coord still reads. The declaration below is the answer it asks for.
+#
+# Nothing here is load-bearing for any deployed reader: these are the same three
+# columns this revision ADDS, so they exist on no deployed schema and the
+# downgrade only ever removes what this upgrade created.
+COORD_SCHEMA_DROPS: list[tuple[str, str]] = [
+    ("coord.device_resource_samples", "disk_inodes_total"),
+    ("coord.device_resource_samples", "disk_inodes_free"),
+    ("coord.device_resource_samples", "swap_shmem_bytes"),
+]
+
+# Spelled as literals because the gate is a static reader — but pinned to the one
+# list above, so the declaration cannot drift from the columns actually dropped.
+# That is the same single-source rule the ADD/DROP generation already follows; a
+# hand-maintained second copy is exactly what this file's design refuses.
+if COORD_SCHEMA_DROPS != [(_TABLE, name) for name, _ in _INODE_AND_SHMEM_COLUMNS]:
+    raise RuntimeError(
+        "COORD_SCHEMA_DROPS drifted from _INODE_AND_SHMEM_COLUMNS: the drop "
+        "declaration and the column list must name the same set"
+    )
 
 
 def _add_columns(table: str) -> str:
