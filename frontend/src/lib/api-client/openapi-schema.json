@@ -53327,7 +53327,7 @@
       },
       "WorkArtifactEdgeCreate": {
         "additionalProperties": false,
-        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the four two-ended relations, supply EXACTLY ONE of ``to_id``\n(outgoing) or ``from_id`` (incoming) \u2014 plus ``supersedes``, five in all.\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
+        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the six two-ended relations (``produced_report``, ``feeds``,\n``authored_plan``, ``supersedes``, ``depends_on``, ``refutes``), supply\nEXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
         "properties": {
           "from_id": {
             "anyOf": [
