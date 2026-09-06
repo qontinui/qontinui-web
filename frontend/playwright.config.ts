@@ -262,6 +262,16 @@ export default defineConfig({
           // a prior `npm run build`; without one it exits with "Could not
           // find a production build in the '.next' directory", which
           // Playwright surfaces verbatim — no separate guard needed.
+          //
+          // `next.config.mjs` sets `output: 'standalone'`, so `next start`
+          // logs `"next start" does not work with "output: standalone"
+          // configuration`. That line is a WARNING, not an error: Next
+          // only warns and then serves the ordinary `.next` build anyway
+          // (next/dist/server/next.js — the `output: 'export'` arm beside
+          // it is the one that throws). spec-ci.yml has served this same
+          // build with `next start` since it was written. Do not "fix" the
+          // warning by switching to `.next/standalone/server.js`: that
+          // tree needs `public/` and `.next/static` copied in by hand.
           command: "npm run start -- --port 3001 --hostname 0.0.0.0",
           url: "http://localhost:3001",
           reuseExistingServer: !process.env.CI,
