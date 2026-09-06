@@ -62,6 +62,7 @@ which looks exactly like a green run in the summary line.
 
 from __future__ import annotations
 
+import ast
 import uuid
 from pathlib import Path
 
@@ -88,11 +89,17 @@ from tests._alembic_harness import (
 # stale pin rewinds too far and replays unrelated non-idempotent revisions,
 # surfacing as someone else's `DuplicateTable`.
 #
-# It is `reqchk_walk_01`, NOT the `fleet_res_tel_04` the family prefix suggests:
-# that revision stopped being the chain head long ago. The prefix carries the
-# lineage, never the edge.
+# It is NOT the `fleet_res_tel_04` the family prefix suggests: that revision
+# stopped being the chain head long ago. The prefix carries the lineage, never
+# the edge.
+#
+# Re-pointed 2026-09-06 `reqchk_walk_01` -> `policy_rule_proposals_01`: that
+# sibling landed underneath this still-unlanded revision, giving the rebuilt
+# chain two heads, and `alembic-heads-pr` fails on that. The comment above
+# anticipated exactly this, and the first test below is what caught the stale
+# pin — it is doing its job, so re-point BOTH together or it fires again.
 _REVISION_ID = "fleet_res_tel_05"
-_PARENT_REVISION_ID = "reqchk_walk_01"
+_PARENT_REVISION_ID = "policy_rule_proposals_01"
 _REVISION_FILENAME = "fleet_res_tel_05_inode_and_shmem_columns.py"
 
 _TABLE = "device_resource_samples"
@@ -239,14 +246,69 @@ def test_the_shmem_comment_refuses_the_formula_change_it_enables() -> None:
     )
 
 
-def test_the_revision_generates_its_drops_from_the_same_list() -> None:
-    """Downgrade must be the exact inverse, over the one list."""
+def test_the_revision_generates_its_drops_from_the_same_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Downgrade must be the exact inverse, over the one list.
+
+    This used to call a module-level `_drop_columns` helper. That helper is gone
+    on purpose (2026-09-06) and MUST NOT come back: `check_coord_column_drops.py`
+    scans the whole module MINUS the `downgrade()` body, so a shared template
+    reads as an UPGRADE-path drop and demands a `COORD_SCHEMA_DROPS` declaration
+    for a drop the upgrade never makes — which then puts the revision in front of
+    the guard's manifest phase for nothing. `pdpub_02` documents the same choice.
+
+    So this executes `downgrade()` against a recording stub. That is strictly
+    stronger than the helper call it replaces: it pins the SQL the real downgrade
+    path emits, not the SQL of a helper that path merely happens to use.
+    """
     module = _revision_module()
-    drops = module._drop_columns(_QUALIFIED)
     adds = module._add_columns(_QUALIFIED)
+
+    executed: list[str] = []
+
+    class _RecordingOp:
+        @staticmethod
+        def execute(sql: object) -> None:
+            executed.append(str(sql))
+
+    monkeypatch.setattr(module, "op", _RecordingOp)
+    module.downgrade()
+
+    drops = "\n".join(executed)
+    assert executed, "downgrade() emitted no SQL at all"
+    assert f"ALTER TABLE {_QUALIFIED}" in drops, (
+        "downgrade() must ALTER the qualified table; an unqualified name would "
+        "hit whatever `search_path` happens to be"
+    )
     for name, sql_type in _EXPECTED_DDL:
         assert f"ADD COLUMN IF NOT EXISTS {name} {sql_type}" in adds
         assert f"DROP COLUMN IF EXISTS {name}" in drops
+
+
+def test_no_module_level_drop_template_reappears() -> None:
+    """The guard-visibility property the test above depends on, pinned directly.
+
+    `check_coord_column_drops.py` skips only the `downgrade()` FUNCTION BODY
+    (`scan_source`: `stmt.name == "downgrade": continue`). Any `DROP COLUMN`
+    text reachable at module level — a helper, a constant, a template — is read
+    as an upgrade-path drop and re-breaks the gate. Assert on the module's AST
+    rather than on the raw source, so the `downgrade()` body and the prose in
+    this file's own docstrings are both correctly excluded.
+    """
+    tree = ast.parse(_revision_source())
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "downgrade":
+            continue
+        for literal in (
+            n.value
+            for n in ast.walk(node)
+            if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        ):
+            assert "DROP COLUMN" not in literal.upper(), (
+                "a DROP COLUMN template reappeared OUTSIDE downgrade(); "
+                "coord-column-drop-guard will read it as an upgrade-path drop"
+            )
 
 
 # ---------------------------------------------------------------------------
