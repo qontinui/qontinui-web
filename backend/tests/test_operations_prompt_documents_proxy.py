@@ -225,6 +225,93 @@ class TestGetPromptDocument:
             "/coord/prompt-documents/policy/engineering-priorities"
         )
 
+    def test_claims_envelope_passed_through_intact(self, auth_client: TestClient):
+        """The five ``claims*`` fields coord adds beside ``document`` (plan
+        ``2026-09-06-domain-spec-divergences-decay-with-no-re-probe`` Phase 2)
+        must reach the browser byte-for-byte.
+
+        The proxy returns coord's JSON verbatim and declares ``-> Any``, so
+        nothing whitelists keys today — this pins that a future response
+        model on this route cannot silently DROP them. Each field is asserted
+        individually rather than by whole-payload equality so a regression
+        names the key it lost; the ``unknown`` claim with
+        ``{"reason": "never_observed"}`` and the ``table_absent`` source are
+        the two degrade shapes the console must be able to render, so those
+        are the values chosen.
+        """
+        claims = [
+            {
+                "claim_id": "speculative-chaining-lever",
+                "state": "confirmed",
+                "observed_at": "2026-09-06T07:00:00Z",
+                "verified_at": "2026-09-06T06:30:00Z",
+                "verified_against": "qontinui-coord@a497830f",
+                "anchor_type": "flag_state",
+                "detail": {},
+            },
+            {
+                "claim_id": "never-observed-claim",
+                "state": "unknown",
+                "observed_at": None,
+                "verified_at": "2026-09-06T06:30:00Z",
+                "verified_against": "qontinui-coord@a497830f",
+                "anchor_type": "content",
+                "detail": {"reason": "never_observed"},
+            },
+        ]
+        coord_payload = _doc(
+            kind="domain_spec",
+            name="coord-merge-train",
+            claims=claims,
+            claims_probed=2,
+            claims_malformed=1,
+            claims_observed_at="2026-09-06T07:00:00Z",
+            claims_state_source="table_absent",
+        )
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=coord_payload)
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/domain_spec/coord-merge-train"
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["claims"] == claims
+        assert body["claims_probed"] == 2
+        assert body["claims_malformed"] == 1
+        assert body["claims_observed_at"] == "2026-09-06T07:00:00Z"
+        assert body["claims_state_source"] == "table_absent"
+        # And nothing was added or renamed on the way through either.
+        assert body == coord_payload
+
+    def test_claims_envelope_absent_stays_absent(self, auth_client: TestClient):
+        """An older coord serves NONE of the ``claims*`` fields. The proxy
+        must not invent them (a defaulted ``claims: []`` or
+        ``claims_probed: 0`` would render as "no probe blocks" — a confident
+        zero where the honest state is UNKNOWN)."""
+        with _patch_httpx() as MockClient:
+            instance = AsyncMock()
+            instance.get.return_value = _mock_response(json_data=_doc())
+            _configure_mock_client(MockClient, instance)
+
+            resp = auth_client.get(
+                f"{API_PREFIX}/coord/prompt-documents/policy/engineering-priorities"
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        for key in (
+            "claims",
+            "claims_probed",
+            "claims_malformed",
+            "claims_observed_at",
+            "claims_state_source",
+        ):
+            assert key not in body, key
+
     def test_not_found_passed_through(self, auth_client: TestClient):
         with _patch_httpx() as MockClient:
             instance = AsyncMock()

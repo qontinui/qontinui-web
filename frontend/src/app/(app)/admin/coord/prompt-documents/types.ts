@@ -528,6 +528,66 @@ export function isAgentWriteTier(value: unknown): value is AgentWriteTier {
   );
 }
 
+/**
+ * The observer's three-valued verdict on one probed claim (plan
+ * `2026-09-06-domain-spec-divergences-decay-with-no-re-probe`, D3). A WIRE
+ * contract with coord's `prompt_document_claim_states.state` CHECK — lowercase
+ * on the wire and in the DB, uppercase only in prose.
+ *
+ * `unknown` is the observer's "resolution failure is NEVER gone" arm: a fetch
+ * error, an unknown anchor type, a malformed block, a budget cutoff, a claim
+ * never observed, or a document whose newest observation is older than the
+ * staleness budget. **It must never render like `confirmed`.**
+ */
+export type PromptDocumentClaimState = "confirmed" | "contradicted" | "unknown";
+
+/** Every state, in the order the console lists them. Literal strings on
+ *  purpose — they mirror a DB CHECK, so a rename here would not be a rename. */
+export const PROMPT_DOCUMENT_CLAIM_STATES: readonly PromptDocumentClaimState[] =
+  ["confirmed", "contradicted", "unknown"] as const;
+
+/** Narrow an arbitrary coord string to a claim state this console knows. */
+export function isPromptDocumentClaimState(
+  value: unknown
+): value is PromptDocumentClaimState {
+  return (
+    typeof value === "string" &&
+    (PROMPT_DOCUMENT_CLAIM_STATES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * One entry per fenced ```probe``` block in the document BODY, parsed by coord
+ * at read time and joined to the persisted `coord.prompt_document_claim_states`
+ * row when one exists.
+ */
+export interface PromptDocumentClaim {
+  /** The block's `claim:` id — kebab-case, unique within the document. */
+  claim_id: string;
+  state: PromptDocumentClaimState;
+  /** When the observer last resolved this claim; `null` when it never has. */
+  observed_at: string | null;
+  /** The block's own `verified_at:` line — what the AUTHOR verified, not the observer. */
+  verified_at: string | null;
+  /** The block's `verified_against:` line, `<repo>@<sha-prefix>`. */
+  verified_against: string | null;
+  /** The anchor's `type` (`flag_state`, `content`, `blob`, …); `null` when the anchor was unparseable. */
+  anchor_type: string | null;
+  /** The observer's finding: `reason`, `stale`, the resolved value. Shape is the observer's, not ours. */
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Where coord got the per-claim states from. `table` is the ordinary case;
+ * the other two are the missing-relation and read-error degrades, under which
+ * coord serves EVERY claim as `unknown` — never an empty `claims` array when
+ * the body carries probe blocks.
+ */
+export type PromptDocumentClaimStateSource =
+  | "table"
+  | "table_absent"
+  | "read_failed";
+
 /** A full `coord.prompt_documents` row, body included (the get-one shape). */
 export interface PromptDocument extends PromptDocumentSummary {
   tenant_id: string;
@@ -539,6 +599,25 @@ export interface PromptDocument extends PromptDocumentSummary {
    * `PromptDocumentSummary`.
    */
   attrs: PromptDocumentAttrs | null;
+  /**
+   * The per-claim probe envelope coord serves BESIDE the document (plan
+   * `2026-09-06-domain-spec-divergences-decay-with-no-re-probe`, D2).
+   *
+   * All five are OPTIONAL because a coord predating the probe grammar serves
+   * none of them, and **absent is UNKNOWN, never zero**: a missing
+   * `claims_probed` must render as "not served by this coord build", not as
+   * "no probe blocks in this document". The two say opposite things about
+   * whether the sweep is alive, and the whole point of the count is to tell
+   * a stopped sweep apart from a corpus with nothing to contradict.
+   */
+  claims?: PromptDocumentClaim[];
+  /** Probe blocks parsed from the body — including malformed-but-identified ones. */
+  claims_probed?: number;
+  /** Probe blocks skipped outright because they carried no `claim:` id. */
+  claims_malformed?: number;
+  /** The newest persisted `observed_at` across this document's claims, or `null`. */
+  claims_observed_at?: string | null;
+  claims_state_source?: PromptDocumentClaimStateSource;
 }
 
 /**
