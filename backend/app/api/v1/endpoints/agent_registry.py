@@ -381,6 +381,14 @@ _ADMIN_DESCRIPTIVE: _DescriptiveSpec = {
 #: exists for the scalars beside it.
 _ADMIN_STRING_LISTS: tuple[str, ...] = ("allowed_dispositions",)
 
+#: How many orphaned agent names :func:`_render_admin_rows` names in one log
+#: line. A tenant registry is a couple of dozen agents, so this shows every
+#: name in any realistic case; the cap exists because the count is coord's to
+#: choose, not because the realistic case needs one. The log ALSO carries the
+#: full count and a truncation flag — a cap reported as a total is how a
+#: truncated list comes to read as a complete one.
+_ORPHAN_NAMES_LOGGED = 20
+
 
 def _descriptive_is_usable(value: Any, accepted: type | tuple[type, ...]) -> bool:
     """Whether a descriptive value may be read as its declared type.
@@ -1041,7 +1049,11 @@ def _render_admin_rows(
     reported beside it rather than instead of it.
 
     Because those two numbers ARE the page's claim, a pref row that cannot be
-    attributed to an agent is a 502 rather than a skip — see below.
+    attributed to an agent is a 502 rather than a skip — see below. A pref row
+    that CAN be attributed but names an agent the registry does not list is the
+    third case, and it takes the middle treatment: the render stands (every
+    number here is still exactly right) and a warning says so, matching the
+    unreadable-``enabled`` arm rather than the refusal.
     """
     by_agent: dict[str, list[dict[str, Any]]] = {}
     for index, pref in enumerate(prefs):
@@ -1200,6 +1212,54 @@ def _render_admin_rows(
                     and bool(p["enabled"]) != default_enabled
                 ),
             )
+        )
+    # The third member of the pref-row family, and until now the only one
+    # treated by neither arm. A pref row can fail this page in three ways:
+    #
+    #   * it cannot be ATTRIBUTED at all (no usable `agent_name`) -> 502
+    #     above, because with no agent to count it against every count on the
+    #     page becomes unverifiable, not one of them;
+    #   * its `enabled` cannot be READ -> warn above, render kept, because the
+    #     conservative count is still the right one;
+    #   * it names an agent the registry does not list -> this.
+    #
+    # It is the second treatment, not the first: an orphan's name IS known, it
+    # simply matches no row, so every number the page renders stays exactly
+    # correct and refusing would be far too loud. But it is not nothing either.
+    # `pref_count` is what the page states as "changing the default does not
+    # reach N members", and an orphan is a member holding a stored preference
+    # for an agent the page does not list AT ALL -- absent from every count,
+    # every filter and the health strip, on a surface whose whole job is the
+    # tenant-wide consent picture. Dropping it in silence is the same shape as
+    # the drop this loop was fixed for, one level up: not a wrong number, a
+    # missing row nobody is told about.
+    #
+    # Reachable because nothing enforces the join. `coord.agent_user_prefs`
+    # carries NO foreign key to `coord.agent_registry` (the composite PK is
+    # `(tenant_id, user_id, agent_name)`, agent_registry_01), and coord's
+    # `list_prefs` selects every pref row for the tenant with no join at all --
+    # so the two lists are only ever as consistent as whatever last wrote them.
+    # Coord validates the agent exists on the WRITE path (`unknown_agent`,
+    # 404), which is why no shipped route produces one today; a registry row
+    # removed or renamed after the fact, by any means, produces one at once,
+    # and this route would have said nothing.
+    orphaned = sorted(set(by_agent) - {entry.agent_name for entry in entries})
+    if orphaned:
+        # The name list is CAPPED, and says so. `agent_name` is an arbitrary
+        # string arriving from coord in arbitrary quantity — the guards above
+        # refuse an unusable one but never bound how many usable ones there
+        # are — so an unbounded field here would let one off-contract payload
+        # put an unbounded log line on the operator's log pipeline. The counts
+        # beside it are over the WHOLE set, never the shown slice: a cap
+        # reported as a total is how a truncated list comes to read as a
+        # complete one.
+        logger.warning(
+            "agent_registry_admin_prefs_for_unregistered_agents",
+            agent_names=orphaned[:_ORPHAN_NAMES_LOGGED],
+            agent_name_count=len(orphaned),
+            agent_names_truncated=len(orphaned) > _ORPHAN_NAMES_LOGGED,
+            pref_rows=sum(len(by_agent[name]) for name in orphaned),
+            registry_rows=len(entries),
         )
     return entries
 
