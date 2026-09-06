@@ -29,8 +29,8 @@ const LEVEL_COPY: Record<PlanCaptureLevel, { label: string; blurb: string }> = {
  * Three states the panel is careful to keep distinct, because collapsing any
  * of them into "off" would misreport the fleet:
  *
- * * `resolved_scope: "none"` — no row exists at all. Devices resolve `off` by
- *   the poller's fail-safe, but nobody chose that.
+ * * `resolved_scope: "none"` — no row exists at all. Devices resolve `record`
+ *   (coord's per-domain default), but nobody chose that.
  * * a scope band that is not `tenant` — someone else's row (system-band) is
  *   winning, so this tenant's setting is not what is in force.
  * * a failed read-back after a write — the write landed, the resolved value is
@@ -168,15 +168,20 @@ export function CapturePolicyPanel() {
             </p>
           )}
 
-          {/* "Off because nobody wrote a row" ≠ "off because someone chose off". */}
+          {/* "Record because nobody wrote a row" ≠ "record because someone chose it".
+              The fallback is coord's per-domain DEFAULT, not the poller's
+              fail-safe: a device that reads no row resolves `record` (plan
+              2026-09-03-plan-library-write-door-nonce-authorized-and-body-sync-on-by-default,
+              amendment A2). Saying `off` here was true only before coord
+              served that default. */}
           {noRow && (
             <p
               className="text-xs text-muted-foreground"
               data-testid="plan-capture-no-row"
             >
               No policy row exists for this tenant yet. Devices fall back to{" "}
-              <code>off</code> — that is the poller&apos;s fail-safe, not a
-              choice anyone made. Pick a level to write one.
+              <code>record</code> — coord&apos;s per-domain default, not a
+              choice anyone made. Pick a level to write an explicit row.
             </p>
           )}
 
@@ -263,7 +268,10 @@ export function CapturePolicyPanel() {
             with confidence on no evidence, which is the same mistake as
             rendering an unreachable coord as "no work unit".
           */}
-          <p className="text-xs text-muted-foreground" data-testid="plan-capture-blurb">
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="plan-capture-blurb"
+          >
             {current === null
               ? "The resolved level could not be read, so what a spawning session is told is unknown."
               : (LEVEL_COPY[current as PlanCaptureLevel]?.blurb ??

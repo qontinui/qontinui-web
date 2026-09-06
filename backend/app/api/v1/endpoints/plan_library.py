@@ -2208,8 +2208,10 @@ async def list_work_artifacts(
         offset=offset,
         limit=limit,
     )
+    items = [_summary(r) for r in rows]
     return WorkArtifactListResponse(
-        items=[_summary(r) for r in rows],
+        items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,
@@ -3302,6 +3304,7 @@ async def list_plan_candidates(
 
     return PlanCandidateResponse(
         items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,
@@ -3354,8 +3357,10 @@ async def list_open_followups(
         db, org_id=org_id, offset=offset, limit=limit
     )
     now = datetime.now(UTC)
+    items = [_open_followup(edge, origin, now) for edge, origin in rows]
     return OpenFollowupResponse(
-        items=[_open_followup(edge, origin, now) for edge, origin in rows],
+        items=items,
+        count=len(items),
         total=total,
         offset=offset,
         limit=limit,
@@ -3562,11 +3567,16 @@ async def upsert_work_artifact(
 ) -> WorkArtifactUpsertResponse:
     """Insert or update one artifact.
 
-    Unchanged content is a no-op: the response carries ``changed=false``,
-    ``X-Artifact-Unchanged: true`` and an ``ETag`` of the digest, and neither
-    ``current_version`` nor the version log moves. That is the plan's
-    "304-equivalent" — a literal 304 cannot carry the body the caller needs
-    to assert the version did not move.
+    Unchanged content keeps the version log: neither ``current_version`` nor
+    a snapshot moves, and the response carries an ``ETag`` of the digest.
+    That is the plan's "304-equivalent" — a literal 304 cannot carry the body
+    the caller needs to assert the version did not move. The head row's
+    METADATA (``title``, ``status``, ``repos``, ``work_unit_slug``,
+    ``authored_at``, ``source_path``, ``captured_by``) is still stored when
+    it differs, so ``changed`` reports whether THIS request moved anything:
+    a byte-identical re-post answers ``changed=false`` with
+    ``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored
+    body answers ``changed=true`` and no header, with the version untouched.
     """
     computed = crud.compute_content_sha256(payload.body)
     if payload.content_sha256 is not None and payload.content_sha256 != computed:

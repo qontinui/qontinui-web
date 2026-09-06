@@ -15,12 +15,25 @@ Two validation rules are deliberate and load-bearing:
 model on purpose** — it is derived server-side from the authenticated
 principal. A caller-supplied organization would be a scope-escalation bug, and
 the surest way to prevent one is to give the request body nowhere to put it.
+
+Every request model carries ``extra="forbid"`` (plan
+``2026-09-03-wrong-key-reads-cannot-yield-a-silent-zero``, Phase 4): an
+unknown body key is a 422 naming the key, never a silently dropped field. A
+misspelled ``work_unit_slug`` on an upsert would otherwise write a row that
+the exact-stem filter can never find — a silent zero on every later read.
+The runner's ``ArtifactUpsert`` (``plan_workunit_adapter/body_push.rs``) and
+its ``:9876/plan-library`` door (``mcp/plan_library.rs``) send only declared
+fields, checked against qontinui-runner ``origin/main`` on 2026-09-03.
+
+Every list response carries ``count`` = ``len(items)`` for THIS page (D4 of
+the same plan); ``total`` stays the unpaged total. Both are required and
+un-defaulted so a handler cannot ship a page without saying how big it is.
 """
 
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.base import BaseORMSchema, IsoDatetime
 
@@ -59,6 +72,8 @@ class WorkArtifactUpsert(BaseModel):
 
     NOTE the absence of ``organization_id``. See the module docstring.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     kind: WorkArtifactKind
     slug: str = Field(..., min_length=1, max_length=512)
@@ -100,6 +115,8 @@ class WorkArtifactKindPatch(BaseModel):
     records that a human/agent asserted it.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     kind: WorkArtifactKind
 
 
@@ -114,6 +131,8 @@ class WorkArtifactEdgeCreate(BaseModel):
     ``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal
     and records a follow-up that already has an owner.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     to_id: UUID | None = None
     from_id: UUID | None = None
@@ -131,6 +150,8 @@ class WorkArtifactEdgeClaim(BaseModel):
     out of ``GET /plan-library/followups`` while staying traceable from the
     originating artifact's edge list.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     to_id: UUID
 
@@ -335,9 +356,11 @@ class WorkArtifactDetail(WorkArtifactSummary):
 
 
 class WorkArtifactListResponse(BaseModel):
-    """A page of list rows."""
+    """A page of list rows. ``count`` is this page's length; ``total`` is the
+    unpaged total."""
 
     items: list[WorkArtifactSummary]
+    count: int
     total: int
     offset: int
     limit: int
@@ -346,10 +369,13 @@ class WorkArtifactListResponse(BaseModel):
 class WorkArtifactUpsertResponse(BaseModel):
     """Upsert outcome.
 
-    The "304-equivalent" the plan asks for: an unchanged ``content_sha256``
-    returns ``changed=False`` (and the response carries the
-    ``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).
-    A literal HTTP 304 is not used because 304 must carry no body and the
+    ``changed`` says whether THIS request moved anything on the head row —
+    the body (a version bump and a snapshot) or only its metadata (``title``,
+    ``status``, ``repos``, ``work_unit_slug``, ``authored_at``,
+    ``source_path``, ``captured_by``; no version bump). A byte-identical
+    re-post is the "304-equivalent" the plan asks for: ``changed=False``, the
+    ``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A
+    literal HTTP 304 is not used because 304 must carry no body and the
     caller still wants the current row back — notably ``current_version``,
     which it can then assert did NOT move.
     """
@@ -581,9 +607,11 @@ class OpenFollowup(BaseModel):
 
 
 class OpenFollowupResponse(BaseModel):
-    """A page of open (unclaimed) follow-ups."""
+    """A page of open (unclaimed) follow-ups. ``count`` is this page's length;
+    ``total`` is the unpaged total."""
 
     items: list[OpenFollowup]
+    count: int
     total: int
     offset: int
     limit: int
@@ -593,9 +621,11 @@ class OpenFollowupResponse(BaseModel):
 
 
 class PlanCandidateResponse(BaseModel):
-    """A page of candidates plus the honesty flags for the whole read."""
+    """A page of candidates plus the honesty flags for the whole read.
+    ``count`` is this page's length; ``total`` is the unpaged total."""
 
     items: list[PlanCandidate]
+    count: int
     total: int
     offset: int
     limit: int
