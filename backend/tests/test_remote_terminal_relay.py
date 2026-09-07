@@ -20,7 +20,15 @@ Plan ``2026-08-31-remote-session-tabs-in-runner-terminal``. What is pinned:
   sources choosing equal request ids never cross-bind;
 * a Redis failure is a typed ``attach_registry_unavailable`` on the socket,
   never an exception into the device loop;
-* the listener task closes its own pubsub and unregisters itself when it dies;
+* the terminal bind is ONE atomic round trip (a cancel mid-bind cannot leave
+  a busy key with no TTL) and the release is compare-and-delete (dropping an
+  expired attachment never deletes the key a newer grant has bound);
+* an expired attachment the target never answered is reaped on the next frame
+  either way, releasing the listener and the runner-side subscription;
+* the listener task closes its own pubsub, unregisters itself AND evicts the
+  attachments it routed for (``listener_lost``) when it dies;
+* a target error naming a grant this socket does not hold is ignored — never
+  re-keyed onto our grant through the terminal route;
 * ``devices_ws`` routes the new family through the relay while the existing
   mobile-watcher path is untouched.
 
@@ -101,6 +109,9 @@ class _FakeRedis:
         self.expiry: dict[str, int] = {}
         self.published: list[tuple[str, dict[str, Any]]] = []
         self.pubsubs: list[_FakePubSub] = []
+        # Every command in arrival order, so a test can pin HOW MANY round
+        # trips a path took, not only what the store held afterwards.
+        self.commands: list[tuple[Any, ...]] = []
 
     async def set(
         self,
@@ -110,6 +121,7 @@ class _FakeRedis:
         nx: bool = False,
         exat: int | None = None,
     ) -> bool | None:
+        self.commands.append(("set", key))
         if nx and (key in self.strings or key in self.hashes):
             return None
         self.strings[key] = value
@@ -118,24 +130,48 @@ class _FakeRedis:
         return True
 
     async def hset(self, key: str, mapping: dict[str, str]) -> int:
+        self.commands.append(("hset", key))
         self.hashes.setdefault(key, {}).update(mapping)
         return len(mapping)
 
-    async def hsetnx(self, key: str, field: str, value: str) -> bool:
-        h = self.hashes.setdefault(key, {})
-        if field in h:
-            return False
-        h[field] = value
-        return True
-
     async def hget(self, key: str, field: str) -> str | None:
+        self.commands.append(("hget", key))
         return self.hashes.get(key, {}).get(field)
 
     async def expireat(self, key: str, when: int) -> bool:
+        self.commands.append(("expireat", key))
         self.expiry[key] = when
         return True
 
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> int:
+        """The two module scripts, with their server-side semantics."""
+        keys, args = keys_and_args[:numkeys], keys_and_args[numkeys:]
+        self.commands.append(("eval", script, *keys, *args))
+        (key,) = keys
+        held = self.hashes.get(key, {}).get("grant_jti")
+        if script == rtr.BIND_TERMINAL_SCRIPT:
+            source, jti, exp = args
+            if held is not None and held != jti:
+                return 0
+            self.hashes.setdefault(key, {}).update(
+                {"source_device_id": source, "grant_jti": jti, "exp": exp}
+            )
+            self.expiry[key] = int(exp)
+            return 1
+        if script == rtr.RELEASE_TERMINAL_SCRIPT:
+            (jti,) = args
+            if held != jti:
+                return 0
+            self.hashes.pop(key, None)
+            self.expiry.pop(key, None)
+            return 1
+        raise NotImplementedError(script)
+
+    def evals(self, script: str) -> list[tuple[Any, ...]]:
+        return [c for c in self.commands if c[0] == "eval" and c[1] == script]
+
     async def delete(self, *keys: str) -> int:
+        self.commands.append(("delete", *keys))
         n = 0
         for key in keys:
             if self.hashes.pop(key, None) is not None:
@@ -231,7 +267,6 @@ async def _attach(
                 "rows": 40,
             },
             SOURCE_DEVICE,
-            "user-1",
             manager,
             ws,
         )
@@ -286,7 +321,7 @@ async def _attached(
 async def _send(
     relay: RemoteTerminalRelay, ws: _FakeWS, manager: Any, msg: dict[str, Any]
 ) -> None:
-    await relay.handle_source_frame(msg, SOURCE_DEVICE, "user-1", manager, ws)
+    await relay.handle_source_frame(msg, SOURCE_DEVICE, manager, ws)
 
 
 async def _settle(done: Callable[[], bool] | None = None) -> None:
@@ -636,6 +671,85 @@ async def test_two_grants_cannot_hold_one_terminal(
     await relay.release_source(ws_b)
 
 
+async def test_lazily_dropped_expired_attachment_does_not_release_the_new_holder(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """Dropping A after B has bound the same terminal must leave B's key alone.
+
+    A's grant expires; its Redis keys expire with it, and B binds the now-free
+    terminal. A is still in memory on its socket until something touches it —
+    and that lazy drop deleted ``terminal_key(target, t1)`` unconditionally,
+    which was B's freshly-bound key. The release is compare-and-delete.
+    """
+    ws_a = _FakeWS()
+    ws_b = _FakeWS()
+    manager = _manager()
+    claims_a = await _attached(relay, ws_a, manager, terminal_id="t1", request_id="ra")
+    session_a = relay._sessions[id(ws_a)]
+    att_a = session_a.grants[claims_a["jti"]]
+    key = rtr.terminal_key(TARGET_DEVICE, "t1")
+
+    # A's grant runs out; Redis reaps A's keys (TTL) before anything on A's
+    # socket notices.
+    att_a.exp = int(time.time()) - 1
+    await redis.delete(
+        rtr.claim_key(claims_a["jti"]), rtr.grant_key(claims_a["jti"]), key
+    )
+    claims_b = await _attached(relay, ws_b, manager, terminal_id="t1", request_id="rb")
+    assert redis.hashes[key]["grant_jti"] == claims_b["jti"]
+
+    # Now A is touched and dropped.
+    await relay.route_target_frame(
+        session_a,
+        TARGET_DEVICE,
+        {"type": "terminal_output", "terminal_id": "t1", "data": "aGk="},
+    )
+
+    assert session_a.grants == {}
+    # B still holds the terminal — in Redis and on its socket.
+    assert redis.hashes[key]["grant_jti"] == claims_b["jti"]
+    assert redis.expiry[key] == claims_b["exp"]
+    session_b = relay._sessions[id(ws_b)]
+    output = {"type": "terminal_output", "terminal_id": "t1", "data": "aGk="}
+    assert await relay.route_target_frame(session_b, TARGET_DEVICE, output) is True
+    await relay.release_source(ws_a)
+    await relay.release_source(ws_b)
+
+
+async def test_terminal_bind_is_one_atomic_round_trip(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The bind runs inside the listener task, which teardown cancels.
+
+    Four commands (HSETNX, HGET, HSET, EXPIREAT) could be cut between the
+    claim and the TTL, leaving a busy terminal key that never expires. One
+    server-side script cannot: the key is written with its TTL or not at all.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    key = rtr.terminal_key(TARGET_DEVICE, "t1")
+
+    touches = [c for c in redis.commands if key in c]
+    assert touches == [
+        (
+            "eval",
+            rtr.BIND_TERMINAL_SCRIPT,
+            key,
+            SOURCE_DEVICE,
+            claims["jti"],
+            str(claims["exp"]),
+        )
+    ]
+    assert redis.expiry[key] == claims["exp"]
+    await relay.release_source(ws)
+    # ...and the release is the compare-and-delete script, not a bare DEL.
+    assert [c for c in redis.commands if key in c][1:] == [
+        ("eval", rtr.RELEASE_TERMINAL_SCRIPT, key, claims["jti"])
+    ]
+    assert key not in redis.hashes and key not in redis.expiry
+
+
 # ---------------------------------------------------------------------------
 # Registry failure — a typed refusal on the socket, never an exception
 # ---------------------------------------------------------------------------
@@ -802,11 +916,144 @@ async def test_output_stops_once_the_grant_expires(
     att.exp = int(time.time()) - 1
 
     assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
-    assert ws.sent[before:] == []
+    # No more output — the one frame after expiry is the expiry notice itself.
+    assert ws.sent[before:] == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "attach_grant_expired",
+            "message": "grant expired",
+            "terminal_id": "t1",
+        }
+    ]
     # The dead attachment is reclaimed, not left routing until the socket dies.
     assert session.grants == {}
     assert redis.empty()
     assert session.listeners == {}
+    await relay.release_source(ws)
+
+
+async def test_expired_unanswered_attach_is_reaped_on_the_next_unrelated_frame(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """An attach the target never answers must not hold the listener forever.
+
+    Nothing ever touches such an attachment (no output names its terminal, no
+    input is admitted for it), so without a sweep it would keep the per-target
+    pubsub listener and the runner's ``terminal_subscribe`` alive for the
+    socket's whole lifetime — days.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    att = session.grants[claims["jti"]]
+    assert att.attached is False
+    assert TARGET_DEVICE in session.listeners
+    pubsub = redis.pubsubs[0]
+    manager.send_terminal.reset_mock()
+    manager.relay.send_command_to_runner.reset_mock()
+
+    att.exp = int(time.time()) - 1
+    # An unrelated source frame — a different (unknown) grant.
+    await _send(
+        relay,
+        ws,
+        manager,
+        {"type": "remote_terminal_input", "grant_jti": "other", "data": "x"},
+    )
+
+    assert session.grants == {}
+    assert session.pending_attach == {}
+    assert session.listeners == {}
+    assert redis.empty()
+    assert pubsub.close_count == 1
+    manager.relay.send_command_to_runner.assert_awaited_with(
+        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+    )
+    # The target is told to unbind the grant; the source learns the attach it
+    # is still waiting on is over, under the attach's own request id.
+    detach = manager.send_terminal.await_args.args[1]
+    assert detach["type"] == "terminal_detach"
+    assert detach["remote"]["grant_jti"] == claims["jti"]
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "attach_grant_expired",
+            "message": "grant expired",
+            "request_id": "req-attach-1",
+        }
+    ]
+    # The frame itself is then refused on its own merits.
+    assert [e["code"] for e in ws.of_type("error")] == ["attach_not_registered"]
+    await relay.release_source(ws)
+
+
+async def test_expired_attach_is_reaped_on_the_next_target_frame(
+    relay: RemoteTerminalRelay, redis: _FakeRedis
+) -> None:
+    """The same sweep runs on the return path — a frame for another terminal."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = _claims()
+    await _attach(relay, ws, manager, claims)
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    routed = await relay.route_target_frame(
+        session,
+        TARGET_DEVICE,
+        {"type": "terminal_output", "terminal_id": "t-other", "data": "no"},
+    )
+
+    assert routed is False
+    assert session.grants == {}
+    assert session.listeners == {}
+    assert redis.empty()
+    assert [e["code"] for e in ws.of_type("remote_terminal_error")] == [
+        "attach_grant_expired"
+    ]
+    await relay.release_source(ws)
+
+
+async def test_frame_naming_the_expired_grant_is_refused_as_expired(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """The grant a frame NAMES is left to ``_authorize``: one typed refusal,
+    correlated to the frame, rather than a sweep notice plus not_registered."""
+    ws = _FakeWS()
+    manager = _manager()
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+    session.grants[claims["jti"]].exp = int(time.time()) - 1
+
+    await _send(
+        relay,
+        ws,
+        manager,
+        {
+            "type": "remote_terminal_input",
+            "request_id": "in-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+            "data": "x",
+        },
+    )
+
+    assert ws.of_type("remote_terminal_error") == []
+    assert ws.of_type("error") == [
+        {
+            "type": "error",
+            "code": "attach_grant_expired",
+            "message": "grant expired",
+            "request_id": "in-1",
+            "grant_jti": claims["jti"],
+            "terminal_id": "t1",
+        }
+    ]
+    assert session.grants == {}
     await relay.release_source(ws)
 
 
@@ -944,6 +1191,41 @@ async def test_remote_marked_error_falls_back_to_the_terminal_route(
             "terminal_id": "t1",
         }
     ]
+    await relay.release_source(ws)
+
+
+async def test_remote_marked_error_naming_a_foreign_grant_is_ignored(
+    relay: RemoteTerminalRelay,
+) -> None:
+    """A jti hint that matches no grant here is another source's refusal.
+
+    Falling back to the terminal route would deliver that refusal to us under
+    OUR grant's jti. Only a frame carrying no jti at all may use the terminal.
+    """
+    ws = _FakeWS()
+    manager = _manager()
+    await _attached(relay, ws, manager, terminal_id="t1")
+    session = relay._sessions[id(ws)]
+
+    for frame in (
+        {
+            "type": "error",
+            "terminal_id": "t1",
+            "remote": {"source_device_id": SOURCE_DEVICE, "grant_jti": "not-ours"},
+            "code": "attach_terminal_mismatch",
+            "message": "wrong terminal",
+        },
+        {
+            "type": "error",
+            "terminal_id": "t1",
+            "grant_jti": "not-ours-either",
+            "code": "attach_terminal_mismatch",
+            "message": "wrong terminal",
+        },
+    ):
+        assert await relay.route_target_frame(session, TARGET_DEVICE, frame) is False
+
+    assert ws.of_type("remote_terminal_error") == []
     await relay.release_source(ws)
 
 
@@ -1334,10 +1616,12 @@ async def test_dying_listener_closes_its_pubsub_and_unregisters(
 ) -> None:
     ws = _FakeWS()
     manager = _manager()
-    await _attached(relay, ws, manager, terminal_id="t1")
+    claims = await _attached(relay, ws, manager, terminal_id="t1")
     session = relay._sessions[id(ws)]
     pubsub = redis.pubsubs[0]
     (_, task) = session.listeners[TARGET_DEVICE]
+    manager.send_terminal.reset_mock()
+    manager.relay.send_command_to_runner.reset_mock()
 
     pubsub.push(ConnectionError("pubsub connection lost"))
     await _settle(task.done)
@@ -1346,6 +1630,26 @@ async def test_dying_listener_closes_its_pubsub_and_unregisters(
     assert task.exception() is None  # swallowed and logged, not re-raised
     assert pubsub.closed is True
     assert session.listeners == {}
+    # The route is dead, so the attachment it carried does not linger: the
+    # source is told, the target is told to unbind, the registry is released
+    # and the runner-side subscribe this listener opened is matched.
+    assert ws.of_type("remote_terminal_error") == [
+        {
+            "type": "remote_terminal_error",
+            "grant_jti": claims["jti"],
+            "code": "listener_lost",
+            "message": "return route to the target was lost",
+            "terminal_id": "t1",
+        }
+    ]
+    assert session.grants == {}
+    assert redis.empty()
+    detach = manager.send_terminal.await_args.args[1]
+    assert detach["type"] == "terminal_detach"
+    assert detach["remote"]["grant_jti"] == claims["jti"]
+    manager.relay.send_command_to_runner.assert_awaited_once_with(
+        TARGET_DEVICE, {"type": "terminal_unsubscribe", "runner_id": TARGET_DEVICE}
+    )
     # A later attach to the same target gets a fresh listener.
     await _attached(relay, ws, manager, terminal_id="t2", request_id="r2")
     assert TARGET_DEVICE in session.listeners
@@ -1393,7 +1697,7 @@ async def test_router_hands_source_frames_to_the_relay() -> None:
         devices_ws.remote_terminal_relay, "handle_source_frame", AsyncMock()
     ) as h:
         await devices_ws._route_device_message(msg, "dev-1", "user-1", manager, 7, ws)
-    h.assert_awaited_once_with(msg, "dev-1", "user-1", manager, ws)
+    h.assert_awaited_once_with(msg, "dev-1", manager, ws)
     manager.send_terminal_response_to_mobiles.assert_not_called()
 
 

@@ -501,7 +501,7 @@ async def _route_device_message(
     if remote_terminal_relay.is_source_frame(msg_type):
         try:
             await remote_terminal_relay.handle_source_frame(
-                msg, device_id, user_id, manager, websocket
+                msg, device_id, manager, websocket
             )
         except Exception as e:
             logger.error(
