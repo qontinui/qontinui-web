@@ -681,6 +681,9 @@ class RemoteTerminalRelay:
             )
             return None
         if att.expired():
+            # Same two-sided teardown as ``_evict``: the target learns the
+            # grant is gone rather than holding a detached subscriber.
+            await self._detach_target(session, att, att.terminal_id)
             await self._drop_attachment(session, att)
             await self._refuse(
                 session,
@@ -858,7 +861,15 @@ class RemoteTerminalRelay:
         The source gets a ``remote_terminal_error`` naming the grant (and the
         original attach ``request_id`` while the attach was never answered, so
         a pending attach can settle); the target gets ``terminal_detach``.
+
+        Idempotent: two concurrent sweeps (the device loop's and a listener
+        task's) can snapshot the same expired grant, so the grant is claimed
+        out of ``session.grants`` BEFORE the first await — the loser returns
+        without a second notice to either end.
         """
+        if session.grants.get(att.grant_jti) is not att:
+            return
+        session.grants.pop(att.grant_jti, None)
         payload: dict[str, Any] = {
             "type": "remote_terminal_error",
             "grant_jti": att.grant_jti,
