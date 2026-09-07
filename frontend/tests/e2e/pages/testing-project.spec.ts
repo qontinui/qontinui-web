@@ -15,19 +15,9 @@ import { test, expect } from "../fixtures";
 // Use a placeholder project ID for page-load tests
 const TEST_PROJECT_ID = "test-project-placeholder-id";
 
-// Every navigation here waits for `domcontentloaded`, not `load`: the E2E
-// stack runs against `next dev`, where a route's FIRST hit compiles its chunks
-// on demand and those scripts hold the `load` event — measured twice on the
-// changed-specs lane (web#1265) as a 60 s `page.goto` timeout on a different
-// sub-route each time, while every later hit took ~2 s. Each test already
-// waits for `domcontentloaded` and then auto-waits on the content it asserts,
-// so this is the state the tests actually need. The structural fix (an E2E
-// webServer on a production build) is out of this plan's scope.
 test.describe("Project Testing Dashboard", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -42,9 +32,7 @@ test.describe("Project Testing Dashboard", () => {
   });
 
   test("should display 4-view selector buttons", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
     await page.waitForLoadState("domcontentloaded");
 
     // View selector buttons: Test Runs, Live Execution, Coverage Trends, Reliability
@@ -63,9 +51,7 @@ test.describe("Project Testing Dashboard", () => {
   });
 
   test("should have navigation links to sub-pages", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
     await page.waitForLoadState("domcontentloaded");
 
     // Coverage button in header
@@ -85,9 +71,7 @@ test.describe("Project Testing Dashboard", () => {
   });
 
   test("should display welcome section text", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing`);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(
@@ -102,9 +86,7 @@ test.describe("Project Testing Dashboard", () => {
 
 test.describe("Project Testing - Coverage Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -119,9 +101,7 @@ test.describe("Project Testing - Coverage Page", () => {
   });
 
   test("should display coverage stat cards", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
     await page.waitForLoadState("domcontentloaded");
 
     // Three stat cards: Overall Coverage, Passing Tests, Failing Tests
@@ -131,9 +111,7 @@ test.describe("Project Testing - Coverage Page", () => {
   });
 
   test("should display coverage analysis heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
     await page.waitForLoadState("domcontentloaded");
 
     // The page no longer has a separate "Coverage Analysis" heading; the
@@ -146,9 +124,7 @@ test.describe("Project Testing - Coverage Page", () => {
   });
 
   test("should display navigation buttons", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/coverage`);
     await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Deficiencies buttons in header
@@ -163,9 +139,7 @@ test.describe("Project Testing - Coverage Page", () => {
 
 test.describe("Project Testing - Deficiencies Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -180,9 +154,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
   });
 
   test("should display deficiency tracking list", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
     await page.waitForLoadState("domcontentloaded");
 
     // Without a real backend, DeficiencyList stays in its loading state and the
@@ -199,9 +171,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
   });
 
   test("should display navigation buttons", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/deficiencies`);
     await page.waitForLoadState("domcontentloaded");
 
     // Test Runs and Coverage buttons in header
@@ -216,9 +186,7 @@ test.describe("Project Testing - Deficiencies Page", () => {
 
 test.describe("Project Testing - Integration Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -233,18 +201,14 @@ test.describe("Project Testing - Integration Page", () => {
   });
 
   test("should display Mock Mode badge", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByText("Mock Mode").first()).toBeVisible();
   });
 
   test("should display API health indicator", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     // API health badge shows one of: "Checking API...", "API Connected", "API Offline"
@@ -255,9 +219,7 @@ test.describe("Project Testing - Integration Page", () => {
   });
 
   test("should display integration test runs heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     // The page no longer renders an "Integration Test Runs" section heading;
@@ -272,18 +234,14 @@ test.describe("Project Testing - Integration Page", () => {
   });
 
   test("should display Run Test button", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     await expect(page.getByRole("button", { name: /Run Test/i })).toBeVisible();
   });
 
   test("should show empty state or run list", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/integration`);
     await page.waitForLoadState("domcontentloaded");
 
     // The list area has three legitimate states: empty-state heading, a list
@@ -314,9 +272,7 @@ test.describe("Project Testing - Integration Page", () => {
 
 test.describe("Project Testing - Live Page", () => {
   test("should load without errors and display heading", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
     await page.waitForLoadState("domcontentloaded");
 
     await page.screenshot({
@@ -333,9 +289,7 @@ test.describe("Project Testing - Live Page", () => {
   test("should display tabs for Live Execution and Test History", async ({
     page,
   }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
     await page.waitForLoadState("domcontentloaded");
 
     // Tabs: Live Execution and Test History
@@ -348,9 +302,7 @@ test.describe("Project Testing - Live Page", () => {
   });
 
   test("should show no-active-test message on Live tab", async ({ page }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
     await page.waitForLoadState("domcontentloaded");
 
     // When no test run is selected, shows "No Active Test" message
@@ -363,9 +315,7 @@ test.describe("Project Testing - Live Page", () => {
   test("should switch to Test History tab and show filters", async ({
     page,
   }) => {
-    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`, {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(`/projects/${TEST_PROJECT_ID}/testing/live`);
     await page.waitForLoadState("domcontentloaded");
 
     // Click Test History tab
@@ -381,8 +331,7 @@ test.describe("Project Testing - Live Page", () => {
 test.describe("Project Testing - Run Detail Page", () => {
   test("should load without errors for non-existent run", async ({ page }) => {
     await page.goto(
-      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`,
-      { waitUntil: "domcontentloaded" }
+      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
     await page.waitForLoadState("domcontentloaded");
 
@@ -397,8 +346,7 @@ test.describe("Project Testing - Run Detail Page", () => {
 
   test("should display heading", async ({ page }) => {
     await page.goto(
-      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`,
-      { waitUntil: "domcontentloaded" }
+      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
     await page.waitForLoadState("domcontentloaded");
 
@@ -413,8 +361,7 @@ test.describe("Project Testing - Run Detail Page", () => {
 
   test("should show not-found message for invalid run", async ({ page }) => {
     await page.goto(
-      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`,
-      { waitUntil: "domcontentloaded" }
+      `/projects/${TEST_PROJECT_ID}/testing/runs/non-existent-run-id`
     );
     await page.waitForLoadState("domcontentloaded");
 
