@@ -1,7 +1,7 @@
 """coord.device_resource_samples — the socket-census lane (per-listener TCP states)
 
 Revision ID: fleet_res_tel_05_socket_census
-Revises: policy_rules_tombstone_01
+Revises: fleet_res_tel_05
 Create Date: 2026-09-01
 
 Phase 2a of plan
@@ -281,7 +281,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "fleet_res_tel_05_socket_census"
-down_revision: str | Sequence[str] | None = "policy_rules_tombstone_01"
+down_revision: str | Sequence[str] | None = "fleet_res_tel_05"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -291,41 +291,36 @@ depends_on: str | Sequence[str] | None = None
 # at it would fork the graph — which `alembic-graph-pr.yml`'s `alembic-heads-pr`
 # job (a required check on `web-protect-main`) fails the PR for.
 #
-# down_revision is NO LONGER the live head, and that is deliberate. It was:
-# `pmf_scope_cols_01` at authoring time (origin/main `e9f7496a`), then
-# `vetev_01` when #1212 landed on top, then `require_review_cols_01`.
+# `down_revision` is `fleet_res_tel_05` — the live head of `origin/main` on
+# 2026-09-07, and NOT a relative of this revision despite the shared prefix:
+# `fleet_res_tel_05_inode_and_shmem_columns.py` took the bare `fleet_res_tel_05`
+# id on 2026-09-06 and revises `policy_rule_proposals_01`. This file keeps the
+# id `fleet_res_tel_05_socket_census` because qontinui-coord#1832 and
+# qontinui-web#1180 (`pdtier_03`) both name it. Two revisions sharing a family
+# number is a naming collision, not a chain edge — read `down_revision`, never
+# the prefix.
 #
-# On 2026-09-05 at 16:05Z `main` landed `coord_agent_questions_audience_backfill`
-# off `require_review_cols_01`, forking SIX open PRs at once — five of them off
-# that identical token. Alembic's single-head invariant is a TOTAL ORDER, so
-# re-pointing all six at the live head does not fix it; they re-fork the instant
-# the first lands. They were chained in a stated landing order instead:
+# HISTORY OF THIS EDGE, kept because a gate caught each re-point:
+# `pmf_scope_cols_01` at authoring (origin/main `e9f7496a`) -> `vetev_01` when
+# #1212 landed -> `require_review_cols_01` on a rebase -> `policy_rules_tombstone_01`
+# on 2026-09-05, when a land off `require_review_cols_01` forked SIX open PRs and
+# they were chained in a stated landing order (#1210 -> #1218 -> #989 -> #1269 ->
+# this PR -> #1180) so an unrelated land would cost ONE root re-point instead of
+# six. That chain still stands for #1218 -> #989 -> #1269 (rooted on
+# `reqchk_walk_01`, itself no longer the head, so the root owes a re-point
+# today regardless) and for #1180, whose `pdtier_03` revises THIS revision and
+# needs no edit. This revision alone LEFT the chain on 2026-09-07:
+# qontinui-coord#1832 is `coord:downstream-of` this PR and had sat blocked
+# `has-cross-repo-dependency` behind three unrelated migrations, while an
+# UNLANDED parent kept `alembic-heads-pr`, `Spec CI`
+# (`KeyError: 'policy_rules_tombstone_01'`) and every migration test here red
+# by construction. Detaching one member does not restore the fork: once this
+# lands, the chain root owes the same single re-point it already owes — onto
+# `fleet_res_tel_05_socket_census` instead of `fleet_res_tel_05`.
 #
-#   #1210 -> #1218 -> #989 -> #1269 -> #1216 (this PR) -> #1180
-#
-# So `down_revision` is `policy_rules_tombstone_01` — an UNLANDED sibling
-# (qontinui-web #1269), not a head. Until the four PRs ahead of this one land,
-# `alembic-heads-pr` here is RED BY CONSTRUCTION, because the parent named
-# exists in no tree yet; it goes green on its own with no further edit as they
-# land. That red is the safety property — it is what stops an out-of-order land
-# leaving `main` with a dangling `down_revision`. Do NOT "fix" it by re-pointing
-# at the live head; that dissolves the chain and restores the six-way fork.
-#
-# It is NOT `coordtouch_01`, which this revision was originally briefed to
-# revise. `coordtouch_01` is not a head and has not been one for some time —
-# `grantorig_01_operator_roles_grant_origin.py` already revises it, so pointing
-# here would have produced an immediate two-head fork. Read `down_revision` off
-# a live head computation, never off a name or a brief.
-#
-# A head can MOVE between authoring and the first CI run; `fleet_res_tel_04`
-# was re-pointed twice for exactly that reason, and this revision has now been
-# re-pointed three times (`pmf_scope_cols_01` -> `vetev_01` ->
-# `require_review_cols_01` -> `policy_rules_tombstone_01`). The chain above is
-# what stops a fourth: an unrelated migration landing on `main` now costs ONE
-# re-point — the chain root, #1210 — instead of one per sibling.
-# A stale local head is
-# expected on a busy repo, which is why the fork check is a REQUIRED status
-# check and not a lint — rebase onto the new head when it fires.
+# A head can MOVE between authoring and the first CI run, which is why the fork
+# check is a REQUIRED status check and not a lint — re-point onto the new head
+# when it fires.
 #
 # A re-point is TWO edits, not one. `test_fleet_res_tel_05_socket_census_migration.py`
 # pins this parent in `_PARENT_REVISION_ID` so its walk cannot rewind past the
