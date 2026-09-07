@@ -62,10 +62,13 @@ const APP_READY_TIMEOUT_MS = 30_000;
 /**
  * Per-test budget for the polled tests below.
  *
- * The default 60s is not enough to hold BOTH a dev-mode first-hit compile and a
- * full poll: playwright.config.ts sets navigationTimeout to 60s specifically
- * because Next compiles these routes on demand (~23s for the dashboard). If
- * `goto` eats 30s+, a 30s poll gets truncated by the 60s test deadline and the
+ * The default budget is not enough to hold BOTH a dev-mode first-hit compile
+ * and a full poll. playwright.config.ts's bounds are mode-keyed since Phase 3
+ * of plan 2026-09-05-web-e2e-runs-against-next-dev-…: the `dev` arm still
+ * allows navigationTimeout 60s because Next compiles these routes on demand
+ * (~23s for the dashboard), while the production build every gating lane uses
+ * allows 15s. This constant is sized against the dev arm, the worst one. If
+ * `goto` eats 30s+, a 30s poll gets truncated by the test deadline and the
  * failure surfaces as a bare test-level timeout — losing the diagnostic message
  * that is the point of the poll. Reserve navigation budget and poll budget
  * separately so the assertion always gets to speak.

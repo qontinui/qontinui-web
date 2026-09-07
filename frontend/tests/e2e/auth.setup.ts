@@ -59,6 +59,13 @@ async function mintCognitoIdToken(
   try {
     const resp = await fetch(`https://cognito-idp.${COGNITO_REGION}.amazonaws.com/`, {
       method: "POST",
+      // Bound the call. A bare fetch has NO timeout (undici defaults to 300 s),
+      // and this runs inside the `setup` project's own test budget — which every
+      // browser project depends on, so an unbounded hang here does not fail one
+      // test, it skips the suite. Bounded, not eliminated: on this lane the
+      // serial worst case is 15 s here + ~40 s below = 55 s, still over the 45 s
+      // production budget. CI takes the storage-state lane, not this one.
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/x-amz-json-1.1",
         "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
@@ -120,7 +127,14 @@ async function seedAndVerifyToken(
   // goes through the Next /api proxy). `/api/v1/auth/users/me` JIT-provisions
   // the user on first call in the hermetic lane, so this probe both verifies
   // AND triggers provisioning.
-  const probe = await context.request.get(`${origin}/api/v1/auth/users/me`);
+  // Explicit timeout. APIRequestContext defaults to 30 s, which used to sit
+  // comfortably inside a 60 s test budget and no longer does: the
+  // production-build budget is 45 s (playwright.config.ts TEST_TIMEOUT_MS). An
+  // inherited 30 s would leave this probe's own diagnostic competing with the
+  // test deadline instead of reporting the failure.
+  const probe = await context.request.get(`${origin}/api/v1/auth/users/me`, {
+    timeout: 10_000,
+  });
   if (!probe.ok()) {
     console.warn(
       `[Auth Setup] ${lane} token rejected by probe ` +
