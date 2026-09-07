@@ -494,10 +494,23 @@ async def _route_device_message(
     # against the same JWKS that admitted this socket — forwards to the TARGET
     # device with a ``remote`` block. Refusals are typed ``error`` frames and
     # forward nothing. Every other frame on this socket is untouched.
+    # The relay answers every failure it knows about as a typed ``error``
+    # on this socket; this guard is for the ones it does not, because an
+    # exception here would end the loop above and tear the SOURCE device's
+    # whole socket down over one remote frame.
     if remote_terminal_relay.is_source_frame(msg_type):
-        await remote_terminal_relay.handle_source_frame(
-            msg, device_id, user_id, manager, websocket
-        )
+        try:
+            await remote_terminal_relay.handle_source_frame(
+                msg, device_id, user_id, manager, websocket
+            )
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_source_frame_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         return
 
     # This device is a TARGET answering a remote attach: ``terminal_attached``
@@ -506,7 +519,16 @@ async def _route_device_message(
     # ride a remote-only channel and the mobile watchers below see exactly the
     # frames they saw before.
     if remote_terminal_relay.is_remote_only_target_frame(msg):
-        await remote_terminal_relay.publish_target_frame(device_id, msg)
+        try:
+            await remote_terminal_relay.publish_target_frame(device_id, msg)
+        except Exception as e:
+            logger.error(
+                "devices_ws_remote_terminal_publish_failed",
+                device_id=str(device_id),
+                msg_type=msg_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         return
 
     if msg_type in {
