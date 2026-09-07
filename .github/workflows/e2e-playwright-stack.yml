@@ -1,11 +1,15 @@
 name: Playwright E2E stack (reusable)
 
 # THE ONE DEFINITION of the Playwright E2E stack: postgres service, sibling
-# clones, backend + frontend installs, the split apt/CDN browser install with
-# its font-.deb cache, migrations, the hermetic local id token + JWKS, the test
-# run, the artifact uploads and the infrastructure-timeout marker. Everything
-# that used to be the body of e2e-tests.yml's `frontend-tests` job, moved here
-# VERBATIM so it can be called from more than one place.
+# clones, backend + frontend installs, the PRODUCTION frontend build (with its
+# compiler cache), the split apt/CDN browser install with its font-.deb cache,
+# migrations, the hermetic local id token + JWKS, the test run, the artifact
+# uploads and the infrastructure-timeout marker. Everything that used to be
+# the body of e2e-tests.yml's `frontend-tests` job, moved here VERBATIM so it
+# can be called from more than one place — plus, since plan
+# 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure
+# Phase 2, the build: the suite runs against `next start` on a production
+# build instead of `next dev`, so no route compiles at request time.
 #
 # Two callers, both in .github/workflows/e2e-tests.yml:
 #
@@ -211,6 +215,109 @@ jobs:
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm ci
+
+      # THE SUITE RUNS AGAINST A PRODUCTION BUILD, not `next dev` (plan
+      # 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-
+      # test-failure, Phase 2). Under `next dev` a route is compiled on its
+      # FIRST hit, and under a long single-worker run that compile competes
+      # with the test's own timeout: four consecutive changed-specs lane runs
+      # on #1265 each failed a DIFFERENT test's first `page.goto` before any
+      # assertion ran (two 60 s `load` waits, one ERR_EMPTY_RESPONSE, one 60 s
+      # wait for the FIRST BYTE), while every 4-shard `main` run that day — a
+      # quarter of the routes per server — passed. Sibling first hits of those
+      # routes took 7-9 s and every later hit ~2 s, so the failure was a
+      # property of how many routes ONE dev server had compiled, not of any
+      # test. `next build` here + `next start` in playwright.config.ts
+      # (PLAYWRIGHT_WEB_SERVER=prod, the config's default) removes the class:
+      # every route is precompiled, the first hit costs what the second does,
+      # and the thing under test is the bundle users get.
+      #
+      # WHAT IS CACHED: `.next/cache` — Next's persisted compiler state
+      # (webpack's client-/server-production caches), which makes a rebuild
+      # incremental. NOT the build output itself: `.next/server` bakes the
+      # env and `next.config.mjs` rewrites of the run that produced it, so a
+      # restored output could serve a stale app while reading as green, and a
+      # skip-the-build-on-hit would have to reason about every such input.
+      # The build therefore ALWAYS runs; the cache only makes it fast.
+      # Measured 2026-09-06 on a 48-core box: cold build 89 s, `.next/cache`
+      # 1.9 GB on disk, 103 MB as the zstd archive actions/cache stores.
+      #
+      # THE KEY moves with the lockfile (a dependency bump changes what the
+      # cache holds), the sources and the Next config; `restore-keys` falls
+      # back to the newest entry for the same lockfile, which is the usual PR
+      # case — a warm cache from a sibling commit. `hashFiles` over
+      # `frontend/src/**` is the plan's "lockfile + src content hash".
+      # `continue-on-error`: a cache problem must never red the job — a miss
+      # is a slower build, never a wrong one — and no `id:`, since nothing
+      # here runs apt and the infrastructure marker must never be able to
+      # name it.
+      - name: Restore Next.js compiler cache
+        uses: actions/cache@v4
+        continue-on-error: true
+        with:
+          path: frontend/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-${{ hashFiles('frontend/src/**', 'frontend/next.config.mjs') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}-
+
+      # `npm run build` = build-id injection + `next build` + the standalone
+      # sw.js stamp (frontend/package.json). The build bakes NEXT_PUBLIC_*
+      # and the rewrite targets (BACKEND_URL / COORD_URL) in — so this step
+      # deliberately sets none of them, exactly as the `npm run dev` server
+      # this replaces was given none: both fall back to the config's
+      # localhost defaults, and the built app points at the same run-local
+      # stack the test step starts.
+      #
+      # NEXT_PUBLIC_DEV_RESET is the one dev-only dependency the suite
+      # ASSERTS on (plan Phase 1): `src/app/dev/reset/page.tsx` renders
+      # nothing and redirects to `/` unless NODE_ENV=development, and
+      # tests/e2e/pages/dev-reset.spec.ts visits it. This build-time opt-in
+      # enables that one route on the production build — per route, as the
+      # plan requires, never a global fallback to `dev`.
+      #
+      # THE REST OF THE PHASE 1 LIST — every `NODE_ENV === "development"`
+      # branch in frontend/src the suite can REACH, each checked against
+      # what the specs actually assert, and each left alone:
+      #
+      #   * `/build/tests` — the `qontinui_vision` test type is `devOnly`
+      #     and disappears on a production build. build-workflows.spec.ts
+      #     visits the page but asserts only "Playwright Tests" / "New Test"
+      #     / "Runner Not Connected"; it never names that type.
+      #   * `/build/templates` — same `devOnly` filter over the step
+      #     builders; no spec visits the route at all.
+      #   * The sidebar's `hiddenInProd` nav items (event-history,
+      #     generator-eval, autoresearch, meta-optimizer, online-learning,
+      #     skills, image-quality-tests) vanish on a production build. No
+      #     spec names any of them; the nav items specs DO lean on
+      #     (Captures, Recordings, Admin) are not `hiddenInProd`, and every
+      #     spec reaches its route by `page.goto`, not by clicking the nav.
+      #   * UI Bridge remote commands auto-attach on `isDev ||
+      #     NEXT_PUBLIC_UI_BRIDGE_REMOTE_COMMANDS === "1"`, so no tab
+      #     attaches to the relay on a production build. ui-bridge-search
+      #     .spec.ts already refuses to assert an attached tab either way
+      #     (its own comment says why) and checks `typeof responsive ===
+      #     "boolean"`, which holds on both arms.
+      #   * `/control/page/evaluate` is hard-rejected 403 on a production
+      #     build (`web-forbidden-routes.ts`). No spec calls it; the only
+      #     UI Bridge route a spec hits is `/api/ui-bridge/health`, which is
+      #     not in the forbidden set.
+      #   * `isAllowedOrigin` drops localhost/127.0.0.1 on a production
+      #     build — but only inside `isAuthGateEnabled()`, i.e. under
+      #     `UI_BRIDGE_REQUIRE_AUTH=1`, which nothing here sets.
+      #   * `/api/dev-debug/browser-events` + `/perf-events` 404 outside
+      #     dev, `usePageSpecs` no-ops, `AiGeneratePanel`'s spec-source
+      #     section and `RegionSelector`'s debug block disappear, and the
+      #     error boundaries stop rendering stack detail. No spec touches
+      #     any of them.
+      #
+      # Two OTHER workflows drive playwright.config.ts's webServer and run
+      # no build — style-gate.yml and cross-browser-survey.yml — so both
+      # now pin PLAYWRIGHT_WEB_SERVER=dev. Phase 2 moves this lane only.
+      - name: Build frontend (production)
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_DEV_RESET: 'true'
+        run: npm run build
 
       # `npx playwright install --with-deps <engines>` was THREE things fused
       # into one step: npx resolution, a browser-bundle download from
@@ -641,6 +748,10 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_BASE_URL: http://localhost:3001
+          # The config's default, spelled out so the log and the file agree:
+          # Playwright's webServer is `next start` on the build above. `dev`
+          # is a local-iteration opt-in only (playwright.config.ts).
+          PLAYWRIGHT_WEB_SERVER: prod
           # Duration-balanced shard weights (colon-separated ints; Playwright's
           # filterForShard sizes each shard's test-count span proportionally —
           # parse: cli/testActions.js resolveShardWeightsOption, semi-internal,
@@ -711,6 +822,7 @@ jobs:
             echo "::error::e2e-playwright-stack: neither 'shard' nor 'spec_files' was given; refusing to run the whole suite unsharded by accident."
             exit 1
           fi
+          echo "Web server: PLAYWRIGHT_WEB_SERVER=${PLAYWRIGHT_WEB_SERVER} (prod = next start on the production build above)"
           echo "Command: npx playwright test ${args[*]}"
           rc=0
           npx playwright test "${args[@]}" || rc=$?

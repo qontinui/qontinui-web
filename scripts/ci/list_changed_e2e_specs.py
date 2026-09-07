@@ -37,7 +37,9 @@ OUTPUT: one classified line per changed file, then the frontend-relative list
 ``frontend/``) that will run, or "no spec files changed". With
 ``--github-output <path>`` it also appends ``files=<space-separated list>`` and
 ``any=true|false`` for the workflow's job outputs, plus ``groups=<json>`` — the
-matrix of ≤6-file groups the lane fans out over (one stack per group).
+matrix of groups of at most :data:`MAX_FILES_PER_GROUP` files the lane fans out
+over (one stack per group; see that constant for why the bound is 6, and what
+was measured before leaving it there).
 
 EXIT CODES: 0 whether or not any spec changed -- an empty list is a RESULT of a
 real diff, not a vacuous scan (``_gate_lib``'s distinction); 2 when the diff
@@ -134,11 +136,59 @@ def frontend_relative(repo_path: str) -> str:
     return repo_path[len(FRONTEND_PREFIX) :]
 
 
-#: Largest number of spec files one stack job runs. A full-suite shard covers a
-#: quarter of the suite on its own `next dev`; the 23-file single-job lane on
-#: web#1265 (2026-09-05) showed that server degrading late in a long run —
-#: four runs, four different tests' FIRST `page.goto` past 60 s or dropped —
-#: so a big change set is split into groups that each get their own stack.
+#: Largest number of spec files one stack job runs.
+#:
+#: THE ORIGINAL REASON IS RETIRED; THE NUMBER STILL STANDS. The cap was
+#: introduced because the 23-file single-job lane on web#1265 (2026-09-05)
+#: degraded its ``next dev`` server late in a long run — four runs, four
+#: different tests' FIRST ``page.goto`` past 60 s or dropped. That cannot
+#: happen here any more: plan
+#: 2026-09-05-web-e2e-runs-against-next-dev-so-a-first-hit-compile-is-a-test-failure
+#: moved this lane onto a production build (web#1279), where no route compiles
+#: at request time. Do NOT cite dev-server degradation as a live constraint.
+#:
+#: Phase 3 of that plan re-evaluated the number and deliberately left it at 6.
+#: What was measured, so nobody re-derives it — and note the DENOMINATOR IS
+#: PULL REQUESTS, because this lane diffs a PR against its base, never a
+#: single commit:
+#:
+#: * HOW OFTEN IT BINDS — of 831 pull requests merged between 2026-03-01 and
+#:   2026-09-07, 49 changed at least one e2e spec file (43 once the
+#:   :func:`chromium_ignores` exclusions above are applied). Exactly FOUR
+#:   exceeded this cap, at 7, 11, 11 and 48 files — raw counts, of which the
+#:   largest is 47 runnable; four exceed the cap under either filter.
+#:   Measuring per-commit instead gives 97 items and understates the binding
+#:   rate roughly twofold, so use the PR figure.
+#: * THE FOUR ARE ONE BURST, NOT A RECURRENCE — all four landed between
+#:   2026-05-06 and 2026-05-08. In the four months since, no PR has changed
+#:   more than THREE spec files. Aggregating commits into PRs was tested and
+#:   promoted zero additional items past the cap.
+#: * WHAT WIDENING WOULD BUY — a cap of 12 would have dispatched 52 group jobs
+#:   instead of 59 across that whole window: 7 fewer jobs, ~34 runner-minutes
+#:   in six months, and ALL of the saving comes from the single 48-file PR.
+#: * WHAT A GROUP COSTS — ~292 s of fixed overhead (n=1: run 34042226302
+#:   group 1, 314 s wall, of which the test step was 22 s — 7% of the job).
+#:   131 s of that was ``next build``, a step that did not exist under
+#:   ``next dev``, so the fan-out roughly doubled in cost as its justification
+#:   disappeared. Treat 292 s as one sample: the same build took 84-88 s in
+#:   the four shard jobs of run 34042283673.
+#: * WHAT WIDENING WOULD COST — groups are a PARALLEL matrix with
+#:   ``fail-fast: false``, so runner-minutes are saved by spending WALL-CLOCK
+#:   time to feedback, and precisely on the largest PRs. At cap 6 a 48-file PR
+#:   gets 8 concurrent jobs of ~292 s + 6 files of tests; at cap 12, 4 jobs of
+#:   ~292 s + 12 files of tests.
+#: * THAT WIDENING WOULD BE SAFE — one production-build server already carries
+#:   more than six spec files, green: the four shards of run 34042283673 each
+#:   held 10, 13, 12 and 13 spec files (9, 10, 11 and 11 of them contributing
+#:   an executed test), dispatched up to 219 tests, and summed up to 288 s of
+#:   test time, for 491 passed / 0 failed. So a shard's per-server load is
+#:   well ABOVE this cap rather than equal to it, and a 12-file group sits
+#:   inside the files-present envelope.
+#:
+#: Verdict: the saving is ~34 runner-minutes per half-year, it is bought with
+#: feedback latency on the biggest PRs, and the cap has not bound at all in
+#: four months — so the number stays. Raise it here in one line if that tail
+#: returns; the evidence above says the per-server load is not what stops you.
 MAX_FILES_PER_GROUP = 6
 
 

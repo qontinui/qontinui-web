@@ -29,11 +29,23 @@ What it scans
 Offline, by AST (``ast.parse``) — it never imports ``env.py`` or the revision
 module, which would pull in qontinui-web's whole app. The UPGRADE PATH of each
 changed revision file is the whole module minus the ``downgrade()`` function
-body: module-level constants, ``upgrade()``, and every helper — a helper that
-drops something is reachable from ``upgrade()`` whether or not this scan can
-prove it, so it counts (fail-closed). A module-level template counts even when
-nothing references it. Docstrings (the first string statement of the module,
-a class or a function) are prose and are skipped.
+body AND minus every module-level helper reachable ONLY from it
+(``_downgrade_only_helpers``): module-level constants, ``upgrade()``, and every
+other helper — one that drops something may be reachable from ``upgrade()`` in a
+way this scan cannot prove, so it counts (fail-closed). A module-level template
+counts even when nothing references it. Docstrings (the first string statement
+of the module, a class or a function) are prose and are skipped.
+
+The downgrade-only exclusion is the same rule as the ``downgrade()`` one, not a
+relaxation of it: a DROP that only a downgrade performs does not LAND, and "must
+not land" is this gate's own predicate. Excluding the body while still scanning
+the helper it calls made an ADDITIVE revision — one whose ``downgrade()``
+removes exactly what its ``upgrade()`` added, both generated from a single
+column list, the shape every ``fleet_res_tel_*`` revision uses — report an
+unresolved site. That forced a ``COORD_SCHEMA_DROPS`` declaration, which
+activated the manifest phase against columns no deployed coord can possibly be
+reading. Anything referenced outside the downgrade closure, or reached by
+``getattr`` / ``globals()`` / a string dispatch table, stays scanned.
 
 Collected as DROP/RENAME sites:
 
@@ -128,11 +140,25 @@ FETCH_TIMEOUT_S = 20.0
 FETCH_TRIES = 3
 WHOLE_TABLE = "*"
 
+#: Statuses that mean coord does not SERVE :data:`MANIFEST_ROUTE` at all, as
+#: opposed to serving it and refusing this caller. Measured against controls on
+#: 2026-09-06: coord answers an existing-but-forbidden route (``/coord/fleet/
+#: health``) **403**, and an invented one (``/coord/definitely-not-a-route``)
+#: **401** — so a 401 here is the signature of an UNROUTED path, not of an auth
+#: failure. A 404 is the same statement from a host that routes differently.
+ROUTE_ABSENT_STATUSES = frozenset({401, 404})
+
 Fetcher = Callable[[str], bytes]
 
 
 class ManifestUnavailableError(Exception):
     """The manifest could not be fetched or is not usable. Exit 2, never 1."""
+
+    def __init__(self, message: str, *, http_status: int | None = None) -> None:
+        super().__init__(message)
+        #: The HTTP status the fetch saw, when the failure was an HTTP one.
+        #: ``None`` for a timeout, a DNS failure, or an unusable payload.
+        self.http_status = http_status
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +536,76 @@ def _walk(node: ast.AST, label: str, scan: FileScan) -> None:
         _walk(child, label, scan)
 
 
+def _referenced_names(node: ast.AST) -> set[str]:
+    """Every bare identifier referenced anywhere under ``node``."""
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _downgrade_only_helpers(tree: ast.Module) -> set[str]:
+    """Module-level functions reachable from ``downgrade()`` and NOWHERE else.
+
+    The upgrade path already excludes ``downgrade()``'s own body, because a
+    DROP that only a downgrade performs does not LAND — and not landing is the
+    whole predicate this gate is written against ("a coord.* DROP/RENAME must
+    not land while a coord build that is serving still reads the surface").
+
+    A helper that only ``downgrade()`` calls is downgrade code by exactly that
+    argument, so scanning it re-imports the drop the exclusion just removed.
+    The module docstring justifies scanning every helper on the grounds that
+    one "is reachable from ``upgrade()`` whether or not this scan can prove
+    it" — but that is a REACHABILITY claim, and reachability is precisely what
+    an AST can settle in the common case. This function settles it, and the
+    exclusion then matches the contract the docstring already states.
+
+    Conservative in the one direction that matters. A name referenced anywhere
+    outside the downgrade closure stays on the upgrade path, and a helper
+    reached by any means this pass cannot see (``getattr``, ``globals()``, a
+    string dispatch table) never enters the closure at all, so it is scanned.
+    The failure mode is a helper scanned needlessly, never one skipped that
+    mattered.
+    """
+    functions = {
+        stmt.name: stmt
+        for stmt in tree.body
+        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    downgrade = functions.get("downgrade")
+    if downgrade is None:
+        return set()
+
+    # Fixpoint: what downgrade() calls, then what those call.
+    closure: set[str] = set()
+    frontier = (_referenced_names(downgrade) & set(functions)) - {"downgrade"}
+    while frontier:
+        name = frontier.pop()
+        if name in closure:
+            continue
+        closure.add(name)
+        frontier |= (
+            (_referenced_names(functions[name]) & set(functions))
+            - closure
+            - {"downgrade"}
+        )
+
+    # Everything OUTSIDE downgrade() and outside the closure keeps every name
+    # it mentions on the upgrade path. A closure member's DECORATORS count as
+    # outside: the decorator runs at import time, on the upgrade path.
+    outside: set[str] = set()
+    for stmt in tree.body:
+        is_closure_fn = (
+            isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+            and stmt.name in closure
+        )
+        if is_closure_fn:
+            for decorator in stmt.decorator_list:
+                outside |= _referenced_names(decorator)
+            continue
+        if isinstance(stmt, ast.FunctionDef) and stmt.name == "downgrade":
+            continue
+        outside |= _referenced_names(stmt)
+    return closure - outside
+
+
 # ---------------------------------------------------------------------------
 # The COORD_SCHEMA_DROPS declaration
 # ---------------------------------------------------------------------------
@@ -625,9 +721,15 @@ def scan_source(source: str, path: Path) -> FileScan:
     label = repo_relative(path)
     tree = ast.parse(source, filename=str(path))
 
+    downgrade_only = _downgrade_only_helpers(tree)
     for stmt in _body_without_docstring(tree.body):
         if isinstance(stmt, ast.FunctionDef) and stmt.name == "downgrade":
             continue  # the one body that is NOT the upgrade path
+        if (
+            isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef)
+            and stmt.name in downgrade_only
+        ):
+            continue  # reachable only from downgrade() — downgrade code too
         _walk(stmt, label, scan)
 
     declaration = _declaration_node(tree)
@@ -664,6 +766,13 @@ def scan_source(source: str, path: Path) -> FileScan:
             "nothing in coord.*, declare the coord drops it DOES perform — there "
             "must be at least one, or restructure the SQL so the table and column "
             "are literals the gate can read."
+        )
+        scan.violations.append(
+            f"  NOTE: a {DECLARATION_NAME} declaration ACTIVATES the manifest check, "
+            f"which needs coord to serve {MANIFEST_ROUTE}. While that route is "
+            "unserved, declaring converts this fixable failure into an unfixable "
+            "one. If your DROP sites are reached only from downgrade(), you need no "
+            "declaration at all — this gate scans the upgrade path only."
         )
     return scan
 
@@ -731,7 +840,8 @@ def fetch_manifest(url: str) -> bytes:
             last = exc
         if attempt < FETCH_TRIES:
             time.sleep(attempt)
-    raise ManifestUnavailableError(f"{url}: {last}")
+    status = last.code if isinstance(last, urllib.error.HTTPError) else None
+    raise ManifestUnavailableError(f"{url}: {last}", http_status=status)
 
 
 @dataclass
@@ -993,6 +1103,11 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         note(
             "No coord.* DROP/RENAME in the upgrade path; nothing to check against coord."
         )
+        note(
+            "  NB: this pass says this revision drops nothing in coord.*. It is NOT "
+            "evidence that a drop was checked against coord's read contract — no "
+            "manifest was fetched, and none was needed."
+        )
         return 0
 
     # 4. Only now is coord consulted.
@@ -1017,13 +1132,28 @@ def main(argv: list[str] | None = None, *, fetch: Fetcher | None = None) -> int:
         return EXIT_VACUOUS
     except ManifestUnavailableError as exc:
         err(f"coord read-surface manifest unusable ({manifest_label}): {exc}")
-        err(
-            "This revision DROPS a coord.* surface and the gate cannot see what coord "
-            "reads, so it cannot pass. UNKNOWN is not green. If coord does not serve "
-            f"{MANIFEST_ROUTE} yet, the guard's coord half has not deployed; if the "
-            "`main` half is null, coord's CI has not pushed a snapshot since its last "
-            "boot — dispatch coord's ci.yml on main, or wait for its next land."
-        )
+        if exc.http_status in ROUTE_ABSENT_STATUSES:
+            err(
+                f"coord does not SERVE {MANIFEST_ROUTE} (HTTP {exc.http_status}). "
+                "The coord half of this gate has not shipped, so there is no "
+                "manifest for any revision to be checked against — this check "
+                "currently has NO passing shape for a coord.* drop."
+            )
+            err(
+                "THIS IS NOT A DEFECT IN THIS REVISION, AND NO EDIT INSIDE THIS PR "
+                f"CAN FIX IT. In particular do NOT add a {DECLARATION_NAME} "
+                "declaration to try to satisfy this check: a declaration is what "
+                "ACTIVATES this phase, so it turns a fixable exit 1 into this "
+                "unfixable exit 2. Escalate the gate itself — plan "
+                "2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest."
+            )
+        else:
+            err(
+                "This revision DROPS a coord.* surface and the gate cannot see what "
+                "coord reads, so it cannot pass. UNKNOWN is not green. If the `main` "
+                "half is null, coord's CI has not pushed a snapshot since its last "
+                "boot — dispatch coord's ci.yml on main, or wait for its next land."
+            )
         return EXIT_VACUOUS
     note(
         f"manifest: deployed build {manifest.deployed_sha}, main {manifest.main_sha}, "

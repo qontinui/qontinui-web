@@ -22,8 +22,10 @@ Three invariants, all from
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
+import textwrap
 import time
 from types import SimpleNamespace
 
@@ -338,32 +340,60 @@ def test_relay_has_exactly_one_503_emitter() -> None:
 
 
 def test_relay_503_is_the_ws_session_id_branch() -> None:
-    """The one 503 is guarded by the ``ws_session_id`` read, not anything else."""
-    source = inspect.getsource(device_bridge_ws._runner_proxy_relay)
-    lines = source.splitlines()
+    """The one 503 is guarded by the ``ws_session_id`` read, not anything else.
 
-    emitters = [i for i, line in enumerate(lines) if "status_code=503" in line]
+    Read the AST rather than the text. Two earlier spellings of this check
+    were both too weak, and each failed the same way — by approximating
+    "governs" with something cheaper:
+
+    * a fixed line-distance lookback, which broke the moment the branch grew
+      a body (the W-A structured log, the W-B clock decoration);
+    * "the nearest preceding ``if``", which broke on the first conditional
+      *inside* the branch (``if liveness.known:``) — a line that precedes
+      the emitter without governing it. Indentation fixes that one, but still
+      cannot see ``else:``/``try:``/``for``, so moving the emitter into the
+      ``else:`` of this very guard — its exact negation, the inversion this
+      test exists to catch — would have PASSED.
+
+    The AST knows the difference between a node's ``body`` and its
+    ``orelse``, so ask it.
+    """
+    source = textwrap.dedent(inspect.getsource(device_bridge_ws._runner_proxy_relay))
+    tree = ast.parse(source)
+
+    def emits_503(node: ast.AST) -> bool:
+        return any(
+            isinstance(k, ast.keyword)
+            and k.arg == "status_code"
+            and isinstance(k.value, ast.Constant)
+            and k.value.value == 503
+            for sub in ast.walk(node)
+            if isinstance(sub, ast.Call)
+            for k in sub.keywords
+        )
+
+    emitters = [n for n in ast.walk(tree) if isinstance(n, ast.Return) and emits_503(n)]
     assert len(emitters) == 1, (
         f"the relay must have exactly ONE 503 emitter; found {len(emitters)}"
     )
-    idx = emitters[0]
+    emitter = emitters[0]
 
-    # Walk back to the nearest CONDITIONAL; it must be the ws_session_id read.
-    # A fixed line-distance lookback was the earlier spelling of this check and
-    # it broke the moment the branch grew a body (the W-A structured log + the
-    # W-B ``last_seen_at`` decoration) — the invariant is which guard governs
-    # the emitter, not how many lines away it sits.
-    guard = next(
-        (
-            lines[i]
-            for i in range(idx - 1, -1, -1)
-            if lines[i].strip().startswith(("if ", "elif "))
-        ),
-        None,
-    )
-    assert guard is not None and 'row.get("ws_session_id") is None' in guard, (
+    # The governing ``If`` is the innermost one holding the emitter in its
+    # TRUE branch. ``orelse`` is deliberately not searched: an emitter in the
+    # negation of the ws_session_id test is the defect, not a pass.
+    governing = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and any(emitter in ast.walk(stmt) for stmt in node.body)
+    ]
+    assert governing, "the 503 is not inside the true branch of any conditional"
+
+    innermost = max(governing, key=lambda n: n.test.col_offset)
+    guard = ast.unparse(innermost.test)
+    assert guard == "row.get('ws_session_id') is None", (
         "the relay's only 503 must be the ws_session_id IS NULL branch; "
-        f"nearest governing conditional was:\n{guard}"
+        f"the innermost conditional containing it was: {guard}"
     )
 
 

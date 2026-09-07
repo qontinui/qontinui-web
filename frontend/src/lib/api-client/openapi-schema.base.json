@@ -27694,6 +27694,20 @@
               }
             ],
             "title": "Since"
+          },
+          "title_prefix": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact case-sensitive prefix match on `title`, ANDed with the FTS/vector/link arms. For resolving a dossier HEAD (`DOSSIER <slug> \u2014`); contributions and deltas must not share the prefix. `%` and `_` are literal, not wildcards.",
+            "title": "Title Prefix"
           }
         },
         "required": [
@@ -31354,6 +31368,13 @@
             ],
             "title": "Id"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -34959,6 +34980,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "relay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerRelay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running_task_count": {
             "default": 0,
             "title": "Running Task Count",
@@ -36421,6 +36452,16 @@
             "title": "Port",
             "type": "integer"
           },
+          "relay": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunnerRelay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "running_task_count": {
             "default": 0,
             "title": "Running Task Count",
@@ -36640,6 +36681,57 @@
           "line"
         ],
         "title": "RunnerProcessSessionOutputLine",
+        "type": "object"
+      },
+      "RunnerRelay": {
+        "description": "Cloud-relay state a runner reports about itself.\n\nRT6 of plan\n``2026-08-30-mobile-account-usage-relay-503-runner-runtime-starvation``.\n\nA mobile relay 503 is ``coord.devices.ws_session_id IS NULL``, and the two\nfaults that produce it need opposite remedies:\n\n* the runner never registered (unpaired, wrong tier, switched off, or\n  pointed at the wrong backend), and\n* the runner registers and drops every few seconds.\n\n``connected`` alone cannot separate them \u2014 a flapping relay reports ``True``\nin whichever heartbeat lands inside a connection \u2014 so the operator sees one\nerror message for two problems. These fields separate them:\n\n* ``consecutive_quick_disconnects > 0`` means churning, whatever\n  ``connected`` says.\n* ``last_connected_at_ms is None`` means never registered in that runner\n  process's lifetime.\n* a set ``last_connected_at_ms`` with ``connected is False`` means\n  registered, then dropped \u2014 the fault actually observed on 2026-08-30.\n\nEvery field is optional because a runner predating the change omits the\nwhole block. Absent is UNKNOWN, never \"healthy\" and never \"never paired\".",
+        "properties": {
+          "connected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected"
+          },
+          "consecutive_quick_disconnects": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consecutive Quick Disconnects"
+          },
+          "last_connected_at_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Connected At Ms"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "title": "RunnerRelay",
         "type": "object"
       },
       "RunnerStatus": {
@@ -51978,6 +52070,13 @@
             "title": "Id",
             "type": "string"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -52076,6 +52175,7 @@
           "source_repo",
           "work_unit_slug",
           "repos",
+          "intent_refs",
           "authored_at",
           "captured_by",
           "current_version",
@@ -52106,7 +52206,7 @@
       },
       "WorkArtifactEdgeCreate": {
         "additionalProperties": false,
-        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the four two-ended relations, supply EXACTLY ONE of ``to_id``\n(outgoing) or ``from_id`` (incoming) \u2014 plus ``supersedes``, five in all.\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
+        "description": "Create one provenance edge out of (or into) the path artifact.\n\nFor the six two-ended relations (``produced_report``, ``feeds``,\n``authored_plan``, ``supersedes``, ``depends_on``, ``refutes``), supply\nEXACTLY ONE of ``to_id`` (outgoing) or ``from_id`` (incoming).\n\nFor ``spawned_followup`` both may be omitted: that is the one-ended form,\n``{\"relation\": \"spawned_followup\", \"note\": \"<text>\", \"to_id\": null}``, and\n``note`` is then REQUIRED. Supplying ``to_id`` alongside it is still legal\nand records a follow-up that already has an owner.",
         "properties": {
           "from_id": {
             "anyOf": [
@@ -52138,7 +52238,8 @@
               "authored_plan",
               "supersedes",
               "depends_on",
-              "spawned_followup"
+              "spawned_followup",
+              "refutes"
             ],
             "title": "Relation",
             "type": "string"
@@ -52283,7 +52384,8 @@
               "implementation_prompt",
               "investigation_report",
               "handoff",
-              "plan"
+              "plan",
+              "diagnostic"
             ],
             "title": "Kind",
             "type": "string"
@@ -52379,6 +52481,13 @@
             "title": "Id",
             "type": "string"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
@@ -52470,6 +52579,7 @@
           "source_repo",
           "work_unit_slug",
           "repos",
+          "intent_refs",
           "authored_at",
           "captured_by",
           "current_version",
@@ -52533,6 +52643,13 @@
             ],
             "title": "Content Sha256"
           },
+          "intent_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Refs",
+            "type": "array"
+          },
           "kind": {
             "enum": [
               "investigation_prompt",
@@ -52540,7 +52657,8 @@
               "implementation_prompt",
               "investigation_report",
               "handoff",
-              "plan"
+              "plan",
+              "diagnostic"
             ],
             "title": "Kind",
             "type": "string"
@@ -52619,7 +52737,7 @@
         "type": "object"
       },
       "WorkArtifactUpsertResponse": {
-        "description": "Upsert outcome.\n\nThe \"304-equivalent\" the plan asks for: an unchanged ``content_sha256``\nreturns ``changed=False`` (and the response carries the\n``X-Artifact-Unchanged: true`` header plus an ``ETag`` of the digest).\nA literal HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
+        "description": "Upsert outcome.\n\n``changed`` says whether THIS request moved anything on the head row \u2014\nthe body (a version bump and a snapshot) or only its metadata (``title``,\n``status``, ``repos``, ``intent_refs``, ``work_unit_slug``,\n``authored_at``, ``source_path``, ``captured_by``; no version bump). A byte-identical\nre-post is the \"304-equivalent\" the plan asks for: ``changed=False``, the\n``X-Artifact-Unchanged: true`` header and an ``ETag`` of the digest. A\nliteral HTTP 304 is not used because 304 must carry no body and the\ncaller still wants the current row back \u2014 notably ``current_version``,\nwhich it can then assert did NOT move.",
         "properties": {
           "artifact": {
             "$ref": "#/components/schemas/WorkArtifactSummary"
@@ -77985,7 +78103,7 @@
     },
     "/api/v1/memory/query": {
       "post": {
-        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
+        "description": "Hybrid retrieval: pgvector cosine + websearch FTS, RRF-fused.\n\nOptionally a THIRD arm: with ``link_expansion=true`` the endpoint\nfuses twice \u2014 once over vector+FTS to pick the top\n:data:`LINK_SEED_COUNT` seeds, then again after one-hop expansion of\nthose seeds over ``coord.memory_links``. ``link_arm`` says which of\n``expanded`` / ``skipped_disabled`` / ``skipped_no_seeds`` happened,\nand a hit reached only that way carries ``link_rank`` with both other\nranks null. The arm is default-OFF until the recall-efficacy harness\ncan say whether it helps.\n\nAll arms are tenant-bound and validity-filtered (tombstones out,\n``valid_from``/``valid_until`` against now() or ``as_of``).\n``agent``/``session``-scoped rows are only visible when the request\nnames those scopes AND supplies the matching ``scope_ref``.\n\n``title_prefix`` is an exact, case-sensitive prefix filter on\n``title``, ANDed with every arm above. It is the HEAD-RESOLUTION\ndoor: a dossier head is titled ``DOSSIER <slug> \u2014 <issue>`` while its\ncontributions and deltas must not share that prefix, so\n``title_prefix=\"DOSSIER <slug> \u2014\"`` returns the head alone where the\nbare key ranks it behind its own contributions. ``%`` and ``_`` in\nthe value are literal.\n\nThe semantic arm needs a vector, and this endpoint never computes\none. It runs only when the caller supplies ``query_embedding`` (with\nits ``query_embedding_model``) AND this tenant's corpus is entirely\nin the deployed space. Otherwise it is SKIPPED and the result is\nFTS-only. Which of the three happened is reported in ``vector_arm``\n\u2014 never inferred, so an FTS-only result can't pass for a hybrid one.\n\nThe mid-migration skip is what makes the model transition atomic per\ntenant: the old and new spaces are not interchangeable, so a\nnew-space query is served FTS-only rather than cosine-scored against\ndocuments the runner-paid reindex has not rewritten yet.\n\nEvery hit carries ``anchor_state``. ``moved`` means the ground truth\nthe record is anchored to changed under it: the record is still\nretrievable and normally ranked (\u00a73.2 makes ``moved`` advisory on\npurpose \u2014 silently hiding a true memory is the failure mode that\nmatters), and the flag is how a reader learns to check.\n\n``anchored_to`` is the separate PROACTIVE arm (Phase 5): records\nanchored to the files the caller is touching, ranked by importance x\nfreshness, returned in ``anchored_hits`` rather than fused into\n``hits``. It is gated on ``MEMORY_ANCHORED_RECALL_ENABLED``, which is\nOFF by default; ``anchored_arm`` always says which of ran /\nnot_requested / skipped_disabled happened.\n\n**A zero here is self-describing.** ``hits: []`` used to be the same\nanswer for an empty corpus, a mistyped filter, a wrong tenant and a\nretrieval that landed in the anchored arm, so three more REQUIRED\nfields ride on every response:\n\n* ``live_row_count`` \u2014 the tenant's retrieval-live row total,\n  counted in this same request on the predicate ``/memory/stats``\n  uses. Zero hits against a non-zero count is \"your query matched\n  none of N\"; against zero it is \"there is nothing to match\".\n* ``query_echo`` \u2014 the RESOLVED parameters the arms actually ran\n  with, so a defaulted ``scopes``, an ignored-because-absent\n  ``scope_ref`` or a ``limit`` the caller never set is visible in the\n  answer itself.\n* ``anchored_hit_count`` \u2014 so a caller reading only ``hits`` cannot\n  read zero off a response that did retrieve records.\n\nThe request body is ``extra=\"forbid\"``: an unrecognized key is a 422\nnaming the field rather than a silently wider query.",
         "operationId": "api_v1_memory_query_post",
         "requestBody": {
           "content": {
@@ -90509,6 +90627,24 @@
             }
           },
           {
+            "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
+            "in": "query",
+            "name": "intent_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exact member of intent_refs[] \u2014 a served coord Intent citation such as success_metric/<name>. Not resolved; a citation no artifact carries simply returns an empty page.",
+              "title": "Intent Ref"
+            }
+          },
+          {
             "in": "query",
             "name": "offset",
             "required": false,
@@ -90568,7 +90704,7 @@
         ]
       },
       "post": {
-        "description": "Insert or update one artifact.\n\nUnchanged content is a no-op: the response carries ``changed=false``,\n``X-Artifact-Unchanged: true`` and an ``ETag`` of the digest, and neither\n``current_version`` nor the version log moves. That is the plan's\n\"304-equivalent\" \u2014 a literal 304 cannot carry the body the caller needs\nto assert the version did not move.",
+        "description": "Insert or update one artifact.\n\nUnchanged content keeps the version log: neither ``current_version`` nor\na snapshot moves, and the response carries an ``ETag`` of the digest.\nThat is the plan's \"304-equivalent\" \u2014 a literal 304 cannot carry the body\nthe caller needs to assert the version did not move. The head row's\nMETADATA (``title``, ``status``, ``repos``, ``intent_refs``,\n``work_unit_slug``, ``authored_at``, ``source_path``, ``captured_by``) is\nstill stored when\nit differs, so ``changed`` reports whether THIS request moved anything:\na byte-identical re-post answers ``changed=false`` with\n``X-Artifact-Unchanged: true``; a corrected ``status`` against a stored\nbody answers ``changed=true`` and no header, with the version untouched.",
         "operationId": "api_v1_plan_library_post",
         "requestBody": {
           "content": {
