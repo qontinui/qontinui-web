@@ -13,9 +13,13 @@ cases the plan names plus the parser edges the design rests on:
    on a surface nothing reads it passes.
 4. A ``downgrade()``-only drop passes with no network call.
 5. A ``project.*`` drop (web#805's shape) passes with no network call.
-6. A fetch failure, ``main: null``, or empty ``deployed.surfaces`` is exit 2
-   naming the half — UNKNOWN, never a pass.
-7. A ``*`` wildcard row on the dropped table is exit 2 naming the waiver.
+6. A fetch failure, ``main: null``, ``deployed: null`` or empty
+   ``deployed.surfaces`` is exit 2 naming the half — UNKNOWN, never a pass —
+   and a null half quotes its own ``<half>_unavailable_reason`` verbatim, or
+   says "no reason served" when coord sent none (Phase 2b; peer plan
+   ``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest`` §5a).
+7. A ``*`` wildcard row on the dropped table is exit 2 naming the waiver —
+   the file AND the reason its ``<file>: <reason>`` source carries.
 8. web#1180's ``pdtier_03`` (the queued customer) against a manifest WITHOUT
    ``agent_writable`` passes — the guard is precise, not blanket. Its SQL is
    composed (``_RECONCILE_AND_DROP.format(table=table, ...)``), so the test
@@ -78,20 +82,42 @@ HEADER = (
 )
 
 
+MAIN_NULL_REASON = "no snapshot ingested since boot"
+DEPLOYED_NULL_REASON = (
+    "BUILD_SHA is the build.rs fallback `unknown`, not a 40-hex sha; "
+    "refusing to fabricate one"
+)
+
+
 def _manifest(
     *surfaces: tuple[str, str, str],
     main: list | None | str = "same",
     deployed_surfaces: list | None = None,
+    deployed: str | None = "present",
+    main_reason: str | None = MAIN_NULL_REASON,
+    deployed_reason: str | None = DEPLOYED_NULL_REASON,
 ) -> dict:
+    """The served shape of ``GET /coord/schema/read-surfaces`` (coord PR #2010).
+
+    Both halves carry a sibling ``<half>_unavailable_reason`` key, null while
+    the half is present. ``main=None`` / ``deployed=None`` serve that half null
+    with the given reason; pass ``main_reason=None`` / ``deployed_reason=None``
+    to serve the null half with NO reason beside it.
+    """
     rows = [list(s) for s in surfaces]
     payload: dict = {
-        "deployed": {
+        "deployed_unavailable_reason": None,
+        "main_unavailable_reason": None,
+    }
+    if deployed is None:
+        payload["deployed"] = None
+        payload["deployed_unavailable_reason"] = deployed_reason
+    else:
+        payload["deployed"] = {
             "build_sha": DEPLOYED_SHA,
             "built_at": "2026-09-03T10:38:12Z",
             "surfaces": rows if deployed_surfaces is None else deployed_surfaces,
-        },
-        "main_unavailable_reason": None,
-    }
+        }
     if main == "same":
         payload["main"] = {
             "sha": MAIN_SHA,
@@ -100,7 +126,7 @@ def _manifest(
         }
     elif main is None:
         payload["main"] = None
-        payload["main_unavailable_reason"] = "no snapshot ingested since boot"
+        payload["main_unavailable_reason"] = main_reason
     else:
         payload["main"] = {
             "sha": MAIN_SHA,
@@ -205,6 +231,31 @@ def test_pdtier_01_with_declaration_names_both_surfaces_and_the_shas(
     assert MAIN_SHA in result.stderr
     assert "Land the coord change that stops reading" in result.stderr
     assert "/health" in result.stderr
+    # The remedy names the route the `main` half actually comes from, not the
+    # Redis-era "coord's CI re-pushes it" story.
+    assert "/coord/schema/read-surfaces-snapshot" in result.stderr
+    assert "coord's CI re-pushes" not in result.stderr
+
+
+def test_the_violation_remedy_offers_the_downgrade_only_shape_honestly(
+    tmp_path: Path,
+) -> None:
+    """The third remediation (peer plan Phase 5): a DROP that is the reversal of
+    an ADD belongs inside downgrade(), which the gate does not scan — and the
+    remedy says a green from that shape is not a checked drop."""
+    fixture = _write(
+        tmp_path,
+        "pdtier_01.py",
+        PDTIER_01.read_text(encoding="utf-8") + DECLARATION,
+    )
+    manifest = _write_manifest(tmp_path, READS_AGENT_WRITABLE)
+    result = _run("--files", str(fixture), "--manifest-json", str(manifest))
+    assert result.returncode == 1
+    assert (
+        "write the DROP literally inside `downgrade()`, which this gate does not\nscan"
+        in result.stderr
+    )
+    assert 'not "a drop was checked"' in result.stderr
 
 
 def test_pdtier_01_with_declaration_passes_once_coord_stopped_reading(
@@ -503,7 +554,108 @@ def test_main_null_is_vacuous_and_quotes_the_reason(
     assert code == guard.EXIT_VACUOUS
     err = capsys.readouterr().err
     assert "`main` half of the manifest is null" in err
-    assert "no snapshot ingested since boot" in err
+    assert f"`main_unavailable_reason`: {MAIN_NULL_REASON}" in err
+    assert guard.NO_REASON_SERVED not in err
+
+
+def test_main_null_remediation_is_the_ingest_route_not_the_redis_era_story(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A null `main` is fixed by coord's snapshot ingest landing, not by
+    dispatching a CI workflow — and the gate says it fails closed on purpose."""
+    payload = _manifest(("prompt_documents", "agent_write_tier", "sql"), main=None)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    assert guard.main(["--files", str(fixture)], fetch=_fetch_of(payload)) == (
+        guard.EXIT_VACUOUS
+    )
+    err = capsys.readouterr().err
+    assert "UNKNOWN is not green" in err
+    assert "POST /coord/schema/read-surfaces-snapshot" in err
+    assert "fails closed BY DESIGN" in err
+    assert "serves `main.sha`" in err
+    assert "dispatch coord's ci.yml" not in err
+    assert "since its last boot" not in err
+    # The `deployed` remediation must not fire for a null `main`.
+    assert "BUILD_SHA" not in err
+
+
+def test_main_null_with_no_reason_says_no_reason_served(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"), main=None, main_reason=None
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "`main` half of the manifest is null" in err
+    assert guard.NO_REASON_SERVED in err
+    assert "`main_unavailable_reason`" in err  # named, so the reader knows the key
+
+
+def test_deployed_null_is_vacuous_and_quotes_deployed_unavailable_reason(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Symmetric with `main` (peer plan §5a): the reason is read on the
+    `deployed` key exactly as `main_unavailable_reason` is read on `main`."""
+    payload = _manifest(("prompt_documents", "agent_write_tier", "sql"), deployed=None)
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "`deployed` half of the manifest is null" in err
+    assert f"`deployed_unavailable_reason`: {DEPLOYED_NULL_REASON}" in err
+    assert guard.NO_REASON_SERVED not in err
+    # Its own remediation, not main's.
+    assert "coord DEPLOY defect" in err
+    assert "read-surfaces-snapshot" not in err
+
+
+def test_deployed_null_with_no_reason_says_no_reason_served(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        deployed=None,
+        deployed_reason=None,
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "`deployed` half of the manifest is null" in err
+    assert guard.NO_REASON_SERVED in err
+    assert "`deployed_unavailable_reason`" in err
+
+
+@pytest.mark.parametrize("blank", ["", "   ", 42])
+def test_a_blank_or_non_string_reason_counts_as_no_reason(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], blank: object
+) -> None:
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        main=None,
+        main_reason=blank,  # type: ignore[arg-type]
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "agent_writable")
+    )
+    assert guard.main(["--files", str(fixture)], fetch=_fetch_of(payload)) == (
+        guard.EXIT_VACUOUS
+    )
+    err = capsys.readouterr().err
+    assert guard.NO_REASON_SERVED in err
+    # The quoted-verbatim form never appears for a value that is not a reason.
+    assert "`main_unavailable_reason`: " not in err
 
 
 def test_empty_deployed_surfaces_is_vacuous_naming_the_deployed_half(
@@ -587,6 +739,67 @@ def test_wildcard_row_on_the_dropped_table_is_vacuous_naming_the_waiver(
     err = capsys.readouterr().err
     assert "INTENTIONALLY_UNRESOLVED" in err
     assert "unresolved_wildcard" in err
+    # A source with no `: <reason>` half is named as such, never invented.
+    assert f"unresolved_wildcard — {guard.NO_REASON_SERVED}" in err
+
+
+# The exact spelling coord PR #2010 serves for a wildcard row's source: the
+# waiver's file, then `: `, then its reason (measured live 2026-09-07).
+_LIVE_WILDCARD_SOURCE = (
+    "routes_phase3.rs: format!-composed SQL with a non-const runtime "
+    "placeholder — column set not statically resolvable"
+)
+
+
+def test_wildcard_waiver_names_the_file_and_the_reason(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Peer plan Phase 5: on a wildcard half, name the REASON, not just the file."""
+    # deployed carries both waivers; main only the second — three lines, each
+    # attributed to its half.
+    payload = _manifest(
+        ("prompt_documents", "agent_write_tier", "sql"),
+        ("prompt_documents", "*", _LIVE_WILDCARD_SOURCE),
+        ("prompt_documents", "*", "prompt_documents.rs: unqualified columns"),
+        main=[["prompt_documents", "*", "prompt_documents.rs: unqualified columns"]],
+    )
+    fixture = _write(
+        tmp_path, "r.py", _drop_column_revision("prompt_documents", "scratch")
+    )
+    code = guard.main(["--files", str(fixture)], fetch=_fetch_of(payload))
+    assert code == guard.EXIT_VACUOUS
+    err = capsys.readouterr().err
+    assert "3 INTENTIONALLY_UNRESOLVED waiver(s)" in err
+    assert (
+        f"deployed build {DEPLOYED_SHA}: routes_phase3.rs — format!-composed SQL "
+        "with a non-const runtime placeholder — column set not statically "
+        "resolvable" in err
+    )
+    assert f"main {MAIN_SHA}: prompt_documents.rs — unqualified columns" in err
+    assert guard.NO_REASON_SERVED not in err
+    assert "coord's own reason" in err
+
+
+def test_parse_manifest_splits_a_wildcard_source_into_file_and_reason() -> None:
+    payload = _manifest(
+        ("prompt_documents", "*", _LIVE_WILDCARD_SOURCE),
+        ("tasks", "*", "tasks.rs"),
+        main=[["tasks", "*", "tasks.rs: "]],
+    )
+    manifest = guard.parse_manifest(json.dumps(payload))
+    assert manifest.wildcards["prompt_documents"] == [
+        (
+            f"deployed build {DEPLOYED_SHA}",
+            "routes_phase3.rs",
+            "format!-composed SQL with a non-const runtime placeholder — column "
+            "set not statically resolvable",
+        )
+    ]
+    # No `: ` at all, and a trailing `: ` with nothing after it, both mean no reason.
+    assert manifest.wildcards["tasks"] == [
+        (f"deployed build {DEPLOYED_SHA}", "tasks.rs", None),
+        (f"main {MAIN_SHA}", "tasks.rs", None),
+    ]
 
 
 def test_a_concrete_read_wins_over_the_wildcard(
@@ -967,7 +1180,11 @@ def test_the_zero_drop_pass_says_what_it_does_not_prove(
     """A green here is 'this revision drops nothing', never 'a drop was checked'."""
     fixture = _write(tmp_path, "r.py", _ADDITIVE)
     assert guard.main(["--files", str(fixture)], fetch=_forbid_fetch) == 0
-    assert "NOT evidence that a drop was checked" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "NOT evidence that a drop was checked" in out
+    assert "none was found in the upgrade path" in out
+    assert "inside downgrade()" in out
+    assert "is not scanned" in out
 
 
 def test_a_genuine_upgrade_path_drop_still_fails(
@@ -1066,6 +1283,39 @@ def test_a_revision_with_no_downgrade_is_unaffected() -> None:
 # ---------------------------------------------------------------------------
 # An unserved manifest route is a gate defect, not a revision defect
 # ---------------------------------------------------------------------------
+
+
+def test_the_manifest_route_is_in_coords_schema_family() -> None:
+    """Peer plan §5c. The edge answers an unprefixed `/schema/...` 401 before
+    coord's router sees it, so every real drop exited 2 for the wrong reason
+    until the constant moved under `/coord/schema/*` beside `lifecycle`."""
+    assert guard.MANIFEST_ROUTE == "/coord/schema/read-surfaces"
+    assert guard.MAIN_INGEST_ROUTE == "/coord/schema/read-surfaces-snapshot"
+    # --help and the docstring both name the served spelling, never the old one.
+    result = _run("--help")
+    assert guard.MANIFEST_ROUTE in result.stdout
+    source = (REPO_ROOT / _SCRIPT_REF).read_text(encoding="utf-8")
+    assert "<coord-url>/schema/read-surfaces" not in source
+
+
+def test_an_unserved_route_now_names_the_build_that_predates_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The route HAS shipped (coord #2010); a 401 now means a stale build or a
+    wrong host, and the text must not claim the coord half never shipped."""
+    source = (
+        HEADER
+        + "def upgrade() -> None:\n"
+        + '    op.drop_column("prompt_documents", "agent_writable", schema="coord")\n'
+        + "def downgrade() -> None:\n    pass\n"
+    )
+    fixture = _write(tmp_path, "r.py", source)
+    assert guard.main(["--files", str(fixture)], fetch=_http_error(401)) == (
+        guard.EXIT_VACUOUS
+    )
+    errs = capsys.readouterr().err
+    assert "coord PR #2010" in errs
+    assert "has not shipped" not in errs
 
 
 def _http_error(status: int):
