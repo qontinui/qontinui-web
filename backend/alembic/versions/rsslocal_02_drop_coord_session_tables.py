@@ -100,20 +100,66 @@ one past batch 20 runs its ``drop_table`` against the same.
 
 ## Idempotence
 
-Every drop is ``if_exists=True`` — the same posture as the surrounding
-intentional-drop revisions (``ud03_drop_remap_table``,
+Every drop in ``upgrade()`` is ``if_exists=True`` — the same posture as the
+surrounding intentional-drop revisions (``ud03_drop_remap_table``,
 ``consolidation_phase2_v_30_productivity_knowledge``'s downgrade), which spell
 it as raw ``DROP TABLE IF EXISTS``. A database that somehow never received one
-of these four does not fail the migration. ``downgrade()`` is symmetric:
-``checkfirst``-style ``IF NOT EXISTS`` on the recreated indexes, and the tables
-recreated in FK order.
+of these four does not fail the migration.
 
-## Data
+``downgrade()`` is deliberately NOT symmetric, and the asymmetry is the point:
+the four ``op.create_table`` calls are unconditional, while only the recreated
+indexes carry ``if_not_exists=True``. A downgrade runs against a database whose
+upgrade just dropped these tables, so a table that is already present means the
+database is not in the state this downgrade assumes — that is a real signal and
+it should fail loudly rather than be swallowed by an ``IF NOT EXISTS``. The
+indexes differ because three of them are also created by ancestor revisions
+(``projdash_01_stf_prefix_idx``'s expression index, plus ``idx_sfs_session``
+and ``idx_sfs_session_file``, which ``consolidation_phase1_20_tail_specialty``
+and ``consolidation_phase2_v_30_productivity_knowledge`` both create), so
+tolerating a pre-existing index is correct there and the whole set is spelled
+the same way for consistency. Tables are recreated in
+FK order, parent before child.
 
-These tables hold machine-local session residue that no fleet member reads;
-the drop discards it. Confirming zero rows in production is an operator step
-taken before this revision is applied — it is deliberately not attempted here,
-and this revision runs against no live database as part of authoring.
+## Data — and there is NO operator gate in front of this drop
+
+These tables hold machine-local session residue that no fleet member reads; the
+drop discards it, and ``downgrade()`` restores empty tables, never the rows.
+
+State the absence rather than assert a control that does not exist. This
+revision is the chain HEAD, so ``alembic upgrade head`` applies it **unattended,
+with no human in the loop**, on three paths:
+
+* ``backend/start-backend.sh`` (line 12) — every backend start;
+* ``backend/.platform/hooks/postdeploy/01_run_migrations.sh`` (line 29) — the
+  Elastic Beanstalk postdeploy hook;
+* ``.github/workflows/migrate.yml`` — auto-runs against the canonical DB on
+  every push to ``main`` that touches ``backend/alembic/**``, which this commit
+  does.
+
+So the sequence on merge is: land → postdeploy → four tables and every row in
+them gone. Confirming zero rows in production is therefore a step to take
+**before MERGING**, not before applying. **It has not been done.**
+
+Do not copy ``ud03_drop_remap_table``'s posture as precedent: its docstring
+claims "OPERATOR-RUN: This revision lives at the END of the chain but is NOT
+automatically applied", and **nothing enforces that** — it has no runtime guard
+of any kind and ``alembic upgrade head`` applies it exactly like any other
+revision. An asserted-but-unenforced gate is worse than a stated absence,
+because it invites reliance on a control that is not there.
+
+## CI: the coord column-drop guard fails UNKNOWN on this revision
+
+``scripts/ci/check_coord_column_drops.py`` resolves all four drop sites cleanly
+(no ``COORD_SCHEMA_DROPS`` declaration needed) and coord's ``deployed`` manifest
+names none of the four tables — but the gate still exits **2 (UNKNOWN, not a
+violation)** because coord serves ``main: null``: Phases 3 and 4 of plan
+``2026-09-06-devops-coord-column-drop-guard-has-no-served-manifest`` (the
+``coord.schema_read_surfaces`` table and the
+``POST /coord/schema/read-surfaces-snapshot`` ingest) are unshipped, so no coord
+build has ever stored a ``main`` half. This is a standing fleet-wide condition
+on every ``coord.*`` drop, not a defect in this revision, and **no edit inside
+this file changes it** — the gate says so itself. Coord finding
+``4400726c-56bd-4345-8969-df84ad6b9f63``.
 """
 
 from collections.abc import Sequence
