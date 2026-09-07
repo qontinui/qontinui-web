@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import React from "react";
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Header } from "@/components/marketing/header";
@@ -54,9 +54,20 @@ export default function MarketingLayout({
         {JSON.stringify(jsonLd)}
       </script>
       <Header />
-      <main className="flex-1 pt-16">
-        <Suspense fallback={null}>{children}</Suspense>
-      </main>
+      {/* No Suspense boundary around `children`. A `fallback={null}` boundary
+          here bought no fallback UI and cost the page its server-rendered
+          body: React's streaming SSR deferred the whole `<main>` out-of-order
+          into a `<div hidden id="S:n">` staging container, so the HTML this
+          route actually serves carried an EMPTY `<main>` (measured: 48 bytes
+          of boundary markers) and the content appeared only after the
+          client-side reveal. On public marketing and docs pages that is the
+          content that most wants to be in the first response. It also opened
+          a window in which the page was in the DOM twice — the client copy
+          plus the staged one — which is what broke 20 Playwright assertions
+          on shard 3 of run 34039419789. Pages under this layout that call
+          `useSearchParams()` (`/login`, `/auth/callback`) carry their own
+          boundary. */}
+      <main className="flex-1 pt-16">{children}</main>
       <Footer />
       <Analytics />
     </div>

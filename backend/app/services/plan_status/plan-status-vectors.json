@@ -1,0 +1,1136 @@
+{
+  "$schema_note": "Shared test vectors for the three-way plan-status classifier. AUTHORED in qontinui-dev-notes; VENDORED into qontinui-web. Two repos cannot share a file (no package dependency, and no qontinui-dev-notes workflow checks out a sibling repo), so the copy is made DETECTABLE instead: both repos pin this file's content_sha256 in a constant (plan_status_classifier.VECTORS_SHA256 here) and each suite asserts the file it holds hashes to it. A divergence reds both suites on the next run. (D7)",
+  "spec": "plans/2026-09-03-plan-status-three-way-reconciler-surface.md",
+  "spec_version": 1,
+  "authored": "2026-09-03",
+  "measured_against": {
+    "plans_repo": "qontinui-dev-notes origin/main @ f105b1112ef74f81a99c1321f88ffedf78fd8538",
+    "coord": "loopback /coord-mcp JSON-RPC proxy, tenant c231d9da-0ca8-4fe4-bd81-0e3d6c20339a",
+    "note": "Corpus counts drift hourly; the LIVE fixtures below are pinned observations, not current state."
+  },
+  "cascade_order_note": "FIRST-MATCH-WINS. The order is part of the spec (D6), not an implementation detail: several members match one row at once, and without a stated order the two implementations pick different winners on the same input. Vectors tagged `asserts_order` exist only to pin a specific precedence. NOTE on arm 6: NO_CITATIONS_CAPTURED requires a terminality claim on some axis in ADDITION to evidence_complete:true and zero citations. Without that third condition it also swallows every genuinely-unstarted plan (measured 235 of its 351 rows on 2026-09-03) and AGREE_OPEN becomes unreachable; see `regression/both-open-zero-citations-must-be-AGREE_OPEN`.",
+  "cascade_order": [
+    "UNKNOWN_AXIS_UNREADABLE",
+    "UNKNOWN_NO_BODY_ON_MAIN",
+    "UNKNOWN_NO_UNIT",
+    "UNKNOWN_UNIT_STATUS_EMPTY",
+    "EVIDENCE_INCOMPLETE",
+    "NO_CITATIONS_CAPTURED",
+    "UNIT_STATUS_CONTRADICTS_DELIVERY",
+    "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+    "DOC_OVERSTATES",
+    "DOC_UNDERSTATES",
+    "AGREE_TERMINAL",
+    "AGREE_OPEN"
+  ],
+  "vectors": [
+    {
+      "name": "live/2026-05-17-runner-auto-login-initial-mount",
+      "why": "The plan's headline row. coord stored status `shipped`, document stamp `draft` on origin/main, and the LIVE delivery predicate reads shipped:false with evidence_complete:false. Arm 5 must win over arm 7 and arm 10: under an incomplete evidence read, shipped:false is not an observation.",
+      "live_fixture": true,
+      "asserts_order": "EVIDENCE_INCOMPLETE precedes UNIT_STATUS_CONTRADICTS_DELIVERY and DOC_UNDERSTATES",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": false,
+        "evidence_gaps": [
+          "qontinui/qontinui-runner#164 reads unmerged on a STALE cached row that could not be re-read live — cannot tell \"not landed\" from \"we did not look\""
+        ],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "EVIDENCE_INCOMPLETE",
+      "expect_reason_contains": [
+        "qontinui/qontinui-runner#164 reads unmerged on a STALE cached row that could not be re-read live — cannot tell \"not landed\" from \"we did not look\""
+      ]
+    },
+    {
+      "name": "live/2026-09-03-stacked-prs-citation-convention-generates-endless-correction-prs",
+      "why": "coord accepted status:'' silently (Free transition tier). It is not null and not a vocabulary word, so it detaches the unit from every status query. 410 units held this value on 2026-09-03.",
+      "live_fixture": true,
+      "asserts_order": "UNKNOWN_UNIT_STATUS_EMPTY precedes NO_CITATIONS_CAPTURED",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_UNIT_STATUS_EMPTY"
+    },
+    {
+      "name": "live/2026-06-18-coord-merge-scheduler-db-test-harness",
+      "why": "Direction (d)'s row AS MEASURED: coord status '', document stamp `shipped`, zero citations, delivery {shipped:false, evidence_complete:true, gaps:[]}. The empty stored status is read FIRST, which is itself the ordering claim.",
+      "live_fixture": true,
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_UNIT_STATUS_EMPTY"
+    },
+    {
+      "name": "live/2026-06-18-coord-merge-scheduler-db-test-harness+nonempty-unit-status",
+      "why": "The same live row with ONLY the empty stored status replaced by `draft`, so the cascade reaches direction (d) itself: the DOCUMENT stamp claims `shipped` while coord looked and found nothing, and 'found nothing' is rendered identically to 'nothing to find' everywhere else. The terminality claim here comes from axis B, not axis A.",
+      "derived_from_live_fixture": "live/2026-06-18-coord-merge-scheduler-db-test-harness",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "NO_CITATIONS_CAPTURED",
+      "expect_reason_contains": [
+        "ZERO captured citations"
+      ]
+    },
+    {
+      "name": "live/2026-06-16-wire-agent-durability-daemons",
+      "why": "The A-vs-C class, live: coord's STORED column says `in_progress` while coord's own LIVE delivery predicate says shipped:true over a complete read of 3 citations. The stored column and the derived verdict are two different facts and they disagree -- which is why axis A is retained rather than collapsed into axis C. Measured 2026-09-03.",
+      "live_fixture": true,
+      "asserts_order": "UNIT_STATUS_CONTRADICTS_DELIVERY precedes DOC_OVERSTATES",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 3,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNIT_STATUS_CONTRADICTS_DELIVERY",
+      "expect_reason_contains": [
+        "not a terminal word"
+      ]
+    },
+    {
+      "name": "live/2026-06-13-coord-tier2-specialist-auto-invocation",
+      "why": "A stamp a human reads and the adapter does not. The linter's looser grammar parses `in progress` and calls it `ok`; no line in the body satisfies the byte-exact `> **Status:` test, so the adapter substitutes `draft`. Measured 2026-09-03; 60 rows carried this class that day.",
+      "live_fixture": true,
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in progress",
+        "classification": "ok",
+        "adapter_readable": false,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+      "expect_reason_contains": [
+        "byte-exact"
+      ]
+    },
+    {
+      "name": "live/2026-05-17-sdk-canonical-shape-unification",
+      "why": "DOC_UNDERSTATES, live: coord derived `shipped` from 2 merged citations and the body on origin/main still reads `in progress`. This is the population qontinui-dev-notes#445 already repairs -- the correction goes to the BODY, never to coord, because `shipped` is derived and a direct write is 422 status_is_derived. Measured 2026-09-03.",
+      "live_fixture": true,
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in progress",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_UNDERSTATES"
+    },
+    {
+      "name": "live/2026-06-07-ui-bridge-friction-action-params-and-exited-tombstones",
+      "why": "What full agreement actually looks like on this corpus: stored status `shipped`, body stamped `shipped` and adapter-readable, and a complete delivery read over 2 citations. 249 of 1558 stems reached this class on 2026-09-03. Measured live.",
+      "live_fixture": true,
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_TERMINAL"
+    },
+    {
+      "name": "axis-unreadable/coord-transport-dead",
+      "why": "The plan's central claim in vector form: with no coord transport, axes A and C are UNREADABLE and the row must NOT fall through into agreement.",
+      "asserts_order": "UNKNOWN_AXIS_UNREADABLE precedes AGREE_TERMINAL",
+      "axis_a": {
+        "readable": false,
+        "present": false,
+        "status": null,
+        "unreadable_reason": "no coord transport answered"
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": false,
+        "present": false,
+        "shipped": null,
+        "evidence_complete": null,
+        "evidence_gaps": [],
+        "citation_count": null,
+        "unreadable_reason": "no coord transport answered"
+      },
+      "expect_class": "UNKNOWN_AXIS_UNREADABLE",
+      "expect_reason_contains": [
+        "axis A",
+        "axis C"
+      ]
+    },
+    {
+      "name": "axis-unreadable/linter-unresolvable",
+      "why": "lint-plan-status.py could not be resolved. Axis B is UNKNOWN naming axis B -- there is deliberately no home-grown fallback parse (D2).",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": false,
+        "present": false,
+        "status": null,
+        "classification": null,
+        "adapter_readable": null,
+        "unreadable_reason": "lint-plan-status.py could not be resolved"
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 3,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_AXIS_UNREADABLE",
+      "expect_reason_contains": [
+        "axis B"
+      ]
+    },
+    {
+      "name": "axis-unreadable/citation-read-failed-for-one-slug",
+      "why": "A per-slug citation read failed while the rest of the corpus read fine. Only axis C is named, and only this row degrades.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": false,
+        "present": true,
+        "shipped": null,
+        "evidence_complete": null,
+        "evidence_gaps": [],
+        "citation_count": null,
+        "unreadable_reason": "citation read failed: HTTP 503"
+      },
+      "expect_class": "UNKNOWN_AXIS_UNREADABLE",
+      "expect_reason_contains": [
+        "axis C",
+        "HTTP 503"
+      ]
+    },
+    {
+      "name": "no-body/coord-unit-with-no-plan-on-main",
+      "why": "73 units on 2026-09-03 had no top-level plans/*.md on origin/main. The document axis has no value, so the row is UNKNOWN rather than compared against a default.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": false,
+        "status": null,
+        "classification": null,
+        "adapter_readable": null,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_NO_BODY_ON_MAIN"
+    },
+    {
+      "name": "no-body/both-sides-absent-body-wins",
+      "why": "Both joined sides absent. Arm 2 precedes arm 3, so the answer is deterministic rather than whichever check an implementation happened to write first.",
+      "asserts_order": "UNKNOWN_NO_BODY_ON_MAIN precedes UNKNOWN_NO_UNIT",
+      "axis_a": {
+        "readable": true,
+        "present": false,
+        "status": null,
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": false,
+        "status": null,
+        "classification": null,
+        "adapter_readable": null,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": false,
+        "shipped": null,
+        "evidence_complete": null,
+        "evidence_gaps": [],
+        "citation_count": null,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_NO_BODY_ON_MAIN"
+    },
+    {
+      "name": "no-unit/plan-on-main-with-no-coord-unit",
+      "why": "139 bodies on 2026-09-03 had no coord work unit. Axes A and C have no value.",
+      "axis_a": {
+        "readable": true,
+        "present": false,
+        "status": null,
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in progress",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": false,
+        "shipped": null,
+        "evidence_complete": null,
+        "evidence_gaps": [],
+        "citation_count": null,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_NO_UNIT"
+    },
+    {
+      "name": "empty-unit-status/precedes-evidence-incomplete",
+      "why": "A unit with status '' whose delivery ALSO reads evidence_complete:false satisfies two members at once. D6's whole reason for existing: arm 4 wins.",
+      "asserts_order": "UNKNOWN_UNIT_STATUS_EMPTY precedes EVIDENCE_INCOMPLETE",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": false,
+        "evidence_gaps": [
+          "citation surface unreadable"
+        ],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_UNIT_STATUS_EMPTY"
+    },
+    {
+      "name": "empty-unit-status/whitespace-only",
+      "why": "A status of whitespace is the empty string for every practical purpose and must not be read as an off-vocabulary word.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "   ",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNKNOWN_UNIT_STATUS_EMPTY"
+    },
+    {
+      "name": "evidence-incomplete/gaps-carried-verbatim",
+      "why": "evidence_gaps must be carried VERBATIM into the reason, never collapsed or summarised: the gap text is the only thing that says WHICH of coord's three modelled degradations fired.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in progress",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": false,
+        "evidence_gaps": [
+          "citation surface unreadable",
+          "merged predicate DEGRADED for qontinui/qontinui-web#1234"
+        ],
+        "citation_count": 4,
+        "unreadable_reason": null
+      },
+      "expect_class": "EVIDENCE_INCOMPLETE",
+      "expect_reason_contains": [
+        "citation surface unreadable",
+        "merged predicate DEGRADED for qontinui/qontinui-web#1234"
+      ]
+    },
+    {
+      "name": "evidence-incomplete/precedes-doc-overstates",
+      "why": "Doc terminal, unit open -- which would be DOC_OVERSTATES -- but the evidence read is incomplete, so arm 5 wins and the doc comparison is not reported as established.",
+      "asserts_order": "EVIDENCE_INCOMPLETE precedes DOC_OVERSTATES",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": false,
+        "evidence_gaps": [
+          "stale cached row"
+        ],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "EVIDENCE_INCOMPLETE"
+    },
+    {
+      "name": "no-citations/precedes-unit-status-contradicts-delivery",
+      "why": "status `shipped` over a COMPLETE evidence read of zero citations -- both axes claim the work landed. Both arm 6 and arm 7 match; arm 6 wins, because 'coord captured nothing while something claims it is done' is the more specific fact.",
+      "asserts_order": "NO_CITATIONS_CAPTURED precedes UNIT_STATUS_CONTRADICTS_DELIVERY",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "NO_CITATIONS_CAPTURED"
+    },
+    {
+      "name": "contradiction/unit-says-shipped-delivery-says-not",
+      "why": "The A-vs-C class in its plainest form, over a COMPLETE evidence read with citations actually captured -- so shipped:false IS an observation here.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 3,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNIT_STATUS_CONTRADICTS_DELIVERY",
+      "expect_reason_contains": [
+        "asserts the work landed"
+      ]
+    },
+    {
+      "name": "contradiction/delivery-says-shipped-unit-is-open",
+      "why": "The other direction: the live predicate says shipped, the stored column says `draft`. On this tenant the derive worker runs mode=live but coord's own health verdict for it reads `dead`, so the stored column is INTERMITTENTLY correct -- exactly what a per-row class surfaces and an aggregate cannot.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNIT_STATUS_CONTRADICTS_DELIVERY",
+      "expect_reason_contains": [
+        "not a terminal word"
+      ]
+    },
+    {
+      "name": "contradiction/abandoned-unit-with-shipped-delivery",
+      "why": "`superseded` is terminal but not shipped-class, so it does not trip the first arm; a delivery verdict of shipped:true over it still is a genuine disagreement.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "superseded",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "superseded",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNIT_STATUS_CONTRADICTS_DELIVERY",
+      "expect_reason_contains": [
+        "abandoned"
+      ]
+    },
+    {
+      "name": "contradiction/off-vocabulary-unit-status-done",
+      "why": "`done` is outside EVERY documented vocabulary and coord stores it anyway (8 units on 2026-09-03). It reads shipped-class here, so a shipped:false delivery contradicts it.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "done",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 5,
+        "unreadable_reason": null
+      },
+      "expect_class": "UNIT_STATUS_CONTRADICTS_DELIVERY"
+    },
+    {
+      "name": "doc-unreadable/underscore-form-the-linter-calls-ok",
+      "why": "THE VOCABULARY TRAP. lint-plan-status.py's ADAPTER_VOCAB carries eleven spellings and classifies `in_progress` as `ok`; the Rust adapter tokenizes NINE phrases with a starts_with + word-boundary test, and 'in_progress'.starts_with('in progress') is false. So this stamp is genuinely unreadable by the adapter.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+      "expect_reason_contains": [
+        "nine phrases do not match"
+      ]
+    },
+    {
+      "name": "doc-unreadable/no-status-block-at-all",
+      "why": "45 bodies on origin/main carried no status block at all (linter totals, f105b111). The adapter silently defaults them to `draft` and can push that over a status coord had derived -- so this is never rendered as an open document.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": null,
+        "classification": "no_status_block",
+        "adapter_readable": false,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+      "expect_reason_contains": [
+        "no status block"
+      ]
+    },
+    {
+      "name": "doc-unreadable/human-readable-but-not-byte-exact",
+      "why": "The linter's looser grammar accepts an unquoted, unbolded stamp; the adapter's byte-exact `> **Status:` test does not. A human and the adapter read different statuses off the same body, which is the gap D2 refuses to reconcile away.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": false,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER",
+      "expect_reason_contains": [
+        "byte-exact"
+      ]
+    },
+    {
+      "name": "doc-unreadable/off-vocabulary-word",
+      "why": "115 bodies carried an off-vocabulary word on f105b111 (`complete`, `landed`, `proposed`, `planned`...). The adapter keeps it verbatim rather than tokenizing it.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "landed",
+        "classification": "off_vocabulary",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER"
+    },
+    {
+      "name": "doc-unreadable/precedes-doc-overstates",
+      "why": "Doc terminal, unit open -- DOC_OVERSTATES on terminality alone -- but the stamp is not adapter-readable, so the comparison rests on a value the adapter never sees. Arm 8 wins.",
+      "asserts_order": "DOC_STAMP_UNREADABLE_BY_ADAPTER precedes DOC_OVERSTATES",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": false,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_STAMP_UNREADABLE_BY_ADAPTER"
+    },
+    {
+      "name": "doc-overstates/doc-shipped-unit-in-progress",
+      "why": "67 rows on the plan's first measurement. The body says the work landed; coord's unit does not.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 3,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_OVERSTATES"
+    },
+    {
+      "name": "doc-understates/unit-shipped-doc-draft",
+      "why": "169 rows on the plan's first measurement, and the population qontinui-dev-notes#445 already repairs. This surface hands it over; it does not re-repair, and it never hand-writes `shipped`.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "DOC_UNDERSTATES"
+    },
+    {
+      "name": "agree-terminal/both-shipped",
+      "why": "Every axis was READ and both terminality readings agree. Reachable only because arm 1 already proved no axis was missing.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "shipped",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": true,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 4,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_TERMINAL"
+    },
+    {
+      "name": "agree-terminal/both-superseded",
+      "why": "Abandonment agrees too: `superseded` is terminal on both axes, and coord's delivery reads shipped:false over a complete evidence read -- which is not a contradiction, because a superseded unit never claimed to have landed.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "superseded",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "superseded",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_TERMINAL"
+    },
+    {
+      "name": "agree-open/both-draft",
+      "why": "The plainest agreement, and still only reachable at the END of the cascade.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 1,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_OPEN"
+    },
+    {
+      "name": "agree-open/vetted-vs-in-progress-both-open",
+      "why": "Different words, same terminality reading. The classifier compares terminality, not string equality -- coord's stored vocabulary and the document's are not the same set.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "vetted",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "in progress",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_OPEN"
+    },
+    {
+      "name": "agree-open/off-vocabulary-unit-status-reads-open",
+      "why": "`ready` and `proposed` are stored on this tenant and are in no terminal set, so they read OPEN. That reading is stated here rather than assumed, because axis A is not drawn from a closed set.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "ready",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "vetted",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 2,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_OPEN"
+    },
+    {
+      "name": "regression/both-open-zero-citations-must-be-AGREE_OPEN",
+      "why": "REGRESSION GUARD for the arm-6 tightening. `NO_CITATIONS_CAPTURED` requires a THIRD condition beyond evidence_complete:true and zero citations -- at least one axis must actually CLAIM the work is done. Here both axes are open and there are no citations, because the plan has not started; coord captured nothing for the ordinary reason. Without the third condition this row lands in arm 6, which sits above the agreement arms -- and the first live corpus run measured that cost: 351 rows in arm 6 of which 235 were this exact shape, driving AGREE_OPEN to ZERO over a corpus that is mostly open. If this vector ever reports NO_CITATIONS_CAPTURED, the predicate was loosened back and the classifier can no longer observe agreement-on-open.",
+      "asserts_order": "NO_CITATIONS_CAPTURED requires a terminality claim, so this falls through to AGREE_OPEN",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "draft",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_OPEN"
+    },
+    {
+      "name": "regression/both-open-zero-citations-in-progress-and-vetted",
+      "why": "The same guard over the two commonest OPEN words on this corpus (`in_progress` 104 and `draft` 80 of the 235 measured). Different words, same terminality reading, still agreement rather than a manufactured finding.",
+      "axis_a": {
+        "readable": true,
+        "present": true,
+        "status": "in_progress",
+        "unreadable_reason": null
+      },
+      "axis_b": {
+        "readable": true,
+        "present": true,
+        "status": "vetted",
+        "classification": "ok",
+        "adapter_readable": true,
+        "unreadable_reason": null
+      },
+      "axis_c": {
+        "readable": true,
+        "present": true,
+        "shipped": false,
+        "evidence_complete": true,
+        "evidence_gaps": [],
+        "citation_count": 0,
+        "unreadable_reason": null
+      },
+      "expect_class": "AGREE_OPEN"
+    }
+  ]
+}

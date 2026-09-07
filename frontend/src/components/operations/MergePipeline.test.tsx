@@ -17,7 +17,12 @@ import {
   within,
 } from "@testing-library/react";
 import type { MergePipelineData } from "./useMergePipelineData";
-import type { BlastRadiusBlock, PrRow, ProposalDetail } from "./mergeTypes";
+import type {
+  BlastRadiusBlock,
+  MergeEconomics,
+  PrRow,
+  ProposalDetail,
+} from "./mergeTypes";
 
 const hookData: { current: MergePipelineData } = {
   current: {
@@ -25,6 +30,7 @@ const hookData: { current: MergePipelineData } = {
     prs: [],
     mergedPrs: null,
     mergedCount: null,
+    economicsByRepo: {},
     suggestions: [],
     gateBlocks: [],
     gateTotalBlocks: 0,
@@ -139,6 +145,7 @@ describe("MergePipeline", () => {
       prs: [],
       mergedPrs: null,
       mergedCount: null,
+      economicsByRepo: {},
       gateBlocks: [],
       gateTotalBlocks: 0,
       gateTotalEvals: null,
@@ -1209,5 +1216,125 @@ describe("MergePipeline gate-decisions counting", () => {
     // …but what the rows ARE does not depend on which coord answered.
     expect(section.textContent).toContain("not necessarily");
     expect(section.textContent).toContain("still held");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Candidate-CI churn on the health strip (plan
+// 2026-07-27-coord-green-candidates-discarded-always-zero, F3). The badge is
+// ALWAYS on the strip: measured, measured-with-unknowns, or "unknown". It is
+// never omitted, because on a page about waste an absent number reads as "no
+// waste". Text is asserted exactly.
+// ---------------------------------------------------------------------------
+describe("MergePipeline green-CI-discarded badge", () => {
+  const COORD = "qontinui/qontinui-coord";
+  const RUNNER = "qontinui/qontinui-runner";
+  const measured: MergeEconomics = {
+    green_candidates_discarded: 15,
+    base_mismatch_discards: 13,
+    candidate_ci_minutes_per_land: 47.4,
+    green_candidates_discarded_basis: "green candidates discarded in 24h",
+  };
+  const unknown: MergeEconomics = {
+    green_candidates_discarded: null,
+    coverage_note: "no candidate CI observed in window",
+  };
+
+  beforeEach(() => {
+    hookData.current = { ...hookData.current, economicsByRepo: {} };
+  });
+
+  it("measured: the summed count, red-toned because there IS waste", () => {
+    hookData.current.economicsByRepo = {
+      [COORD]: measured,
+      "qontinui/qontinui-web": { green_candidates_discarded: 3 },
+    };
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-green-discarded");
+    expect(badge).toHaveTextContent(/^green CI discarded 18$/);
+    expect(badge).toHaveAttribute("title", "green candidates discarded in 24h");
+    expect(badge.className).toContain("text-red-200");
+    expect(
+      within(screen.getByTestId("pipeline-health")).getByTestId(
+        "pipeline-green-discarded"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("partially unknown: sums the measured repos and names the unknown count", () => {
+    hookData.current.economicsByRepo = { [COORD]: measured, [RUNNER]: unknown };
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-green-discarded");
+    // 15 — the null repo contributes nothing, not a zero.
+    expect(badge).toHaveTextContent(
+      /^green CI discarded 15 \(1 repo unknown\)$/
+    );
+    expect(badge).toHaveAttribute(
+      "title",
+      "green candidates discarded in 24h; no candidate CI observed in window"
+    );
+  });
+
+  it("all unknown: reads 'unknown', muted, and is still on the strip", () => {
+    hookData.current.economicsByRepo = { [RUNNER]: unknown };
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-green-discarded");
+    expect(badge).toHaveTextContent(/^green CI discarded unknown$/);
+    expect(badge).not.toHaveTextContent("0");
+    expect(badge.className).not.toContain("text-red-200");
+    expect(badge).toHaveAttribute(
+      "title",
+      "no candidate CI observed in window"
+    );
+  });
+
+  it("economics read failed entirely (empty map): the unknown form, not 0", () => {
+    hookData.current.economicsByRepo = {};
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-green-discarded");
+    expect(badge).toHaveTextContent(/^green CI discarded unknown$/);
+    expect(badge).toHaveAttribute(
+      "title",
+      expect.stringContaining("Unknown, not zero")
+    );
+  });
+
+  it("a measured zero prints 0, without the attention tone", () => {
+    hookData.current.economicsByRepo = {
+      [COORD]: { green_candidates_discarded: 0 },
+    };
+    render(<MergePipeline />);
+    const badge = screen.getByTestId("pipeline-green-discarded");
+    expect(badge).toHaveTextContent(/^green CI discarded 0$/);
+    expect(badge.className).not.toContain("text-red-200");
+  });
+
+  it("the Train tab carries the SAME fleet reading and the per-repo values", () => {
+    hookData.current.prs = [
+      pr({ repo: COORD }),
+      pr({ repo: RUNNER, pr_number: 2 }),
+    ];
+    hookData.current.economicsByRepo = { [COORD]: measured, [RUNNER]: unknown };
+    render(<MergePipeline />);
+    fireEvent.click(screen.getByTestId("pipeline-filter-train"));
+
+    expect(screen.getByTestId("train-green-discarded")).toHaveTextContent(
+      "15 (1 repo unknown)"
+    );
+    const coordRow = screen.getByTestId(`train-churn-${COORD}`);
+    expect(
+      within(coordRow).getByTestId("churn-green-discarded")
+    ).toHaveTextContent(/^green discarded 15$/);
+    expect(
+      within(coordRow).getByTestId("churn-base-move-discards")
+    ).toHaveTextContent(/^base-move discards 13$/);
+    expect(
+      within(coordRow).getByTestId("churn-ci-minutes-per-land")
+    ).toHaveTextContent(/^CI min \/ land 47\.4$/);
+
+    const runnerRow = screen.getByTestId(`train-churn-${RUNNER}`);
+    const dash = within(runnerRow).getByTestId("churn-green-discarded");
+    expect(dash).toHaveTextContent(/^green discarded —$/);
+    expect(dash).toHaveAttribute("title", "no candidate CI observed in window");
   });
 });

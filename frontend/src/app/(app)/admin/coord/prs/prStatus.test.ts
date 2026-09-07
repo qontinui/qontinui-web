@@ -95,15 +95,48 @@ describe("the readings the palette audit cannot make", () => {
     expect(PR_MERGE_STATUS_CLASS.unknown).toBe(UNKNOWN_AMBER);
   });
 
-  it("keeps amber ONLY where something else clears the row", () => {
-    // Both amber rows must be nameable: the merge train rebases a BEHIND PR,
-    // and a dispatched specialist review returns a verdict.
+  it("keeps amber ONLY where something else clears the row, or we cannot tell", () => {
+    // Every amber row is one of two things and nothing else. Either the
+    // clearer is NAMEABLE — the merge train rebases a BEHIND PR, a dispatched
+    // specialist review returns a verdict — or the row sits at the IGNORANCE
+    // FLOOR, where we cannot say whose move it is and calm would assert
+    // nothing is wrong. `unknown` and `predicate-blocked` are the floor:
+    // coord's residue token spans members with opposite readings (`main-red`
+    // and `has-cross-repo-dependency` self-clear; `has-blocking-label` needs a
+    // human, `dry-run-mode` is operator config), so neither red nor the
+    // self-clearing promise is honest about it.
     const amber = ALL.filter(
       (k) => PR_ATTENTION_BY_MERGE_STATUS[k] === "waiting"
     ).sort();
     expect(amber).toEqual(
-      ["awaiting-specialist-review", "behind-base", "unknown"].sort()
+      [
+        "awaiting-specialist-review",
+        "behind-base",
+        "predicate-blocked",
+        "unknown",
+      ].sort()
     );
+  });
+
+  it("floors `predicate-blocked` at the ignorance floor, with unknown", () => {
+    // It is a real block (never calm) whose members disagree about whose move
+    // it is (never red, never the self-clearing amber). What separates it from
+    // `unknown` is that coord DID diagnose it and names the specific code in
+    // `blocking_summary` — which `derivePrStatus` surfaces as the row reason.
+    expect(PR_ATTENTION_BY_MERGE_STATUS["predicate-blocked"]).toBe("waiting");
+    expect(PR_MERGE_STATUS_CLASS["predicate-blocked"]).toBe(UNKNOWN_AMBER);
+    expect(PR_AUTHOR_GLYPH_STATUSES.has("predicate-blocked")).toBe(false);
+    expect(mergeStatusLabel("predicate-blocked")).toBe("predicate blocked");
+    expect(
+      derivePrStatus({
+        merge_status: "predicate-blocked",
+        blocking_summary: "has-cross-repo-dependency",
+      })
+    ).toMatchObject({
+      kind: "predicate-blocked",
+      attention: "waiting",
+      reason: "has-cross-repo-dependency",
+    });
   });
 
   it("grades required-checks-missing with ci-failed, not with behind-base", () => {

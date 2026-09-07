@@ -12,6 +12,8 @@
 import { describe, it, expect } from "vitest";
 import {
   isLoosening,
+  countLooseningVerdicts,
+  hasLooseningVerdict,
   looseningClassificationPresent,
   notificationHref,
   sortWritesForFeed,
@@ -27,6 +29,52 @@ describe("isLoosening", () => {
     expect(isLoosening({ loosening: null })).toBe(false);
     expect(isLoosening({})).toBe(false);
     expect(isLoosening({ loosening: undefined })).toBe(false);
+  });
+});
+
+describe("hasLooseningVerdict", () => {
+  it("is true for BOTH explicit verdicts — it asks whether coord answered", () => {
+    // The distinction from `isLoosening`, which asks which way coord answered.
+    expect(hasLooseningVerdict({ loosening: true })).toBe(true);
+    expect(hasLooseningVerdict({ loosening: false })).toBe(true);
+  });
+
+  it("is false for null and for an ABSENT field", () => {
+    // `null` is forwarded verbatim by the proxy and is explicitly not a
+    // verdict — the one spelling that looks like it agrees with the layer
+    // below and does not.
+    expect(hasLooseningVerdict({ loosening: null })).toBe(false);
+    expect(hasLooseningVerdict({})).toBe(false);
+    expect(hasLooseningVerdict({ loosening: undefined })).toBe(false);
+  });
+});
+
+describe("countLooseningVerdicts", () => {
+  it("counts both verdicts and nothing else", () => {
+    expect(
+      countLooseningVerdicts([
+        { loosening: true },
+        { loosening: false },
+        { loosening: null },
+        {},
+      ])
+    ).toBe(2);
+  });
+
+  it("is 0 on the pre-classification feed", () => {
+    expect(countLooseningVerdicts([{}, {}])).toBe(0);
+  });
+
+  it("agrees with looseningClassificationPresent by construction", () => {
+    // They are one predicate, not two: the count is what the boolean is built
+    // from, so a page cannot decide whether to speak off one and what to say
+    // off the other.
+    const mixed = [{}, { loosening: false }, { loosening: null }];
+    expect(countLooseningVerdicts(mixed) > 0).toBe(
+      looseningClassificationPresent(mixed)
+    );
+    expect(countLooseningVerdicts([])).toBe(0);
+    expect(looseningClassificationPresent([])).toBe(false);
   });
 });
 

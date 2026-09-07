@@ -45,6 +45,30 @@ type IntegrityResult =
   | { kind: "mismatch"; computed: string }
   | { kind: "uncheckable"; reason: string };
 
+/**
+ * The server's own served-vs-stored verdict, when it disagrees with ours.
+ *
+ * Both sides compare the same two things, so they agree unless the bytes
+ * changed between the server hashing them and this browser hashing them, or
+ * the summary row this panel was handed is stale relative to the archive.
+ * Either is worth saying out loud rather than silently preferring one answer.
+ */
+type ServerDisagreement = { serverSaid: boolean; weSaid: boolean } | null;
+
+/**
+ * What the EXPORT RESPONSE said about the bytes it served, as opposed to what
+ * the summary row says about the artifact.
+ *
+ * The row is a list projection that may have been fetched minutes ago; these
+ * headers describe the download in hand. They differ exactly when the row has
+ * gone stale — and that is the case where trusting the row makes the panel
+ * print the wrong sentence about the file the operator just downloaded.
+ */
+type ServedProvenance = {
+  bodySource: string | null;
+  digestVerifiable: boolean | null;
+} | null;
+
 /** SHA-256 of a string, hex. Returns null where WebCrypto is unavailable. */
 async function sha256Hex(text: string): Promise<string | null> {
   const subtle =
@@ -88,6 +112,8 @@ export function BodyPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [integrity, setIntegrity] = useState<IntegrityResult | null>(null);
+  const [disagreement, setDisagreement] = useState<ServerDisagreement>(null);
+  const [served, setServed] = useState<ServedProvenance>(null);
 
   const claim = digestClaim(artifact.body_source, artifact.content_sha256);
   const agrees = digestClaimAgreesWithServer(claim, serverDigestVerifiable);
@@ -99,31 +125,67 @@ export function BodyPanel({
     setBusy(true);
     setError(null);
     setIntegrity(null);
+    setDisagreement(null);
+    setServed(null);
     try {
       const body = await exportSessionBody(artifact.id);
       const computed = await sha256Hex(body.text);
-      // Prefer the head row's digest — it is the value the corpus indexes on;
-      // the served header is a courtesy copy of the same thing.
-      const expected = artifact.content_sha256 ?? body.servedSha256;
+      setServed({
+        bodySource: body.bodySource,
+        digestVerifiable: body.digestVerifiable,
+      });
+      // The response's own answer wins over the row for anything said ABOUT
+      // this download — including its filename, which must not call a
+      // redacted copy verbatim because a stale row said `disk_verbatim`.
+      const servedRedacted = body.bodySource
+        ? body.bodySource === "coord_redacted"
+        : redacted;
+
+      // The digest the ARCHIVE recorded — never the one this response served.
+      //
+      // `servedSha256` is computed by the server from the very bytes being
+      // checked here, so comparing the download against it is a tautology
+      // that always passes: it would prove the bytes crossed the wire intact
+      // and report that as "the stored copy is intact". This used to read
+      // `artifact.content_sha256 ?? body.servedSha256`, which was harmless
+      // only for as long as the header was unreadable — a cross-origin
+      // browser got `null` for it, so the fallback never fired in the
+      // deployed shape. #1177 published the header, which turned a latent
+      // dev-only bug into a live one: a row with a body and NO recorded
+      // digest started rendering a green "hashes to the recorded digest"
+      // while the same response said `X-Content-Sha256-Stored: none` and
+      // `X-Content-Sha256-Match: false`.
+      //
+      // Prefer the per-response header over the summary row: the server read
+      // it from the archive while serving these bytes, so it is the fresher
+      // of the two. The row is the fallback for an older backend that does
+      // not publish the header.
+      const recorded = body.storedSha256 ?? artifact.content_sha256;
+
       if (computed === null) {
         setIntegrity({
           kind: "uncheckable",
           reason:
             "WebCrypto is unavailable in this browsing context, so the downloaded bytes were not re-hashed here.",
         });
-      } else if (!expected) {
+      } else if (!recorded) {
         setIntegrity({
           kind: "uncheckable",
           reason:
             "The archive recorded no digest for this body, so there is nothing to compare the download against.",
         });
-      } else if (computed === expected) {
-        setIntegrity({ kind: "match" });
       } else {
-        setIntegrity({ kind: "mismatch", computed });
+        const weSaid = computed === recorded;
+        setIntegrity(weSaid ? { kind: "match" } : { kind: "mismatch", computed });
+        // The server already ran this comparison. If it reached the other
+        // answer, neither result is trustworthy on its own and saying so is
+        // the only honest option.
+        if (body.serverMatch !== null && body.serverMatch !== weSaid) {
+          setDisagreement({ serverSaid: body.serverMatch, weSaid });
+        }
       }
       download(
-        `${artifact.claude_session_id}${redacted ? ".redacted" : ""}.jsonl`,
+        `${artifact.claude_session_id}${servedRedacted ? ".redacted" : ""}.jsonl`,
         body.text
       );
     } catch (err) {
@@ -239,9 +301,17 @@ export function BodyPanel({
           <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           The downloaded bytes hash to the recorded digest — the stored copy is
           intact.
-          {redacted
-            ? " This still says nothing about the session's original file: these are coord's redacted bytes, and no digest here can be checked against the original."
-            : " Because this body is the verbatim file, that digest is also the original file's."}
+          {/* What that means about the ORIGINAL file is a separate question,
+              and the export response answers it for the bytes actually
+              served. The reassuring arm is taken only on an explicit
+              `X-Digest-Verifiable: true`: an unreadable header is UNKNOWN,
+              and resolving an unknown to the reassuring answer is the exact
+              move `body_source` exists to prevent. */}
+          {served?.digestVerifiable === true
+            ? " Because this body is the verbatim file, that digest is also the original file's."
+            : (served?.bodySource ?? artifact.body_source) === "coord_redacted"
+              ? " This still says nothing about the session's original file: these are coord's redacted bytes, and no digest here can be checked against the original."
+              : " Whether that digest also covers the session's original file is not established here — the server did not say, so treat it as unknown rather than as a second pass."}
         </p>
       )}
 
@@ -257,6 +327,23 @@ export function BodyPanel({
           which does NOT match the digest recorded on this row. The archive and
           its head row disagree — do not treat the download as this session&apos;s
           transcript until that is explained.
+        </p>
+      )}
+
+      {disagreement && (
+        <p
+          className="flex max-w-3xl items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300"
+          data-testid="session-export-server-disagreement"
+        >
+          <FileWarning className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          The server compared the bytes it served against the digest it has
+          recorded and reported{" "}
+          {disagreement.serverSaid ? "a match" : "NO match"}; re-hashing the
+          download in this browser says{" "}
+          {disagreement.weSaid ? "it matches" : "it does not"}. The two cannot
+          both be right — either the bytes changed in transit or this row is
+          stale against the archive — so treat the result above as unconfirmed
+          until that is explained.
         </p>
       )}
 

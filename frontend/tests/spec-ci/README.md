@@ -5,10 +5,13 @@ Playwright-driven, in-browser executor that runs every IR spec under
 walks each spec's state machine, and writes a deterministic
 `spec-ci-report.json`. Spec CI is the **on-PR merge gate**
 (`.github/workflows/spec-ci.yml`); the Playwright E2E suite
-(`.github/workflows/e2e-tests.yml`) runs on nightly + pushes to main/develop only —
-it is skipped on PRs and on coord's `merge-candidate*` proposal-validation
-refs (the required `Test Summary` check stays green there via its
-skipped-tolerant result loop).
+(`.github/workflows/e2e-tests.yml`) runs its full 4-shard suite on nightly +
+pushes to main/develop only — the shards are skipped on PRs and on coord's
+`merge-candidate*` proposal-validation refs (the required `Test Summary` check
+stays green there via its skipped-tolerant result loop). On a PR the same
+workflow runs ONLY the `tests/e2e/**/*.spec.ts` files the PR changed
+(`Frontend E2E Tests (changed specs)`, advisory), on the same stack
+(`.github/workflows/e2e-playwright-stack.yml`).
 
 Entry point: `run-spec-ci.ts`. Run locally with:
 

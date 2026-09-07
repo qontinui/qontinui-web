@@ -115,9 +115,8 @@ export class TokenRefreshService {
    * (which outlives any single HttpClient instance).
    *
    * Several 401 handlers outside `HttpClient` (`lib/api-client`,
-   * `lib/api-client/client`, `services/workflow-templates-api`) call
-   * `refreshAccessToken()` on ANY 401 with no staleness predicate and no
-   * fire-once flag of their own. After a teardown each of their later 401s
+   * `services/workflow-templates-api`) call `refreshAccessToken()` on ANY
+   * 401 with no staleness predicate and no fire-once flag of their own. After a teardown each of their later 401s
    * re-enters here, finds no refresh token, and would dispatch `session-expired`
    * AGAIN — and the polling consumers (`RunnerMonitor`, `useTreeEvents`) do that
    * every tick. Centralising the guard here makes the teardown fire once for

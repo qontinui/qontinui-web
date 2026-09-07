@@ -39,7 +39,9 @@
  * `admin/prompt-injections/PromptInjectionsDashboard.tsx`,
  * `sessions/LineageTimeline.tsx` (four byte-identical copies) and
  * `operations/gatesPredicate.ts`'s `relativeAgo`. `admin/coord/TreeCard.tsx`
- * was deleted by Phase 3.
+ * was deleted by Phase 3; `admin/agent-sessions/AgentSessionsDashboard.tsx`
+ * by Phase 3 of `2026-08-26-sessions-console-consolidation`, when
+ * `/admin/agent-sessions` folded into `/sessions`.
  *
  * **One named file deliberately did NOT migrate.**
  * `execute/ScheduleListItem.tsx` is a same-NAME, different-BEHAVIOUR function:

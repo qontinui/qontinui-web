@@ -117,13 +117,23 @@ async def redeem_pair_code_endpoint(
     new device's stable identity — the runner cannot escalate to a
     different tenant by claiming a different ``device_id``.
 
+    The call to coord's ``pair-cli`` rides the web service token +
+    ``X-Qontinui-User-Id = issued_by_user_id`` (coord's pairing arm B).
+    Coord verifies that credential and then REFUSES the redeem (403
+    ``tenant_membership_required`` → 502 here) when the code's issuer no
+    longer belongs to the code's tenant, matched by Cognito subject — a
+    code outlives its issuer's membership only as a row, never as a
+    credential.
+
     Returns:
 
     * **200** + :class:`PairCodeRedeemOut` on success.
     * **404** if the code doesn't exist (or never did).
     * **409** if the code has already been redeemed (single-use).
     * **410** if the code has expired.
-    * **502** if the downstream coord ``pair-cli`` call fails.
+    * **502** if the downstream coord ``pair-cli`` call fails — including
+      coord's own refusal when the issuer is no longer a member of the
+      code's tenant.
     * **503** + ``Retry-After`` if coord is temporarily unavailable
       (e.g. mid-deploy) after the proxy's connect-failure retries.
     * **504** if coord did not respond in time (no retry — the request

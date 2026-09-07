@@ -354,13 +354,132 @@ export const FRONT_QUEUE_DEPTH_THRESHOLD = 2;
  */
 export const CONFLICT_DEFERRAL_MAX_MS = 6 * 60 * 60 * 1000;
 
-/** Look up a repo's economics by full `owner/name` then by short name. */
-function economicsFor(
+/**
+ * Look up a repo's economics by full `owner/name` then by short name.
+ *
+ * coord keys the economics map by `owner/name`; some row sources carry the
+ * short name only. Exported so the Train tab resolves repo keys through the
+ * SAME normalizer as the severity model, rather than a second spelling.
+ */
+export function economicsFor(
   repo: string,
   economics: Record<string, MergeEconomics> | undefined
 ): MergeEconomics | undefined {
   if (!economics) return undefined;
   return economics[repo] ?? economics[shortRepo(repo)];
+}
+
+// ---------------------------------------------------------------------------
+// Candidate-CI churn — the fleet-wide "green CI discarded" reading.
+//
+// Plan 2026-07-27-coord-green-candidates-discarded-always-zero. coord's
+// `green_candidates_discarded` is `Option<u64>`: `null` means coord could not
+// measure it, and it is NEVER 0. The reading therefore sums only the repos
+// that MEASURED a value and counts the rest as unknown, and when nothing was
+// measured it says "unknown" rather than printing a zero — an absent number
+// on a page about waste reading as "no waste" is the failure mode the plan
+// documented. The health strip and the Train tab both render THIS reading,
+// so the two surfaces show one number.
+// ---------------------------------------------------------------------------
+
+export interface CandidateChurn {
+  /**
+   * Sum of `green_candidates_discarded` over the repos that measured it.
+   * `null` when NO repo did (including an empty economics map — coord's read
+   * failed entirely). Never coerce to 0.
+   */
+  greenDiscarded: number | null;
+  /** Repos in the map whose `green_candidates_discarded` was null/absent. */
+  greenDiscardedUnknownRepos: number;
+  /** Same shape for `base_mismatch_discards`. */
+  baseMoveDiscards: number | null;
+  baseMoveDiscardsUnknownRepos: number;
+  /** Repos that measured `green_candidates_discarded`. */
+  measuredRepos: number;
+  /**
+   * coord's own statement of what the green count counted — the distinct
+   * `green_candidates_discarded_basis` strings (or `coverage_note` where a
+   * repo served no basis), joined. `null` when coord served neither for any
+   * repo.
+   */
+  basis: string | null;
+}
+
+/** Sum a nullable counter over repos: measured total + unknown-repo count. */
+function sumMeasured(
+  economics: MergeEconomics[],
+  pick: (e: MergeEconomics) => number | null | undefined
+): { total: number | null; unknownRepos: number } {
+  let total: number | null = null;
+  let unknownRepos = 0;
+  for (const e of economics) {
+    const v = pick(e);
+    if (typeof v === "number" && Number.isFinite(v)) {
+      total = (total ?? 0) + v;
+    } else {
+      unknownRepos += 1;
+    }
+  }
+  return { total, unknownRepos };
+}
+
+export function deriveCandidateChurn(
+  economicsByRepo: Record<string, MergeEconomics> | undefined
+): CandidateChurn {
+  const all = Object.values(economicsByRepo ?? {}).filter(
+    (e): e is MergeEconomics => e != null && typeof e === "object"
+  );
+  const green = sumMeasured(all, (e) => e.green_candidates_discarded);
+  const base = sumMeasured(all, (e) => e.base_mismatch_discards);
+
+  const bases = new Set<string>();
+  for (const e of all) {
+    const b = e.green_candidates_discarded_basis ?? e.coverage_note;
+    if (typeof b === "string" && b.trim()) bases.add(b.trim());
+  }
+
+  return {
+    greenDiscarded: green.total,
+    greenDiscardedUnknownRepos: green.unknownRepos,
+    baseMoveDiscards: base.total,
+    baseMoveDiscardsUnknownRepos: base.unknownRepos,
+    measuredRepos: all.length - green.unknownRepos,
+    basis: bases.size > 0 ? [...bases].join("; ") : null,
+  };
+}
+
+/**
+ * The health-strip badge text for the churn reading, exactly:
+ *
+ * - `green CI discarded 15`
+ * - `green CI discarded 15 (2 repos unknown)` — some repo served null
+ * - `green CI discarded unknown` — NO repo measured it, or the economics read
+ *   failed entirely. Shown, not omitted: honesty about uncertainty is the rule.
+ */
+export function candidateChurnBadgeLabel(churn: CandidateChurn): string {
+  if (churn.greenDiscarded === null) return "green CI discarded unknown";
+  const k = churn.greenDiscardedUnknownRepos;
+  const unknown = k > 0 ? ` (${k} repo${k === 1 ? "" : "s"} unknown)` : "";
+  return `green CI discarded ${churn.greenDiscarded}${unknown}`;
+}
+
+/**
+ * The badge's hover text: coord's basis when it served one, otherwise a plain
+ * statement of WHY the number is unknown — never an empty title.
+ */
+export function candidateChurnBadgeTitle(churn: CandidateChurn): string {
+  if (churn.basis) return churn.basis;
+  if (churn.greenDiscarded === null) {
+    return (
+      "coord did not measure green-candidate discards for any repo — the " +
+      "economics read was unavailable or served null. Unknown, not zero."
+    );
+  }
+  return (
+    `Merge candidates whose CI reached green and were then discarded, ` +
+    `summed over ${churn.measuredRepos} repo` +
+    `${churn.measuredRepos === 1 ? "" : "s"} that measured it.`
+  );
 }
 
 /**

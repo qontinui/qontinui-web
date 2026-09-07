@@ -90,7 +90,7 @@ export function DeviceCrossLinks({ deviceId }: { deviceId: string }) {
       </Link>
       <span className="text-muted-foreground">·</span>
       <Link
-        href={`/admin/agent-sessions`}
+        href={`/sessions`}
         className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
       >
         sessions <ExternalLink className="h-3 w-3" />

@@ -15,7 +15,6 @@ import { describe, expect, it } from "vitest";
 import {
   type CoordNotificationRow,
   MARK_ALL,
-  containsUuid,
   detailActor,
   humanKind,
   linkedRefNotice,
@@ -45,28 +44,6 @@ function row(over: Partial<CoordNotificationRow> = {}): CoordNotificationRow {
   };
 }
 
-describe("containsUuid", () => {
-  it("detects a UUID anywhere in the string", () => {
-    expect(containsUuid(UUID)).toBe(true);
-    expect(containsUuid(`operator:${UUID}`)).toBe(true);
-    expect(containsUuid(`stale-tree:${UUID}:qontinui-runner-wt-mtobs`)).toBe(
-      true
-    );
-  });
-
-  it("passes ordinary prose and nullish input", () => {
-    expect(containsUuid("PR #742 landed in qontinui-web")).toBe(false);
-    expect(containsUuid(null)).toBe(false);
-    expect(containsUuid(undefined)).toBe(false);
-  });
-
-  it("is stateless across repeated calls (no /g lastIndex carry-over)", () => {
-    // A global regex reused with .test() alternates true/false on the same
-    // input. This predicate must not.
-    for (let i = 0; i < 4; i++) expect(containsUuid(UUID)).toBe(true);
-  });
-});
-
 describe("scrubUuids", () => {
   it("elides every UUID while keeping the sentence", () => {
     expect(scrubUuids(`stale-tree:${UUID}:qontinui-runner-wt-mtobs`)).toBe(
@@ -75,6 +52,10 @@ describe("scrubUuids", () => {
   });
 
   it("elides more than one, and is stable when reused", () => {
+    // The module holds ONE `/g` instance now that the unused `containsUuid`
+    // predicate is gone, so this is the whole guard against `lastIndex`
+    // carry-over: `.replace()` resets it, `.test()` would not. A second call
+    // returning "… then c79a…" is what a regression here looks like.
     const two = `${UUID} then ${UUID}`;
     expect(scrubUuids(two)).toBe("… then …");
     expect(scrubUuids(two)).toBe("… then …");

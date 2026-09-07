@@ -409,7 +409,7 @@ describe("TokenRefreshService.refreshAccessToken", () => {
   });
 
   /**
-   * M1 — three other 401 handlers (`lib/api-client`, `lib/api-client/client`,
+   * M1 — two other 401 handlers (`lib/api-client`,
    * `services/workflow-templates-api`) call `refreshAccessToken()` on ANY 401
    * with no fire-once flag of their own, and polling consumers re-enter on
    * every tick. The guard therefore lives here, not in HttpClient.

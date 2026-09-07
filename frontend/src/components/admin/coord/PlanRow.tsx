@@ -13,7 +13,8 @@
  * 1. **R2 — the card was three stacked lines inside `p-4`; it is now one
  *    `px-3 py-2` row.** The fields that were stacked (title, the date cluster)
  *    moved into the detail panel, which costs a click only when the operator
- *    wants them.
+ *    wants them. The row keeps ONE time, chosen by {@link planRowTime}:
+ *    shipped → authored → ingested, never the scanner's `updated_at`.
  * 2. **D1 — the whole card was a `<Link>` to `/admin/coord/plans/[slug]`.**
  *    Clicking a row now expands it in place; the detail route survives and is
  *    reached by the explicit "Open full page ↗" action, which keeps the
@@ -40,25 +41,16 @@ import { RecordDetail, RecordRow } from "@/components/console";
 import { RowTime, StatusBadge } from "@/components/console";
 import {
   PLAN_STATUS_PALETTE,
+  PLAN_TIME_ABSENT,
   describePlanStatus,
   derivePlanStatus,
   planIdentity,
   planRest,
+  planRowTime,
   type CoordPlanRow,
 } from "@/components/admin/coord/planStatus";
 
 export type { CoordPlanRow };
-
-/**
- * The timestamp the row reports: the semantically-right one for the plan's
- * state (a shipped plan reports when it shipped), never just "the newest
- * column we have".
- */
-function rowTimeFor(plan: CoordPlanRow): { at: string | null; verb: string } {
-  if (plan.shipped_at) return { at: plan.shipped_at, verb: "Shipped" };
-  if (plan.updated_at) return { at: plan.updated_at, verb: "Updated" };
-  return { at: plan.created_at ?? null, verb: "Created" };
-}
 
 export function PlanRow({
   plan,
@@ -72,7 +64,9 @@ export function PlanRow({
   const router = useRouter();
   const status = derivePlanStatus(plan);
   const tag = describePlanStatus(plan.status);
-  const { at, verb } = rowTimeFor(plan);
+  // shipped → authored → ingested; `updated_at` is a scanner touch, not a
+  // plan event, and lives in the detail panel below. See `planRowTime`.
+  const { at, verb } = planRowTime(plan);
   const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
 
   return (
@@ -108,7 +102,7 @@ export function PlanRow({
         </span>
       }
       reason={plan.current_phase ? `phase ${plan.current_phase}` : undefined}
-      time={<RowTime at={at} verb={verb} />}
+      time={<RowTime at={at} verb={verb} absent={PLAN_TIME_ABSENT} />}
     >
       <RecordDetail
         why={
@@ -156,29 +150,59 @@ export function PlanRow({
             className="text-xs text-muted-foreground flex flex-wrap gap-x-3"
             data-testid="coord-plan-card-dates"
           >
-            {/* An absent date is rendered as absent, never as a blank cell:
-                "no creation date recorded" is a real, common state that the
-                page's own sort has to reason about. */}
-            <span title={plan.created_at ? `Created ${plan.created_at}` : undefined}>
-              created{" "}
-              {plan.created_at ? (
-                <RowTime at={plan.created_at} verb="Created" className="inline" />
-              ) : (
-                <span className="italic">not recorded</span>
-              )}
-            </span>
-            {plan.shipped_at ? (
-              <span title={`Shipped ${plan.shipped_at}`}>
-                shipped{" "}
-                <RowTime at={plan.shipped_at} verb="Shipped" className="inline" />
+            {/* Three dates, three different facts, each under the word for
+                what it IS: `authored` is when the plan was written (coord
+                `authored_at`, slug-derived), `ingested` is when coord first
+                saw the row (`created_at` — mislabelled "created" here until
+                plan 2026-09-02-coord-work-units-carry-no-authoring-date),
+                `updated` is the scanner's last touch, honest HERE because it
+                is labelled. An absent authoring date falls through to the
+                ingest date under ITS OWN name, and when that is absent too
+                the cell says so: "not recorded" is a real, common state the
+                page's own sort has to reason about, never a blank and never
+                the ingest date wearing the authored label. */}
+            {plan.authored_at ? (
+              <span title={`Authored ${plan.authored_at}`}>
+                authored{" "}
+                <RowTime
+                  at={plan.authored_at}
+                  verb="Authored"
+                  className="inline"
+                />
+              </span>
+            ) : plan.created_at ? (
+              <span title={`Ingested ${plan.created_at}`}>
+                ingested{" "}
+                <RowTime
+                  at={plan.created_at}
+                  verb="Ingested"
+                  className="inline"
+                />
               </span>
             ) : (
-              plan.updated_at && (
-                <span title={`Updated ${plan.updated_at}`}>
-                  updated{" "}
-                  <RowTime at={plan.updated_at} verb="Updated" className="inline" />
-                </span>
-              )
+              <span>
+                authored <span className="italic">not recorded</span>
+              </span>
+            )}
+            {plan.first_shipped_at && (
+              <span title={`Shipped ${plan.first_shipped_at}`}>
+                shipped{" "}
+                <RowTime
+                  at={plan.first_shipped_at}
+                  verb="Shipped"
+                  className="inline"
+                />
+              </span>
+            )}
+            {plan.updated_at && (
+              <span title={`Updated ${plan.updated_at}`}>
+                updated{" "}
+                <RowTime
+                  at={plan.updated_at}
+                  verb="Updated"
+                  className="inline"
+                />
+              </span>
             )}
           </p>
         }

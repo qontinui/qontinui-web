@@ -35,6 +35,12 @@
 import { test as setup, type BrowserContext, type Page } from "@playwright/test";
 import { STORAGE_STATE_PATH } from "./auth.constants";
 
+/**
+ * Replaces the old `waitForTimeout(1000)` after the authenticated reload
+ * (plan 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time).
+ */
+const HYDRATE_TIMEOUT = 5000;
+
 // Cognito CI app client — see `frontend/tests/spec-ci/run-spec-ci.ts`. The id
 // is a public app-client id (USER_PASSWORD_AUTH, no secret), not a secret.
 const COGNITO_CI_CLIENT_ID =
@@ -148,9 +154,18 @@ async function seedAndVerifyToken(
       // localStorage unavailable — best effort.
     }
   });
+  // The reload hydrates authenticated: checkAuth's `getCurrentUser()` round-
+  // trip (GET /api/v1/auth/users/me) is what the state used to be given a
+  // fixed second for. Register the wait before the reload so it cannot be
+  // missed; tolerated, since the probe above already verified the token.
+  const meRoundTrip = page
+    .waitForResponse((r) => r.url().includes("/api/v1/auth/users/me"), {
+      timeout: HYDRATE_TIMEOUT,
+    })
+    .catch(() => null);
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1000);
+  await meRoundTrip;
 
   await page.context().storageState({ path: STORAGE_STATE_PATH });
   console.log(
@@ -223,9 +238,15 @@ setup("authenticate", async ({ page, context }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("is_authenticated", "true");
   });
+  // Same hydration round-trip as `seedAndVerifyToken`, tolerated.
+  const meRoundTrip = page
+    .waitForResponse((r) => r.url().includes("/api/v1/auth/users/me"), {
+      timeout: HYDRATE_TIMEOUT,
+    })
+    .catch(() => null);
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(1000);
+  await meRoundTrip;
 
   await page.context().storageState({ path: STORAGE_STATE_PATH });
   console.log(

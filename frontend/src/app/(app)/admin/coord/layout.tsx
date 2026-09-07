@@ -17,8 +17,10 @@
  *  - /admin/coord/alerts
  *  - /admin/coord/history
  *
- * Cross-links to /admin/agent-claims (PR #156) and /admin/agent-sessions
- * (PR #158) live in CoordNav.
+ * Cross-links to /admin/agent-claims (PR #156) and /sessions live in
+ * CoordNav. The sessions cross-link pointed at /admin/agent-sessions
+ * (PR #158) until `2026-08-26-sessions-console-consolidation` Phase 3
+ * consolidated the six session surfaces onto /sessions.
  */
 
 import { Activity } from "lucide-react";

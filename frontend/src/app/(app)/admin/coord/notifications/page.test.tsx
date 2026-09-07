@@ -17,7 +17,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const httpGet = vi.fn();
@@ -75,9 +75,14 @@ describe("CoordNotificationsPage", () => {
     });
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-unread-count")
-    ).toHaveTextContent("137 unread");
+    // `waitFor` on the CONTENT: both badges are rendered unconditionally and
+    // read `– unread` / `– total` until the head read lands, so `findBy`
+    // resolves immediately and a chained assertion races the read.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-unread-count")
+      ).toHaveTextContent("137 unread")
+    );
     expect(screen.getByTestId("coord-notifications-total")).toHaveTextContent(
       "900 total"
     );
@@ -238,7 +243,9 @@ describe("CoordNotificationsPage", () => {
     const button = await screen.findByTestId(
       "coord-notifications-mark-all-read"
     );
-    expect(button).toHaveAttribute("data-mark-all-scope", "everything");
+    await waitFor(() =>
+      expect(button).toHaveAttribute("data-mark-all-scope", "everything")
+    );
     expect(button).toHaveTextContent("Mark all read");
     await user.click(button);
 
@@ -359,9 +366,11 @@ describe("CoordNotificationsPage", () => {
     render(<CoordNotificationsPage />);
 
     // The good load.
-    expect(
-      await screen.findByTestId("coord-notifications-unread-count")
-    ).toHaveTextContent("137 unread");
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-unread-count")
+      ).toHaveTextContent("137 unread")
+    );
     expect(screen.getByTestId("coord-notifications-health")).toHaveAttribute(
       "data-health-level",
       "green"
@@ -663,9 +672,15 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+    const button = await screen.findByTestId(
+      "coord-notifications-mark-all-read"
+    );
+    await waitFor(() =>
+      expect(button).toHaveAttribute(
+        "title",
+        expect.stringContaining("ALL 137 unread")
+      )
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await waitFor(() =>
@@ -699,9 +714,11 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toHaveAttribute("title", expect.stringContaining("ALL 137 unread"))
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await screen.findByTestId("coord-notifications-pending");
@@ -737,9 +754,11 @@ describe("CoordNotificationsPage", () => {
     const user = userEvent.setup();
     render(<CoordNotificationsPage />);
 
-    expect(
-      await screen.findByTestId("coord-notifications-mark-all-read")
-    ).toBeEnabled();
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeEnabled()
+    );
 
     await user.click(screen.getByTestId("coord-notifications-refresh"));
     await screen.findByTestId("coord-notifications-pending");
@@ -754,6 +773,440 @@ describe("CoordNotificationsPage", () => {
     // rather than asserting that a test which never clicks did not post.
     await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
     expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it("does not grey out mark-all off a count it never got", async () => {
+    // The last `?? 0` on this page, and the only one making its claim in an
+    // AFFORDANCE rather than in words. A failed first read leaves
+    // `unread_count` null and `rows` empty, so `(unreadCount ?? 0) > 0` read
+    // the absent scalar as a zero and disabled the button — a third surface
+    // answering "is anything unread?", and the only one answering it
+    // confidently while the strip beside it said UNKNOWN and the list below it
+    // said "unknown, not none".
+    //
+    // Nothing about an unreadable FEED says the STORE cannot be written, which
+    // is the standard the migration-pending disable was argued to one line up.
+    // `{all: true}` marks every unread row for this principal regardless of any
+    // number the page holds.
+    httpGet.mockRejectedValue(
+      new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+    );
+    httpPost.mockResolvedValue({ marked: 3, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await screen.findByTestId("coord-notifications-unknown");
+    const button = screen.getByTestId("coord-notifications-mark-all-read");
+    expect(button).toBeEnabled();
+    // No figure is promised — `readIsCurrent` is false — but the warning
+    // stands, because the click really does mark everything.
+    expect(button).toHaveAttribute(
+      "title",
+      expect.stringContaining("cannot be undone")
+    );
+    expect(button).not.toHaveAttribute("title", expect.stringMatching(/\d/));
+
+    // Clicked, not merely inspected: the point is that the request goes out.
+    await user.click(button);
+    await waitFor(() =>
+      expect(httpPost).toHaveBeenCalledWith(
+        "/api/v1/operations/notifications/mark-read",
+        { all: true },
+        expect.anything()
+      )
+    );
+  });
+
+  it("still greys out mark-all when coord AFFIRMATIVELY says zero", async () => {
+    // The other half of the discrimination, and the reason the fix above is a
+    // weakening rather than a removal: `unread_count: 0` from a read that
+    // landed IS knowledge, and a button that would do nothing should look like
+    // one. A test for the enabled arm alone passes against a predicate that
+    // never disables.
+    httpGet.mockResolvedValue({
+      notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+      next_cursor: null,
+      total: 4,
+      unread_count: 0,
+    });
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+  });
+
+  it("keeps mark-all live on a zero the feed has stopped confirming", async () => {
+    // The DISCRIMINATION for the pair above, and the arm the first cut of this
+    // fix missed. `applyEnvelope` RETAINS the previous scalar across a failed
+    // poll, so a fresh `0` and a frozen `0` are the same value in state — and a
+    // predicate reading the value alone disables the button in both. Here the
+    // strip is rendering "These counts stopped updating" and saying, in words,
+    // that what has arrived since is unknown; the button must not be the one
+    // surface still treating that zero as knowledge.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+        unread_count: 0,
+      })
+      .mockRejectedValue(
+        new Error("GET /api/v1/operations/notifications failed: 500 - boom")
+      );
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // Fresh zero: disabled, per the test above.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        "These counts stopped updating"
+      )
+    );
+    // Same `unreadCount === 0` in state; different answer, because the read
+    // behind it is no longer current.
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeEnabled();
+  });
+
+  it("does not paint green over counts the feed stopped carrying", async () => {
+    // The third way a scalar stops being current, and the one this page shipped
+    // blind to. `applyEnvelope` retains an absent scalar (right) while
+    // `setLoaded(true)` fires on any successful GET, so a coord build that
+    // stops sending `unread_count` leaves `loaded` true, `readFailed` FALSE and
+    // a frozen number in state — and the strip took the green arm over it.
+    //
+    // Found from the nav badge, which polls this same route and had the
+    // identical hole; fixing it there first briefly made the nav the MORE
+    // careful of the two surfaces reading one scalar.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // `waitFor` on the CONTENT, not `findBy` on the element. The strip is
+    // rendered unconditionally, so `findBy` resolves the instant the component
+    // mounts — while the strip still reads "Waiting for coord…" — and the
+    // chained assertion then races the head read. It passes only because a
+    // mocked GET resolves in a microtask, and loses that race under load.
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+    // Its OWN sentence: nothing is failing here, so telling the operator the
+    // feed could not be re-read would send them after an outage that is not
+    // happening.
+    expect(strip).toHaveTextContent("the counts are no longer being refreshed");
+    // Names the READS, not the feed. In the sibling test below the feed has
+    // never carried the scalar and only the POST has, so "the feed no longer
+    // carries them" would presuppose a feed delivery that never happened —
+    // the same over-reach one register down.
+    expect(strip).not.toHaveTextContent("the feed is answering");
+    // The number is retained and shown — it is real — and no longer quotable.
+    expect(strip).toHaveTextContent("7");
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).not.toHaveAttribute("title", expect.stringContaining("ALL 7"));
+  });
+
+  it("keeps mark-all live when the scalar stopped coming back at zero", async () => {
+    // The same degrade over a retained ZERO — last round's defect surviving in
+    // the scalar-less arm rather than the failed one. `unreadCount` is a frozen
+    // `0`, so the affirmative-zero predicate would grey the button out under a
+    // strip that is simultaneously saying the counts stopped updating.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+        unread_count: 0,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 4,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("coord-notifications-mark-all-read")
+      ).toBeDisabled()
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(screen.getByTestId("coord-notifications-health")).toHaveTextContent(
+        "These counts stopped updating"
+      )
+    );
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeEnabled();
+  });
+
+  it("does not say counts stopped updating before any of them started", async () => {
+    // A FIRST read that answers without the scalar is not a read that stopped
+    // carrying it. Flagging both alike put "no longer" and "since" in front of
+    // an operator who had never had a good read — and, worse, made the arm
+    // written for exactly this state unreachable, because it is checked after
+    // the stale one.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+    });
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("The unread count did not come back")
+    );
+    expect(strip).not.toHaveTextContent("no longer");
+    expect(strip).not.toHaveTextContent("stopped updating");
+    // `total` DID come back, and one missing scalar does not make the other
+    // unknown.
+    expect(screen.getByTestId("coord-notifications-total")).toHaveTextContent(
+      "900 total"
+    );
+  });
+
+  it("does not let a cursor page stale the head counts", async () => {
+    // `pagingFailed` exists in this file precisely so a failed "Load more"
+    // cannot paint the head counts stale while the 10s poller is still
+    // refreshing them. Writing the scalar verdict from `applyEnvelope` — which
+    // both reads call — reintroduced that coupling through the other door: a
+    // cursor page answering without the scalar flipped a green strip to
+    // "These counts stopped updating", as a direct result of the operator's
+    // own click.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: "opaque",
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ notification_id: "second" })],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    // `waitFor` on the CONTENT, not `findBy` on the element. The strip is
+    // rendered unconditionally, so `findBy` resolves the instant the component
+    // mounts — while the strip still reads "Waiting for coord…" — and the
+    // chained assertion then races the head read. It passes only because a
+    // mocked GET resolves in a microtask, and loses that race under load.
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    await user.click(screen.getByTestId("coord-notifications-load-more"));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("coord-notifications-load-more")
+      ).not.toBeInTheDocument()
+    );
+
+    // The page landed and appended; the HEAD counts are the poller's business
+    // and are untouched.
+    expect(
+      screen.getByTestId("coord-notifications-health")
+    ).toHaveTextContent("7 unread events");
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toHaveAttribute("title", expect.stringContaining("ALL 7 unread"));
+  });
+
+  it("treats the mark-read scalar as a delivery, in both directions", async () => {
+    // `markRead` writes `unreadCount` and does NOT go through `applyEnvelope`,
+    // so when that function became the sole author of the scalar's verdict this
+    // door was left behind — and the `scalarSeenRef` gate then made the
+    // omission PERMANENT.
+    //
+    // Against a feed that never carries the scalar, a mark-all wrote a real `0`
+    // into state while `scalarSeenRef` stayed false: `scalarStale` could never
+    // be set, the "did not come back" arm could never fire again, and the strip
+    // settled into a green "you have seen everything coord recorded" over a
+    // number the FEED has never delivered — with no read able to dislodge it.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+    });
+    httpPost.mockResolvedValue({ marked: 1, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("The unread count did not come back")
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    // coord computed this for the principal just now — it IS current, and the
+    // strip is allowed to say so.
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unread"));
+
+    // ...and the next scalar-less head read must be able to take it back.
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+    // ...and the sentence is true in this path too, which is why it names the
+    // READS rather than the feed: here the FEED has never carried the scalar
+    // and only the mark-read door has.
+    expect(strip).toHaveTextContent("the counts are no longer being refreshed");
+  });
+
+  it("un-stales the strip when mark-read brings a fresh scalar", async () => {
+    // The mirror case. A feed that stops carrying the scalar after a good read
+    // leaves the strip amber — correct — and a mark-all then returns a fresh
+    // `unread_count`. Leaving the flag set called a number frozen one tick
+    // after coord delivered it, and the affirmative-zero disable stopped
+    // working on a genuine fresh zero.
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification({ read_at: "2026-08-14T11:00:00Z" })],
+        next_cursor: null,
+        total: 900,
+      });
+    httpPost.mockResolvedValue({ marked: 7, unread_count: 0 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(strip).toHaveTextContent("Nothing unread"));
+    // A genuine, current zero — so the affirmative-zero disable works again.
+    expect(
+      screen.getByTestId("coord-notifications-mark-all-read")
+    ).toBeDisabled();
+  });
+
+  it("does not let a WRITE's silence stale the counts", async () => {
+    // The other half of treating the POST as a delivery: it is a delivery
+    // WITHOUT being a read. `POST /mark-read` returns `unread_count` as a
+    // courtesy, and a response that omits it says nothing whatever about
+    // whether the feed is still carrying the scalar — so its silence must not
+    // stale a strip the head reads are keeping current. Making the write count
+    // as a read turns every scalar-less mark-read into "the counts are no
+    // longer being refreshed" over a feed that is refreshing them fine.
+    httpGet.mockResolvedValue({
+      notifications: [notification()],
+      next_cursor: null,
+      total: 900,
+      unread_count: 7,
+    });
+    httpPost.mockResolvedValue({ marked: 7 });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(httpPost).toHaveBeenCalled());
+
+    expect(strip).not.toHaveTextContent("no longer being refreshed");
+    expect(strip).toHaveTextContent("7 unread events");
+  });
+
+  it("does not let a slow mark-read un-stale a newer read that answered without the scalar", async () => {
+    // Three writers touch this scalar — the head read, Load more, and the POST
+    // — and treating the POST as a delivery without ORDERING it opened the
+    // window one door over: the POST hangs, a newer head read lands carrying
+    // nothing and correctly turns the strip amber, and then the POST resolves
+    // and paints green over it. The number is honest (coord answered 0 when it
+    // processed the write); "current" is not, because a newer read finished
+    // afterwards and could not confirm one.
+    let resolvePost: ((v: unknown) => void) | null = null;
+    httpPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        })
+    );
+    httpGet
+      .mockResolvedValueOnce({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+        unread_count: 7,
+      })
+      .mockResolvedValue({
+        notifications: [notification()],
+        next_cursor: null,
+        total: 900,
+      });
+    const user = userEvent.setup();
+    render(<CoordNotificationsPage />);
+
+    const strip = await screen.findByTestId("coord-notifications-health");
+    await waitFor(() => expect(strip).toHaveTextContent("7 unread events"));
+
+    // The POST goes out and hangs.
+    await user.click(screen.getByTestId("coord-notifications-mark-all-read"));
+    await waitFor(() => expect(httpPost).toHaveBeenCalled());
+
+    // A newer head read lands, carrying no scalar.
+    await user.click(screen.getByTestId("coord-notifications-refresh"));
+    await waitFor(() =>
+      expect(strip).toHaveTextContent("These counts stopped updating")
+    );
+
+    // Now the superseded POST answers.
+    await act(async () => {
+      resolvePost?.({ marked: 7, unread_count: 0 });
+      await Promise.resolve();
+    });
+
+    // Its number may be applied — it is the newest one anybody delivered — but
+    // the verdict stands, because a newer READ finished without confirming it.
+    expect(strip).toHaveTextContent("These counts stopped updating");
+    expect(strip).not.toHaveTextContent("you have seen everything coord recorded");
   });
 
   describe("the ?ref= banner", () => {
@@ -784,10 +1237,16 @@ describe("CoordNotificationsPage", () => {
       const user = userEvent.setup();
       render(<CoordNotificationsPage />);
 
-      // UUID_B is not on the page, so the banner starts on its last arm.
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/not on the page that is loaded/);
+      // UUID_B is not on the page, so the banner SETTLES on its last arm.
+      // Not "starts" — it starts on the loading arm, which is the whole reason
+      // this has to wait on the content: the banner renders as soon as
+      // `linkedRef` is set from the mount effect, before the head read lands,
+      // and `findBy` resolves on element EXISTENCE.
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/not on the page that is loaded/)
+      );
 
       await user.click(screen.getByTestId("coord-notification-mark-read"));
       await screen.findByText(/Could not mark read/);
@@ -898,9 +1357,11 @@ describe("CoordNotificationsPage", () => {
       withRef(UUID_B);
       render(<CoordNotificationsPage />);
 
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/deployment state, not a missing event/);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/deployment state, not a missing event/)
+      );
     });
 
     it("still blames the feed when the feed is what failed", async () => {
@@ -910,9 +1371,11 @@ describe("CoordNotificationsPage", () => {
       withRef(UUID_B);
       render(<CoordNotificationsPage />);
 
-      expect(
-        await screen.findByTestId("coord-notifications-linked-ref")
-      ).toHaveTextContent(/feed above failed to load/);
+      await waitFor(() =>
+        expect(
+          screen.getByTestId("coord-notifications-linked-ref")
+        ).toHaveTextContent(/feed above failed to load/)
+      );
     });
   });
 });

@@ -8,6 +8,15 @@
  *
  * These pages all require a project to be selected (wrapped in RequireProject).
  * The annotations page additionally requires admin (superuser) access.
+ *
+ * No fixed sleeps. Every wait here is a bounded `waitFor(...).catch(() =>
+ * null)` on the state the test then screenshots and reads (the
+ * RequireProject prompt or the page's own heading; a selected tab after a
+ * tab click), tolerated so a page that renders neither still reaches the
+ * test's own conditionals — never a `waitForTimeout(N)` followed by a
+ * non-waiting read, which asserts on wall-clock. Timeouts are the replaced
+ * sleep × 3, floor 5 s.
+ * Plan: 2026-09-05-web-e2e-fixed-sleeps-red-main-one-test-at-a-time.
  */
 
 import { test, expect } from "../fixtures";
@@ -33,6 +42,32 @@ async function selectProjectIfAvailable(
   _page: import("@playwright/test").Page
 ): Promise<boolean> {
   return false;
+}
+
+/** Replaces the old `waitForTimeout(2000)` after a page navigation. */
+const PAGE_SETTLE_TIMEOUT = 6000;
+/** Replaces the old `waitForTimeout(3000)` before a page-data presence read. */
+const PAGE_DATA_TIMEOUT = 9000;
+/** Replaces the old `waitForTimeout(1000)` after a tab click. */
+const TAB_SWITCH_TIMEOUT = 5000;
+
+/**
+ * Bounded wait for the state a RequireProject-wrapped page settles on: the
+ * prompt ("No project selected" / "No projects yet") or the page's own
+ * heading. Tolerated if neither renders (the annotations page redirects
+ * non-admins, and that branch is read from the URL below).
+ */
+async function waitForPageSettled(
+  page: import("@playwright/test").Page,
+  timeout: number
+): Promise<void> {
+  await page
+    .locator("text=No project selected")
+    .or(page.locator("text=No projects yet"))
+    .or(page.locator("h1"))
+    .first()
+    .waitFor({ state: "visible", timeout })
+    .catch(() => null);
 }
 
 test.describe("Automation Builder - Analytics & Annotations Pages", () => {
@@ -61,7 +96,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics-heading.png",
@@ -91,7 +126,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics-metrics.png",
@@ -130,7 +165,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics-time-range.png",
@@ -168,7 +203,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics-tabs.png",
@@ -204,7 +239,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       if (hasProject) {
         const topWorkflowsTab = page.getByRole("tab", {
@@ -216,7 +251,11 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
         if (tabVisible) {
           await topWorkflowsTab.click();
-          await page.waitForTimeout(1000);
+          // The click selects the tab — the state it produces, tolerated.
+          await page
+            .getByRole("tab", { name: /Top Workflows/i, selected: true })
+            .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+            .catch(() => null);
 
           await page.screenshot({
             path: "test-results/automation-builder-analytics-top-workflows.png",
@@ -250,7 +289,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       if (hasProject) {
         const executionsTab = page.getByRole("tab", { name: /Executions/i });
@@ -260,7 +299,11 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
         if (tabVisible) {
           await executionsTab.click();
-          await page.waitForTimeout(1000);
+          // The click selects the tab — the state it produces, tolerated.
+          await page
+            .getByRole("tab", { name: /Executions/i, selected: true })
+            .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+            .catch(() => null);
 
           await page.screenshot({
             path: "test-results/automation-builder-analytics-executions.png",
@@ -288,7 +331,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       if (hasProject) {
         const performanceTab = page.getByRole("tab", {
@@ -300,7 +343,11 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
         if (tabVisible) {
           await performanceTab.click();
-          await page.waitForTimeout(1000);
+          // The click selects the tab — the state it produces, tolerated.
+          await page
+            .getByRole("tab", { name: /Performance/i, selected: true })
+            .waitFor({ state: "visible", timeout: TAB_SWITCH_TIMEOUT })
+            .catch(() => null);
 
           await page.screenshot({
             path: "test-results/automation-builder-analytics-performance.png",
@@ -329,7 +376,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/analytics");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(2000);
+      await waitForPageSettled(page, PAGE_SETTLE_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-analytics-filters.png",
@@ -385,7 +432,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
     }) => {
       await page.goto("/automation-builder/annotations");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-annotations-access.png",
@@ -413,7 +460,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/annotations");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-annotations-tools.png",
@@ -484,7 +531,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/screenshots");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-screenshots-content.png",
@@ -528,7 +575,7 @@ test.describe("Automation Builder - Analytics & Annotations Pages", () => {
 
       await page.goto("/automation-builder/screenshots");
       await page.waitForLoadState("domcontentloaded");
-      await page.waitForTimeout(3000);
+      await waitForPageSettled(page, PAGE_DATA_TIMEOUT);
 
       await page.screenshot({
         path: "test-results/automation-builder-screenshots-upload.png",

@@ -53,10 +53,12 @@ import {
 import { CoordAdminOnly } from "@/components/admin/coord/CoordAdminOnly";
 import {
   PLAN_STATUS_PALETTE,
+  PLAN_TIME_ABSENT,
   describePlanStatus,
   derivePlanStatus,
   planIdentity,
   planRest,
+  planRowTime,
   type CoordPlanRow,
 } from "@/components/admin/coord/planStatus";
 
@@ -73,6 +75,7 @@ export function SpawnPlanRow({
 }) {
   const status = derivePlanStatus(plan);
   const tag = describePlanStatus(plan.status);
+  const time = planRowTime(plan);
   const href = `/admin/coord/plans/${encodeURIComponent(plan.slug)}`;
 
   return (
@@ -99,11 +102,11 @@ export function SpawnPlanRow({
           reason={
             plan.current_phase ? `phase ${plan.current_phase}` : undefined
           }
+          // Same chain as `<PlanRow>` (shipped → authored → ingested) so the
+          // two lists agree on what a plan's time means; `updated_at` is a
+          // scanner touch and is not a plan event. See `planRowTime`.
           time={
-            <RowTime
-              at={plan.updated_at ?? plan.created_at ?? null}
-              verb={plan.updated_at ? "Updated" : "Created"}
-            />
+            <RowTime at={time.at} verb={time.verb} absent={PLAN_TIME_ABSENT} />
           }
         >
           <RecordDetail
