@@ -111,14 +111,24 @@ the four ``op.create_table`` calls are unconditional, while only the recreated
 indexes carry ``if_not_exists=True``. A downgrade runs against a database whose
 upgrade just dropped these tables, so a table that is already present means the
 database is not in the state this downgrade assumes — that is a real signal and
-it should fail loudly rather than be swallowed by an ``IF NOT EXISTS``. The
-indexes differ because three of them are also created by ancestor revisions
-(``projdash_01_stf_prefix_idx``'s expression index, plus ``idx_sfs_session``
-and ``idx_sfs_session_file``, which ``consolidation_phase1_20_tail_specialty``
-and ``consolidation_phase2_v_30_productivity_knowledge`` both create), so
-tolerating a pre-existing index is correct there and the whole set is spelled
-the same way for consistency. Tables are recreated in
-FK order, parent before child.
+it should fail loudly rather than be swallowed by an ``IF NOT EXISTS``. Tables
+are recreated in FK order, parent before child.
+
+The indexes carry ``if_not_exists=True`` as **defensive uniformity, not because
+a pre-existing index is expected** — and an earlier draft of this paragraph got
+that rationale wrong, so it is spelled out here. Every one of the eight
+recreated indexes has an ancestor creator, not three of them
+(``consolidation_phase1_12_coord_sessions_worktrees`` lines 74-75;
+``consolidation_phase1_14_workflows_flows_cross`` lines 289-290 and 307;
+``consolidation_phase1_20_tail_specialty`` and
+``consolidation_phase2_v_30_productivity_knowledge`` for the two ``idx_sfs_*``;
+``projdash_01_session_touched_files_prefix_idx`` for the expression index). And
+the tolerance can never actually fire: each index is created immediately after
+an unconditional ``op.create_table`` of its own table in this same
+``downgrade()``, so an index can only pre-exist if its table did — in which case
+``create_table`` has already raised, which is exactly the loud failure the
+paragraph above wants. Do not read the flag as marking some subset of indexes
+that may legitimately already be there; no such subset exists.
 
 ## Data — and there is NO operator gate in front of this drop
 
