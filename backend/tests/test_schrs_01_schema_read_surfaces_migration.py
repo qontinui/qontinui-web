@@ -83,10 +83,21 @@ sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
 import check_coord_column_drops as guard  # noqa: E402
 
-# Pinned explicitly rather than "head"; the first test enforces that it equals
-# the revision's own `down_revision`.
+# The parent is NOT pinned here. coord re-points a migration's `down_revision`
+# to the live head at land time, so a literal parent in this file reds on every
+# legitimate re-chain (fleet memory: "coord rebase cannot clear an alembic
+# fork"). The tests below read the parent FROM the revision module and assert
+# it is coherent (a real sibling revision, never "head") — the single-head
+# property itself is `alembic-heads-pr`'s job.
 _REVISION_ID = "schrs_01"
-_PARENT_REVISION_ID = "fleet_res_tel_05_socket_census"
+
+
+def _parent_revision_id() -> str:
+    parent = _revision_module().down_revision
+    assert isinstance(parent, str) and parent, "down_revision must name ONE parent"
+    return parent
+
+
 _REVISION_FILENAME = "schrs_01_coord_schema_read_surfaces.py"
 
 _SCHEMA = "coord"
@@ -155,12 +166,24 @@ def _kwarg(call: ast.Call, name: str) -> ast.expr | None:
 # ---------------------------------------------------------------------------
 
 
-def test_revision_ids_are_wired_as_pinned() -> None:
+def test_revision_ids_are_wired_and_the_parent_is_a_real_sibling() -> None:
     module = _revision_module()
     assert module.revision == _REVISION_ID
-    assert module.down_revision == _PARENT_REVISION_ID, (
-        "the revision's down_revision moved; update _PARENT_REVISION_ID so the "
-        "round-trip below rewinds to the right place"
+    parent = _parent_revision_id()
+    assert parent != "head", "down_revision must be a concrete revision id"
+    versions_dir = _REPO_ROOT / "backend" / "alembic" / "versions"
+    pattern = re.compile(
+        rf'^revision(?:: str)?\s*=\s*["\']{re.escape(parent)}["\']', re.M
+    )
+    siblings = [
+        f
+        for f in versions_dir.glob("*.py")
+        if f.name != _REVISION_FILENAME
+        and pattern.search(f.read_text(encoding="utf-8"))
+    ]
+    assert len(siblings) == 1, (
+        f"down_revision {parent!r} must name exactly one existing sibling revision "
+        f"(found {[f.name for f in siblings]})"
     )
     assert module.branch_labels is None
     assert module.depends_on is None
@@ -169,7 +192,7 @@ def test_revision_ids_are_wired_as_pinned() -> None:
 def test_docstring_header_matches_the_identifiers() -> None:
     source = _revision_source()
     assert re.search(rf"^Revision ID: {re.escape(_REVISION_ID)}$", source, re.M)
-    assert re.search(rf"^Revises: {re.escape(_PARENT_REVISION_ID)}$", source, re.M)
+    assert re.search(rf"^Revises: {re.escape(_parent_revision_id())}$", source, re.M)
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +515,7 @@ def test_up_down_up_leaves_no_residue_and_spares_neighbours() -> None:
                 {"sha": _GOOD_SHA},
             )
 
-        down = run_alembic(backend_root(), db_url, "downgrade", _PARENT_REVISION_ID)
+        down = run_alembic(backend_root(), db_url, "downgrade", _parent_revision_id())
         assert down.returncode == 0, down.stderr
         assert not table_exists(engine, _SCHEMA, _TABLE)
 

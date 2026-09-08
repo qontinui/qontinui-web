@@ -1,7 +1,7 @@
 """coord.schema_read_surfaces — the durable ``main`` half of the column-drop guard
 
 Revision ID: schrs_01
-Revises: fleet_res_tel_05_socket_census
+Revises: cciobs_01
 Create Date: 2026-09-07
 
 Phase 1b of plan ``2026-09-03-coord-column-drop-guard-on-web-migrations``,
@@ -103,7 +103,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "schrs_01"
-down_revision: str | Sequence[str] | None = "fleet_res_tel_05_socket_census"
+down_revision: str | Sequence[str] | None = "cciobs_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
