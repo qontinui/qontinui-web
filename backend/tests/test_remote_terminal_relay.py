@@ -347,30 +347,40 @@ def relay(redis: _FakeRedis) -> RemoteTerminalRelay:
 # ---------------------------------------------------------------------------
 
 
+# Each case is a FACTORY, not a value. `_claims()` stamps `exp = now + 900`, and
+# a value built here is built at COLLECTION time — so on a full run (this suite
+# takes over an hour) every claim in this list is already expired by the time
+# the case executes, and the expiry check, which runs first, answers
+# `attach_grant_expired` for cases asserting a different code. That is exactly
+# how `[verifier_result5-attach_grant_invalid]` failed on CI while passing
+# locally. Building inside the test keeps each claim fresh.
 @pytest.mark.parametrize(
-    ("verifier_result", "expected_code"),
+    ("make_verifier_result", "expected_code"),
     [
         (
-            CoordTokenInvalidError("token verification failed: bad signature"),
+            lambda: CoordTokenInvalidError("token verification failed: bad signature"),
             "attach_grant_invalid",
         ),
-        (CoordTokenExpiredError("token expired"), "attach_grant_expired"),
-        (_claims(exp=int(time.time()) - 5), "attach_grant_expired"),
-        (_claims(device_id=str(uuid4())), "attach_grant_wrong_source"),
-        (_claims(sub_type="device"), "attach_grant_invalid"),
-        (_claims(attach={"target_device_id": "not-a-uuid"}), "attach_grant_invalid"),
+        (lambda: CoordTokenExpiredError("token expired"), "attach_grant_expired"),
+        (lambda: _claims(exp=int(time.time()) - 5), "attach_grant_expired"),
+        (lambda: _claims(device_id=str(uuid4())), "attach_grant_wrong_source"),
+        (lambda: _claims(sub_type="device"), "attach_grant_invalid"),
+        (
+            lambda: _claims(attach={"target_device_id": "not-a-uuid"}),
+            "attach_grant_invalid",
+        ),
     ],
 )
 async def test_attach_refused_with_typed_code_and_nothing_forwarded(
     relay: RemoteTerminalRelay,
     redis: _FakeRedis,
-    verifier_result: Any,
+    make_verifier_result: Any,
     expected_code: str,
 ) -> None:
     ws = _FakeWS()
     manager = _manager()
 
-    await _attach(relay, ws, manager, verifier_result)
+    await _attach(relay, ws, manager, make_verifier_result())
 
     errors = ws.of_type("error")
     assert len(errors) == 1, ws.sent
