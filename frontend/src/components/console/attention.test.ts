@@ -128,6 +128,11 @@ import {
   GATE_KIND_CLASS,
 } from "@/app/(app)/admin/coord/gates/gateStatus";
 import {
+  CONTINUATION_ATTENTION_BY_KIND,
+  CONTINUATION_AUTHOR_GLYPH_KINDS,
+  CONTINUATION_KIND_CLASS,
+} from "@/app/(app)/admin/coord/gates/continuationStatus";
+import {
   POLICY_ATTENTION_BY_KIND,
   POLICY_AUTHOR_GLYPH_KINDS,
   POLICY_KIND_CLASS,
@@ -299,6 +304,18 @@ const CONSOLE_PALETTES: ReadonlyArray<{
     palette: {
       badgeClass: GATE_KIND_CLASS,
       authorGlyphKinds: GATE_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
+    },
+  },
+  {
+    // The SECOND palette on the gates page: a gate's verdict and its
+    // continuation's fate are independent facts (a cleared gate can carry a
+    // continuation that failed to spawn), so they are two audited tables on
+    // one surface rather than one widened union.
+    surface: "gate continuations (/admin/coord/gates)",
+    attentionByKind: CONTINUATION_ATTENTION_BY_KIND,
+    palette: {
+      badgeClass: CONTINUATION_KIND_CLASS,
+      authorGlyphKinds: CONTINUATION_AUTHOR_GLYPH_KINDS as ReadonlySet<string>,
     },
   },
   {
