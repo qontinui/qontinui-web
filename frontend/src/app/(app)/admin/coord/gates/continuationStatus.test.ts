@@ -368,7 +368,8 @@ describe("deriveContinuationStatus — deferral pressure", () => {
 
   it("refuses to judge a deferral whose time it cannot read", () => {
     // The silence test is the whole basis of the amber reading here, so
-    // without a readable stamp neither amber nor red is available.
+    // without a readable stamp neither amber nor red is available — UNLESS the
+    // count already settles it (the case below).
     const s = derive({
       continuation_dispatched_at: minsAgo(10_000),
       continuation_deferred_at: "not a timestamp",
@@ -378,6 +379,74 @@ describe("deriveContinuationStatus — deferral pressure", () => {
     expect(s.status.kind).toBe("unknown");
     expect(s.status.attention).toBe("waiting");
     expect(s.status.reason).toContain("cannot be established");
+  });
+
+  it("keeps a known-stuck count red when only the TIME is missing", () => {
+    // The count test needs no timestamp. Letting ignorance about *when* erase
+    // a judgement that never depended on knowing when would put the row below
+    // the evidence — the ignorance floor upside down.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(10_000),
+      continuation_deferred_at: null,
+      continuation_deferred_reason: "thread_pressure:critical:540_over_400",
+      continuation_deferred_count: 58,
+    });
+    expect(s.status.kind).toBe("deferral_stuck");
+    expect(s.status.attention).toBe("author");
+    // ...and it says which test it could not run, rather than implying it did.
+    expect(s.status.reason).toContain("could not be checked");
+  });
+
+  // --- whose dispatch is the deferral about? --------------------------------
+  //
+  // coord's `stamp_continuation_dispatched` re-stamps
+  // `continuation_dispatched_at`, NULLs the two expiry columns and touches
+  // NONE of the three deferral columns; no writer anywhere in coord resets
+  // them. So a re-dispatched gate carries the previous cycle's deferral
+  // stamps, by design.
+
+  it("does not call a freshly re-dispatched row abandoned on old deferral stamps", () => {
+    const s = derive({
+      // Dispatched three seconds ago; deferral stamps ~2.8 days old.
+      continuation_dispatched_at: new Date(NOW - 3_000).toISOString(),
+      continuation_deferred_at: minsAgo(4_000),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 3,
+    });
+    expect(s.status.kind).toBe("dispatched");
+    expect(s.status.attention).toBe("none");
+    expect(s.status.reason).toContain("re-dispatched");
+    expect(s.status.reason).toContain("from an earlier dispatch");
+    // The deferrals are not lost — they become history the panel still reports.
+    expect(s.deferral?.count).toBe(3);
+    expect(s.deferralRendered).toBe(false);
+  });
+
+  it("judges a re-dispatched row on the DISPATCH age, not the stale deferral", () => {
+    const s = derive({
+      continuation_dispatched_at: new Date(
+        NOW - DISPATCH_STALE_MS - 1_000
+      ).toISOString(),
+      continuation_deferred_at: minsAgo(4_000),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 3,
+    });
+    expect(s.status.kind).toBe("dispatch_stalled");
+    expect(s.status.attention).toBe("author");
+    expect(s.status.reason).toContain("from an earlier dispatch");
+  });
+
+  it("still uses the deferral when it belongs to the dispatch in flight", () => {
+    // Deferred AFTER the dispatch — the ordinary case, and the boundary is
+    // inclusive because a deferral stamped in the same instant is this cycle's.
+    const s = derive({
+      continuation_dispatched_at: minsAgo(120),
+      continuation_deferred_at: minsAgo(120),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 3,
+    });
+    expect(s.status.kind).toBe("deferred");
+    expect(s.deferralRendered).toBe(true);
   });
 
   it("prefers the stated deferral over an unexplained stall", () => {
@@ -390,6 +459,50 @@ describe("deriveContinuationStatus — deferral pressure", () => {
       continuation_deferred_count: 3,
     });
     expect(s.status.kind).toBe("deferred");
+  });
+
+  it("marks a deferral as NOT the rendered state once the row has moved past it", () => {
+    const s = derive({
+      continuation_dispatched_at: minsAgo(500),
+      continuation_deferred_at: minsAgo(400),
+      continuation_deferred_reason: "at_cap:4",
+      continuation_deferred_count: 12,
+      continuation_consumed_at: minsAgo(200),
+      continuation_consumed_outcome: "spawn_failed: no AppHandle",
+    });
+    expect(s.status.kind).toBe("spawn_failed");
+    expect(s.deferralRendered).toBe(false);
+  });
+
+  it("marks every deferral-derived reading as rendering the deferral", () => {
+    // The flag is what the table excludes the history chip on, so it must be
+    // true for EVERY arm of the deferral branch — including the `unknown` one,
+    // whose kind three unrelated branches also produce.
+    const arms: Array<[string, Partial<ContinuationStatusInput>]> = [
+      ["deferred", { continuation_deferred_count: 2 }],
+      ["deferral_stuck", { continuation_deferred_count: 58 }],
+      [
+        "deferral_abandoned",
+        {
+          continuation_deferred_at: minsAgo(10_000),
+          continuation_deferred_count: 2,
+        },
+      ],
+      [
+        "unknown",
+        { continuation_deferred_at: "not a timestamp", continuation_deferred_count: 2 },
+      ],
+    ];
+    for (const [expected, over] of arms) {
+      const s = derive({
+        continuation_dispatched_at: minsAgo(20_000),
+        continuation_deferred_at: minsAgo(30),
+        continuation_deferred_reason: "at_cap:4",
+        ...over,
+      });
+      expect(s.status.kind).toBe(expected);
+      expect(s.deferralRendered).toBe(true);
+    }
   });
 
   it("keeps reporting the deferrals a row has already moved past", () => {
