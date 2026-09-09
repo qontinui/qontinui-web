@@ -138,6 +138,33 @@ describe("GateActions", () => {
     ).toBeInTheDocument();
   });
 
+  it("does NOT offer cancel on a continuation coord has already expired", async () => {
+    // coord's cancel writer guards on consumed/cancelled being NULL and NOT on
+    // `continuation_expired_at`, so a cancel posted here is ACCEPTED — it
+    // achieves nothing (the continuation was never going to dispatch) and it
+    // is not reversible. The console must not offer it. `continuationStatus`
+    // separately keeps `expired` ahead of `cancelled` so a cancel from another
+    // door cannot erase the expiry from the row either.
+    render(
+      <GateActions
+        gate={gate({
+          continuation_spawn: { initial_prompt: "go" },
+          continuation_dispatched_at: new Date(
+            Date.now() - 700_000_000,
+          ).toISOString(),
+          continuation_expired_at: new Date(Date.now() - 60_000).toISOString(),
+          continuation_expired_reason: "ttl_7d_elapsed",
+        })}
+        onActed={() => {}}
+      />,
+    );
+    await openMenu();
+    // The menu itself opened (another item is present), so this is an absent
+    // ITEM rather than an absent menu.
+    expect(await screen.findByText("Mute")).toBeInTheDocument();
+    expect(screen.queryByText("Cancel continuation…")).toBeNull();
+  });
+
   it("force-clear confirm is disabled until a reason is entered", async () => {
     render(<GateActions gate={gate()} onActed={() => {}} />);
     await openMenu();
