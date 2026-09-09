@@ -509,6 +509,84 @@ describe("GatesTable — continuation column", () => {
     ).toBe("after 12 deferrals");
   });
 
+  it("renders a deferral-derived row ONCE, never as badge plus history chip", () => {
+    // Every arm of the deferral branch, including the `unknown` one whose kind
+    // three unrelated branches also produce. A hand-maintained kind exclusion
+    // list shipped `deferral_abandoned` saying "deferred ×2 — nothing pulling"
+    // in the badge and "after 2 deferrals" in a chip below it, under a tooltip
+    // reading "pushed back BEFORE this state" — about the state itself.
+    const dispatched = new Date(Date.now() - 20_000_000).toISOString();
+    const armed: Array<[string, Partial<GateOverviewRow>]> = [
+      ["deferred", { continuation_deferred_count: 2 }],
+      ["deferral_stuck", { continuation_deferred_count: 58 }],
+      [
+        "deferral_abandoned",
+        {
+          continuation_deferred_at: new Date(
+            Date.now() - 20_000_000,
+          ).toISOString(),
+          continuation_deferred_count: 2,
+        },
+      ],
+      [
+        "unknown",
+        {
+          continuation_deferred_at: "not a timestamp",
+          continuation_deferred_count: 2,
+        },
+      ],
+    ];
+    for (const [expected, over] of armed) {
+      const { unmount } = render(
+        <GatesTable
+          gates={[
+            gate({
+              continuation_spawn: { target_device_id: "abcdef1234567890" },
+              continuation_dispatched_at: dispatched,
+              continuation_deferred_at: new Date(
+                Date.now() - 600_000,
+              ).toISOString(),
+              continuation_deferred_reason: "at_cap:4",
+              ...over,
+            }),
+          ]}
+          onActed={() => {}}
+        />,
+      );
+      expect(kinds()).toEqual([expected]);
+      expect(
+        screen.queryByTestId("gates-continuation-deferral-chip"),
+      ).toBeNull();
+      unmount();
+    }
+  });
+
+  it("keeps the history chip on a RE-DISPATCHED row, where it is the true reading", () => {
+    // coord re-stamps `dispatched_at` and never clears the deferral columns,
+    // so this shape is a designed path. The badge is about the new dispatch;
+    // the chip is about the old cycle. Both belong.
+    render(
+      <GatesTable
+        gates={[
+          gate({
+            continuation_spawn: { target_device_id: "abcdef1234567890" },
+            continuation_dispatched_at: new Date(Date.now() - 3_000).toISOString(),
+            continuation_deferred_at: new Date(
+              Date.now() - 240_000_000,
+            ).toISOString(),
+            continuation_deferred_reason: "at_cap:4",
+            continuation_deferred_count: 3,
+          }),
+        ]}
+        onActed={() => {}}
+      />,
+    );
+    expect(kinds()).toEqual(["dispatched"]);
+    expect(
+      screen.getByTestId("gates-continuation-deferral-chip").textContent,
+    ).toBe("after 3 deferrals");
+  });
+
   it("counts the attention/unknown/deferred populations above the table", () => {
     render(
       <GatesTable

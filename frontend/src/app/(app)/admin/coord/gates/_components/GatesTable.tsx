@@ -329,14 +329,19 @@ function ContinuationCell({ status }: { status: ContinuationStatus | null }) {
     );
   }
   const { deferral } = status;
-  // When the row's own kind IS the deferral, its label already carries the
-  // count; this chip is for a continuation that was pushed back and then moved
-  // on — "it eventually ran, after 58 refusals" is the pressure signal that
-  // otherwise vanishes the moment the state advances.
-  const historic =
-    deferral &&
-    status.status.kind !== "deferred" &&
-    status.status.kind !== "deferral_stuck";
+  // When the badge IS the deferral, its label already carries the count; this
+  // chip is for a continuation that was pushed back and then moved on — "it
+  // eventually ran, after 58 refusals" is the pressure signal that otherwise
+  // vanishes the moment the state advances.
+  //
+  // The predicate is the derivation's own `deferralRendered` flag, NOT a list
+  // of kinds. A hand-maintained `kind !== "deferred" && kind !== …` list is
+  // what let `deferral_abandoned` ship rendering the deferral twice, with a
+  // "pushed back BEFORE this state" tooltip contradicting the badge it sat
+  // under; and no list keyed on kind could have been complete anyway, because
+  // one of the deferral readings is `unknown`, a kind three unrelated branches
+  // also produce.
+  const historic = deferral && !status.deferralRendered;
   return (
     <div
       className="flex flex-col items-start gap-1"
