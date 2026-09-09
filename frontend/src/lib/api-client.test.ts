@@ -19,11 +19,13 @@
  *     `maxRetries: 3` counter applies — so the total is 1 + 4, with
  *     1s + 2s + 4s of backoff in between.
  *
- * DEFERRED — the plan's V3 assertion ("a POST answering 504 is issued exactly
- * once") is deliberately NOT written here. `HttpOptions.idempotent` and the
- * method-aware retry rule arrive with PR #1225, which is still open; on today's
- * `main` `httpClient.fetch` retries a POST 5xx just like a GET, so that
- * assertion would fail. It lands in Phase 3, gated on #1225.
+ * V3 ("a POST answering 504 is issued exactly once") is asserted below. It was
+ * deferred while PR #1225 — `HttpOptions.idempotent` and the method-aware
+ * retry rule — was still open, because until it landed `httpClient.fetch`
+ * retried a POST 5xx just like a GET. #1225 landed as `67e565346`, so the gate
+ * is released and the assertion is written: it is the one test that proves
+ * ApiClient's POSTs actually inherit the method rule rather than merely being
+ * assumed to.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -117,6 +119,35 @@ describe("ApiClient delegates its transport to HttpClient", () => {
     await assertion;
 
     expect(counter.calls()).toBe(5);
+  });
+
+  // V3. The method rule (RFC 9110 §9.2.2) is what makes this one request
+  // rather than five: a POST's 5xx is not re-issued, because a 504 from a
+  // proxy in front of a slow backend says nothing about whether the side
+  // effect already committed. Contrast the 5xx GET test above (5 requests)
+  // and the 429 test below (429 retries for EVERY method) — between them the
+  // three pin the rule to the method and the status independently, so a
+  // regression in either dimension fails a named test.
+  it("issues a POST answering 504 exactly once — no 5xx retry for a non-idempotent method", async () => {
+    const counter = countedFetch(504);
+
+    vi.useFakeTimers();
+    const pending = apiClient.createProject({
+      name: "p",
+    } as never);
+    const assertion = expect(pending).rejects.toThrow(
+      /Failed to create project/
+    );
+
+    // Drain every timer the chain could possibly have parked on. If the POST
+    // had entered the retry chain, the un-delayed second request alone would
+    // already put the count at 2 before any backoff elapsed.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(counter.calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+
+    expect(counter.calls()).toBe(1);
   });
 
   it("retries a 429 on HttpClient's policy, honouring Retry-After", async () => {

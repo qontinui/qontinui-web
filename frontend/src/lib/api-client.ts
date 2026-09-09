@@ -1,4 +1,5 @@
 import { authService, httpClient } from "@/services/service-factory";
+import type { HttpOptions } from "@/services/http-client";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
 import type {
@@ -238,10 +239,17 @@ class ApiClient {
    * 429/5xx retry policy and the staleness-gated, single-flight 401 refresh —
    * to `httpClient.fetch`. There is deliberately no second copy of that
    * plumbing here.
+   *
+   * `options` is `HttpOptions`, not `RequestInit`, so a call site can actually
+   * reach the per-request policy it delegates to — `idempotent`,
+   * `noRetryStatuses`, `maxRetries`, `timeoutMs`. Typed as `RequestInit` those
+   * four were structurally unreachable from every route on this class, which
+   * made the `idempotent` opt-in added for the method-aware retry rule
+   * impossible to use here.
    */
   private async fetchWithAuth(
     url: string,
-    options: RequestInit = {}
+    options: HttpOptions = {}
   ): Promise<Response> {
     return httpClient.fetch(`${API_BASE_URL}/api/v1${url}`, options);
   }
