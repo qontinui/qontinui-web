@@ -86,7 +86,13 @@
  * All of that applies only to a deferral belonging to the dispatch currently in
  * flight. coord re-stamps `continuation_dispatched_at` on re-dispatch and never
  * clears the deferral columns, so a deferral older than the dispatch is a
- * previous cycle's and decides nothing about this one.
+ * previous cycle's and decides nothing about this one — and currency is only
+ * decidable when BOTH stamps are readable. When either is corrupt the deferral
+ * decides the row on its own evidence with the missed test named, because the
+ * two corruption cases have identical reachability and must not answer
+ * differently: an arm that exited before consulting the count would drop a
+ * known-stuck row out of red on the strength of a timestamp that judgement
+ * never needed. See {@link deferralReading}.
  *
  * None of the three is a liveness claim: nothing here probes a device. Each
  * reads a stamp coord holds against a cadence the producer documents, and the
@@ -423,10 +429,17 @@ export interface ContinuationStatus {
    * the readings this module produces are `unknown` — an unreadable outcome,
    * an unreadable dispatch time, and an unreadable deferral time — so the KIND
    * cannot say what a badge is about, and a set of "deferral kinds" would leave
-   * exactly one hole while looking complete. It is set in one place, by the
-   * single constructor every arm of the deferral branch returns through, so a
-   * reading added there enrols itself and one added elsewhere cannot claim it
-   * by accident.
+   * exactly one hole while looking complete.
+   *
+   * The invariant is STRUCTURAL, not conventional. Every deferral reading is
+   * built by {@link deferralReading}, which is module-level and therefore
+   * cannot see the `wrap` closure that stamps this field; the single call site
+   * spells `wrap(deferralReading(…), true)`. So a reading added to that helper
+   * enrols itself, and one added anywhere else cannot claim the flag by
+   * accident. While the block lived inline beside `wrap`, this paragraph
+   * claimed the same thing and was simply wrong — a new arm could have called
+   * `wrap(status(…))` and defaulted the flag to `false`, which is the exact
+   * shape of the double-render bug the flag exists to prevent.
    *
    * `false` whenever a deferral is present but HISTORIC — a previous dispatch
    * cycle's stamps on a row coord has since re-dispatched. The chip is exactly
@@ -473,6 +486,120 @@ function readDeferral(g: ContinuationStatusInput): ContinuationDeferral | null {
 /** `deferred ×58`, or `deferred ×?` when the count column gave us nothing. */
 function deferralLabel(d: ContinuationDeferral): string {
   return `deferred ×${d.countKnown ? d.count : "?"}`;
+}
+
+/**
+ * The reading the DEFERRAL columns support, or `null` when they do not decide
+ * this row at all.
+ *
+ * **Module-level on purpose.** The caller's `wrap` — which is what stamps
+ * `ContinuationStatus.deferralRendered` — is a closure inside
+ * {@link deriveContinuationStatus}, so a reading added here CANNOT reach it and
+ * cannot return a deferral status with the flag defaulted to `false`. The one
+ * call site does `wrap(deferralReading(…), true)`. That is the difference
+ * between an invariant and a convention: while this lived inline beside `wrap`,
+ * "there is no way to return without setting the flag" was a comment asking the
+ * next author to remember, not something the compiler held.
+ *
+ * ## Whose dispatch is the deferral about?
+ *
+ * coord's `stamp_continuation_dispatched` (`gates.rs`) re-stamps
+ * `continuation_dispatched_at` and NULLs the two expiry columns, and touches
+ * NONE of the three deferral columns — and nothing else in coord resets them
+ * either (no `continuation_deferred_at = NULL` / `_count = 0` writer exists).
+ * Its own doc says the stamp goes "precisely to gates whose anchor can still be
+ * re-cleared", so a re-dispatch carrying a previous cycle's deferral stamps is a
+ * DESIGNED path. Such a deferral says nothing about the dispatch now in flight,
+ * so this returns `null` and the caller judges on the dispatch age instead —
+ * without that, a row coord dispatched three seconds ago read red "nothing
+ * pulling".
+ *
+ * **The currency cut is an exact instant, and the runner's stamp cadence is
+ * not.** `should_post_deferred_stamp` (qontinui-runner `agent_runtime.rs`) is
+ * an in-process per-gate map that a re-dispatch does not reset, so a gate
+ * re-dispatched within an hour of its last deferral stamp can be actively
+ * deferred by a runner that is rate-limited from saying so. Past
+ * {@link DISPATCH_STALE_MS} that row reads `dispatch_stalled` — "no runner has
+ * claimed it since; the deferrals are from an earlier dispatch" — every clause
+ * of which is literally true, but the runner's silence there is the rate limit
+ * rather than absence. The error direction is toward attention rather than
+ * false calm, which is the right way round for R3, and no cheaper signal
+ * distinguishes the two; it is written down so the next reader does not have to
+ * rediscover it.
+ *
+ * ## Currency is only DECIDABLE when both stamps are readable
+ *
+ * With either one unreadable the two cannot be ordered, so the deferral's own
+ * evidence — which does not depend on the dispatch stamp at all — decides, and
+ * the caveat is named in the reason. Both corruption cases resolve the same
+ * way, which they must: they have identical reachability, and an arm that
+ * exits before consulting the count would put a known-stuck row BELOW the
+ * evidence on the strength of a timestamp that judgement never needed.
+ */
+function deferralReading(
+  deferral: ContinuationDeferral | null,
+  dispatchedMs: number,
+  now: number
+): RowStatus<ContinuationKind> | null {
+  if (!deferral) return null;
+
+  const deferredMs = deferral.at ? new Date(deferral.at).getTime() : Number.NaN;
+  const deferredTimeKnown = !Number.isNaN(deferredMs);
+  const dispatchTimeKnown = !Number.isNaN(dispatchedMs);
+
+  // Historic — a previous dispatch cycle's stamps. The only branch that hands
+  // the row back to the dispatch-age readings.
+  if (deferredTimeKnown && dispatchTimeKnown && deferredMs < dispatchedMs) {
+    return null;
+  }
+
+  const why = deferral.reason ? ` — last time: ${deferral.reason}` : "";
+  const times = deferral.countKnown
+    ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
+    : "an unrecorded number of times";
+  // Named rather than implied: a reading that could not run one of its tests
+  // must say so, or it claims more than it checked.
+  const caveat = dispatchTimeKnown
+    ? ""
+    : ". coord recorded no readable dispatch time, so whether this deferral belongs to the dispatch now in flight could not be checked";
+
+  // The COUNT test needs neither timestamp, so it is consulted first whenever a
+  // timestamp is missing. The AGE test outranks it when it CAN run: "nothing is
+  // pulling this any more" needs a different fix from "still being actively
+  // refused", and only the age can tell them apart.
+  if (!deferredTimeKnown) {
+    if (deferral.stuck) {
+      return status(
+        "deferral_stuck",
+        deferralLabel(deferral),
+        `a runner has pushed this dispatch back ${times}; the retry loop is not getting to it${why}. coord recorded no readable time for the last deferral, so whether it is STILL being refused could not be checked — the count alone is enough for this reading${caveat}`
+      );
+    }
+    return status(
+      "unknown",
+      "deferral time unreadable",
+      `coord recorded ${times} deferred${why}, but no readable time for the last one — whether any runner is still pulling this cannot be established${caveat}`
+    );
+  }
+  if (now - deferredMs >= DEFERRAL_SILENT_MS) {
+    return status(
+      "deferral_abandoned",
+      `${deferralLabel(deferral)} — nothing pulling`,
+      `pushed back ${times}, and the last deferral is older than the runner's hourly stamp allows for a row anything is still pulling; it is not being retried${why}${caveat}`
+    );
+  }
+  if (deferral.stuck) {
+    return status(
+      "deferral_stuck",
+      deferralLabel(deferral),
+      `a runner has pushed this dispatch back ${times} and is still doing so; the retry loop is not getting to it${why}${caveat}`
+    );
+  }
+  return status(
+    "deferred",
+    deferralLabel(deferral),
+    `a runner saw this continuation and pushed it back; it is still being re-listed, so it stays pending and re-deliverable${why}${caveat}`
+  );
 }
 
 function status(
@@ -661,114 +788,40 @@ export function deriveContinuationStatus(
 
   // 4 — out for delivery.
   if (g.continuation_dispatched_at) {
-    // Read FIRST, because every reading below is derived from it — including
-    // whether the deferral stamps belong to the dispatch we are looking at.
     const dispatchedMs = new Date(g.continuation_dispatched_at).getTime();
+
+    // The deferral columns get first refusal, and the helper is where every
+    // deferral reading lives. `true` here is the ONLY place
+    // `deferralRendered` is set — the helper is module-level so it cannot
+    // reach `wrap` and cannot forget.
+    const fromDeferral = deferralReading(deferral, dispatchedMs, now);
+    if (fromDeferral) return wrap(fromDeferral, true);
+
     if (Number.isNaN(dispatchedMs)) {
-      // Inherited verbatim from the deleted summarizer, which fell through to
-      // a calm "waiting for a runner to claim it" — a positive claim about a
-      // row whose only evidence is an unparseable string. The age tests are
-      // the whole basis of the readings below, so without one neither is
-      // available.
+      // Reached only with NO deferral to fall back on, because the helper
+      // above already used the deferral's own evidence when there was any —
+      // including the count, which needs no timestamp at all. Before that
+      // ordering, a corrupt dispatch stamp beside `deferred_count: 58` read
+      // amber `unknown` where it had previously read red `deferral_stuck`,
+      // and dropped out of the needs-attention count and filter: ignorance
+      // about *when* erasing a judgement that never depended on it.
+      //
+      // With nothing but this stamp, though, both readings below are gone —
+      // they are age tests and there is no readable age. The retired
+      // summarizer fell through to the CALM one, a positive claim
+      // ("waiting for a runner to claim it") whose only evidence is an
+      // unparseable string.
       return wrap(
         status(
           "unknown",
           "dispatch time unreadable",
-          `coord recorded the dispatch time as "${g.continuation_dispatched_at}", which this build cannot read — how long this has been out is unknown`
+          `coord recorded the dispatch time as "${g.continuation_dispatched_at}", which this build cannot read, and no deferral was recorded either — how long this has been out is unknown`
         )
       );
     }
 
-    const deferredMs = deferral?.at
-      ? new Date(deferral.at).getTime()
-      : Number.NaN;
-    const deferredTimeKnown = !Number.isNaN(deferredMs);
-
-    // **Whose dispatch is this deferral about?**
-    //
-    // coord's `stamp_continuation_dispatched` (`gates.rs`) re-stamps
-    // `continuation_dispatched_at` and NULLs the two expiry columns, and
-    // touches NONE of the three deferral columns — and nothing else in coord
-    // resets them either (no `continuation_deferred_at = NULL` / `_count = 0`
-    // writer exists). Its own doc says the stamp goes "precisely to gates
-    // whose anchor can still be re-cleared", so a re-dispatch carrying a
-    // previous cycle's deferral stamps is a DESIGNED path.
-    //
-    // A deferral older than the dispatch therefore says nothing about the
-    // dispatch now in flight: measuring silence from `now` alone read a row
-    // coord dispatched three seconds ago as red "nothing pulling", every
-    // clause of which was false. Such a deferral drops to HISTORY — it stays
-    // on `ContinuationStatus.deferral` so the panel keeps reporting it, and
-    // the current state comes from the dispatch age instead, which is the only
-    // evidence about the cycle actually running.
-    const deferralIsCurrent =
-      deferral != null && (!deferredTimeKnown || deferredMs >= dispatchedMs);
-
-    if (deferral && deferralIsCurrent) {
-      const why = deferral.reason ? ` — last time: ${deferral.reason}` : "";
-      const times = deferral.countKnown
-        ? `${deferral.count} time${deferral.count === 1 ? "" : "s"}`
-        : "an unrecorded number of times";
-
-      /**
-       * The ONE constructor for a status whose subject IS the deferral.
-       *
-       * `deferralRendered` is what stops the row rendering the deferral twice
-       * (the badge plus the panel's "after N deferrals" history chip). It is a
-       * per-row flag rather than a kind-membership test because `unknown` is
-       * reachable from THREE unrelated branches — an unreadable outcome, an
-       * unreadable dispatch time, and the unreadable deferral time below — so
-       * the kind alone cannot say what a row's badge is about. Routing every
-       * arm of this block through one constructor is what makes a future
-       * deferral reading enrol itself: there is no list to extend and no way
-       * to return from here without setting the flag.
-       */
-      const deferralState = (
-        kind: ContinuationKind,
-        label: string,
-        reason: string
-      ) => wrap(status(kind, label, reason), true);
-
-      // The AGE test decides amber-vs-red, because amber on a deferred row
-      // promises a runner is still pulling it and that promise has a heartbeat
-      // we can check. The COUNT test needs no timestamp at all, so it is
-      // consulted first when the time is missing: ignorance about *when* must
-      // not erase a judgement that never depended on knowing when.
-      if (!deferredTimeKnown) {
-        if (deferral.stuck) {
-          return deferralState(
-            "deferral_stuck",
-            deferralLabel(deferral),
-            `a runner has pushed this dispatch back ${times}; the retry loop is not getting to it${why}. coord recorded no readable time for the last deferral, so whether it is STILL being refused could not be checked — the count alone is enough for this reading`
-          );
-        }
-        return deferralState(
-          "unknown",
-          "deferral time unreadable",
-          `coord recorded ${times} deferred${why}, but no readable time for the last one — whether any runner is still pulling this cannot be established`
-        );
-      }
-      if (now - deferredMs >= DEFERRAL_SILENT_MS) {
-        return deferralState(
-          "deferral_abandoned",
-          `${deferralLabel(deferral)} — nothing pulling`,
-          `pushed back ${times}, and the last deferral is older than the runner's hourly stamp allows for a row anything is still pulling; it is not being retried${why}`
-        );
-      }
-      if (deferral.stuck) {
-        return deferralState(
-          "deferral_stuck",
-          deferralLabel(deferral),
-          `a runner has pushed this dispatch back ${times} and is still doing so; the retry loop is not getting to it${why}`
-        );
-      }
-      return deferralState(
-        "deferred",
-        deferralLabel(deferral),
-        `a runner saw this continuation and pushed it back; it is still being re-listed, so it stays pending and re-deliverable${why}`
-      );
-    }
-
+    // Either no deferral was ever stamped, or the one on the row belongs to an
+    // earlier dispatch cycle. Say which, rather than implying there are none.
     const reDispatched = deferral != null;
     return wrap(
       now - dispatchedMs >= DISPATCH_STALE_MS
