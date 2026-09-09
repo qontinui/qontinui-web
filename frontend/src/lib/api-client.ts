@@ -1,4 +1,5 @@
 import { authService, httpClient } from "@/services/service-factory";
+import type { HttpOptions } from "@/services/http-client";
 import { TokenValidator } from "@/services/auth/token-validator";
 import { csrfService } from "@/services/csrf-service";
 import type {
@@ -238,10 +239,28 @@ class ApiClient {
    * 429/5xx retry policy and the staleness-gated, single-flight 401 refresh —
    * to `httpClient.fetch`. There is deliberately no second copy of that
    * plumbing here.
+   *
+   * Typed as `HttpOptions` rather than `RequestInit` so a route can declare
+   * `idempotent: true` and reach the other per-request knobs. `skipAuth` is
+   * excluded from the type because it would contradict the name — a
+   * type-level guardrail, not a runtime one. Retry is method-aware: a
+   * `POST`/`PATCH` here does NOT retry a 5xx unless it says so, because a 504
+   * in front of a slow backend does not say whether the side effect
+   * committed.
+   *
+   * The bar for `idempotent: true` is CONCURRENT re-issue, not sequential.
+   * The 5xx it widens is a gateway giving up on a request the backend is
+   * still running, so the retry overlaps the original — `f(f(x)) == f(x)` is
+   * not enough. The four `reset` routes below are the worked counter-example
+   * and are deliberately NOT opted in: each deletes the caller's rows,
+   * commits, and only then re-seeds the defaults, so two overlapping resets
+   * interleave into a unique-constraint violation
+   * (`uq_workflow_phase_user_phase` and friends) that a single reset never
+   * hits.
    */
   private async fetchWithAuth(
     url: string,
-    options: RequestInit = {}
+    options: Omit<HttpOptions, "skipAuth"> = {}
   ): Promise<Response> {
     return httpClient.fetch(`${API_BASE_URL}/api/v1${url}`, options);
   }
@@ -528,6 +547,10 @@ class ApiClient {
       `/projects/${projectId}/images/${encodeURIComponent(s3Key)}/refresh-url`,
       {
         method: "POST",
+        // Read-shaped: the handler verifies the object exists in S3 and mints
+        // a fresh CDN/presigned URL. It writes nothing, so re-issuing returns
+        // another equally valid URL for the same key.
+        idempotent: true,
       }
     );
 

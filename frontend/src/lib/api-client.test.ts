@@ -19,11 +19,16 @@
  *     `maxRetries: 3` counter applies — so the total is 1 + 4, with
  *     1s + 2s + 4s of backoff in between.
  *
- * DEFERRED — the plan's V3 assertion ("a POST answering 504 is issued exactly
- * once") is deliberately NOT written here. `HttpOptions.idempotent` and the
- * method-aware retry rule arrive with PR #1225, which is still open; on today's
- * `main` `httpClient.fetch` retries a POST 5xx just like a GET, so that
- * assertion would fail. It lands in Phase 3, gated on #1225.
+ * Phase 3 adds the plan's V3 assertion, which was deferred here until PR #1225
+ * landed `HttpOptions.idempotent` and the method-aware retry rule: a POST
+ * through `apiClient` answering 504 is issued exactly ONCE, while a GET
+ * answering the same 504 still retries.
+ *
+ * The last test pins the sweep itself: the one site that carries
+ * `idempotent: true` is covered, so deleting that declaration goes red
+ * instead of quietly costing the endpoint its resilience. The rule's
+ * `POST`/`PATCH` breadth is proved upstream, against `HttpClient` directly,
+ * in `src/services/http-client.test.ts`.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -156,5 +161,86 @@ describe("ApiClient delegates its transport to HttpClient", () => {
 
     await expect(apiClient.getWebSocketToken()).resolves.toBe("ws-tok");
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ApiClient retry is method-aware", () => {
+  let warned: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    // Spied rather than merely silenced: the suppressed-retry warn is the only
+    // thing that says a count of 1 was the METHOD rule and not retries being
+    // off altogether.
+    warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("issues a non-idempotent POST exactly once on a 504", async () => {
+    // The plan's V3. `POST /projects/` creates a row: a 504 from a proxy in
+    // front of a slow backend says nothing about whether that row was written,
+    // so re-issuing the identical body is how duplicate projects appear.
+    const counter = countedFetch(504);
+
+    vi.useFakeTimers();
+    const pending = apiClient.createProject({ name: "V3" });
+    // Assert the rejection before advancing, so a failure is never an
+    // unhandled rejection racing the timer advance.
+    const assertion = expect(pending).rejects.toThrow(
+      /Failed to create project/
+    );
+
+    // Well past the 1s + 2s + 4s the 5xx chain would have spent.
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+
+    expect(counter.calls()).toBe(1);
+    // ...and for the right reason. Without this, a regression that zeroed
+    // retries globally would satisfy the count above.
+    expect(warned).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "not retried because the method is non-idempotent"
+      )
+    );
+  });
+
+  it("still retries a GET answering the same 504", async () => {
+    // The contrast that makes the assertion above load-bearing: same status,
+    // same client, same stub — only the method differs.
+    const counter = countedFetch(504);
+
+    vi.useFakeTimers();
+    const pending = apiClient.getProjects();
+    const assertion = expect(pending).rejects.toThrow(
+      /Failed to get projects: 504/
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+
+    expect(counter.calls()).toBe(5);
+  });
+
+  it("retries the opted-in POST — the read-shaped presigned-URL refresh", async () => {
+    // Pins one half of the Phase 3 sweep. The handler verifies the object
+    // exists in S3 and mints a URL; it writes nothing, so re-issuing is free.
+    // Deleting its `idempotent: true` turns this red.
+    const counter = countedFetch(504);
+
+    vi.useFakeTimers();
+    const pending = apiClient.refreshPresignedUrl(1, "images/u/p/a.png");
+    const assertion = expect(pending).rejects.toThrow(
+      /Failed to refresh presigned URL: 504/
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+
+    expect(counter.calls()).toBe(5);
   });
 });
