@@ -242,17 +242,6 @@ export interface NotifyWhenGreenResponse {
 // `POST /operations/gates/{id}/{approve,mute,unmute,snooze}` actions.
 // ---------------------------------------------------------------------------
 
-/** A gate's evaluation verdict (coord `GateVerdict`). `misconfigured` =
- *  the predicate references something unevaluable (loud misconfiguration);
- *  `withdrawn` = the registrant cancelled its own request (terminal,
- *  non-clear — plan `2026-07-27-configurable-gate-clearance-authority`). */
-export type GateVerdict =
-  | "open"
-  | "cleared"
-  | "failed"
-  | "misconfigured"
-  | "withdrawn";
-
 /**
  * The typed predicate JSON coord evaluates. Serde-tagged on `kind`
  * (snake_case). Variant-specific fields are optional here because a
@@ -321,109 +310,22 @@ export interface ContinuationSpawn {
   presentation?: "terminal" | "headless";
 }
 
-/**
- * One gate row returned by `GET /api/v1/operations/gates/list`. Mirrors
- * coord's `GateResponse` (`gate_routes.rs`), with the observation/mute/snooze
- * columns rendered defensively (optional) because a lagging coord deploy may
- * not yet emit them.
- */
-export interface GateRow {
-  gate_id: string;
-  /** Claim-anchored gates carry `claim_kind` + `resource_key`. */
-  claim_kind: string | null;
-  resource_key: string | null;
-  /** Plan-anchored gates carry `plan_id` + `phase_name`. */
-  plan_id: string | null;
-  phase_name: string | null;
-  /** Human-readable plan slug (e.g. `2026-06-05-plan-gate-web-surface`),
-   *  added by the parallel coord PR. Optional + nullable: a lagging coord
-   *  deploy omits it, so the group header falls back to `plan_id`. */
-  plan_slug?: string | null;
-  predicate: GatePredicate;
-  verdict: GateVerdict;
-  verdict_reason: string | null;
-  registered_by: string | null;
-  /** Agent UUID of the registrant when the registering token carried one
-   *  (agent-token sessions only; device JWTs carry no agent_id by design).
-   *  Optional + nullable: a coord predating the clearance-authority deploy
-   *  omits it (plan `2026-07-27-configurable-gate-clearance-authority`). */
-  registered_by_agent_id?: string | null;
-  /** Registrant self-classified gate class (e.g. `security-surface`,
-   *  `routine-review`, `ops-confirm` — free vocabulary, no closed union so a
-   *  future class still renders). NULL/absent = unclassified (strictest
-   *  default authority coord-side). Optional: a lagging coord omits it. */
-  gate_class?: string | null;
-  // Clearance provenance (columns from web migration
-  // `gates_clearance_provenance_01`; stamped by coord's clear/fail/withdraw
-  // paths). ALL optional + nullable — a coord predating the deploy omits
-  // them and the panel renders no provenance line (never a crash).
-  /** Device UUID of the caller that moved the gate to a terminal verdict. */
-  cleared_by_device_id?: string | null;
-  /** Agent UUID of the caller (agent-token sessions only). */
-  cleared_by_agent_id?: string | null;
-  /** Which door moved the gate: `operator_route | agent_attest |
-   *  agent_reject | withdraw | force_clear | sweep` (free text). */
-  cleared_via?: string | null;
-  /** `policy_rules.policy_id` of the `gate_clearance` rule that authorized
-   *  the action; NULL for operator routes and the no-rule defaults. */
-  cleared_under_rule?: string | null;
-  tenant_id: string;
-  created_at: string;
-  evaluated_at: string | null;
-  cleared_at: string | null;
-  /** Mute/snooze columns — optional: a pre-deploy coord omits them. */
-  muted?: boolean;
-  snoozed_until?: string | null;
-  /** Who clears this gate: `operator` (default, surfaces a primary
-   *  `Mark met…` button) vs `agent` (cleared by the completing agent
-   *  session; operator override only, behind the overflow menu). Optional:
-   *  a lagging coord deploy omits it, and the panel defaults to `operator`. */
-  clearance_audience?: "operator" | "agent";
-  /**
-   * What clearing this gate's anchor will spawn (coord PR #356, populated on
-   * the list route). Optional + nullable: a coord predating #356 omits it, so
-   * the continuation summary simply isn't rendered (no crash, no fake claim).
-   */
-  continuation_spawn?: ContinuationSpawn | null;
-
-  // -------------------------------------------------------------------------
-  // Continuation LIFECYCLE stamps (distinct from `continuation_spawn`, which is
-  // the register-time spawn INTENT). Added by coord Phase 2 of plan
-  // `2026-06-07-coord-continuation-cancel-and-outcome.md` onto the gates LIST
-  // read-side (`GateResponse` ordinals 18+). Every field is optional + nullable:
-  // a coord predating that deploy omits them entirely and the panel renders no
-  // lifecycle chip (graceful degrade — never a crash, never a fabricated state).
-  //
-  // The honest signal here is AGE-OF-PENDING, not device liveness: the panel
-  // wires no device-liveness feed, so a pending continuation is rendered with
-  // its dispatch age (warning-accented past ~15m) and the operator judges
-  // whether it has stalled — coord never claims "stalled" on the row's behalf.
-  // -------------------------------------------------------------------------
-
-  /** When coord emitted the gate continuation (RFC 3339). NULL = never
-   *  dispatched → no lifecycle chip. The pending-age clock starts here. */
-  continuation_dispatched_at?: string | null;
-  /** When the runner acked consumption (RFC 3339). NULL while pending. */
-  continuation_consumed_at?: string | null;
-  /** Device UUID that consumed the continuation (audit). NULL while pending. */
-  continuation_consumed_by?: string | null;
-  /**
-   * The runner's honest spawn result, recorded after the terminal/headless
-   * session actually opened: `"spawned"` | `"spawn_failed: <detail>"`.
-   * NULL = the runner acked the claim but has not yet reported an outcome
-   * (a pre-outcome ack — older runner, or the window between claim and result).
-   */
-  continuation_consumed_outcome?: string | null;
-  /** When the continuation was cancelled (RFC 3339). NULL = not cancelled.
-   *  Takes precedence over every other lifecycle state in the chip. */
-  continuation_cancelled_at?: string | null;
-  /** Heterogeneous actor who cancelled — a session owner-token subject, an
-   *  operator bearer subject, or the refresh path. Free-form TEXT by design
-   *  (coord column is intentionally TEXT, not UUID). NULL = not cancelled. */
-  continuation_cancelled_by?: string | null;
-  /** Why the continuation was cancelled (free-form). NULL = not cancelled. */
-  continuation_cancel_reason?: string | null;
-}
+// `GateRow` — the mirror of coord's `GateResponse` for
+// `GET /api/v1/operations/gates/list` — was DELETED by plan
+// `2026-09-09-continuation-dispatch-fails-silently-three-times-in-four`
+// Phase 1, along with the `GateVerdict` union it alone used.
+//
+// Nothing imported it. It was the type a never-rendered continuation chip
+// was written against, and its continuation block documented the outcome
+// vocabulary as `"spawned" | "spawn_failed: <detail>"` — two of the five
+// words coord's `normalize_consume_outcome` actually writes, with the
+// deferred/expired columns and the `continuation_will_dispatch` predicate
+// missing entirely. A dead type that is also WRONG about the wire is worse
+// than no type: the next reader believes it.
+//
+// The live gate row is `GateOverviewRow` in `services/admin-dev-service.ts`
+// (`GET /api/v1/admin-dev/overview`), and its continuation half is derived by
+// `app/(app)/admin/coord/gates/continuationStatus.ts`.
 
 // ---------------------------------------------------------------------------
 // Dev-action ledger (plan 2026-06-07-twin-dev-event-cause-effect-ledger)
