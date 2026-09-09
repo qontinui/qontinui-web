@@ -35,7 +35,8 @@
  * the `coord.notifications` alembic revision deploys, and the coord PR lands
  * AFTER this one by design. That state renders as a quiet "not available yet"
  * note, never an error — and every call here opts out of `HttpClient`'s 5xx
- * retry for 503 (`NOTIFICATIONS_REQUEST_OPTIONS`). Retrying a deliberate,
+ * retry for 503: the GET pollers via `NOTIFICATIONS_REQUEST_OPTIONS`, the
+ * `mark-read` POST via the method rule plus `NOTIFICATIONS_MARK_READ_OPTIONS`. Retrying a deliberate,
  * days-long answer costs a measured 5 requests over ~15s, which this page's
  * 10s poller would overlap with itself while the first paint sat behind a
  * skeleton for the whole chain.
@@ -160,6 +161,7 @@ import {
   type NotificationsResponse,
   MARK_ALL,
   NOTIFICATIONS_REQUEST_OPTIONS,
+  NOTIFICATIONS_MARK_READ_OPTIONS,
   humanKind,
   isContractError,
   isMigrationPending,
@@ -529,7 +531,7 @@ export default function CoordNotificationsPage() {
         const body = await httpClient.post<MarkReadResponse>(
           `${API}/notifications/mark-read`,
           selection,
-          NOTIFICATIONS_REQUEST_OPTIONS
+          NOTIFICATIONS_MARK_READ_OPTIONS
         );
         if (queryGenRef.current !== gen) return;
         const now = new Date().toISOString();
