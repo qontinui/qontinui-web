@@ -57,6 +57,13 @@ function gate(overrides: Partial<GateOverviewRow> = {}): GateOverviewRow {
     continuation_cancelled_at: null,
     continuation_cancelled_by: null,
     continuation_cancel_reason: null,
+    continuation_deferred_at: null,
+    continuation_deferred_reason: null,
+    continuation_deferred_count: 0,
+    continuation_expired_at: null,
+    continuation_expired_reason: null,
+    continuation_action: null,
+    continuation_will_dispatch: null,
     title: "Ship gate",
     measures: "operator approval",
     progress: {

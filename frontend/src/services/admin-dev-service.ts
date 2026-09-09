@@ -119,6 +119,46 @@ export interface GateOverviewRow {
   continuation_cancelled_at: string | null;
   continuation_cancelled_by: string | null;
   continuation_cancel_reason: string | null;
+  // ---- Deferred / expired lifecycle + the honesty predicate ----------------
+  //
+  // coord has served all seven of these on `GET /coord/dev-overview` since plan
+  // `2026-08-03-coord-cleared-gate-continuation-never-dispatches` Phase 2.1
+  // (`api/dev_overview.rs`, mapping straight into `GateResponse`), and the web
+  // proxy `GET /api/v1/admin-dev/overview` returns coord's envelope VERBATIM —
+  // they were simply absent from this type, so nothing could read them.
+  // Typed as they arrive on the wire; every one is nullable because the
+  // underlying column is.
+  /** When the dispatch was last DEFERRED — a runner saw it and pushed back. */
+  continuation_deferred_at: string | null;
+  /**
+   * Why the last deferral happened. Four producer constructors, all documented
+   * on `humanizeDeferralReason` in `gates/continuationStatus.ts`; coord also
+   * writes a plain `"no runner online"` directly.
+   */
+  continuation_deferred_reason: string | null;
+  /**
+   * How many times the dispatch has been pushed back (`NOT NULL DEFAULT 0` in
+   * coord's schema, nullable here only so a hand-edited NULL degrades to
+   * UNKNOWN instead of reading as zero).
+   */
+  continuation_deferred_count: number | null;
+  /** When coord's stall watcher EXPIRED it — it will never dispatch. */
+  continuation_expired_at: string | null;
+  /** Why it expired (`ttl_7d_elapsed`, `never_dispatched_at_clearance`, …). */
+  continuation_expired_reason: string | null;
+  /**
+   * The continuation's `action` tag (`run_skill` | `notify_only` | `merge_pr` |
+   * `deploy` | `migrate`), or null for a legacy untagged row AND for a gate
+   * with no continuation at all — `continuation_spawn != null` disambiguates.
+   */
+  continuation_action: string | null;
+  /**
+   * coord's HONESTY PREDICATE, derived server-side and never stored: would
+   * clearing this gate actually dispatch anything? `continuation_spawn` present
+   * with this `false` is the INERT-ARM class — attached, but nothing fires —
+   * which is why "armed" alone was never an answer to "is a safety net live".
+   */
+  continuation_will_dispatch: boolean | null;
   title: string;
   measures: string;
   progress: GateProgress;
