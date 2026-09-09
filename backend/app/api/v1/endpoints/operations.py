@@ -9518,7 +9518,6 @@ async def approve_prompt_document_proposal(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/approve",
         {
             "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
         },
         tenant_id=tenant_id,
     )
@@ -9540,7 +9539,6 @@ async def reject_prompt_document_proposal(
         f"{_COORD_PROPOSALS_PATH}/{quote(proposal_id, safe='')}/reject",
         {
             "decision_note": (body or {}).get("decision_note"),
-            "decided_by": _editor_identity(current_user),
         },
         tenant_id=tenant_id,
     )
