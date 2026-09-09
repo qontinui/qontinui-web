@@ -1,7 +1,7 @@
 """coord.primary_tree_branch_events — branch provenance for SHARED checkouts
 
 Revision ID: ptbe_01_primary_tree_branch_events
-Revises: reqchk_walk_01
+Revises: remote_attach_01
 Create Date: 2026-09-02
 
 Phase 2 (web migration) of plan
@@ -160,27 +160,55 @@ Idempotency / authorship posture
 Chaining
 ========
 
-``down_revision = "reqchk_walk_01"`` -- an UNLANDED sibling, deliberately, and
-the one thing about this file a later reader must not mistake for the usual
-"whatever main's head was when I authored".
+``down_revision = "remote_attach_01"`` -- ``main``'s single alembic head,
+measured 2026-09-09 with ``scripts/ci/count_alembic_heads.py``
+(``HEAD_COUNT=1``, ``HEAD=remote_attach_01``).
 
-The original parent was ``require_review_cols_01``, the single head at
-authoring time. On 2026-09-05 at 16:05Z ``main`` landed
-``coord_agent_questions_audience_backfill`` off that same parent, which forked
-this chain -- and forked qontinui-web #1210 and #989 with it, since all three
-had declared the identical token. Three unlanded siblings of one parent cannot
-all be re-pointed at ``main``'s head: alembic's single-head invariant is a
-total order, so re-pointing them all at the same landed revision only re-forks
-the moment the first of them lands.
+This parent has been re-pointed twice, and the history matters because the
+second re-point invalidated the first one's reasoning. It was
+``require_review_cols_01``, the single head at authoring time; on
+2026-09-05T15:02:53Z ``main`` landed ``coord_agent_questions_audience_backfill``
+(commit ``f8a1fe821``) off that same node and forked six open PRs at once, so the six were chained in a stated
+landing order behind qontinui-web #1210 (``reqchk_walk_01``). Two of those six
+have since LANDED -- #1210 (``reqchk_walk_01``) and #1216
+(``fleet_res_tel_05_socket_census``) are both on ``main`` now -- and ``main``
+moved nine further revisions past ``reqchk_walk_01``, ending at
+``remote_attach_01``. That re-forked the chain at its root: a parent that has
+landed but is no longer the head forks just as surely as one that has not
+landed at all.
 
-So the three were chained in a stated landing order instead --
-**#1210 -> #1218 -> #989** -- and this revision takes the middle position.
-``reqchk_walk_01`` is qontinui-web **#1210**, which must land FIRST. Until it
-does, ``alembic-heads-pr`` on this PR is RED BY CONSTRUCTION (the parent named
-here does not exist in any tree yet, so ``ptbe_01`` and ``main``'s head both
-read as heads); it turns green on its own, with no further edit, once #1210
-lands. That red is also the safety property: it is what stops this PR landing
-out of order and leaving ``main`` with a dangling ``down_revision``.
+This revision is now the HEAD-CHILD, and the four remaining open PRs (five
+revisions -- #989 carries two) are chained behind it in one total order:
+
+    remote_attach_01                            (main's head)
+      -> ptbe_01_primary_tree_branch_events     (#1218 -- this revision)
+      -> devenv_09_auto_enrollment              (#989)
+      -> devenv_10_unique_active_coord_device   (#989)
+      -> policy_rules_tombstone_01              (#1269)
+      -> oplog_age_idx_01                       (#1272)
+      -> pdtier_03                              (#1180)
+
+Alembic's single-head invariant is a TOTAL ORDER, so only ONE open PR can be
+the head-child at a time; re-pointing all five at ``main``'s head only re-forks
+them the instant the first lands. Chaining is the only shape that serialises
+them, and the tail order is deliberate: ``pdtier_03`` (#1180) is last because it
+is the only revision here that drops a COLUMN and the only one that can
+``RAISE EXCEPTION`` and abort mid-upgrade, so a refusal there halts nothing but
+itself. (``devenv_10`` also drops something -- a now-redundant index -- but that
+is reversible and loses no data.)
+
+The consequence, stated so a later reader does not mistake it for a defect:
+every revision BELOW this one names a parent that exists in no tree yet, so
+alembic cannot build its revision map there at all (``KeyError: '<parent>'``).
+That reds MORE than the head counter on #989, #1269, #1272 and #1180 -- it reds
+``alembic-heads-pr``, Spec CI's ``Run database migrations`` (``alembic upgrade
+heads``) and the ``_needs_pg`` migration-harness tests alike. All of it is RED
+BY CONSTRUCTION and goes green on its own, with no further edit, as the
+revisions ahead of it land. (``migration-reversal.yml`` is the one lane that is
+unaffected: it detects the unresolvable-parent shape and skips-and-passes.)
+That red is the safety property -- it is what stops an out-of-order land leaving
+``main`` with a dangling ``down_revision``. THIS revision is the one that is
+green now, because its parent is the one on ``main``.
 
 Nothing is reserved. ``alembic-graph-pr.yml`` gates any fork that results, and
 ``scripts/ci/notify_forked_open_prs.py`` comments the exact token to adopt if a
@@ -193,7 +221,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ptbe_01_primary_tree_branch_events"
-down_revision: str = "reqchk_walk_01"
+down_revision: str = "remote_attach_01"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
