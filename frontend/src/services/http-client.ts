@@ -450,7 +450,37 @@ export class HttpClient {
 
       if (outcome === "refreshed") {
         log.debug("Token refresh successful, retrying request");
-        return this.replayAfterRefresh(url, options, skipAuth, timeoutMs);
+        const replay = await this.replayAfterRefresh(
+          url,
+          options,
+          skipAuth,
+          timeoutMs
+        );
+        // The replay is a response like any other, so it goes through the
+        // SAME retry door as the first one. Without this a request that
+        // happened to cross a token refresh silently lost its whole retry
+        // budget: a GET answering 503 on the replay was handed straight back
+        // to the caller, while the identical GET a second earlier cost 5
+        // requests. The method rule still governs, so a POST gains only the
+        // 429 arm here — never a 5xx re-issue.
+        //
+        // That 429 arm IS a widening: a replay's 429 used to go straight back
+        // to the caller and now enters the chain, so a non-idempotent call can
+        // cost up to four requests and ~3 minutes here where it cost one. It
+        // is the policy working rather than an oversight — a 429 means the
+        // server refused to process the request, so nothing committed — and
+        // `noRetryStatuses: [429]` is how a call site that would rather fail
+        // fast opts out.
+        return this.maybeRetry(
+          replay,
+          url,
+          options,
+          skipAuth,
+          timeoutMs,
+          retryStrategy,
+          isRetryable,
+          attempt
+        );
       }
 
       if (outcome === "transient") {
@@ -485,26 +515,73 @@ export class HttpClient {
       this.maybeHandleAuthRejection(response.status, skipAuth);
     }
 
-    // Enter the retry chain only when this request's policy says the status
-    // is retryable (`isRetryableStatus`: 429 for every method, 5xx only when
-    // re-issuing is safe, never an opted-out status). Checked BEFORE entering
-    // the chain so a non-retryable status costs exactly one request, and
-    // handed INTO the chain so every later response is judged by the same
-    // rule — a 429 cannot be a side door into retrying a 5xx.
-    //
-    // `canRetry` guards the budget at the door: the chain runs the request
-    // once more BEFORE its own attempt counter applies, so without this a
-    // `maxRetries: 0` request was still re-issued once — exactly the
-    // duplication the callers passing it were trying to avoid.
-    if (retryStrategy.canRetry(attempt) && isRetryable(response)) {
-      return retryStrategy.executeWithRetry(
-        () => this.executeSingleRequest(url, options, skipAuth, timeoutMs),
-        attempt,
-        isRetryable
-      );
+    return this.maybeRetry(
+      response,
+      url,
+      options,
+      skipAuth,
+      timeoutMs,
+      retryStrategy,
+      isRetryable,
+      attempt
+    );
+  }
+
+  /**
+   * The retry door, shared by every response this client hands back: the
+   * first one, and the replay issued after a successful token refresh.
+   *
+   * Enter the retry chain only when this request's policy says the status is
+   * retryable (`isRetryableStatus`: 429 for every method, 5xx only when
+   * re-issuing is safe, never an opted-out status). Checked BEFORE entering
+   * the chain so a non-retryable status costs exactly one request, and handed
+   * INTO the chain so every later response is judged by the same rule — a 429
+   * cannot be a side door into retrying a 5xx.
+   *
+   * `canRetry` guards the budget at the door: the chain runs the request once
+   * more BEFORE its own attempt counter applies, so without this a
+   * `maxRetries: 0` request was still re-issued once — exactly the
+   * duplication the callers passing it were trying to avoid.
+   *
+   * A non-retryable status costs exactly one request on the FIRST-response
+   * path. On the replay path it costs two — the 401 that triggered the
+   * refresh, then the replay — because the door request was already spent
+   * before the refresh; the replay is not charged to the retry budget.
+   */
+  private async maybeRetry(
+    response: Response,
+    url: string,
+    options: RequestInit,
+    skipAuth: boolean,
+    timeoutMs: number,
+    retryStrategy: RetryStrategy,
+    isRetryable: (response: Response) => boolean,
+    attempt: number
+  ): Promise<Response> {
+    if (!retryStrategy.canRetry(attempt) || !isRetryable(response)) {
+      return response;
     }
 
-    return response;
+    const settled = await retryStrategy.executeWithRetry(
+      () => this.executeSingleRequest(url, options, skipAuth, timeoutMs),
+      attempt,
+      isRetryable
+    );
+
+    // A 401/403 that arrives INSIDE the chain has passed no auth handling:
+    // the chain re-issues through `executeSingleRequest`, which carries no
+    // auth branch, and `isRetryable` is false for both statuses so the chain
+    // simply returns them. Without this the dead-session backstop is skipped
+    // and the caller 401s forever — precisely the "no teardown and no route
+    // back to re-auth" case `replayAfterRefresh` was written to close. Reached
+    // on the replay path (401 -> refresh -> retryable -> 401) and on the
+    // first-response path alike (429 -> 401), neither of which existed as a
+    // handled route before.
+    if (settled.status === 401 || settled.status === 403) {
+      this.maybeHandleAuthRejection(settled.status, skipAuth);
+    }
+
+    return settled;
   }
 
   private async executeSingleRequest(

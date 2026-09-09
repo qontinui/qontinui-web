@@ -198,6 +198,3 @@ export class RetryStrategy {
     return attempt <= this.config.maxRetries;
   }
 }
-
-// Export a default instance for convenience
-export const defaultRetryStrategy = new RetryStrategy();

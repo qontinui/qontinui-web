@@ -860,6 +860,9 @@ describe("HttpClient reactive refresh on 401", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    // This block runs on real timers; restore explicitly so a fake-timer test
+    // added here later cannot leak into the next one.
+    vi.useRealTimers();
   });
 
   it("refreshes and replays the request when the bearer is expired", async () => {
@@ -883,6 +886,118 @@ describe("HttpClient reactive refresh on 401", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2); // original + replay
     expect(r.status).toBe(200);
     expect(onExpired).not.toHaveBeenCalled();
+  });
+
+  // The replay issued after a successful refresh is a response like any
+  // other, so the request's retry policy must govern it too. It did not:
+  // `replayAfterRefresh` returned `executeSingleRequest` straight to the
+  // caller, so a request that happened to cross a token refresh silently lost
+  // its whole retry budget. Measured before the fix: 2 requests, 503 returned
+  // in 5ms, against 5 requests for the identical GET that did not 401 first.
+  it("applies the retry policy to the replay after a refresh (GET, 503)", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      // 401 first (spent bearer), then a transient 503 for every replay.
+      return new Response(JSON.stringify({}), {
+        status: calls === 1 ? 401 : 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      isAccessTokenExpired: vi.fn(() => true),
+    });
+    const refreshService = makeRefreshService("refreshed");
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      refreshService as never
+    );
+
+    // maxRetries: 1 keeps the wall clock at one 1s backoff. The door issues
+    // the 401; the replay is the 503; the chain then costs two more.
+    const r = await client.fetch("https://api.test/api/v1/thing", {
+      maxRetries: 1,
+    });
+
+    expect(refreshService.refreshWithOutcome).toHaveBeenCalledTimes(1);
+    expect(r.status).toBe(503);
+    // 1 (401) + 1 (replay 503) + 2 (the chain the replay now enters).
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  // A 401 arriving INSIDE the chain reaches the dead-session backstop. The
+  // chain re-issues through `executeSingleRequest`, which carries no auth
+  // branch, and `isRetryable` is false for 401 — so before the fix this
+  // returned a bare 401 with no teardown and no route back to re-auth, which
+  // is the exact failure `replayAfterRefresh` was written to close.
+  it("routes a 401 that arrives inside the retry chain to the auth backstop", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      // 401 (spent bearer) -> refresh -> 503 replay -> chain re-issue -> 401.
+      const status = calls === 1 ? 401 : calls === 2 ? 503 : 401;
+      return new Response(JSON.stringify({}), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      isAccessTokenExpired: vi.fn(() => true),
+    });
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      makeRefreshService("refreshed") as never
+    );
+    const onExpired = vi.fn();
+    client.setSessionExpiredHandler(onExpired);
+
+    const r = await client.fetch("https://api.test/api/v1/thing", {
+      maxRetries: 1,
+    });
+
+    expect(r.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  // The method rule still governs the replay: a POST gains only the 429 arm,
+  // never a 5xx re-issue, so routing the replay through the door cannot
+  // reintroduce the duplication the whole change exists to prevent.
+  it("does NOT retry a 5xx on the replay for a POST", async () => {
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls++;
+      return new Response(JSON.stringify({}), {
+        status: calls === 1 ? 401 : 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tm = makeTokenManager({
+      getAccessToken: vi.fn(() => "expired"),
+      isAccessTokenExpired: vi.fn(() => true),
+    });
+    const client = new HttpClient(
+      tm as unknown as TokenManager,
+      undefined,
+      makeRefreshService("refreshed") as never
+    );
+
+    const r = await client.fetch("https://api.test/api/v1/thing", {
+      method: "POST",
+    });
+
+    expect(r.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 401 + replay, no re-issue
   });
 
   it("refreshes inside the clock-skew window, where neither staleness predicate fires", async () => {
